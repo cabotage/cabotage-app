@@ -1,0 +1,24 @@
+[[source]]
+
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+
+[dev-packages]
+
+coverage = "==4.4.2"
+Flask-DebugToolbar = "==0.10.1"
+Flask-Testing = "==0.6.2"
+
+
+[packages]
+
+Flask = "==0.12.2"
+Flask-Bcrypt = "==0.7.1"
+Flask-Bootstrap = "==3.3.7.1"
+Flask-Login = "==0.4.0"
+Flask-Migrate = "==2.1.1"
+Flask-Script = "==2.0.6"
+Flask-SQLAlchemy = "==2.3.2"
+Flask-WTF = "==0.14.2"
