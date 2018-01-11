@@ -1,10 +1,112 @@
 import datetime
+import re
 
 from flask import current_app
 
 from cabotage.server import db, bcrypt
 from sqlalchemy import text
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.ext.associationproxy import association_proxy
+from unidecode import unidecode
+
+_punct_re = re.compile(r'[\t !"#$%&\'()*\-/<=>?@\[\\\]^_`{|},.]+')
+
+
+def slugify(text, delim=u'-'):
+    """Generates an ASCII-only slug."""
+    result = []
+    for word in _punct_re.split(text.lower()):
+        result.extend(unidecode(word).split())
+    return str(delim.join(result))
+
+"""
+sqlalchemy.exc.ArgumentError: reverse_property 'teams' on relationship TeamMember.organization references relationship Organization.teams, which does not reference mapper Mapper|TeamMember|team_members
+"""
+
+
+class OrganizationMember(db.Model):
+
+    __tablename__ = 'organization_members'
+
+    user_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey('users.id'),
+        primary_key=True
+    )
+    organization_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey('organizations.id'),
+        primary_key=True
+    )
+    admin = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False
+    )
+
+    user = db.relationship(
+        'User',
+        back_populates="organizations"
+    )
+    organization = db.relationship(
+        'Organization',
+        back_populates="members"
+    )
+
+
+class OrganizationTeam(db.Model):
+
+    __tablename__ = 'organization_teams'
+
+    organization_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey('organizations.id'),
+        primary_key=True
+    )
+    team_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey('teams.id'),
+        primary_key=True
+    )
+
+    organization = db.relationship(
+        'Organization',
+        back_populates="teams"
+    )
+    team = db.relationship(
+        'Team',
+        back_populates="organizations"
+    )
+
+
+class TeamMember(db.Model):
+
+    __tablename__ = 'team_members'
+
+    user_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey('users.id'),
+        primary_key=True
+    )
+    team_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey('teams.id'),
+        primary_key=True
+    )
+    admin = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False
+    )
+
+    user = db.relationship(
+        'User',
+        back_populates="teams"
+    )
+    team = db.relationship(
+        'Team',
+        back_populates="members"
+    )
 
 
 class User(db.Model):
@@ -22,6 +124,9 @@ class User(db.Model):
     password = db.Column(db.String(255), nullable=False)
     registered_on = db.Column(db.DateTime, nullable=False)
     admin = db.Column(db.Boolean, nullable=False, default=False)
+
+    organizations = db.relationship("OrganizationMember", back_populates="user")
+    teams = db.relationship("TeamMember", back_populates="user")
 
     def __init__(self, username, email, password, admin=False):
         self.username = username
@@ -46,3 +151,76 @@ class User(db.Model):
 
     def __repr__(self):
         return '<User {0}>'.format(self.username)
+
+
+class Organization(db.Model):
+
+    __tablename__ = 'organizations'
+
+    def __init__(self, *args, **kwargs):
+        if not 'slug' in kwargs:
+            kwargs['slug'] = slugify(kwargs.get('name'))
+        super().__init__(*args, **kwargs)
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True
+    )
+    name = db.Column(db.String(64), nullable=False)
+    slug = db.Column(db.String(64), nullable=False)
+
+    members = db.relationship("OrganizationMember", back_populates="organization")
+    teams = db.relationship("OrganizationTeam", back_populates="organization")
+
+    def add_user(self, user, admin=False):
+        association = OrganizationMember(admin=admin)
+        association.organization = self
+        association.user = user
+        db.session.add(association)
+
+    def remove_user(self, user):
+        association = OrganizationMember.query.filter_by(user_id=user.id, organization_id=self.id)
+        if association:
+            db.session.delete(association)
+
+    def add_team(self, team):
+        association = OrganizationTeam()
+        association.organization = self
+        association.team = team
+        db.session.add(association)
+
+
+class Team(db.Model):
+
+    __tablename__ = 'teams'
+
+    def __init__(self, *args, **kwargs):
+        if not 'slug' in kwargs:
+            kwargs['slug'] = slugify(kwargs.get('name'))
+        super().__init__(*args, **kwargs)
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True
+    )
+
+    name = db.Column(db.String(64), nullable=False)
+    slug = db.Column(db.String(64), nullable=False)
+
+    organizations = db.relationship("OrganizationTeam", back_populates="team")
+    members = db.relationship("TeamMember", back_populates="team")
+
+    def add_user(self, user, admin=False):
+        association = TeamMember(admin=admin)
+        association.team = self
+        association.user = user
+        db.session.add(association)
+
+    def remove_user(self, user):
+        association = TeamMember.query.filter_by(user_id=user.id, team_id=self.id)
+        if association:
+            db.session.delete(association)
