@@ -18,18 +18,18 @@ class DevelopmentConfig(BaseConfig):
     DEBUG = True
     BCRYPT_LOG_ROUNDS = 4
     WTF_CSRF_ENABLED = False
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///{0}'.format(
-        os.path.join(basedir, 'dev.db'))
+    SQLALCHEMY_DATABASE_URI = 'postgresql://localhost/cabotage_dev'
     DEBUG_TB_ENABLED = True
 
 
 class TestingConfig(BaseConfig):
     """Testing configuration."""
     DEBUG = True
+    DEBUG_TB_ENABLED = False
     TESTING = True
     BCRYPT_LOG_ROUNDS = 4
     WTF_CSRF_ENABLED = False
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///'
+    SQLALCHEMY_DATABASE_URI = 'postgresql://localhost/cabotage_test'
     DEBUG_TB_ENABLED = False
     PRESERVE_CONTEXT_ON_EXCEPTION = False
 

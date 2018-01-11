@@ -16,7 +16,7 @@ class TestUserBlueprint(BaseTestCase):
         with self.client:
             response = self.client.post(
                 '/login',
-                data=dict(email="ad@min.com", password="admin_user"),
+                data=dict(username="admin", password="admin_user"),
                 follow_redirects=True
             )
             self.assertIn(b'Welcome', response.data)
@@ -31,7 +31,7 @@ class TestUserBlueprint(BaseTestCase):
         with self.client:
             self.client.post(
                 '/login',
-                data=dict(email="ad@min.com", password="admin_user"),
+                data=dict(username="admin", password="admin_user"),
                 follow_redirects=True
             )
             response = self.client.get('/logout', follow_redirects=True)
@@ -50,27 +50,23 @@ class TestUserBlueprint(BaseTestCase):
 
     def test_validate_success_login_form(self):
         # Ensure correct data validates.
-        form = LoginForm(email='ad@min.com', password='admin_user')
+        form = LoginForm(username='admin', password='admin_user')
         self.assertTrue(form.validate())
-
-    def test_validate_invalid_email_format(self):
-        # Ensure invalid email format throws error.
-        form = LoginForm(email='unknown', password='example')
-        self.assertFalse(form.validate())
 
     def test_get_by_id(self):
         # Ensure id is correct for the current/logged in user.
         with self.client:
             self.client.post('/login', data=dict(
-                email='ad@min.com', password='admin_user'
+                username='admin', password='admin_user'
             ), follow_redirects=True)
-            self.assertTrue(current_user.id == 1)
+            user = User.query.filter_by(email='ad@min.com').first()
+            self.assertTrue(current_user.id == user.id)
 
     def test_registered_on_defaults_to_datetime(self):
         # Ensure that registered_on is a datetime.
         with self.client:
             self.client.post('/login', data=dict(
-                email='ad@min.com', password='admin_user'
+                username='admin', password='admin_user'
             ), follow_redirects=True)
             user = User.query.filter_by(email='ad@min.com').first()
             self.assertIsInstance(user.registered_on, datetime.datetime)
@@ -86,7 +82,7 @@ class TestUserBlueprint(BaseTestCase):
         # Ensure user can't login when the pasword is incorrect.
         with self.client:
             response = self.client.post('/login', data=dict(
-                email='ad@min.com', password='foo_bar'
+                username='admin', password='foo_bar'
             ), follow_redirects=True)
         self.assertIn(b'Invalid email and/or password.', response.data)
 
@@ -100,11 +96,14 @@ class TestUserBlueprint(BaseTestCase):
         with self.client:
             response = self.client.post(
                 '/register',
-                data=dict(email="test@tester.com", password="testing",
-                          confirm="testing"),
+                data=dict(username="testuser",
+                          email="test@tester.com",
+                          password="testingpassword",
+                          confirm="testingpassword"),
                 follow_redirects=True
             )
             self.assertIn(b'Welcome', response.data)
+            self.assertTrue(current_user.username == "testuser")
             self.assertTrue(current_user.email == "test@tester.com")
             self.assertTrue(current_user.is_active())
             self.assertEqual(response.status_code, 200)

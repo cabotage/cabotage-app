@@ -59,6 +59,7 @@ def cov():
 @manager.command
 def create_db():
     """Creates the db tables."""
+    db.engine.execute('CREATE EXTENSION IF NOT EXISTS pgcrypto')
     db.create_all()
 
 
