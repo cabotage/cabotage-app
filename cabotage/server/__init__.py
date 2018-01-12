@@ -66,9 +66,13 @@ def create_app():
             View('All My Projects', 'user.projects'),
         ),
         Subgroup(
+            'Orgs',
+            View('All My Orgs', 'user.organizations'),
+        ),
+        Subgroup(
           'Account',
-          View('Change Password', 'security.change_password'),
           Separator(),
+          View('Change Password', 'security.change_password'),
           View('Log Out', 'security.logout'),
         ),
     )

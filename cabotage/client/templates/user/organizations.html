@@ -1,0 +1,18 @@
+{% extends "_base.html" %}
+{% from "bootstrap/utils.html" import form_button %}
+{% block content %}
+  <div class="container" id="content">
+    <div class="row">
+      <h1>Your Organizations</h1>
+    </div>
+    <div class="row">
+      {{ form_button(url_for('user.organization_create'), "Create a new Organization", method="GET", class="btn btn-primary pull-right") }}
+    </div>
+    <div class="row">
+      {% for organization in organizations %}
+      <a href="{{ url_for("user.organization_view", org_slug=organization.organization.slug) }}">{{ organization.organization.slug }}</a>
+      {% endfor %}
+    </div>
+  </div>
+{% endblock %}
+

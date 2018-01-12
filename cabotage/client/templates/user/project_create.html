@@ -9,6 +9,7 @@
   <div class="row">
     <div class="col-md-4 col-md-offset-4 col-sm-8 col-xs-8 col-xs-offset-2 col-sm-offset-2">
       <h1>Create Project</h1>
+      {% if project_create_form.organization_id.choices %}
       <form action="{{ url_for('user.project_create') }}" method="POST" name="project_create_form">
         {{ project_create_form.hidden_tag() }}
         {{ form_field(project_create_form.organization_id) }}
@@ -16,6 +17,10 @@
         {{ form_field(project_create_form.slug) }}
         {{ form_button(project_create_form.submit, "Create", method="POST", class="btn btn-primary") }}
       </form>
+      {% else %}
+      <div class="alert alert-info">Sorry, you need to create an organization first!</div>
+      {{ form_button(url_for('user.organization_create'), "Create an Organization", method="GET", class="btn btn-primary") }}
+      {% endif %}
     </div>
   </div>
 </div>

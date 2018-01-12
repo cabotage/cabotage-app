@@ -52,6 +52,54 @@ def project_create():
     return render_template('user/project_create.html', project_create_form=form)
 
 
+@user_blueprint.route('/organizations/<org_slug>/projects/create', methods=["GET", "POST"])
+@login_required
+def organization_project_create(org_slug):
+    user = current_user
+    organization = Organization.query.filter_by(slug=org_slug).first()
+    if organization is None:
+        abort(404)
+
+    form = CreateProjectForm()
+    form.organization_id.choices = [(str(organization.id), organization.name)]
+    form.organization_id.data = str(organization.id)
+
+    if form.validate_on_submit():
+        project = Project(organization_id=organization.id, name=form.name.data, slug=form.slug.data)
+        db.session.add(project)
+        db.session.commit()
+        return 'created project', 201
+    return render_template('user/organization_project_create.html', organization=organization, organization_project_create_form=form)
+
+
+@user_blueprint.route('/organizations/<org_slug>')
+@login_required
+def organization_view(org_slug):
+    user = current_user
+    organization = Organization.query.filter_by(slug=org_slug).first()
+    if organization is None:
+        abort(404)
+    return render_template('user/organization.html', organization=organization)
+
+
+@user_blueprint.route('/organizations/<org_slug>/projects')
+@login_required
+def organization_projects(org_slug):
+    user = current_user
+    organization = Organization.query.filter_by(slug=org_slug).first()
+    if organization is None:
+        abort(404)
+    return render_template('user/organization_projects.html', organization=organization)
+
+
+@user_blueprint.route('/organizations')
+@login_required
+def organizations():
+    user = current_user
+    organizations = user.organizations
+    return render_template('user/organizations.html', organizations=organizations)
+
+
 @user_blueprint.route('/organizations/create', methods=["GET", "POST"])
 @login_required
 def organization_create():

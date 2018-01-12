@@ -1,8 +1,12 @@
 {% extends "_base.html" %}
+{% from "bootstrap/utils.html" import form_button %}
 {% block content %}
   <div class="container" id="content">
     <div class="row">
-      <h1>Projects</em>!</h1>
+      <h1>Projects</h1>
+    </div>
+    <div class="row">
+      {{ form_button(url_for('user.project_create'), "Create a new Project", method="GET", class="btn btn-primary pull-right") }}
     </div>
     <div class="row">
       {% for project in projects %}
