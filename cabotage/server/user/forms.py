@@ -41,27 +41,79 @@ class ExtendedConfirmRegisterForm(ConfirmRegisterForm):
 
 class CreateProjectForm(FlaskForm):
 
-    organization_id = SelectField(u'Organization', [DataRequired()]) 
-    name = StringField(u'Project Name', [DataRequired()])
-    slug = StringField(u'Project Slug', [DataRequired()])
+    organization_id = SelectField(
+        u'Organization',
+        [DataRequired()],
+        description="Organization this Project belongs to.",
+    )
+    name = StringField(
+        u'Project Name',
+        [DataRequired()],
+        description="Friendly and descriptive name for your Project.",
+    )
+    slug = StringField(
+        u'Project Slug',
+        [DataRequired()],
+        description="URL Safe short name for your Project, must be unique within the Organization.",
+    )
 
 
 class CreateOrganizationForm(FlaskForm):
 
-    name = StringField(u'Organization Name', [DataRequired()])
-    slug = StringField(u'Organization Slug', [DataRequired()])
+    name = StringField(
+        u'Organization Name',
+        [DataRequired()],
+        description="Friendly and descriptive name for your Organization.",
+    )
+    slug = StringField(
+        u'Organization Slug',
+        [DataRequired()],
+        description="URL Safe short name for your Organization, must be globally unique.",
+    )
 
 
 class CreatePipelineForm(FlaskForm):
-    organization_id = SelectField(u'Organization', [DataRequired()])
-    project_id = SelectField(u'Project', [DataRequired()])
-    name = StringField(u'Pipeline Name', [DataRequired()])
-    slug = StringField(u'Pipeline Slug', [DataRequired()])
+    organization_id = SelectField(
+        u'Organization',
+        [DataRequired()],
+        description="Organization this Pipeline belongs to.",
+    )
+    project_id = SelectField(
+        u'Project',
+        [DataRequired()],
+        description="Project this Pipeline belongs to.",
+    )
+    name = StringField(
+        u'Pipeline Name',
+        [DataRequired()],
+        description="Friendly and descriptive name for your Pipeline.",
+    )
+    slug = StringField(
+        u'Pipeline Slug',
+        [DataRequired()],
+        description="URL Safe short name for your Pipeline, must be unique within the Project.",
+    )
 
 
 class CreateApplicationForm(FlaskForm):
 
-    organization_id = SelectField(u'Organization', [DataRequired()]) 
-    project_id = SelectField(u'Project', [DataRequired()])
-    name = StringField(u'Application Name', [DataRequired()])
-    slug = StringField(u'Application Slug', [DataRequired()])
+    organization_id = SelectField(
+        u'Organization',
+        [DataRequired()],
+        description="Organization this Application belongs to.",
+    )
+    project_id = SelectField(
+        u'Project',
+        [DataRequired()],
+        description="Project this Application belongs to.",
+    )
+    name = StringField(
+        u'Application Name',
+        [DataRequired()],
+        description="Friendly and descriptive name for your Application.",
+    )
+    slug = StringField(
+        u'Application Slug',
+        [DataRequired()],
+        description="URL Safe short name for your Application, must be unique within the Project.",
+    )

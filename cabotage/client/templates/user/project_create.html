@@ -25,3 +25,11 @@
   </div>
 </div>
 {% endblock %}
+
+{% block js %}
+<script type="text/javascript">
+(function() {
+  applySlugify('#name', '#slug');
+})();
+</script>
+{% endblock %}
