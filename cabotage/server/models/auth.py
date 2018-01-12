@@ -80,7 +80,7 @@ class User(db.Model, UserMixin):
     organizations = db.relationship("OrganizationMember", back_populates="user")
     teams = db.relationship("TeamMember", back_populates="user")
 
-    def __init__(self, username, email, password, admin=False):
+    def __init__(self, username, email, password, active=False, roles=None, admin=False):
         self.username = username
         self.email = email
         self.password = bcrypt.generate_password_hash(
@@ -93,7 +93,7 @@ class User(db.Model, UserMixin):
         return True
 
     def is_active(self):
-        return True
+        return self.active
 
     def is_anonymous(self):
         return False

@@ -6,7 +6,7 @@ from flask_login import current_user
 from base import BaseTestCase
 from cabotage.server import bcrypt
 from cabotage.server.models import User
-from cabotage.server.user.forms import LoginForm
+from cabotage.server.user.forms import ExtendedLoginForm
 
 
 class TestUserBlueprint(BaseTestCase):
@@ -50,7 +50,7 @@ class TestUserBlueprint(BaseTestCase):
 
     def test_validate_success_login_form(self):
         # Ensure correct data validates.
-        form = LoginForm(username='admin', password='admin_user')
+        form = ExtendedLoginForm(username='admin', password='admin_user')
         self.assertTrue(form.validate())
 
     def test_get_by_id(self):
@@ -98,8 +98,7 @@ class TestUserBlueprint(BaseTestCase):
                 '/register',
                 data=dict(username="testuser",
                           email="test@tester.com",
-                          password="testingpassword",
-                          confirm="testingpassword"),
+                          password="testingpassword",),
                 follow_redirects=True
             )
             self.assertIn(b'Welcome', response.data)

@@ -1,4 +1,4 @@
-from flask_security.forms import LoginForm, RegisterForm
+from flask_security.forms import ConfirmRegisterForm, LoginForm, RegisterForm
 
 from wtforms import StringField
 from wtforms.validators import DataRequired, Length
@@ -17,6 +17,16 @@ class ExtendedLoginForm(LoginForm):
             self.email.data = user.email
 
 class ExtendedRegisterForm(RegisterForm):
+
+    username = StringField(
+        'Username',
+        validators=[
+            DataRequired(),
+            Length(min=3, max=40),
+        ]
+    )
+
+class ExtendedConfirmRegisterForm(ConfirmRegisterForm):
 
     username = StringField(
         'Username',

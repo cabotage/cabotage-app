@@ -8,8 +8,6 @@ from flask_security import Security, SQLAlchemyUserDatastore
 from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail
 from flask_migrate import Migrate
-from flask_nav import Nav
-from flask_nav.elements import Navbar, View
 
 from sqlalchemy import MetaData
 
@@ -31,12 +29,6 @@ db_metadata = MetaData(
 db = SQLAlchemy(metadata=db_metadata)
 mail = Mail()
 migrate = Migrate()
-nav = Nav()
-
-topbar = Navbar('',
-   View('Home', 'main.home'),
-   View('Members', 'user.members'),
-)
 
 
 def create_app():
@@ -51,9 +43,33 @@ def create_app():
     from cabotage.server.models.auth import User, Role
     user_datastore = SQLAlchemyUserDatastore(db, User, Role)
 
-    from cabotage.server.user.forms import ExtendedRegisterForm, ExtendedLoginForm
+    from cabotage.server.user.forms import (
+        ExtendedConfirmRegisterForm,
+        ExtendedLoginForm,
+        ExtendedRegisterForm,
+    )
 
-    nav.register_element('top', topbar)
+    from flask_nav import Nav
+    from flask_nav.elements import Navbar, View, Separator, Subgroup
+
+    nav = Nav()
+
+    anonymous_nav = Navbar(
+        'Cabotage',
+        View('Register', 'security.register'),
+        View('Log In', 'security.login'),
+    )
+    logged_in_nav = Navbar(
+        'Cabotage',
+        Subgroup(
+          'Account',
+          View('Change Password', 'security.change_password'),
+          Separator(),
+          View('Log Out', 'security.logout'),
+        ),
+    )
+    nav.register_element('anonymous', anonymous_nav)
+    nav.register_element('logged_in', logged_in_nav)
 
     # set config
     app_settings = os.getenv(
@@ -66,6 +82,7 @@ def create_app():
     bootstrap.init_app(app)
     security.init_app(
         app, user_datastore,
+        confirm_register_form=ExtendedConfirmRegisterForm,
         register_form=ExtendedRegisterForm,
         login_form=ExtendedLoginForm,
     )
