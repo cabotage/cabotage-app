@@ -14,7 +14,10 @@
     <div class="row">
       <h2>Applications</h2>
     </div>
-    {% for application in project.applications %}
+    {% for application in project.project_applications %}
+    <div class="row">
+      <a href="{{ url_for('user.project_application', org_slug=project.organization.slug, project_slug=project.slug, app_slug=application.slug) }}">{{ application.name }}</a>
+    </div>
     {% endfor %}
 <!--
     <div class="row">

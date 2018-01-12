@@ -49,7 +49,7 @@ def project_application(org_slug, project_slug, app_slug):
     application = Application.query.filter_by(project_id=project.id, slug=app_slug)
     if application is None:
         abort(404)
-    return render_template('user/project_application.html', application=application)
+    return render_template('user/project_application.html', project=project, application=application)
 
 
 @user_blueprint.route('/projects/<org_slug>/<project_slug>/applications')
