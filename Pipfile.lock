@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "edd22d1f053cd52e23757bda9452187b3a1a29dffc3bb84d637ec197841de5dd"
+            "sha256": "722fbbc9643567bd69f52586629a97adb88b2944be8ebb4cb1cabea36c349e50"
         },
         "host-environment-markers": {
             "implementation_name": "cpython",
@@ -112,13 +112,6 @@
             ],
             "version": "==6.7"
         },
-        "decorator": {
-            "hashes": [
-                "sha256:95a26b17806e284452bfd97fa20aa1e8cb4ee23542bda4dbac5e4562aa1642cd",
-                "sha256:7cb64d38cb8002971710c8899fbdfb859a23a364b7c99dab19d1f719c2ba16b5"
-            ],
-            "version": "==4.1.2"
-        },
         "dominate": {
             "hashes": [
                 "sha256:4b8ce6f33633c9dd9175b228d21c00c801b6bd0327747cd5e17fc2da934c3a69"
@@ -193,18 +186,6 @@
                 "sha256:5d14d55cfd35f613d99ee7cba0fc3fbbe63ba02f544d349158c14ca15561cc36"
             ],
             "version": "==0.14.2"
-        },
-        "infinity": {
-            "hashes": [
-                "sha256:dc4aa138d7e366fc00d2e741e32c78a0fecd16b74f8daeb3f7408b459668005c"
-            ],
-            "version": "==1.4"
-        },
-        "intervals": {
-            "hashes": [
-                "sha256:37921da1407a5e9384e8e1350cfb8500f8d0d69fc43d03d01a4fdc6e7a7c7166"
-            ],
-            "version": "==0.8.1"
         },
         "itsdangerous": {
             "hashes": [
@@ -299,24 +280,12 @@
             ],
             "version": "==1.2.0"
         },
-        "sqlalchemy-utils": {
-            "hashes": [
-                "sha256:e35431b0e57c4f7030ff598c23813c8b7b04b508ce10e8e9ebe448645b38d6d7"
-            ],
-            "version": "==0.32.21"
-        },
         "unidecode": {
             "hashes": [
                 "sha256:72f49d3729f3d8f5799f710b97c1451c5163102e76d64d20e170aedbbd923582",
                 "sha256:8c33dd588e0c9bc22a76eaa0c715a5434851f726131bd44a6c26471746efabf5"
             ],
             "version": "==1.0.22"
-        },
-        "validators": {
-            "hashes": [
-                "sha256:bf1aa66554df0a7907f0e78b6d356e2ce30d6f2e73fefd1f3b14d20114341066"
-            ],
-            "version": "==0.12.0"
         },
         "visitor": {
             "hashes": [
@@ -336,18 +305,6 @@
                 "sha256:ffdf10bd1fa565b8233380cb77a304cd36fd55c73023e91d4b803c96bc11d46f"
             ],
             "version": "==2.1"
-        },
-        "wtforms-alchemy": {
-            "hashes": [
-                "sha256:f885dd7225133a3a513e6afb53922a4ad993da8465ba2f509bf828b28ce8b5ef"
-            ],
-            "version": "==0.16.5"
-        },
-        "wtforms-components": {
-            "hashes": [
-                "sha256:e66cd8fa8269bfb75b40453ade387a55d55ba33aac534264043d6d283285d2e4"
-            ],
-            "version": "==0.10.3"
         }
     },
     "develop": {
