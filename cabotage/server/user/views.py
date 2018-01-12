@@ -1,4 +1,4 @@
-from flask import abort, render_template, Blueprint
+from flask import abort, render_template, Blueprint, redirect, url_for
 from flask_security import current_user, login_required
 
 from cabotage.server import db
@@ -27,7 +27,7 @@ def org_projects(org_slug):
 
 @user_blueprint.route('/projects/<org_slug>/<project_slug>')
 @login_required
-def project_view(org_slug, project_slug):
+def project(org_slug, project_slug):
     organization = Organization.query.filter_by(slug=org_slug).first()
     if organization is None:
         abort(404)
@@ -48,7 +48,7 @@ def project_create():
         project = Project(organization_id=form.organization_id.data, name=form.name.data, slug=form.slug.data)
         db.session.add(project)
         db.session.commit()
-        return 'created project', 201
+        return redirect(url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug))
     return render_template('user/project_create.html', project_create_form=form)
 
 
@@ -68,13 +68,13 @@ def organization_project_create(org_slug):
         project = Project(organization_id=organization.id, name=form.name.data, slug=form.slug.data)
         db.session.add(project)
         db.session.commit()
-        return 'created project', 201
+        return redirect(url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug))
     return render_template('user/organization_project_create.html', organization=organization, organization_project_create_form=form)
 
 
 @user_blueprint.route('/organizations/<org_slug>')
 @login_required
-def organization_view(org_slug):
+def organization(org_slug):
     user = current_user
     organization = Organization.query.filter_by(slug=org_slug).first()
     if organization is None:
@@ -111,5 +111,5 @@ def organization_create():
         organization.add_user(user, admin=True)
         db.session.add(organization)
         db.session.commit()
-        return 'created organization!', 200
+        return redirect(url_for('user.organization', org_slug=organization.slug))
     return render_template('user/organization_create.html', organization_create_form=form)

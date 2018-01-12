@@ -10,7 +10,7 @@
     </div>
     <div class="row">
       {% for project in projects %}
-      <a href="{{ url_for("user.project_view", org_slug=project.organization.slug, project_slug=project.slug) }}">{{ project.organization.slug }}/{{ project.slug }}</a>
+      <a href="{{ url_for("user.project", org_slug=project.organization.slug, project_slug=project.slug) }}">{{ project.organization.slug }}/{{ project.slug }}</a>
       {% endfor %}
     </div>
   </div>

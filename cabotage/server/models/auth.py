@@ -83,9 +83,7 @@ class User(db.Model, UserMixin):
     def __init__(self, username, email, password, active=False, roles=None, admin=False):
         self.username = username
         self.email = email
-        self.password = bcrypt.generate_password_hash(
-            password, current_app.config.get('BCRYPT_LOG_ROUNDS')
-        ).decode('utf-8')
+        self.password = password
         self.registered_at = datetime.datetime.now()
         self.admin = admin
 

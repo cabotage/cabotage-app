@@ -10,7 +10,7 @@
     </div>
     <div class="row">
       {% for organization in organizations %}
-      <a href="{{ url_for("user.organization_view", org_slug=organization.organization.slug) }}">{{ organization.organization.slug }}</a>
+      <a href="{{ url_for("user.organization", org_slug=organization.organization.slug) }}">{{ organization.organization.slug }}</a>
       {% endfor %}
     </div>
   </div>
