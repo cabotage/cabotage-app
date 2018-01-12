@@ -77,6 +77,9 @@ class User(db.Model, UserMixin):
     current_login_ip = db.Column(postgresql.INET)
     login_count = db.Column(db.Integer)
 
+    roles = db.relationship('Role', secondary=roles_users,
+                            backref=db.backref('users', lazy='dynamic'))
+
     organizations = db.relationship("OrganizationMember", back_populates="user")
     teams = db.relationship("TeamMember", back_populates="user")
 
@@ -128,7 +131,7 @@ class Organization(db.Model):
         primary_key=True
     )
     name = db.Column(db.String(64), nullable=False)
-    slug = db.Column(db.String(64), nullable=False)
+    slug = db.Column(db.String(64), nullable=False, unique=True)
 
     members = db.relationship("OrganizationMember", back_populates="organization")
     teams = db.relationship("OrganizationTeam", back_populates="organization")

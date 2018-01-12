@@ -10,13 +10,8 @@ from cabotage.server.models.auth import User
 
 class ExtendedLoginForm(LoginForm):
 
-    username = StringField('Username', [DataRequired()])
+    email = StringField('Username or Email Address', [DataRequired()])
 
-    def __init__(self, *args, **kwargs):
-        super(ExtendedLoginForm, self).__init__(*args, **kwargs)
-        user = User.query.filter_by(username=self.username.data).first()
-        if user:
-            self.email.data = user.email
 
 class ExtendedRegisterForm(RegisterForm):
 
@@ -24,7 +19,7 @@ class ExtendedRegisterForm(RegisterForm):
         'Username',
         validators=[
             DataRequired(),
-            Length(min=3, max=40),
+            Length(min=3, max=64),
         ]
     )
 
@@ -34,7 +29,7 @@ class ExtendedConfirmRegisterForm(ConfirmRegisterForm):
         'Username',
         validators=[
             DataRequired(),
-            Length(min=3, max=40),
+            Length(min=3, max=64),
         ]
     )
 
