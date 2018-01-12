@@ -1,20 +1,10 @@
-import re
 
 from cabotage.server import db
-from sqlalchemy import text
+from sqlalchemy import text, UniqueConstraint
 from sqlalchemy.dialects import postgresql
-from unidecode import unidecode
+from citext import CIText
 
-
-_punct_re = re.compile(r'[\t !"#$%&\'()*\-/<=>?@\[\\\]^_`{|},.]+')
-
-
-def slugify(text, delim=u'-'):
-    """Generates an ASCII-only slug."""
-    result = []
-    for word in _punct_re.split(text.lower()):
-        result.extend(unidecode(word).split())
-    return str(delim.join(result))
+from .utils import slugify
 
 
 class Project(db.Model):
@@ -36,8 +26,8 @@ class Project(db.Model):
         postgresql.UUID(as_uuid=True),
         db.ForeignKey('organizations.id')
     )
-    name = db.Column(db.String(64), nullable=False)
-    slug = db.Column(db.String(64), nullable=False)
+    name = db.Column(db.Text(), nullable=False)
+    slug = db.Column(CIText(), nullable=False)
 
     organization = db.relationship(
         "Organization",
@@ -57,6 +47,8 @@ class Project(db.Model):
         back_populates="project"
     )
 
+    UniqueConstraint('organization_id', 'slug')
+
 
 class Pipeline(db.Model):
 
@@ -72,8 +64,8 @@ class Pipeline(db.Model):
         postgresql.UUID(as_uuid=True),
         db.ForeignKey('projects.id')
     )
-    name = db.Column(db.String(64), nullable=False)
-    slug = db.Column(db.String(64), nullable=False)
+    name = db.Column(db.Text(), nullable=False)
+    slug = db.Column(CIText(), nullable=False)
 
     project = db.relationship(
         "Project",
@@ -83,6 +75,8 @@ class Pipeline(db.Model):
         "Application",
         back_populates="pipeline"
     )
+
+    UniqueConstraint('project_id', 'slug')
 
 
 class Application(db.Model):
@@ -104,8 +98,8 @@ class Application(db.Model):
         postgresql.UUID(as_uuid=True),
         db.ForeignKey('project_pipelines.id')
     )
-    name = db.Column(db.String(64), nullable=False)
-    slug = db.Column(db.String(64), nullable=False)
+    name = db.Column(db.Text(), nullable=False)
+    slug = db.Column(CIText(), nullable=False)
 
     project = db.relationship(
         "Project",
@@ -119,6 +113,8 @@ class Application(db.Model):
         "Release",
         back_populates="application"
     )
+
+    UniqueConstraint('project_id', 'slug')
 
 
 class Release(db.Model):

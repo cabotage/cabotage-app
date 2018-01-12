@@ -1,5 +1,4 @@
 import datetime
-import re
 
 from flask import current_app
 
@@ -8,23 +7,15 @@ from flask_security import RoleMixin, UserMixin
 from cabotage.server import db, bcrypt
 from sqlalchemy import text
 from sqlalchemy.dialects import postgresql
-from unidecode import unidecode
+from citext import CIText
+
+from .utils import slugify
 
 from .auth_associations import (
     OrganizationMember,
     OrganizationTeam,
     TeamMember,
 )
-
-_punct_re = re.compile(r'[\t !"#$%&\'()*\-/<=>?@\[\\\]^_`{|},.]+')
-
-
-def slugify(text, delim=u'-'):
-    """Generates an ASCII-only slug."""
-    result = []
-    for word in _punct_re.split(text.lower()):
-        result.extend(unidecode(word).split())
-    return str(delim.join(result))
 
 
 roles_users = db.Table(
@@ -130,8 +121,8 @@ class Organization(db.Model):
         nullable=False,
         primary_key=True
     )
-    name = db.Column(db.String(64), nullable=False)
-    slug = db.Column(db.String(64), nullable=False, unique=True)
+    name = db.Column(db.Text(), nullable=False)
+    slug = db.Column(CIText(), nullable=False, unique=True)
 
     members = db.relationship("OrganizationMember", back_populates="organization")
     teams = db.relationship("OrganizationTeam", back_populates="organization")

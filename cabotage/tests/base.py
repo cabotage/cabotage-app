@@ -16,6 +16,7 @@ class BaseTestCase(TestCase):
         return app
 
     def setUp(self):
+        db.engine.execute('CREATE EXTENSION IF NOT EXISTS citext')
         db.engine.execute('CREATE EXTENSION IF NOT EXISTS pgcrypto')
         db.create_all()
         user = User(email="ad@min.com", username='admin', password="admin_user")
