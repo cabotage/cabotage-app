@@ -1,7 +1,7 @@
 import datetime
 import unittest
 
-from flask_login import current_user
+from flask_security import current_user
 
 from base import BaseTestCase
 from cabotage.server import bcrypt
@@ -50,7 +50,7 @@ class TestUserBlueprint(BaseTestCase):
 
     def test_validate_success_login_form(self):
         # Ensure correct data validates.
-        form = ExtendedLoginForm(username='admin', password='admin_user')
+        form = ExtendedLoginForm(email=None, username='admin', password='admin_user')
         self.assertTrue(form.validate())
 
     def test_get_by_id(self):

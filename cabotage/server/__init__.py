@@ -62,6 +62,10 @@ def create_app():
     logged_in_nav = Navbar(
         'Cabotage',
         Subgroup(
+            'Projects',
+            View('All My Projects', 'user.projects'),
+        ),
+        Subgroup(
           'Account',
           View('Change Password', 'security.change_password'),
           Separator(),

@@ -8,23 +8,23 @@ name = "pypi"
 [dev-packages]
 
 coverage = "==4.4.2"
-flask-debugtoolbar = "==0.10.1"
-flask-testing = "==0.6.2"
+Flask-DebugToolbar = "==0.10.1"
+Flask-Testing = "==0.6.2"
 "testing.postgresql" = "*"
 
 
 [packages]
 
-flask = "==0.12.2"
-flask-bcrypt = "==0.7.1"
-flask-bootstrap = "*"
-flask-login = "==0.4.0"
-flask-migrate = "==2.1.1"
-flask-script = "==2.0.6"
-flask-sqlalchemy = "==2.3.2"
-flask-wtf = "==0.14.2"
+Flask = "==0.12.2"
+Flask-Bcrypt = "==0.7.1"
+Flask-Bootstrap = "*"
+Flask-Login = "==0.4.0"
+Flask-Migrate = "==2.1.1"
+Flask-Script = "==2.0.6"
+Flask-SQLAlchemy = "==2.3.2"
+Flask-WTF = "==0.14.2"
 "psycopg2" = "*"
-unidecode = "*"
-flask-security = {git = "https://github.com/mattupstate/flask-security.git", ref = "3f9b75bad279a129a8f8ee599816cc36db7c2c9a"}
-flask-mail = "*"
+Unidecode = "*"
+Flask-Security = {git = "https://github.com/mattupstate/flask-security.git", ref = "3f9b75bad279a129a8f8ee599816cc36db7c2c9a"}
+Flask-Mail = "*"
 flask-nav = "*"

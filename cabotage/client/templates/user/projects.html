@@ -1,0 +1,13 @@
+{% extends "_base.html" %}
+{% block content %}
+  <div class="container" id="content">
+    <div class="row">
+      <h1>Projects</em>!</h1>
+    </div>
+    <div class="row">
+      {% for project in projects %}
+      <a href="{{ url_for("user.project_view", org_slug=project.organization.slug, project_slug=project.slug) }}">{{ project.organization.slug }}/{{ project.slug }}</a>
+      {% endfor %}
+    </div>
+  </div>
+{% endblock %}

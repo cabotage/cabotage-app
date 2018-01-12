@@ -1,6 +1,8 @@
 from flask_security.forms import ConfirmRegisterForm, LoginForm, RegisterForm
 
-from wtforms import StringField
+from flask_wtf import FlaskForm
+
+from wtforms import SelectField, StringField
 from wtforms.validators import DataRequired, Length
 
 from cabotage.server.models.auth import User
@@ -35,3 +37,16 @@ class ExtendedConfirmRegisterForm(ConfirmRegisterForm):
             Length(min=3, max=40),
         ]
     )
+
+
+class CreateProjectForm(FlaskForm):
+
+    organization_id = SelectField(u'Organization', [DataRequired()]) 
+    name = StringField(u'Project Name', [DataRequired()])
+    slug = StringField(u'Project Slug', [DataRequired()])
+
+
+class CreateOrganizationForm(FlaskForm):
+
+    name = StringField(u'Organization Name', [DataRequired()])
+    slug = StringField(u'Organization Slug', [DataRequired()])

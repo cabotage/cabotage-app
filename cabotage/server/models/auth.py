@@ -104,6 +104,15 @@ class User(db.Model, UserMixin):
     def __repr__(self):
         return '<User {0}>'.format(self.username)
 
+    @property
+    def projects(self):
+        projects = []
+        for organization in self.organizations:
+            projects += organization.organization.projects
+        for team in self.teams:
+            projects += team.team.projects
+        return projects
+
 
 class Organization(db.Model):
 
