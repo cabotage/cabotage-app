@@ -50,3 +50,18 @@ class CreateOrganizationForm(FlaskForm):
 
     name = StringField(u'Organization Name', [DataRequired()])
     slug = StringField(u'Organization Slug', [DataRequired()])
+
+
+class CreatePipelineForm(FlaskForm):
+    organization_id = SelectField(u'Organization', [DataRequired()])
+    project_id = SelectField(u'Project', [DataRequired()])
+    name = StringField(u'Pipeline Name', [DataRequired()])
+    slug = StringField(u'Pipeline Slug', [DataRequired()])
+
+
+class CreateApplicationForm(FlaskForm):
+
+    organization_id = SelectField(u'Organization', [DataRequired()]) 
+    project_id = SelectField(u'Project', [DataRequired()])
+    name = StringField(u'Application Name', [DataRequired()])
+    slug = StringField(u'Application Slug', [DataRequired()])

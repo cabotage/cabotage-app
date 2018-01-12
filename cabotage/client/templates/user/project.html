@@ -1,6 +1,30 @@
 {% extends "_base.html" %}
+{% from "bootstrap/utils.html" import form_button %}
 {% block content %}
   <div class="container" id="content">
-    <h1>{{ project.organization.slug }}/{{ project.slug }}</h1>
+    <div class="row pull-right">
+      <p>Organization: {{ project.organization.name }}</p>
+    </div>
+    <div class="row">
+      <h1>Project: {{ project.name }}</h1>
+    </div>
+    <div class="row">
+      {{ form_button(url_for('user.project_application_create', org_slug=project.organization.slug, project_slug=project.slug), "Create a new Application", method="GET", class="btn btn-primary pull-right") }}
+    </div>
+    <div class="row">
+      <h2>Applications</h2>
+    </div>
+    {% for application in project.applications %}
+    {% endfor %}
+<!--
+    <div class="row">
+      <h2>Pipelines</h2>
+    </div>
+    <div class="row">
+      {{ form_button(url_for('user.project_pipeline_create', org_slug=project.organization.slug, project_slug=project.slug), "Create a new Pipeline", method="GET", class="btn btn-primary pull-right") }}
+    </div>
+    {% for pipeline in project.pipelines  %}
+    {% endfor %}
+-->
   </div>
 {% endblock %}

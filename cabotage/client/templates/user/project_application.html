@@ -1,0 +1,18 @@
+{% extends "_base.html" %}
+{% block content %}
+  <div class="container" id="content">
+    <div class="row">
+      <h1>{{ project.organization.slug }}/{{ project.slug }}</h1>
+    </div>
+    {% if project.pipelines  %}
+    <div class="row">
+      <h2>Pipelines</h2>
+    </div>
+    {% endif %}
+    {% if project.applications %}
+    <div class="row">
+      <h2>Applications</h2>
+    </div>
+    {% endif %}
+  </div>
+{% endblock %}
