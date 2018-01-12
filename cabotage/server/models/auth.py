@@ -3,6 +3,8 @@ import re
 
 from flask import current_app
 
+from flask_security import RoleMixin, UserMixin
+
 from cabotage.server import db, bcrypt
 from sqlalchemy import text
 from sqlalchemy.dialects import postgresql
@@ -25,7 +27,34 @@ def slugify(text, delim=u'-'):
     return str(delim.join(result))
 
 
-class User(db.Model):
+roles_users = db.Table(
+    'roles_users',
+    db.Column('user_id', postgresql.UUID(as_uuid=True), db.ForeignKey('users.id')),
+    db.Column('role_id', postgresql.UUID(as_uuid=True), db.ForeignKey('roles.id'))
+)
+
+
+class Role(db.Model, RoleMixin):
+
+    __tablename__ = 'roles'
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True
+    )
+    name = db.Column(db.String(80), unique=True)
+    description = db.Column(db.String(255))
+
+    def __str__(self):
+        return self.name
+
+    def __hash__(self):
+        return hash(self.name)
+
+
+class User(db.Model, UserMixin):
 
     __tablename__ = 'users'
 
@@ -38,8 +67,15 @@ class User(db.Model):
     username = db.Column(db.String(255), unique=True, nullable=False)
     email = db.Column(db.String(255), unique=True, nullable=False)
     password = db.Column(db.String(255), nullable=False)
-    registered_on = db.Column(db.DateTime, nullable=False)
+    active = db.Column(db.Boolean, nullable=False, default=False)
     admin = db.Column(db.Boolean, nullable=False, default=False)
+    registered_at = db.Column(db.DateTime, nullable=False)
+    confirmed_at = db.Column(db.DateTime)
+    last_login_at = db.Column(db.DateTime)
+    current_login_at = db.Column(db.DateTime)
+    last_login_ip = db.Column(postgresql.INET)
+    current_login_ip = db.Column(postgresql.INET)
+    login_count = db.Column(db.Integer)
 
     organizations = db.relationship("OrganizationMember", back_populates="user")
     teams = db.relationship("TeamMember", back_populates="user")
@@ -50,7 +86,7 @@ class User(db.Model):
         self.password = bcrypt.generate_password_hash(
             password, current_app.config.get('BCRYPT_LOG_ROUNDS')
         ).decode('utf-8')
-        self.registered_on = datetime.datetime.now()
+        self.registered_at = datetime.datetime.now()
         self.admin = admin
 
     def is_authenticated(self):

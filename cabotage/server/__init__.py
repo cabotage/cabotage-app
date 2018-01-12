@@ -1,21 +1,24 @@
 import os
 
 from flask import Flask, render_template
-from flask_login import LoginManager
 from flask_bcrypt import Bcrypt
 from flask_debugtoolbar import DebugToolbarExtension
 from flask_bootstrap import Bootstrap
+from flask_security import Security, SQLAlchemyUserDatastore
 from flask_sqlalchemy import SQLAlchemy
+from flask_mail import Mail
 from flask_migrate import Migrate
+from flask_nav import Nav
+from flask_nav.elements import Navbar, View
 
 from sqlalchemy import MetaData
 
 
 # instantiate the extensions
-login_manager = LoginManager()
 bcrypt = Bcrypt()
 toolbar = DebugToolbarExtension()
 bootstrap = Bootstrap()
+security = Security()
 db_metadata = MetaData(
     naming_convention={
         "ix": 'ix_%(column_0_label)s',
@@ -26,7 +29,14 @@ db_metadata = MetaData(
     }
 )
 db = SQLAlchemy(metadata=db_metadata)
+mail = Mail()
 migrate = Migrate()
+nav = Nav()
+
+topbar = Navbar('',
+   View('Home', 'main.home'),
+   View('Members', 'user.members'),
+)
 
 
 def create_app():
@@ -38,35 +48,37 @@ def create_app():
         static_folder='../client/static'
     )
 
+    from cabotage.server.models.auth import User, Role
+    user_datastore = SQLAlchemyUserDatastore(db, User, Role)
+
+    from cabotage.server.user.forms import ExtendedRegisterForm, ExtendedLoginForm
+
+    nav.register_element('top', topbar)
+
     # set config
     app_settings = os.getenv(
         'APP_SETTINGS', 'cabotage.server.config.DevelopmentConfig')
     app.config.from_object(app_settings)
 
     # set up extensions
-    login_manager.init_app(app)
     bcrypt.init_app(app)
     toolbar.init_app(app)
     bootstrap.init_app(app)
+    security.init_app(
+        app, user_datastore,
+        register_form=ExtendedRegisterForm,
+        login_form=ExtendedLoginForm,
+    )
     db.init_app(app)
+    mail.init_app(app)
     migrate.init_app(app, db)
+    nav.init_app(app)
 
     # register blueprints
     from cabotage.server.user.views import user_blueprint
     from cabotage.server.main.views import main_blueprint
     app.register_blueprint(user_blueprint)
     app.register_blueprint(main_blueprint)
-
-    # flask login
-    from cabotage.server.models import User
-    login_manager.login_view = 'user.login'
-    login_manager.login_message_category = 'danger'
-
-    @login_manager.user_loader
-    def load_user(user_id):
-        return User.query.filter(User.id == user_id).first()
-
-        return app
 
     # error handlers
     @app.errorhandler(401)

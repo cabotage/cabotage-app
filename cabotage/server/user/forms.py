@@ -1,37 +1,27 @@
-from flask_wtf import FlaskForm
-from wtforms import StringField, PasswordField
-from wtforms.validators import DataRequired, Email, Length, EqualTo
+from flask_security.forms import LoginForm, RegisterForm
+
+from wtforms import StringField
+from wtforms.validators import DataRequired, Length
+
+from cabotage.server.models.auth import User
 
 
-class LoginForm(FlaskForm):
+class ExtendedLoginForm(LoginForm):
+
     username = StringField('Username', [DataRequired()])
-    password = PasswordField('Password', [DataRequired()])
 
+    def __init__(self, *args, **kwargs):
+        super(ExtendedLoginForm, self).__init__(*args, **kwargs)
+        user = User.query.filter_by(username=self.username.data).first()
+        if user:
+            self.email.data = user.email
 
-class RegisterForm(FlaskForm):
-    email = StringField(
-        'Email Address',
-        validators=[
-            DataRequired(),
-            Email(message=None),
-            Length(min=6, max=40),
-        ]
-    )
+class ExtendedRegisterForm(RegisterForm):
+
     username = StringField(
         'Username',
         validators=[
             DataRequired(),
             Length(min=3, max=40),
-        ]
-    )
-    password = PasswordField(
-        'Password',
-        validators=[DataRequired(), Length(min=10, max=1024)]
-    )
-    confirm = PasswordField(
-        'Confirm password',
-        validators=[
-            DataRequired(),
-            EqualTo('password', message='Passwords must match.')
         ]
     )

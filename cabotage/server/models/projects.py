@@ -43,3 +43,113 @@ class Project(db.Model):
         "Organization",
         back_populates="projects"
     )
+
+    project_applications = db.relationship(
+        "Application",
+        back_populates="project"
+    )
+    pipeline_applications = db.relationship(
+        "Pipeline",
+        back_populates="project"
+    )
+    pipelines = db.relationship(
+        "Pipeline",
+        back_populates="project"
+    )
+
+
+class Pipeline(db.Model):
+
+    __tablename__ = 'project_pipelines'
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True
+    )
+    project_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey('projects.id')
+    )
+    name = db.Column(db.String(64), nullable=False)
+    slug = db.Column(db.String(64), nullable=False)
+
+    project = db.relationship(
+        "Project",
+        back_populates="pipelines"
+    )
+    applications = db.relationship(
+        "Application",
+        back_populates="pipeline"
+    )
+
+
+class Application(db.Model):
+
+    __tablename__ = 'project_applications'
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True
+    )
+    project_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey('projects.id'),
+        nullable=False,
+    )
+    project_pipeline_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey('project_pipelines.id')
+    )
+    name = db.Column(db.String(64), nullable=False)
+    slug = db.Column(db.String(64), nullable=False)
+
+    project = db.relationship(
+        "Project",
+        back_populates="project_applications"
+    )
+    pipeline = db.relationship(
+        "Pipeline",
+        back_populates="applications"
+    )
+    releases = db.relationship(
+        "Release",
+        back_populates="application"
+    )
+
+
+class Release(db.Model):
+
+    __tablename__ = 'project_app_releases'
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True
+    )
+    application_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey('project_applications.id'),
+        nullable=False,
+    )
+
+    application = db.relationship(
+        "Application",
+        back_populates="releases"
+    )
+
+
+class Configuration(db.Model):
+
+    __tablename__ = 'project_app_configurations'
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True
+    )

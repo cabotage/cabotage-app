@@ -62,14 +62,14 @@ class TestUserBlueprint(BaseTestCase):
             user = User.query.filter_by(email='ad@min.com').first()
             self.assertTrue(current_user.id == user.id)
 
-    def test_registered_on_defaults_to_datetime(self):
-        # Ensure that registered_on is a datetime.
+    def test_registered_at_defaults_to_datetime(self):
+        # Ensure that registered_at is a datetime.
         with self.client:
             self.client.post('/login', data=dict(
                 username='admin', password='admin_user'
             ), follow_redirects=True)
             user = User.query.filter_by(email='ad@min.com').first()
-            self.assertIsInstance(user.registered_on, datetime.datetime)
+            self.assertIsInstance(user.registered_at, datetime.datetime)
 
     def test_check_password(self):
         # Ensure given password is correct after unhashing.
