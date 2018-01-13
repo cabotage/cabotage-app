@@ -15,7 +15,7 @@
         {{ form_field(register_user_form.username) }}
         {{ form_field(register_user_form.password) }}
         {% if register_user_form.password_confirm %}
-          {{ render_field(register_user_form.password_confirm) }}
+          {{ form_field(register_user_form.password_confirm) }}
         {% endif %}
         {{ form_button(register_user_form.submit, "Register", method="POST", class="btn btn-primary") }}
       </form>

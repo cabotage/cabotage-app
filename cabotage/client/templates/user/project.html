@@ -9,9 +9,6 @@
       <h1>Project: {{ project.name }}</h1>
     </div>
     <div class="row">
-      {{ form_button(url_for('user.project_application_create', org_slug=project.organization.slug, project_slug=project.slug), "Create a new Application", method="GET", class="btn btn-primary pull-right") }}
-    </div>
-    <div class="row">
       <h2>Applications</h2>
     </div>
     {% for application in project.project_applications %}
@@ -29,5 +26,8 @@
     {% for pipeline in project.pipelines  %}
     {% endfor %}
 -->
+    <div class="row">
+      {{ form_button(url_for('user.project_application_create', org_slug=project.organization.slug, project_slug=project.slug), "Create a new Application", method="GET", class="btn btn-primary pull-right") }}
+    </div>
   </div>
 {% endblock %}
