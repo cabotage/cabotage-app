@@ -6,15 +6,54 @@
       <h1>{{ application.project.organization.slug|lower }}/{{ application.project.slug|lower }}: {{ application.slug }}</h1>
     </div>
     <div class="row">
-      <div class="col-md-6">
+      <div class="col-md-8">
         <h3>Container</h3>
+        <table class="table table-striped">
+          <tr>
+            <th>Repository</th>
+            <th>Tag</th>
+            <th style="white-space: nowrap; width: 1%;"></th>
+            <th style="white-space: nowrap; width: 1%;"></th>
+          </tr>
+         {% if application.container %}
+          <tr>
+            <td>
+              <pre style="margin: 0px;">{{ application.container[0].container_repository }}</pre>
+            </td>
+            <td>
+              <pre style="margin: 0px;">{{ application.container[0].container_tag }}</pre>
+            </td>
+            <td style="white-space: nowrap; width: 1%;">
+              <a class="btn btn-sm btn-link narrow" href="#">
+                <span class="glyphicon glyphicon-pencil"></span>
+              </a>
+            </td>
+            <td style="white-space: nowrap; width: 1%;">
+              <a class="btn btn-sm btn-link narrow icon-flipped" href="#">
+                <span class="glyphicon glyphicon-refresh"></span>
+              </a>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td class="right" colspan="4">
+              <a class="btn btn-primary" href="{{ url_for('user.project_application_configuration_create', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}">
+                Add New Container
+              </a>
+            </td>
+          </tr>
+          {% endif %}
+        </table>
       </div>
-      <div class="col-md-6">
-        <h3>Configuration</h3>
+    </div>
+    <div class="row">
+      <div class="col-md-8">
+        <h3>Environment Variables</h3>
         <table class="table table-striped">
           <tr>
             <th>Name</th>
             <th>Value</th>
+            <th style="white-space: nowrap; width: 1%;"></th>
             <th style="white-space: nowrap; width: 1%;"></th>
             <th style="white-space: nowrap; width: 1%;"></th>
           </tr>
@@ -27,19 +66,24 @@
               <pre style="margin: 0px;">{% if configuration.secret %}<span class="glyphicon glyphicon-lock"></span>{% else %}{{ configuration.value }}{% endif %}</pre>
             </td>
             <td style="white-space: nowrap; width: 1%;">
-              <a class="btn btn-sm btn-link" href="{{ url_for('user.project_application_configuration_edit', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}">
+              <a class="btn btn-sm btn-link narrow" href="{{ url_for('user.project_application_configuration_edit', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}">
                 <span class="glyphicon glyphicon-pencil"></span>
               </a>
             </td>
             <td style="white-space: nowrap; width: 1%;">
-              <a class="btn btn-sm btn-danger" href="{{ url_for('user.project_application_configuration_delete', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}">
+              <a class="btn btn-sm btn-link narrow icon-flipped" href="{{ url_for('user.project_application_configuration', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}">
+                <span class="glyphicon glyphicon-refresh"></span>
+              </a>
+            </td>
+            <td style="white-space: nowrap; width: 1%;">
+              <a class="btn btn-sm btn-danger narrow" href="{{ url_for('user.project_application_configuration_delete', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}">
                 <span class="glyphicon glyphicon-trash"></span>
               </a>
             </td>
           </tr>
           {% endfor %}
           <tr>
-            <td class="right" colspan="4">
+            <td class="right" colspan="5">
               <a class="btn btn-primary" href="{{ url_for('user.project_application_configuration_create', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}">
                 Add New Environment Variable
               </a>

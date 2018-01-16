@@ -20,7 +20,14 @@
           </label>
           <p class="help-block">{{form.secure.description|safe}}</p>
         </div>
-        {{ form_button(form.submit, "Create Environment Variable", method="POST", class="btn btn-primary") }}
+        <div class="row">
+          <div class="col-md-6">
+            {{ form_button(form.submit, "Create Environment Variable", method="POST", class="btn btn-primary") }}
+          </div>
+          <div class="col-md-6">
+            <a class="btn btn-info pull-right" onclick="window.history.back()">Cancel</a>
+          </div>
+        </div>
       </form>
     </div>
   </div>

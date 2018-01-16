@@ -168,6 +168,14 @@ class CreateConfigurationForm(FlaskForm):
         description="Store this Environment Variable Securely. It will not be recoverable again via the UI.",
     )
 
+    def validate_name(form, field):
+        configuration = Configuration.query.filter_by(application_id=form.application_id.data, name=field.data).first()
+        if configuration is not None:
+            if form.name.data == configuration.name:
+                return True
+            raise ValidationError('Configuration names must be unique (case insensitive) within Applications')
+        return True
+
 
 class DeleteConfigurationForm(FlaskForm):
 

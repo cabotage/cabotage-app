@@ -92,7 +92,7 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
         )
         db.session.add(configuration)
         db.session.commit()
-        return redirect(url_for('user.project_application_configuration', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug, config_id=configuration.id))
+        return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
     return render_template('user/project_application_configuration_create.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug)
 
 
@@ -116,18 +116,16 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
     form.application_id.choices = [(str(configuration.application.id), f'{organization.slug}/{project.slug}: {application.slug}')]
     form.application_id.data = str(configuration.application.id)
     form.name.data = str(configuration.name)
-    form.sec.data = configuration.secret
+    form.secure.data = configuration.secret
 
     if form.validate_on_submit():
-        configuration = Configuration(
-            application_id=form.application_id.data,
-            name=form.name.data,
-            value=form.value.data,
-            secret=form.secure.data,
-        )
-        db.session.add(configuration)
+        form.populate_obj(configuration)
         db.session.commit()
-        return redirect(url_for('user.project_application_configuration', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug, config_id=configuration.id))
+        return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
+
+    if configuration.secret:
+        form.value.data = None
+
     return render_template('user/project_application_configuration_edit.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug, configuration=configuration)
 
 

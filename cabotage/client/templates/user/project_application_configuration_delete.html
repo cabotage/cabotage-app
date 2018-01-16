@@ -8,14 +8,21 @@
 <div class="container-fluid clearfix" id="content">
   <div class="row">
     <div class="col-md-4 col-md-offset-4 col-sm-8 col-xs-8 col-xs-offset-2 col-sm-offset-2">
-      <h1>Create Application Configuration</h1>
+      <h1>Delete Application Configuration</h1>
       <form action="{{ url_for('user.project_application_configuration_delete', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, config_id=configuration.id) }}" method="POST" name="project_application_configuration_delete_form">
         {{ form.hidden_tag() }}
         {{ form_field(form.configuration_id, disabled="disabled") }}
         {{ form_field(form.name, disabled="disabled") }}
         {{ form_field(form.confirm) }}
         {% if form.secret %}<span class="glyphicon glyphicon-lock"></span>{% else %}{{ form_field(form.value, disabled="disabled") }}{% endif %}
-        {{ form_button(form.submit, "Delete Environment Variable", method="POST", class="btn btn-danger") }}
+        <div class="row">
+          <div class="col-md-6">
+            {{ form_button(form.submit, "Delete Environment Variable", method="POST", class="btn btn-danger") }}
+          </div>
+          <div class="col-md-6">
+            <a class="btn btn-info pull-right" onclick="window.history.back()">Cancel</a>
+          </div>
+        </div>
       </form>
     </div>
   </div>

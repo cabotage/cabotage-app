@@ -4,3 +4,15 @@ body {
     padding-left: 0.5em;
     padding-right: 0.5em;
 }
+
+.icon-flipped {
+    transform: scaleX(-1);
+    -moz-transform: scaleX(-1);
+    -webkit-transform: scaleX(-1);
+    -ms-transform: scaleX(-1);
+}
+
+.narrow {
+    padding-left: 2px;
+    padding-right: 2px;
+}

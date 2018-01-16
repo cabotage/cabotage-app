@@ -110,7 +110,7 @@ class Application(db.Model):
         back_populates="applications"
     )
 
-    containers = db.relationship(
+    container = db.relationship(
         "Container",
         back_populates="application"
     )
@@ -170,7 +170,7 @@ class Configuration(db.Model):
     )
 
     name = db.Column(
-        db.String(256),
+        CIText(),
         nullable=False,
     )
     value = db.Column(
@@ -192,6 +192,8 @@ class Configuration(db.Model):
         nullable=False,
         default=False
     )
+
+    UniqueConstraint('application_id', 'name')
 
     __mapper_args__ = {
         "version_id_col": version_id
@@ -216,5 +218,32 @@ class Container(db.Model):
 
     application = db.relationship(
         "Application",
-        back_populates="containers"
+        back_populates="container"
     )
+
+    container_repository = db.Column(
+        db.String(256),
+        nullable=False,
+    )
+    container_tag = db.Column(
+        db.String(256),
+        nullable=False,
+    )
+    container_image_id = db.Column(
+        db.String(128),
+        nullable=True,
+    )
+
+    version_id = db.Column(
+        db.Integer,
+        nullable=False
+    )
+    deleted = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False
+    )
+
+    __mapper_args__ = {
+        "version_id_col": version_id
+    }
