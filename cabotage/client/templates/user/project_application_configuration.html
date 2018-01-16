@@ -3,14 +3,11 @@
 {% block content %}
   <div class="container" id="content">
     <div class="row">
-      <h1>{{ application.project.organization.slug|lower }}/{{ application.project.slug|lower }}: {{ application.slug }}</h1>
+      <h1>{{ configuration.application.project.organization.slug|lower }}/{{ configuration.application.project.slug|lower }}/{{ configuration.application.slug|lower }}: {{ configuration.name }}</h1>
     </div>
     <div class="row">
       <div class="col-md-6">
-        <h3>Container</h3>
-      </div>
-      <div class="col-md-6">
-        <h3>Configuration</h3>
+        <h3>Current Value</h3>
         <table class="table table-striped">
           <tr>
             <th>Name</th>
@@ -18,13 +15,12 @@
             <th style="white-space: nowrap; width: 1%;"></th>
             <th style="white-space: nowrap; width: 1%;"></th>
           </tr>
-          {% for configuration in application.configurations %}
           <tr>
             <td>
               <pre style="margin: 0px;">{{ configuration.name }}</pre>
             </td>
             <td>
-              <pre style="margin: 0px;">{% if configuration.secret %}<span class="glyphicon glyphicon-lock"></span>{% else %}{{ configuration.value }}{% endif %}</pre>
+              <pre style="margin: 0px;">{{ configuration.value }}</pre>
             </td>
             <td style="white-space: nowrap; width: 1%;">
               <a class="btn btn-sm btn-link" href="{{ url_for('user.project_application_configuration_edit', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}">
@@ -34,14 +30,6 @@
             <td style="white-space: nowrap; width: 1%;">
               <a class="btn btn-sm btn-danger" href="{{ url_for('user.project_application_configuration_delete', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}">
                 <span class="glyphicon glyphicon-trash"></span>
-              </a>
-            </td>
-          </tr>
-          {% endfor %}
-          <tr>
-            <td class="right" colspan="4">
-              <a class="btn btn-primary" href="{{ url_for('user.project_application_configuration_create', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}">
-                Add New Environment Variable
               </a>
             </td>
           </tr>

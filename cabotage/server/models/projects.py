@@ -109,6 +109,15 @@ class Application(db.Model):
         "Pipeline",
         back_populates="applications"
     )
+
+    containers = db.relationship(
+        "Container",
+        back_populates="application"
+    )
+    configurations = db.relationship(
+        "Configuration",
+        back_populates="application"
+    )
     releases = db.relationship(
         "Release",
         back_populates="application"
@@ -148,4 +157,64 @@ class Configuration(db.Model):
         server_default=text("gen_random_uuid()"),
         nullable=False,
         primary_key=True
+    )
+    application_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey('project_applications.id'),
+        nullable=False,
+    )
+
+    application = db.relationship(
+        "Application",
+        back_populates="configurations"
+    )
+
+    name = db.Column(
+        db.String(256),
+        nullable=False,
+    )
+    value = db.Column(
+        db.String(2048),
+        nullable=False,
+    )
+
+    version_id = db.Column(
+        db.Integer,
+        nullable=False
+    )
+    deleted = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False
+    )
+    secret = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False
+    )
+
+    __mapper_args__ = {
+        "version_id_col": version_id
+    }
+
+
+class Container(db.Model):
+
+    __tablename__ = 'project_app_containers'
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True
+    )
+    application_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey('project_applications.id'),
+        nullable=False,
+    )
+
+    application = db.relationship(
+        "Application",
+        back_populates="containers"
     )

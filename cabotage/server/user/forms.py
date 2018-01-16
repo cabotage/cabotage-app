@@ -2,11 +2,17 @@ from flask_security.forms import ConfirmRegisterForm, LoginForm, RegisterForm
 
 from flask_wtf import FlaskForm
 
-from wtforms import SelectField, StringField
-from wtforms.validators import DataRequired, Length, ValidationError
+from wtforms import BooleanField, SelectField, StringField, FieldList, FormField, HiddenField
+from wtforms.validators import DataRequired, Length, ValidationError, EqualTo
 
+from cabotage.server import db
 from cabotage.server.models.auth import Organization
-from cabotage.server.models.projects import Project, Application, Pipeline
+from cabotage.server.models.projects import (
+    Application,
+    Configuration,
+    Pipeline,
+    Project,
+)
 
 
 class ExtendedLoginForm(LoginForm):
@@ -137,3 +143,55 @@ class CreateApplicationForm(FlaskForm):
         if project is not None:
             raise ValidationError('Application slugs must be unique within Projects.')
         return True
+
+
+class CreateConfigurationForm(FlaskForm):
+
+    application_id = SelectField(
+        u'Application',
+        [DataRequired()],
+        description="Application this Configuration belongs to.",
+    )
+    name = StringField(
+        u'Name',
+        [DataRequired()],
+        description="Name for the Environment Variable.",
+    )
+    value = StringField(
+        u'Value',
+        [DataRequired()],
+        description="Value for the Environment Variable.",
+    )
+    secure = BooleanField(
+        u'Secure',
+        [],
+        description="Store this Environment Variable Securely. It will not be recoverable again via the UI.",
+    )
+
+
+class DeleteConfigurationForm(FlaskForm):
+
+    configuration_id = HiddenField(
+        u'Configuration ID',
+        [DataRequired()],
+        description="ID of the Environment Variable to delete.",
+    )
+    name = StringField(
+        u'Name',
+        [DataRequired()],
+        description="Name for the Environment Variable.",
+    )
+    value = StringField(
+        u'Value',
+        [DataRequired()],
+        description="Value for the Environment Variable.",
+    )
+    secure = BooleanField(
+        u'Secure',
+        [],
+        description="Store this Environment Variable Securely. It will not be recoverable again via the UI.",
+    )
+    confirm = StringField(
+        u'Type the name of the Environment Variable.',
+        [EqualTo('name', message='Must confirm the *exact* name of the Environment Variable!')],
+    )

@@ -62,12 +62,12 @@ def create_app():
     logged_in_nav = Navbar(
         'Cabotage',
         Subgroup(
-            'Projects',
-            View('All My Projects', 'user.projects'),
-        ),
-        Subgroup(
             'Orgs',
             View('All My Orgs', 'user.organizations'),
+        ),
+        Subgroup(
+            'Projects',
+            View('All My Projects', 'user.projects'),
         ),
         Subgroup(
           'Account',

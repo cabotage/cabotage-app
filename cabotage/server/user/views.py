@@ -1,11 +1,23 @@
-from flask import abort, render_template, Blueprint, redirect, url_for
+from flask import abort, render_template, Blueprint, redirect, url_for, request
 from flask_security import current_user, login_required
 
 from cabotage.server import db
 from cabotage.server.models.auth import Organization
-from cabotage.server.models.projects import Project, Application, Pipeline
+from cabotage.server.models.projects import (
+    Project,
+    Application,
+    Pipeline,
+    Configuration,
+)
 
-from cabotage.server.user.forms import CreateApplicationForm, CreateProjectForm, CreateOrganizationForm, CreatePipelineForm
+from cabotage.server.user.forms import (
+    CreateApplicationForm,
+    CreateConfigurationForm,
+    CreateOrganizationForm,
+    CreatePipelineForm,
+    CreateProjectForm,
+    DeleteConfigurationForm,
+)
 
 user_blueprint = Blueprint('user', __name__,)
 
@@ -46,10 +58,109 @@ def project_application(org_slug, project_slug, app_slug):
     project = Project.query.filter_by(organization_id=organization.id, slug=project_slug).first()
     if project is None:
         abort(404)
-    application = Application.query.filter_by(project_id=project.id, slug=app_slug)
+    application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
     if application is None:
         abort(404)
-    return render_template('user/project_application.html', project=project, application=application)
+    return render_template(
+        'user/project_application.html',
+        application=application,
+    )
+
+@user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/config/create', methods=['GET', 'POST'])
+@login_required
+def project_application_configuration_create(org_slug, project_slug, app_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first()
+    if organization is None:
+        abort(404)
+    project = Project.query.filter_by(organization_id=organization.id, slug=project_slug).first()
+    if project is None:
+        abort(404)
+    application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
+    if application is None:
+        abort(404)
+
+    form = CreateConfigurationForm()
+    form.application_id.choices = [(str(application.id), f'{organization.slug}/{project.slug}: {application.slug}')]
+    form.application_id.data = str(application.id)
+
+    if form.validate_on_submit():
+        configuration = Configuration(
+            application_id=form.application_id.data,
+            name=form.name.data,
+            value=form.value.data,
+            secret=form.secure.data,
+        )
+        db.session.add(configuration)
+        db.session.commit()
+        return redirect(url_for('user.project_application_configuration', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug, config_id=configuration.id))
+    return render_template('user/project_application_configuration_create.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug)
+
+
+@user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/config/<config_id>/edit', methods=['GET', 'POST'])
+@login_required
+def project_application_configuration_edit(org_slug, project_slug, app_slug, config_id):
+    organization = Organization.query.filter_by(slug=org_slug).first()
+    if organization is None:
+        abort(404)
+    project = Project.query.filter_by(organization_id=organization.id, slug=project_slug).first()
+    if project is None:
+        abort(404)
+    application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
+    if application is None:
+        abort(404)
+    configuration = Configuration.query.filter_by(application_id=application.id, id=config_id).first()
+    if configuration is None:
+        abort(404)
+
+    form = CreateConfigurationForm(obj=configuration)
+    form.application_id.choices = [(str(configuration.application.id), f'{organization.slug}/{project.slug}: {application.slug}')]
+    form.application_id.data = str(configuration.application.id)
+    form.name.data = str(configuration.name)
+    form.sec.data = configuration.secret
+
+    if form.validate_on_submit():
+        configuration = Configuration(
+            application_id=form.application_id.data,
+            name=form.name.data,
+            value=form.value.data,
+            secret=form.secure.data,
+        )
+        db.session.add(configuration)
+        db.session.commit()
+        return redirect(url_for('user.project_application_configuration', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug, config_id=configuration.id))
+    return render_template('user/project_application_configuration_edit.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug, configuration=configuration)
+
+
+@user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/config/<config_id>/delete', methods=['GET', 'POST'])
+@login_required
+def project_application_configuration_delete(org_slug, project_slug, app_slug, config_id):
+    organization = Organization.query.filter_by(slug=org_slug).first()
+    if organization is None:
+        abort(404)
+    project = Project.query.filter_by(organization_id=organization.id, slug=project_slug).first()
+    if project is None:
+        abort(404)
+    application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
+    if application is None:
+        abort(404)
+    configuration = Configuration.query.filter_by(application_id=application.id, id=config_id).first()
+    if configuration is None:
+        abort(404)
+
+    if request.method == 'GET':
+        form = DeleteConfigurationForm(obj=configuration)
+    else:
+        form = DeleteConfigurationForm()
+    form.configuration_id.data = str(configuration.id)
+    form.name.data = str(configuration.name)
+    form.value.data = str(configuration.value)
+    form.secure.data = str(configuration.secret)
+
+    if form.validate_on_submit():
+        db.session.delete(configuration)
+        db.session.commit()
+        return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
+    return render_template('user/project_application_configuration_delete.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug, configuration=configuration)
 
 
 @user_blueprint.route('/projects/<org_slug>/<project_slug>/applications')
@@ -62,6 +173,25 @@ def project_applications(org_slug, project_slug):
     if project is None:
         abort(404)
     return render_template('user/project_applications.html', project=project)
+
+
+@user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/config/<config_id>')
+@login_required
+def project_application_configuration(org_slug, project_slug, app_slug, config_id):
+    organization = Organization.query.filter_by(slug=org_slug).first()
+    if organization is None:
+        abort(404)
+    project = Project.query.filter_by(organization_id=organization.id, slug=project_slug).first()
+    if project is None:
+        abort(404)
+    application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
+    if application is None:
+        abort(404)
+    configuration = Configuration.query.filter_by(application_id=application.id, id=config_id).first()
+    if configuration is None:
+        abort(404)
+
+    return render_template('user/project_application_configuration.html', configuration=configuration)
 
 
 @user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/create', methods=["GET", "POST"])
