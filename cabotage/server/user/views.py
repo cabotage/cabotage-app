@@ -8,11 +8,13 @@ from cabotage.server.models.projects import (
     Application,
     Pipeline,
     Configuration,
+    Container,
 )
 
 from cabotage.server.user.forms import (
     CreateApplicationForm,
     CreateConfigurationForm,
+    CreateContainerForm,
     CreateOrganizationForm,
     CreatePipelineForm,
     CreateProjectForm,
@@ -159,6 +161,81 @@ def project_application_configuration_delete(org_slug, project_slug, app_slug, c
         db.session.commit()
         return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
     return render_template('user/project_application_configuration_delete.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug, configuration=configuration)
+
+
+@user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/container/create', methods=['GET', 'POST'])
+@login_required
+def project_application_container_create(org_slug, project_slug, app_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first()
+    if organization is None:
+        abort(404)
+    project = Project.query.filter_by(organization_id=organization.id, slug=project_slug).first()
+    if project is None:
+        abort(404)
+    application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
+    if application is None:
+        abort(404)
+
+    form = CreateContainerForm()
+    form.application_id.choices = [(str(application.id), f'{organization.slug}/{project.slug}: {application.slug}')]
+    form.application_id.data = str(application.id)
+
+    if form.validate_on_submit():
+        container = Container(
+            application_id=form.application_id.data,
+            container_repository=form.container_repository.data,
+            container_tag=form.container_tag.data,
+        )
+        db.session.add(container)
+        db.session.commit()
+        return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
+    return render_template('user/project_application_container_create.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug)
+
+
+@user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/container/<container_id>')
+@login_required
+def project_application_container(org_slug, project_slug, app_slug, container_id):
+    organization = Organization.query.filter_by(slug=org_slug).first()
+    if organization is None:
+        abort(404)
+    project = Project.query.filter_by(organization_id=organization.id, slug=project_slug).first()
+    if project is None:
+        abort(404)
+    application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
+    if application is None:
+        abort(404)
+    container = Container.query.filter_by(application_id=application.id, id=container_id).first()
+    if container is None:
+        abort(404)
+
+    return render_template('user/project_application_container.html', container=container)
+
+
+@user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/container/<container_id>/edit', methods=['GET', 'POST'])
+@login_required
+def project_application_container_edit(org_slug, project_slug, app_slug, container_id):
+    organization = Organization.query.filter_by(slug=org_slug).first()
+    if organization is None:
+        abort(404)
+    project = Project.query.filter_by(organization_id=organization.id, slug=project_slug).first()
+    if project is None:
+        abort(404)
+    application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
+    if application is None:
+        abort(404)
+    container = Container.query.filter_by(application_id=application.id, id=container_id).first()
+    if container is None:
+        abort(404)
+
+    form = CreateContainerForm(obj=container)
+    form.application_id.choices = [(str(container.application.id), f'{organization.slug}/{project.slug}: {application.slug}')]
+    form.application_id.data = str(container.application.id)
+
+    if form.validate_on_submit():
+        form.populate_obj(container)
+        db.session.commit()
+        return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
+    return render_template('user/project_application_container_edit.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug, container=container)
 
 
 @user_blueprint.route('/projects/<org_slug>/<project_slug>/applications')

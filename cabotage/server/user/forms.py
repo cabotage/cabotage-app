@@ -10,6 +10,7 @@ from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import (
     Application,
     Configuration,
+    Container,
     Pipeline,
     Project,
 )
@@ -203,3 +204,30 @@ class DeleteConfigurationForm(FlaskForm):
         u'Type the name of the Environment Variable.',
         [EqualTo('name', message='Must confirm the *exact* name of the Environment Variable!')],
     )
+
+
+class CreateContainerForm(FlaskForm):
+
+    application_id = SelectField(
+        u'Application',
+        [DataRequired()],
+        description="Application this Container belongs to.",
+    )
+    container_repository = StringField(
+        u'Container Repository',
+        [DataRequired()],
+        description="Public Container repository to pull from.",
+    )
+    container_tag = StringField(
+        u'Container Tag',
+        [DataRequired()],
+        description="Pull Container with this tag.",
+    )
+
+    def validate_application_id(form, field):
+        container = Container.query.filter_by(application_id=form.application_id.data).first()
+        if container is not None:
+            if form.application_id.data == str(container.application_id):
+                return True
+            raise ValidationError('Container already exists for Application, edit it instead!')
+        return True

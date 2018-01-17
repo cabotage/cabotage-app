@@ -16,6 +16,7 @@
             <th style="white-space: nowrap; width: 1%;"></th>
           </tr>
          {% if application.container %}
+         {% set container = application.container[0] %}
           <tr>
             <td>
               <pre style="margin: 0px;">{{ application.container[0].container_repository }}</pre>
@@ -24,12 +25,12 @@
               <pre style="margin: 0px;">{{ application.container[0].container_tag }}</pre>
             </td>
             <td style="white-space: nowrap; width: 1%;">
-              <a class="btn btn-sm btn-link narrow" href="#">
+              <a class="btn btn-sm btn-link narrow" href="{{ url_for('user.project_application_container_edit', org_slug=container.application.project.organization.slug, project_slug=container.application.project.slug, app_slug=container.application.slug, container_id=container.id) }}">
                 <span class="glyphicon glyphicon-pencil"></span>
               </a>
             </td>
             <td style="white-space: nowrap; width: 1%;">
-              <a class="btn btn-sm btn-link narrow icon-flipped" href="#">
+              <a class="btn btn-sm btn-link narrow" href="{{ url_for('user.project_application_container', org_slug=container.application.project.organization.slug, project_slug=container.application.project.slug, app_slug=container.application.slug, container_id=container.id) }}">
                 <span class="glyphicon glyphicon-refresh"></span>
               </a>
             </td>
@@ -37,7 +38,7 @@
           {% else %}
           <tr>
             <td class="right" colspan="4">
-              <a class="btn btn-primary" href="{{ url_for('user.project_application_configuration_create', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}">
+              <a class="btn btn-primary" href="{{ url_for('user.project_application_container_create', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}">
                 Add New Container
               </a>
             </td>

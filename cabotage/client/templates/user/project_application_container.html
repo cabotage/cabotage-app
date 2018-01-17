@@ -1,0 +1,38 @@
+{% extends "_base.html" %}
+
+{% block content %}
+  <div class="container" id="content">
+    <div class="row">
+      <h1>{{ container.application.project.organization.slug|lower }}/{{ container.application.project.slug|lower }}/{{ container.application.slug|lower }}: {{ container.name }}</h1>
+    </div>
+    <div class="row">
+      <div class="col-md-6">
+        <h3>Current Container</h3>
+        <table class="table table-striped">
+          <tr>
+            <th>Repository</th>
+            <th>Tag</th>
+            <th>Image ID</th>
+            <th style="white-space: nowrap; width: 1%;"></th>
+          </tr>
+          <tr>
+            <td>
+              <pre style="margin: 0px;">{{ container.container_repository }}</pre>
+            </td>
+            <td>
+              <pre style="margin: 0px;">{{ container.container_tag }}</pre>
+            </td>
+            <td>
+              <pre style="margin: 0px;">{{ container.container_image_id }}</pre>
+            </td>
+            <td style="white-space: nowrap; width: 1%;">
+              <a class="btn btn-sm btn-link" href="{{ url_for('user.project_application_container_edit', org_slug=container.application.project.organization.slug, project_slug=container.application.project.slug, app_slug=container.application.slug, container_id=container.id) }}">
+                <span class="glyphicon glyphicon-pencil"></span>
+              </a>
+            </td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endblock %}
