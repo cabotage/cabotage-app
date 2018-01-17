@@ -19,6 +19,7 @@ class BaseConfig(object):
     SECURITY_RECOVERABLE = True
     SECURITY_EMAIL_SENDER = 'noreply@localhost'
     SECURITY_USER_IDENTITY_ATTRIBUTES = ['email', 'username']
+    SECURITY_POST_REGISTER_VIEW = 'security.login'
     MAIL_SERVER = 'debugmail.io'
     MAIL_PORT = 25
     MAIL_USE_TLS = False
