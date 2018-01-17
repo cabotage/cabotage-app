@@ -1,13 +1,15 @@
 
-from cabotage.server import db
+from citext import CIText
 from sqlalchemy import text, UniqueConstraint
 from sqlalchemy.dialects import postgresql
-from citext import CIText
+from sqlalchemy_utils.models import Timestamp
+
+from cabotage.server import db
 
 from .utils import slugify
 
 
-class Project(db.Model):
+class Project(db.Model, Timestamp):
 
     __tablename__ = 'projects'
 
@@ -50,7 +52,7 @@ class Project(db.Model):
     UniqueConstraint('organization_id', 'slug')
 
 
-class Pipeline(db.Model):
+class Pipeline(db.Model, Timestamp):
 
     __tablename__ = 'project_pipelines'
 
@@ -79,7 +81,7 @@ class Pipeline(db.Model):
     UniqueConstraint('project_id', 'slug')
 
 
-class Application(db.Model):
+class Application(db.Model, Timestamp):
 
     __tablename__ = 'project_applications'
 
@@ -126,7 +128,7 @@ class Application(db.Model):
     UniqueConstraint('project_id', 'slug')
 
 
-class Release(db.Model):
+class Release(db.Model, Timestamp):
 
     __tablename__ = 'project_app_releases'
 
@@ -148,7 +150,7 @@ class Release(db.Model):
     )
 
 
-class Configuration(db.Model):
+class Configuration(db.Model, Timestamp):
 
     __tablename__ = 'project_app_configurations'
 
@@ -200,7 +202,7 @@ class Configuration(db.Model):
     }
 
 
-class Container(db.Model):
+class Container(db.Model, Timestamp):
 
     __tablename__ = 'project_app_containers'
 
