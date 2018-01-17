@@ -16,13 +16,13 @@
             <th style="white-space: nowrap; width: 1%;"></th>
           </tr>
          {% if application.container %}
-         {% set container = application.container[0] %}
+         {% set container = application.container %}
           <tr>
             <td>
-              <pre style="margin: 0px;">{{ application.container[0].container_repository }}</pre>
+              <pre style="margin: 0px;">{{ container.container_repository }}</pre>
             </td>
             <td>
-              <pre style="margin: 0px;">{{ application.container[0].container_tag }}</pre>
+              <pre style="margin: 0px;">{{ container.container_tag }}</pre>
             </td>
             <td style="white-space: nowrap; width: 1%;">
               <a class="btn btn-sm btn-link narrow" href="{{ url_for('user.project_application_container_edit', org_slug=container.application.project.organization.slug, project_slug=container.application.project.slug, app_slug=container.application.slug, container_id=container.id) }}">

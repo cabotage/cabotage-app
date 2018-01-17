@@ -11,7 +11,6 @@ from cabotage.server.models.projects import (
     Application,
     Configuration,
     Container,
-    Pipeline,
     Project,
 )
 
@@ -84,35 +83,6 @@ class CreateOrganizationForm(FlaskForm):
         organization = Organization.query.filter_by(slug=field.data).first()
         if organization is not None:
             raise ValidationError('Organization slugs must be globally unique.')
-        return True
-
-
-class CreatePipelineForm(FlaskForm):
-    organization_id = SelectField(
-        u'Organization',
-        [DataRequired()],
-        description="Organization this Pipeline belongs to.",
-    )
-    project_id = SelectField(
-        u'Project',
-        [DataRequired()],
-        description="Project this Pipeline belongs to.",
-    )
-    name = StringField(
-        u'Pipeline Name',
-        [DataRequired()],
-        description="Friendly and descriptive name for your Pipeline.",
-    )
-    slug = StringField(
-        u'Pipeline Slug',
-        [DataRequired()],
-        description="URL Safe short name for your Pipeline, must be unique within the Project.",
-    )
-
-    def validate_slug(form, field):
-        project = Application.query.filter_by(project_id=form.project_id.data).filter_by(slug=field.data).first()
-        if project is not None:
-            raise ValidationError('Pipeline slugs must be unique within Projects.')
         return True
 
 

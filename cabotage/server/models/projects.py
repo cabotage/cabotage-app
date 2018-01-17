@@ -35,55 +35,12 @@ class Project(db.Model, Timestamp):
     name = db.Column(db.Text(), nullable=False)
     slug = db.Column(CIText(), nullable=False)
 
-    organization = db.relationship(
-        "Organization",
-        back_populates="projects"
-    )
-
     project_applications = db.relationship(
         "Application",
-        back_populates="project"
-    )
-    pipeline_applications = db.relationship(
-        "Pipeline",
-        back_populates="project"
-    )
-    pipelines = db.relationship(
-        "Pipeline",
-        back_populates="project"
+        backref="project"
     )
 
     UniqueConstraint('organization_id', 'slug')
-
-
-class Pipeline(db.Model, Timestamp):
-
-    __versioned__ = {}
-    __tablename__ = 'project_pipelines'
-
-    id = db.Column(
-        postgresql.UUID(as_uuid=True),
-        server_default=text("gen_random_uuid()"),
-        nullable=False,
-        primary_key=True
-    )
-    project_id = db.Column(
-        postgresql.UUID(as_uuid=True),
-        db.ForeignKey('projects.id')
-    )
-    name = db.Column(db.Text(), nullable=False)
-    slug = db.Column(CIText(), nullable=False)
-
-    project = db.relationship(
-        "Project",
-        back_populates="pipelines"
-    )
-    applications = db.relationship(
-        "Application",
-        back_populates="pipeline"
-    )
-
-    UniqueConstraint('project_id', 'slug')
 
 
 class Application(db.Model, Timestamp):
@@ -102,33 +59,21 @@ class Application(db.Model, Timestamp):
         db.ForeignKey('projects.id'),
         nullable=False,
     )
-    project_pipeline_id = db.Column(
-        postgresql.UUID(as_uuid=True),
-        db.ForeignKey('project_pipelines.id')
-    )
     name = db.Column(db.Text(), nullable=False)
     slug = db.Column(CIText(), nullable=False)
 
-    project = db.relationship(
-        "Project",
-        back_populates="project_applications"
-    )
-    pipeline = db.relationship(
-        "Pipeline",
-        back_populates="applications"
-    )
-
     container = db.relationship(
         "Container",
-        back_populates="application"
+        backref="application",
+        uselist=False,
     )
     configurations = db.relationship(
         "Configuration",
-        back_populates="application"
+        backref="application"
     )
     releases = db.relationship(
         "Release",
-        back_populates="application"
+        backref="application"
     )
 
     UniqueConstraint('project_id', 'slug')
@@ -151,11 +96,6 @@ class Release(db.Model, Timestamp):
         nullable=False,
     )
 
-    application = db.relationship(
-        "Application",
-        back_populates="releases"
-    )
-
 
 class Configuration(db.Model, Timestamp):
 
@@ -172,11 +112,6 @@ class Configuration(db.Model, Timestamp):
         postgresql.UUID(as_uuid=True),
         db.ForeignKey('project_applications.id'),
         nullable=False,
-    )
-
-    application = db.relationship(
-        "Application",
-        back_populates="configurations"
     )
 
     name = db.Column(
@@ -225,11 +160,6 @@ class Container(db.Model, Timestamp):
         postgresql.UUID(as_uuid=True),
         db.ForeignKey('project_applications.id'),
         nullable=False,
-    )
-
-    application = db.relationship(
-        "Application",
-        back_populates="container"
     )
 
     container_repository = db.Column(

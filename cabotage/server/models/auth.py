@@ -127,7 +127,7 @@ class Organization(db.Model):
     members = db.relationship("OrganizationMember", back_populates="organization")
     teams = db.relationship("OrganizationTeam", back_populates="organization")
 
-    projects = db.relationship("Project", back_populates="organization")
+    projects = db.relationship("Project", backref="organization")
 
     def add_user(self, user, admin=False):
         association = OrganizationMember(admin=admin)

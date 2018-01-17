@@ -16,16 +16,6 @@
       <a href="{{ url_for('user.project_application', org_slug=project.organization.slug, project_slug=project.slug, app_slug=application.slug) }}">{{ application.name }}</a>
     </div>
     {% endfor %}
-<!--
-    <div class="row">
-      <h2>Pipelines</h2>
-    </div>
-    <div class="row">
-      {{ form_button(url_for('user.project_pipeline_create', org_slug=project.organization.slug, project_slug=project.slug), "Create a new Pipeline", method="GET", class="btn btn-primary pull-right") }}
-    </div>
-    {% for pipeline in project.pipelines  %}
-    {% endfor %}
--->
     <div class="row">
       {{ form_button(url_for('user.project_application_create', org_slug=project.organization.slug, project_slug=project.slug), "Create a new Application", method="GET", class="btn btn-primary pull-right") }}
     </div>
