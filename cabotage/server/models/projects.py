@@ -26,18 +26,19 @@ class Project(db.Model, Timestamp):
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
         nullable=False,
-        primary_key=True
+        primary_key=True,
     )
     organization_id = db.Column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey('organizations.id')
+        db.ForeignKey('organizations.id'),
     )
     name = db.Column(db.Text(), nullable=False)
     slug = db.Column(CIText(), nullable=False)
 
     project_applications = db.relationship(
         "Application",
-        backref="project"
+        backref="project",
+        cascade="all, delete-orphan",
     )
 
     UniqueConstraint('organization_id', 'slug')
@@ -66,14 +67,17 @@ class Application(db.Model, Timestamp):
         "Container",
         backref="application",
         uselist=False,
+        cascade="all, delete-orphan",
     )
     configurations = db.relationship(
         "Configuration",
-        backref="application"
+        backref="application",
+        cascade="all, delete-orphan",
     )
     releases = db.relationship(
         "Release",
-        backref="application"
+        backref="application",
+        cascade="all, delete-orphan",
     )
 
     UniqueConstraint('project_id', 'slug')
