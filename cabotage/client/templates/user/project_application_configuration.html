@@ -20,7 +20,7 @@
               <pre style="margin: 0px;">{{ configuration.name }}</pre>
             </td>
             <td>
-              <pre style="margin: 0px;">{{ configuration.value }}</pre>
+              <pre style="margin: 0px;">{% if configuration.secret %}<span class="glyphicon glyphicon-lock"></span>{% else %}{{ configuration.value }}{% endif %}</pre>
             </td>
             <td style="white-space: nowrap; width: 1%;">
               <a class="btn btn-sm btn-link" href="{{ url_for('user.project_application_configuration_edit', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}">
@@ -33,6 +33,43 @@
               </a>
             </td>
           </tr>
+        </table>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-md-6">
+        <h3>History</h3>
+        <table class="table table-striped">
+          <tr>
+            <th>Name</th>
+            <th>Value</th>
+            <th>Last Touch</th>
+            <th style="white-space: nowrap; width: 1%;"></th>
+            <th style="white-space: nowrap; width: 1%;"></th>
+          </tr>
+          {% for version in (configuration.versions|reverse)[1:] %}
+          <tr>
+            <td>
+              <pre style="margin: 0px;">{{ version.name }}</pre>
+            </td>
+            <td>
+              <pre style="margin: 0px;">{% if version.secret %}<span class="glyphicon glyphicon-lock"></span>{% else %}{{ version.value }}{% endif %}</pre>
+            </td>
+            <td>
+              <p>{{ version.updated|humanize }}</p>
+            </td>
+            <td style="white-space: nowrap; width: 1%;">
+              <a class="btn btn-sm btn-link" href="#">
+                <span class="glyphicon glyphicon-refresh"></span>
+              </a>
+            </td>
+            <td style="white-space: nowrap; width: 1%;">
+              <a class="btn btn-sm btn-danger" href="#">
+                <span class="glyphicon glyphicon-trash"></span>
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
         </table>
       </div>
     </div>

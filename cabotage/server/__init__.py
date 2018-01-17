@@ -2,12 +2,13 @@ import os
 
 from flask import Flask, render_template
 from flask_bcrypt import Bcrypt
-from flask_debugtoolbar import DebugToolbarExtension
 from flask_bootstrap import Bootstrap
-from flask_security import Security, SQLAlchemyUserDatastore
-from flask_sqlalchemy import SQLAlchemy
+from flask_debugtoolbar import DebugToolbarExtension
+from flask_humanize import Humanize
 from flask_mail import Mail
 from flask_migrate import Migrate
+from flask_security import Security, SQLAlchemyUserDatastore
+from flask_sqlalchemy import SQLAlchemy
 
 from sqlalchemy import MetaData
 
@@ -29,6 +30,7 @@ db_metadata = MetaData(
 db = SQLAlchemy(metadata=db_metadata)
 mail = Mail()
 migrate = Migrate()
+humanize = Humanize()
 
 
 def create_app():
@@ -98,6 +100,7 @@ def create_app():
     mail.init_app(app)
     migrate.init_app(app, db)
     nav.init_app(app)
+    humanize.init_app(app)
 
     # register blueprints
     from cabotage.server.user.views import user_blueprint

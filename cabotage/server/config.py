@@ -27,6 +27,7 @@ class BaseConfig(object):
     MAIL_PASSWORD = '40d5a170-f648-11e7-8c0d-e34c4746c3e2'
     MAIL_DEFAULT_SENDER = 'noreply@localhost'
     BOOTSTRAP_SERVE_LOCAL = True
+    HUMANIZE_USE_UTC = True
 
 class DevelopmentConfig(BaseConfig):
     """Development configuration."""

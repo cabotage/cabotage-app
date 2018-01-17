@@ -2,15 +2,19 @@
 from citext import CIText
 from sqlalchemy import text, UniqueConstraint
 from sqlalchemy.dialects import postgresql
+from sqlalchemy_continuum import make_versioned
 from sqlalchemy_utils.models import Timestamp
 
 from cabotage.server import db
 
 from .utils import slugify
 
+make_versioned()
+
 
 class Project(db.Model, Timestamp):
 
+    __versioned__ = {}
     __tablename__ = 'projects'
 
     def __init__(self, *args, **kwargs):
@@ -54,6 +58,7 @@ class Project(db.Model, Timestamp):
 
 class Pipeline(db.Model, Timestamp):
 
+    __versioned__ = {}
     __tablename__ = 'project_pipelines'
 
     id = db.Column(
@@ -83,6 +88,7 @@ class Pipeline(db.Model, Timestamp):
 
 class Application(db.Model, Timestamp):
 
+    __versioned__ = {}
     __tablename__ = 'project_applications'
 
     id = db.Column(
@@ -130,6 +136,7 @@ class Application(db.Model, Timestamp):
 
 class Release(db.Model, Timestamp):
 
+    __versioned__ = {}
     __tablename__ = 'project_app_releases'
 
     id = db.Column(
@@ -152,6 +159,7 @@ class Release(db.Model, Timestamp):
 
 class Configuration(db.Model, Timestamp):
 
+    __versioned__ = {}
     __tablename__ = 'project_app_configurations'
 
     id = db.Column(
@@ -204,6 +212,7 @@ class Configuration(db.Model, Timestamp):
 
 class Container(db.Model, Timestamp):
 
+    __versioned__ = {}
     __tablename__ = 'project_app_containers'
 
     id = db.Column(
@@ -249,3 +258,5 @@ class Container(db.Model, Timestamp):
     __mapper_args__ = {
         "version_id_col": version_id
     }
+
+db.configure_mappers()

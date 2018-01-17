@@ -6,7 +6,7 @@
       <h1>{{ container.application.project.organization.slug|lower }}/{{ container.application.project.slug|lower }}/{{ container.application.slug|lower }}: {{ container.name }}</h1>
     </div>
     <div class="row">
-      <div class="col-md-6">
+      <div class="col-md-9">
         <h3>Current Container</h3>
         <table class="table table-striped">
           <tr>
@@ -31,6 +31,37 @@
               </a>
             </td>
           </tr>
+        </table>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-md-9">
+        <h3>History</h3>
+        <table class="table table-striped">
+          <tr>
+            <th>Repository</th>
+            <th>Tag</th>
+            <th>Image ID</th>
+            <th style="white-space: nowrap; width: 1%;"></th>
+          </tr>
+          {% for version in (container.versions|reverse)[1:] %}
+          <tr>
+            <td>
+              <pre style="margin: 0px;">{{ version.container_repository }}</pre>
+            </td>
+            <td>
+              <pre style="margin: 0px;">{{ version.container_tag }}</pre>
+            </td>
+            <td>
+              <pre style="margin: 0px;">{{ version.container_image_id }}</pre>
+            </td>
+            <td style="white-space: nowrap; width: 1%;">
+              <a class="btn btn-sm btn-link" href="#">
+                <span class="glyphicon glyphicon-refresh"></span>
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
         </table>
       </div>
     </div>
