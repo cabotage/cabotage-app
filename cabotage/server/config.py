@@ -29,6 +29,15 @@ class BaseConfig(object):
     MAIL_DEFAULT_SENDER = 'noreply@localhost'
     BOOTSTRAP_SERVE_LOCAL = True
     HUMANIZE_USE_UTC = True
+    CONSUL_HOST = '127.0.0.1'
+    CONSUL_PORT = 8500
+    CONSUL_SCHEME = 'http'
+    CONSUL_VERIFY = False
+    CONSUL_CERT = None
+    VAULT_URL = 'http://127.0.0.1:8200'
+    VAULT_TOKEN = os.environ.get('VAULT_TOKEN', '')
+    VAULT_VERIFY = False
+    VAULT_CERT = None
 
 class DevelopmentConfig(BaseConfig):
     """Development configuration."""

@@ -93,6 +93,15 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
             secret=form.secure.data,
         )
         db.session.add(configuration)
+#        try:
+#            if configuration.secret:
+#                current_app.consul.kv.put(
+#                    f'cabotage/{org_slug}/{project_slug}-{app_slug}/env/{name}/1'
+#                )
+#            else:
+#                pass
+#        except Exception as exc:
+#            raise  # No, we should def not do this
         db.session.commit()
         return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
     return render_template('user/project_application_configuration_create.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug)

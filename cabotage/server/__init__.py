@@ -1,5 +1,8 @@
 import os
 
+import consul
+import hvac
+
 from flask import Flask, render_template
 from flask_bcrypt import Bcrypt
 from flask_bootstrap import Bootstrap
@@ -101,6 +104,20 @@ def create_app():
     migrate.init_app(app, db)
     nav.init_app(app)
     humanize.init_app(app)
+
+    app.vault_client = hvac.Client(
+        url=app.config['VAULT_URL'],
+        token=app.config['VAULT_TOKEN'],
+        verify=app.config['VAULT_VERIFY'],
+        cert=app.config['VAULT_CERT'],
+    )
+    app.consul_client = consul.Consul(
+        host=app.config['CONSUL_HOST'],
+        port=app.config['CONSUL_PORT'],
+        scheme=app.config['CONSUL_SCHEME'],
+        verify=app.config['CONSUL_VERIFY'],
+        cert=app.config['CONSUL_CERT'],
+    )
 
     # register blueprints
     from cabotage.server.user.views import user_blueprint
