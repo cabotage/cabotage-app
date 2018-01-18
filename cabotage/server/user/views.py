@@ -1,6 +1,7 @@
 from flask import abort, render_template, Blueprint, redirect, url_for, request
 from flask_security import current_user, login_required
 
+from cabotage.server import config_writer
 from cabotage.server import db
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import (
@@ -103,6 +104,21 @@ def project(org_slug, project_slug):
     return render_template('user/project.html', project=project)
 
 
+@user_blueprint.route('/projects/create', methods=["GET", "POST"])
+@login_required
+def project_create():
+    user = current_user
+    form = CreateProjectForm()
+    form.organization_id.choices = [(str(o.organization_id), o.organization.name) for o in user.organizations]
+
+    if form.validate_on_submit():
+        project = Project(organization_id=form.organization_id.data, name=form.name.data, slug=form.slug.data)
+        db.session.add(project)
+        db.session.commit()
+        return redirect(url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug))
+    return render_template('user/project_create.html', project_create_form=form)
+
+
 @user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>')
 @login_required
 def project_application(org_slug, project_slug, app_slug):
@@ -202,15 +218,15 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
             secret=form.secure.data,
         )
         db.session.add(configuration)
-#        try:
-#            if configuration.secret:
-#                current_app.consul.kv.put(
-#                    f'cabotage/{org_slug}/{project_slug}-{app_slug}/env/{name}/1'
-#                )
-#            else:
-#                pass
-#        except Exception as exc:
-#            raise  # No, we should def not do this
+        try:
+            config_writer.write_configuration(
+                org_slug,
+                project_slug,
+                app_slug,
+                configuration,
+            )
+        except Exception as exc:
+            raise  # No, we should def not do this
         db.session.commit()
         return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
     return render_template('user/project_application_configuration_create.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug)
@@ -240,6 +256,15 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
 
     if form.validate_on_submit():
         form.populate_obj(configuration)
+        try:
+            config_writer.write_configuration(
+                org_slug,
+                project_slug,
+                app_slug,
+                configuration,
+            )
+        except Exception as exc:
+            raise  # No, we should def not do this
         db.session.commit()
         return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
 
@@ -277,6 +302,15 @@ def project_application_configuration_delete(org_slug, project_slug, app_slug, c
     if form.validate_on_submit():
         db.session.delete(configuration)
         db.session.commit()
+        try:
+            config_writer.delete_configuration(
+                org_slug,
+                project_slug,
+                app_slug,
+                configuration,
+            )
+        except Exception as exc:
+            pass  # No, we should def not do this
         return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
     return render_template('user/project_application_configuration_delete.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug, configuration=configuration)
 

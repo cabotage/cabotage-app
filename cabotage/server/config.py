@@ -29,15 +29,17 @@ class BaseConfig(object):
     MAIL_DEFAULT_SENDER = 'noreply@localhost'
     BOOTSTRAP_SERVE_LOCAL = True
     HUMANIZE_USE_UTC = True
-    CONSUL_HOST = '127.0.0.1'
-    CONSUL_PORT = 8500
-    CONSUL_SCHEME = 'http'
-    CONSUL_VERIFY = False
-    CONSUL_CERT = None
-    VAULT_URL = 'http://127.0.0.1:8200'
-    VAULT_TOKEN = os.environ.get('VAULT_TOKEN', '')
-    VAULT_VERIFY = False
-    VAULT_CERT = None
+    CABOTAGE_WRITE_BACKENDS = True
+    CABOTAGE_CONSUL_HOST = '127.0.0.1'
+    CABOTAGE_CONSUL_PORT = 8500
+    CABOTAGE_CONSUL_SCHEME = 'http'
+    CABOTAGE_CONSUL_VERIFY = False
+    CABOTAGE_CONSUL_CERT = None
+    CABOTAGE_VAULT_TOKEN_FILE = os.path.expanduser('~/.vault-token')
+    CABOTAGE_VAULT_TOKEN_UNWRAP = False
+    CABOTAGE_VAULT_URL = 'http://127.0.0.1:8200'
+    CABOTAGE_VAULT_VERIFY = False
+    CABOTAGE_VAULT_CERT = None
 
 class DevelopmentConfig(BaseConfig):
     """Development configuration."""
