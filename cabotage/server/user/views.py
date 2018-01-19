@@ -1,3 +1,5 @@
+import datetime
+
 from flask import abort, render_template, Blueprint, redirect, url_for, request
 from flask_security import current_user, login_required
 
@@ -10,6 +12,7 @@ from cabotage.server.models.projects import (
     Configuration,
     Container,
 )
+from cabotage.server.models.projects import activity_plugin
 
 from cabotage.server.user.forms import (
     CreateApplicationForm,
@@ -20,6 +23,7 @@ from cabotage.server.user.forms import (
     DeleteConfigurationForm,
 )
 
+Activity = activity_plugin.activity_cls
 user_blueprint = Blueprint('user', __name__,)
 
 
@@ -51,6 +55,16 @@ def organization_create():
         organization = Organization(name=form.name.data, slug=form.slug.data)
         organization.add_user(user, admin=True)
         db.session.add(organization)
+        db.session.flush()
+        org_create = Activity(
+            verb='create',
+            object=organization,
+            data={
+                'user_id': str(current_user.id),
+                'timestamp': datetime.datetime.utcnow().isoformat(),
+            }
+        )
+        db.session.add(org_create)
         db.session.commit()
         return redirect(url_for('user.organization', org_slug=organization.slug))
     return render_template('user/organization_create.html', organization_create_form=form)
@@ -81,6 +95,16 @@ def organization_project_create(org_slug):
     if form.validate_on_submit():
         project = Project(organization_id=organization.id, name=form.name.data, slug=form.slug.data)
         db.session.add(project)
+        db.session.flush()
+        activity = Activity(
+            verb='create',
+            object=project,
+            data={
+                'user_id': str(current_user.id),
+                'timestamp': datetime.datetime.utcnow().isoformat(),
+            }
+        )
+        db.session.add(activity)
         db.session.commit()
         return redirect(url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug))
     return render_template('user/organization_project_create.html', organization=organization, organization_project_create_form=form)
@@ -114,6 +138,16 @@ def project_create():
     if form.validate_on_submit():
         project = Project(organization_id=form.organization_id.data, name=form.name.data, slug=form.slug.data)
         db.session.add(project)
+        db.session.flush()
+        activity = Activity(
+            verb='create',
+            object=project,
+            data={
+                'user_id': str(current_user.id),
+                'timestamp': datetime.datetime.utcnow().isoformat(),
+            }
+        )
+        db.session.add(activity)
         db.session.commit()
         return redirect(url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug))
     return render_template('user/project_create.html', project_create_form=form)
@@ -157,6 +191,16 @@ def project_application_create(org_slug, project_slug):
     if form.validate_on_submit():
         application = Application(project_id=form.project_id.data, name=form.name.data, slug=form.slug.data)
         db.session.add(application)
+        db.session.flush()
+        activity = Activity(
+            verb='create',
+            object=application,
+            data={
+                'user_id': str(current_user.id),
+                'timestamp': datetime.datetime.utcnow().isoformat(),
+            }
+        )
+        db.session.add(activity)
         db.session.commit()
         return redirect(url_for('user.project_application', org_slug=project.organization.slug, project_slug=project.slug, app_slug=application.slug))
     return render_template('user/project_application_create.html', project_application_create_form=form, org_slug=org_slug, project_slug=project_slug)
@@ -227,6 +271,16 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
             )
         except Exception as exc:
             raise  # No, we should def not do this
+        db.session.flush()
+        activity = Activity(
+            verb='create',
+            object=configuration,
+            data={
+                'user_id': str(current_user.id),
+                'timestamp': datetime.datetime.utcnow().isoformat(),
+            }
+        )
+        db.session.add(activity)
         db.session.commit()
         return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
     return render_template('user/project_application_configuration_create.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug)
@@ -265,6 +319,16 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
             )
         except Exception as exc:
             raise  # No, we should def not do this
+        db.session.flush()
+        activity = Activity(
+            verb='edit',
+            object=configuration,
+            data={
+                'user_id': str(current_user.id),
+                'timestamp': datetime.datetime.utcnow().isoformat(),
+            }
+        )
+        db.session.add(activity)
         db.session.commit()
         return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
 
@@ -301,6 +365,16 @@ def project_application_configuration_delete(org_slug, project_slug, app_slug, c
 
     if form.validate_on_submit():
         db.session.delete(configuration)
+        db.session.flush()
+        activity = Activity(
+            verb='delete',
+            object=configuration,
+            data={
+                'user_id': str(current_user.id),
+                'timestamp': datetime.datetime.utcnow().isoformat(),
+            }
+        )
+        db.session.add(activity)
         db.session.commit()
         try:
             config_writer.delete_configuration(
@@ -358,6 +432,16 @@ def project_application_container_create(org_slug, project_slug, app_slug):
             container_tag=form.container_tag.data,
         )
         db.session.add(container)
+        db.session.flush()
+        activity = Activity(
+            verb='create',
+            object=container,
+            data={
+                'user_id': str(current_user.id),
+                'timestamp': datetime.datetime.utcnow().isoformat(),
+            }
+        )
+        db.session.add(activity)
         db.session.commit()
         return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
     return render_template('user/project_application_container_create.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug)
@@ -385,6 +469,16 @@ def project_application_container_edit(org_slug, project_slug, app_slug, contain
 
     if form.validate_on_submit():
         form.populate_obj(container)
+        db.session.flush()
+        activity = Activity(
+            verb='edit',
+            object=container,
+            data={
+                'user_id': str(current_user.id),
+                'timestamp': datetime.datetime.utcnow().isoformat(),
+            }
+        )
+        db.session.add(activity)
         db.session.commit()
         return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
     return render_template('user/project_application_container_edit.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug, container=container)

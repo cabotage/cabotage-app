@@ -4,9 +4,12 @@ from flask import current_app
 
 from flask_security import RoleMixin, UserMixin
 
+
 from cabotage.server import db, bcrypt
 from sqlalchemy import text
 from sqlalchemy.dialects import postgresql
+from sqlalchemy_continuum import make_versioned
+
 from citext import CIText
 
 from .utils import slugify
@@ -16,6 +19,12 @@ from .auth_associations import (
     OrganizationTeam,
     TeamMember,
 )
+
+from cabotage.server.models.plugins import ActivityPlugin
+from cabotage.server.models.utils import slugify
+
+activity_plugin = ActivityPlugin()
+make_versioned(plugins=[activity_plugin])
 
 
 roles_users = db.Table(
@@ -27,6 +36,7 @@ roles_users = db.Table(
 
 class Role(db.Model, RoleMixin):
 
+    __versioned__ = {}
     __tablename__ = 'roles'
 
     id = db.Column(
@@ -47,6 +57,7 @@ class Role(db.Model, RoleMixin):
 
 class User(db.Model, UserMixin):
 
+    __versioned__ = {}
     __tablename__ = 'users'
 
     id = db.Column(
@@ -108,6 +119,7 @@ class User(db.Model, UserMixin):
 
 class Organization(db.Model):
 
+    __versioned__ = {}
     __tablename__ = 'organizations'
 
     def __init__(self, *args, **kwargs):
@@ -149,6 +161,7 @@ class Organization(db.Model):
 
 class Team(db.Model):
 
+    __versioned__ = {}
     __tablename__ = 'teams'
 
     def __init__(self, *args, **kwargs):

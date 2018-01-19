@@ -1,4 +1,3 @@
-
 from citext import CIText
 from sqlalchemy import text, UniqueConstraint
 from sqlalchemy.dialects import postgresql
@@ -7,9 +6,11 @@ from sqlalchemy_utils.models import Timestamp
 
 from cabotage.server import db
 
-from .utils import slugify
+from cabotage.server.models.plugins import ActivityPlugin
+from cabotage.server.models.utils import slugify
 
-make_versioned()
+activity_plugin = ActivityPlugin()
+make_versioned(plugins=[activity_plugin])
 
 
 class Project(db.Model, Timestamp):
@@ -192,5 +193,3 @@ class Container(db.Model, Timestamp):
     __mapper_args__ = {
         "version_id_col": version_id
     }
-
-db.configure_mappers()
