@@ -57,7 +57,9 @@ class Role(db.Model, RoleMixin):
 
 class User(db.Model, UserMixin):
 
-    __versioned__ = {}
+    __versioned__ = {
+        'exclude': ['password'],
+    }
     __tablename__ = 'users'
 
     id = db.Column(
