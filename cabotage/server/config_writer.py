@@ -83,16 +83,18 @@ class ConfigWriter(object):
     def write_configuration(self, org_slug, project_slug, app_slug, configuration):
         version = configuration.version_id + 1 if configuration.version_id else 1
         if configuration.secret:
+            key_name = (f'cabotage-secrets/automation/{org_slug}/'
+                        f'{project_slug}_{app_slug}/configuration/'
+                        f'{configuration.name}/{version}')
+            storage = 'vault'
             self.vault_connection.write(
-                (f'cabotage-secrets/automation/{org_slug}/'
-                 f'{project_slug}_{app_slug}/configuration/'
-                 f'{configuration.name}/{version}'),
-                **{configuration.name: configuration.value},
+                key_name, **{configuration.name: configuration.value},
             )
         else:
-            self.consul_connection.kv.put(
-                (f'cabotage/automation/{org_slug}/{project_slug}_{app_slug}/'
-                 f'configuration/{configuration.name}/'
-                 f'{version}/{configuration.name}'),
-                configuration.value,
-            )
+            key_name = (f'cabotage/automation/{org_slug}/'
+                        f'{project_slug}_{app_slug}/configuration/'
+                        f'{configuration.name}/{version}/{configuration.name}')
+            storage = 'consul'
+            self.consul_connection.kv.put(key_name, configuration.value)
+            key_name = '/'.join(key_name.split('/')[:-1])
+        return f'{storage}:{key_name}'

@@ -127,7 +127,10 @@ class Configuration(db.Model, Timestamp):
         db.String(2048),
         nullable=False,
     )
-
+    key_slug = db.Column(
+        db.Text(),
+        nullable=True,
+    )
     version_id = db.Column(
         db.Integer,
         nullable=False
