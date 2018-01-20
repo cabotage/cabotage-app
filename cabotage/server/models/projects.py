@@ -1,4 +1,7 @@
+import json
+
 from citext import CIText
+from deepdiff import DeepDiff
 from sqlalchemy import text, UniqueConstraint
 from sqlalchemy.dialects import postgresql
 from sqlalchemy_continuum import make_versioned
@@ -11,6 +14,16 @@ from cabotage.server.models.utils import slugify
 
 activity_plugin = ActivityPlugin()
 make_versioned(plugins=[activity_plugin])
+
+platform_version = postgresql.ENUM(
+    'wind',
+    'steam',
+    'diesel',
+    'stirling',
+    'nuclear',
+    'electric',
+    name='platform_version',
+)
 
 
 class Project(db.Model, Timestamp):
@@ -63,6 +76,7 @@ class Application(db.Model, Timestamp):
     )
     name = db.Column(db.Text(), nullable=False)
     slug = db.Column(CIText(), nullable=False)
+    platform = db.Column(platform_version, nullable=False, default='wind')
 
     container = db.relationship(
         "Container",
@@ -75,11 +89,52 @@ class Application(db.Model, Timestamp):
         backref="application",
         cascade="all, delete-orphan",
     )
-    releases = db.relationship(
+    release = db.relationship(
         "Release",
         backref="application",
+        uselist=False,
         cascade="all, delete-orphan",
     )
+
+    @property
+    def release_candidate(self):
+        release = Release(
+            application_id=self.id,
+            container=self.container.asdict,
+            configuration=[c.asdict for c in self.configurations],
+            platform=self.platform,
+        )
+        return release.asdict
+
+    @property
+    def current_release(self):
+        if self.release:
+            return self.release.asdict
+        return None
+
+    @property
+    def ready_for_deployment(self):
+        current = self.current_release
+        candidate = self.release_candidate
+        del(current['id'])
+        del(candidate['id'])
+        diff = DeepDiff(current, candidate, ignore_order=True)
+        return diff
+
+    def create_release(self):
+        if self.release:
+            self.release.container = self.container.asdict
+            self.release.configuration = [c.asdict for c in self.configurations]
+            self.release.platform = self.platform
+        else:
+            self.release = Release(
+                application_id=self.id,
+                container=self.container.asdict,
+                configuration=[c.asdict for c in self.configurations],
+                platform=self.platform,
+            )
+        db.session.add(self.release)
+        db.session.commit()
 
     UniqueConstraint('project_id', 'slug')
 
@@ -98,9 +153,22 @@ class Release(db.Model, Timestamp):
     application_id = db.Column(
         postgresql.UUID(as_uuid=True),
         db.ForeignKey('project_applications.id'),
+        unique=True,
         nullable=False,
     )
+    platform = db.Column(platform_version, nullable=False, default='wind')
+    container = db.Column(postgresql.JSONB(), nullable=False)
+    configuration = db.Column(postgresql.JSONB(), nullable=False)
 
+    @property
+    def asdict(self):
+        return {
+            "id": str(self.id),
+            "application_id": str(self.application_id),
+            "platform": self.platform,
+            "container": self.container,
+            "configuration": self.configuration,
+        }
 
 class Configuration(db.Model, Timestamp):
 
@@ -152,6 +220,15 @@ class Configuration(db.Model, Timestamp):
         "version_id_col": version_id
     }
 
+    @property
+    def asdict(self):
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "version_id": self.version_id,
+            "secret": self.secret,
+        }
+
 
 class Container(db.Model, Timestamp):
 
@@ -167,6 +244,7 @@ class Container(db.Model, Timestamp):
     application_id = db.Column(
         postgresql.UUID(as_uuid=True),
         db.ForeignKey('project_applications.id'),
+        unique=True,
         nullable=False,
     )
 
@@ -196,3 +274,13 @@ class Container(db.Model, Timestamp):
     __mapper_args__ = {
         "version_id_col": version_id
     }
+
+    @property
+    def asdict(self):
+        return {
+            "id": str(self.id),
+            "container_repository": self.container_repository,
+            "container_tag": self.container_tag,
+            "container_image_id": self.container_image_id,
+            "version_id": self.version_id,
+        }
