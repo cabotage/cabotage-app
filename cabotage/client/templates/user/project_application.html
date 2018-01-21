@@ -7,6 +7,28 @@
     </div>
     <div class="row">
       <div class="col-md-8">
+        <h3>Releases</h3>
+        {% if application.ready_for_deployment %}
+        <a class="btn btn-info" href="{{ url_for('user.project_application_release_create', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}">
+          Cut a new release!&nbsp;<span class="glyphicon glyphicon-scissors"></span>
+        </a>
+        <h4>Unapplied changes exist!</h4>
+        <pre>{{ application.ready_for_deployment }}</pre>
+        {% endif %}
+        <table class="table table-striped">
+          <tr>
+            <th>Release Version</th>
+          </tr>
+          {% for release in view_releases %}
+          <tr>
+            <td>{{ release.version_id }}</td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-md-8">
         <h3>Container</h3>
         <table class="table table-striped">
           <tr>

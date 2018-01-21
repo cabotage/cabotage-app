@@ -3,6 +3,9 @@ import datetime
 from flask import abort, render_template, Blueprint, redirect, url_for, request
 from flask_security import current_user, login_required
 
+from sqlalchemy import desc
+from sqlalchemy_continuum import version_class
+
 from cabotage.server import config_writer
 from cabotage.server import db
 from cabotage.server.models.auth import Organization
@@ -11,6 +14,7 @@ from cabotage.server.models.projects import (
     Application,
     Configuration,
     Container,
+    Release
 )
 from cabotage.server.models.projects import activity_plugin
 
@@ -168,6 +172,7 @@ def project_application(org_slug, project_slug, app_slug):
     return render_template(
         'user/project_application.html',
         application=application,
+        view_releases=version_class(Release).query.filter_by(application_id=application.id).order_by(desc(version_class(Release).version_id)).limit(5),
     )
 
 
@@ -488,3 +493,31 @@ def project_application_container_edit(org_slug, project_slug, app_slug, contain
         db.session.commit()
         return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
     return render_template('user/project_application_container_edit.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug, container=container)
+
+
+@user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/release/create', methods=['GET', 'POST'])
+@login_required
+def project_application_release_create(org_slug, project_slug, app_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first()
+    if organization is None:
+        abort(404)
+    project = Project.query.filter_by(organization_id=organization.id, slug=project_slug).first()
+    if project is None:
+        abort(404)
+    application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
+    if application is None:
+        abort(404)
+
+    release = application.create_release()
+    db.session.add(release)
+    db.session.flush()
+    activity = Activity(
+        verb='edit',
+        object=release,
+        data={
+            'user_id': str(current_user.id),
+            'timestamp': datetime.datetime.utcnow().isoformat(),
+        }
+    )
+    db.session.add(activity)
+    db.session.commit()

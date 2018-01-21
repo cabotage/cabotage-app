@@ -110,15 +110,17 @@ class Application(db.Model, Timestamp):
     def current_release(self):
         if self.release:
             return self.release.asdict
-        return None
+        return {}
 
     @property
     def ready_for_deployment(self):
         current = self.current_release
         candidate = self.release_candidate
-        del(current['id'])
-        del(candidate['id'])
-        diff = DeepDiff(current, candidate, ignore_order=True)
+        diff = DeepDiff(
+            current, candidate,
+            ignore_order=True,
+            exclude_paths={"root['id']"},
+        )
         return diff
 
     def create_release(self):
@@ -133,8 +135,7 @@ class Application(db.Model, Timestamp):
                 configuration=[c.asdict for c in self.configurations],
                 platform=self.platform,
             )
-        db.session.add(self.release)
-        db.session.commit()
+        return self.release
 
     UniqueConstraint('project_id', 'slug')
 
@@ -159,6 +160,10 @@ class Release(db.Model, Timestamp):
     platform = db.Column(platform_version, nullable=False, default='wind')
     container = db.Column(postgresql.JSONB(), nullable=False)
     configuration = db.Column(postgresql.JSONB(), nullable=False)
+    version_id = db.Column(
+        db.Integer,
+        nullable=False
+    )
 
     @property
     def asdict(self):
@@ -169,6 +174,10 @@ class Release(db.Model, Timestamp):
             "container": self.container,
             "configuration": self.configuration,
         }
+
+    __mapper_args__ = {
+        "version_id_col": version_id
+    }
 
 class Configuration(db.Model, Timestamp):
 
