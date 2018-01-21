@@ -95,6 +95,10 @@ class Application(db.Model, Timestamp):
         uselist=False,
         cascade="all, delete-orphan",
     )
+    version_id = db.Column(
+        db.Integer,
+        nullable=False
+    )
 
     @property
     def release_candidate(self):
@@ -128,16 +132,24 @@ class Application(db.Model, Timestamp):
             self.release.container = self.container.asdict
             self.release.configuration = [c.asdict for c in self.configurations]
             self.release.platform = self.platform
+            self.release.version_id += 1
+            return True
         else:
             self.release = Release(
                 application_id=self.id,
                 container=self.container.asdict,
                 configuration=[c.asdict for c in self.configurations],
                 platform=self.platform,
+                version_id = 1,
             )
-        return self.release
+            return True
+        return False
 
     UniqueConstraint('project_id', 'slug')
+
+    __mapper_args__ = {
+        "version_id_col": version_id
+    }
 
 
 class Release(db.Model, Timestamp):
@@ -174,10 +186,6 @@ class Release(db.Model, Timestamp):
             "container": self.container,
             "configuration": self.configuration,
         }
-
-    __mapper_args__ = {
-        "version_id_col": version_id
-    }
 
 class Configuration(db.Model, Timestamp):
 

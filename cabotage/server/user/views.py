@@ -508,9 +508,7 @@ def project_application_release_create(org_slug, project_slug, app_slug):
     if application is None:
         abort(404)
 
-    release = application.create_release()
-    if release is not None:
-        application.release = release
+    application.create_release()
     db.session.flush()
     activity = Activity(
         verb='edit',
