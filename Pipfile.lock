@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "872edaff552f31f6b90efee237ff0e4eb918ca372fc07dc3a47596ceb31e0f3d"
+            "sha256": "2f2f72db613ad437fc6a2a5b861a4a905ab23feb47aabeadf639cf2fd026d912"
         },
         "host-environment-markers": {
             "implementation_name": "cpython",
@@ -126,14 +126,6 @@
             ],
             "version": "==6.7"
         },
-        "deepdiff": {
-            "hashes": [
-                "sha256:b4150052e610b231885c4c0be3eea86e4c029df91550ec51b9fc14dd209a5055",
-                "sha256:152b29dd9cd97cc78403121fb394925ec47377d4a410751e56547c3930ba2b39",
-                "sha256:ecad8e16a96ffd27e8f40c9801a6ab16ec6a7e7e6e6859a7710ba4695f22702c"
-            ],
-            "version": "==3.3.0"
-        },
         "dominate": {
             "hashes": [
                 "sha256:4b8ce6f33633c9dd9175b228d21c00c801b6bd0327747cd5e17fc2da934c3a69"
@@ -247,12 +239,6 @@
                 "sha256:f84be1bb0040caca4cea721fcbbbbd61f9be9464ca236387158b0feea01914a4"
             ],
             "version": "==2.10"
-        },
-        "jsonpickle": {
-            "hashes": [
-                "sha256:cc25dc79571d4ad7db59d05ddb7de0d76a8d598cf6136e1dbeaa9361ebcfe749"
-            ],
-            "version": "==0.9.5"
         },
         "mako": {
             "hashes": [

@@ -1,7 +1,6 @@
 import json
 
 from citext import CIText
-from deepdiff import DeepDiff
 from sqlalchemy import text, UniqueConstraint
 from sqlalchemy.dialects import postgresql
 from sqlalchemy_continuum import make_versioned
@@ -10,7 +9,10 @@ from sqlalchemy_utils.models import Timestamp
 from cabotage.server import db
 
 from cabotage.server.models.plugins import ActivityPlugin
-from cabotage.server.models.utils import slugify
+from cabotage.server.models.utils import (
+    slugify,
+    DictDiffer,
+)
 
 activity_plugin = ActivityPlugin()
 make_versioned(plugins=[activity_plugin])
@@ -104,8 +106,8 @@ class Application(db.Model, Timestamp):
     def release_candidate(self):
         release = Release(
             application_id=self.id,
-            container=self.container.asdict,
-            configuration=[c.asdict for c in self.configurations],
+            container=self.container.asdict if self.container else {},
+            configuration={c.name: c.asdict for c in self.configurations},
             platform=self.platform,
         )
         return release.asdict
@@ -120,17 +122,22 @@ class Application(db.Model, Timestamp):
     def ready_for_deployment(self):
         current = self.current_release
         candidate = self.release_candidate
-        diff = DeepDiff(
-            current, candidate,
-            ignore_order=True,
-            exclude_paths={"root['id']"},
+        config_diff = DictDiffer(
+            candidate.get('configuration', {}),
+            current.get('configuration', {}),
+            ignored_keys=['id'],
         )
-        return diff
+        container_diff = DictDiffer(
+            candidate.get('container', {}),
+            current.get('container', {}),
+            ignored_keys=['id', 'version_id'],
+        )
+        return container_diff, config_diff
 
     def create_release(self):
         if self.release:
             self.release.container = self.container.asdict
-            self.release.configuration = [c.asdict for c in self.configurations]
+            self.release.configuration = {c.name: c.asdict for c in self.configurations}
             self.release.platform = self.platform
             self.release.version_id += 1
             return True
@@ -138,7 +145,7 @@ class Application(db.Model, Timestamp):
             self.release = Release(
                 application_id=self.id,
                 container=self.container.asdict,
-                configuration=[c.asdict for c in self.configurations],
+                configuration={c.name: c.asdict for c in self.configurations},
                 platform=self.platform,
                 version_id = 1,
             )

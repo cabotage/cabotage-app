@@ -8,24 +8,132 @@
     <div class="row">
       <div class="col-md-8">
         <h3>Releases</h3>
-        {% if application.ready_for_deployment %}
-        <a class="btn btn-info" href="{{ url_for('user.project_application_release_create', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}">
-          Cut a new release!&nbsp;<span class="glyphicon glyphicon-scissors"></span>
-        </a>
-        <h4>Unapplied changes exist!</h4>
-        <pre>{{ application.ready_for_deployment }}</pre>
+        {% set container_diff, config_diff = application.ready_for_deployment %}
+        {% if container_diff.has_changes() or config_diff.has_changes() %}
+          <div class="row">
+            <div class="alert alert-info">
+              <p>Unapplied changes exist!</p>
+            </div>
+          </div>
+          {% if container_diff.has_changes() %}
+          {% set added = container_diff.added() %}
+          {% set removed = container_diff.removed() %}
+          {% set changed = container_diff.changed() %}
+          <div class="row">
+            <h5>Container Changes</h5>
+            <div class="col-md-8">
+              <table class="table">
+                <tr>
+                  <th></th>
+                  <th>Attribute</th>
+                  <th>Operation</th>
+                </tr>
+                {% for container_added in added %}
+                <tr>
+                  <td><span class="glyphicon glyphicon-plus text-success"></span></td>
+                  <td><code>{{ container_added }}</code></td>
+                  <td>Added</td>
+                </tr>
+                {% endfor %}
+                {% for container_changed in changed %}
+                <tr>
+                  <td><span class="glyphicon glyphicon-pencil text-info"></span></td>
+                  <td><code>{{ container_changed }}</code></td>
+                  <td>Edited</td>
+                </tr>
+                {% endfor %}
+                {% for container_removed in removed %}
+                <tr>
+                  <td><span class="glyphicon glyphicon-minus text-danger"></span></rd>
+                  <td><code>{{ container_removed }}</code></td>
+                  <td>Removed</td>
+                </tr>
+                {% endfor %}
+              </table>
+            </div>
+          </div>
+          {% endif %}
+          {% if config_diff.has_changes() %}
+          {% set added = config_diff.added() %}
+          {% set removed = config_diff.removed() %}
+          {% set changed = config_diff.changed() %}
+          <div class="row">
+            <h5>Configuration Changes</h5>
+            <div class="col-md-8">
+              <table class="table">
+                <tr>
+                  <th></th>
+                  <th>Environment Variable</th>
+                  <th>Operation</th>
+                </tr>
+              {% if added %}
+                {% for config_added in added %}
+                <tr>
+                  <td><span class="glyphicon glyphicon-plus text-success"></span></td>
+                  <td><code>{{ config_added }}</code></td>
+                  <td>Added</td>
+                </tr>
+                {% endfor %}
+              {% endif %}
+              {% if removed  %}
+                {% for config_removed in removed %}
+                <tr>
+                  <td><span class="glyphicon glyphicon-minus text-danger"></span></rd>
+                  <td><code>{{ config_removed }}</code></td>
+                  <td>Removed</td>
+                </tr>
+                {% endfor %}
+              {% endif %}
+              {% if changed %}
+                {% for config_changed in changed %}
+                <tr>
+                  <td><span class="glyphicon glyphicon-pencil text-info"></span></td>
+                  <td><code>{{ config_changed }}</code></td>
+                  <td>Edited</td>
+                </tr>
+                {% endfor %}
+              {% endif %}
+              </table>
+            </div>
+          </div>
+          {% endif %}
+          <div class="row">
+            <a class="btn btn-info pull-right" href="{{ url_for('user.project_application_release_create', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}">
+              Cut a new release!&nbsp;<span class="glyphicon glyphicon-scissors"></span>
+            </a>
+          </div>
         {% endif %}
-        <table class="table table-striped">
-          <tr>
-            <th>Release Version</th>
-          </tr>
-          {% for release in view_releases %}
-          <tr>
-            <td>{{ release.version_id }}</td>
-          </tr>
-          {% endfor %}
-        </table>
-      </div>
+        <div class="row">
+          {% if application.release %}
+          <h4>Current</h4>
+          <table class="table table-striped">
+            <tr>
+              <th>Version</th>
+              <th>Updated</th>
+            </tr>
+            <tr>
+              <td>{{ application.release.version_id }}</td>
+              <td>{{ application.release.updated|humanize }}</td>
+            </tr>
+          </table>
+          {% endif %}
+          {% if view_releases.all() |length > 1 %}
+          <h4>History</h4>
+          <table class="table table-striped">
+            <tr>
+              <th>Version</th>
+              <th>Updated</th>
+            </tr>
+            <tr>
+            {% for release in view_releases[1:] %}
+            <tr>
+              <td>{{ release.version_id }}</td>
+              <td>{{ release.updated| humanize }}</td>
+            </tr>
+            {% endfor %}
+          </table>
+          {% endif %}
+        </div>
     </div>
     <div class="row">
       <div class="col-md-8">
