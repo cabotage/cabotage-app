@@ -509,11 +509,12 @@ def project_application_release_create(org_slug, project_slug, app_slug):
         abort(404)
 
     release = application.create_release()
-    db.session.add(release)
+    if release is not None:
+        application.release = release
     db.session.flush()
     activity = Activity(
         verb='edit',
-        object=release,
+        object=application.release,
         data={
             'user_id': str(current_user.id),
             'timestamp': datetime.datetime.utcnow().isoformat(),
@@ -521,3 +522,4 @@ def project_application_release_create(org_slug, project_slug, app_slug):
     )
     db.session.add(activity)
     db.session.commit()
+    return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
