@@ -8,13 +8,15 @@
     <div class="row">
       <h2>Projects</h2>
     </div>
+    <table class="table">
     {% for project in organization.projects %}
-    <div class="row">
-      <a href="{{ url_for("user.project", org_slug=project.organization.slug, project_slug=project.slug) }}">{{ project.name }}</a>
-    </div>
+      <tr>
+        <td><a href="{{ url_for("user.project", org_slug=project.organization.slug, project_slug=project.slug) }}">{{ project.name }}</a></td>
+      </tr>
     {% endfor %}
-    <div class="row">
-      {{ form_button(url_for('user.organization_project_create', org_slug=organization.slug), "Create a new Project", method="GET", class="btn btn-primary pull-right") }}
-    </div>
+      <tr>
+        <td>{{ form_button(url_for('user.organization_project_create', org_slug=organization.slug), "Create a new Project", method="GET", class="btn btn-primary pull-right") }}</td>
+      </tr>
+    </table>
   </div>
 {% endblock %}

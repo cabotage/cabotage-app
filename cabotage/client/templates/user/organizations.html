@@ -5,14 +5,16 @@
     <div class="row">
       <h1>Your Organizations</h1>
     </div>
-    {% for organization in organizations %}
-    <div class="row">
-      <a href="{{ url_for("user.organization", org_slug=organization.organization.slug) }}">{{ organization.organization.slug }}</a>
-    </div>
-    {% endfor %}
-    <div class="row">
-      {{ form_button(url_for('user.organization_create'), "Create a new Organization", method="GET", class="btn btn-primary pull-right") }}
-    </div>
+    <table class="table">
+      {% for organization in organizations %}
+      <tr>
+        <td><a href="{{ url_for("user.organization", org_slug=organization.organization.slug) }}">{{ organization.organization.slug }}</a></td>
+      </tr>
+      {% endfor %}
+      <tr>
+        <td>{{ form_button(url_for('user.organization_create'), "Create a new Organization", method="GET", class="btn btn-primary pull-right") }}</td>
+      </tr>
+    </table>
   </div>
 {% endblock %}
 
