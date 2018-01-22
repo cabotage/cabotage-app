@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cabotage-dind-builder
+spec:
+  template:
+    spec:
+      containers:
+      - name: cabotage-dind
+        image: docker:stable-dind
+        securityContext:
+          privileged: true
+        volumeMounts: 
+          - mountPath: /var/run 
+            name: docker-sock 
+      - name: cabotage-dind-builder
+        image: docker:stable
+        command: ["docker", "images"]
+        volumeMounts: 
+          - mountPath: /var/run 
+            name: docker-sock 
+      restartPolicy: Never
+      volumes:
+        - name: docker-sock
+          emptyDir:
+            medium: "Memory"
+            sizeLimit: "1k"
+  backoffLimit: 10

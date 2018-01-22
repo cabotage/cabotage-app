@@ -1,0 +1,39 @@
+version: '3'
+
+volumes:
+  consuldata:
+  registrydata:
+
+services:
+  consul:
+    image: consul
+    restart: always
+    environment:
+      CONSUL_CLIENT_INTERFACE: eth0
+    ports:
+      - "8500:8500"
+    volumes:
+      - consuldata:/consul/data
+  vault:
+    image: vault
+    restart: on-failure
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: deadbeef-dead-beef-dead-beefdeadbeef
+    ports:
+      - "8200:8200"
+    cap_add:
+      - IPC_LOCK
+  registry:
+    image: registry:2
+    restart: always
+    ports:
+      - "5001:5000"
+    volumes:
+      - registrydata:/var/lib/registry
+  cabotage-dind:
+    image: docker:stable-dind
+    command: --insecure-registry registry:5000
+    restart: always
+    ports:
+      - "2375:2375"
+    privileged: true
