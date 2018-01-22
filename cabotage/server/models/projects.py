@@ -122,7 +122,7 @@ class Application(db.Model, Timestamp):
     def ready_for_deployment(self):
         current = self.current_release
         candidate = self.release_candidate
-        config_diff = DictDiffer(
+        configuration_diff = DictDiffer(
             candidate.get('configuration', {}),
             current.get('configuration', {}),
             ignored_keys=['id'],
@@ -132,12 +132,16 @@ class Application(db.Model, Timestamp):
             current.get('container', {}),
             ignored_keys=['id', 'version_id'],
         )
-        return container_diff, config_diff
+        return container_diff, configuration_diff
 
     def create_release(self):
+        container_diff, configuration_diff = self.ready_for_deployment
         if self.release:
             self.release.container = self.container.asdict
             self.release.configuration = {c.name: c.asdict for c in self.configurations}
+            self.release.container_changes = container_diff.asdict
+            self.release.configuration = {c.name: c.asdict for c in self.configurations}
+            self.release.configuration_changes = configuration_diff.asdict
             self.release.platform = self.platform
             self.release.version_id += 1
             return True
@@ -145,7 +149,9 @@ class Application(db.Model, Timestamp):
             self.release = Release(
                 application_id=self.id,
                 container=self.container.asdict,
+                container_changes=container_diff.asdict,
                 configuration={c.name: c.asdict for c in self.configurations},
+                configuration_changes=configuration_diff.asdict,
                 platform=self.platform,
                 version_id = 1,
             )
@@ -179,6 +185,8 @@ class Release(db.Model, Timestamp):
     platform = db.Column(platform_version, nullable=False, default='wind')
     container = db.Column(postgresql.JSONB(), nullable=False)
     configuration = db.Column(postgresql.JSONB(), nullable=False)
+    container_changes = db.Column(postgresql.JSONB(), nullable=False)
+    configuration_changes = db.Column(postgresql.JSONB(), nullable=False)
     version_id = db.Column(
         db.Integer,
         nullable=False

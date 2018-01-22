@@ -74,3 +74,11 @@ class DictDiffer(object):
 
     def __repr__(self):
         return f'<DictDiffer Added: {self.added()}, Removed: {self.removed()}, Changed: {self.changed()}>'
+
+    @property
+    def asdict(self):
+        return {
+            'added': list(self.added()),
+            'removed': list(self.removed()),
+            'changed': list(self.changed()),
+        }
