@@ -20,12 +20,14 @@ class ConfigWriter(object):
         self.consul_scheme = app.config.get('CABOTAGE_CONSUL_SCHEME', 'http')
         self.consul_verify = app.config.get('CABOTAGE_CONSUL_VERIFY', False)
         self.consul_cert = app.config.get('CABOTAGE_CONSUL_CERT', None)
+        self.consul_prefix = app.config.get('CABOTAGE_CONSUL_PREFIX', 'cabotage')
         self.vault_url = app.config.get('CABOTAGE_VAULT_URL', 'http://127.0.0.1:8200')
         self.vault_verify = app.config.get('CABOTAGE_VAULT_VERIFY', False)
         self.vault_cert = app.config.get('CABOTAGE_VAULT_CERT', None)
         self.vault_token = app.config.get('CABOTAGE_VAULT_TOKEN', None)
         self.vault_token_file = app.config.get('CABOTAGE_VAULT_TOKEN_FILE', os.path.expanduser('~/.vault-token'))
         self.vault_token_unwrap = app.config.get('CABOTAGE_VAULT_TOKEN_UNWRAP', False)
+        self.vault_prefix = app.config.get('CABOTAGE_VAULT_PREFIX', 'secrets/cabotage')
 
         if self.vault_token is None:
             if os.path.exists(self.vault_token_file):
@@ -83,7 +85,7 @@ class ConfigWriter(object):
     def write_configuration(self, org_slug, project_slug, app_slug, configuration):
         version = configuration.version_id + 1 if configuration.version_id else 1
         if configuration.secret:
-            key_name = (f'cabotage-secrets/automation/{org_slug}/'
+            key_name = (f'{self.consul_prefix}/automation/{org_slug}/'
                         f'{project_slug}_{app_slug}/configuration/'
                         f'{configuration.name}/{version}')
             storage = 'vault'
@@ -91,7 +93,7 @@ class ConfigWriter(object):
                 key_name, **{configuration.name: configuration.value},
             )
         else:
-            key_name = (f'cabotage/automation/{org_slug}/'
+            key_name = (f'{self.vault_prefix}/automation/{org_slug}/'
                         f'{project_slug}_{app_slug}/configuration/'
                         f'{configuration.name}/{version}/{configuration.name}')
             storage = 'consul'

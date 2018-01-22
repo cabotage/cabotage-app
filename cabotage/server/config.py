@@ -35,11 +35,13 @@ class BaseConfig(object):
     CABOTAGE_CONSUL_SCHEME = 'http'
     CABOTAGE_CONSUL_VERIFY = False
     CABOTAGE_CONSUL_CERT = None
+    CABOTAGE_CONSUL_PREFIX = 'cabotage'
     CABOTAGE_VAULT_TOKEN_FILE = os.path.expanduser('~/.vault-token')
     CABOTAGE_VAULT_TOKEN_UNWRAP = False
     CABOTAGE_VAULT_URL = 'http://127.0.0.1:8200'
     CABOTAGE_VAULT_VERIFY = False
     CABOTAGE_VAULT_CERT = None
+    CABOTAGE_VAULT_PREFIX = 'secrets/cabotage'
 
 class DevelopmentConfig(BaseConfig):
     """Development configuration."""
