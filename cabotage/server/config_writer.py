@@ -27,7 +27,7 @@ class ConfigWriter(object):
         self.vault_token = app.config.get('CABOTAGE_VAULT_TOKEN', None)
         self.vault_token_file = app.config.get('CABOTAGE_VAULT_TOKEN_FILE', os.path.expanduser('~/.vault-token'))
         self.vault_token_unwrap = app.config.get('CABOTAGE_VAULT_TOKEN_UNWRAP', False)
-        self.vault_prefix = app.config.get('CABOTAGE_VAULT_PREFIX', 'secrets/cabotage')
+        self.vault_prefix = app.config.get('CABOTAGE_VAULT_PREFIX', 'secret/cabotage')
 
         if self.vault_token is None:
             if os.path.exists(self.vault_token_file):
@@ -85,7 +85,7 @@ class ConfigWriter(object):
     def write_configuration(self, org_slug, project_slug, app_slug, configuration):
         version = configuration.version_id + 1 if configuration.version_id else 1
         if configuration.secret:
-            key_name = (f'{self.consul_prefix}/automation/{org_slug}/'
+            key_name = (f'{self.vault_prefix}/automation/{org_slug}/'
                         f'{project_slug}_{app_slug}/configuration/'
                         f'{configuration.name}/{version}')
             storage = 'vault'
@@ -93,7 +93,7 @@ class ConfigWriter(object):
                 key_name, **{configuration.name: configuration.value},
             )
         else:
-            key_name = (f'{self.vault_prefix}/automation/{org_slug}/'
+            key_name = (f'{self.consul_prefix}/automation/{org_slug}/'
                         f'{project_slug}_{app_slug}/configuration/'
                         f'{configuration.name}/{version}/{configuration.name}')
             storage = 'consul'

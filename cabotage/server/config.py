@@ -41,7 +41,7 @@ class BaseConfig(object):
     CABOTAGE_VAULT_URL = 'http://127.0.0.1:8200'
     CABOTAGE_VAULT_VERIFY = False
     CABOTAGE_VAULT_CERT = None
-    CABOTAGE_VAULT_PREFIX = 'secrets/cabotage'
+    CABOTAGE_VAULT_PREFIX = 'secret/cabotage'
 
 class DevelopmentConfig(BaseConfig):
     """Development configuration."""
