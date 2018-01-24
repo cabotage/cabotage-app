@@ -20,7 +20,8 @@ class MinioDriver(object):
         self.minio_access_key = app.config.get('CABOTAGE_MINIO_ACCESS_KEY', '')
         self.minio_secret_key = app.config.get('CABOTAGE_MINIO_SECRET_KEY', '')
         self.minio_secure = app.config.get('CABOTAGE_MINIO_SECURE', True)
-        self.minio_bucket = app.config.get('CABOTAGE_MINIO_BUCKET', 'cabotage-builds')
+        self.minio_bucket = app.config.get('CABOTAGE_MINIO_BUCKET', 'cabotage-registry')
+        self.minio_prefix = app.config.get('CABOTAGE_MINIO_PREFIX', 'cabotage-builds')
 
         app.teardown_appcontext(self.teardown)
 
@@ -53,7 +54,7 @@ class MinioDriver(object):
         file_length = fileobj.tell()
         fileobj.seek(0)
         self.create_bucket()
-        path = f'{org_slug}/{proj_slug}/{app_slug}/{secrets.token_urlsafe(8)}.tar.gz'
+        path = f'{self.minio_prefix}/{org_slug}/{proj_slug}/{app_slug}/{secrets.token_urlsafe(8)}.tar.gz'
         etag = self.minio_connection.put_object(
             self.minio_bucket,
             path,

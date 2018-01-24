@@ -49,14 +49,16 @@ class BaseConfig(object):
     CABOTAGE_MINIO_ACCESS_KEY = 'MINIOACCESSKEY'
     CABOTAGE_MINIO_SECRET_KEY = 'MINIOSECRETKEY'
     CABOTAGE_MINIO_SECURE = False
+    CABOTAGE_MINIO_PREFIX = 'cabotage-builds'
 
 class DevelopmentConfig(BaseConfig):
     """Development configuration."""
     DEBUG = True
     BCRYPT_LOG_ROUNDS = 4
     WTF_CSRF_ENABLED = False
-    SQLALCHEMY_DATABASE_URI = 'postgresql://localhost/cabotage_dev'
+    SQLALCHEMY_DATABASE_URI = 'postgresql://postgres@localhost/cabotage_dev'
     DEBUG_TB_ENABLED = True
+    SECURITY_CONFIRMABLE = False
 
 
 class TestingConfig(BaseConfig):
