@@ -4,11 +4,12 @@ import os
 import shutil
 import sys
 
-import docker
-
 from contextlib import ExitStack
 from tarfile import TarFile
 from tempfile import TemporaryDirectory
+
+import docker
+import minio
 
 
 def build_image(tarfileobj, org_slug, project_slug, application_slug, version):
@@ -73,5 +74,26 @@ def build_image(tarfileobj, org_slug, project_slug, application_slug, version):
 
 
 if __name__ == '__main__':
-    with gzip.open('test-app.tgz', 'rb') as fd:
-        build_image(fd, 'ernestd', 'test', 'test-app', 1)
+    import click
+    @click.command()
+    @click.option('--object-bucket', default='cabotage-builds')
+    @click.option('--object-path', default='org/project/app/deadbeef.tar.gz')
+    @click.option('--minio-endpoint', default='127.0.0.1:9000')
+    @click.option('--minio-access-key', default='MINIOACCESSKEY')
+    @click.option('--minio-secret-key', default='MINIOSECRETKEY')
+    @click.option('--minio-secure', default=False)
+    @click.option('--registry', default='registry:5000')
+    @click.option('--registry-token', default=None)
+    @click.option('--registry-secure', default=False)
+    @click.option('--organization-slug', default='org')
+    @click.option('--project-slug', default='proj')
+    @click.option('--application-slug', default='app')
+    @click.option('--version', default=1)
+    def run_build(object_bucket, object_path, minio_endpoint, minio_access_key, minio_secret_key,
+                  minio_secure, registry, registry_token, registry_secure, organization_slug,
+                  project_slug, application_slug, version):
+        pass
+
+    run_build()
+    #with gzip.open('test-app.tgz', 'rb') as fd:
+    #    build_image(fd, 'ernestd', 'test', 'test-app', 1)
