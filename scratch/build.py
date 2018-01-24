@@ -105,6 +105,7 @@ if __name__ == '__main__':
                 fp.seek(0)
                 with gzip.open(fp, 'rb') as fd:
                     build_image(fd, registry, organization_slug, project_slug, application_slug, version)
+            minio_client.remove_object(object_bucket, object_path)
         except Exception:
             raise
 
