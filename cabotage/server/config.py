@@ -6,6 +6,7 @@ class BaseConfig(object):
     """Base configuration."""
     SECRET_KEY = 'my_precious'
     DEBUG = False
+    MAX_CONTENT_LENGTH = 32 * 1024 * 1024
     BCRYPT_LOG_ROUNDS = 13
     WTF_CSRF_ENABLED = True
     DEBUG_TB_ENABLED = False
@@ -42,6 +43,10 @@ class BaseConfig(object):
     CABOTAGE_VAULT_VERIFY = False
     CABOTAGE_VAULT_CERT = None
     CABOTAGE_VAULT_PREFIX = 'secret/cabotage'
+    CABOTAGE_MINIO_HOST = '127.0.0.1:9000'
+    CABOTAGE_MINIO_ACCESS_KEY = 'MINIOACCESSKEY'
+    CABOTAGE_MINIO_SECRET_KEY = 'MINIOSECRETKEY'
+    CABOTAGE_MINIO_SECURE = False
 
 class DevelopmentConfig(BaseConfig):
     """Development configuration."""

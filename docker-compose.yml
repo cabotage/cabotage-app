@@ -3,6 +3,7 @@ version: '3'
 volumes:
   consuldata:
   registrydata:
+  miniodata:
 
 services:
   consul:
@@ -37,3 +38,14 @@ services:
     ports:
       - "2375:2375"
     privileged: true
+  minio:
+    image: minio/minio
+    command: server /export
+    restart: always
+    environment:
+      MINIO_ACCESS_KEY: MINIOACCESSKEY
+      MINIO_SECRET_KEY: MINIOSECRETKEY
+    ports:
+      - "9000:9000"
+    volumes:
+      - miniodata:/export

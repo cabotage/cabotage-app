@@ -1,12 +1,25 @@
+import os
 import datetime
 
-from flask import abort, render_template, Blueprint, redirect, url_for, request
-from flask_security import current_user, login_required
+from flask import (
+    Blueprint,
+    abort,
+    flash,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
+from flask_security import (
+    current_user,
+    login_required,
+)
 
 from sqlalchemy import desc
 from sqlalchemy_continuum import version_class
 
 from cabotage.server import config_writer
+from cabotage.server import minio
 from cabotage.server import db
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import (
@@ -521,3 +534,36 @@ def project_application_release_create(org_slug, project_slug, app_slug):
     db.session.add(activity)
     db.session.commit()
     return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
+
+
+@user_blueprint.route('/build/submit', methods=['GET', 'POST'])
+@login_required
+def build_submit():
+    if request.method == 'POST':
+        # TODO: check for org/project/application access
+        # TODO: convert to WTForm and Template
+        if 'file' not in request.files:
+            flash('No file part')
+            return redirect(request.url)
+        if 'organization' not in request.form or 'project' not in request.form or 'application' not in request.form:
+            flash('Must supply organization, project, and application')
+            return redirect(request.url)
+        org_slug = request.form['organization']
+        proj_slug = request.form['project']
+        app_slug = request.form['application']
+        fileobj = request.files['file']
+        if fileobj:
+            response = minio.write_object(org_slug, proj_slug, app_slug, fileobj)
+            return f'{response}'
+    return '''
+    <!doctype html>
+    <title>Upload new File</title>
+    <h1>Upload new File</h1>
+    <form method=post enctype=multipart/form-data>
+      <p>Organization<input type=text name=organization>
+      <p>Project<input type=text name=project>
+      <p>Application<input type=text name=application>
+      <p><input type=file name=file>
+         <input type=submit value=Upload>
+    </form>
+    '''

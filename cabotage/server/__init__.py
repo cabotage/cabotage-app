@@ -12,7 +12,8 @@ from flask_sqlalchemy import SQLAlchemy
 
 from sqlalchemy import MetaData
 
-from cabotage.server.config_writer import ConfigWriter
+from cabotage.server.ext.config_writer import ConfigWriter
+from cabotage.server.ext.minio_driver import MinioDriver
 
 # instantiate the extensions
 bcrypt = Bcrypt()
@@ -33,6 +34,7 @@ mail = Mail()
 migrate = Migrate()
 humanize = Humanize()
 config_writer = ConfigWriter()
+minio = MinioDriver()
 
 
 def create_app():
@@ -104,6 +106,7 @@ def create_app():
     nav.init_app(app)
     humanize.init_app(app)
     config_writer.init_app(app)
+    minio.init_app(app)
 
     # register blueprints
     from cabotage.server.user.views import user_blueprint
