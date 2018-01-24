@@ -1,0 +1,11 @@
+version: 0.1
+log:
+  fields:
+    service: registry
+storage:
+  cache:
+    blobdescriptor: inmemory
+http:
+  addr: :5000
+  headers:
+    X-Content-Type-Options: [nosniff]
