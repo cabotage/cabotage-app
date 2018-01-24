@@ -2,7 +2,6 @@ version: '3'
 
 volumes:
   consuldata:
-  registrydata:
   miniodata:
 
 services:
@@ -27,10 +26,19 @@ services:
   registry:
     image: registry:2
     restart: always
+    command: ["/etc/docker/registry-local/config.yml"]
+    environment:
+      REGISTRY_STORAGE_S3_ACCESSKEY: MINIOACCESSKEY
+      REGISTRY_STORAGE_S3_SECRETKEY: MINIOSECRETKEY
+      REGISTRY_STORAGE_S3_ENDPOINT: http://minio:9000
+      REGISTRY_STORAGE_S3_REGION: us-east-1
+      REGISTRY_STORAGE_S3_REGIONENDPOINT: http://minio:9000
+      REGISTRY_STORAGE_S3_BUCKET: cabotage-registry
+      REGISTRY_STORAGE_S3_ENCRYPT: "false"
     ports:
       - "5001:5000"
     volumes:
-      - registrydata:/var/lib/registry
+      - ./docker-compose/registry:/etc/docker/registry-local
   cabotage-dind:
     image: docker:stable-dind
     command: --insecure-registry registry:5000
@@ -45,6 +53,7 @@ services:
     environment:
       MINIO_ACCESS_KEY: MINIOACCESSKEY
       MINIO_SECRET_KEY: MINIOSECRETKEY
+      MINIO_REGION: us-east-1
     ports:
       - "9000:9000"
     volumes:
