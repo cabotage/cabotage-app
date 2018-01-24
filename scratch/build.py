@@ -1,4 +1,5 @@
 import gzip
+import io
 import json
 import os
 import shutil
@@ -6,13 +7,16 @@ import sys
 
 from contextlib import ExitStack
 from tarfile import TarFile
-from tempfile import TemporaryDirectory
+from tempfile import (
+    TemporaryDirectory,
+    TemporaryFile,
+)
 
 import docker
 import minio
 
 
-def build_image(tarfileobj, org_slug, project_slug, application_slug, version):
+def build_image(tarfileobj, registry, org_slug, project_slug, application_slug, version):
     with ExitStack() as stack:
         temp_dir = stack.enter_context(TemporaryDirectory())
         tar_ball = stack.enter_context(TarFile(fileobj=tarfileobj, mode='r'))
@@ -53,7 +57,7 @@ def build_image(tarfileobj, org_slug, project_slug, application_slug, version):
         tag = f'cabotage/{org_slug}_{project_slug}_{application_slug}'
         response = client.api.build(
             path=temp_dir,
-            tag=f'registry:5000/{tag}:{version}',
+            tag=f'{registry}/{tag}:{version}',
             rm=True,
             forcerm=True,
             dockerfile="Dockerfile",
@@ -68,9 +72,9 @@ def build_image(tarfileobj, org_slug, project_slug, application_slug, version):
                     status = payload.get('status')
                     if stream:
                         sys.stderr.write(stream)
-        image = client.images.get(f'registry:5000/{tag}:{version}')
+        image = client.images.get(f'{registry}/{tag}:{version}')
         print(image.id)
-        print(client.images.push(f'registry:5000/{tag}', f'{version}'))
+        print(client.images.push(f'{registry}/{tag}', f'{version}'))
 
 
 if __name__ == '__main__':
@@ -84,16 +88,24 @@ if __name__ == '__main__':
     @click.option('--minio-secure', default=False)
     @click.option('--registry', default='registry:5000')
     @click.option('--registry-token', default=None)
-    @click.option('--registry-secure', default=False)
     @click.option('--organization-slug', default='org')
     @click.option('--project-slug', default='proj')
     @click.option('--application-slug', default='app')
     @click.option('--version', default=1)
-    def run_build(object_bucket, object_path, minio_endpoint, minio_access_key, minio_secret_key,
-                  minio_secure, registry, registry_token, registry_secure, organization_slug,
-                  project_slug, application_slug, version):
-        pass
+    def run_build(object_bucket, object_path,
+                  minio_endpoint, minio_access_key, minio_secret_key, minio_secure,
+                  registry, registry_token,
+                  organization_slug, project_slug, application_slug, version):
+        minio_client = minio.Minio(minio_endpoint, access_key=minio_access_key, secret_key=minio_secret_key, secure=minio_secure)
+        try:
+            data = minio_client.get_object(object_bucket, object_path)
+            with TemporaryFile() as fp:
+                for chunk in data.stream(32*1024):
+                    fp.write(chunk)
+                fp.seek(0)
+                with gzip.open(fp, 'rb') as fd:
+                    build_image(fd, registry, organization_slug, project_slug, application_slug, version)
+        except Exception:
+            raise
 
     run_build()
-    #with gzip.open('test-app.tgz', 'rb') as fd:
-    #    build_image(fd, 'ernestd', 'test', 'test-app', 1)
