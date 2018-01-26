@@ -6,8 +6,13 @@ import uuid
 
 from base64 import (
     b32encode,
+    b32decode,
+    b64encode,
+    b64decode,
     urlsafe_b64encode,
 )
+
+import hvac
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
@@ -100,29 +105,30 @@ def generate_docker_claim_set(
 
 
 if __name__ == '__main__':
-    with open('docker-compose/cabotage-app/pki/cabotage.crt', 'rb') as cert_fd:
-        cert_pem = cert_fd.read()
-    cert = x509.load_pem_x509_certificate(
-        cert_pem,
-        default_backend(),
-    )
-    public_key_pem = cert.public_key().public_bytes(
-        encoding=Encoding.PEM,
-        format=PublicFormat.SubjectPublicKeyInfo,
-    )
+    VAULT_TOKEN = 'deadbeef-dead-beef-dead-beefdeadbeef'
+    VAULT_ADDR = 'http://127.0.0.1:8200'
+    VAULT_TRANSIT_KEY = 'cabotage-signing/keys/docker-auth'
+    VAULT_TRANSIT_SIGNING = 'cabotage-signing/sign/docker-auth/sha2-256'
+
+    vault_client = hvac.Client(url=VAULT_ADDR, token=VAULT_TOKEN)
+
+    key_data = vault_client.read(VAULT_TRANSIT_KEY)
+    keys = key_data['data']['keys']
+    latest = str(max((int(x) for x in keys.keys())))
+    public_key_pem = keys[latest]['public_key'].encode()
+
     header = generate_docker_jose_header(public_key_pem)
     claim_set = generate_docker_claim_set()
     payload = (f'{urlsafe_b64encode(header.encode("utf-8")).rstrip(b"=").decode()}'
                f'.{urlsafe_b64encode(claim_set.encode("utf-8")).rstrip(b"=").decode()}')
-    with open('docker-compose/cabotage-app/pki/private.key', 'rb') as private_key_fd:
-        private_key_pem = private_key_fd.read()
-    private_key = load_pem_private_key(
-        private_key_pem, None, default_backend()
+
+    signature_response = vault_client.write(
+        VAULT_TRANSIT_SIGNING,
+        input=b64encode(payload.encode()).decode(),
     )
-    signature_bytes = private_key.sign(
-        payload.encode(),
-        ec.ECDSA(hashes.SHA256()),
-    )
-    signature = der_to_raw_signature(signature_bytes, private_key.curve)
+    signature_encoded = signature_response['data']['signature'].split(':')[2]
+    signature_bytes = b64decode(signature_encoded)
+
+    signature = der_to_raw_signature(signature_bytes, ec.SECP256R1)
     jwt = f'{payload}.{urlsafe_b64encode(signature).rstrip(b"=").decode()}'
     print(jwt)
