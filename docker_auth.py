@@ -73,13 +73,13 @@ def generate_docker_jose_header(public_key_pem):
 
 
 def generate_docker_claim_set(
-        issuer="cabotage-app",
-        subject="cabotage-builder",
-        audience="cabotage-registry",
-        repository="cabotage/org_project_application",
-        type="registry",
-        name="catalog",
-        actions=None,
+            issuer="cabotage-app",
+            subject="cabotage-builder",
+            audience="cabotage-registry",
+            repository="cabotage/org_project_application",
+            type="registry",
+            name="catalog",
+            actions=None,
         ):
     if actions is None:
         actions = ["*"]
@@ -119,8 +119,10 @@ if __name__ == '__main__':
 
     header = generate_docker_jose_header(public_key_pem)
     claim_set = generate_docker_claim_set()
-    payload = (f'{urlsafe_b64encode(header.encode("utf-8")).rstrip(b"=").decode()}'
-               f'.{urlsafe_b64encode(claim_set.encode("utf-8")).rstrip(b"=").decode()}')
+    header_encoded = urlsafe_b64encode(header.encode("utf-8"))
+    claim_set_encoded = urlsafe_b64encode(claim_set.encode("utf-8"))
+    payload = (f'{header_encoded.rstrip(b"=").decode()}'
+               f'.{claim_set_encoded.rstrip(b"=").decode()}')
 
     signature_response = vault_client.write(
         VAULT_TRANSIT_SIGNING,
