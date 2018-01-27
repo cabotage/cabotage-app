@@ -39,6 +39,7 @@ from cabotage.server.user.forms import (
     CreateOrganizationForm,
     CreateProjectForm,
     DeleteConfigurationForm,
+    EditConfigurationForm,
 )
 
 from cabotage.utils.docker_auth import generate_docker_registry_jwt
@@ -326,7 +327,7 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
     if configuration is None:
         abort(404)
 
-    form = CreateConfigurationForm(obj=configuration)
+    form = EditConfigurationForm(obj=configuration)
     form.application_id.choices = [(str(configuration.application.id), f'{organization.slug}/{project.slug}: {application.slug}')]
     form.application_id.data = str(configuration.application.id)
     form.name.data = str(configuration.name)

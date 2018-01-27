@@ -193,6 +193,39 @@ class CreateConfigurationForm(FlaskForm):
         return True
 
 
+class EditConfigurationForm(FlaskForm):
+
+    application_id = SelectField(
+        u'Application',
+        [DataRequired()],
+        description="Application this Configuration belongs to.",
+    )
+    name = StringField(
+        u'Name',
+        [DataRequired(),
+         Regexp('^[a-zA-Z_]+[a-zA-Z0-9_]*$', message="Invalid Environment Variable Name! Must match ^[a-zA-Z_]+[a-zA-Z0-9_]*$")],
+        description="Name for the Environment Variable.",
+    )
+    value = StringField(
+        u'Value',
+        [DataRequired()],
+        description="Value for the Environment Variable.",
+    )
+    secure = BooleanField(
+        u'Secure',
+        [],
+        description="Store this Environment Variable Securely. It will not be recoverable again via the UI.",
+    )
+
+    def validate_name(form, field):
+        configuration = Configuration.query.filter_by(application_id=form.application_id.data, name=field.data).first()
+        if configuration is not None:
+            if form.name.data == configuration.name:
+                return True
+            raise ValidationError('Configuration names cannot be changed! Delete and re-create')
+        raise ValidationError('Configurations must be created from the Create Application Configuration form')
+
+
 class DeleteConfigurationForm(FlaskForm):
 
     configuration_id = HiddenField(
