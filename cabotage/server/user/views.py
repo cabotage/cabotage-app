@@ -558,7 +558,7 @@ def build_submit():
         fileobj = request.files['file']
         if fileobj:
             response = minio.write_object(org_slug, proj_slug, app_slug, fileobj)
-            return f'{response}, {generate_docker_registry_jwt()}, {vault.signing_public_key}'
+            return f'{response}, {generate_docker_registry_jwt()}, {(vault.signing_cert,)}'
     return '''
     <!doctype html>
     <title>Upload new File</title>

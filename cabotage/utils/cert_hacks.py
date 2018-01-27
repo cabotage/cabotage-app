@@ -62,10 +62,10 @@ def certificate_squisher(cert, signature):
 def construct_cert_from_public_key(signer, public_key_pem, common_name):
     dummy_cert = issue_dummy_cert(public_key_pem, common_name)
     bytes_to_sign = dummy_cert.tbs_certificate_bytes
+    payload = base64.b64encode(bytes_to_sign).decode()
+    signature_bytes = signer(payload)
 
-    signature_bytes = signer(bytes_to_sign)
-
-    final_certificate_bytes = certificate_squisher(dummy_cert, signed_bytes)
+    final_certificate_bytes = certificate_squisher(dummy_cert, signature_bytes)
     final_cert = x509.load_der_x509_certificate(
         final_certificate_bytes,
         backend=default_backend(),
