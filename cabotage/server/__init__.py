@@ -12,6 +12,8 @@ from flask_sqlalchemy import SQLAlchemy
 
 from sqlalchemy import MetaData
 
+from cabotage.server.ext.consul import Consul
+from cabotage.server.ext.vault import Vault
 from cabotage.server.ext.config_writer import ConfigWriter
 from cabotage.server.ext.minio_driver import MinioDriver
 
@@ -33,7 +35,9 @@ db = SQLAlchemy(metadata=db_metadata)
 mail = Mail()
 migrate = Migrate()
 humanize = Humanize()
-config_writer = ConfigWriter()
+consul = Consul()
+vault = Vault()
+config_writer = ConfigWriter(consul=consul, vault=vault)
 minio = MinioDriver()
 
 
@@ -105,7 +109,9 @@ def create_app():
     migrate.init_app(app, db)
     nav.init_app(app)
     humanize.init_app(app)
-    config_writer.init_app(app)
+    consul.init_app(app)
+    vault.init_app(app)
+    config_writer.init_app(app, consul, vault)
     minio.init_app(app)
 
     # register blueprints
