@@ -32,7 +32,7 @@ class ExtendedRegisterForm(RegisterForm):
         'Username',
         validators=[
             DataRequired(),
-            Length(min=3, max=64),
+            Length(min=1, max=64),
         ]
     )
 
@@ -42,7 +42,7 @@ class ExtendedConfirmRegisterForm(ConfirmRegisterForm):
         'Username',
         validators=[
             DataRequired(),
-            Length(min=3, max=64),
+            Length(min=1, max=64),
         ]
     )
 
