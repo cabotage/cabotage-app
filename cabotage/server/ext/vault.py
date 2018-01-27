@@ -1,9 +1,16 @@
 import os
 
+from base64 import(
+    b64decode,
+    b64encode,
+)
+
 import hvac
 
 from flask import current_app
 from flask import _app_ctx_stack as stack
+
+from cabotage.utils.cert_hacks import construct_cert_from_public_key
 
 
 class Vault(object):
@@ -56,3 +63,30 @@ class Vault(object):
             if not hasattr(ctx, 'vault_client'):
                 ctx.vault_client = self.connect_vault()
             return ctx.vault_client
+
+    @property
+    def signing_public_key(self):
+        VAULT_TRANSIT_KEY = f'{self.vault_signing_mount}/keys/{self.vault_signing_key}'
+        key_data = self.vault_connection.read(VAULT_TRANSIT_KEY)
+        keys = key_data['data']['keys']
+        latest = str(key_data['data']['latest_version'])
+        return keys[latest]['public_key'].encode()
+
+    @property
+    def signing_cert(self):
+        return construct_cert_from_public_key(
+            self.sign_payload,
+            self.signing_public_key,
+            'cabotage-app',
+        )
+
+    def sign_payload(self, payload, algorithm='sha2-256'):
+        if algorithm not in ('sha2-224', 'sha2-256', 'sha2-384', 'sha2-512'):
+            raise KeyError(f'Specified algorithm ({algorithm}) not supported!')
+        VAULT_TRANSIT_SIGNING = f'{self.vault_signing_mount}/sign/{self.vault_signing_key}/{algorithm}'
+        signature_response = self.vault_connection.write(
+            VAULT_TRANSIT_SIGNING,
+            input=b64encode(payload.encode()).decode(),
+        )
+        signature_encoded = signature_response['data']['signature'].split(':')[2]
+        return b64decode(signature_encoded)

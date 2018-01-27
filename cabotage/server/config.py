@@ -43,6 +43,8 @@ class BaseConfig(object):
     CABOTAGE_VAULT_VERIFY = False
     CABOTAGE_VAULT_CERT = None
     CABOTAGE_VAULT_PREFIX = 'secret/cabotage'
+    CABOTAGE_VAULT_SIGNING_MOUNT = 'transit'
+    CABOTAGE_VAULT_SIGNING_KEY = 'cabotage-app'
     CABOTAGE_REGISTRY = '127.0.0.1:5001'
     CABOTAGE_REGISTRY_SECURE = False
     CABOTAGE_MINIO_HOST = '127.0.0.1:9000'
@@ -50,6 +52,8 @@ class BaseConfig(object):
     CABOTAGE_MINIO_SECRET_KEY = 'MINIOSECRETKEY'
     CABOTAGE_MINIO_SECURE = False
     CABOTAGE_MINIO_PREFIX = 'cabotage-builds'
+    CELERY_BROKER_URL='redis://127.0.0.1:6379',
+    CELERY_RESULT_BACKEND='redis://127.0.0.1:6379'
 
 class DevelopmentConfig(BaseConfig):
     """Development configuration."""

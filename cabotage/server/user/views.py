@@ -21,6 +21,7 @@ from sqlalchemy_continuum import version_class
 from cabotage.server import config_writer
 from cabotage.server import minio
 from cabotage.server import db
+from cabotage.server import vault
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import (
     Project,
@@ -39,6 +40,8 @@ from cabotage.server.user.forms import (
     CreateProjectForm,
     DeleteConfigurationForm,
 )
+
+from cabotage.utils.docker_auth import generate_docker_registry_jwt
 
 Activity = activity_plugin.activity_cls
 user_blueprint = Blueprint('user', __name__,)
@@ -554,7 +557,7 @@ def build_submit():
         fileobj = request.files['file']
         if fileobj:
             response = minio.write_object(org_slug, proj_slug, app_slug, fileobj)
-            return f'{response}'
+            return f'{response}, {generate_docker_registry_jwt()}, {vault.signing_public_key}'
     return '''
     <!doctype html>
     <title>Upload new File</title>

@@ -28,6 +28,8 @@ from cryptography.hazmat.primitives.serialization import (
     load_pem_private_key,
 )
 
+from cabotage.server import vault
+
 
 def number_to_bytes(num, num_bytes):
     padded_hex = '%0*x' % (2 * num_bytes, num)
@@ -76,13 +78,12 @@ def generate_docker_claim_set(
             issuer="cabotage-app",
             subject="cabotage-builder",
             audience="cabotage-registry",
-            repository="cabotage/org_project_application",
-            type="registry",
-            name="catalog",
-            actions=None,
+            resource_type="registry",
+            resource_name="catalog",
+            resource_actions=None,
         ):
-    if actions is None:
-        actions = ["*"]
+    if resource_actions is None:
+        resource_actions = ["*"]
 
     jti = str(uuid.uuid4())
     issued_at = int(time.time())
@@ -96,26 +97,19 @@ def generate_docker_claim_set(
         "jti": jti,
         "access": [
             {
-                "type": type,
-                "name": name,
-                "actions": actions,
+                "type": resource_type,
+                "name": resource_name,
+                "actions": resource_actions,
             },
         ],
     }, separators=(',', ':'))
 
 
-if __name__ == '__main__':
-    VAULT_TOKEN = 'deadbeef-dead-beef-dead-beefdeadbeef'
-    VAULT_ADDR = 'http://127.0.0.1:8200'
-    VAULT_TRANSIT_KEY = 'cabotage-signing/keys/docker-auth'
-    VAULT_TRANSIT_SIGNING = 'cabotage-signing/sign/docker-auth/sha2-256'
+def generate_docker_registry_jwt(resource_type="registry", resource_name="catalog", resource_actions=None):
+    if resource_actions is None:
+        resource_actions = ["*"]
 
-    vault_client = hvac.Client(url=VAULT_ADDR, token=VAULT_TOKEN)
-
-    key_data = vault_client.read(VAULT_TRANSIT_KEY)
-    keys = key_data['data']['keys']
-    latest = str(max((int(x) for x in keys.keys())))
-    public_key_pem = keys[latest]['public_key'].encode()
+    public_key_pem = vault.signing_public_key
 
     header = generate_docker_jose_header(public_key_pem)
     claim_set = generate_docker_claim_set()
@@ -124,13 +118,6 @@ if __name__ == '__main__':
     payload = (f'{header_encoded.rstrip(b"=").decode()}'
                f'.{claim_set_encoded.rstrip(b"=").decode()}')
 
-    signature_response = vault_client.write(
-        VAULT_TRANSIT_SIGNING,
-        input=b64encode(payload.encode()).decode(),
-    )
-    signature_encoded = signature_response['data']['signature'].split(':')[2]
-    signature_bytes = b64decode(signature_encoded)
-
+    signature_bytes = vault.sign_payload(payload)
     signature = der_to_raw_signature(signature_bytes, ec.SECP256R1)
-    jwt = f'{payload}.{urlsafe_b64encode(signature).rstrip(b"=").decode()}'
-    print(jwt)
+    return f'{payload}.{urlsafe_b64encode(signature).rstrip(b"=").decode()}'

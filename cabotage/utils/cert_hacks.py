@@ -59,36 +59,17 @@ def certificate_squisher(cert, signature):
     return bytes(cert_bytes)[:-len(cert.signature)] + signature
 
 
-if __name__ == '__main__':
-    VAULT_TOKEN = 'deadbeef-dead-beef-dead-beefdeadbeef'
-    VAULT_ADDR = 'http://127.0.0.1:8200'
-    VAULT_TRANSIT_KEY = 'cabotage-signing/keys/docker-auth'
-    VAULT_TRANSIT_SIGNING = 'cabotage-signing/sign/docker-auth/sha2-256'
-
-    vault_client = hvac.Client(url=VAULT_ADDR, token=VAULT_TOKEN)
-
-    key_data = vault_client.read(VAULT_TRANSIT_KEY)
-    keys = key_data['data']['keys']
-    latest = str(max((int(x) for x in keys.keys())))
-    public_key_pem = keys[latest]['public_key'].encode()
-
-    dummy_cert = issue_dummy_cert(public_key_pem, 'cabotage-app')
+def construct_cert_from_public_key(signer, public_key_pem, common_name):
+    dummy_cert = issue_dummy_cert(public_key_pem, common_name)
     bytes_to_sign = dummy_cert.tbs_certificate_bytes
 
-    signature_response = vault_client.write(
-        VAULT_TRANSIT_SIGNING,
-        input=base64.b64encode(bytes_to_sign).decode(),
-    )
-    signature_encoded = signature_response['data']['signature'].split(':')[2]
-    signature_bytes = base64.b64decode(signature_encoded)
+    signature_bytes = signer(bytes_to_sign)
 
     final_certificate_bytes = certificate_squisher(dummy_cert, signed_bytes)
     final_cert = x509.load_der_x509_certificate(
         final_certificate_bytes,
         backend=default_backend(),
     )
-    print(
-        final_cert.public_bytes(
-            encoding=serialization.Encoding.PEM,
-        ).decode()
-    )
+    return final_cert.public_bytes(
+        encoding=serialization.Encoding.PEM,
+    ).decode()

@@ -12,6 +12,7 @@ from flask_sqlalchemy import SQLAlchemy
 
 from sqlalchemy import MetaData
 
+from cabotage.celery import make_celery
 from cabotage.server.ext.consul import Consul
 from cabotage.server.ext.vault import Vault
 from cabotage.server.ext.config_writer import ConfigWriter
@@ -113,6 +114,7 @@ def create_app():
     vault.init_app(app)
     config_writer.init_app(app, consul, vault)
     minio.init_app(app)
+    make_celery(app)
 
     # register blueprints
     from cabotage.server.user.views import user_blueprint
