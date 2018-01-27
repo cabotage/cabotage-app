@@ -57,7 +57,7 @@ class Project(db.Model, Timestamp):
         cascade="all, delete-orphan",
     )
 
-    UniqueConstraint('organization_id', 'slug')
+    UniqueConstraint(organization_id, slug)
 
 
 class Application(db.Model, Timestamp):
@@ -158,7 +158,7 @@ class Application(db.Model, Timestamp):
             return True
         return False
 
-    UniqueConstraint('project_id', 'slug')
+    UniqueConstraint(project_id, slug)
 
     __mapper_args__ = {
         "version_id_col": version_id
@@ -246,7 +246,7 @@ class Configuration(db.Model, Timestamp):
         default=False
     )
 
-    UniqueConstraint('application_id', 'name')
+    UniqueConstraint(application_id, name)
 
     __mapper_args__ = {
         "version_id_col": version_id

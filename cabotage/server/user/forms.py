@@ -187,7 +187,7 @@ class CreateConfigurationForm(FlaskForm):
     def validate_name(form, field):
         configuration = Configuration.query.filter_by(application_id=form.application_id.data, name=field.data).first()
         if configuration is not None:
-            if form.name.data == configuration.name:
+            if form.name.data.lower() != configuration.name.lower():
                 return True
             raise ValidationError('Configuration names must be unique (case insensitive) within Applications')
         return True
