@@ -19,4 +19,3 @@ COPY . /opt/cabotage-app/src/
 WORKDIR /opt/cabotage-app/src/
 
 RUN pipenv install --dev
-

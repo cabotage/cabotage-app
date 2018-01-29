@@ -45,3 +45,4 @@ click = "*"
 minio = "*"
 celery = {extras = ["redis"]}
 cryptography = "*"
+Flask-Celery-Helper = "*"

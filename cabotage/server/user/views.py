@@ -50,6 +50,11 @@ from cabotage.utils.docker_auth import (
     generate_docker_registry_jwt,
 )
 
+from cabotage.celery.tasks import (
+    is_this_thing_on,
+    run_build,
+)
+
 Activity = activity_plugin.activity_cls
 user_blueprint = Blueprint('user', __name__,)
 
@@ -571,6 +576,7 @@ def build_submit():
         org_slug = request.form['organization']
         proj_slug = request.form['project']
         app_slug = request.form['application']
+        version = 99
         fileobj = request.files['file']
         if fileobj:
             response = minio.write_object(org_slug, proj_slug, app_slug, fileobj)
@@ -582,6 +588,11 @@ def build_submit():
                 resource_name=f"cabotage/{org_slug}_{proj_slug}_{app_slug}",
                 resource_actions=["push", "pull"],
             )
+            run_build.delay(minio.minio_bucket, response['path'],
+                            minio.minio_endpoint, minio.minio_access_key, minio.minio_secret_key, minio.minio_secure,
+                            'tcp://cabotage-dind:2375', False,
+                            registry, 'cabotage-builder', credentials,
+                            org_slug, proj_slug, app_slug, version)
             return f'{(minio.minio_bucket, response)}, {(registry, credentials)}'
     return '''
     <!doctype html>

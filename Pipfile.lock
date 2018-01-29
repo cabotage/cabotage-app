@@ -1,19 +1,19 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "5a8f76e9f8f2b3519863c18885d36b375c71428fbe9cd704548084d0798a41e0"
+            "sha256": "d6725f6bdaf4cfb3898ac85b635038f0cc5aff89bf11099ef8449ad25c3f21e3"
         },
         "host-environment-markers": {
             "implementation_name": "cpython",
-            "implementation_version": "3.7.0a3",
+            "implementation_version": "3.6.3",
             "os_name": "posix",
             "platform_machine": "x86_64",
             "platform_python_implementation": "CPython",
             "platform_release": "17.4.0",
             "platform_system": "Darwin",
             "platform_version": "Darwin Kernel Version 17.4.0: Sun Dec 17 09:19:54 PST 2017; root:xnu-4570.41.2~1/RELEASE_X86_64",
-            "python_full_version": "3.7.0a3",
-            "python_version": "3.7",
+            "python_full_version": "3.6.3",
+            "python_version": "3.6",
             "sys_platform": "darwin"
         },
         "pipfile-spec": 6,
@@ -147,6 +147,7 @@
                 "sha256:87f837459c3c78d75cb4f5aadf08a7104db15e8c7618a5c732e60f252279c7a6",
                 "sha256:df9083a992b17a28cd4251a3f5c879e0198bb26c9e808c4647e0a18739f1d11d"
             ],
+            "markers": "platform_python_implementation != 'PyPy'",
             "version": "==1.11.4"
         },
         "chardet": {
@@ -240,6 +241,12 @@
             ],
             "version": "==3.3.7.1"
         },
+        "flask-celery-helper": {
+            "hashes": [
+                "sha256:454d4a989c82894be30e5d764341e9f16bb2cedfb2a7f9d5edc67c09e195f8c5"
+            ],
+            "version": "==1.1.0"
+        },
         "flask-humanize": {
             "hashes": [
                 "sha256:7beda034d191fd98db3dd1247b4ed94830d6bfbfa48d095732b158208bffa5d0",
@@ -320,7 +327,7 @@
             "hashes": [
                 "sha256:200d8686011d470b5e4de207d803445deee427455cd0cb7c982b68cf82524f81"
             ],
-            "markers": "python_version < '3'",
+            "markers": "python_version < '3.3'",
             "version": "==1.0.19"
         },
         "itsdangerous": {

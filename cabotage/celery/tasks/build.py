@@ -15,6 +15,8 @@ from tempfile import (
 import docker
 import minio
 
+from cabotage.server import celery
+
 
 def build_image(tarfileobj, registry, registry_username, registry_password, docker_url, docker_secure, org_slug, project_slug, application_slug, version):
     with ExitStack() as stack:
@@ -78,40 +80,21 @@ def build_image(tarfileobj, registry, registry_username, registry_password, dock
         print(client.images.push(f'{registry}/{tag}', f'{version}'))
 
 
-if __name__ == '__main__':
-    import click
-    @click.command()
-    @click.option('--object-bucket', default='cabotage-builds')
-    @click.option('--object-path', default='org/project/app/deadbeef.tar.gz')
-    @click.option('--minio-endpoint', default='127.0.0.1:9000')
-    @click.option('--minio-access-key', default='MINIOACCESSKEY')
-    @click.option('--minio-secret-key', default='MINIOSECRETKEY')
-    @click.option('--minio-secure', default=False)
-    @click.option('--docker-url', default='tcp://127.0.0.1:2375')
-    @click.option('--docker-secure', default=False)
-    @click.option('--registry', default='registry:5000')
-    @click.option('--registry-username', default=None)
-    @click.option('--registry-password', default=None)
-    @click.option('--organization-slug', default='org')
-    @click.option('--project-slug', default='proj')
-    @click.option('--application-slug', default='app')
-    @click.option('--version', default=1)
-    def run_build(object_bucket, object_path,
-                  minio_endpoint, minio_access_key, minio_secret_key, minio_secure,
-                  docker_url, docker_secure,
-                  registry, registry_username, registry_password,
-                  organization_slug, project_slug, application_slug, version):
-        minio_client = minio.Minio(minio_endpoint, access_key=minio_access_key, secret_key=minio_secret_key, secure=minio_secure)
-        try:
-            data = minio_client.get_object(object_bucket, object_path)
-            with TemporaryFile() as fp:
-                for chunk in data.stream(32*1024):
-                    fp.write(chunk)
-                fp.seek(0)
-                with gzip.open(fp, 'rb') as fd:
-                    build_image(fd, registry, registry_username, registry_password, docker_url, docker_secure, organization_slug, project_slug, application_slug, version)
-            minio_client.remove_object(object_bucket, object_path)
-        except Exception:
-            raise
-
-    run_build()
+@celery.task()
+def run_build(object_bucket, object_path,
+              minio_endpoint, minio_access_key, minio_secret_key, minio_secure,
+              docker_url, docker_secure,
+              registry, registry_username, registry_password,
+              organization_slug, project_slug, application_slug, version):
+    minio_client = minio.Minio(minio_endpoint, access_key=minio_access_key, secret_key=minio_secret_key, secure=minio_secure)
+    try:
+        data = minio_client.get_object(object_bucket, object_path)
+        with TemporaryFile() as fp:
+            for chunk in data.stream(32*1024):
+                fp.write(chunk)
+            fp.seek(0)
+            with gzip.open(fp, 'rb') as fd:
+                build_image(fd, registry, registry_username, registry_password, docker_url, docker_secure, organization_slug, project_slug, application_slug, version)
+        minio_client.remove_object(object_bucket, object_path)
+    except Exception:
+        raise

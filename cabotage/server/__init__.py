@@ -3,6 +3,7 @@ import os
 from flask import Flask, render_template
 from flask_bcrypt import Bcrypt
 from flask_bootstrap import Bootstrap
+from flask_celery import Celery
 from flask_debugtoolbar import DebugToolbarExtension
 from flask_humanize import Humanize
 from flask_mail import Mail
@@ -12,7 +13,6 @@ from flask_sqlalchemy import SQLAlchemy
 
 from sqlalchemy import MetaData
 
-from cabotage.celery import make_celery
 from cabotage.server.ext.consul import Consul
 from cabotage.server.ext.vault import Vault
 from cabotage.server.ext.config_writer import ConfigWriter
@@ -40,6 +40,7 @@ consul = Consul()
 vault = Vault()
 config_writer = ConfigWriter(consul=consul, vault=vault)
 minio = MinioDriver()
+celery = Celery()
 
 
 def create_app():
@@ -114,7 +115,7 @@ def create_app():
     vault.init_app(app)
     config_writer.init_app(app, consul, vault)
     minio.init_app(app)
-    make_celery(app)
+    celery.init_app(app)
 
     # register blueprints
     from cabotage.server.user.views import user_blueprint
