@@ -8,6 +8,14 @@ spec:
       containers:
       - name: cabotage-dind
         image: docker:stable-dind
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            dockerd --host=unix:///var/run/docker.sock &
+            CHILD_PID=$!
+            (while true; do if [[ -f "/var/run/build-terminated" ]]; then kill $CHILD_PID; fi; sleep 1; done) &
+            wait $CHILD_PID
+            if [[ -f "/var/run/build-terminated" ]]; then exit 0; fi
         securityContext:
           privileged: true
         volumeMounts: 
@@ -15,7 +23,11 @@ spec:
             name: docker-sock 
       - name: cabotage-dind-builder
         image: docker:stable
-        command: ["docker", "images"]
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            trap "touch /var/run/build-terminated" EXIT
+            docker images
         volumeMounts: 
           - mountPath: /var/run 
             name: docker-sock 
