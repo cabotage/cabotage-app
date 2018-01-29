@@ -31,36 +31,37 @@ class BaseConfig(object):
     BOOTSTRAP_SERVE_LOCAL = True
     HUMANIZE_USE_UTC = True
     CABOTAGE_WRITE_BACKENDS = True
-    CABOTAGE_CONSUL_HOST = '127.0.0.1'
+    CABOTAGE_CONSUL_HOST = 'consul'
     CABOTAGE_CONSUL_PORT = 8500
     CABOTAGE_CONSUL_SCHEME = 'http'
     CABOTAGE_CONSUL_VERIFY = False
     CABOTAGE_CONSUL_CERT = None
     CABOTAGE_CONSUL_PREFIX = 'cabotage'
-    CABOTAGE_VAULT_TOKEN_FILE = os.path.expanduser('~/.vault-token')
+    CABOTAGE_VAULT_TOKEN = 'deadbeef-dead-beef-dead-beefdeadbeef'
     CABOTAGE_VAULT_TOKEN_UNWRAP = False
-    CABOTAGE_VAULT_URL = 'http://127.0.0.1:8200'
+    CABOTAGE_VAULT_URL = 'http://vault:8200'
     CABOTAGE_VAULT_VERIFY = False
     CABOTAGE_VAULT_CERT = None
     CABOTAGE_VAULT_PREFIX = 'secret/cabotage'
     CABOTAGE_VAULT_SIGNING_MOUNT = 'transit'
     CABOTAGE_VAULT_SIGNING_KEY = 'cabotage-app'
-    CABOTAGE_REGISTRY = '127.0.0.1:5001'
+    CABOTAGE_REGISTRY = 'registry:5001'
     CABOTAGE_REGISTRY_SECURE = False
-    CABOTAGE_MINIO_HOST = '127.0.0.1:9000'
+    CABOTAGE_REGISTRY_AUTH_SECRET = 'v3rys3cur3'
+    CABOTAGE_MINIO_HOST = 'minio:9000'
     CABOTAGE_MINIO_ACCESS_KEY = 'MINIOACCESSKEY'
     CABOTAGE_MINIO_SECRET_KEY = 'MINIOSECRETKEY'
     CABOTAGE_MINIO_SECURE = False
     CABOTAGE_MINIO_PREFIX = 'cabotage-builds'
-    CELERY_BROKER_URL='redis://127.0.0.1:6379',
-    CELERY_RESULT_BACKEND='redis://127.0.0.1:6379'
+    CELERY_BROKER_URL='redis://redis:6379',
+    CELERY_RESULT_BACKEND='redis://redis:6379'
 
 class DevelopmentConfig(BaseConfig):
     """Development configuration."""
     DEBUG = True
     BCRYPT_LOG_ROUNDS = 4
     WTF_CSRF_ENABLED = False
-    SQLALCHEMY_DATABASE_URI = 'postgresql://postgres@localhost/cabotage_dev'
+    SQLALCHEMY_DATABASE_URI = 'postgresql://postgres@db/cabotage_dev'
     DEBUG_TB_ENABLED = True
     SECURITY_CONFIRMABLE = False
 

@@ -27,6 +27,10 @@ from cryptography.hazmat.primitives.serialization import (
     load_pem_public_key,
     load_pem_private_key,
 )
+from itsdangerous import (
+    BadData,
+    URLSafeTimedSerializer,
+)
 
 from cabotage.server import vault
 
@@ -78,12 +82,10 @@ def generate_docker_claim_set(
             issuer="cabotage-app",
             subject="cabotage-builder",
             audience="cabotage-registry",
-            resource_type="registry",
-            resource_name="catalog",
-            resource_actions=None,
+            access=None,
         ):
-    if resource_actions is None:
-        resource_actions = ["*"]
+    if access is None:
+        access = []
 
     jti = str(uuid.uuid4())
     issued_at = int(time.time())
@@ -95,24 +97,42 @@ def generate_docker_claim_set(
         "nbf": issued_at,
         "iat": issued_at,
         "jti": jti,
-        "access": [
-            {
-                "type": resource_type,
-                "name": resource_name,
-                "actions": resource_actions,
-            },
-        ],
+        "access": access,
     }, separators=(',', ':'))
 
 
-def generate_docker_registry_jwt(resource_type="registry", resource_name="catalog", resource_actions=None):
+def _docker_credential_serializer(secret=None):
+    if secret is None:
+        return ValueError('secret must be supplied!')
+    serializer = URLSafeTimedSerializer(secret)
+    return serializer
+
+
+def generate_docker_credentials(secret=None, resource_type="registry", resource_name="catalog", resource_actions=None):
     if resource_actions is None:
         resource_actions = ["*"]
+    serializer = _docker_credential_serializer(secret=secret)
+    access = [{"type": resource_type, "name": resource_name, "actions": resource_actions}]
+    return serializer.dumps(access)
+
+
+def check_docker_credentials(token, secret=None, max_age=60):
+    serializer = _docker_credential_serializer(secret=secret)
+    try:
+        access = serializer.loads(token, max_age=max_age)
+        return access
+    except BadData:
+        return []
+
+
+def generate_docker_registry_jwt(access=None):
+    if access is None:
+        access = []
 
     public_key_pem = vault.signing_public_key
 
     header = generate_docker_jose_header(public_key_pem)
-    claim_set = generate_docker_claim_set()
+    claim_set = generate_docker_claim_set(access=access)
     header_encoded = urlsafe_b64encode(header.encode("utf-8"))
     claim_set_encoded = urlsafe_b64encode(claim_set.encode("utf-8"))
     payload = (f'{header_encoded.rstrip(b"=").decode()}'

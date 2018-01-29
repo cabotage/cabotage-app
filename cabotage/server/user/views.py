@@ -4,7 +4,9 @@ import datetime
 from flask import (
     Blueprint,
     abort,
+    current_app,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -42,7 +44,11 @@ from cabotage.server.user.forms import (
     EditConfigurationForm,
 )
 
-from cabotage.utils.docker_auth import generate_docker_registry_jwt
+from cabotage.utils.docker_auth import (
+    check_docker_credentials,
+    generate_docker_credentials,
+    generate_docker_registry_jwt,
+)
 
 Activity = activity_plugin.activity_cls
 user_blueprint = Blueprint('user', __name__,)
@@ -538,6 +544,15 @@ def project_application_release_create(org_slug, project_slug, app_slug):
     db.session.add(activity)
     db.session.commit()
     return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
+
+
+@user_blueprint.route('/docker/auth')
+def docker_auth():
+    username, password = request.authorization.username, request.authorization.password
+    access = check_docker_credentials(password, secret=current_app.config['CABOTAGE_REGISTRY_AUTH_SECRET'], max_age=600)
+    if not access:
+        return jsonify({"error": "unauthorized"}), 401
+    return jsonify({'token': generate_docker_registry_jwt(access=access)})
 
 
 @user_blueprint.route('/build/submit', methods=['GET', 'POST'])

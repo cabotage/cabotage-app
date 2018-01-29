@@ -54,7 +54,7 @@ services:
       REGISTRY_STORAGE_S3_BUCKET: cabotage-registry
       REGISTRY_STORAGE_S3_ENCRYPT: "false"
     ports:
-      - "5001:5000"
+      - "5000:5000"
     volumes:
       - ./docker-compose/registry:/etc/docker/registry-local
   cabotage-dind:
@@ -76,3 +76,10 @@ services:
       - "9000:9000"
     volumes:
       - miniodata:/export
+  cabotage-app:
+    build: .
+    command: pipenv run python manage.py runserver -h 0.0.0.0 -p 8000
+    volumes:
+      - .:/opt/cabotage-app/src
+    ports:
+      - "8000:8000"

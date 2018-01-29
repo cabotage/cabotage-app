@@ -16,7 +16,7 @@ import docker
 import minio
 
 
-def build_image(tarfileobj, registry, docker_url, docker_secure, org_slug, project_slug, application_slug, version):
+def build_image(tarfileobj, registry, registry_username, registry_password, docker_url, docker_secure, org_slug, project_slug, application_slug, version):
     with ExitStack() as stack:
         temp_dir = stack.enter_context(TemporaryDirectory())
         tar_ball = stack.enter_context(TarFile(fileobj=tarfileobj, mode='r'))
@@ -74,6 +74,7 @@ def build_image(tarfileobj, registry, docker_url, docker_secure, org_slug, proje
                         sys.stderr.write(stream)
         image = client.images.get(f'{registry}/{tag}:{version}')
         print(image.id)
+        print(client.login(username=registry_username, password=registry_password, registry=registry)
         print(client.images.push(f'{registry}/{tag}', f'{version}'))
 
 
@@ -89,7 +90,8 @@ if __name__ == '__main__':
     @click.option('--docker-url', default='tcp://127.0.0.1:2375')
     @click.option('--docker-secure', default=False)
     @click.option('--registry', default='registry:5000')
-    @click.option('--registry-token', default=None)
+    @click.option('--registry-username', default=None)
+    @click.option('--registry-password', default=None)
     @click.option('--organization-slug', default='org')
     @click.option('--project-slug', default='proj')
     @click.option('--application-slug', default='app')
@@ -97,7 +99,7 @@ if __name__ == '__main__':
     def run_build(object_bucket, object_path,
                   minio_endpoint, minio_access_key, minio_secret_key, minio_secure,
                   docker_url, docker_secure,
-                  registry, registry_token,
+                  registry, registry_username, registry_password,
                   organization_slug, project_slug, application_slug, version):
         minio_client = minio.Minio(minio_endpoint, access_key=minio_access_key, secret_key=minio_secret_key, secure=minio_secure)
         try:
@@ -107,7 +109,7 @@ if __name__ == '__main__':
                     fp.write(chunk)
                 fp.seek(0)
                 with gzip.open(fp, 'rb') as fd:
-                    build_image(fd, registry, docker_url, docker_secure, organization_slug, project_slug, application_slug, version)
+                    build_image(fd, registry, registry_username, registry_password, docker_url, docker_secure, organization_slug, project_slug, application_slug, version)
             minio_client.remove_object(object_bucket, object_path)
         except Exception:
             raise

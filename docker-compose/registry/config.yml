@@ -1,7 +1,7 @@
 version: 0.1
 auth:
   token:
-    realm: http://cabotage-app:5001/auth
+    realm: http://cabotage-app:8000/docker/auth
     service: cabotage-registry
     issuer: cabotage-app
     rootcertbundle: /etc/docker/registry-local/public_key_bundle
