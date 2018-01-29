@@ -579,10 +579,10 @@ def build_submit():
             credentials = generate_docker_credentials(
                 secret=secret,
                 resource_type="repository",
-                resource_name=f"{org_slug}_{proj_slug}/{app_slug}",
-                resource_actions=["push"],
+                resource_name=f"cabotage/{org_slug}_{proj_slug}_{app_slug}",
+                resource_actions=["push", "pull"],
             )
-            return f'{response}, {(registry, credentials)}'
+            return f'{(minio.minio_bucket, response)}, {(registry, credentials)}'
     return '''
     <!doctype html>
     <title>Upload new File</title>

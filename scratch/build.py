@@ -74,7 +74,7 @@ def build_image(tarfileobj, registry, registry_username, registry_password, dock
                         sys.stderr.write(stream)
         image = client.images.get(f'{registry}/{tag}:{version}')
         print(image.id)
-        print(client.login(username=registry_username, password=registry_password, registry=registry)
+        print(client.login(username=registry_username, password=registry_password, registry=registry))
         print(client.images.push(f'{registry}/{tag}', f'{version}'))
 
 
