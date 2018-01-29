@@ -548,8 +548,9 @@ def project_application_release_create(org_slug, project_slug, app_slug):
 
 @user_blueprint.route('/docker/auth')
 def docker_auth():
+    secret = current_app.config['CABOTAGE_REGISTRY_AUTH_SECRET']
     username, password = request.authorization.username, request.authorization.password
-    access = check_docker_credentials(password, secret=current_app.config['CABOTAGE_REGISTRY_AUTH_SECRET'], max_age=600)
+    access = check_docker_credentials(password, secret=secret, max_age=600)
     if not access:
         return jsonify({"error": "unauthorized"}), 401
     return jsonify({'token': generate_docker_registry_jwt(access=access)})
@@ -573,7 +574,15 @@ def build_submit():
         fileobj = request.files['file']
         if fileobj:
             response = minio.write_object(org_slug, proj_slug, app_slug, fileobj)
-            return f'{response}, {generate_docker_registry_jwt()}, {(vault.signing_cert,)}'
+            secret = current_app.config['CABOTAGE_REGISTRY_AUTH_SECRET']
+            registry = current_app.config['CABOTAGE_REGISTRY']
+            credentials = generate_docker_credentials(
+                secret=secret,
+                resource_type="repository",
+                resource_name=f"{org_slug}_{proj_slug}/{app_slug}",
+                resource_actions=["push"],
+            )
+            return f'{response}, {(registry, credentials)}'
     return '''
     <!doctype html>
     <title>Upload new File</title>
