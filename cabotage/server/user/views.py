@@ -48,6 +48,8 @@ from cabotage.utils.docker_auth import (
     check_docker_credentials,
     generate_docker_credentials,
     generate_docker_registry_jwt,
+    parse_docker_scope,
+    docker_access_intersection,
 )
 
 from cabotage.celery.tasks import (
@@ -555,9 +557,12 @@ def project_application_release_create(org_slug, project_slug, app_slug):
 def docker_auth():
     secret = current_app.config['CABOTAGE_REGISTRY_AUTH_SECRET']
     username, password = request.authorization.username, request.authorization.password
-    access = check_docker_credentials(password, secret=secret, max_age=600)
-    if not access:
+    scope = request.args.get('scope', 'registry:catalog:*')
+    requested_access = parse_docker_scope(scope)
+    granted_access = check_docker_credentials(password, secret=secret, max_age=600)
+    if not granted_access:
         return jsonify({"error": "unauthorized"}), 401
+    access = docker_access_intersection(granted_access, requested_access)
     return jsonify({'token': generate_docker_registry_jwt(access=access)})
 
 

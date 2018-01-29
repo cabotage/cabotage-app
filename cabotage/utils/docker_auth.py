@@ -108,6 +108,31 @@ def _docker_credential_serializer(secret=None):
     return serializer
 
 
+def parse_docker_scope(scope_string):
+    scopes = []
+    for scope in scope_string.split(' '):
+        if len(scope.split(':')) == 3:
+            r_type, r_name, r_actions = scope.split(':')
+        elif len(scope.split(':')) > 3:
+            r_type, r_host, r_port, r_actions = scope.split(':')
+            r_name = f'{r_host}:{r_port}'
+        r_actions = r_actions.split(',')
+        scopes.append({"type": r_type, "name": r_name, "actions": r_actions})
+    return scopes
+
+
+def docker_access_intersection(scope0, scope1):
+    scope0 = {f'{x["type"]}:{x["name"]}': x["actions"] for x in scope0}
+    scope1 = {f'{x["type"]}:{x["name"]}': x["actions"] for x in scope1}
+    intersection = []
+    for key in (frozenset(scope0.keys()) & frozenset(scope1.keys())):
+        actions = list(frozenset(scope0[key]) & frozenset(scope1[key]))
+        if actions:
+            r_type, r_name = key.split(':', 1)
+            intersection.append({'type': r_type, 'name': r_name, 'actions': actions})
+    return intersection
+
+
 def generate_docker_credentials(secret=None, resource_type="registry", resource_name="catalog", resource_actions=None):
     if resource_actions is None:
         resource_actions = ["*"]
