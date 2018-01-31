@@ -11,7 +11,14 @@ from flask_script import Manager
 from flask_migrate import Migrate, MigrateCommand
 
 from cabotage.server import create_app, db
-from cabotage.server.models import User
+from cabotage.server.models import (
+    Organization,
+    User,
+)
+from cabotage.server.models.projects import (
+    Application,
+    Project,
+)
 
 # code coverage
 COV = coverage.coverage(
@@ -76,7 +83,21 @@ def drop_db():
 @manager.command
 def create_admin():
     """Creates the admin user."""
-    db.session.add(User(email='ad@min.com', password='admin', username='admin', admin=True))
+    user = User(email='ad@min.com', password='admin', username='admin', admin=True)
+    db.session.add(user)
+    db.session.flush()
+    db.session.flush()
+    org = Organization(name="Admin Organization", slug="admin-org")
+    org.add_user(user, admin=True)
+    db.session.add(org)
+    db.session.flush()
+    db.session.refresh(org)
+    proj = Project(name="Admin Project", slug="admin-proj", organization_id=org.id)
+    db.session.add(proj)
+    db.session.flush()
+    db.session.refresh(proj)
+    app = Application(name="Admin Application", slug="admin-app", project_id=proj.id)
+    db.session.add(app)
     db.session.commit()
 
 
