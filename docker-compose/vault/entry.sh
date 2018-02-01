@@ -35,6 +35,3 @@ else
     VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID vault write transit/restore/cabotage-app backup=`cat /etc/vault/cabotage-vault-key.backup`
     wait
 fi
-
-
-#["vault", "server", "-dev", "-dev-skip-init", "-config", "/etc/vault/config.hcl"]
