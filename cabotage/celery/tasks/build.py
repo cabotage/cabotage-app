@@ -81,7 +81,7 @@ def build_image(tarfileobj, registry, registry_username, registry_password, dock
 
 
 @celery.task()
-def run_build(object_bucket, object_path,
+def run_build(image_id, object_bucket, object_path,
               minio_endpoint, minio_access_key, minio_secret_key, minio_secure,
               docker_url, docker_secure,
               registry, registry_username, registry_password,

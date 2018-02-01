@@ -2,6 +2,7 @@ import json
 
 from citext import CIText
 from sqlalchemy import text, UniqueConstraint
+from sqlalchemy.event import listens_for
 from sqlalchemy.dialects import postgresql
 from sqlalchemy_continuum import make_versioned
 from sqlalchemy_utils.models import Timestamp
@@ -262,6 +263,65 @@ class Configuration(db.Model, Timestamp):
         }
 
 
+class Image(db.Model, Timestamp):
+
+    __versioned__ = {}
+    __tablename__ = 'project_app_images'
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True
+    )
+    application_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey('project_applications.id'),
+        nullable=False,
+    )
+
+    repository_name = db.Column(
+        db.String(256),
+        nullable=False,
+    )
+    image_id = db.Column(
+        db.String(256),
+        nullable=True,
+    )
+    version = db.Column(
+        db.Integer,
+        nullable=False,
+    )
+
+    version_id = db.Column(
+        db.Integer,
+        nullable=False,
+    )
+    built = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False
+    )
+    deleted = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False
+    )
+
+    __mapper_args__ = {
+        "version_id_col": version_id
+    }
+
+
+@listens_for(Image, 'before_insert')
+def image_before_insert_listener(mapper, connection, target):
+    most_recent_image = mapper.class_.query.filter_by(application_id=target.application_id).order_by(mapper.class_.version.desc()).first()
+    if most_recent_image is None:
+        target.version = 1
+    else:
+        target.version = most_recent_image.version + 1
+
+
 class Container(db.Model, Timestamp):
 
     __versioned__ = {}
@@ -280,16 +340,12 @@ class Container(db.Model, Timestamp):
         nullable=False,
     )
 
-    container_repository = db.Column(
-        db.String(256),
-        nullable=False,
-    )
     container_tag = db.Column(
         db.String(256),
         nullable=False,
     )
     container_image_id = db.Column(
-        db.String(128),
+        db.String(256),
         nullable=True,
     )
 
@@ -311,8 +367,6 @@ class Container(db.Model, Timestamp):
     def asdict(self):
         return {
             "id": str(self.id),
-            "container_repository": self.container_repository,
-            "container_tag": self.container_tag,
             "container_image_id": self.container_image_id,
             "version_id": self.version_id,
         }

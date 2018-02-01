@@ -2,7 +2,15 @@ from flask_security.forms import ConfirmRegisterForm, LoginForm, RegisterForm
 
 from flask_wtf import FlaskForm
 
-from wtforms import BooleanField, SelectField, StringField, FieldList, FormField, HiddenField
+from wtforms import (
+    BooleanField,
+    FieldList,
+    FileField,
+    FormField,
+    HiddenField,
+    SelectField,
+    StringField,
+)
 from wtforms.validators import (
     DataRequired,
     EqualTo,
@@ -261,21 +269,8 @@ class CreateContainerForm(FlaskForm):
         [DataRequired()],
         description="Application this Container belongs to.",
     )
-    container_repository = StringField(
-        u'Container Repository',
+    build_file = FileField(
+        u'Build File',
         [DataRequired()],
-        description="Public Container repository to pull from.",
+        description="Gzipped Tarball matching {documentation_url}.",
     )
-    container_tag = StringField(
-        u'Container Tag',
-        [DataRequired()],
-        description="Pull Container with this tag.",
-    )
-
-    def validate_application_id(form, field):
-        container = Container.query.filter_by(application_id=form.application_id.data).first()
-        if container is not None:
-            if form.application_id.data == str(container.application_id):
-                return True
-            raise ValidationError('Container already exists for Application, edit it instead!')
-        return True

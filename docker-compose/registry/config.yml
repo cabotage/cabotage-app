@@ -6,6 +6,7 @@ auth:
     issuer: cabotage-app
     rootcertbundle: /etc/docker/registry-local/public_key_bundle
 log:
+  level: debug
   fields:
     service: registry
 storage:

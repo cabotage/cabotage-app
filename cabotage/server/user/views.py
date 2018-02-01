@@ -30,6 +30,7 @@ from cabotage.server.models.projects import (
     Application,
     Configuration,
     Container,
+    Image,
     Release
 )
 from cabotage.server.models.projects import activity_plugin
@@ -452,40 +453,77 @@ def project_application_container(org_slug, project_slug, app_slug, container_id
 @user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/container/create', methods=['GET', 'POST'])
 @login_required
 def project_application_container_create(org_slug, project_slug, app_slug):
-    organization = Organization.query.filter_by(slug=org_slug).first()
-    if organization is None:
-        abort(404)
-    project = Project.query.filter_by(organization_id=organization.id, slug=project_slug).first()
-    if project is None:
-        abort(404)
-    application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
+    application = Application.query.filter_by(slug=app_slug).first()
     if application is None:
         abort(404)
+    project = application.project
+    organization = application.project.organization
 
     form = CreateContainerForm()
     form.application_id.choices = [(str(application.id), f'{organization.slug}/{project.slug}: {application.slug}')]
     form.application_id.data = str(application.id)
 
     if form.validate_on_submit():
-        container = Container(
-            application_id=form.application_id.data,
-            container_repository=form.container_repository.data,
-            container_tag=form.container_tag.data,
+        organization_slug = organization.slug
+        project_slug = project.slug
+        application_slug = application.slug
+        repository_name = f"cabotage/{organization_slug}_{project_slug}_{application_slug}"
+        image = Image(
+            application_id=application.id,
+            repository_name=repository_name,
         )
-        db.session.add(container)
-        db.session.flush()
-        activity = Activity(
-            verb='create',
-            object=container,
-            data={
-                'user_id': str(current_user.id),
-                'timestamp': datetime.datetime.utcnow().isoformat(),
-            }
-        )
-        db.session.add(activity)
-        db.session.commit()
+        db.session.add(image)
+
+        fileobj = request.files['build_file']
+        if fileobj:
+            response = minio.write_object(organization_slug, project_slug, application_slug, fileobj)
+            secret = current_app.config['CABOTAGE_REGISTRY_AUTH_SECRET']
+            registry = current_app.config['CABOTAGE_REGISTRY']
+            credentials = generate_docker_credentials(
+                secret=secret,
+                resource_type="repository",
+                resource_name=repository_name,
+                resource_actions=["push", "pull"],
+            )
+            db.session.flush()
+            activity = Activity(
+                verb='submit',
+                object=image,
+                data={
+                    'user_id': str(current_user.id),
+                    'timestamp': datetime.datetime.utcnow().isoformat(),
+                }
+            )
+            db.session.add(activity)
+            db.session.commit()
+            run_build.delay(image.id, minio.minio_bucket, response['path'],
+                            minio.minio_endpoint, minio.minio_access_key, minio.minio_secret_key, minio.minio_secure,
+                            'tcp://cabotage-dind:2375', False,
+                            registry, 'cabotage-builder', credentials,
+                            organization_slug, project_slug, application_slug, image.version)
         return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
     return render_template('user/project_application_container_create.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug)
+
+
+@user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/container/pull-secrets')
+@login_required
+def project_application_container_pull_secrets(org_slug, project_slug, app_slug):
+    application = Application.query.filter_by(slug=app_slug).first()
+    if application is None:
+        abort(404)
+    project = application.project
+    organization = application.project.organization
+
+    secret = current_app.config['CABOTAGE_REGISTRY_AUTH_SECRET']
+    registry = current_app.config['CABOTAGE_REGISTRY']
+    repository_name = f"cabotage/{organization.slug}_{project.slug}_{application.slug}"
+    credentials = generate_docker_credentials(
+        secret=secret,
+        resource_type="repository",
+        resource_name=repository_name,
+        resource_actions=["pull"],
+    )
+    return render_template('user/project_application_container_credentials.html', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug, credentials=credentials, registry=registry, repository=repository_name)
 
 
 @user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/container/<container_id>/edit', methods=['GET', 'POST'])
@@ -559,55 +597,11 @@ def docker_auth():
     username, password = request.authorization.username, request.authorization.password
     scope = request.args.get('scope', 'registry:catalog:*')
     requested_access = parse_docker_scope(scope)
-    granted_access = check_docker_credentials(password, secret=secret, max_age=600)
+    max_age = None
+    if 'push' in [action for access in requested_access for action in access['actions']]:
+        max_age = 600
+    granted_access = check_docker_credentials(password, secret=secret, max_age=max_age)
     if not granted_access:
         return jsonify({"error": "unauthorized"}), 401
     access = docker_access_intersection(granted_access, requested_access)
     return jsonify({'token': generate_docker_registry_jwt(access=access)})
-
-
-@user_blueprint.route('/build/submit', methods=['GET', 'POST'])
-@login_required
-def build_submit():
-    if request.method == 'POST':
-        # TODO: check for org/project/application access
-        # TODO: convert to WTForm and Template
-        if 'file' not in request.files:
-            flash('No file part')
-            return redirect(request.url)
-        if 'organization' not in request.form or 'project' not in request.form or 'application' not in request.form:
-            flash('Must supply organization, project, and application')
-            return redirect(request.url)
-        org_slug = request.form['organization']
-        proj_slug = request.form['project']
-        app_slug = request.form['application']
-        version = 99
-        fileobj = request.files['file']
-        if fileobj:
-            response = minio.write_object(org_slug, proj_slug, app_slug, fileobj)
-            secret = current_app.config['CABOTAGE_REGISTRY_AUTH_SECRET']
-            registry = current_app.config['CABOTAGE_REGISTRY']
-            credentials = generate_docker_credentials(
-                secret=secret,
-                resource_type="repository",
-                resource_name=f"cabotage/{org_slug}_{proj_slug}_{app_slug}",
-                resource_actions=["push", "pull"],
-            )
-            run_build.delay(minio.minio_bucket, response['path'],
-                            minio.minio_endpoint, minio.minio_access_key, minio.minio_secret_key, minio.minio_secure,
-                            'tcp://cabotage-dind:2375', False,
-                            registry, 'cabotage-builder', credentials,
-                            org_slug, proj_slug, app_slug, version)
-            return f'{(minio.minio_bucket, response)}, {(registry, credentials)}'
-    return '''
-    <!doctype html>
-    <title>Upload new File</title>
-    <h1>Upload new File</h1>
-    <form method=post enctype=multipart/form-data>
-      <p>Organization<input type=text name=organization>
-      <p>Project<input type=text name=project>
-      <p>Application<input type=text name=application>
-      <p><input type=file name=file>
-         <input type=submit value=Upload>
-    </form>
-    '''
