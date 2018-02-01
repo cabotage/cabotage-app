@@ -13,11 +13,15 @@ from tempfile import (
 )
 
 import docker
+import procfile
 
 from flask import current_app
 
-from cabotage.server import celery
-from cabotage.server import minio
+from cabotage.server import (
+    db,
+    celery,
+    minio,
+)
 
 from cabotage.server.models.projects import Image
 
@@ -30,7 +34,10 @@ from cabotage.utils.docker_auth import (
 )
 
 
-def build_image(tarfileobj, registry, registry_username, registry_password, docker_url, docker_secure, org_slug, project_slug, application_slug, version):
+def build_image(tarfileobj, registry, registry_username, registry_password,
+                docker_url, docker_secure,
+                org_slug, project_slug, application_slug,
+                repository, version):
     with ExitStack() as stack:
         temp_dir = stack.enter_context(TemporaryDirectory())
         tar_ball = stack.enter_context(TarFile(fileobj=tarfileobj, mode='r'))
@@ -61,6 +68,13 @@ def build_image(tarfileobj, registry, registry_username, registry_password, dock
                 'must include a Procfile in top level of archive'
             )
         tar_ball.extractall(path=temp_dir, numeric_owner=False)
+        with open(os.path.join(temp_dir, 'Procfile'), 'rU') as image_procfile:
+            try:
+                processes = procfile.loads(image_procfile.read())
+            except ValueError as exc:
+                raise RuntimeError(
+                    'error parsing Procfile: {exc}'
+                )
         shutil.copy(
             'envconsul-linux-amd64',
             os.path.join(temp_dir, 'envconsul-linux-amd64'),
@@ -68,10 +82,9 @@ def build_image(tarfileobj, registry, registry_username, registry_password, dock
         with open(os.path.join(temp_dir, 'Dockerfile'), 'a') as fd:
             fd.write(f'COPY envconsul-linux-amd64 /usr/bin/envconsul\n')
         client = docker.DockerClient(base_url=docker_url, tls=docker_secure)
-        tag = f'cabotage/{org_slug}/{project_slug}/{application_slug}'
         response = client.api.build(
             path=temp_dir,
-            tag=f'{registry}/{tag}:{version}',
+            tag=f'{registry}/{repository}:{version}',
             rm=True,
             forcerm=True,
             dockerfile="Dockerfile",
@@ -84,12 +97,18 @@ def build_image(tarfileobj, registry, registry_username, registry_password, dock
                     aux = payload.get('aux')
                     stream = payload.get('stream')
                     status = payload.get('status')
-        image = client.images.get(f'{registry}/{tag}:{version}')
-        print(image.id)
-        client.login(username=registry_username, password=registry_password, registry=registry)
-        client.images.push(f'{registry}/{tag}', f'{version}')
-        image = client.images.get(f'{registry}/{tag}:{version}')
-        print(image.id)
+        image = client.images.get(f'{registry}/{repository}:{version}')
+        client.login(
+            username=registry_username,
+            password=registry_password,
+            registry=registry,
+        )
+        client.images.push(f'{registry}/{repository}', f'{version}')
+        image = client.images.get(f'{registry}/{repository}:{version}')
+        return {
+            'image_id': image.id,
+            'processes': processes,
+        }
 
 
 @celery.task()
@@ -117,10 +136,15 @@ def run_build(image_id=None):
                 fp.write(chunk)
             fp.seek(0)
             with gzip.open(fp, 'rb') as fd:
-                build_image(
+                build_metadata = build_image(
                     fd, registry, 'cabotage-builder', credentials,
                     'tcp://cabotage-dind:2375', False,
-                    organization_slug, project_slug, application_slug, image.version
+                    organization_slug, project_slug,
+                    application_slug, image.repository_name, image.version
                 )
+        image.image_id = build_metadata['image_id']
+        image.processes = build_metadata['processes']
+        image.built = True
+        db.session.commit()
     except Exception:
         raise
