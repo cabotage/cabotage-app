@@ -467,24 +467,17 @@ def project_application_container_create(org_slug, project_slug, app_slug):
         organization_slug = organization.slug
         project_slug = project.slug
         application_slug = application.slug
-        repository_name = f"cabotage/{organization_slug}_{project_slug}_{application_slug}"
-        image = Image(
-            application_id=application.id,
-            repository_name=repository_name,
-        )
-        db.session.add(image)
+        repository_name = f"cabotage/{organization_slug}/{project_slug}/{application_slug}"
 
         fileobj = request.files['build_file']
         if fileobj:
-            response = minio.write_object(organization_slug, project_slug, application_slug, fileobj)
-            secret = current_app.config['CABOTAGE_REGISTRY_AUTH_SECRET']
-            registry = current_app.config['CABOTAGE_REGISTRY']
-            credentials = generate_docker_credentials(
-                secret=secret,
-                resource_type="repository",
-                resource_name=repository_name,
-                resource_actions=["push", "pull"],
+            minio_response = minio.write_object(organization_slug, project_slug, application_slug, fileobj)
+            image = Image(
+                application_id=application.id,
+                repository_name=repository_name,
+                build_slug=minio_response['path'],
             )
+            db.session.add(image)
             db.session.flush()
             activity = Activity(
                 verb='submit',
@@ -496,11 +489,7 @@ def project_application_container_create(org_slug, project_slug, app_slug):
             )
             db.session.add(activity)
             db.session.commit()
-            run_build.delay(image.id, minio.minio_bucket, response['path'],
-                            minio.minio_endpoint, minio.minio_access_key, minio.minio_secret_key, minio.minio_secure,
-                            'tcp://cabotage-dind:2375', False,
-                            registry, 'cabotage-builder', credentials,
-                            organization_slug, project_slug, application_slug, image.version)
+            run_build.delay(image_id=image.id)
         return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
     return render_template('user/project_application_container_create.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug)
 
@@ -516,7 +505,7 @@ def project_application_container_pull_secrets(org_slug, project_slug, app_slug)
 
     secret = current_app.config['CABOTAGE_REGISTRY_AUTH_SECRET']
     registry = current_app.config['CABOTAGE_REGISTRY']
-    repository_name = f"cabotage/{organization.slug}_{project.slug}_{application.slug}"
+    repository_name = f"cabotage/{organization.slug}/{project.slug}/{application.slug}"
     credentials = generate_docker_credentials(
         secret=secret,
         resource_type="repository",

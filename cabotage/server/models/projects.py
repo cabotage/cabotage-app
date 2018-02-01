@@ -81,6 +81,12 @@ class Application(db.Model, Timestamp):
     slug = db.Column(CIText(), nullable=False)
     platform = db.Column(platform_version, nullable=False, default='wind')
 
+    images = db.relationship(
+        "Image",
+        backref="application",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
     container = db.relationship(
         "Container",
         backref="application",
@@ -306,6 +312,14 @@ class Image(db.Model, Timestamp):
         db.Boolean,
         nullable=False,
         default=False
+    )
+    build_slug = db.Column(
+        db.String(1024),
+        nullable=False,
+    )
+    processes = db.Column(
+        postgresql.JSONB(),
+        nullable=True,
     )
 
     __mapper_args__ = {

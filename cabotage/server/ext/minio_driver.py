@@ -64,6 +64,21 @@ class MinioDriver(object):
         )
         return {'etag': etag, 'path': path}
 
+    def get_object(self, org_slug, proj_slug, app_slug, fileobj):
+        fileobj.seek(0, os.SEEK_END)
+        file_length = fileobj.tell()
+        fileobj.seek(0)
+        self.create_bucket()
+        path = f'{self.minio_prefix}/{org_slug}/{proj_slug}/{app_slug}/{secrets.token_urlsafe(8)}.tar.gz'
+        etag = self.minio_connection.put_object(
+            self.minio_bucket,
+            path,
+            fileobj,
+            file_length,
+            'application/tar+gzip',
+        )
+        return {'etag': etag, 'path': path}
+
     @property
     def minio_connection(self):
         ctx = stack.top
