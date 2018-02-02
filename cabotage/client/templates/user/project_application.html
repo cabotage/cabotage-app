@@ -134,46 +134,39 @@
           </table>
           {% endif %}
         </div>
+      </div>
     </div>
     <div class="row">
       <div class="col-md-8">
-        <h3>Container</h3>
+        <h3>Images</h3>
         <table class="table table-striped">
           <tr>
-            <th>Repository</th>
-            <th>Tag</th>
-            <th style="white-space: nowrap; width: 1%;"></th>
-            <th style="white-space: nowrap; width: 1%;"></th>
+            <th>Version</th>
+            <th>Built</th>
+            <th>Updated</th>
+            <th style="white-space: nowrap; width: 1%;">Details</th>
           </tr>
-         {% if application.container %}
-         {% set container = application.container %}
+          {% for image in application.images.order_by("version DESC").limit(5) %}
           <tr>
-            <td>
-              <pre style="margin: 0px;">{{ container.container_repository }}</pre>
-            </td>
-            <td>
-              <pre style="margin: 0px;">{{ container.container_tag }}</pre>
-            </td>
-            <td style="white-space: nowrap; width: 1%;">
-              <a class="btn btn-sm btn-link narrow" href="{{ url_for('user.project_application_container_edit', org_slug=container.application.project.organization.slug, project_slug=container.application.project.slug, app_slug=container.application.slug, container_id=container.id) }}">
-                <span class="glyphicon glyphicon-pencil"></span>
-              </a>
-            </td>
-            <td style="white-space: nowrap; width: 1%;">
-              <a class="btn btn-sm btn-link narrow icon-flipped" href="{{ url_for('user.project_application_container', org_slug=container.application.project.organization.slug, project_slug=container.application.project.slug, app_slug=container.application.slug, container_id=container.id) }}">
-                <span class="glyphicon glyphicon-refresh"></span>
-              </a>
-            </td>
+            <td><code>{{ image.version }}</code></td>
+            {% if image.built %}
+            <td><span class="glyphicon glyphicon glyphicon-ok-sign text-success"></span></td>
+            {% elif image.error %}
+            <td><span class="glyphicon glyphicon-exclamation-sign text-danger"></span></td>
+            {% else %}
+            <td><span class="glyphicon glyphicon-question-sign text-info"></span></td>
+            {% endif %}
+            <td>{{ image.updated |humanize }}</td>
+            <td><a class="btn btn-info" href="#"><span class="glyphicon glyphicon-search"></a></td>
           </tr>
-          {% else %}
+          {% endfor %}
           <tr>
             <td class="right" colspan="4">
-              <a class="btn btn-primary" href="{{ url_for('user.project_application_container_create', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}">
-                Add New Container
+              <a class="btn btn-primary" href="{{ url_for('user.project_application_image_build_submit', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}">
+                Submit New Image Build
               </a>
             </td>
           </tr>
-          {% endif %}
         </table>
       </div>
     </div>

@@ -84,8 +84,8 @@ class Application(db.Model, Timestamp):
     images = db.relationship(
         "Image",
         backref="application",
-        uselist=False,
         cascade="all, delete-orphan",
+        lazy="dynamic",
     )
     container = db.relationship(
         "Container",
@@ -307,6 +307,15 @@ class Image(db.Model, Timestamp):
         db.Boolean,
         nullable=False,
         default=False
+    )
+    error = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False
+    )
+    error_detail = db.Column(
+        db.String(2048),
+        nullable=True,
     )
     deleted = db.Column(
         db.Boolean,

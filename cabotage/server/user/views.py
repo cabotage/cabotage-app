@@ -452,7 +452,7 @@ def project_application_container(org_slug, project_slug, app_slug, container_id
 
 @user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/container/create', methods=['GET', 'POST'])
 @login_required
-def project_application_container_create(org_slug, project_slug, app_slug):
+def project_application_image_build_submit(org_slug, project_slug, app_slug):
     application = Application.query.filter_by(slug=app_slug).first()
     if application is None:
         abort(404)
@@ -491,7 +491,7 @@ def project_application_container_create(org_slug, project_slug, app_slug):
             db.session.commit()
             run_build.delay(image_id=image.id)
         return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
-    return render_template('user/project_application_container_create.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug)
+    return render_template('user/project_application_image_build_submit.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug)
 
 
 @user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/container/pull-secrets')

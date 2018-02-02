@@ -34,6 +34,10 @@ from cabotage.utils.docker_auth import (
 )
 
 
+class BuildError(RuntimeError):
+    pass
+
+
 def build_image(tarfileobj, registry, registry_username, registry_password,
                 docker_url, docker_secure,
                 org_slug, project_slug, application_slug,
@@ -43,13 +47,13 @@ def build_image(tarfileobj, registry, registry_username, registry_password,
         tar_ball = stack.enter_context(TarFile(fileobj=tarfileobj, mode='r'))
         for tarinfo in tar_ball:
             if os.path.normpath(tarinfo.name).startswith((os.sep, '/', '..')):
-                raise RuntimeError(
+                raise BuildError(
                     ('refusing to touch sketchy tarball, '
                      'no relative paths outside of root directory allowed '
                      f'{tarinfo.name} exits top level directory')
                 )
             if not (tarinfo.isfile() or tarinfo.isdir()):
-                raise RuntimeError(
+                raise BuildError(
                     ('refusing to touch sketchy tarball, '
                      'only regular files and directories allowed '
                      f'{tarinfo.name} is not a regular file or directory')
@@ -57,14 +61,14 @@ def build_image(tarfileobj, registry, registry_username, registry_password,
         try:
             tar_ball.getmember('./Dockerfile')
         except KeyError:
-            raise RuntimeError(
+            raise BuildError(
                 ('must include a Dockerfile or Dockerfile.cabotage '
                  'in top level of archive')
             )
         try:
             tar_ball.getmember('./Procfile')
         except KeyError:
-            raise RuntimeError(
+            raise BuildError(
                 'must include a Procfile in top level of archive'
             )
         tar_ball.extractall(path=temp_dir, numeric_owner=False)
@@ -72,8 +76,8 @@ def build_image(tarfileobj, registry, registry_username, registry_password,
             try:
                 processes = procfile.loads(image_procfile.read())
             except ValueError as exc:
-                raise RuntimeError(
-                    'error parsing Procfile: {exc}'
+                raise BuildError(
+                    f'error parsing Procfile: {exc}'
                 )
         shutil.copy(
             'envconsul-linux-amd64',
@@ -97,6 +101,13 @@ def build_image(tarfileobj, registry, registry_username, registry_password,
                     aux = payload.get('aux')
                     stream = payload.get('stream')
                     status = payload.get('status')
+                    error = payload.get('error')
+                    if error is not None:
+                        errorDetail = payload.get('errorDetail', {})
+                        message = errorDetail.get('message', 'unknown error')
+                        raise BuildError(
+                            f'Error building image: {message}'
+                        )
         image = client.images.get(f'{registry}/{repository}:{version}')
         client.login(
             username=registry_username,
@@ -135,17 +146,21 @@ def run_build(image_id=None):
                 fp.write(chunk)
             fp.seek(0)
             with gzip.open(fp, 'rb') as fd:
-                build_metadata = build_image(
-                    fd, registry, 'cabotage-builder', credentials,
-                    docker_url, docker_secure,
-                    image.application.project.organization.slug,
-                    image.application.project.slug,
-                    image.application.slug,
-                    image.repository_name, image.version
-                )
-        image.image_id = build_metadata['image_id']
-        image.processes = build_metadata['processes']
-        image.built = True
+                try:
+                    build_metadata = build_image(
+                        fd, registry, 'cabotage-builder', credentials,
+                        docker_url, docker_secure,
+                        image.application.project.organization.slug,
+                        image.application.project.slug,
+                        image.application.slug,
+                        image.repository_name, image.version
+                    )
+                    image.image_id = build_metadata['image_id']
+                    image.processes = build_metadata['processes']
+                    image.built = True
+                except BuildError as exc:
+                    image.error = True
+                    image.error_detail = str(exc)
         db.session.commit()
     except Exception:
         raise

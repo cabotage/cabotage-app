@@ -8,14 +8,14 @@
 <div class="container-fluid clearfix" id="content">
   <div class="row">
     <div class="col-md-4 col-md-offset-4 col-sm-8 col-xs-8 col-xs-offset-2 col-sm-offset-2">
-      <h1>Submit Build</h1>
-      <form action="{{ url_for('user.project_application_container_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}" method="POST" name="project_application_container_create_form" enctype="multipart/form-data">
+      <h1>Submit Image Build</h1>
+      <form action="{{ url_for('user.project_application_image_build_submit', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}" method="POST" name="project_application_image_build_submit_form" enctype="multipart/form-data">
         {{ form.hidden_tag() }}
         {{ form_field(form.application_id, disabled="disabled") }}
         {{ form_field(form.build_file) }}
         <div class="row">
           <div class="col-md-6">
-            {{ form_button(form.submit, "Submit Container for Build", method="POST", class="btn btn-primary") }}
+            {{ form_button(form.submit, "Submit Image for Build", method="POST", class="btn btn-primary") }}
           </div>
           <div class="col-md-6">
             <a class="btn btn-info pull-right" onclick="window.history.back()">Cancel</a>
