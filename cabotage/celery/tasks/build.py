@@ -119,10 +119,10 @@ def build_image(tarfileobj, image,
                             f'Error building image: {message}'
                         )
                     log_lines.append(json.dumps(payload))
-        if build_errored:
-            raise BuildError(build_errored)
         image.image_build_log = '\n'.join(log_lines)
         db.session.commit()
+        if build_errored:
+            raise BuildError(build_errored)
         built_image = client.images.get(
             f'{registry}/{image.repository_name}:{image.version}'
         )

@@ -146,7 +146,7 @@
           </div>
         </div>
         {% endif %}
-        {% if application.latest_image_error and application.latest_image_error.version|default(0) > application.latest_imagei.version|default(0) %}
+        {% if application.latest_image_error and application.latest_image_error.version|default(0) > application.latest_image.version|default(0) %}
         <div class="col-md-12">
           <div class="row alert alert-danger">
             <a class="text-danger" href="{{ url_for('user.image_detail', image_id=application.latest_image_error.id) }}">Latest Image Build #{{ application.latest_image_error.version }} Failed! Take a closer look! <span class="glyphicon glyphicon-search"></span></a>
