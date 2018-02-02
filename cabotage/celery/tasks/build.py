@@ -38,10 +38,9 @@ class BuildError(RuntimeError):
     pass
 
 
-def build_image(tarfileobj, registry, registry_username, registry_password,
-                docker_url, docker_secure,
-                org_slug, project_slug, application_slug,
-                repository, version):
+def build_image(tarfileobj, image,
+                registry, registry_username, registry_password,
+                docker_url, docker_secure):
     with ExitStack() as stack:
         temp_dir = stack.enter_context(TemporaryDirectory())
         tar_ball = stack.enter_context(TarFile(fileobj=tarfileobj, mode='r'))
@@ -72,23 +71,29 @@ def build_image(tarfileobj, registry, registry_username, registry_password,
                 'must include a Procfile in top level of archive'
             )
         tar_ball.extractall(path=temp_dir, numeric_owner=False)
-        with open(os.path.join(temp_dir, 'Procfile'), 'rU') as image_procfile:
-            try:
-                processes = procfile.loads(image_procfile.read())
-            except ValueError as exc:
-                raise BuildError(
-                    f'error parsing Procfile: {exc}'
-                )
+        with open(os.path.join(temp_dir, 'Procfile'), 'rU') as img_procfile:
+            procfile_body = img_procfile.read()
+        with open(os.path.join(temp_dir, 'Dockerfile'), 'a') as fd:
+            fd.write(f'COPY envconsul-linux-amd64 /usr/bin/envconsul\n')
+        with open(os.path.join(temp_dir, 'Dockerfile'), 'rU') as img_dockerfile:
+            dockerfile_body = img_dockerfile.read()
+        image.dockerfile = dockerfile_body
+        image.procfile = procfile_body
+        db.session.commit()
+        try:
+            processes = procfile.loads(procfile_body)
+        except ValueError as exc:
+            raise BuildError(
+                f'error parsing Procfile: {exc}'
+            )
         shutil.copy(
             'envconsul-linux-amd64',
             os.path.join(temp_dir, 'envconsul-linux-amd64'),
         )
-        with open(os.path.join(temp_dir, 'Dockerfile'), 'a') as fd:
-            fd.write(f'COPY envconsul-linux-amd64 /usr/bin/envconsul\n')
         client = docker.DockerClient(base_url=docker_url, tls=docker_secure)
         response = client.api.build(
             path=temp_dir,
-            tag=f'{registry}/{repository}:{version}',
+            tag=f'{registry}/{image.repository_name}:{image.version}',
             rm=True,
             forcerm=True,
             dockerfile="Dockerfile",
@@ -98,9 +103,9 @@ def build_image(tarfileobj, registry, registry_username, registry_password,
                 if line:
                     payload = json.loads(line.decode())
                     sys.stderr.write(json.dumps(payload))
-                    aux = payload.get('aux')
                     stream = payload.get('stream')
                     status = payload.get('status')
+                    aux = payload.get('aux')
                     error = payload.get('error')
                     if error is not None:
                         errorDetail = payload.get('errorDetail', {})
@@ -108,17 +113,26 @@ def build_image(tarfileobj, registry, registry_username, registry_password,
                         raise BuildError(
                             f'Error building image: {message}'
                         )
-        image = client.images.get(f'{registry}/{repository}:{version}')
+        built_image = client.images.get(
+            f'{registry}/{image.repository_name}:{image.version}'
+        )
         client.login(
             username=registry_username,
             password=registry_password,
             registry=registry,
         )
-        client.images.push(f'{registry}/{repository}', f'{version}')
-        image = client.images.get(f'{registry}/{repository}:{version}')
+        client.images.push(
+            f'{registry}/{image.repository_name}',
+            f'{image.version}'
+        )
+        pushed_image = client.images.get(
+            f'{registry}/{image.repository_name}:{image.version}'
+        )
         return {
-            'image_id': image.id,
+            'image_id': pushed_image.id,
             'processes': processes,
+            'dockerfile': dockerfile_body,
+            'procfile': procfile_body,
         }
 
 
@@ -148,12 +162,9 @@ def run_build(image_id=None):
             with gzip.open(fp, 'rb') as fd:
                 try:
                     build_metadata = build_image(
-                        fd, registry, 'cabotage-builder', credentials,
-                        docker_url, docker_secure,
-                        image.application.project.organization.slug,
-                        image.application.project.slug,
-                        image.application.slug,
-                        image.repository_name, image.version
+                        fd, image,
+                        registry, 'cabotage-builder', credentials,
+                        docker_url, docker_secure
                     )
                     image.image_id = build_metadata['image_id']
                     image.processes = build_metadata['processes']

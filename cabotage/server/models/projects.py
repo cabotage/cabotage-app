@@ -326,6 +326,14 @@ class Image(db.Model, Timestamp):
         db.String(1024),
         nullable=False,
     )
+    dockerfile = db.Column(
+        db.Text(),
+        nullable=True,
+    )
+    procfile = db.Column(
+        db.Text(),
+        nullable=True,
+    )
     processes = db.Column(
         postgresql.JSONB(),
         nullable=True,
