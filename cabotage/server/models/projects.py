@@ -169,6 +169,14 @@ class Application(db.Model, Timestamp):
     def latest_image(self):
         return self.images.filter_by(built=True).order_by(Image.version.desc()).first()
 
+    @property
+    def latest_image_error(self):
+        return self.images.filter_by(error=True).order_by(Image.version.desc()).first()
+
+    @property
+    def latest_image_building(self):
+        return self.images.filter_by(built=False, error=False).order_by(Image.version.desc()).first()
+
     UniqueConstraint(project_id, slug)
 
     __mapper_args__ = {
@@ -344,6 +352,10 @@ class Image(db.Model, Timestamp):
     )
     image_metadata = db.Column(
         postgresql.JSONB(),
+        nullable=True,
+    )
+    image_build_log = db.Column(
+        db.Text(),
         nullable=True,
     )
 

@@ -98,6 +98,8 @@ def build_image(tarfileobj, image,
             forcerm=True,
             dockerfile="Dockerfile",
         )
+        build_errored = False
+        log_lines = []
         for chunk in response:
             for line in chunk.split(b'\r\n'):
                 if line:
@@ -105,14 +107,22 @@ def build_image(tarfileobj, image,
                     sys.stderr.write(json.dumps(payload))
                     stream = payload.get('stream')
                     status = payload.get('status')
+                    if status:
+                        if payload.get('progressDetail'):
+                            continue
                     aux = payload.get('aux')
                     error = payload.get('error')
                     if error is not None:
                         errorDetail = payload.get('errorDetail', {})
                         message = errorDetail.get('message', 'unknown error')
-                        raise BuildError(
+                        build_errored = (
                             f'Error building image: {message}'
                         )
+                    log_lines.append(json.dumps(payload))
+        if build_errored:
+            raise BuildError(build_errored)
+        image.image_build_log = '\n'.join(log_lines)
+        db.session.commit()
         built_image = client.images.get(
             f'{registry}/{image.repository_name}:{image.version}'
         )
