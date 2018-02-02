@@ -1,0 +1,84 @@
+{% extends "_base.html" %}
+
+{% block content %}
+  <div class="container" id="content">
+    <div class="row">
+      <div class="col-md-9">
+        <h2>Information</h2>
+        <table class="table">
+          <tr>
+            <th>Repository</th>
+            <td><code>{{ image.repository_name }}</code></td>
+          </tr>
+          <tr>
+            <th>Tag</th>
+            <td><code>{{ image.version }}</code></td>
+          </tr>
+          <tr>
+            <th>Identifier</th>
+            <td><code>{{ image.image_id }}</code></td>
+          </tr>
+          <tr>
+            <th>Status</th>
+            {% if image.built %}
+            <td><span class="glyphicon glyphicon glyphicon-ok-sign text-success"></span> Built</td>
+            {% elif image.error %}
+            <td><span class="glyphicon glyphicon-exclamation-sign text-danger"></span> Error</td>
+            {% else %}
+            <td><span class="glyphicon glyphicon-question-sign text-info"></span> Building...</td>
+            {% endif %}
+          </tr>
+          <tr>
+            <th>Submitted</th>
+            <td>{{ image.created|humanize }}</td>
+          </tr>
+          <tr>
+            <th>Updated </th>
+            <td>{{ image.updated|humanize }}</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+    {% if image.error %}
+    <div class="row">
+      <div class="alert alert-danger col-md-9">
+        <p>Error Building Image</p>
+        <pre>{{ image.error_detail }}</pre>
+      </div>
+    </div>
+    {% endif %}
+    {% if image.processes %}
+    <div class="row">
+      <div class="col-md-9">
+        <h3>Processes</h3>
+        <table class="table">
+            <tr>
+              <th>Name</th>
+              <th>Command</th>
+              <th>Environment</th>
+            </tr>
+            {% for process, info in image.processes.items() %}
+            <tr>
+              <td><code>{{ process }}</code></td>
+              <td><code>{{ info['cmd'] }}</code></td>
+              <td><code>{{ info['env'] }}</code></td>
+            </tr>
+            {% endfor %}
+        </table>
+      </div>
+    </div>
+    {% endif %}
+    <div class="row">
+      <div class="col-md-9">
+        <h3>Dockerfile</h3>
+        <pre>{{ image.dockerfile }}</pre>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-md-9">
+        <h3>Procfile</h3>
+        <pre>{{ image.procfile }}</pre>
+      </div>
+    </div>
+  </div>
+{% endblock %}

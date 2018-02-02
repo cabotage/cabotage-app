@@ -157,7 +157,7 @@
             <td><span class="glyphicon glyphicon-question-sign text-info"></span></td>
             {% endif %}
             <td>{{ image.updated |humanize }}</td>
-            <td><a class="btn btn-info" href="#"><span class="glyphicon glyphicon-search"></a></td>
+            <td><a class="btn btn-info" href="{{ url_for('user.image_detail', image_id=image.id) }}"><span class="glyphicon glyphicon-search"></a></td>
           </tr>
           {% endfor %}
           <tr>

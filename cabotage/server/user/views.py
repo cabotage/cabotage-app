@@ -494,6 +494,15 @@ def project_application_image_build_submit(org_slug, project_slug, app_slug):
     return render_template('user/project_application_image_build_submit.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug)
 
 
+@user_blueprint.route('/image/<image_id>')
+@login_required
+def image_detail(image_id):
+    image = Image.query.filter_by(id=image_id).first()
+    if image is None:
+        abort(404)
+    return render_template('user/image_detail.html', image=image)
+
+
 @user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/container/pull-secrets')
 @login_required
 def project_application_container_pull_secrets(org_slug, project_slug, app_slug):
