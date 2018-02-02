@@ -116,6 +116,8 @@ def run_build(image_id=None):
     secret = current_app.config['CABOTAGE_REGISTRY_AUTH_SECRET']
     registry = current_app.config['CABOTAGE_REGISTRY']
     object_bucket = current_app.config['CABOTAGE_MINIO_BUCKET']
+    docker_url = current_app.config['CABOTAGE_DOCKER_URL']
+    docker_secure = current_app.config['CABOTAGE_DOCKER_SECURE']
     image = Image.query.filter_by(id=image_id).first()
     if image is None:
         raise KeyError(f'Image with ID {image_id} not found!')
@@ -125,9 +127,6 @@ def run_build(image_id=None):
         resource_name=image.repository_name,
         resource_actions=["push", "pull"],
     )
-    application_slug = image.application.slug
-    project_slug = image.application.project.slug
-    organization_slug = image.application.project.organization.slug
     minio_client = minio.minio_connection
     try:
         data = minio_client.get_object(object_bucket, image.build_slug)
@@ -138,9 +137,11 @@ def run_build(image_id=None):
             with gzip.open(fp, 'rb') as fd:
                 build_metadata = build_image(
                     fd, registry, 'cabotage-builder', credentials,
-                    'tcp://cabotage-dind:2375', False,
-                    organization_slug, project_slug,
-                    application_slug, image.repository_name, image.version
+                    docker_url, docker_secure,
+                    image.application.project.organization.slug,
+                    image.application.project.slug,
+                    image.application.slug,
+                    image.repository_name, image.version
                 )
         image.image_id = build_metadata['image_id']
         image.processes = build_metadata['processes']

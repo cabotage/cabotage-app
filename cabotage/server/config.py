@@ -48,6 +48,8 @@ class BaseConfig(object):
     CABOTAGE_REGISTRY = 'registry:5000'
     CABOTAGE_REGISTRY_SECURE = False
     CABOTAGE_REGISTRY_AUTH_SECRET = 'v3rys3cur3'
+    CABOTAGE_DOCKER_URL = 'tcp://cabotage-dind:2375'
+    CABOTAGE_DOCKER_SECURE = False
     CABOTAGE_MINIO_ENDPOINT = 'minio:9000'
     CABOTAGE_MINIO_BUCKET = 'cabotage-registry'
     CABOTAGE_MINIO_ACCESS_KEY = 'MINIOACCESSKEY'
