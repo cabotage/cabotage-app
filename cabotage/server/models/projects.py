@@ -165,6 +165,10 @@ class Application(db.Model, Timestamp):
             return True
         return False
 
+    @property
+    def latest_image(self):
+        return self.images.filter_by(built=True).order_by(Image.version.desc()).first()
+
     UniqueConstraint(project_id, slug)
 
     __mapper_args__ = {
@@ -338,10 +342,22 @@ class Image(db.Model, Timestamp):
         postgresql.JSONB(),
         nullable=True,
     )
+    image_metadata = db.Column(
+        postgresql.JSONB(),
+        nullable=True,
+    )
 
     __mapper_args__ = {
         "version_id_col": version_id
     }
+
+    def asdict(self):
+        return {
+            "id": str(self.id),
+            "repository": self.repository_name,
+            "tag": str(self.version),
+            "processes": self.processes,
+        }
 
 
 @listens_for(Image, 'before_insert')

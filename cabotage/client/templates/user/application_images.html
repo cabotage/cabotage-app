@@ -1,0 +1,32 @@
+{% extends "_base.html" %}
+{% from "bootstrap/utils.html" import form_button %}
+{% block content %}
+  <div class="container" id="content">
+    <div class="row">
+      <div class="col-md-8">
+        <h3>Images</h3>
+        <table class="table table-striped">
+          <tr>
+            <th>Version</th>
+            <th>Built</th>
+            <th>Updated</th>
+            <th style="white-space: nowrap; width: 1%;">Details</th>
+          </tr>
+          {% for image in images %}
+          <tr>
+            <td><code>{{ image.version }}</code></td>
+            {% if image.built %}
+            <td><span class="glyphicon glyphicon glyphicon-ok-sign text-success"></span></td>
+            {% elif image.error %}
+            <td><span class="glyphicon glyphicon-exclamation-sign text-danger"></span></td>
+            {% else %}
+            <td><span class="glyphicon glyphicon-question-sign text-info"></span></td>
+            {% endif %}
+            <td>{{ image.updated |humanize }}</td>
+            <td><a class="btn btn-info" href="{{ url_for('user.image_detail', image_id=image.id) }}"><span class="glyphicon glyphicon-search"></a></td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
+  </div>
+{% endblock %}

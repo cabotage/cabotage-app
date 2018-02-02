@@ -494,7 +494,18 @@ def project_application_image_build_submit(org_slug, project_slug, app_slug):
     return render_template('user/project_application_image_build_submit.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug)
 
 
-@user_blueprint.route('/image/<image_id>')
+@user_blueprint.route('/applications/<application_id>/images')
+@login_required
+def application_images(application_id):
+    application = Application.query.filter_by(id=application_id).first()
+    if application is None:
+        abort(404)
+    page = request.args.get('page', 1, type=int)
+    images = application.images.order_by(Image.version.desc()).paginate(page, 20, False)
+    return render_template('user/application_images.html', page=page, application=application, images=images.items)
+
+
+@user_blueprint.route('/images/<image_id>')
 @login_required
 def image_detail(image_id):
     image = Image.query.filter_by(id=image_id).first()

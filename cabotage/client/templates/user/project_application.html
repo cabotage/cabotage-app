@@ -138,7 +138,7 @@
     </div>
     <div class="row">
       <div class="col-md-8">
-        <h3>Images</h3>
+        <h3>Latest Built Image</h3>
         <table class="table table-striped">
           <tr>
             <th>Version</th>
@@ -146,25 +146,32 @@
             <th>Updated</th>
             <th style="white-space: nowrap; width: 1%;">Details</th>
           </tr>
-          {% for image in application.images.order_by("version DESC").limit(5) %}
+          {% if application.latest_image %}
           <tr>
-            <td><code>{{ image.version }}</code></td>
-            {% if image.built %}
+            <td><code>{{ application.latest_image.version }}</code></td>
+            {% if application.latest_image.built %}
             <td><span class="glyphicon glyphicon glyphicon-ok-sign text-success"></span></td>
-            {% elif image.error %}
+            {% elif application.latest_image.error %}
             <td><span class="glyphicon glyphicon-exclamation-sign text-danger"></span></td>
             {% else %}
             <td><span class="glyphicon glyphicon-question-sign text-info"></span></td>
             {% endif %}
-            <td>{{ image.updated |humanize }}</td>
-            <td><a class="btn btn-info" href="{{ url_for('user.image_detail', image_id=image.id) }}"><span class="glyphicon glyphicon-search"></a></td>
+            <td>{{ application.latest_image.updated |humanize }}</td>
+            <td><a class="btn btn-info" href="{{ url_for('user.image_detail', image_id=application.latest_image.id) }}"><span class="glyphicon glyphicon-search"></a></td>
           </tr>
-          {% endfor %}
+          {% endif %}
           <tr>
-            <td class="right" colspan="4">
+            <td class="right" colspan="2">
               <a class="btn btn-primary" href="{{ url_for('user.project_application_image_build_submit', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}">
                 Submit New Image Build
               </a>
+            </td>
+            <td class="right" colspan="2">
+              {% if application.images.count() > 0 %}
+              <a class="btn btn-info" href="{{ url_for('user.application_images', application_id=application.id) }}">
+                View All Images
+              </a>
+              {% endif %}
             </td>
           </tr>
         </table>
