@@ -92,11 +92,11 @@ class Application(db.Model, Timestamp):
         backref="application",
         cascade="all, delete-orphan",
     )
-    release = db.relationship(
+    releases = db.relationship(
         "Release",
         backref="application",
-        uselist=False,
         cascade="all, delete-orphan",
+        lazy="dynamic",
     )
     version_id = db.Column(
         db.Integer,
@@ -114,9 +114,13 @@ class Application(db.Model, Timestamp):
         return release.asdict
 
     @property
+    def latest_release(self):
+        return self.releases.filter_by(built=True).order_by(Release.version.desc()).first()
+
+    @property
     def current_release(self):
-        if self.release:
-            return self.release.asdict
+        if self.latest_release:
+            return self.latest_release.asdict
         return {}
 
     @property
@@ -137,27 +141,15 @@ class Application(db.Model, Timestamp):
 
     def create_release(self):
         image_diff, configuration_diff = self.ready_for_deployment
-        if self.release:
-            self.release.image = self.latest_image.asdict
-            self.release.configuration = {c.name: c.asdict for c in self.configurations}
-            self.release.image_changes = image_diff.asdict
-            self.release.configuration = {c.name: c.asdict for c in self.configurations}
-            self.release.configuration_changes = configuration_diff.asdict
-            self.release.platform = self.platform
-            self.release.version_id += 1
-            return True
-        else:
-            self.release = Release(
-                application_id=self.id,
-                image=self.latest_image.asdict,
-                image_changes=image_diff.asdict,
-                configuration={c.name: c.asdict for c in self.configurations},
-                configuration_changes=configuration_diff.asdict,
-                platform=self.platform,
-                version_id = 1,
-            )
-            return True
-        return False
+        release = Release(
+            application_id=self.id,
+            image=self.latest_image.asdict,
+            configuration={c.name: c.asdict for c in self.configurations},
+            image_changes=image_diff.asdict,
+            configuration_changes=configuration_diff.asdict,
+            platform=self.platform,
+        )
+        return release
 
     @property
     def latest_image(self):
@@ -192,7 +184,6 @@ class Release(db.Model, Timestamp):
     application_id = db.Column(
         postgresql.UUID(as_uuid=True),
         db.ForeignKey('project_applications.id'),
-        unique=True,
         nullable=False,
     )
     platform = db.Column(platform_version, nullable=False, default='wind')
@@ -205,6 +196,43 @@ class Release(db.Model, Timestamp):
         nullable=False
     )
 
+    version = db.Column(
+        db.Integer,
+        nullable=False,
+    )
+
+    built = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False
+    )
+    error = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False
+    )
+    error_detail = db.Column(
+        db.String(2048),
+        nullable=True,
+    )
+    deleted = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False
+    )
+    release_metadata = db.Column(
+        postgresql.JSONB(),
+        nullable=True,
+    )
+    release_build_log = db.Column(
+        db.Text(),
+        nullable=True,
+    )
+
+    __mapper_args__ = {
+        "version_id_col": version_id
+    }
+
     @property
     def asdict(self):
         return {
@@ -214,6 +242,15 @@ class Release(db.Model, Timestamp):
             "image": self.image,
             "configuration": self.configuration,
         }
+
+
+@listens_for(Release, 'before_insert')
+def release_before_insert_listener(mapper, connection, target):
+    most_recent_release = mapper.class_.query.filter_by(application_id=target.application_id).order_by(mapper.class_.version.desc()).first()
+    if most_recent_release is None:
+        target.version = 1
+    else:
+        target.version = most_recent_release.version + 1
 
 class Configuration(db.Model, Timestamp):
 

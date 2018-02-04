@@ -471,24 +471,19 @@ def application_image_pull_secrets(application_id):
     return render_template('user/application_image_credentials.html', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug, credentials=credentials, registry=registry, repository=repository_name)
 
 
-@user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/release/create', methods=['GET', 'POST'])
+@user_blueprint.route('/applications/<application_id>/release/create', methods=['GET', 'POST'])
 @login_required
-def project_application_release_create(org_slug, project_slug, app_slug):
-    organization = Organization.query.filter_by(slug=org_slug).first()
-    if organization is None:
-        abort(404)
-    project = Project.query.filter_by(organization_id=organization.id, slug=project_slug).first()
-    if project is None:
-        abort(404)
-    application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
+def application_release_create(application_id):
+    application = Application.query.filter_by(id=application_id).first()
     if application is None:
         abort(404)
 
-    application.create_release()
+    release = application.create_release()
+    db.session.add(release)
     db.session.flush()
     activity = Activity(
         verb='edit',
-        object=application.release,
+        object=release,
         data={
             'user_id': str(current_user.id),
             'timestamp': datetime.datetime.utcnow().isoformat(),
@@ -496,7 +491,7 @@ def project_application_release_create(org_slug, project_slug, app_slug):
     )
     db.session.add(activity)
     db.session.commit()
-    return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
+    return redirect(url_for('user.project_application', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug))
 
 
 @user_blueprint.route('/docker/auth')
@@ -514,9 +509,9 @@ def docker_auth():
     access = docker_access_intersection(granted_access, requested_access)
     return jsonify({'token': generate_docker_registry_jwt(access=access)})
 
-@user_blueprint.route('/applications/<application_id>/image/submit', methods=['GET', 'POST'])
+@user_blueprint.route('/applications/<application_id>/images/submit', methods=['GET', 'POST'])
 @login_required
-def application_image_build_submit(application_id):
+def application_images_build_submit(application_id):
     application = Application.query.filter_by(id=application_id).first()
     if application is None:
         abort(404)
@@ -555,4 +550,4 @@ def application_image_build_submit(application_id):
             db.session.commit()
             run_build.delay(image_id=image.id)
         return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
-    return render_template('user/application_image_build_submit.html', form=form, application=application)
+    return render_template('user/application_images_build_submit.html', form=form, application=application)

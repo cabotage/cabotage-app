@@ -98,42 +98,52 @@
           </div>
           {% endif %}
           <div class="row">
-            <a class="btn btn-info pull-right" href="{{ url_for('user.project_application_release_create', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}">
+            <a class="btn btn-info pull-right" href="{{ url_for('user.application_release_create', application_id=application.id) }}">
               Cut a new release!&nbsp;<span class="glyphicon glyphicon-scissors"></span>
             </a>
           </div>
         {% endif %}
-        <div class="row">
-          {% if application.release %}
-          <h4>Current</h4>
-          <table class="table table-striped">
-            <tr>
-              <th>Version</th>
-              <th>Updated</th>
-            </tr>
-            <tr>
-              <td>{{ application.release.version_id }}</td>
-              <td>{{ application.release.updated|humanize }}</td>
-            </tr>
-          </table>
-          {% endif %}
-          {% if view_releases.all() |length > 1 %}
-          <h4>History</h4>
-          <table class="table table-striped">
-            <tr>
-              <th>Version</th>
-              <th>Updated</th>
-            </tr>
-            <tr>
-            {% for release in view_releases[1:] %}
-            <tr>
-              <td>{{ release.version_id }}</td>
-              <td>{{ release.updated| humanize }}</td>
-            </tr>
-            {% endfor %}
-          </table>
-          {% endif %}
-        </div>
+          </div>
+          </div>
+    <div class="row">
+      <div class="col-md-8">
+        {% if application.release %}
+        <h3>Latest Release</h3>
+        <table class="table table-striped">
+          <tr>
+            <th>Version</th>
+            <th>Built</th>
+            <th>Updated</th>
+            <th style="white-space: nowrap; width: 1%;">Details</th>
+          </tr>
+          <tr>
+            <td><code>{{ application.release.version_id }}</code></td>
+            {% if application.release.built %}
+            <td><span class="glyphicon glyphicon glyphicon-ok-sign text-success"></span></td>
+            {% elif application.release.error %}
+            <td><span class="glyphicon glyphicon-exclamation-sign text-danger"></span></td>
+            {% else %}
+            <td><span class="glyphicon glyphicon-question-sign text-info"></span></td>
+            {% endif %}
+            <td>{{ application.release.updated|humanize }}</td>
+            <td><a class="btn btn-info" href="#"><span class="glyphicon glyphicon-search"></a></a></td>
+          </tr>
+          <tr>
+            <td class="right" colspan="2">
+              <a class="btn btn-primary" href="{{ url_for('user.application_images_build_submit', application_id=application.id) }}">
+                Create New Release
+              </a>
+            </td>
+            <td class="right" colspan="2">
+              {% if application.release.count() > 0 %}
+              <a class="btn btn-info" href="#">
+                View All Releases
+              </a>
+              {% endif %}
+            </td>
+          </tr>
+        </table>
+        {% endif %}
       </div>
     </div>
     <div class="row">
@@ -176,7 +186,7 @@
           {% endif %}
           <tr>
             <td class="right" colspan="2">
-              <a class="btn btn-primary" href="{{ url_for('user.application_image_build_submit', application_id=application.id) }}">
+              <a class="btn btn-primary" href="{{ url_for('user.application_images_build_submit', application_id=application.id) }}">
                 Submit New Image Build
               </a>
             </td>
