@@ -87,12 +87,6 @@ class Application(db.Model, Timestamp):
         cascade="all, delete-orphan",
         lazy="dynamic",
     )
-    container = db.relationship(
-        "Container",
-        backref="application",
-        uselist=False,
-        cascade="all, delete-orphan",
-    )
     configurations = db.relationship(
         "Configuration",
         backref="application",
@@ -113,7 +107,7 @@ class Application(db.Model, Timestamp):
     def release_candidate(self):
         release = Release(
             application_id=self.id,
-            container=self.container.asdict if self.container else {},
+            image=self.latest_image.asdict if self.latest_image else {},
             configuration={c.name: c.asdict for c in self.configurations},
             platform=self.platform,
         )
@@ -134,19 +128,19 @@ class Application(db.Model, Timestamp):
             current.get('configuration', {}),
             ignored_keys=['id'],
         )
-        container_diff = DictDiffer(
-            candidate.get('container', {}),
-            current.get('container', {}),
+        image_diff = DictDiffer(
+            candidate.get('image', {}),
+            current.get('image', {}),
             ignored_keys=['id', 'version_id'],
         )
-        return container_diff, configuration_diff
+        return image_diff, configuration_diff
 
     def create_release(self):
-        container_diff, configuration_diff = self.ready_for_deployment
+        image_diff, configuration_diff = self.ready_for_deployment
         if self.release:
-            self.release.container = self.container.asdict
+            self.release.image = self.latest_image.asdict
             self.release.configuration = {c.name: c.asdict for c in self.configurations}
-            self.release.container_changes = container_diff.asdict
+            self.release.image_changes = image_diff.asdict
             self.release.configuration = {c.name: c.asdict for c in self.configurations}
             self.release.configuration_changes = configuration_diff.asdict
             self.release.platform = self.platform
@@ -155,8 +149,8 @@ class Application(db.Model, Timestamp):
         else:
             self.release = Release(
                 application_id=self.id,
-                container=self.container.asdict,
-                container_changes=container_diff.asdict,
+                image=self.latest_image.asdict,
+                image_changes=image_diff.asdict,
                 configuration={c.name: c.asdict for c in self.configurations},
                 configuration_changes=configuration_diff.asdict,
                 platform=self.platform,
@@ -202,9 +196,9 @@ class Release(db.Model, Timestamp):
         nullable=False,
     )
     platform = db.Column(platform_version, nullable=False, default='wind')
-    container = db.Column(postgresql.JSONB(), nullable=False)
+    image = db.Column(postgresql.JSONB(), nullable=False)
     configuration = db.Column(postgresql.JSONB(), nullable=False)
-    container_changes = db.Column(postgresql.JSONB(), nullable=False)
+    image_changes = db.Column(postgresql.JSONB(), nullable=False)
     configuration_changes = db.Column(postgresql.JSONB(), nullable=False)
     version_id = db.Column(
         db.Integer,
@@ -217,7 +211,7 @@ class Release(db.Model, Timestamp):
             "id": str(self.id),
             "application_id": str(self.application_id),
             "platform": self.platform,
-            "container": self.container,
+            "image": self.image,
             "configuration": self.configuration,
         }
 
@@ -363,6 +357,7 @@ class Image(db.Model, Timestamp):
         "version_id_col": version_id
     }
 
+    @property
     def asdict(self):
         return {
             "id": str(self.id),
@@ -379,53 +374,3 @@ def image_before_insert_listener(mapper, connection, target):
         target.version = 1
     else:
         target.version = most_recent_image.version + 1
-
-
-class Container(db.Model, Timestamp):
-
-    __versioned__ = {}
-    __tablename__ = 'project_app_containers'
-
-    id = db.Column(
-        postgresql.UUID(as_uuid=True),
-        server_default=text("gen_random_uuid()"),
-        nullable=False,
-        primary_key=True
-    )
-    application_id = db.Column(
-        postgresql.UUID(as_uuid=True),
-        db.ForeignKey('project_applications.id'),
-        unique=True,
-        nullable=False,
-    )
-
-    container_tag = db.Column(
-        db.String(256),
-        nullable=False,
-    )
-    container_image_id = db.Column(
-        db.String(256),
-        nullable=True,
-    )
-
-    version_id = db.Column(
-        db.Integer,
-        nullable=False
-    )
-    deleted = db.Column(
-        db.Boolean,
-        nullable=False,
-        default=False
-    )
-
-    __mapper_args__ = {
-        "version_id_col": version_id
-    }
-
-    @property
-    def asdict(self):
-        return {
-            "id": str(self.id),
-            "container_image_id": self.container_image_id,
-            "version_id": self.version_id,
-        }

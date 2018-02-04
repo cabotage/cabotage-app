@@ -24,7 +24,6 @@ from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import (
     Application,
     Configuration,
-    Container,
     Project,
 )
 
@@ -262,12 +261,12 @@ class DeleteConfigurationForm(FlaskForm):
     )
 
 
-class CreateContainerForm(FlaskForm):
+class ImageBuildSubmitForm(FlaskForm):
 
     application_id = SelectField(
         u'Application',
         [DataRequired()],
-        description="Application this Container belongs to.",
+        description="Application this Image is built for.",
     )
     build_file = FileField(
         u'Build File',

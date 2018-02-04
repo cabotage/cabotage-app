@@ -8,19 +8,19 @@
     <div class="row">
       <div class="col-md-8">
         <h3>Releases</h3>
-        {% set container_diff, config_diff = application.ready_for_deployment %}
-        {% if container_diff.has_changes() or config_diff.has_changes() %}
+        {% set image_diff, config_diff = application.ready_for_deployment %}
+        {% if image_diff.has_changes() or config_diff.has_changes() %}
           <div class="row">
             <div class="alert alert-info">
               <p>Unapplied changes exist!</p>
             </div>
           </div>
-          {% if container_diff.has_changes() %}
-          {% set added = container_diff.added() %}
-          {% set removed = container_diff.removed() %}
-          {% set changed = container_diff.changed() %}
+          {% if image_diff.has_changes() %}
+          {% set added = image_diff.added() %}
+          {% set removed = image_diff.removed() %}
+          {% set changed = image_diff.changed() %}
           <div class="row">
-            <h5>Container Changes</h5>
+            <h5>Image Changes</h5>
             <div class="col-md-8">
               <table class="table">
                 <tr>
@@ -28,24 +28,24 @@
                   <th>Attribute</th>
                   <th>Operation</th>
                 </tr>
-                {% for container_added in added %}
+                {% for image_added in added %}
                 <tr>
                   <td><span class="glyphicon glyphicon-plus text-success"></span></td>
-                  <td><code>{{ container_added }}</code></td>
+                  <td><code>{{ image_added }}</code></td>
                   <td>Added</td>
                 </tr>
                 {% endfor %}
-                {% for container_changed in changed %}
+                {% for image_changed in changed %}
                 <tr>
                   <td><span class="glyphicon glyphicon-pencil text-info"></span></td>
-                  <td><code>{{ container_changed }}</code></td>
+                  <td><code>{{ image_changed }}</code></td>
                   <td>Edited</td>
                 </tr>
                 {% endfor %}
-                {% for container_removed in removed %}
+                {% for image_removed in removed %}
                 <tr>
                   <td><span class="glyphicon glyphicon-minus text-danger"></span></rd>
-                  <td><code>{{ container_removed }}</code></td>
+                  <td><code>{{ image_removed }}</code></td>
                   <td>Removed</td>
                 </tr>
                 {% endfor %}
@@ -176,7 +176,7 @@
           {% endif %}
           <tr>
             <td class="right" colspan="2">
-              <a class="btn btn-primary" href="{{ url_for('user.project_application_image_build_submit', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}">
+              <a class="btn btn-primary" href="{{ url_for('user.application_image_build_submit', application_id=application.id) }}">
                 Submit New Image Build
               </a>
             </td>

@@ -29,7 +29,6 @@ from cabotage.server.models.projects import (
     Project,
     Application,
     Configuration,
-    Container,
     Image,
     Release
 )
@@ -38,11 +37,11 @@ from cabotage.server.models.projects import activity_plugin
 from cabotage.server.user.forms import (
     CreateApplicationForm,
     CreateConfigurationForm,
-    CreateContainerForm,
     CreateOrganizationForm,
     CreateProjectForm,
     DeleteConfigurationForm,
     EditConfigurationForm,
+    ImageBuildSubmitForm,
 )
 
 from cabotage.utils.docker_auth import (
@@ -431,69 +430,6 @@ def project_application_configuration_delete(org_slug, project_slug, app_slug, c
     return render_template('user/project_application_configuration_delete.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug, configuration=configuration)
 
 
-@user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/container/<container_id>')
-@login_required
-def project_application_container(org_slug, project_slug, app_slug, container_id):
-    organization = Organization.query.filter_by(slug=org_slug).first()
-    if organization is None:
-        abort(404)
-    project = Project.query.filter_by(organization_id=organization.id, slug=project_slug).first()
-    if project is None:
-        abort(404)
-    application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
-    if application is None:
-        abort(404)
-    container = Container.query.filter_by(application_id=application.id, id=container_id).first()
-    if container is None:
-        abort(404)
-
-    return render_template('user/project_application_container.html', container=container)
-
-
-@user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/container/create', methods=['GET', 'POST'])
-@login_required
-def project_application_image_build_submit(org_slug, project_slug, app_slug):
-    application = Application.query.filter_by(slug=app_slug).first()
-    if application is None:
-        abort(404)
-    project = application.project
-    organization = application.project.organization
-
-    form = CreateContainerForm()
-    form.application_id.choices = [(str(application.id), f'{organization.slug}/{project.slug}: {application.slug}')]
-    form.application_id.data = str(application.id)
-
-    if form.validate_on_submit():
-        organization_slug = organization.slug
-        project_slug = project.slug
-        application_slug = application.slug
-        repository_name = f"cabotage/{organization_slug}/{project_slug}/{application_slug}"
-
-        fileobj = request.files['build_file']
-        if fileobj:
-            minio_response = minio.write_object(organization_slug, project_slug, application_slug, fileobj)
-            image = Image(
-                application_id=application.id,
-                repository_name=repository_name,
-                build_slug=minio_response['path'],
-            )
-            db.session.add(image)
-            db.session.flush()
-            activity = Activity(
-                verb='submit',
-                object=image,
-                data={
-                    'user_id': str(current_user.id),
-                    'timestamp': datetime.datetime.utcnow().isoformat(),
-                }
-            )
-            db.session.add(activity)
-            db.session.commit()
-            run_build.delay(image_id=image.id)
-        return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
-    return render_template('user/project_application_image_build_submit.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug)
-
-
 @user_blueprint.route('/applications/<application_id>/images')
 @login_required
 def application_images(application_id):
@@ -514,10 +450,10 @@ def image_detail(image_id):
     return render_template('user/image_detail.html', image=image)
 
 
-@user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/container/pull-secrets')
+@user_blueprint.route('/applications/<application_id>/images/pull-secrets')
 @login_required
-def project_application_container_pull_secrets(org_slug, project_slug, app_slug):
-    application = Application.query.filter_by(slug=app_slug).first()
+def application_image_pull_secrets(application_id):
+    application = Application.query.filter_by(id=application_id).first()
     if application is None:
         abort(404)
     project = application.project
@@ -532,44 +468,7 @@ def project_application_container_pull_secrets(org_slug, project_slug, app_slug)
         resource_name=repository_name,
         resource_actions=["pull"],
     )
-    return render_template('user/project_application_container_credentials.html', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug, credentials=credentials, registry=registry, repository=repository_name)
-
-
-@user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/container/<container_id>/edit', methods=['GET', 'POST'])
-@login_required
-def project_application_container_edit(org_slug, project_slug, app_slug, container_id):
-    organization = Organization.query.filter_by(slug=org_slug).first()
-    if organization is None:
-        abort(404)
-    project = Project.query.filter_by(organization_id=organization.id, slug=project_slug).first()
-    if project is None:
-        abort(404)
-    application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
-    if application is None:
-        abort(404)
-    container = Container.query.filter_by(application_id=application.id, id=container_id).first()
-    if container is None:
-        abort(404)
-
-    form = CreateContainerForm(obj=container)
-    form.application_id.choices = [(str(container.application.id), f'{organization.slug}/{project.slug}: {application.slug}')]
-    form.application_id.data = str(container.application.id)
-
-    if form.validate_on_submit():
-        form.populate_obj(container)
-        db.session.flush()
-        activity = Activity(
-            verb='edit',
-            object=container,
-            data={
-                'user_id': str(current_user.id),
-                'timestamp': datetime.datetime.utcnow().isoformat(),
-            }
-        )
-        db.session.add(activity)
-        db.session.commit()
-        return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
-    return render_template('user/project_application_container_edit.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug, container=container)
+    return render_template('user/application_image_credentials.html', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug, credentials=credentials, registry=registry, repository=repository_name)
 
 
 @user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/release/create', methods=['GET', 'POST'])
@@ -614,3 +513,46 @@ def docker_auth():
         return jsonify({"error": "unauthorized"}), 401
     access = docker_access_intersection(granted_access, requested_access)
     return jsonify({'token': generate_docker_registry_jwt(access=access)})
+
+@user_blueprint.route('/applications/<application_id>/image/submit', methods=['GET', 'POST'])
+@login_required
+def application_image_build_submit(application_id):
+    application = Application.query.filter_by(id=application_id).first()
+    if application is None:
+        abort(404)
+    project = application.project
+    organization = application.project.organization
+
+    form = ImageBuildSubmitForm()
+    form.application_id.choices = [(str(application.id), f'{organization.slug}/{project.slug}: {application.slug}')]
+    form.application_id.data = str(application.id)
+
+    if form.validate_on_submit():
+        organization_slug = organization.slug
+        project_slug = project.slug
+        application_slug = application.slug
+        repository_name = f"cabotage/{organization_slug}/{project_slug}/{application_slug}"
+
+        fileobj = request.files['build_file']
+        if fileobj:
+            minio_response = minio.write_object(organization_slug, project_slug, application_slug, fileobj)
+            image = Image(
+                application_id=application.id,
+                repository_name=repository_name,
+                build_slug=minio_response['path'],
+            )
+            db.session.add(image)
+            db.session.flush()
+            activity = Activity(
+                verb='submit',
+                object=image,
+                data={
+                    'user_id': str(current_user.id),
+                    'timestamp': datetime.datetime.utcnow().isoformat(),
+                }
+            )
+            db.session.add(activity)
+            db.session.commit()
+            run_build.delay(image_id=image.id)
+        return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
+    return render_template('user/application_image_build_submit.html', form=form, application=application)
