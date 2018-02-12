@@ -110,22 +110,30 @@ def build_image(tarfileobj, image,
             for line in chunk.split(b'\r\n'):
                 if line:
                     payload = json.loads(line.decode())
-                    sys.stderr.write(json.dumps(payload))
                     stream = payload.get('stream')
                     status = payload.get('status')
+                    aux = payload.get('aux')
+                    error = payload.get('error')
+                    if stream:
+                        log_lines.append(stream)
                     if status:
                         if payload.get('progressDetail'):
                             continue
-                    aux = payload.get('aux')
-                    error = payload.get('error')
+                        if payload.get("id"):
+                          log_lines.append(f'{payload.get("id")}: {status}\n')
+                        else:
+                          log_lines.append(f'{status}\n')
                     if error is not None:
                         errorDetail = payload.get('errorDetail', {})
                         message = errorDetail.get('message', 'unknown error')
                         build_errored = (
                             f'Error building image: {message}'
                         )
-                    log_lines.append(json.dumps(payload))
-        image.image_build_log = '\n'.join(log_lines)
+                    if aux:
+                        if 'ID' in aux:
+                            built_id = aux['ID']
+                            log_lines.append(f'Built Image with ID: {built_id}\n')
+        image.image_build_log = ''.join(log_lines)
         db.session.commit()
         if build_errored:
             raise BuildError(build_errored)
