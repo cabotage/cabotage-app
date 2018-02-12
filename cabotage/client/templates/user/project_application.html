@@ -107,7 +107,7 @@
           </div>
     <div class="row">
       <div class="col-md-8">
-        {% if application.release %}
+        {% if application.latest_release %}
         <h3>Latest Release</h3>
         <table class="table table-striped">
           <tr>
@@ -117,26 +117,21 @@
             <th style="white-space: nowrap; width: 1%;">Details</th>
           </tr>
           <tr>
-            <td><code>{{ application.release.version_id }}</code></td>
-            {% if application.release.built %}
+            <td><code>{{ application.latest_release.version }}</code></td>
+            {% if application.latest_release.built %}
             <td><span class="glyphicon glyphicon glyphicon-ok-sign text-success"></span></td>
-            {% elif application.release.error %}
+            {% elif application.latest_release.error %}
             <td><span class="glyphicon glyphicon-exclamation-sign text-danger"></span></td>
             {% else %}
             <td><span class="glyphicon glyphicon-question-sign text-info"></span></td>
             {% endif %}
-            <td>{{ application.release.updated|humanize }}</td>
+            <td>{{ application.latest_release.updated|humanize }}</td>
             <td><a class="btn btn-info" href="#"><span class="glyphicon glyphicon-search"></a></a></td>
           </tr>
           <tr>
-            <td class="right" colspan="2">
-              <a class="btn btn-primary" href="{{ url_for('user.application_images_build_submit', application_id=application.id) }}">
-                Create New Release
-              </a>
-            </td>
-            <td class="right" colspan="2">
-              {% if application.release.count() > 0 %}
-              <a class="btn btn-info" href="#">
+            <td colspan="4">
+              {% if application.releases.count() > 0 %}
+              <a class="btn btn-info pull-right" href="#">
                 View All Releases
               </a>
               {% endif %}
@@ -148,7 +143,7 @@
     </div>
     <div class="row">
       <div class="col-md-8">
-        <h3>Latest Built Image</h3>
+        <h3>Latest Image</h3>
         {% if application.latest_image_building and application.latest_image_building.version|default(0) > application.latest_image.version|default(0) %}
         <div class="col-md-12">
           <div class="row alert alert-info">
@@ -185,14 +180,14 @@
           </tr>
           {% endif %}
           <tr>
-            <td class="right" colspan="2">
+            <td colspan="2">
               <a class="btn btn-primary" href="{{ url_for('user.application_images_build_submit', application_id=application.id) }}">
                 Submit New Image Build
               </a>
             </td>
-            <td class="right" colspan="2">
+            <td colspan="2">
               {% if application.images.count() > 0 %}
-              <a class="btn btn-info" href="{{ url_for('user.application_images', application_id=application.id) }}">
+              <a class="btn btn-info pull-right" href="{{ url_for('user.application_images', application_id=application.id) }}">
                 View All Images
               </a>
               {% endif %}
