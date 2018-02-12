@@ -6,7 +6,10 @@ import shutil
 import sys
 
 from contextlib import ExitStack
-from tarfile import TarFile
+from tarfile import (
+    TarFile,
+    TarError,
+)
 from tempfile import (
     TemporaryDirectory,
     TemporaryFile,
@@ -43,7 +46,10 @@ def build_image(tarfileobj, image,
                 docker_url, docker_secure):
     with ExitStack() as stack:
         temp_dir = stack.enter_context(TemporaryDirectory())
-        tar_ball = stack.enter_context(TarFile(fileobj=tarfileobj, mode='r'))
+        try:
+            tar_ball = stack.enter_context(TarFile(fileobj=tarfileobj, mode='r'))
+        except Exception as exc:
+            raise BuildError(f'{exc}')
         for tarinfo in tar_ball:
             if os.path.normpath(tarinfo.name).startswith((os.sep, '/', '..')):
                 raise BuildError(
