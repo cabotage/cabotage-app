@@ -1,2 +1,2 @@
-web:     while [ 1 ]; do echo "webbing on $PORT"; sleep 1; done
-worker:  while [ 1 ]; do echo "working..."; sleep 1; done
+web:     bash -c 'while [ 1 ]; do echo "webbing on $PORT"; sleep 1; done'
+worker:  env TEST_ENV=1 ENV_TEST=1 bash -c 'while [ 1 ]; do echo "working..."; sleep 1; done'
