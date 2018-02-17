@@ -286,6 +286,27 @@ class Release(db.Model, Timestamp):
         }
 
     @property
+    def envconsul_configurations(self):
+        configurations = {}
+        environment_statements = '\n'.join([
+            c.envconsul_statement for c in self.configuration_objects.values()
+            if c is not None
+        ])
+        for proc_name, proc in self.image_object.processes.items():
+            custom_env = json.dumps([f"{key}={value}" for key, value in proc['env']])
+            exec_statement = (
+                 'exec {\n'
+                f'  command = {json.dumps(proc["cmd"])}\n'
+                 '  env = {\n'
+                 '    pristine = true\n'
+                f'    custom = {custom_env}\n'
+                 '  }\n'
+                 '}'
+            )
+            configurations[proc_name] = '\n'.join([exec_statement, environment_statements])
+        return configurations
+
+    @property
     def image_object(self):
         return Image.query.filter_by(id=self.image["id"]).first()
 
@@ -356,6 +377,17 @@ class Configuration(db.Model, Timestamp):
             "version_id": self.version_id,
             "secret": self.secret,
         }
+
+    @property
+    def envconsul_statement(self):
+        directive = 'secret' if self.secret else 'prefix'
+        path = self.key_slug.split(':', 1)[1]
+        return (
+            f'{directive} {{\n'
+             '  no_prefix = true\n'
+            f'  path = "{path}"\n'
+             '}'
+        )
 
 
 class Image(db.Model, Timestamp):
