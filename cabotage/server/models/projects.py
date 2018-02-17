@@ -115,7 +115,19 @@ class Application(db.Model, Timestamp):
 
     @property
     def latest_release(self):
+        return self.releases.filter_by().order_by(Release.version.desc()).first()
+
+    @property
+    def latest_release_built(self):
         return self.releases.filter_by(built=True).order_by(Release.version.desc()).first()
+
+    @property
+    def latest_release_error(self):
+        return self.releases.filter_by(error=True).order_by(Release.version.desc()).first()
+
+    @property
+    def latest_release_building(self):
+        return self.releases.filter_by(built=False, error=False).order_by(Release.version.desc()).first()
 
     @property
     def current_release(self):

@@ -1,0 +1,102 @@
+{% extends "_base.html" %}
+
+{% block content %}
+  <div class="container" id="content">
+    <div class="row">
+      <div class="col-md-9">
+        <h2>Information</h2>
+        <table class="table">
+          <tr>
+            <th>Repository</th>
+            <td><code>{{ release.repository_name }}</code></td>
+          </tr>
+          <tr>
+            <th>Tag</th>
+            <td><code>{{ release.version }}</code></td>
+          </tr>
+          <tr>
+            <th>Identifier</th>
+            <td><code>{{ release.release_id }}</code></td>
+          </tr>
+          <tr>
+            <th>Status</th>
+            {% if release.built %}
+            <td><span class="glyphicon glyphicon glyphicon-ok-sign text-success"></span> Built</td>
+            {% elif release.error %}
+            <td><span class="glyphicon glyphicon-exclamation-sign text-danger"></span> Error</td>
+            {% else %}
+            <td><span class="glyphicon glyphicon-question-sign text-info"></span> Building...</td>
+            {% endif %}
+          </tr>
+          <tr>
+            <th>Submitted</th>
+            <td>{{ release.created|humanize }}</td>
+          </tr>
+          <tr>
+            <th>Updated </th>
+            <td>{{ release.updated|humanize }}</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+    {% if release.error %}
+    <div class="row">
+      <div class="alert alert-danger col-md-9">
+        <p>Error Building Image</p>
+        <pre>{{ release.error_detail }}</pre>
+      </div>
+    </div>
+    {% endif %}
+    {% if release.processes %}
+    <div class="row">
+      <div class="col-md-9">
+        <h3>Processes</h3>
+        <table class="table">
+            <tr>
+              <th>Name</th>
+              <th>Command</th>
+              <th>Environment</th>
+            </tr>
+            {% for process, info in release.processes.items() %}
+            <tr>
+              <td><code>{{ process }}</code></td>
+              <td><code>{{ info['cmd'] }}</code></td>
+              <td><code>{{ info['env'] }}</code></td>
+            </tr>
+            {% endfor %}
+        </table>
+      </div>
+    </div>
+    {% endif %}
+    <div class="row">
+      <div class="col-md-9">
+        <h3>Dockerfile</h3>
+        <pre>{{ release.dockerfile }}</pre>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-md-9">
+        <h3>Procfile</h3>
+        <pre>{{ release.procfile }}</pre>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-md-9">
+        <h3>Metadata</h3>
+        <pre>{{ release.release_metadata }}</pre>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-md-9">
+        <h3>Build Log</h3>
+        <pre>{{ release.release_build_log }}</pre>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-md-9">
+        <h3><code>asdict</code></h3>
+        <pre>{{ release.asdict|pprint }}</pre>
+      </div>
+    </div>
+  </div>
+{% endblock %}

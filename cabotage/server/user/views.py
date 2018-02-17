@@ -441,7 +441,7 @@ def application_images(application_id):
     return render_template('user/application_images.html', page=page, application=application, images=images.items)
 
 
-@user_blueprint.route('/images/<image_id>')
+@user_blueprint.route('/image/<image_id>')
 @login_required
 def image_detail(image_id):
     image = Image.query.filter_by(id=image_id).first()
@@ -469,6 +469,26 @@ def application_image_pull_secrets(application_id):
         resource_actions=["pull"],
     )
     return render_template('user/application_image_credentials.html', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug, credentials=credentials, registry=registry, repository=repository_name)
+
+
+@user_blueprint.route('/applications/<application_id>/releases')
+@login_required
+def application_releases(application_id):
+    application = Application.query.filter_by(id=application_id).first()
+    if application is None:
+        abort(404)
+    page = request.args.get('page', 1, type=int)
+    releases = application.releases.order_by(Release.version.desc()).paginate(page, 20, False)
+    return render_template('user/application_releases.html', page=page, application=application, releases=releases.items)
+
+
+@user_blueprint.route('/release/<release_id>')
+@login_required
+def release_detail(release_id):
+    release = Release.query.filter_by(id=release_id).first()
+    if release is None:
+        abort(404)
+    return render_template('user/release_detail.html', release=release)
 
 
 @user_blueprint.route('/applications/<application_id>/release/create', methods=['GET', 'POST'])

@@ -126,12 +126,12 @@
             <td><span class="glyphicon glyphicon-question-sign text-info"></span></td>
             {% endif %}
             <td>{{ application.latest_release.updated|humanize }}</td>
-            <td><a class="btn btn-info" href="#"><span class="glyphicon glyphicon-search"></a></a></td>
+            <td><a class="btn btn-info" href="{{ url_for('user.release_detail', release_id=application.latest_release.id) }}"><span class="glyphicon glyphicon-search"></a></a></td>
           </tr>
           <tr>
             <td colspan="4">
               {% if application.releases.count() > 0 %}
-              <a class="btn btn-info pull-right" href="#">
+              <a class="btn btn-info pull-right" href="{{ url_for('user.application_releases', application_id=application.id) }}">
                 View All Releases
               </a>
               {% endif %}
