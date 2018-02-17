@@ -246,6 +246,29 @@ class Release(db.Model, Timestamp):
     }
 
     @property
+    def valid(self):
+        return (
+            (self.image_object is not None)
+            and
+            all(v is not None for v in self.configuration_objects.values())
+        )
+
+    @property
+    def deposed(self):
+        return not self.valid
+
+    @property
+    def deposed_reason(self):
+        reasons = []
+        if self.image_object is None:
+            reasons.append(f'<code>Image({self.image["id"]})</code> no longer exists!')
+        for configuration, configuration_serialized in self.configuration.items():
+            configuration_object = Configuration.query.filter_by(id=configuration_serialized["id"]).first()
+            if configuration_object is None:
+                reasons.append(f'<code>Configuration({configuration_serialized["id"]})</code> for <code>{configuration}</code> no longer exists!')
+        return reasons
+
+    @property
     def asdict(self):
         return {
             "id": str(self.id),
@@ -254,6 +277,17 @@ class Release(db.Model, Timestamp):
             "image": self.image,
             "configuration": self.configuration,
         }
+
+    @property
+    def configuration_objects(self):
+        return {
+            k: Configuration.query.filter_by(id=v["id"]).first()
+            for k, v in self.configuration.items()
+        }
+
+    @property
+    def image_object(self):
+        return Image.query.filter_by(id=self.image["id"]).first()
 
 
 @listens_for(Release, 'before_insert')
