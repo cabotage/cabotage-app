@@ -261,11 +261,11 @@ class Release(db.Model, Timestamp):
     def deposed_reason(self):
         reasons = []
         if self.image_object is None:
-            reasons.append(f'<code>Image({self.image["id"]})</code> no longer exists!')
+            reasons.append(f'<code>Image {self.image["repository"]}:{self.image["tag"]} no longer exists!</code>')
         for configuration, configuration_serialized in self.configuration.items():
             configuration_object = Configuration.query.filter_by(id=configuration_serialized["id"]).first()
             if configuration_object is None:
-                reasons.append(f'<code>Configuration({configuration_serialized["id"]})</code> for <code>{configuration}</code> no longer exists!')
+                reasons.append(f'<code>Configuration for {configuration} no longer exists!</code>')
         return reasons
 
     @property

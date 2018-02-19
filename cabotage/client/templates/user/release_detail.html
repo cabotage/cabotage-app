@@ -20,12 +20,16 @@
           </tr>
           <tr>
             <th>Status</th>
-            {% if release.built %}
-            <td><span class="glyphicon glyphicon glyphicon-ok-sign text-success"></span> Built</td>
-            {% elif release.error %}
-            <td><span class="glyphicon glyphicon-exclamation-sign text-danger"></span> Error</td>
+            {% if release.valid %}
+              {% if release.built %}
+              <td><span class="glyphicon glyphicon glyphicon-ok-sign text-success"></span> Built</td>
+              {% elif release.error %}
+              <td><span class="glyphicon glyphicon-exclamation-sign text-danger"></span> Error</td>
+              {% else %}
+              <td><span class="glyphicon glyphicon-question-sign text-info"></span> Building...</td>
+              {% endif %}
             {% else %}
-            <td><span class="glyphicon glyphicon-question-sign text-info"></span> Building...</td>
+              <td><span class="glyphicon glyphicon-exclamation-sign text-danger"></span> Release Invalid!</td>
             {% endif %}
           </tr>
           <tr>
@@ -39,6 +43,14 @@
         </table>
       </div>
     </div>
+    {% if release.deposed %}
+    <div class="row">
+      <div class="alert alert-danger col-md-9">
+        <p>Release Invalid</p>
+        <pre>{{ release.deposed_reason|join("<br>")|safe }}</pre>
+      </div>
+    </div>
+    {% endif %}
     {% if release.error %}
     <div class="row">
       <div class="alert alert-danger col-md-9">
@@ -47,7 +59,44 @@
       </div>
     </div>
     {% endif %}
-    {% if release.processes %}
+    <div class="row">
+      <div class="col-md-9">
+      <h3>Image</h3>
+      {% if release.image_object %}
+      <a href="{{ url_for('user.image_detail', image_id=release.image_object.id) }}"><h4>{{ release.image_object.repository_name }}:{{ release.image_object.version }}</h4></a>
+      {% else %}
+      <code>Image {{ release.image.repository }}/{{ release.image.tag }} no longer exists!</code>
+      {% endif %}
+      </div>
+    </div>
+    {% if release.configuration_objects %}
+    <div class="row">
+      <div class="col-md-9">
+        <h3>Environment</h3>
+        <table class="table">
+            <tr>
+              <th>Key</th>
+              <th>Value</th>
+            </tr>
+            {% for name, environment_variable in release.configuration_objects.items() %}
+            <tr>
+              <td><code>{{ name }}</code></td>
+              {% if environment_variable %}
+                {% if environment_variable.secret %}
+                <td><span class="glyphicon glyphicon-lock"></span></td>
+                {% else %}
+                <td><code>{{ environment_variable.value }}</code></td>
+                {% endif %}
+              {% else %}
+                <td><span class="glyphicon glyphicon-trash text-danger"></span> Deleted</td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+        </table>
+      </div>
+    </div>
+    {% endif %}
+    {% if release.image_object.processes %}
     <div class="row">
       <div class="col-md-9">
         <h3>Processes</h3>
@@ -57,29 +106,23 @@
               <th>Command</th>
               <th>Environment</th>
             </tr>
-            {% for process, info in release.processes.items() %}
+            {% for process, info in release.image_object.processes.items() %}
             <tr>
               <td><code>{{ process }}</code></td>
               <td><code>{{ info['cmd'] }}</code></td>
-              <td><code>{{ info['env'] }}</code></td>
+              <td>
+                <div>
+                  {% for item in info['env'] %}
+                  <span style="display: block;"><code>{{ item[0] }}={{ item[1] }}</code></span>
+                  {% endfor %}
+                </div>
+              </td>
             </tr>
             {% endfor %}
         </table>
       </div>
     </div>
     {% endif %}
-    <div class="row">
-      <div class="col-md-9">
-        <h3>Dockerfile</h3>
-        <pre>{{ release.dockerfile }}</pre>
-      </div>
-    </div>
-    <div class="row">
-      <div class="col-md-9">
-        <h3>Procfile</h3>
-        <pre>{{ release.procfile }}</pre>
-      </div>
-    </div>
     <div class="row">
       <div class="col-md-9">
         <h3>Metadata</h3>
@@ -96,6 +139,17 @@
       <div class="col-md-9">
         <h3><code>asdict</code></h3>
         <pre>{{ release.asdict|pprint }}</pre>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-md-9">
+        <h3><code>__dict__</code></h3>
+        <pre>{{ release.__dict__|pprint }}</pre>
+        <pre>{{ release.image_object|pprint }}</pre>
+        {% for process_name, envconsul_configuration in  release.envconsul_configurations.items() %}
+        <h3>{{ process_name }}</h3>
+        <pre>{{ envconsul_configuration }}</pre>
+        {% endfor %}
       </div>
     </div>
   </div>
