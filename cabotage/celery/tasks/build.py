@@ -26,7 +26,10 @@ from cabotage.server import (
     minio,
 )
 
-from cabotage.server.models.projects import Image
+from cabotage.server.models.projects import (
+    Image,
+    Release,
+)
 
 from cabotage.utils.docker_auth import (
     check_docker_credentials,
@@ -39,6 +42,96 @@ from cabotage.utils.docker_auth import (
 
 class BuildError(RuntimeError):
     pass
+
+
+RELEASE_DOCKERFILE_TEMPLATE = """
+FROM {registry}/{image.repository_name}:image-{image.version}
+
+"""
+
+
+def build_release(release,
+                  registry, registry_username, registry_password,
+                  docker_url, docker_secure):
+    with ExitStack() as stack:
+        temp_dir = stack.enter_context(TemporaryDirectory())
+        with open(os.path.join(temp_dir, 'Dockerfile'), 'a') as fd:
+            fd.write(RELEASE_DOCKERFILE_TEMPLATE.format(registry=registry, image=release.image_object))
+            fd.write(f'COPY envconsul-linux-amd64 /usr/bin/envconsul\n')
+            for process_name in  release.envconsul_configurations:
+                fd.write(f'COPY envconsul-{process_name}.hcl /etc/cabotage/envconsul-{process_name}.hcl\n')
+        with open(os.path.join(temp_dir, 'Dockerfile'), 'rU') as release_dockerfile:
+            dockerfile_body = release_dockerfile.read()
+        release.dockerfile = dockerfile_body
+        db.session.commit()
+        shutil.copy(
+            'envconsul-linux-amd64',
+            os.path.join(temp_dir, 'envconsul-linux-amd64'),
+        )
+        for process_name, envconsul_configuration in  release.envconsul_configurations.items():
+            with open(os.path.join(temp_dir, f'envconsul-{process_name}.hcl'), 'w') as envconsul_config:
+                envconsul_config.write(envconsul_configuration)
+        client = docker.DockerClient(base_url=docker_url, tls=docker_secure)
+        client.login(
+            username=registry_username,
+            password=registry_password,
+            registry=registry,
+            reauth=True,
+        )
+        response = client.api.build(
+            path=temp_dir,
+            tag=f'{registry}/{release.repository_name}:release-{release.version}',
+            rm=True,
+            forcerm=True,
+            dockerfile="Dockerfile",
+        )
+        build_errored = False
+        log_lines = []
+        for chunk in response:
+            for line in chunk.split(b'\r\n'):
+                if line:
+                    payload = json.loads(line.decode())
+                    stream = payload.get('stream')
+                    status = payload.get('status')
+                    aux = payload.get('aux')
+                    error = payload.get('error')
+                    if stream:
+                        log_lines.append(stream)
+                    if status:
+                        if payload.get('progressDetail'):
+                            continue
+                        if payload.get("id"):
+                          log_lines.append(f'{payload.get("id")}: {status}\n')
+                        else:
+                          log_lines.append(f'{status}\n')
+                    if error is not None:
+                        errorDetail = payload.get('errorDetail', {})
+                        message = errorDetail.get('message', 'unknown error')
+                        build_errored = (
+                            f'Error building release: {message}'
+                        )
+                    if aux:
+                        if 'ID' in aux:
+                            built_id = aux['ID']
+                            log_lines.append(f'Built Image with ID: {built_id}\n')
+        release.release_build_log = ''.join(log_lines)
+        db.session.commit()
+        if build_errored:
+            raise BuildError(build_errored)
+        built_release = client.images.get(
+            f'{registry}/{release.repository_name}:release-{release.version}'
+        )
+        client.images.push(
+            f'{registry}/{release.repository_name}',
+            f'release-{release.version}'
+        )
+        pushed_release = client.images.get(
+            f'{registry}/{release.repository_name}:release-{release.version}'
+        )
+        return {
+            'release_id': pushed_release.id,
+            'dockerfile': dockerfile_body,
+        }
 
 
 def build_image(tarfileobj, image,
@@ -64,6 +157,10 @@ def build_image(tarfileobj, image,
                      f'{tarinfo.name} is not a regular file or directory')
                 )
         try:
+            try:
+                tar_ball.getmember('./Dockerfile.cabotage')
+            except KeyError:
+                pass
             tar_ball.getmember('./Dockerfile')
         except KeyError:
             raise BuildError(
@@ -79,8 +176,6 @@ def build_image(tarfileobj, image,
         tar_ball.extractall(path=temp_dir, numeric_owner=False)
         with open(os.path.join(temp_dir, 'Procfile'), 'rU') as img_procfile:
             procfile_body = img_procfile.read()
-        with open(os.path.join(temp_dir, 'Dockerfile'), 'a') as fd:
-            fd.write(f'COPY envconsul-linux-amd64 /usr/bin/envconsul\n')
         with open(os.path.join(temp_dir, 'Dockerfile'), 'rU') as img_dockerfile:
             dockerfile_body = img_dockerfile.read()
         image.dockerfile = dockerfile_body
@@ -92,14 +187,10 @@ def build_image(tarfileobj, image,
             raise BuildError(
                 f'error parsing Procfile: {exc}'
             )
-        shutil.copy(
-            'envconsul-linux-amd64',
-            os.path.join(temp_dir, 'envconsul-linux-amd64'),
-        )
         client = docker.DockerClient(base_url=docker_url, tls=docker_secure)
         response = client.api.build(
             path=temp_dir,
-            tag=f'{registry}/{image.repository_name}:{image.version}',
+            tag=f'{registry}/{image.repository_name}:image-{image.version}',
             rm=True,
             forcerm=True,
             dockerfile="Dockerfile",
@@ -138,19 +229,20 @@ def build_image(tarfileobj, image,
         if build_errored:
             raise BuildError(build_errored)
         built_image = client.images.get(
-            f'{registry}/{image.repository_name}:{image.version}'
+            f'{registry}/{image.repository_name}:image-{image.version}'
         )
         client.login(
             username=registry_username,
             password=registry_password,
             registry=registry,
+            reauth=True,
         )
         client.images.push(
             f'{registry}/{image.repository_name}',
-            f'{image.version}'
+            f'image-{image.version}'
         )
         pushed_image = client.images.get(
-            f'{registry}/{image.repository_name}:{image.version}'
+            f'{registry}/{image.repository_name}:image-{image.version}'
         )
         return {
             'image_id': pushed_image.id,
@@ -161,7 +253,7 @@ def build_image(tarfileobj, image,
 
 
 @celery.task()
-def run_build(image_id=None):
+def run_image_build(image_id=None):
     secret = current_app.config['CABOTAGE_REGISTRY_AUTH_SECRET']
     registry = current_app.config['CABOTAGE_REGISTRY']
     object_bucket = current_app.config['CABOTAGE_MINIO_BUCKET']
@@ -187,7 +279,7 @@ def run_build(image_id=None):
                 try:
                     build_metadata = build_image(
                         fd, image,
-                        registry, 'cabotage-builder', credentials,
+                        registry, f'cabotage-builder-{image.id}', credentials,
                         docker_url, docker_secure
                     )
                     image.image_id = build_metadata['image_id']
@@ -199,3 +291,40 @@ def run_build(image_id=None):
         db.session.commit()
     except Exception:
         raise
+
+
+@celery.task()
+def run_release_build(release_id=None):
+    secret = current_app.config['CABOTAGE_REGISTRY_AUTH_SECRET']
+    registry = current_app.config['CABOTAGE_REGISTRY']
+    object_bucket = current_app.config['CABOTAGE_MINIO_BUCKET']
+    docker_url = current_app.config['CABOTAGE_DOCKER_URL']
+    docker_secure = current_app.config['CABOTAGE_DOCKER_SECURE']
+    release = Release.query.filter_by(id=release_id).first()
+    if release is None:
+        raise KeyError(f'Release with ID {release_id} not found!')
+    credentials = generate_docker_credentials(
+        secret=secret,
+        resource_type="repository",
+        resource_name=release.repository_name,
+        resource_actions=["push", "pull"],
+    )
+    print(
+        release,
+        registry, f'cabotage-builder-{release.id}', credentials,
+        docker_url, docker_secure
+    )
+    try:
+        build_metadata = build_release(
+            release,
+            registry, f'cabotage-builder-{release.id}', credentials,
+            docker_url, docker_secure
+        )
+        release.release_id = build_metadata['release_id']
+        release.built = True
+    except BuildError as exc:
+        release.error = True
+        release.error_detail = str(exc)
+    except Exception:
+        raise
+    db.session.commit()

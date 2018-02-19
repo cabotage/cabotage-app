@@ -153,9 +153,14 @@ class Application(db.Model, Timestamp):
 
     def create_release(self):
         image_diff, configuration_diff = self.ready_for_deployment
+        organization_slug = self.project.organization.slug
+        project_slug = self.project.slug
+        application_slug = self.slug
+        repository_name = f"cabotage/{organization_slug}/{project_slug}/{application_slug}"
         release = Release(
             application_id=self.id,
             image=self.latest_image.asdict,
+            repository_name=repository_name,
             configuration={c.name: c.asdict for c in self.configurations},
             image_changes=image_diff.asdict,
             configuration_changes=configuration_diff.asdict,
@@ -208,6 +213,14 @@ class Release(db.Model, Timestamp):
         nullable=False
     )
 
+    repository_name = db.Column(
+        db.String(256),
+        nullable=False,
+    )
+    release_id = db.Column(
+        db.String(256),
+        nullable=True,
+    )
     version = db.Column(
         db.Integer,
         nullable=False,
@@ -231,6 +244,10 @@ class Release(db.Model, Timestamp):
         db.Boolean,
         nullable=False,
         default=False
+    )
+    dockerfile = db.Column(
+        db.Text(),
+        nullable=True,
     )
     release_metadata = db.Column(
         postgresql.JSONB(),
@@ -308,7 +325,7 @@ class Release(db.Model, Timestamp):
 
     @property
     def image_object(self):
-        return Image.query.filter_by(id=self.image["id"]).first()
+        return Image.query.filter_by(id=self.image.get("id", None)).first()
 
 
 @listens_for(Release, 'before_insert')

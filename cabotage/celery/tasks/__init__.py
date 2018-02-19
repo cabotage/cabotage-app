@@ -1,6 +1,9 @@
 from cabotage.server import celery
 
-from .build import run_build
+from .build import (
+    run_image_build,
+    run_release_build,
+)
 
 
 @celery.task()

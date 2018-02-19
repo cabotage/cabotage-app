@@ -54,7 +54,8 @@ from cabotage.utils.docker_auth import (
 
 from cabotage.celery.tasks import (
     is_this_thing_on,
-    run_build,
+    run_image_build,
+    run_release_build,
 )
 
 Activity = activity_plugin.activity_cls
@@ -511,6 +512,7 @@ def application_release_create(application_id):
     )
     db.session.add(activity)
     db.session.commit()
+    run_release_build.delay(release_id=release.id)
     return redirect(url_for('user.project_application', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug))
 
 
@@ -568,6 +570,6 @@ def application_images_build_submit(application_id):
             )
             db.session.add(activity)
             db.session.commit()
-            run_build.delay(image_id=image.id)
+            run_image_build.delay(image_id=image.id)
         return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
     return render_template('user/application_images_build_submit.html', form=form, application=application)
