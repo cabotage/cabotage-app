@@ -47,3 +47,4 @@ celery = {extras = ["redis"]}
 cryptography = "*"
 flask-celery-helper = "*"
 procfile = "*"
+kubernetes = "==4.0.0"
