@@ -61,7 +61,13 @@
             <tr>
               <td><code>{{ process }}</code></td>
               <td><code>{{ info['cmd'] }}</code></td>
-              <td><code>{{ info['env'] }}</code></td>
+              <td>
+                <div>
+                  {% for item in info['env'] %}
+                  <span style="display: block;"><code>{{ item[0] }}={{ item[1] }}</code></span>
+                  {% endfor %}
+                </div>
+              </td>
             </tr>
             {% endfor %}
         </table>
