@@ -448,6 +448,8 @@ def image_detail(image_id):
     image = Image.query.filter_by(id=image_id).first()
     if image is None:
         abort(404)
+    secret = current_app.config['CABOTAGE_REGISTRY_AUTH_SECRET']
+    docker_pull_credentials = image.docker_pull_credentials(secret)
     return render_template('user/image_detail.html', image=image)
 
 
@@ -489,7 +491,9 @@ def release_detail(release_id):
     release = Release.query.filter_by(id=release_id).first()
     if release is None:
         abort(404)
-    return render_template('user/release_detail.html', release=release)
+    secret = current_app.config['CABOTAGE_REGISTRY_AUTH_SECRET']
+    docker_pull_credentials = release.docker_pull_credentials(secret)
+    return render_template('user/release_detail.html', release=release, docker_pull_credentials=docker_pull_credentials)
 
 
 @user_blueprint.route('/applications/<application_id>/release/create', methods=['GET', 'POST'])

@@ -14,6 +14,7 @@ from cabotage.server.models.utils import (
     slugify,
     DictDiffer,
 )
+from cabotage.utils.docker_auth import generate_docker_credentials
 
 activity_plugin = ActivityPlugin()
 make_versioned(plugins=[activity_plugin])
@@ -327,6 +328,14 @@ class Release(db.Model, Timestamp):
     def image_object(self):
         return Image.query.filter_by(id=self.image.get("id", None)).first()
 
+    def docker_pull_credentials(self, secret):
+        return generate_docker_credentials(
+            secret=secret,
+            resource_type="repository",
+            resource_name=self.repository_name,
+            resource_actions=["pull"],
+        )
+
 
 @listens_for(Release, 'before_insert')
 def release_before_insert_listener(mapper, connection, target):
@@ -497,6 +506,14 @@ class Image(db.Model, Timestamp):
             "tag": str(self.version),
             "processes": self.processes,
         }
+
+    def docker_pull_credentials(self, secret):
+        return generate_docker_credentials(
+            secret=secret,
+            resource_type="repository",
+            resource_name=self.repository_name,
+            resource_actions=["pull"],
+        )
 
 
 @listens_for(Image, 'before_insert')
