@@ -7,6 +7,8 @@ import minio.error
 from flask import current_app
 from flask import _app_ctx_stack as stack
 
+import urllib3
+
 
 class MinioDriver(object):
 
@@ -20,17 +22,32 @@ class MinioDriver(object):
         self.minio_access_key = app.config.get('CABOTAGE_MINIO_ACCESS_KEY', '')
         self.minio_secret_key = app.config.get('CABOTAGE_MINIO_SECRET_KEY', '')
         self.minio_secure = app.config.get('CABOTAGE_MINIO_SECURE', True)
+        self.minio_ca_cert = app.config.get('CABOTAGE_MINIO_CA_CERT', None)
         self.minio_bucket = app.config.get('CABOTAGE_MINIO_BUCKET', 'cabotage-registry')
         self.minio_prefix = app.config.get('CABOTAGE_MINIO_PREFIX', 'cabotage-builds')
 
         app.teardown_appcontext(self.teardown)
 
     def connect_minio(self):
+        _http = None
+        if self.minio_ca_cert:
+            _http = urllib3.PoolManager(
+                timeout=urllib3.Timeout.DEFAULT_TIMEOUT,
+                        cert_reqs='CERT_REQUIRED',
+                        ca_certs=self.minio_ca_cert,
+                        retries=urllib3.Retry(
+                            total=5,
+                            backoff_factor=0.2,
+                            status_forcelist=[500, 502, 503, 504]
+                        )
+            )
+
         minio_client = minio.Minio(
             self.minio_endpoint,
             access_key=self.minio_access_key,
             secret_key=self.minio_secret_key,
             secure=self.minio_secure,
+            http_client=_http,
         )
         return minio_client
 
