@@ -91,6 +91,7 @@ services:
     command: pipenv run python manage.py runserver -h 0.0.0.0 -p 8000
     volumes:
       - .:/opt/cabotage-app/src
+      - $HOME/.kube:/root/.kube
     ports:
       - "8000:8000"
   cabotage-app-worker:
@@ -100,3 +101,4 @@ services:
       - C_FORCE_ROOT=1
     volumes:
       - .:/opt/cabotage-app/src
+      - $HOME/.kube:/root/.kube

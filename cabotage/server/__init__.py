@@ -17,6 +17,7 @@ from cabotage.server.ext.consul import Consul
 from cabotage.server.ext.vault import Vault
 from cabotage.server.ext.config_writer import ConfigWriter
 from cabotage.server.ext.minio_driver import MinioDriver
+from cabotage.server.ext.kubernetes import Kubernetes
 
 # instantiate the extensions
 bcrypt = Bcrypt()
@@ -38,6 +39,7 @@ migrate = Migrate()
 humanize = Humanize()
 consul = Consul()
 vault = Vault()
+kubernetes = Kubernetes()
 config_writer = ConfigWriter(consul=consul, vault=vault)
 minio = MinioDriver()
 celery = Celery()
@@ -113,6 +115,7 @@ def create_app():
     humanize.init_app(app)
     consul.init_app(app)
     vault.init_app(app)
+    kubernetes.init_app(app)
     config_writer.init_app(app, consul, vault)
     minio.init_app(app)
     celery.init_app(app)
