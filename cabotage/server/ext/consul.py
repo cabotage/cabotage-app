@@ -20,6 +20,7 @@ class Consul(object):
         self.consul_verify = app.config.get('CABOTAGE_CONSUL_VERIFY', False)
         self.consul_cert = app.config.get('CABOTAGE_CONSUL_CERT', None)
         self.consul_prefix = app.config.get('CABOTAGE_CONSUL_PREFIX', 'cabotage')
+        self.consul_token = app.config.get('CABOTAGE_CONSUL_TOKEN', None)
 
         app.teardown_appcontext(self.teardown)
 
@@ -30,6 +31,7 @@ class Consul(object):
             scheme=self.consul_scheme,
             verify=self.consul_verify,
             cert=self.consul_cert,
+            token=self.consul_token,
         )
         return consul_client
 
