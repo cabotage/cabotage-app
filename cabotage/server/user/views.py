@@ -450,28 +450,7 @@ def image_detail(image_id):
         abort(404)
     secret = current_app.config['CABOTAGE_REGISTRY_AUTH_SECRET']
     docker_pull_credentials = image.docker_pull_credentials(secret)
-    return render_template('user/image_detail.html', image=image)
-
-
-@user_blueprint.route('/applications/<application_id>/images/pull-secrets')
-@login_required
-def application_image_pull_secrets(application_id):
-    application = Application.query.filter_by(id=application_id).first()
-    if application is None:
-        abort(404)
-    project = application.project
-    organization = application.project.organization
-
-    secret = current_app.config['CABOTAGE_REGISTRY_AUTH_SECRET']
-    registry = current_app.config['CABOTAGE_REGISTRY']
-    repository_name = f"cabotage/{organization.slug}/{project.slug}/{application.slug}"
-    credentials = generate_docker_credentials(
-        secret=secret,
-        resource_type="repository",
-        resource_name=repository_name,
-        resource_actions=["pull"],
-    )
-    return render_template('user/application_image_credentials.html', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug, credentials=credentials, registry=registry, repository=repository_name)
+    return render_template('user/image_detail.html', image=image, docker_pull_credentials=docker_pull_credentials)
 
 
 @user_blueprint.route('/applications/<application_id>/releases')
@@ -577,3 +556,8 @@ def application_images_build_submit(application_id):
             run_image_build.delay(image_id=image.id)
         return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
     return render_template('user/application_images_build_submit.html', form=form, application=application)
+
+@user_blueprint.route('/signing-cert', methods=['GET'])
+def signing_certi():
+    cert = vault.signing_cert
+    return render_template('user/signing_cert.html', signing_certificate=cert)
