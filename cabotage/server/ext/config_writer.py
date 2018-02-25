@@ -30,7 +30,7 @@ class ConfigWriter(object):
             if self.vault is None:
                 raise RuntimeError('No Vault extension configured!')
             key_name = (f'{self.vault_prefix}'
-                        f'/{org_slug}_{project_slug}_{app_slug}/configuration/'
+                        f'/{org_slug}/{project_slug}-{app_slug}/configuration/'
                         f'{configuration.name}/{version}')
             storage = 'vault'
             self.vault.vault_connection.write(
@@ -40,7 +40,7 @@ class ConfigWriter(object):
             if self.consul is None:
                 raise RuntimeError('No Consul extension configured!')
             key_name = (f'{self.consul_prefix}'
-                        f'/{org_slug}_{project_slug}_{app_slug}/configuration/'
+                        f'/{org_slug}/{project_slug}-{app_slug}/configuration/'
                         f'{configuration.name}/{version}/{configuration.name}')
             storage = 'consul'
             self.consul.consul_connection.kv.put(key_name, configuration.value)

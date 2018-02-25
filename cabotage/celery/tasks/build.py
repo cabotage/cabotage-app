@@ -3,6 +3,7 @@ import io
 import json
 import os
 import shutil
+import stat
 import sys
 
 from contextlib import ExitStack
@@ -49,15 +50,29 @@ FROM {registry}/{image.repository_name}:image-{image.version}
 
 """
 
+ENTRYPOINT = """
+#!/bin/sh
+
+export VAULT_TOKEN=$(cat /var/run/secrets/vault/vault-token)
+export CONSUL_TOKEN=$(cat /var/run/secrets/vault/consul-token)
+
+exec "${@}"
+"""
+
 
 def build_release(release,
                   registry, registry_username, registry_password,
                   docker_url, docker_secure):
     with ExitStack() as stack:
         temp_dir = stack.enter_context(TemporaryDirectory())
+        with open(os.path.join(temp_dir, 'entrypoint.sh'), 'w') as fd:
+            fd.write(ENTRYPOINT)
+        st = os.stat(os.path.join(temp_dir, 'entrypoint.sh'))
+        os.chmod(os.path.join(temp_dir, 'entrypoint.sh'), st.st_mode | stat.S_IEXEC)
         with open(os.path.join(temp_dir, 'Dockerfile'), 'a') as fd:
             fd.write(RELEASE_DOCKERFILE_TEMPLATE.format(registry=registry, image=release.image_object))
             fd.write(f'COPY envconsul-linux-amd64 /usr/bin/envconsul\n')
+            fd.write(f'COPY entrypoint.sh /entrypoint.sh\n')
             for process_name in  release.envconsul_configurations:
                 fd.write(f'COPY envconsul-{process_name}.hcl /etc/cabotage/envconsul-{process_name}.hcl\n')
         with open(os.path.join(temp_dir, 'Dockerfile'), 'rU') as release_dockerfile:
