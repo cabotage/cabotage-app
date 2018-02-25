@@ -24,6 +24,7 @@ from cabotage.server import config_writer
 from cabotage.server import minio
 from cabotage.server import db
 from cabotage.server import vault
+from cabotage.server import kubernetes
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import (
     Project,
@@ -472,7 +473,8 @@ def release_detail(release_id):
         abort(404)
     secret = current_app.config['CABOTAGE_REGISTRY_AUTH_SECRET']
     docker_pull_credentials = release.docker_pull_credentials(secret)
-    return render_template('user/release_detail.html', release=release, docker_pull_credentials=docker_pull_credentials)
+    image_pull_secrets = release.image_pull_secrets(secret, registry_urls=['localhost:5000'])
+    return render_template('user/release_detail.html', release=release, docker_pull_credentials=docker_pull_credentials, image_pull_secrets=image_pull_secrets)
 
 
 @user_blueprint.route('/applications/<application_id>/release/create', methods=['GET', 'POST'])

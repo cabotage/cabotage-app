@@ -14,7 +14,10 @@ from cabotage.server.models.utils import (
     slugify,
     DictDiffer,
 )
-from cabotage.utils.docker_auth import generate_docker_credentials
+from cabotage.utils.docker_auth import (
+    generate_docker_credentials,
+    generate_kubernetes_imagepullsecrets,
+)
 
 activity_plugin = ActivityPlugin()
 make_versioned(plugins=[activity_plugin])
@@ -331,6 +334,15 @@ class Release(db.Model, Timestamp):
     def docker_pull_credentials(self, secret):
         return generate_docker_credentials(
             secret=secret,
+            resource_type="repository",
+            resource_name=self.repository_name,
+            resource_actions=["pull"],
+        )
+
+    def image_pull_secrets(self, secret, registry_urls=None):
+        return generate_kubernetes_imagepullsecrets(
+            secret=secret,
+            registry_urls=registry_urls,
             resource_type="repository",
             resource_name=self.repository_name,
             resource_actions=["pull"],

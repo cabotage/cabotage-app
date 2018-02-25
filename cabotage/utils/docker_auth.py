@@ -141,6 +141,14 @@ def generate_docker_credentials(secret=None, resource_type="registry", resource_
     return serializer.dumps(access)
 
 
+def generate_kubernetes_imagepullsecrets(secret, registry_urls=None, resource_type="registry", resource_name="catalog", resource_actions=None):
+    if registry_urls is None:
+        registry_urls = ['localhost:5000']
+    password = generate_docker_credentials(secret, resource_type=resource_type, resource_name=resource_name, resource_actions=resource_actions)
+    return json.dumps(
+        {'auths': {url: {'username': 'none', 'password': password, 'email': 'none', 'auth': b64encode(f'none:{password}'.encode()).decode()} for url in registry_urls}}
+    )
+
 def check_docker_credentials(token, secret=None, max_age=60):
     serializer = _docker_credential_serializer(secret=secret)
     try:
