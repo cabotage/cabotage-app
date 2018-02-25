@@ -50,8 +50,7 @@ FROM {registry}/{image.repository_name}:image-{image.version}
 
 """
 
-ENTRYPOINT = """
-#!/bin/sh
+ENTRYPOINT = """#!/bin/sh
 
 export VAULT_TOKEN=$(cat /var/run/secrets/vault/vault-token)
 export CONSUL_TOKEN=$(cat /var/run/secrets/vault/consul-token)
@@ -75,6 +74,8 @@ def build_release(release,
             fd.write(f'COPY entrypoint.sh /entrypoint.sh\n')
             for process_name in  release.envconsul_configurations:
                 fd.write(f'COPY envconsul-{process_name}.hcl /etc/cabotage/envconsul-{process_name}.hcl\n')
+            fd.write(f'ENTRYPOINT ["/entrypoint.sh"]\n')
+            fd.write(f'CMD []\n')
         with open(os.path.join(temp_dir, 'Dockerfile'), 'rU') as release_dockerfile:
             dockerfile_body = release_dockerfile.read()
         release.dockerfile = dockerfile_body
