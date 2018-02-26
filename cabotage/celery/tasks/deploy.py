@@ -144,3 +144,95 @@ def run_deploy_release(release_id=None):
         print(exc)
     except Exception:
         raise
+
+
+SAMPLE_DEPLOY = """
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  namespace: admin-org
+  name: admin-proj-admin-app
+  labels:
+    app: admin-org-admin-proj-admin-app
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: admin-org-admin-proj-admin-app
+    spec:
+      serviceAccountName: admin-proj-admin-app
+      initContainers:
+        - name: cabotage-enroller
+          image: gcr.io/the-psf/cabotage-sidecar:v1.0.0a1
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          args:
+            - "kube_login"
+            - "--namespace=$(NAMESPACE)"
+            - "--vault-auth-kubernetes-role=admin-org-admin-proj-admin-app"
+            - "--fetch-cert"
+            - "--vault-pki-role=admin-org-admin-proj-admin-app"
+            - "--fetch-consul-token"
+            - "--vault-consul-role=admin-org-admin-proj-admin-app"
+            - "--pod-name=$(POD_NAME)"
+            - "--pod-ip=$(POD_IP)"
+            - "--service-names=admin-proj-admin-app"
+          volumeMounts:
+            - name: vault-secrets
+              mountPath: /var/run/secrets/vault
+      containers:
+        - name: cabotage-sidecar
+          image: gcr.io/the-psf/cabotage-sidecar:v1.0.0a1
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          args:
+            - "maintain"
+            - "--vault-pki-role=admin-org-admin-proj-admin-app"
+          volumeMounts:
+            - name: vault-secrets
+              mountPath: /var/run/secrets/vault
+        - name: app
+          image: localhost:5000/cabotage/admin-org/admin-proj/admin-app:release-13
+          imagePullPolicy: Always
+          env:
+            - name: VAULT_ADDR
+              value: "https://vault.cabotage.svc.cluster.local"
+            - name: VAULT_CACERT
+              value: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+            - name: CONSUL_HTTP_ADDR
+              value: "https://consul.cabotage.svc.cluster.local:8443"
+            - name: CONSUL_CACERT
+              value: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          args: ["envconsul", "-config=/etc/cabotage/envconsul-web.hcl"]
+          volumeMounts:
+            - name: vault-secrets
+              mountPath: /var/run/secrets/vault
+          resources:
+            limits:
+              memory: "50Mi"
+              cpu: "100m"
+          securityContext:
+            readOnlyRootFilesystem: false
+      imagePullSecrets:
+        - name: admin-proj-admin-app-release-12
+      volumes:
+        - name: vault-secrets
+          emptyDir:
+            medium: "Memory"
+            sizeLimit: "1M"
+"""
