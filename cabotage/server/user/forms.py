@@ -273,3 +273,12 @@ class ImageBuildSubmitForm(FlaskForm):
         [DataRequired()],
         description="Gzipped Tarball matching {documentation_url}.",
     )
+
+
+class ReleaseDeployForm(FlaskForm):
+
+    application_id = StringField(
+        u'Release ID',
+        [DataRequired()],
+        description="Release to deploy.",
+    )

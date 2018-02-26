@@ -1,9 +1,26 @@
 {% extends "_base.html" %}
 
+{% from "security/_macros.html" import render_field_with_errors, render_field %}
+{% from "bootstrap/wtf.html" import form_errors, form_field %}
+{% from "bootstrap/utils.html" import form_button %}
+
 {% block content %}
   <div class="container" id="content">
     <div class="row">
       <h1>{{ application.project.organization.slug|lower }}/{{ application.project.slug|lower }}: {{ application.slug }}</h1>
+    </div>
+    <div class="row">
+      <div class="col-md-8">
+        <h3>Deploy!</h3>
+        <form action="{{ url_for('user.release_deploy', release_id=application.latest_release.id) }}" method="POST" name="deploy_release_form" enctype="multipart/form-data">
+          {{ deploy_form.hidden_tag() }}
+          <div class="row">
+            <div class="col-md-6">
+              {{ form_button(deploy_form.submit, "Do It!", method="POST", class="btn btn-primary") }}
+            </div>
+          </div>
+        </form>
+      </div>
     </div>
     <div class="row">
       <div class="col-md-8">

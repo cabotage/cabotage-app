@@ -43,6 +43,7 @@ from cabotage.server.user.forms import (
     DeleteConfigurationForm,
     EditConfigurationForm,
     ImageBuildSubmitForm,
+    ReleaseDeployForm,
 )
 
 from cabotage.utils.docker_auth import (
@@ -55,6 +56,7 @@ from cabotage.utils.docker_auth import (
 
 from cabotage.celery.tasks import (
     is_this_thing_on,
+    run_deploy_release,
     run_image_build,
     run_release_build,
 )
@@ -204,6 +206,7 @@ def project_application(org_slug, project_slug, app_slug):
     return render_template(
         'user/project_application.html',
         application=application,
+        deploy_form=ReleaseDeployForm(),
         view_releases=version_class(Release).query.filter_by(application_id=application.id).order_by(desc(version_class(Release).version_id)).limit(5),
     )
 
@@ -559,7 +562,16 @@ def application_images_build_submit(application_id):
         return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
     return render_template('user/application_images_build_submit.html', form=form, application=application)
 
+@user_blueprint.route('/release/<release_id>/deploy', methods=['POST'])
+@login_required
+def release_deploy(release_id):
+    release = Release.query.filter_by(id=release_id).first()
+    if release is None:
+        abort(404)
+    run_deploy_release(release_id=release.id)
+    return redirect(url_for('user.project_application', org_slug=release.application.project.organization.slug, project_slug=release.application.project.slug, app_slug=release.application.slug))
+
 @user_blueprint.route('/signing-cert', methods=['GET'])
-def signing_certi():
+def signing_cert():
     cert = vault.signing_cert
     return render_template('user/signing_cert.html', signing_certificate=cert)
