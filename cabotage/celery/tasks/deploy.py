@@ -28,7 +28,7 @@ def create_namespace(core_api_instance, release):
         return core_api_instance.create_namespace(namespace_object)
     except Exception as exc:
         raise DeployError(f'Unexpected exception creating Namespace/{namespace_name}: {exc}')
-    
+
 
 def fetch_namespace(core_api_instance, release):
     namespace_name = release.application.project.organization.slug
@@ -57,7 +57,7 @@ def create_service_account(core_api_instance, release):
         return core_api_instance.create_namespaced_service_account(namespace, service_account_object)
     except Exception as exc:
         raise DeployError(f'Unexpected exception creating ServiceAccount/{service_account_name} in {namespace}: {exc}')
-    
+
 
 def fetch_service_account(core_api_instance, release):
     namespace = release.application.project.organization.slug
@@ -112,10 +112,134 @@ def fetch_image_pull_secrets(core_api_instance, release):
             raise DeployError(f'Unexpected exception fetching ServiceAccount/{secret_name} in {namespace}: {exc}')
     return secret
 
+def create_cabotage_enroller_container(release, process_name):
+    role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
+    return kubernetes.client.V1Container(
+        name='cabotage-enroller',
+        image='gcr.io/the-psf/cabotage-sidecar:v1.0.0a1',
+        image_pull_policy='IfNotPresent',
+        env=[
+            kubernetes.client.V1EnvVar(name='NAMESPACE', value_from=kubernetes.client.V1EnvVarSource(field_ref=kubernetes.client.V1ObjectFieldSelector(field_path='metadata.namespace'))),
+            kubernetes.client.V1EnvVar(name='POD_NAME', value_from=kubernetes.client.V1EnvVarSource(field_ref=kubernetes.client.V1ObjectFieldSelector(field_path='metadata.name'))),
+            kubernetes.client.V1EnvVar(name='POD_IP', value_from=kubernetes.client.V1EnvVarSource(field_ref=kubernetes.client.V1ObjectFieldSelector(field_path='status.podIP'))),
+        ],
+        args=[
+            "kube_login",
+            "--namespace=$(NAMESPACE)",
+            f"--vault-auth-kubernetes-role={role_name}",
+            "--fetch-cert",
+            f"--vault-pki-role={role_name}",
+            "--fetch-consul-token",
+            f"--vault-consul-role={role_name}",
+            "--pod-name=$(POD_NAME)",
+            "--pod-ip=$(POD_IP)",
+            f"--service-names={process_name}.{release.application.slug}",
+        ],
+        volume_mounts=[
+            kubernetes.client.V1VolumeMount(
+                name='vault-secrets',
+                mount_path='/var/run/secrets/vault'
+            ),
+        ],
+    )
+
+def create_cabotage_sidecar_container(release):
+    role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
+    return kubernetes.client.V1Container(
+        name='cabotage-sidecar',
+        image='gcr.io/the-psf/cabotage-sidecar:v1.0.0a1',
+        image_pull_policy='IfNotPresent',
+        args=[
+            "maintain",
+            f"--vault-pki-role={role_name}",
+        ],
+        volume_mounts=[
+            kubernetes.client.V1VolumeMount(
+                name='vault-secrets',
+                mount_path='/var/run/secrets/vault'
+            ),
+        ],
+    )
+
+def create_process_container(release, process_name):
+    return kubernetes.client.V1Container(
+        name=process_name,
+        image=f'localhost:5000/{release.repository_name}:release-{release.version}',
+        image_pull_policy='Always',
+        env=[
+            kubernetes.client.V1EnvVar(name='VAULT_ADDR', value='https://vault.cabotage.svc.cluster.local'),
+            kubernetes.client.V1EnvVar(name='VAULT_CACERT', value='/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'),
+            kubernetes.client.V1EnvVar(name='CONSUL_HTTP_ADDR', value='https://consul.cabotage.svc.cluster.local:8443'),
+            kubernetes.client.V1EnvVar(name='CONSUL_CACERT', value='/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'),
+        ],
+        args=[
+            "envconsul",
+            f"-config=/etc/cabotage/envconsul-{process_name}.hcl",
+        ],
+        resources=kubernetes.client.V1ResourceRequirements(
+            limits={
+                'memory': '128Mi',
+                'cpu': '100m',
+            },
+            requests={
+                'memory': '64Mi',
+                'cpu': '50m',
+            },
+        ),
+        volume_mounts=[
+            kubernetes.client.V1VolumeMount(
+                name='vault-secrets',
+                mount_path='/var/run/secrets/vault'
+            ),
+        ],
+    )
+
+def create_deployment(apps_api_instance, namespace, release, service_account_name, process_name):
+    role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
+    deployment_object = kubernetes.client.AppsV1beta1Deployment(
+        metadata=kubernetes.client.V1ObjectMeta(
+            name=f'{release.application.project.slug}-{release.application.slug}-{process_name}',
+            labels={
+                'organization': release.application.project.organization.slug,
+                'project': release.application.project.slug,
+                'application': release.application.slug,
+                'process': process_name,
+                'app': role_name,
+            }
+        ),
+        spec=kubernetes.client.AppsV1beta1DeploymentSpec(
+            replicas=1,
+            template=kubernetes.client.V1PodTemplateSpec(
+                metadata=kubernetes.client.V1ObjectMeta(
+                    labels={
+                        'organization': release.application.project.organization.slug,
+                        'project': release.application.project.slug,
+                        'application': release.application.slug,
+                        'process': process_name,
+                        'app': role_name,
+                    }
+                ),
+                spec=kubernetes.client.V1PodSpec(
+                    service_account_name=service_account_name,
+                    init_containers=[create_cabotage_enroller_container(release, process_name)],
+                    containers=[create_cabotage_sidecar_container(release), create_process_container(release, process_name)],
+                    volumes=[
+                        kubernetes.client.V1Volume(
+                            name='vault-secrets',
+                            empty_dir=kubernetes.client.V1EmptyDirVolumeSource(medium="Memory", size_limit="1M")
+                        ),
+                    ],
+                ),
+            ),
+        ),
+    )
+    return apps_api_instance.create_namespaced_deployment(namespace, deployment_object)
+
 
 def deploy_release(release):
     api_client = kubernetes_ext.kubernetes_client
     core_api_instance = kubernetes.client.CoreV1Api(api_client)
+    apps_api_instance = kubernetes.client.AppsV1beta1Api(api_client)
     namespace = fetch_namespace(core_api_instance, release)
     service_account = fetch_service_account(core_api_instance, release)
     image_pull_secrets = fetch_image_pull_secrets(core_api_instance, release)
@@ -126,6 +250,7 @@ def deploy_release(release):
             image_pull_secrets=[kubernetes.client.V1LocalObjectReference(name=image_pull_secrets.metadata.name)],
         ),
     )
+    deployment = create_deployment(apps_api_instance, namespace.metadata.name, release, service_account.metadata.name, 'web')
 
 
 @celery.task()
@@ -144,95 +269,3 @@ def run_deploy_release(release_id=None):
         print(exc)
     except Exception:
         raise
-
-
-SAMPLE_DEPLOY = """
-apiVersion: apps/v1beta1
-kind: Deployment
-metadata:
-  namespace: admin-org
-  name: admin-proj-admin-app
-  labels:
-    app: admin-org-admin-proj-admin-app
-spec:
-  replicas: 1
-  template:
-    metadata:
-      labels:
-        app: admin-org-admin-proj-admin-app
-    spec:
-      serviceAccountName: admin-proj-admin-app
-      initContainers:
-        - name: cabotage-enroller
-          image: gcr.io/the-psf/cabotage-sidecar:v1.0.0a1
-          env:
-            - name: NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
-            - name: POD_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
-            - name: POD_IP
-              valueFrom:
-                fieldRef:
-                  fieldPath: status.podIP
-          args:
-            - "kube_login"
-            - "--namespace=$(NAMESPACE)"
-            - "--vault-auth-kubernetes-role=admin-org-admin-proj-admin-app"
-            - "--fetch-cert"
-            - "--vault-pki-role=admin-org-admin-proj-admin-app"
-            - "--fetch-consul-token"
-            - "--vault-consul-role=admin-org-admin-proj-admin-app"
-            - "--pod-name=$(POD_NAME)"
-            - "--pod-ip=$(POD_IP)"
-            - "--service-names=admin-proj-admin-app"
-          volumeMounts:
-            - name: vault-secrets
-              mountPath: /var/run/secrets/vault
-      containers:
-        - name: cabotage-sidecar
-          image: gcr.io/the-psf/cabotage-sidecar:v1.0.0a1
-          env:
-            - name: NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
-          args:
-            - "maintain"
-            - "--vault-pki-role=admin-org-admin-proj-admin-app"
-          volumeMounts:
-            - name: vault-secrets
-              mountPath: /var/run/secrets/vault
-        - name: app
-          image: localhost:5000/cabotage/admin-org/admin-proj/admin-app:release-13
-          imagePullPolicy: Always
-          env:
-            - name: VAULT_ADDR
-              value: "https://vault.cabotage.svc.cluster.local"
-            - name: VAULT_CACERT
-              value: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-            - name: CONSUL_HTTP_ADDR
-              value: "https://consul.cabotage.svc.cluster.local:8443"
-            - name: CONSUL_CACERT
-              value: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-          args: ["envconsul", "-config=/etc/cabotage/envconsul-web.hcl"]
-          volumeMounts:
-            - name: vault-secrets
-              mountPath: /var/run/secrets/vault
-          resources:
-            limits:
-              memory: "50Mi"
-              cpu: "100m"
-          securityContext:
-            readOnlyRootFilesystem: false
-      imagePullSecrets:
-        - name: admin-proj-admin-app-release-12
-      volumes:
-        - name: vault-secrets
-          emptyDir:
-            medium: "Memory"
-            sizeLimit: "1M"
-"""
