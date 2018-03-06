@@ -270,11 +270,11 @@ def build_image(tarfileobj, image,
 
 @celery.task()
 def run_image_build(image_id=None):
-    secret = current_app.config['CABOTAGE_REGISTRY_AUTH_SECRET']
-    registry = current_app.config['CABOTAGE_REGISTRY']
-    object_bucket = current_app.config['CABOTAGE_MINIO_BUCKET']
-    docker_url = current_app.config['CABOTAGE_DOCKER_URL']
-    docker_secure = current_app.config['CABOTAGE_DOCKER_SECURE']
+    secret = current_app.config['REGISTRY_AUTH_SECRET']
+    registry = current_app.config['REGISTRY']
+    object_bucket = current_app.config['MINIO_BUCKET']
+    docker_url = current_app.config['DOCKER_URL']
+    docker_secure = current_app.config['DOCKER_SECURE']
     image = Image.query.filter_by(id=image_id).first()
     if image is None:
         raise KeyError(f'Image with ID {image_id} not found!')
@@ -311,11 +311,11 @@ def run_image_build(image_id=None):
 
 @celery.task()
 def run_release_build(release_id=None):
-    secret = current_app.config['CABOTAGE_REGISTRY_AUTH_SECRET']
-    registry = current_app.config['CABOTAGE_REGISTRY']
-    object_bucket = current_app.config['CABOTAGE_MINIO_BUCKET']
-    docker_url = current_app.config['CABOTAGE_DOCKER_URL']
-    docker_secure = current_app.config['CABOTAGE_DOCKER_SECURE']
+    secret = current_app.config['REGISTRY_AUTH_SECRET']
+    registry = current_app.config['REGISTRY']
+    object_bucket = current_app.config['MINIO_BUCKET']
+    docker_url = current_app.config['DOCKER_URL']
+    docker_secure = current_app.config['DOCKER_SECURE']
     release = Release.query.filter_by(id=release_id).first()
     if release is None:
         raise KeyError(f'Release with ID {release_id} not found!')

@@ -16,8 +16,8 @@ class ConfigWriter(object):
     def init_app(self, app, consul, vault):
         self.consul = consul
         self.vault = vault
-        self.consul_prefix = app.config.get('CABOTAGE_CONSUL_PREFIX', 'cabotage')
-        self.vault_prefix = app.config.get('CABOTAGE_VAULT_PREFIX', 'secret/cabotage')
+        self.consul_prefix = app.config.get('CONSUL_PREFIX', 'cabotage')
+        self.vault_prefix = app.config.get('VAULT_PREFIX', 'secret/cabotage')
 
         app.teardown_appcontext(self.teardown)
 

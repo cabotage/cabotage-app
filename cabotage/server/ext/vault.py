@@ -21,15 +21,15 @@ class Vault(object):
             self.init_app(app)
 
     def init_app(self, app):
-        self.vault_url = app.config.get('CABOTAGE_VAULT_URL', 'http://127.0.0.1:8200')
-        self.vault_verify = app.config.get('CABOTAGE_VAULT_VERIFY', False)
-        self.vault_cert = app.config.get('CABOTAGE_VAULT_CERT', None)
-        self.vault_token = app.config.get('CABOTAGE_VAULT_TOKEN', None)
-        self.vault_token_file = app.config.get('CABOTAGE_VAULT_TOKEN_FILE', os.path.expanduser('~/.vault-token'))
-        self.vault_token_unwrap = app.config.get('CABOTAGE_VAULT_TOKEN_UNWRAP', False)
-        self.vault_prefix = app.config.get('CABOTAGE_VAULT_PREFIX', 'secret/cabotage')
-        self.vault_signing_mount = app.config.get('CABOTAGE_VAULT_SIGNING_MOUNT', 'transit')
-        self.vault_signing_key = app.config.get('CABOTAGE_VAULT_SIGNING_KEY', 'cabotage-app')
+        self.vault_url = app.config.get('VAULT_URL', 'http://127.0.0.1:8200')
+        self.vault_verify = app.config.get('VAULT_VERIFY', False)
+        self.vault_cert = app.config.get('VAULT_CERT', None)
+        self.vault_token = app.config.get('VAULT_TOKEN', None)
+        self.vault_token_file = app.config.get('VAULT_TOKEN_FILE', os.path.expanduser('~/.vault-token'))
+        self.vault_token_unwrap = app.config.get('VAULT_TOKEN_UNWRAP', False)
+        self.vault_prefix = app.config.get('VAULT_PREFIX', 'secret/cabotage')
+        self.vault_signing_mount = app.config.get('VAULT_SIGNING_MOUNT', 'transit')
+        self.vault_signing_key = app.config.get('VAULT_SIGNING_KEY', 'cabotage-app')
 
         if self.vault_token is None:
             if os.path.exists(self.vault_token_file):

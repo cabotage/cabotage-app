@@ -89,6 +89,13 @@ services:
   cabotage-app:
     build: .
     command: pipenv run python manage.py runserver -h 0.0.0.0 -p 8000
+    environment:
+      - CABOTAGE_DEBUG=True
+      - CABOTAGE_BCRYPT_LOG_ROUNDS=4
+      - CABOTAGE_WTF_CSRF_ENABLED=False
+      - CABOTAGE_SQLALCHEMY_DATABASE_URI=postgresql://postgres@db/cabotage_dev
+      - CABOTAGE_DEBUG_TB_ENABLED=True
+      - CABOTAGE_SECURITY_CONFIRMABLE=False
     volumes:
       - .:/opt/cabotage-app/src
       - $HOME/.kube:/root/.kube
@@ -97,6 +104,13 @@ services:
   cabotage-app-worker:
     build: .
     command: pipenv run celery -A cabotage.celery.worker.celery worker -E --loglevel=INFO
+    environment:
+      - CABOTAGE_DEBUG=True
+      - CABOTAGE_BCRYPT_LOG_ROUNDS=4
+      - CABOTAGE_WTF_CSRF_ENABLED=False
+      - CABOTAGE_SQLALCHEMY_DATABASE_URI=postgresql://postgres@db/cabotage_dev
+      - CABOTAGE_DEBUG_TB_ENABLED=True
+      - CABOTAGE_SECURITY_CONFIRMABLE=False
     environment:
       - C_FORCE_ROOT=1
     volumes:

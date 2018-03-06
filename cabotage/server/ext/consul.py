@@ -14,13 +14,13 @@ class Consul(object):
             self.init_app(app)
 
     def init_app(self, app):
-        self.consul_host = app.config.get('CABOTAGE_CONSUL_HOST', '127.0.0.1')
-        self.consul_port = app.config.get('CABOTAGE_CONSUL_PORT', '8500')
-        self.consul_scheme = app.config.get('CABOTAGE_CONSUL_SCHEME', 'http')
-        self.consul_verify = app.config.get('CABOTAGE_CONSUL_VERIFY', False)
-        self.consul_cert = app.config.get('CABOTAGE_CONSUL_CERT', None)
-        self.consul_prefix = app.config.get('CABOTAGE_CONSUL_PREFIX', 'cabotage')
-        self.consul_token = app.config.get('CABOTAGE_CONSUL_TOKEN', None)
+        self.consul_host = app.config.get('CONSUL_HOST', '127.0.0.1')
+        self.consul_port = app.config.get('CONSUL_PORT', '8500')
+        self.consul_scheme = app.config.get('CONSUL_SCHEME', 'http')
+        self.consul_verify = app.config.get('CONSUL_VERIFY', False)
+        self.consul_cert = app.config.get('CONSUL_CERT', None)
+        self.consul_prefix = app.config.get('CONSUL_PREFIX', 'cabotage')
+        self.consul_token = app.config.get('CONSUL_TOKEN', None)
 
         app.teardown_appcontext(self.teardown)
 

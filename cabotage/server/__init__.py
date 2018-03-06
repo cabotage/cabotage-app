@@ -95,7 +95,7 @@ def create_app():
 
     # set config
     app_settings = os.getenv(
-        'APP_SETTINGS', 'cabotage.server.config.DevelopmentConfig')
+        'APP_SETTINGS', 'cabotage.server.config.Config')
     app.config.from_object(app_settings)
 
     # set up extensions

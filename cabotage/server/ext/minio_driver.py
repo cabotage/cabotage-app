@@ -18,13 +18,13 @@ class MinioDriver(object):
             self.init_app(app)
 
     def init_app(self, app):
-        self.minio_endpoint = app.config.get('CABOTAGE_MINIO_ENDPOINT', '127.0.0.1:9000')
-        self.minio_access_key = app.config.get('CABOTAGE_MINIO_ACCESS_KEY', '')
-        self.minio_secret_key = app.config.get('CABOTAGE_MINIO_SECRET_KEY', '')
-        self.minio_secure = app.config.get('CABOTAGE_MINIO_SECURE', True)
-        self.minio_ca_cert = app.config.get('CABOTAGE_MINIO_CA_CERT', None)
-        self.minio_bucket = app.config.get('CABOTAGE_MINIO_BUCKET', 'cabotage-registry')
-        self.minio_prefix = app.config.get('CABOTAGE_MINIO_PREFIX', 'cabotage-builds')
+        self.minio_endpoint = app.config.get('MINIO_ENDPOINT', '127.0.0.1:9000')
+        self.minio_access_key = app.config.get('MINIO_ACCESS_KEY', '')
+        self.minio_secret_key = app.config.get('MINIO_SECRET_KEY', '')
+        self.minio_secure = app.config.get('MINIO_SECURE', True)
+        self.minio_ca_cert = app.config.get('MINIO_CA_CERT', None)
+        self.minio_bucket = app.config.get('MINIO_BUCKET', 'cabotage-registry')
+        self.minio_prefix = app.config.get('MINIO_PREFIX', 'cabotage-builds')
 
         app.teardown_appcontext(self.teardown)
 

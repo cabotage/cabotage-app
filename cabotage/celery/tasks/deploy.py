@@ -73,7 +73,7 @@ def fetch_service_account(core_api_instance, release):
 
 
 def _image_pull_secrets(release):
-    registry_auth_secret = current_app.config['CABOTAGE_REGISTRY_AUTH_SECRET']
+    registry_auth_secret = current_app.config['REGISTRY_AUTH_SECRET']
     secret = kubernetes.client.V1Secret(
         type='kubernetes.io/dockerconfigjson',
         metadata=kubernetes.client.V1ObjectMeta(
