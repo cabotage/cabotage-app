@@ -35,7 +35,7 @@ else
     VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID vault write transit/restore/cabotage-app backup=`cat /etc/vault/cabotage-vault-key.backup`
     echo "bootstrapping postgres stufffff"
     VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID vault secrets enable database
-    VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID vault write database/config/cabotage plugin_name=postgresql-database-plugin allowed_roles="docker-compose" connection_url="postgresql://postgres@db/cabotage_dev?sslmode=disable" verify_connection=false
-    VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID vault write database/roles/docker-compose db_name=cabotage default_ttl="1h" max_ttl="24h" creation_statements="CREATE ROLE \"{{name}}\" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}'; GRANT ALL PRIVILEGES ON SCHEMA public TO \"{{name}}\";"
+    VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID vault write database/config/cabotage plugin_name=postgresql-database-plugin allowed_roles="cabotage" connection_url="postgresql://postgres@db/cabotage_dev?sslmode=disable" verify_connection=false
+    VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID vault write database/roles/cabotage db_name=cabotage default_ttl="1h" max_ttl="24h" creation_statements="CREATE ROLE \"{{name}}\" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}'; GRANT ALL PRIVILEGES ON SCHEMA public TO \"{{name}}\";"
     wait
 fi

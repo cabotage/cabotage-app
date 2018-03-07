@@ -18,6 +18,7 @@ from cabotage.server.ext.vault import Vault
 from cabotage.server.ext.config_writer import ConfigWriter
 from cabotage.server.ext.minio_driver import MinioDriver
 from cabotage.server.ext.kubernetes import Kubernetes
+from cabotage.server.ext.vault_db_creds import VaultDBCreds
 
 # instantiate the extensions
 bcrypt = Bcrypt()
@@ -39,6 +40,7 @@ migrate = Migrate()
 humanize = Humanize()
 consul = Consul()
 vault = Vault()
+vault_db_creds = VaultDBCreds()
 kubernetes = Kubernetes()
 config_writer = ConfigWriter(consul=consul, vault=vault)
 minio = MinioDriver()
@@ -107,6 +109,7 @@ def create_app():
         register_form=ExtendedRegisterForm,
         login_form=ExtendedLoginForm,
     )
+    vault_db_creds.init_app(app)
     db.init_app(app)
     mail.init_app(app)
     migrate.init_app(app, db)

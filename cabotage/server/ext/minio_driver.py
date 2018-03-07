@@ -4,7 +4,6 @@ import secrets
 import minio
 import minio.error
 
-from flask import current_app
 from flask import _app_ctx_stack as stack
 
 import urllib3
