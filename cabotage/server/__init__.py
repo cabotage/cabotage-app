@@ -94,8 +94,7 @@ def create_app():
     nav.register_element('logged_in', logged_in_nav)
 
     # set config
-    app_settings = os.getenv(
-        'APP_SETTINGS', 'cabotage.server.config.Config')
+    app_settings = os.getenv('APP_SETTINGS', 'cabotage.server.config.Config')
     app.config.from_object(app_settings)
 
     # set up extensions
