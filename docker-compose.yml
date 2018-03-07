@@ -105,7 +105,7 @@ services:
       - "8000:8000"
   cabotage-app-worker:
     build: .
-    command: pipenv run celery -A cabotage.celery.worker.celery worker -E --loglevel=INFO
+    command: pipenv run hupper -m celery -A cabotage.celery.worker.celery worker -E --loglevel=INFO
     environment:
       - C_FORCE_ROOT=1
       - CABOTAGE_DEBUG=True
