@@ -1,5 +1,16 @@
 # Cabotage App
 
+A deployment infrastructure tool that helps manage Kubernetes security
+credentials.
+
+See [a two-minute video
+demo](https://twitter.com/EWDurbin/status/968315460101042176) from
+late February 2018.
+
+See [the PyPI infrastructure pull
+request](https://github.com/python/pypi-infra/pull/3) for more on
+design goals.
+
 ### Basics
 
 1. `pipenv install --three --dev`
