@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "bf0a7e32c8d154237299c8a809f7ff56f93ae52c7f357020d5bda55cd8199b2a"
+            "sha256": "0044743acc551553323f4ea64eee8b22d6b17302774d3d21f59da25c767f332f"
         },
         "host-environment-markers": {
             "implementation_name": "cpython",
@@ -147,7 +147,6 @@
                 "sha256:3c85641778460581c42924384f5e68076d724ceac0f267d66c757f7535069c93",
                 "sha256:e90f17980e6ab0f3c2f3730e56d1fe9bcba1891eeea58966e89d352492cc74f4"
             ],
-            "markers": "platform_python_implementation != 'PyPy'",
             "version": "==1.11.5"
         },
         "chardet": {
@@ -307,6 +306,13 @@
             ],
             "version": "==1.4.1"
         },
+        "gunicorn": {
+            "hashes": [
+                "sha256:75af03c99389535f218cc596c7de74df4763803f7b63eb09d77e92b3956b36c6",
+                "sha256:eee1169f0ca667be05db3351a0960765620dad53f53434262ff8901b68a1b622"
+            ],
+            "version": "==19.7.1"
+        },
         "humanize": {
             "hashes": [
                 "sha256:a43f57115831ac7c70de098e6ac46ac13be00d69abbf60bdcac251344785bb19"
@@ -373,11 +379,11 @@
         },
         "minio": {
             "hashes": [
-                "sha256:019c1021e0488b9c1917cc8866c4974660e9b5226e3fb17c11eca679ee3f5936",
-                "sha256:86af3be658d0237680b0fc9f8a40b0d0a0d4a6daa938e412d747c9b7ab552fda",
-                "sha256:19b27a30d2c3c4e46af4bd880b24b9ecdd8c45c644234838b71218e596df71a1"
+                "sha256:17c5d77388e9afc042bd1928400c7d761685a52b8b84730d7fee18800e5e121a",
+                "sha256:76ad6d67e40061ba9bae11444965148d95619c8c9c49df461ea9b2896ec65588",
+                "sha256:5d4d086726bb7800570a86a040c607793235e190299f0d18aa0d2277492f393b"
             ],
-            "version": "==3.0.3"
+            "version": "==3.0.4"
         },
         "oauthlib": {
             "hashes": [

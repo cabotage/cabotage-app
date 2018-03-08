@@ -91,7 +91,7 @@ services:
       - miniodata:/export
   cabotage-app:
     build: .
-    command: pipenv run python manage.py runserver -h 0.0.0.0 -p 8000
+    command: pipenv run hupper -m gunicorn.app.wsgiapp -c gunicorn.conf -w 2 -b 0.0.0.0:8000 cabotage.server.wsgi:app
     environment:
       - CABOTAGE_DEBUG=True
       - CABOTAGE_BCRYPT_LOG_ROUNDS=4
@@ -108,6 +108,7 @@ services:
       - "8000:8000"
     links:
       - db
+      - redis
       - vault
   cabotage-app-worker:
     build: .
@@ -127,4 +128,5 @@ services:
       - $HOME/.kube:/root/.kube
     links:
       - db
+      - redis
       - vault
