@@ -1,3 +1,5 @@
+import atexit
+import hashlib
 import os
 
 from urllib.parse import urlsplit, urlunsplit
@@ -29,6 +31,7 @@ class VaultDBCreds(object):
             self.vault_token_unwrap = app.config.get('VAULT_TOKEN_UNWRAP', False)
             self.vault_db_database_uri = app.config.get('VAULT_DB_DATABASE_URI', None)
             self.vault_db_creds_path = app.config.get('VAULT_DB_CREDS_PATH', 'database/creds/cabotage')
+            self.vault_lease_path = app.config.get('VAULT_LEASE_PATH', '')
 
             self.rendered_uri = None
             self.vault_lease_id = None
@@ -42,25 +45,35 @@ class VaultDBCreds(object):
                     with open(self.vault_token_file, 'rU') as vault_token_file:
                         self.vault_token = vault_token_file.read().lstrip().rstrip()
 
-            self.initial_setup(app)
+            self.logger = app.logger
+            with app.app_context():
+                self.fetch_database_credentials()
+            atexit.register(self.revoke_credentials)
         else:
             raise RuntimeError('Unable to configure a database uri, one of SQLALCHEMY_DATABASE_URI or VAULT_DB_CREDS_PATH must  be specified')
 
         app.teardown_appcontext(self.teardown)
 
-    def initial_setup(self, app):
-        with app.app_context():
-            self.refresh()
-
-
-    def refresh(self):
-        self.fetch_database_credentials()
+    def revoke_credentials(self):
+        self.logger.info(f'revoking {self.vault_lease_id} at shutdown')
+        self.connect_vault().write('sys/leases/revoke', lease_id=self.vault_lease_id)
+        self.logger.info(f'revoked {self.vault_lease_id}')
 
     def fetch_database_credentials(self):
-        response = self.connect_vault().read(self.vault_db_creds_path)
+        response = self.vault_connection.read(self.vault_db_creds_path)
         parsed_uri = urlsplit(self.vault_db_database_uri)
         new_netloc = f"{response['data']['username']}:{response['data']['password']}@{parsed_uri.hostname}"
         constructed = urlunsplit(parsed_uri._replace(netloc=new_netloc))
+        self.rendered_uri = constructed
+        self.vault_lease_id = response['lease_id']
+        self.vault_lease_duration = response['lease_duration']
+        if os.path.exists(os.path.join(self.vault_lease_path, 'leases')):
+            lease_sha = hashlib.sha256(self.vault_lease_id.encode('utf-8')).hexdigest()
+            with open(os.path.join(self.vault_lease_path, 'leases', lease_sha), 'wb') as lease_file:
+                lease_file.write(self.vault_lease_id.lease_id.encode('utf-8'))
+            self.logger.info(f'wrote lease file to {os.path.join(self.vault_lease_path, "leases", lease_sha)}')
+        else:
+            self.logger.warning(f'no lease file written for {self.vault_lease_id}! someone needs to renew it!')
         current_app.config['SQLALCHEMY_DATABASE_URI'] = constructed
 
     def connect_vault(self):
