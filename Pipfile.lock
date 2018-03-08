@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "0044743acc551553323f4ea64eee8b22d6b17302774d3d21f59da25c767f332f"
+            "sha256": "6dd01b95dda933f32587511aa996d67647ee2cdf6ca6c1646733939c198afc5f"
         },
         "host-environment-markers": {
             "implementation_name": "cpython",
@@ -147,6 +147,7 @@
                 "sha256:3c85641778460581c42924384f5e68076d724ceac0f267d66c757f7535069c93",
                 "sha256:e90f17980e6ab0f3c2f3730e56d1fe9bcba1891eeea58966e89d352492cc74f4"
             ],
+            "markers": "platform_python_implementation != 'PyPy'",
             "version": "==1.11.5"
         },
         "chardet": {
@@ -235,6 +236,13 @@
                 "sha256:454d4a989c82894be30e5d764341e9f16bb2cedfb2a7f9d5edc67c09e195f8c5"
             ],
             "version": "==1.1.0"
+        },
+        "flask-debugtoolbar": {
+            "hashes": [
+                "sha256:3d9657bc0c3633ace429e3ff451742bb59d1b7a7b95c9eb23a65ac9be2812959",
+                "sha256:ec810083123aae0632eb32ba11e1cb4cdace81e7ce6c5009dd06c5204afbce52"
+            ],
+            "version": "==0.10.1"
         },
         "flask-env": {
             "hashes": [
@@ -629,12 +637,6 @@
         }
     },
     "develop": {
-        "blinker": {
-            "hashes": [
-                "sha256:471aee25f3992bd325afa3772f1063dbdbbca947a041b8b89466dc00d606f8b6"
-            ],
-            "version": "==1.4"
-        },
         "click": {
             "hashes": [
                 "sha256:29f99fc6125fbc931b758dc053b3114e55c77a6e4c6c3a2674a2dc986016381d",
@@ -693,13 +695,6 @@
                 "sha256:49f44461237b69ecd901cc7ce66feea0319b9158743dd27a2899962ab214dac1"
             ],
             "version": "==0.12.2"
-        },
-        "flask-debugtoolbar": {
-            "hashes": [
-                "sha256:3d9657bc0c3633ace429e3ff451742bb59d1b7a7b95c9eb23a65ac9be2812959",
-                "sha256:ec810083123aae0632eb32ba11e1cb4cdace81e7ce6c5009dd06c5204afbce52"
-            ],
-            "version": "==0.10.1"
         },
         "flask-testing": {
             "hashes": [

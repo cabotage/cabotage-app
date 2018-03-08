@@ -20,7 +20,13 @@ class Consul(object):
         self.consul_verify = app.config.get('CONSUL_VERIFY', False)
         self.consul_cert = app.config.get('CONSUL_CERT', None)
         self.consul_prefix = app.config.get('CONSUL_PREFIX', 'cabotage')
+        self.consul_token_file = app.config.get('CONSUL_TOKEN_FILE', os.path.expanduser('~/.consul-token'))
         self.consul_token = app.config.get('CONSUL_TOKEN', None)
+
+        if self.consul_token is None:
+            if os.path.exists(self.consul_token_file):
+                with open(self.consul_token_file, 'rU') as consul_token_file:
+                    self.consul_token = consul_token_file.read().lstrip().rstrip()
 
         app.teardown_appcontext(self.teardown)
 
