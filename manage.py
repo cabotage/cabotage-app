@@ -2,7 +2,6 @@
 
 
 import unittest
-import coverage
 
 from urllib.parse import unquote
 
@@ -20,17 +19,6 @@ from cabotage.server.models.projects import (
     Project,
 )
 
-# code coverage
-COV = coverage.coverage(
-    branch=True,
-    include='cabotage/*',
-    omit=[
-        'cabotage/tests/*',
-        'cabotage/server/config.py',
-        'cabotage/server/*/__init__.py'
-    ]
-)
-COV.start()
 
 app = create_app()
 migrate = Migrate(app, db)
@@ -53,6 +41,18 @@ def test():
 @manager.command
 def cov():
     """Runs the unit tests with coverage."""
+    import coverage
+    # code coverage
+    COV = coverage.coverage(
+        branch=True,
+        include='cabotage/*',
+        omit=[
+            'cabotage/tests/*',
+            'cabotage/server/config.py',
+            'cabotage/server/*/__init__.py'
+        ]
+    )
+    COV.start()
     tests = unittest.TestLoader().discover('cabotage/tests')
     result = unittest.TextTestRunner(verbosity=2).run(tests)
     if result.wasSuccessful():
