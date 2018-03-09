@@ -19,6 +19,6 @@ COPY Pipfile.lock /opt/cabotage-app/src/Pipfile.lock
 
 WORKDIR /opt/cabotage-app/src/
 
-RUN pipenv install --dev
+RUN pipenv install
 
 COPY . /opt/cabotage-app/src/
