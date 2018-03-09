@@ -116,7 +116,7 @@ def create_cabotage_enroller_container(release, process_name):
     role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
     return kubernetes.client.V1Container(
         name='cabotage-enroller',
-        image='gcr.io/the-psf/cabotage-sidecar:v1.0.0a1',
+        image='cabotage/sidecar:v1.0.0a1',
         image_pull_policy='IfNotPresent',
         env=[
             kubernetes.client.V1EnvVar(name='NAMESPACE', value_from=kubernetes.client.V1EnvVarSource(field_ref=kubernetes.client.V1ObjectFieldSelector(field_path='metadata.namespace'))),
@@ -147,7 +147,7 @@ def create_cabotage_sidecar_container(release):
     role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
     return kubernetes.client.V1Container(
         name='cabotage-sidecar',
-        image='gcr.io/the-psf/cabotage-sidecar:v1.0.0a1',
+        image='cabotage/sidecar:v1.0.0a1',
         image_pull_policy='IfNotPresent',
         args=[
             "maintain",
