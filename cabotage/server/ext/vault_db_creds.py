@@ -21,7 +21,7 @@ class VaultDBCreds(object):
 
     def init_app(self, app):
         if app.config.get('SQLALCHEMY_DATABASE_URI', None):
-            pass
+            return
         if app.config.get('VAULT_DB_CREDS_PATH', None):
             self.vault_url = app.config.get('VAULT_URL', 'http://127.0.0.1:8200')
             self.vault_verify = app.config.get('VAULT_VERIFY', False)
@@ -70,7 +70,7 @@ class VaultDBCreds(object):
         if os.path.exists(os.path.join(self.vault_lease_path, 'leases')):
             lease_sha = hashlib.sha256(self.vault_lease_id.encode('utf-8')).hexdigest()
             with open(os.path.join(self.vault_lease_path, 'leases', lease_sha), 'wb') as lease_file:
-                lease_file.write(self.vault_lease_id.lease_id.encode('utf-8'))
+                lease_file.write(self.vault_lease_id.encode('utf-8'))
             self.logger.info(f'wrote lease file to {os.path.join(self.vault_lease_path, "leases", lease_sha)}')
         else:
             self.logger.warning(f'no lease file written for {self.vault_lease_id}! someone needs to renew it!')
