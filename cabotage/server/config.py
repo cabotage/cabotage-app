@@ -60,6 +60,7 @@ class Config(metaclass=MetaFlaskEnv):
     MINIO_ACCESS_KEY = 'MINIOACCESSKEY'
     MINIO_SECRET_KEY = 'MINIOSECRETKEY'
     MINIO_SECURE = False
+    MINIO_CA_CERT = None
     MINIO_PREFIX = 'cabotage-builds'
     CELERY_BROKER_URL='redis://redis:6379',
     CELERY_RESULT_BACKEND='redis://redis:6379'
