@@ -83,7 +83,7 @@ def _image_pull_secrets(release):
             '.dockerconfigjson': b64encode(
                                      release.image_pull_secrets(
                                          registry_auth_secret,
-                                         registry_urls=['localhost:5000'],
+                                         registry_urls=['localhost:30000'],
                                      ).encode()
                                  ).decode(),
         }
@@ -164,7 +164,7 @@ def create_cabotage_sidecar_container(release):
 def create_process_container(release, process_name):
     return kubernetes.client.V1Container(
         name=process_name,
-        image=f'localhost:5000/{release.repository_name}:release-{release.version}',
+        image=f'localhost:30000/{release.repository_name}:release-{release.version}',
         image_pull_policy='Always',
         env=[
             kubernetes.client.V1EnvVar(name='VAULT_ADDR', value='https://vault.cabotage.svc.cluster.local'),
