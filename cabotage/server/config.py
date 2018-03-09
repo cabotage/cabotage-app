@@ -54,6 +54,7 @@ class Config(metaclass=MetaFlaskEnv):
     REGISTRY_AUTH_SECRET = 'v3rys3cur3'
     DOCKER_URL = 'tcp://cabotage-dind:2375'
     DOCKER_SECURE = False
+    DOCKER_VERIFY = None
     MINIO_ENDPOINT = 'minio:9000'
     MINIO_BUCKET = 'cabotage-registry'
     MINIO_ACCESS_KEY = 'MINIOACCESSKEY'

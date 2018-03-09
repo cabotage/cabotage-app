@@ -17,6 +17,7 @@ from tempfile import (
 )
 
 import docker
+import docker.tls
 import procfile
 
 from flask import current_app
@@ -61,7 +62,7 @@ exec "${@}"
 
 def build_release(release,
                   registry, registry_username, registry_password,
-                  docker_url, docker_secure):
+                  docker_url, docker_secure, docker_ca):
     with ExitStack() as stack:
         temp_dir = stack.enter_context(TemporaryDirectory())
         with open(os.path.join(temp_dir, 'entrypoint.sh'), 'w') as fd:
@@ -87,7 +88,10 @@ def build_release(release,
         for process_name, envconsul_configuration in  release.envconsul_configurations.items():
             with open(os.path.join(temp_dir, f'envconsul-{process_name}.hcl'), 'w') as envconsul_config:
                 envconsul_config.write(envconsul_configuration)
-        client = docker.DockerClient(base_url=docker_url, tls=docker_secure)
+        tls_config = False
+        if docker_secure:
+            tls_config = docker.tls.TLSConfig(client_cert=None, ca_cert=docker_ca, verify=True, ssl_version='PROTOCOL_TLSv1_2')
+        client = docker.DockerClient(base_url=docker_url, tls=tls_config)
         client.login(
             username=registry_username,
             password=registry_password,
@@ -152,7 +156,7 @@ def build_release(release,
 
 def build_image(tarfileobj, image,
                 registry, registry_username, registry_password,
-                docker_url, docker_secure):
+                docker_url, docker_secure, docker_ca):
     with ExitStack() as stack:
         temp_dir = stack.enter_context(TemporaryDirectory())
         try:
@@ -203,7 +207,10 @@ def build_image(tarfileobj, image,
             raise BuildError(
                 f'error parsing Procfile: {exc}'
             )
-        client = docker.DockerClient(base_url=docker_url, tls=docker_secure)
+        tls_config = False
+        if docker_secure:
+            tls_config = docker.tls.TLSConfig(client_cert=None, ca_cert=docker_ca, verify=True, ssl_version='PROTOCOL_TLSv1_2')
+        client = docker.DockerClient(base_url=docker_url, tls=tls_config)
         response = client.api.build(
             path=temp_dir,
             tag=f'{registry}/{image.repository_name}:image-{image.version}',
@@ -275,6 +282,7 @@ def run_image_build(image_id=None):
     object_bucket = current_app.config['MINIO_BUCKET']
     docker_url = current_app.config['DOCKER_URL']
     docker_secure = current_app.config['DOCKER_SECURE']
+    docker_ca = current_app.config['DOCKER_VERIFY']
     image = Image.query.filter_by(id=image_id).first()
     if image is None:
         raise KeyError(f'Image with ID {image_id} not found!')
@@ -296,7 +304,7 @@ def run_image_build(image_id=None):
                     build_metadata = build_image(
                         fd, image,
                         registry, f'cabotage-builder-{image.id}', credentials,
-                        docker_url, docker_secure
+                        docker_url, docker_secure, docker_ca
                     )
                     image.image_id = build_metadata['image_id']
                     image.processes = build_metadata['processes']
@@ -316,6 +324,7 @@ def run_release_build(release_id=None):
     object_bucket = current_app.config['MINIO_BUCKET']
     docker_url = current_app.config['DOCKER_URL']
     docker_secure = current_app.config['DOCKER_SECURE']
+    docker_ca = current_app.config['DOCKER_VERIFY']
     release = Release.query.filter_by(id=release_id).first()
     if release is None:
         raise KeyError(f'Release with ID {release_id} not found!')
@@ -334,7 +343,7 @@ def run_release_build(release_id=None):
         build_metadata = build_release(
             release,
             registry, f'cabotage-builder-{release.id}', credentials,
-            docker_url, docker_secure
+            docker_url, docker_secure, docker_ca
         )
         release.release_id = build_metadata['release_id']
         release.built = True
