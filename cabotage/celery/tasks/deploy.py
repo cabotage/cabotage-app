@@ -208,7 +208,25 @@ def render_cabotage_sidecar_tls_container(release):
                 name='tls',
                 container_port=8000,
             ),
-        ]
+        ],
+        liveness_probe=kubernetes.client.V1Probe(
+            http_get=kubernetes.client.V1HTTPGetAction(
+                scheme='HTTPS',
+                port=8000,
+                path='/_health/',
+            ),
+            initial_delay_seconds=5,
+            period_seconds=1,
+        ),
+        readiness_probe=kubernetes.client.V1Probe(
+            http_get=kubernetes.client.V1HTTPGetAction(
+                scheme='HTTPS',
+                port=8000,
+                path='/_health/',
+            ),
+            initial_delay_seconds=5,
+            period_seconds=1,
+        ),
     )
 
 def render_process_container(release, process_name):
@@ -264,6 +282,15 @@ def render_deployment(namespace, release, service_account_name, process_name):
         ),
         spec=kubernetes.client.AppsV1beta1DeploymentSpec(
             replicas=1,
+            selector=kubernetes.client.V1LabelSelector(
+                match_labels={
+                    'organization': release.application.project.organization.slug,
+                    'project': release.application.project.slug,
+                    'application': release.application.slug,
+                    'process': process_name,
+                    'app': role_name,
+                },
+            ),
             template=kubernetes.client.V1PodTemplateSpec(
                 metadata=kubernetes.client.V1ObjectMeta(
                     labels={
@@ -298,13 +325,28 @@ def render_deployment(namespace, release, service_account_name, process_name):
     )
     return deployment_object
 
+
 def create_deployment(apps_api_instance, namespace, release, service_account_name, process_name):
     role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
     deployment_object = render_deployment(namespace, release, service_account_name, process_name)
+    deployment = None
     try:
-        return apps_api_instance.create_namespaced_deployment(namespace, deployment_object)
-    except Exception as exc:
-        raise DeployError(f'Unexpected exception creating Deployment/{release.application.project.slug}-{release.application.slug}-{process_name} in {namespace}: {exc}')
+        deployment = apps_api_instance.read_namespaced_deployment(deployment_object.metadata.name, namespace)
+    except ApiException as exc:
+        if exc.status == 404:
+            pass
+        else:
+            raise DeployError(f'Unexpected exception fetching Deployment/{deployment_object.metadata.name} in {namespace}: {exc}')
+    if deployment is None:
+        try:
+            return apps_api_instance.create_namespaced_deployment(namespace, deployment_object)
+        except Exception as exc:
+            raise DeployError(f'Unexpected exception creating Deployment/{deployment_object.metadata.name} in {namespace}: {exc}')
+    else:
+        try:
+            return apps_api_instance.patch_namespaced_deployment(deployment_object.metadata.name, namespace, deployment_object)
+        except Exception as exc:
+            raise DeployError(f'Unexpected exception patching Deployment/{deployment_object.metadata.name} in {namespace}: {exc}')
 
 
 def deploy_release(release):
