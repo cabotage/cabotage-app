@@ -568,8 +568,12 @@ def release_deploy(release_id):
     release = Release.query.filter_by(id=release_id).first()
     if release is None:
         abort(404)
-    run_deploy_release(release_id=release.id)
-    return redirect(url_for('user.project_application', org_slug=release.application.project.organization.slug, project_slug=release.application.project.slug, app_slug=release.application.slug))
+    if current_app.config['KUBERNETES_ENABLED']:
+        run_deploy_release(release_id=release.id)
+        return redirect(url_for('user.project_application', org_slug=release.application.project.organization.slug, project_slug=release.application.project.slug, app_slug=release.application.slug))
+    else:
+        from cabotage.celery.tasks.deploy import render_release
+        return render_template('user/release_render.html', rendered_release=render_release(release))
 
 @user_blueprint.route('/signing-cert', methods=['GET'])
 def signing_cert():

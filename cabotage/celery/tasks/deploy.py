@@ -1,6 +1,9 @@
+
 from base64 import b64encode
 
 import kubernetes
+import yaml
+
 from kubernetes.client.rest import ApiException
 
 from flask import current_app
@@ -17,13 +20,18 @@ class DeployError(RuntimeError):
     pass
 
 
-def create_namespace(core_api_instance, release):
+def render_namespace(release):
     namespace_name = release.application.project.organization.slug
     namespace_object = kubernetes.client.V1Namespace(
         metadata=kubernetes.client.V1ObjectMeta(
             name=namespace_name,
         ),
     )
+    return namespace_object
+
+
+def create_namespace(core_api_instance, release):
+    namespace_object = render_namespace(release)
     try:
         return core_api_instance.create_namespace(namespace_object)
     except Exception as exc:
@@ -42,8 +50,7 @@ def fetch_namespace(core_api_instance, release):
     return namespace
 
 
-def create_service_account(core_api_instance, release):
-    namespace = release.application.project.organization.slug
+def render_service_account(release):
     service_account_name = f'{release.application.project.slug}-{release.application.slug}'
     service_account_object = kubernetes.client.V1ServiceAccount(
         metadata=kubernetes.client.V1ObjectMeta(
@@ -53,6 +60,12 @@ def create_service_account(core_api_instance, release):
             },
         ),
     )
+    return service_account_object
+
+
+def create_service_account(core_api_instance, release):
+    namespace = release.application.project.organization.slug
+    service_account_object = render_service_account(release)
     try:
         return core_api_instance.create_namespaced_service_account(namespace, service_account_object)
     except Exception as exc:
@@ -72,7 +85,7 @@ def fetch_service_account(core_api_instance, release):
     return service_account
 
 
-def _image_pull_secrets(release):
+def render_image_pull_secrets(release):
     registry_auth_secret = current_app.config['REGISTRY_AUTH_SECRET']
     secret = kubernetes.client.V1Secret(
         type='kubernetes.io/dockerconfigjson',
@@ -93,9 +106,9 @@ def _image_pull_secrets(release):
 def create_image_pull_secret(core_api_instance, release):
     namespace = release.application.project.organization.slug
     secret_name = f'{release.application.project.slug}-{release.application.slug}'
+    image_pull_secrets = render_image_pull_secrets(release)
     try:
-        print(_image_pull_secrets(release))
-        return core_api_instance.create_namespaced_secret(namespace, _image_pull_secrets(release))
+        return core_api_instance.create_namespaced_secret(namespace, image_pull_secrets)
     except Exception as exc:
         raise DeployError(f'Unexpected exception creating Secret/{secret_name} in {namespace}: {exc}')
 
@@ -112,7 +125,7 @@ def fetch_image_pull_secrets(core_api_instance, release):
             raise DeployError(f'Unexpected exception fetching ServiceAccount/{secret_name} in {namespace}: {exc}')
     return secret
 
-def create_cabotage_enroller_container(release, process_name):
+def render_cabotage_enroller_container(release, process_name):
     role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
     return kubernetes.client.V1Container(
         name='cabotage-enroller',
@@ -143,7 +156,7 @@ def create_cabotage_enroller_container(release, process_name):
         ],
     )
 
-def create_cabotage_sidecar_container(release):
+def render_cabotage_sidecar_container(release):
     role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
     return kubernetes.client.V1Container(
         name='cabotage-sidecar',
@@ -161,7 +174,7 @@ def create_cabotage_sidecar_container(release):
         ],
     )
 
-def create_process_container(release, process_name):
+def render_process_container(release, process_name):
     return kubernetes.client.V1Container(
         name=process_name,
         image=f'localhost:30000/{release.repository_name}:release-{release.version}',
@@ -194,7 +207,8 @@ def create_process_container(release, process_name):
         ],
     )
 
-def create_deployment(apps_api_instance, namespace, release, service_account_name, process_name):
+
+def render_deployment(namespace, release, service_account_name, process_name):
     role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
     deployment_object = kubernetes.client.AppsV1beta1Deployment(
         metadata=kubernetes.client.V1ObjectMeta(
@@ -221,8 +235,8 @@ def create_deployment(apps_api_instance, namespace, release, service_account_nam
                 ),
                 spec=kubernetes.client.V1PodSpec(
                     service_account_name=service_account_name,
-                    init_containers=[create_cabotage_enroller_container(release, process_name)],
-                    containers=[create_cabotage_sidecar_container(release), create_process_container(release, process_name)],
+                    init_containers=[render_cabotage_enroller_container(release, process_name)],
+                    containers=[render_cabotage_sidecar_container(release), render_process_container(release, process_name)],
                     volumes=[
                         kubernetes.client.V1Volume(
                             name='vault-secrets',
@@ -233,7 +247,15 @@ def create_deployment(apps_api_instance, namespace, release, service_account_nam
             ),
         ),
     )
-    return apps_api_instance.create_namespaced_deployment(namespace, deployment_object)
+    return deployment_object
+
+def create_deployment(apps_api_instance, namespace, release, service_account_name, process_name):
+    role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
+    deployment_object = render_deployment(namespace, release, service_account_name, process_name)
+    try:
+        return apps_api_instance.create_namespaced_deployment(namespace, deployment_object)
+    except Exception as exc:
+        raise DeployError(f'Unexpected exception creating Deployment/{release.application.project.slug}-{release.application.slug}-{process_name} in {namespace}: {exc}')
 
 
 def deploy_release(release):
@@ -251,6 +273,31 @@ def deploy_release(release):
         ),
     )
     deployment = create_deployment(apps_api_instance, namespace.metadata.name, release, service_account.metadata.name, 'web')
+
+
+def remove_none(obj):
+    if isinstance(obj, (list, tuple, set)):
+        return type(obj)(remove_none(x) for x in obj if x is not None)
+    elif isinstance(obj, dict):
+        return type(obj)((remove_none(k), remove_none(v))
+            for k, v in obj.items() if k is not None and v is not None)
+    else:
+        return obj
+
+
+def render_release(release):
+    namespace = render_namespace(release)
+    service_account = render_service_account(release)
+    image_pull_secrets = render_image_pull_secrets(release)
+    deployment = render_deployment(namespace.metadata.name, release, service_account.metadata.name, 'web')
+    document = {
+      'namespace': namespace.to_dict(),
+      'service_account': service_account.to_dict(),
+      'image_pull_secrets': image_pull_secrets.to_dict(),
+      'deployment': deployment.to_dict()
+    }
+    document = remove_none(document)
+    return yaml.dump(document, default_flow_style=False)
 
 
 @celery.task()
