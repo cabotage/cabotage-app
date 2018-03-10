@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "6dd01b95dda933f32587511aa996d67647ee2cdf6ca6c1646733939c198afc5f"
+            "sha256": "9a5353e3223778021d2256220b746f527a50b189f12cdda2fca9c3088e802d4a"
         },
         "host-environment-markers": {
             "implementation_name": "cpython",
@@ -205,6 +205,13 @@
                 "sha256:c7ab85de2894baff6ee8f15160cbbfa2fd3a04e56f0372c5793d24060687b299"
             ],
             "version": "==0.2.2"
+        },
+        "dockerfile-parse": {
+            "hashes": [
+                "sha256:6a739e5a69443383aab2dcdd5b1d55e99735a6345f9175c56f8becfed188cc7f",
+                "sha256:50a38c49f0f0c4d6fcb911fdaa2f22c064ab8c6365093a9f470e78be6e393423"
+            ],
+            "version": "==0.0.7"
         },
         "dominate": {
             "hashes": [

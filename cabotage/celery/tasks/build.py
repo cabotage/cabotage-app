@@ -20,6 +20,7 @@ import docker
 import docker.tls
 import procfile
 
+from dockerfile_parse import DockerfileParser
 from flask import current_app
 
 from cabotage.server import (
@@ -196,8 +197,15 @@ def build_image(tarfileobj, image,
         tar_ball.extractall(path=temp_dir, numeric_owner=False)
         with open(os.path.join(temp_dir, 'Procfile'), 'rU') as img_procfile:
             procfile_body = img_procfile.read()
+        if os.path.exists(os.path.join(temp_dir, 'Dockerfile.cabotage')):
+            shutil.copy(
+                os.path.join(temp_dir, 'Dockerfile.cabotage'),
+                os.path.join(temp_dir, 'Dockerfile'),
+            )
         with open(os.path.join(temp_dir, 'Dockerfile'), 'rU') as img_dockerfile:
             dockerfile_body = img_dockerfile.read()
+            dockerfile_object = DockerfileParser(temp_dir)
+            dockerfile_env_vars = list(dockerfile_object.envs.keys())
         image.dockerfile = dockerfile_body
         image.procfile = procfile_body
         db.session.commit()
@@ -272,6 +280,7 @@ def build_image(tarfileobj, image,
             'processes': processes,
             'dockerfile': dockerfile_body,
             'procfile': procfile_body,
+            'dockerfile_env_vars': dockerfile_env_vars,
         }
 
 
@@ -309,6 +318,10 @@ def run_image_build(image_id=None):
                     image.image_id = build_metadata['image_id']
                     image.processes = build_metadata['processes']
                     image.built = True
+                    if image.image_metadata is None:
+                        image.image_metadata = {'dockerfile_env_vars': build_metadata['dockerfile_env_vars']}
+                    else:
+                        image.image_metadata['dockerfile_env_vars'] = build_metadata['dockerfile_env_vars']
                 except BuildError as exc:
                     image.error = True
                     image.error_detail = str(exc)
