@@ -10,7 +10,7 @@
       <h1>{{ application.project.organization.slug|lower }}/{{ application.project.slug|lower }}: {{ application.slug }}</h1>
     </div>
     <div class="row">
-      <div class="col-md-8">
+      <div class="col-md-12">
         <h3>Deploy!</h3>
         <form action="{{ url_for('user.release_deploy', release_id=application.latest_release.id) }}" method="POST" name="deploy_release_form" enctype="multipart/form-data">
           {{ deploy_form.hidden_tag() }}
@@ -23,7 +23,7 @@
       </div>
     </div>
     <div class="row">
-      <div class="col-md-8">
+      <div class="col-md-12">
         <h3>Releases</h3>
         {% set image_diff, config_diff = application.ready_for_deployment %}
         {% if image_diff.has_changes() or config_diff.has_changes() %}
@@ -38,7 +38,7 @@
           {% set changed = image_diff.changed() %}
           <div class="row">
             <h5>Image Changes</h5>
-            <div class="col-md-8">
+            <div class="col-md-12">
               <table class="table">
                 <tr>
                   <th></th>
@@ -76,7 +76,7 @@
           {% set changed = config_diff.changed() %}
           <div class="row">
             <h5>Configuration Changes</h5>
-            <div class="col-md-8">
+            <div class="col-md-12">
               <table class="table">
                 <tr>
                   <th></th>
@@ -123,7 +123,7 @@
           </div>
           </div>
     <div class="row">
-      <div class="col-md-8">
+      <div class="col-md-12">
         {% if application.latest_release %}
         <h3>Latest Release</h3>
         <table class="table table-striped">
@@ -159,7 +159,7 @@
       </div>
     </div>
     <div class="row">
-      <div class="col-md-8">
+      <div class="col-md-12">
         <h3>Latest Image</h3>
         {% if application.latest_image_building and application.latest_image_building.version|default(0) > application.latest_image.version|default(0) %}
         <div class="col-md-12">
@@ -214,8 +214,9 @@
       </div>
     </div>
     <div class="row">
-      <div class="col-md-8">
+      <div class="col-md-12">
         <h3>Environment Variables</h3>
+        <div class="table-responsive">
         <table class="table table-striped">
           <tr>
             <th>Name</th>
@@ -226,11 +227,11 @@
           </tr>
           {% for configuration in application.configurations %}
           <tr>
-            <td>
-              <pre style="margin: 0px;">{{ configuration.name }}</pre>
+            <td style="min-width: 20em; width: 20em; max-width: 20em;">
+              <pre style="margin: 0px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ configuration.name }}</pre>
             </td>
-            <td>
-              <pre style="margin: 0px;">{% if configuration.secret %}<span class="glyphicon glyphicon-lock"></span>{% else %}{{ configuration.value }}{% endif %}</pre>
+            <td style="min-width: 10em; max-width: 25em; width: 25em;">
+              <pre style="margin: 0px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{% if configuration.secret %}<span class="glyphicon glyphicon-lock"></span>{% else %}{{ configuration.value }}{% endif %}</pre>
             </td>
             <td style="white-space: nowrap; width: 1%;">
               <a class="btn btn-sm btn-link narrow" href="{{ url_for('user.project_application_configuration_edit', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}">
@@ -257,6 +258,7 @@
             </td>
           </tr>
         </table>
+        </div>
       </div>
     </div>
   </div>
