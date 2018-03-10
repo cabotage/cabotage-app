@@ -174,6 +174,43 @@ def render_cabotage_sidecar_container(release):
         ],
     )
 
+def render_cabotage_sidecar_tls_container(release):
+    role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
+    return kubernetes.client.V1Container(
+        name='cabotage-sidecar-tls',
+        image='cabotage/sidecar:v1.0.0a1',
+        image_pull_policy='IfNotPresent',
+        command=["./ghostunnel"],
+        args=[
+            "server",
+            "--keystore=/var/run/secrets/vault/combined.pem",
+            "--cacert=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt",
+            "--timed-reload=300s",
+            "--shutdown-timeout=10s",
+            "--connect-timeout=10s",
+            "--disable-authentication",
+            "--target=unix:///var/run/cabotage/cabotage.sock",
+            "--listen=0.0.0.0:8000"
+        ],
+        volume_mounts=[
+            kubernetes.client.V1VolumeMount(
+                name='vault-secrets',
+                mount_path='/var/run/secrets/vault'
+            ),
+            kubernetes.client.V1VolumeMount(
+                name='cabotage-sock',
+                mount_path='/var/run/cabotage'
+            ),
+        ],
+        ports=[
+            kubernetes.client.V1ContainerPort(
+                protocol='TCP',
+                name='tls',
+                container_port=8000,
+            ),
+        ]
+    )
+
 def render_process_container(release, process_name):
     return kubernetes.client.V1Container(
         name=process_name,
@@ -191,18 +228,22 @@ def render_process_container(release, process_name):
         ],
         resources=kubernetes.client.V1ResourceRequirements(
             limits={
-                'memory': '128Mi',
-                'cpu': '100m',
+                'memory': '1536Mi',
+                'cpu': '1000m',
             },
             requests={
-                'memory': '64Mi',
-                'cpu': '50m',
+                'memory': '1024Mi',
+                'cpu': '500m',
             },
         ),
         volume_mounts=[
             kubernetes.client.V1VolumeMount(
                 name='vault-secrets',
                 mount_path='/var/run/secrets/vault'
+            ),
+            kubernetes.client.V1VolumeMount(
+                name='cabotage-sock',
+                mount_path='/var/run/cabotage'
             ),
         ],
     )
@@ -236,10 +277,18 @@ def render_deployment(namespace, release, service_account_name, process_name):
                 spec=kubernetes.client.V1PodSpec(
                     service_account_name=service_account_name,
                     init_containers=[render_cabotage_enroller_container(release, process_name)],
-                    containers=[render_cabotage_sidecar_container(release), render_process_container(release, process_name)],
+                    containers=[
+                        render_cabotage_sidecar_container(release),
+                        render_cabotage_sidecar_tls_container(release),
+                        render_process_container(release, process_name),
+                    ],
                     volumes=[
                         kubernetes.client.V1Volume(
                             name='vault-secrets',
+                            empty_dir=kubernetes.client.V1EmptyDirVolumeSource(medium="Memory", size_limit="1M")
+                        ),
+                        kubernetes.client.V1Volume(
+                            name='cabotage-sock',
                             empty_dir=kubernetes.client.V1EmptyDirVolumeSource(medium="Memory", size_limit="1M")
                         ),
                     ],
