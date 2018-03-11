@@ -27,6 +27,7 @@ from cabotage.server import (
     db,
     celery,
     minio,
+    config_writer,
 )
 
 from cabotage.server.models.projects import (
@@ -225,6 +226,7 @@ def build_image(tarfileobj, image,
             rm=True,
             forcerm=True,
             dockerfile="Dockerfile",
+            buildargs=image.buildargs(config_writer),
         )
         build_errored = False
         log_lines = []

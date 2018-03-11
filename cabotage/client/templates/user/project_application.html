@@ -227,8 +227,13 @@
           </tr>
           {% for configuration in application.configurations %}
           <tr>
-            <td style="min-width: 20em; width: 20em; max-width: 20em;">
-              <pre style="margin: 0px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ configuration.name }}</pre>
+            <td style="min-width: 5em; width: 10em; max-width: 10em;">
+              <div>
+                <pre style="display: inline-block; margin: 0px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ configuration.name }}</pre>
+                {% if configuration.buildtime %}
+                <span style="display: inline-block; margin: 10px;" class="glyphicon glyphicon-cog"></span>
+                {% endif %}
+              </div>
             </td>
             <td style="min-width: 10em; max-width: 25em; width: 25em;">
               <pre style="margin: 0px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{% if configuration.secret %}<span class="glyphicon glyphicon-lock"></span>{% else %}{{ configuration.value }}{% endif %}</pre>

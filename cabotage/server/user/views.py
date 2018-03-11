@@ -300,9 +300,10 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
             name=form.name.data,
             value=form.value.data,
             secret=form.secure.data,
+            buildtime=form.buildtime.data,
         )
         try:
-            key_slug = config_writer.write_configuration(
+            key_slugs = config_writer.write_configuration(
                 org_slug,
                 project_slug,
                 app_slug,
@@ -310,7 +311,8 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
             )
         except Exception as exc:
             raise  # No, we should def not do this
-        configuration.key_slug = key_slug
+        configuration.key_slug = key_slugs['config_key_slug']
+        configuration.build_key_slug = key_slugs['build_key_slug']
         if configuration.secret:
             configuration.value = '**secure**'
         db.session.add(configuration)
@@ -354,7 +356,7 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
     if form.validate_on_submit():
         form.populate_obj(configuration)
         try:
-            key_slug = config_writer.write_configuration(
+            key_slugs = config_writer.write_configuration(
                 org_slug,
                 project_slug,
                 app_slug,
@@ -362,7 +364,8 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
             )
         except Exception as exc:
             raise  # No, we should def not do this
-        configuration.key_slug = key_slug
+        configuration.key_slug = key_slugs['config_key_slug']
+        configuration.build_key_slug = key_slugs['build_key_slug']
         if configuration.secret:
             configuration.value = '**secure**'
         db.session.flush()

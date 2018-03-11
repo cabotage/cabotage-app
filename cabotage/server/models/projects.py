@@ -386,6 +386,10 @@ class Configuration(db.Model, Timestamp):
         db.Text(),
         nullable=True,
     )
+    build_key_slug = db.Column(
+        db.Text(),
+        nullable=True,
+    )
     version_id = db.Column(
         db.Integer,
         nullable=False
@@ -396,6 +400,11 @@ class Configuration(db.Model, Timestamp):
         default=False
     )
     secret = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False
+    )
+    buildtime = db.Column(
         db.Boolean,
         nullable=False,
         default=False
@@ -426,6 +435,14 @@ class Configuration(db.Model, Timestamp):
             f'  path = "{path}"\n'
              '}'
         )
+
+    def read_value(self, reader):
+        if self.secret:
+            if self.buildtime:
+                payload = reader.read(self.build_key_slug.split(':', 1)[1], build=True, secret=True)
+                return payload['data'][self.name]
+            return '**secret**'
+        return self.value
 
 
 class Image(db.Model, Timestamp):
@@ -526,6 +543,12 @@ class Image(db.Model, Timestamp):
             resource_name=self.repository_name,
             resource_actions=["pull"],
         )
+
+    def buildargs(self, reader):
+        return {
+            c.name: c.read_value(reader)
+            for c in self.application.configurations if c.buildtime
+        }
 
 
 @listens_for(Image, 'before_insert')

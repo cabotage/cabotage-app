@@ -190,6 +190,11 @@ class CreateConfigurationForm(FlaskForm):
         [],
         description="Store this Environment Variable Securely. It will not be recoverable again via the UI.",
     )
+    buildtime = BooleanField(
+        u'Expose during Build',
+        [],
+        description="Set this Enviornment Variable during Image builds.",
+    )
 
     def validate_name(form, field):
         configuration = Configuration.query.filter_by(application_id=form.application_id.data, name=field.data).first()
@@ -222,6 +227,11 @@ class EditConfigurationForm(FlaskForm):
         u'Secure',
         [],
         description="Store this Environment Variable Securely. It will not be recoverable again via the UI.",
+    )
+    buildtime = BooleanField(
+        u'Expose during Build',
+        [],
+        description="Set this Enviornment Variable during Image builds.",
     )
 
     def validate_name(form, field):

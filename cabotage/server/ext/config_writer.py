@@ -29,20 +29,36 @@ class ConfigWriter(object):
         if configuration.secret:
             if self.vault is None:
                 raise RuntimeError('No Vault extension configured!')
-            key_name = (f'{self.vault_prefix}'
-                        f'/{org_slug}/{project_slug}-{app_slug}/configuration/'
-                        f'{configuration.name}/{version}')
+            config_key_name = (f'{self.vault_prefix}/automation'
+                               f'/{org_slug}/{project_slug}-{app_slug}/configuration/'
+                               f'{configuration.name}/{version}')
+            build_key_name = (f'{self.vault_prefix}/buildtime'
+                              f'/{org_slug}/{project_slug}-{app_slug}/configuration/'
+                              f'{configuration.name}/{version}')
             storage = 'vault'
             self.vault.vault_connection.write(
-                key_name, **{configuration.name: configuration.value},
+                config_key_name, **{configuration.name: configuration.value},
             )
+            if configuration.buildtime:
+                self.vault.vault_connection.write(
+                    build_key_name, **{configuration.name: configuration.value},
+                )
         else:
             if self.consul is None:
                 raise RuntimeError('No Consul extension configured!')
-            key_name = (f'{self.consul_prefix}'
-                        f'/{org_slug}/{project_slug}-{app_slug}/configuration/'
-                        f'{configuration.name}/{version}/{configuration.name}')
+            config_key_name = (f'{self.consul_prefix}'
+                               f'/{org_slug}/{project_slug}-{app_slug}/configuration/'
+                               f'{configuration.name}/{version}/{configuration.name}')
+            build_key_name = config_key_name
             storage = 'consul'
-            self.consul.consul_connection.kv.put(key_name, configuration.value)
-            key_name = '/'.join(key_name.split('/')[:-1])
-        return f'{storage}:{key_name}'
+            self.consul.consul_connection.kv.put(config_key_name, configuration.value)
+            config_key_name = '/'.join(config_key_name.split('/')[:-1])
+        return {
+            'config_key_slug': f'{storage}:{config_key_name}',
+            'build_key_slug': f'{storage}:{build_key_name}',
+        }
+
+    def read(self, key_slug, build=False, secret=False):
+        if secret:
+            return self.vault.vault_connection.read(key_slug)
+        return self.consul.consul_connection.read(key_slug)

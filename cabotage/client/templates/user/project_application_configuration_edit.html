@@ -24,6 +24,12 @@
           </label>
           <p class="help-block">{{form.secure.description|safe}}</p>
         </div>
+        <div class="checkbox" onclick="return false;">
+          <label>
+            {{form.buildtime()|safe}} {{form.buildtime.label.text|safe}}
+          </label>
+          <p class="help-block">{{form.buildtime.description|safe}}</p>
+        </div>
         <div class="row">
           <div class="col-md-6">
             {{ form_button(form.submit, "Update Environment Variable", method="POST", class="btn btn-primary") }}
