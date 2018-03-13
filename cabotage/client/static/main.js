@@ -43,5 +43,6 @@ $(".incr-btn").on("click", function (e) {
         }
     }
     $button.parent().find('.quantity').val(newVal);
+    $('.set_process_counts').removeClass('hidden');
     e.preventDefault();
 });

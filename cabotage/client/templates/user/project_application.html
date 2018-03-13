@@ -45,10 +45,12 @@
               </td>
             </tr>
             {% endfor %}
+            <tr>
+              <td colspan=2>
+                {{ form_button(scale_form.submit, "set process counts", method="POST", class="btn btn-primary pull-right set_process_counts hidden") }}
+              </td>
+            </tr>
           </table>
-          <div class="row">
-            {{ form_button(scale_form.submit, "set process counts", method="POST", class="btn btn-primary") }}
-          </div>
         </form>
         <h3>Release Commands</h3>
         <table class="table">
