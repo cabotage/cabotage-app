@@ -287,8 +287,17 @@ class ImageBuildSubmitForm(FlaskForm):
 
 class ReleaseDeployForm(FlaskForm):
 
-    application_id = StringField(
+    release_id = StringField(
         u'Release ID',
         [DataRequired()],
         description="Release to deploy.",
+    )
+
+
+class ApplicationScaleForm(FlaskForm):
+
+    application_id = StringField(
+        u'Application ID',
+        [DataRequired()],
+        description="Application to scale.",
     )

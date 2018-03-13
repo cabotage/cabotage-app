@@ -18,6 +18,7 @@ from flask_security import (
 )
 
 from sqlalchemy import desc
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy_continuum import version_class
 
 from cabotage.server import config_writer
@@ -36,6 +37,7 @@ from cabotage.server.models.projects import (
 from cabotage.server.models.projects import activity_plugin
 
 from cabotage.server.user.forms import (
+    ApplicationScaleForm,
     CreateApplicationForm,
     CreateConfigurationForm,
     CreateOrganizationForm,
@@ -207,6 +209,7 @@ def project_application(org_slug, project_slug, app_slug):
         'user/project_application.html',
         application=application,
         deploy_form=ReleaseDeployForm(),
+        scale_form=ApplicationScaleForm(),
         view_releases=version_class(Release).query.filter_by(application_id=application.id).order_by(desc(version_class(Release).version_id)).limit(5),
     )
 
@@ -564,6 +567,40 @@ def application_images_build_submit(application_id):
             run_image_build.delay(image_id=image.id)
         return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
     return render_template('user/application_images_build_submit.html', form=form, application=application)
+
+@user_blueprint.route('/application/<application_id>/scale', methods=['POST'])
+@login_required
+def application_scale(application_id):
+    application = Application.query.filter_by(id=application_id).first()
+    if application is None:
+        abort(404)
+    form = ApplicationScaleForm()
+    form.application_id.data = str(application.id)
+    if form.validate_on_submit():
+        scaled = {}
+        for key, value in request.form.items():
+            if key.startswith('process-count-'):
+                process_name = key.lstrip('process-count-')
+                if application.process_counts.get(process_name, 0) != int(value):
+                    scaled[process_name] = {
+                        'old_value': application.process_counts.get(process_name),
+                        'new_value': int(value),
+                    }
+                    application.process_counts[process_name] = int(value)
+                    flag_modified(application, "process_counts")
+        if scaled:
+            activity = Activity(
+                verb='scale',
+                object=application,
+                data={
+                    'user_id': str(current_user.id),
+                    'timestamp': datetime.datetime.utcnow().isoformat(),
+                    'changes': scaled,
+                }
+            )
+            db.session.add(activity)
+            db.session.commit()
+    return redirect(url_for('user.project_application', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug))
 
 @user_blueprint.route('/release/<release_id>/deploy', methods=['POST'])
 @login_required

@@ -84,6 +84,7 @@ class Application(db.Model, Timestamp):
     name = db.Column(db.Text(), nullable=False)
     slug = db.Column(CIText(), nullable=False)
     platform = db.Column(platform_version, nullable=False, default='wind')
+    process_counts = db.Column(postgresql.JSONB(), server_default=text("json_object('{}')"))
 
     images = db.relationship(
         "Image",
@@ -185,6 +186,33 @@ class Application(db.Model, Timestamp):
         return self.images.filter_by(built=False, error=False).order_by(Image.version.desc()).first()
 
     UniqueConstraint(project_id, slug)
+
+    __mapper_args__ = {
+        "version_id_col": version_id
+    }
+
+
+class Deployment(db.Model, Timestamp):
+
+    __versioned__ = {}
+    __tablename__ = 'deployments'
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True
+    )
+    application_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey('project_applications.id'),
+        nullable=False,
+    )
+    release = db.Column(postgresql.JSONB(), nullable=False)
+    version_id = db.Column(
+        db.Integer,
+        nullable=False
+    )
 
     __mapper_args__ = {
         "version_id_col": version_id
@@ -330,6 +358,14 @@ class Release(db.Model, Timestamp):
     @property
     def image_object(self):
         return Image.query.filter_by(id=self.image.get("id", None)).first()
+
+    @property
+    def processes(self):
+        return {k: v for k, v in self.image_object.processes.items() if not k.startswith('release')}
+
+    @property
+    def release_commands(self):
+        return {k: v for k, v in self.image_object.processes.items() if k.startswith('release')}
 
     def docker_pull_credentials(self, secret):
         return generate_docker_credentials(

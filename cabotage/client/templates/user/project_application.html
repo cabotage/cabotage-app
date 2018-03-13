@@ -22,6 +22,49 @@
         </form>
       </div>
     </div>
+    {% if application.releases.count() > 0 and application.latest_release.built %}
+    <div class="row">
+      <div class="col-md-8">
+        <h3>Processes</h3>
+        <form action="{{ url_for('user.application_scale', application_id=application.id) }}" method="POST" name="process_count_form">
+          <table class="table">
+            <tr>
+              <th>Process Name</th>
+              <th>Count</th>
+            </tr>
+            {% for process_name in application.latest_release.processes %}
+            <tr>
+              <td><code>{{ process_name }}</code></td>
+              <td>
+                <div class="count-input count-input-sm">
+                  <a class="incr-btn" data-action="decrease" href="#">–</a>
+                  <input class="quantity" type="text" name="process-count-{{ process_name }}" value="{{ application.process_counts.get(process_name, 0) }}"/>
+                  <a class="incr-btn" data-action="increase" href="#">&plus;</a>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </table>
+          <div class="row">
+            {{ form_button(scale_form.submit, "set process counts", method="POST", class="btn btn-primary") }}
+          </div>
+        </form>
+        <h3>Release Commands</h3>
+        <table class="table">
+          {% for process_name, proc in application.latest_release.release_commands.items() %}
+          <tr>
+            <th>Command Name</th>
+            <th>Command</th>
+          </tr>
+          <tr>
+            <td><code>{{ process_name }}</code></td>
+            <td><code>{{ proc['cmd'] }}</code></td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
+    </div>
+    {% endif %}
     <div class="row">
       <div class="col-md-12">
         <h3>Releases</h3>

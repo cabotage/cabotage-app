@@ -16,3 +16,52 @@ body {
     padding-left: 2px;
     padding-right: 2px;
 }
+
+.count-input {
+  position: relative;
+  width: 100%;
+  max-width: 165px;
+}
+.count-input input {
+  width: 100%;
+  height: 3em;
+  border: 1px solid #000;
+  border-radius: 2px;
+  background: none;
+  text-align: center;
+}
+.count-input input:focus {
+  outline: none;
+}
+.count-input .incr-btn {
+  display: block;
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  font-size: 26px;
+  font-weight: 300;
+  text-align: center;
+  line-height: 30px;
+  top: 50%;
+  right: 0;
+  margin-top: -15px;
+  text-decoration:none;
+}
+.count-input .incr-btn:first-child {
+  right: auto;
+  left: 0;
+  top: 46%;
+}
+.count-input.count-input-sm {
+  max-width: 125px;
+}
+.count-input.count-input-sm input {
+  height: 2em;
+}
+.count-input.count-input-lg {
+  max-width: 200px;
+}
+.count-input.count-input-lg input {
+  height: 70px;
+  border-radius: 3px;
+}
