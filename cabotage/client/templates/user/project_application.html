@@ -27,6 +27,7 @@
       <div class="col-md-8">
         <h3>Processes</h3>
         <form action="{{ url_for('user.application_scale', application_id=application.id) }}" method="POST" name="process_count_form">
+          {{ scale_form.hidden_tag() }}
           <table class="table">
             <tr>
               <th>Process Name</th>

@@ -205,11 +205,14 @@ def project_application(org_slug, project_slug, app_slug):
     application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
     if application is None:
         abort(404)
+
+    scale_form = ApplicationScaleForm()
+    scale_form.application_id.data = str(application.id)
     return render_template(
         'user/project_application.html',
         application=application,
         deploy_form=ReleaseDeployForm(),
-        scale_form=ApplicationScaleForm(),
+        scale_form=scale_form,
         view_releases=version_class(Release).query.filter_by(application_id=application.id).order_by(desc(version_class(Release).version_id)).limit(5),
     )
 
@@ -598,8 +601,11 @@ def application_scale(application_id):
                     'changes': scaled,
                 }
             )
+            db.session.add(application)
             db.session.add(activity)
             db.session.commit()
+    else:
+        return jsonify(form.errors), 400
     return redirect(url_for('user.project_application', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug))
 
 @user_blueprint.route('/release/<release_id>/deploy', methods=['POST'])
