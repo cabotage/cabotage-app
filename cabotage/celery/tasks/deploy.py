@@ -1,3 +1,5 @@
+import time
+import uuid
 
 from base64 import b64encode
 
@@ -297,12 +299,41 @@ def render_podspec(release, process_name, service_account_name):
                 ),
             ],
         )
-    else:
+    elif process_name.startswith('worker'):
         return kubernetes.client.V1PodSpec(
             service_account_name=service_account_name,
             init_containers=[render_cabotage_enroller_container(release, process_name, with_tls=False)],
             containers=[
                 render_cabotage_sidecar_container(release, with_tls=False),
+                render_process_container(release, process_name, with_tls=False),
+            ],
+            volumes=[
+                kubernetes.client.V1Volume(
+                    name='vault-secrets',
+                    empty_dir=kubernetes.client.V1EmptyDirVolumeSource(medium="Memory", size_limit="1M")
+                ),
+            ],
+        )
+    elif process_name.startswith('release'):
+        return kubernetes.client.V1PodSpec(
+            service_account_name=service_account_name,
+            init_containers=[render_cabotage_enroller_container(release, process_name, with_tls=False)],
+            containers=[
+                render_process_container(release, process_name, with_tls=False),
+            ],
+            restart_policy='Never',
+            volumes=[
+                kubernetes.client.V1Volume(
+                    name='vault-secrets',
+                    empty_dir=kubernetes.client.V1EmptyDirVolumeSource(medium="Memory", size_limit="1M")
+                ),
+            ],
+        )
+    else:
+        return kubernetes.client.V1PodSpec(
+            service_account_name=service_account_name,
+            init_containers=[render_cabotage_enroller_container(release, process_name, with_tls=False)],
+            containers=[
                 render_process_container(release, process_name, with_tls=False),
             ],
             volumes=[
@@ -394,10 +425,75 @@ def scale_deployment(namespace, release, process_name, replicas):
         api_response = apps_api_instance.patch_namespaced_deployment_scale(deployment_name, namespace, scale)
 
 
+def render_job(namespace, release, service_account_name, process_name):
+    role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
+    job_id = str(uuid.uuid4())
+    job_object = kubernetes.client.V1Job(
+        metadata=kubernetes.client.V1ObjectMeta(
+            name=f'{release.application.project.slug}-{release.application.slug}-{process_name}-{job_id}',
+            labels={
+                'organization': release.application.project.organization.slug,
+                'project': release.application.project.slug,
+                'application': release.application.slug,
+                'process': process_name,
+                'app': role_name,
+                'release': str(release.version),
+                'deployment': job_id,
+            }
+        ),
+        spec=kubernetes.client.V1JobSpec(
+            active_deadline_seconds=120,
+            backoff_limit=0,
+            parallelism=1,
+            template=kubernetes.client.V1PodTemplateSpec(
+                metadata=kubernetes.client.V1ObjectMeta(
+                    labels={
+                        'organization': release.application.project.organization.slug,
+                        'project': release.application.project.slug,
+                        'application': release.application.slug,
+                        'process': process_name,
+                        'app': role_name,
+                        'release': str(release.version),
+                        'deployment': job_id,
+                    }
+                ),
+                spec=render_podspec(release, process_name, service_account_name),
+            ),
+        ),
+    )
+    return job_object
+
+
+def run_job(batch_api_instance, namespace, release, service_account_name, process_name):
+    job_object = render_job(namespace, release, service_account_name, process_name)
+    try:
+        job = batch_api_instance.create_namespaced_job(namespace, job_object)
+    except ApiException as exc:
+        raise DeployError(f'Unexpected exception creating Job/{job_object.metadata.name} in {namespace}: {exc}')
+    while True:
+        job_status = batch_api_instance.read_namespaced_job_status(job_object.metadata.name, namespace)
+        if job_status.status.failed and job.status.failed > 0:
+            raise DeployError(f'Job/{job_object.metadata.name} failed!')
+        elif job_status.status.succeeded and job_status.status.succeeded > 0:
+            try:
+                status = batch_api_instance.delete_namespaced_job(
+                    job_object.metadata.name, namespace,
+                    kubernetes.client.V1DeleteOptions(
+                        propagation_policy='Foreground',
+                    )
+                )
+            except ApiException as exc:
+                raise DeployError(f'Unexpected exception deleting Job/{job_object.metadata.name} in {namespace}: {exc}')
+            return True
+        else:
+            time.sleep(1)
+
+
 def deploy_release(release):
     api_client = kubernetes_ext.kubernetes_client
     core_api_instance = kubernetes.client.CoreV1Api(api_client)
     apps_api_instance = kubernetes.client.AppsV1beta1Api(api_client)
+    batch_api_instance = kubernetes.client.BatchV1Api(api_client)
     namespace = fetch_namespace(core_api_instance, release)
     service_account = fetch_service_account(core_api_instance, release)
     image_pull_secrets = fetch_image_pull_secrets(core_api_instance, release)
@@ -408,6 +504,8 @@ def deploy_release(release):
             image_pull_secrets=[kubernetes.client.V1LocalObjectReference(name=image_pull_secrets.metadata.name)],
         ),
     )
+    for release_command in release.release_commands:
+        job = run_job(batch_api_instance, namespace.metadata.name, release, service_account.metadata.name, release_command)
     for process_name in release.processes:
         deployment = create_deployment(apps_api_instance, namespace.metadata.name, release, service_account.metadata.name, process_name)
 
@@ -434,7 +532,10 @@ def render_release(release):
           render_deployment(namespace.metadata.name, release, service_account.metadata.name, process_name).to_dict()
           for process_name in release.processes
       ],
-      'release_jobs': [],
+      'release_jobs': [
+          render_job(namespace.metadata.name, release, service_account.metadata.name, process_name).to_dict()
+          for process_name in release.release_commands
+      ],
     }
     document = remove_none(document)
     return yaml.dump(document, default_flow_style=False)
