@@ -125,8 +125,24 @@ def fetch_image_pull_secrets(core_api_instance, release):
             raise DeployError(f'Unexpected exception fetching ServiceAccount/{secret_name} in {namespace}: {exc}')
     return secret
 
-def render_cabotage_enroller_container(release, process_name):
+def render_cabotage_enroller_container(release, process_name, with_tls=True):
     role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
+
+    args = [
+        "kube_login",
+        "--namespace=$(NAMESPACE)",
+        f"--vault-auth-kubernetes-role={role_name}",
+        "--fetch-consul-token",
+        f"--vault-consul-role={role_name}",
+        "--pod-name=$(POD_NAME)",
+        "--pod-ip=$(POD_IP)",
+    ]
+
+    if with_tls:
+        args.append("--fetch-cert")
+        args.append(f"--vault-pki-role={role_name}")
+        args.append(f"--service-names={process_name}.{release.application.slug}")
+
     return kubernetes.client.V1Container(
         name='cabotage-enroller',
         image='cabotage/sidecar:v1.0.0a1',
@@ -136,18 +152,7 @@ def render_cabotage_enroller_container(release, process_name):
             kubernetes.client.V1EnvVar(name='POD_NAME', value_from=kubernetes.client.V1EnvVarSource(field_ref=kubernetes.client.V1ObjectFieldSelector(field_path='metadata.name'))),
             kubernetes.client.V1EnvVar(name='POD_IP', value_from=kubernetes.client.V1EnvVarSource(field_ref=kubernetes.client.V1ObjectFieldSelector(field_path='status.podIP'))),
         ],
-        args=[
-            "kube_login",
-            "--namespace=$(NAMESPACE)",
-            f"--vault-auth-kubernetes-role={role_name}",
-            "--fetch-cert",
-            f"--vault-pki-role={role_name}",
-            "--fetch-consul-token",
-            f"--vault-consul-role={role_name}",
-            "--pod-name=$(POD_NAME)",
-            "--pod-ip=$(POD_IP)",
-            f"--service-names={process_name}.{release.application.slug}",
-        ],
+        args=args,
         volume_mounts=[
             kubernetes.client.V1VolumeMount(
                 name='vault-secrets',
@@ -156,16 +161,16 @@ def render_cabotage_enroller_container(release, process_name):
         ],
     )
 
-def render_cabotage_sidecar_container(release):
+def render_cabotage_sidecar_container(release, with_tls=True):
+    args = ["maintain"]
+    if with_tls:
+        args.append("--vault-pki-role={role_name}")
     role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
     return kubernetes.client.V1Container(
         name='cabotage-sidecar',
         image='cabotage/sidecar:v1.0.0a1',
         image_pull_policy='IfNotPresent',
-        args=[
-            "maintain",
-            f"--vault-pki-role={role_name}",
-        ],
+        args=args,
         volume_mounts=[
             kubernetes.client.V1VolumeMount(
                 name='vault-secrets',
@@ -229,7 +234,20 @@ def render_cabotage_sidecar_tls_container(release):
         ),
     )
 
-def render_process_container(release, process_name):
+def render_process_container(release, process_name, with_tls=True):
+    volume_mounts = [
+        kubernetes.client.V1VolumeMount(
+            name='vault-secrets',
+            mount_path='/var/run/secrets/vault'
+        ),
+    ]
+    if with_tls:
+        volume_mounts.append(
+            kubernetes.client.V1VolumeMount(
+                name='cabotage-sock',
+                mount_path='/var/run/cabotage'
+            )
+        )
     return kubernetes.client.V1Container(
         name=process_name,
         image=f'localhost:30000/{release.repository_name}:release-{release.version}',
@@ -254,17 +272,46 @@ def render_process_container(release, process_name):
                 'cpu': '500m',
             },
         ),
-        volume_mounts=[
-            kubernetes.client.V1VolumeMount(
-                name='vault-secrets',
-                mount_path='/var/run/secrets/vault'
-            ),
-            kubernetes.client.V1VolumeMount(
-                name='cabotage-sock',
-                mount_path='/var/run/cabotage'
-            ),
-        ],
+        volume_mounts=volume_mounts,
     )
+
+
+def render_podspec(release, process_name, service_account_name):
+    if process_name.startswith('web'):
+        return kubernetes.client.V1PodSpec(
+            service_account_name=service_account_name,
+            init_containers=[render_cabotage_enroller_container(release, process_name, with_tls=True)],
+            containers=[
+                render_cabotage_sidecar_container(release, with_tls=True),
+                render_cabotage_sidecar_tls_container(release),
+                render_process_container(release, process_name, with_tls=True),
+            ],
+            volumes=[
+                kubernetes.client.V1Volume(
+                    name='vault-secrets',
+                    empty_dir=kubernetes.client.V1EmptyDirVolumeSource(medium="Memory", size_limit="1M")
+                ),
+                kubernetes.client.V1Volume(
+                    name='cabotage-sock',
+                    empty_dir=kubernetes.client.V1EmptyDirVolumeSource(medium="Memory", size_limit="1M")
+                ),
+            ],
+        )
+    else:
+        return kubernetes.client.V1PodSpec(
+            service_account_name=service_account_name,
+            init_containers=[render_cabotage_enroller_container(release, process_name, with_tls=False)],
+            containers=[
+                render_cabotage_sidecar_container(release, with_tls=False),
+                render_process_container(release, process_name, with_tls=False),
+            ],
+            volumes=[
+                kubernetes.client.V1Volume(
+                    name='vault-secrets',
+                    empty_dir=kubernetes.client.V1EmptyDirVolumeSource(medium="Memory", size_limit="1M")
+                ),
+            ],
+        )
 
 
 def render_deployment(namespace, release, service_account_name, process_name):
@@ -281,7 +328,7 @@ def render_deployment(namespace, release, service_account_name, process_name):
             }
         ),
         spec=kubernetes.client.AppsV1beta1DeploymentSpec(
-            replicas=1,
+            replicas=release.application.process_counts.get(process_name, 0),
             selector=kubernetes.client.V1LabelSelector(
                 match_labels={
                     'organization': release.application.project.organization.slug,
@@ -301,25 +348,7 @@ def render_deployment(namespace, release, service_account_name, process_name):
                         'app': role_name,
                     }
                 ),
-                spec=kubernetes.client.V1PodSpec(
-                    service_account_name=service_account_name,
-                    init_containers=[render_cabotage_enroller_container(release, process_name)],
-                    containers=[
-                        render_cabotage_sidecar_container(release),
-                        render_cabotage_sidecar_tls_container(release),
-                        render_process_container(release, process_name),
-                    ],
-                    volumes=[
-                        kubernetes.client.V1Volume(
-                            name='vault-secrets',
-                            empty_dir=kubernetes.client.V1EmptyDirVolumeSource(medium="Memory", size_limit="1M")
-                        ),
-                        kubernetes.client.V1Volume(
-                            name='cabotage-sock',
-                            empty_dir=kubernetes.client.V1EmptyDirVolumeSource(medium="Memory", size_limit="1M")
-                        ),
-                    ],
-                ),
+                spec=render_podspec(release, process_name, service_account_name),
             ),
         ),
     )
@@ -363,7 +392,8 @@ def deploy_release(release):
             image_pull_secrets=[kubernetes.client.V1LocalObjectReference(name=image_pull_secrets.metadata.name)],
         ),
     )
-    deployment = create_deployment(apps_api_instance, namespace.metadata.name, release, service_account.metadata.name, 'web')
+    for process_name in release.processes:
+        deployment = create_deployment(apps_api_instance, namespace.metadata.name, release, service_account.metadata.name, process_name)
 
 
 def remove_none(obj):
@@ -380,12 +410,15 @@ def render_release(release):
     namespace = render_namespace(release)
     service_account = render_service_account(release)
     image_pull_secrets = render_image_pull_secrets(release)
-    deployment = render_deployment(namespace.metadata.name, release, service_account.metadata.name, 'web')
     document = {
       'namespace': namespace.to_dict(),
       'service_account': service_account.to_dict(),
       'image_pull_secrets': image_pull_secrets.to_dict(),
-      'deployment': deployment.to_dict()
+      'deployments': [
+          render_deployment(namespace.metadata.name, release, service_account.metadata.name, process_name).to_dict()
+          for process_name in release.processes
+      ],
+      'release_jobs': [],
     }
     document = remove_none(document)
     return yaml.dump(document, default_flow_style=False)
