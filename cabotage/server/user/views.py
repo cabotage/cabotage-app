@@ -63,6 +63,8 @@ from cabotage.celery.tasks import (
     run_release_build,
 )
 
+from cabotage.celery.tasks.deploy import scale_deployment
+
 Activity = activity_plugin.activity_cls
 user_blueprint = Blueprint('user', __name__,)
 
@@ -604,6 +606,10 @@ def application_scale(application_id):
             db.session.add(application)
             db.session.add(activity)
             db.session.commit()
+
+            if current_app.config['KUBERNETES_ENABLED']:
+                for process_name, change in scaled.items():
+                    scale_deployment(application.project.organization.slug, application.latest_release, process_name, change['new_value'])
     else:
         return jsonify(form.errors), 400
     return redirect(url_for('user.project_application', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug))

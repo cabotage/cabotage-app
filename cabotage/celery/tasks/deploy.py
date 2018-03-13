@@ -356,7 +356,6 @@ def render_deployment(namespace, release, service_account_name, process_name):
 
 
 def create_deployment(apps_api_instance, namespace, release, service_account_name, process_name):
-    role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
     deployment_object = render_deployment(namespace, release, service_account_name, process_name)
     deployment = None
     try:
@@ -376,6 +375,23 @@ def create_deployment(apps_api_instance, namespace, release, service_account_nam
             return apps_api_instance.patch_namespaced_deployment(deployment_object.metadata.name, namespace, deployment_object)
         except Exception as exc:
             raise DeployError(f'Unexpected exception patching Deployment/{deployment_object.metadata.name} in {namespace}: {exc}')
+
+
+def scale_deployment(namespace, release, process_name, replicas):
+    api_client = kubernetes_ext.kubernetes_client
+    apps_api_instance = kubernetes.client.AppsV1beta1Api(api_client)
+    deployment_name = f'{release.application.project.slug}-{release.application.slug}-{process_name}'
+    deployment = None
+    try:
+        deployment = apps_api_instance.read_namespaced_deployment(deployment_name, namespace)
+    except ApiException as exc:
+        if exc.status == 404:
+            raise DeployError(f'Unexpected exception fetching Deployment/{deployment_name} in {namespace}: {exc}')
+    if deployment is not None:
+        scale = kubernetes.client.AppsV1beta1Scale(
+            spec=kubernetes.client.AppsV1beta1ScaleSpec(replicas=replicas)
+        )
+        api_response = apps_api_instance.patch_namespaced_deployment_scale(deployment_name, namespace, scale)
 
 
 def deploy_release(release):
