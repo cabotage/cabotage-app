@@ -31,7 +31,7 @@ class GitHubApp(object):
             self.app_id = app.config['GITHUB_APP_ID']
         if app.config['GITHUB_APP_PRIVATE_KEY']:
             try:
-                self.private_key_pem = base64.b64decode(app.config['GITHUB_APP_PRIVATE_KEY'])
+                self.app_private_key_pem = base64.b64decode(app.config['GITHUB_APP_PRIVATE_KEY']).decode()
             except Exception as exc:
                 raise ValueError(f'Unable to decode GITHUB_APP_PRIVATE_KEY: {exc}')
 
@@ -54,12 +54,12 @@ class GitHubApp(object):
             issued = int(time.time())
             payload = {
                 'iat': issued,
-                'exp': issued + 600,
+                'exp': issued + 599,
                 'iss': self.app_id,
             }
-            self._bearer_token = jwt.encode(payload, self.private_key_pem, algorithm='RS256')
-            self._bearer_token_exp = issued + 600
-        return self._bearer_token
+            self._bearer_token = jwt.encode(payload, self.app_private_key_pem, algorithm='RS256')
+            self._bearer_token_exp = issued + 599
+        return self._bearer_token.decode()
 
     def teardown(self, exception):
         ctx = stack.top
