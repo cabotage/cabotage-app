@@ -21,17 +21,23 @@ from sqlalchemy import desc
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy_continuum import version_class
 
-from cabotage.server import config_writer
-from cabotage.server import minio
-from cabotage.server import db
-from cabotage.server import vault
-from cabotage.server import kubernetes
-from cabotage.server import github_app
-from cabotage.server.models.auth import Organization
+from cabotage.server import (
+    config_writer,
+    db,
+    github_app,
+    kubernetes,
+    minio,
+    vault,
+)
+
+from cabotage.server.models.auth import (
+    Organization,
+)
 from cabotage.server.models.projects import (
     Application,
     Configuration,
     Deployment,
+    Hook,
     Image,
     Project,
     Release,
@@ -60,6 +66,7 @@ from cabotage.utils.docker_auth import (
 
 from cabotage.celery.tasks import (
     is_this_thing_on,
+    process_github_hook,
     run_deploy,
     run_image_build,
     run_release_build,
@@ -663,9 +670,12 @@ def signing_cert():
     cert = vault.signing_cert
     return render_template('user/signing_cert.html', signing_certificate=cert)
 
-
 @user_blueprint.route('/github/hooks', methods=['POST'])
 def github_hooks():
-    github_app.validate_webhook()
-    print(request.json)
-    return 'ok'
+    if github_app.validate_webhook():
+        hook = Hook(headers=dict(request.headers), payload=request.json)
+        db.session.add(hook)
+        db.session.commit()
+        process_github_hook.delay(hook_id=hook.id)
+        return jsonify({'hook_id': hook.id})
+    abort(403)

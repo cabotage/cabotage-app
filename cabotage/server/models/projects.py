@@ -543,6 +543,40 @@ class Configuration(db.Model, Timestamp):
         return self.value
 
 
+class Hook(db.Model, Timestamp):
+
+    __versioned__ = {}
+    __tablename__ = 'hooks'
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True,
+    )
+    headers = db.Column(
+        postgresql.JSONB(),
+        nullable=False,
+    )
+    payload = db.Column(
+        postgresql.JSONB(),
+        nullable=False,
+    )
+    processed = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False,
+    )
+    version_id = db.Column(
+        db.Integer,
+        nullable=False
+    )
+
+    __mapper_args__ = {
+        "version_id_col": version_id
+    }
+
+
 class Image(db.Model, Timestamp):
 
     __versioned__ = {}
