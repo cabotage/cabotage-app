@@ -1,3 +1,4 @@
+import sys
 import time
 import uuid
 
@@ -464,7 +465,23 @@ def render_job(namespace, release, service_account_name, process_name):
     return job_object
 
 
-def run_job(batch_api_instance, namespace, release, service_account_name, process_name):
+def fetch_job_logs(core_api_instance, namespace, job_object):
+    label_selector = ','.join([f'{k}={v}' for k, v in job_object.metadata.labels.items()])
+    logs = {}
+    try:
+        pods = core_api_instance.list_namespaced_pod(namespace, label_selector=label_selector)
+    except ApiException as exc:
+        raise DeployError(f'Unexpected exception listing Pods for Job/{job_object.metadata.name} in {namespace}: {exc}')
+    for pod in pods.items:
+        try:
+            pod_logs = core_api_instance.read_namespaced_pod_log(pod.metadata.name, namespace, container=pod.metadata.labels['process'])
+            logs[pod.metadata.name] = pod_logs
+        except ApiException as exc:
+            raise DeployError(f'Unexpected exception reading Pod logs for Job/{job_object.metadata.name}/{pod.metadata.name} in {namespace}: {exc}')
+    return logs
+
+
+def run_job(core_api_instance, batch_api_instance, namespace, release, service_account_name, process_name):
     job_object = render_job(namespace, release, service_account_name, process_name)
     try:
         job = batch_api_instance.create_namespaced_job(namespace, job_object)
@@ -473,6 +490,7 @@ def run_job(batch_api_instance, namespace, release, service_account_name, proces
     while True:
         job_status = batch_api_instance.read_namespaced_job_status(job_object.metadata.name, namespace)
         if job_status.status.failed and job.status.failed > 0:
+            sys.stderr.write(f'{fetch_job_logs(core_api_instance, namespace, job_object)}\n')
             raise DeployError(f'Job/{job_object.metadata.name} failed!')
         elif job_status.status.succeeded and job_status.status.succeeded > 0:
             try:
@@ -484,6 +502,7 @@ def run_job(batch_api_instance, namespace, release, service_account_name, proces
                 )
             except ApiException as exc:
                 raise DeployError(f'Unexpected exception deleting Job/{job_object.metadata.name} in {namespace}: {exc}')
+            sys.stderr.write(f'{fetch_job_logs(core_api_instance, namespace, job_object)}\n')
             return True
         else:
             time.sleep(1)
@@ -505,7 +524,7 @@ def deploy_release(release):
         ),
     )
     for release_command in release.release_commands:
-        job = run_job(batch_api_instance, namespace.metadata.name, release, service_account.metadata.name, release_command)
+        job = run_job(core_api_instance, batch_api_instance, namespace.metadata.name, release, service_account.metadata.name, release_command)
     for process_name in release.processes:
         deployment = create_deployment(apps_api_instance, namespace.metadata.name, release, service_account.metadata.name, process_name)
 
