@@ -481,8 +481,9 @@ def fetch_job_logs(core_api_instance, namespace, job_object):
             raise DeployError(f'Unexpected exception reading Pod logs for Job/{job_object.metadata.name}/{pod.metadata.name} in {namespace}: {exc}')
     log_string = ""
     for pod_name, log_data in logs.items():
+        log_string += f"Job Pod {pod_name}:\n"
         for log_line in log_data.split('\n'):
-            log_string += f"\n{pod_name}: {log_line}"
+            log_string += f"  {log_line}\n"
     return log_string
 
 
