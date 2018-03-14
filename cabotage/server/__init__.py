@@ -19,6 +19,7 @@ from cabotage.server.ext.config_writer import ConfigWriter
 from cabotage.server.ext.minio_driver import MinioDriver
 from cabotage.server.ext.kubernetes import Kubernetes
 from cabotage.server.ext.vault_db_creds import VaultDBCreds
+from cabotage.server.ext.github_app import GitHubApp
 
 # instantiate the extensions
 bcrypt = Bcrypt()
@@ -45,6 +46,7 @@ kubernetes = Kubernetes()
 config_writer = ConfigWriter(consul=consul, vault=vault)
 minio = MinioDriver()
 celery = Celery()
+github_app = GitHubApp()
 
 
 def create_app():
@@ -121,6 +123,7 @@ def create_app():
     config_writer.init_app(app, consul, vault)
     minio.init_app(app)
     celery.init_app(app)
+    github_app.init_app(app)
 
     # register blueprints
     from cabotage.server.user.views import user_blueprint

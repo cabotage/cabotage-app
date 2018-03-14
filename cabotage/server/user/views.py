@@ -26,6 +26,7 @@ from cabotage.server import minio
 from cabotage.server import db
 from cabotage.server import vault
 from cabotage.server import kubernetes
+from cabotage.server import github_app
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import (
     Application,
@@ -661,3 +662,10 @@ def release_deploy(release_id):
 def signing_cert():
     cert = vault.signing_cert
     return render_template('user/signing_cert.html', signing_certificate=cert)
+
+
+@user_blueprint.route('/github/hooks', methods=['POST'])
+def github_hooks():
+    github_app.validate_webhook()
+    print(request.json)
+    return 'ok'
