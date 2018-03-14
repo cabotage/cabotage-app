@@ -6,7 +6,7 @@ from .build import (
 )
 
 from .deploy import (
-    run_deploy_release,
+    run_deploy,
 )
 
 

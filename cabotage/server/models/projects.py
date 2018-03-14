@@ -103,6 +103,12 @@ class Application(db.Model, Timestamp):
         cascade="all, delete-orphan",
         lazy="dynamic",
     )
+    deployments = db.relationship(
+        "Deployment",
+        backref="application",
+        cascade="all, delete-orphan",
+        lazy="dynamic",
+    )
     version_id = db.Column(
         db.Integer,
         nullable=False
@@ -175,6 +181,10 @@ class Application(db.Model, Timestamp):
 
     @property
     def latest_image(self):
+        return self.images.filter_by().order_by(Image.version.desc()).first()
+
+    @property
+    def latest_image_built(self):
         return self.images.filter_by(built=True).order_by(Image.version.desc()).first()
 
     @property
@@ -213,10 +223,32 @@ class Deployment(db.Model, Timestamp):
         db.Integer,
         nullable=False
     )
+    complete = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False
+    )
+    error = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False
+    )
+    error_detail = db.Column(
+        db.String(2048),
+        nullable=True,
+    )
+    deploy_log = db.Column(
+        db.Text(),
+        nullable=True,
+    )
 
     __mapper_args__ = {
         "version_id_col": version_id
     }
+
+    @property
+    def release_object(self):
+        return Release.query.filter_by(id=self.release.get("id", None)).first()
 
 
 class Release(db.Model, Timestamp):

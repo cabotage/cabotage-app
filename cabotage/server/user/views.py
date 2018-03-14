@@ -28,11 +28,12 @@ from cabotage.server import vault
 from cabotage.server import kubernetes
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import (
-    Project,
     Application,
     Configuration,
+    Deployment,
     Image,
-    Release
+    Project,
+    Release,
 )
 from cabotage.server.models.projects import activity_plugin
 
@@ -58,7 +59,7 @@ from cabotage.utils.docker_auth import (
 
 from cabotage.celery.tasks import (
     is_this_thing_on,
-    run_deploy_release,
+    run_deploy,
     run_image_build,
     run_release_build,
 )
@@ -620,12 +621,20 @@ def release_deploy(release_id):
     release = Release.query.filter_by(id=release_id).first()
     if release is None:
         abort(404)
+    deployment = Deployment(
+        application_id=release.application.id,
+        release=release.asdict,
+    )
+    db.session.add(deployment)
+    db.session.commit()
     if current_app.config['KUBERNETES_ENABLED']:
-        run_deploy_release(release_id=release.id)
-        return redirect(url_for('user.project_application', org_slug=release.application.project.organization.slug, project_slug=release.application.project.slug, app_slug=release.application.slug))
+        deployment_id = deployment.id
+        run_deploy(deployment_id=deployment.id)
+        deployment = Deployment.query.filter_by(id=deployment_id).first()
+        return redirect(url_for('user.project_application', org_slug=deployment.release_object.application.project.organization.slug, project_slug=deployment.release_object.application.project.slug, app_slug=deployment.release_object.application.slug))
     else:
-        from cabotage.celery.tasks.deploy import render_release
-        return render_template('user/release_render.html', rendered_release=render_release(release))
+        from cabotage.celery.tasks.deploy import fake_deploy_release
+        return render_template('user/release_render.html', rendered_release=fake_deploy_release(deployment))
 
 @user_blueprint.route('/signing-cert', methods=['GET'])
 def signing_cert():

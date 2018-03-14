@@ -13,10 +13,11 @@ from flask import current_app
 
 from cabotage.server import (
     celery,
+    db,
     kubernetes as kubernetes_ext,
 )
 
-from cabotage.server.models.projects import Release
+from cabotage.server.models.projects import Deployment
 
 
 class DeployError(RuntimeError):
@@ -478,7 +479,23 @@ def fetch_job_logs(core_api_instance, namespace, job_object):
             logs[pod.metadata.name] = pod_logs
         except ApiException as exc:
             raise DeployError(f'Unexpected exception reading Pod logs for Job/{job_object.metadata.name}/{pod.metadata.name} in {namespace}: {exc}')
-    return logs
+    log_string = ""
+    for pod_name, log_data in logs.items():
+        for log_line in log_data.split('\n'):
+            log_string += f"\n{pod_name}: {log_line}"
+    return log_string
+
+
+def delete_job(batch_api_instance, namespace, job_object):
+    try:
+        status = batch_api_instance.delete_namespaced_job(
+            job_object.metadata.name, namespace,
+            kubernetes.client.V1DeleteOptions(
+                propagation_policy='Foreground',
+            )
+        )
+    except ApiException as exc:
+        raise DeployError(f'Unexpected exception deleting Job/{job_object.metadata.name} in {namespace}: {exc}')
 
 
 def run_job(core_api_instance, batch_api_instance, namespace, release, service_account_name, process_name):
@@ -490,43 +507,84 @@ def run_job(core_api_instance, batch_api_instance, namespace, release, service_a
     while True:
         job_status = batch_api_instance.read_namespaced_job_status(job_object.metadata.name, namespace)
         if job_status.status.failed and job_status.status.failed > 0:
-            sys.stderr.write(f'{fetch_job_logs(core_api_instance, namespace, job_object)}\n')
-            raise DeployError(f'Job/{job_object.metadata.name} failed!')
+            job_logs = fetch_job_logs(core_api_instance, namespace, job_status)
+            delete_job(batch_api_instance, namespace, job_object)
+            return False, job_logs
         elif job_status.status.succeeded and job_status.status.succeeded > 0:
-            try:
-                status = batch_api_instance.delete_namespaced_job(
-                    job_object.metadata.name, namespace,
-                    kubernetes.client.V1DeleteOptions(
-                        propagation_policy='Foreground',
-                    )
-                )
-            except ApiException as exc:
-                raise DeployError(f'Unexpected exception deleting Job/{job_object.metadata.name} in {namespace}: {exc}')
-            sys.stderr.write(f'{fetch_job_logs(core_api_instance, namespace, job_object)}\n')
-            return True
+            job_logs = fetch_job_logs(core_api_instance, namespace, job_status)
+            delete_job(batch_api_instance, namespace, job_object)
+            return True, job_logs
         else:
             time.sleep(1)
 
 
-def deploy_release(release):
-    api_client = kubernetes_ext.kubernetes_client
-    core_api_instance = kubernetes.client.CoreV1Api(api_client)
-    apps_api_instance = kubernetes.client.AppsV1beta1Api(api_client)
-    batch_api_instance = kubernetes.client.BatchV1Api(api_client)
-    namespace = fetch_namespace(core_api_instance, release)
-    service_account = fetch_service_account(core_api_instance, release)
-    image_pull_secrets = fetch_image_pull_secrets(core_api_instance, release)
-    service_account = core_api_instance.patch_namespaced_service_account(
-        service_account.metadata.name,
-        namespace.metadata.name,
-        kubernetes.client.V1ServiceAccount(
-            image_pull_secrets=[kubernetes.client.V1LocalObjectReference(name=image_pull_secrets.metadata.name)],
-        ),
-    )
-    for release_command in release.release_commands:
-        job = run_job(core_api_instance, batch_api_instance, namespace.metadata.name, release, service_account.metadata.name, release_command)
-    for process_name in release.processes:
-        deployment = create_deployment(apps_api_instance, namespace.metadata.name, release, service_account.metadata.name, process_name)
+def deploy_release(deployment):
+    deploy_log = []
+    try:
+        deploy_log.append("Constructing API Clients")
+        api_client = kubernetes_ext.kubernetes_client
+        core_api_instance = kubernetes.client.CoreV1Api(api_client)
+        apps_api_instance = kubernetes.client.AppsV1beta1Api(api_client)
+        batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+        deploy_log.append(f"Fetching Namespace")
+        namespace = fetch_namespace(core_api_instance, deployment.release_object)
+        deploy_log.append(f"Fetching ServiceAccount")
+        service_account = fetch_service_account(core_api_instance, deployment.release_object)
+        deploy_log.append(f"Fetching ImagePullSecrets")
+        image_pull_secrets = fetch_image_pull_secrets(core_api_instance, deployment.release_object)
+        deploy_log.append(f"Patching ServiceAccount with ImagePullSecrets")
+        service_account = core_api_instance.patch_namespaced_service_account(
+            service_account.metadata.name,
+            namespace.metadata.name,
+            kubernetes.client.V1ServiceAccount(
+                image_pull_secrets=[kubernetes.client.V1LocalObjectReference(name=image_pull_secrets.metadata.name)],
+            ),
+        )
+        for release_command in deployment.release_object.release_commands:
+            deploy_log.append(f"Running release command {release_command}")
+            job_complete, job_logs = run_job(core_api_instance, batch_api_instance, namespace.metadata.name, deployment.release_object, service_account.metadata.name, release_command)
+            deploy_log.append(job_logs)
+            if not job_complete:
+                raise DeployError(f'Release command {release_command} failed!')
+            else:
+                deploy_log.append(f'Release command {release_command} complete!')
+        for process_name in deployment.release_object.processes:
+            deploy_log.append(f"Creating deployment for {process_name} with {deployment.application.process_counts.get(process_name, 0)} replicas")
+            deployment_object = create_deployment(apps_api_instance, namespace.metadata.name, deployment.release_object, service_account.metadata.name, process_name)
+        deployment.complete = True
+        deploy_log.append(f"Deployment {deployment.id} complete")
+    except DeployError as exc:
+        deployment.error = True
+        deployment.error_detail = str(exc)
+    except Exception as exc:
+        deployment.error = True
+        deployment.error_detail = f'Unexpected Error: {str(exc)}'
+    deployment.deploy_log = "\n".join(deploy_log)
+    db.session.commit()
+
+
+def fake_deploy_release(deployment):
+    deploy_log = []
+    namespace = render_namespace(deployment.release_object)
+    deploy_log.append(f"Creating Namespace/{namespace.metadata.name}")
+    deploy_log.append(yaml.dump(remove_none(namespace.to_dict())))
+    service_account = render_service_account(deployment.release_object)
+    deploy_log.append(f"Creating ServiceAccount/{service_account.metadata.name} in Namespace/{namespace.metadata.name}")
+    deploy_log.append(yaml.dump(remove_none(service_account.to_dict())))
+    image_pull_secrets = render_image_pull_secrets(deployment.release_object)
+    deploy_log.append(f"Creating ImagePullSecrets/{image_pull_secrets.metadata.name} in Namespace/{namespace.metadata.name}")
+    deploy_log.append(yaml.dump(remove_none(image_pull_secrets.to_dict())))
+    deploy_log.append(f"Patching ServiceAccount/{service_account.metadata.name} with ImagePullSecrets/{image_pull_secrets.metadata.name} in Namespace/{namespace.metadata.name}")
+    for release_command in deployment.release_object.release_commands:
+        job_object = render_job(namespace.metadata.name, deployment.release_object, service_account.metadata.name, release_command)
+        deploy_log.append(f"Running Job/{job_object.metadata.name} in Namespace/{namespace.metadata.name}")
+        deploy_log.append(yaml.dump(remove_none(job_object.to_dict())))
+    for process in deployment.release_object.processes:
+        deployment_object = render_deployment(namespace.metadata.name, deployment.release_object, service_account.metadata.name, process)
+        deploy_log.append(f"Creating Deployment/{deployment_object.metadata.name} in Namespace/{namespace.metadata.name}")
+        deploy_log.append(yaml.dump(remove_none(deployment_object.to_dict())))
+    deployment.deploy_log = "\n".join(deploy_log)
+    return "\n".join(deploy_log)
 
 
 def remove_none(obj):
@@ -539,36 +597,15 @@ def remove_none(obj):
         return obj
 
 
-def render_release(release):
-    namespace = render_namespace(release)
-    service_account = render_service_account(release)
-    image_pull_secrets = render_image_pull_secrets(release)
-    document = {
-      'namespace': namespace.to_dict(),
-      'service_account': service_account.to_dict(),
-      'image_pull_secrets': image_pull_secrets.to_dict(),
-      'deployments': [
-          render_deployment(namespace.metadata.name, release, service_account.metadata.name, process_name).to_dict()
-          for process_name in release.processes
-      ],
-      'release_jobs': [
-          render_job(namespace.metadata.name, release, service_account.metadata.name, process_name).to_dict()
-          for process_name in release.release_commands
-      ],
-    }
-    document = remove_none(document)
-    return yaml.dump(document, default_flow_style=False)
-
-
 @celery.task()
-def run_deploy_release(release_id=None):
-    release = Release.query.filter_by(id=release_id).first()
-    if release is None:
-        raise KeyError(f'Release with ID {release_id} not found!')
+def run_deploy(deployment_id=None):
+    deployment = Deployment.query.filter_by(id=deployment_id).first()
+    if deployment is None:
+        raise KeyError(f'Deployment with ID {deployment_id} not found!')
     error = False
     error_detail = ""
     try:
-        deploy_release(release)
+        deploy_release(deployment)
     except DeployError as exc:
         error = True
         error_detail = str(exc)
