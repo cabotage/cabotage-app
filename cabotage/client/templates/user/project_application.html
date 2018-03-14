@@ -9,8 +9,9 @@
     <div class="row">
       <h1>{{ application.project.organization.slug|lower }}/{{ application.project.slug|lower }}: {{ application.slug }}</h1>
     </div>
+    {% if application.latest_release.built %}
     <div class="row">
-      <div class="col-md-12">
+      <div class="col-md-8">
         <h3>Deploy!</h3>
         <form action="{{ url_for('user.release_deploy', release_id=application.latest_release.id) }}" method="POST" name="deploy_release_form" enctype="multipart/form-data">
           {{ deploy_form.hidden_tag() }}
@@ -18,10 +19,14 @@
             <div class="col-md-6">
               {{ form_button(deploy_form.submit, "Do It!", method="POST", class="btn btn-primary") }}
             </div>
+            <div>
+              <a href="{{ url_for('user.project_application_deployment_automation', application_id=application.id) }}" class="btn btn-primary pull-right">{% if application.github_app_installation_id %}<span style="margin-right: 5px;" class="glyphicon glyphicon glyphicon-ok-sign"></span>{% endif %}Deploy Automation</a>
+            </div>
           </div>
         </form>
       </div>
     </div>
+    {% endif %}
     {% if application.deployments.count() > 0 %}
     <div class="row">
       <div class="col-md-8">
@@ -116,7 +121,9 @@
     {% endif %}
     <div class="row">
       <div class="col-md-12">
+        {% if application.releases.count() > 0 %}
         <h3>Releases</h3>
+        {% endif %}
         {% set image_diff, config_diff = application.ready_for_deployment %}
         {% if image_diff.has_changes() or config_diff.has_changes() %}
           <div class="row">

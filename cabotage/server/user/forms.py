@@ -204,6 +204,16 @@ class CreateConfigurationForm(FlaskForm):
             raise ValidationError('Configuration names must be unique (case insensitive) within Applications')
         return True
 
+class EditApplicationDeployAutomationForm(FlaskForm):
+    application_id = SelectField(
+        u'Application',
+        [DataRequired()],
+        description="Application this Configuration belongs to.",
+    )
+    github_app_installation_id = StringField(
+        u'GitHub Application Installation ID',
+        description="Application Installation ID from GitHub"
+    )
 
 class EditConfigurationForm(FlaskForm):
 

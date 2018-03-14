@@ -1,0 +1,36 @@
+{% extends "_base.html" %}
+{% from "security/_macros.html" import render_field_with_errors, render_field %}
+{% from "bootstrap/wtf.html" import form_errors, form_field %}
+{% from "bootstrap/utils.html" import form_button %}
+
+{% block content %}
+{% include "security/_messages.html" %}
+<div class="container-fluid clearfix" id="content">
+  <div class="row">
+    <div class="col-md-4 col-md-offset-4 col-sm-8 col-xs-8 col-xs-offset-2 col-sm-offset-2">
+      <h1>Update Application Deployment Automation</h1>
+      <p><b>Before you begin, you need to install <a href="{{ app_url }}">This Application</a> and grant it access to your desired repo</b></p>
+      <form action="{{ url_for('user.project_application_deployment_automation', application_id=form.application_id.data) }}" method="POST" name="project_application_deployment_automation_form">
+        {{ form.hidden_tag() }}
+        {{ form_field(form.application_id, disabled="disabled") }}
+        {{ form_field(form.github_app_installation_id) }}
+        <div class="row">
+          <div class="col-md-12">
+            <p><b>You'll need to configure <a href="https://developer.github.com/v3/guides/automating-deployments-to-integrators/">GitHub's Auto-Deployment</a> for your desired repository to deploy to the environment named:</b></p>
+            <p><code>cabotage/{{ form.application_id.data }}</code></p>
+            <br>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-md-6">
+            {{ form_button(form.submit, "Update Deploy Automation", method="POST", class="btn btn-primary") }}
+          </div>
+          <div class="col-md-6">
+            <a class="btn btn-info pull-right" onclick="window.history.back()">Cancel</a>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

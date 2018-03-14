@@ -101,6 +101,10 @@ services:
       - CABOTAGE_VAULT_TOKEN=deadbeef-dead-beef-dead-beefdeadbeef
       - CABOTAGE_DEBUG_TB_ENABLED=True
       - CABOTAGE_SECURITY_CONFIRMABLE=False
+      - CABOTAGE_GITHUB_APP_URL=https://github.com/apps/cabotage-local
+      - CABOTAGE_GITHUB_APP_ID=
+      - CABOTAGE_GITHUB_APP_PRIVATE_KEY=
+      - CABOTAGE_GITHUB_WEBHOOK_SECRET=
     volumes:
       - .:/opt/cabotage-app/src
       - $HOME/.kube:/root/.kube
@@ -124,6 +128,10 @@ services:
       - CABOTAGE_VAULT_TOKEN=deadbeef-dead-beef-dead-beefdeadbeef
       - CABOTAGE_DEBUG_TB_ENABLED=True
       - CABOTAGE_SECURITY_CONFIRMABLE=False
+      - CABOTAGE_GITHUB_APP_URL=https://github.com/apps/cabotage-local
+      - CABOTAGE_GITHUB_APP_ID=
+      - CABOTAGE_GITHUB_APP_PRIVATE_KEY=
+      - CABOTAGE_GITHUB_WEBHOOK_SECRET=
     volumes:
       - .:/opt/cabotage-app/src
       - $HOME/.kube:/root/.kube

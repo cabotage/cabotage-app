@@ -51,6 +51,7 @@ from cabotage.server.user.forms import (
     CreateOrganizationForm,
     CreateProjectForm,
     DeleteConfigurationForm,
+    EditApplicationDeployAutomationForm,
     EditConfigurationForm,
     ImageBuildSubmitForm,
     ReleaseDeployForm,
@@ -402,6 +403,34 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
         form.value.data = None
 
     return render_template('user/project_application_configuration_edit.html', form=form, org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug, configuration=configuration)
+
+
+@user_blueprint.route('/application/<application_id>/deploy_automation/edit', methods=['GET', 'POST'])
+@login_required
+def project_application_deployment_automation(application_id):
+    application = Application.query.filter_by(id=application_id).first()
+    if application is None:
+        abort(404)
+    form = EditApplicationDeployAutomationForm(obj=application)
+    form.application_id.choices = [(str(application.id), f'{application.project.organization.slug}/{application.project.slug}: {application.slug}')]
+    form.application_id.data = str(application.id)
+
+    if form.validate_on_submit():
+        form.populate_obj(application)
+        db.session.flush()
+        activity = Activity(
+            verb='edit',
+            object=application,
+            data={
+                'user_id': str(current_user.id),
+                'timestamp': datetime.datetime.utcnow().isoformat(),
+            }
+        )
+        db.session.add(activity)
+        db.session.commit()
+        return redirect(url_for('user.project_application', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug))
+
+    return render_template('user/project_application_deploy_automation.html', form=form, app_url=current_app.config.get('GITHUB_APP_URL', 'https://github.com'))
 
 
 @user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/config/<config_id>/delete', methods=['GET', 'POST'])

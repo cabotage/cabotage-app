@@ -113,6 +113,10 @@ class Application(db.Model, Timestamp):
         db.Integer,
         nullable=False
     )
+    github_app_installation_id = db.Column(
+        db.Integer,
+        nullable=True,
+    )
 
     @property
     def release_candidate(self):
