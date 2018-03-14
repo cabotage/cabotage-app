@@ -263,6 +263,10 @@ class Deployment(db.Model, Timestamp):
         db.String(2048),
         nullable=True,
     )
+    deploy_metadata = db.Column(
+        postgresql.JSONB(),
+        nullable=True,
+    )
     deploy_log = db.Column(
         db.Text(),
         nullable=True,
