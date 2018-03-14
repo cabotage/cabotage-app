@@ -1,0 +1,63 @@
+{% extends "_base.html" %}
+
+{% block content %}
+  <div class="container" id="content">
+    <div class="row">
+      <div class="col-md-9">
+        <h2>Information</h2>
+        <table class="table">
+          <tr>
+            <th>Status</th>
+            {% if deployment.complete %}
+            <td><span class="glyphicon glyphicon glyphicon-ok-sign text-success"></span> Complete</td>
+            {% elif deployment.error %}
+            <td><span class="glyphicon glyphicon-exclamation-sign text-danger"></span> Error</td>
+            {% else %}
+            <td><span class="glyphicon glyphicon-question-sign text-info"></span> Building...</td>
+            {% endif %}
+          </tr>
+          <tr>
+            <th>Created</th>
+            <td>{{ deployment.created|humanize }}</td>
+          </tr>
+          <tr>
+            <th>Updated </th>
+            <td>{{ deployment.updated|humanize }}</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+    {% if deployment.error %}
+    <div class="row">
+      <div class="alert alert-danger col-md-9">
+        <p>Error Running Deploy</p>
+        <pre>{{ deployment.error_detail }}</pre>
+      </div>
+    </div>
+    {% endif %}
+    <div class="row">
+      <div class="col-md-9">
+        <h3>Metadata</h3>
+        <pre>{{ deployment.deploy_metadata }}</pre>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-md-9">
+        <h3>Deployment Log</h3>
+        <pre>{{ deployment.deploy_log }}</pre>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-md-9">
+        <h3><code>asdict</code></h3>
+        <pre>{{ deployment.asdict|pprint }}</pre>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-md-9">
+        <h3><code>__dict__</code></h3>
+        <pre>{{ deployment.__dict__|pprint }}</pre>
+      </div>
+    </div>
+  </div>
+{% endblock %}

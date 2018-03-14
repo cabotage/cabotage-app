@@ -584,7 +584,7 @@ def fake_deploy_release(deployment):
         deploy_log.append(f"Creating Deployment/{deployment_object.metadata.name} in Namespace/{namespace.metadata.name}")
         deploy_log.append(yaml.dump(remove_none(deployment_object.to_dict())))
     deployment.deploy_log = "\n".join(deploy_log)
-    return "\n".join(deploy_log)
+    db.session.commit()
 
 
 def remove_none(obj):

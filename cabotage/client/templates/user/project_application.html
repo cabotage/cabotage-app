@@ -22,6 +22,52 @@
         </form>
       </div>
     </div>
+    {% if application.deployments.count() > 0 %}
+    <div class="row">
+      <div class="col-md-8">
+        <h3>Recent Deployments</h3>
+
+        {% if application.latest_deployment_running and application.latest_deployment_running.version|default(0) > application.latest_deployment.version|default(0) %}
+        <div class="col-md-12">
+          <div class="row alert alert-info">
+            <a class="text-info" href="{{ url_for('user.image_detail', image_id=application.latest_image_building.id) }}">Image Build #{{ application.latest_image_building.version }} In Progress! Watch it Go! <span class="glyphicon glyphicon-search"></span></a>
+          </div>
+        </div>
+        {% endif %}
+        {% if application.latest_image_error and application.latest_image_error.version|default(0) > application.latest_image.version|default(0) %}
+        <div class="col-md-12">
+          <div class="row alert alert-danger">
+            <a class="text-danger" href="{{ url_for('user.image_detail', image_id=application.latest_image_error.id) }}">Latest Image Build #{{ application.latest_image_error.version }} Failed! Take a closer look! <span class="glyphicon glyphicon-search"></span></a>
+          </div>
+        </div>
+        {% endif %}
+
+        <table class="table table-striped">
+          <tr>
+            <th>Status</th>
+            <th>Started</th>
+            <th>Updated</th>
+            <th style="white-space: nowrap; width: 1%;">Details</th>
+          </tr>
+          {% for deployment in application.recent_deployments %}
+          <tr>
+            {% if deployment.complete %}
+            <td><span class="glyphicon glyphicon glyphicon-ok-sign text-success"></span></td>
+            {% elif deployment.error %}
+            <td><span class="glyphicon glyphicon-exclamation-sign text-danger"></span></td>
+            {% else %}
+            <td><span class="glyphicon glyphicon-question-sign text-info"></span></td>
+            {% endif %}
+
+            <td>{{ deployment.created |humanize }}</td>
+            <td>{{ deployment.updated |humanize }}</td>
+            <td><a class="btn btn-info" href="{{ url_for('user.deployment_detail', deployment_id=deployment.id) }}"><span class="glyphicon glyphicon-search"></a></td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
+    </div>
+    {% endif %}
     {% if application.releases.count() > 0 and application.latest_release.built %}
     <div class="row">
       <div class="col-md-8">

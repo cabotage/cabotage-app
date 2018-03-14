@@ -147,6 +147,32 @@ class Application(db.Model, Timestamp):
         return {}
 
     @property
+    def latest_deployment(self):
+        return self.deployments.filter_by().order_by(Deployment.version.desc()).first()
+
+    @property
+    def latest_deployment_completed(self):
+        return self.deployments.filter_by(complete=True).order_by(Deployment.version.desc()).first()
+
+    @property
+    def latest_deployment_error(self):
+        return self.deployments.filter_by(error=True).order_by(Deployment.version.desc()).first()
+
+    @property
+    def latest_deployment_running(self):
+        return self.deployments.filter_by(complete=False, error=False).order_by(Deployment.version.desc()).first()
+
+    @property
+    def current_deployment(self):
+        if self.latest_deployment:
+            return self.latest_deployment.asdict
+        return {}
+
+    @property
+    def recent_deployments(self):
+        return self.deployments.order_by(Deployment.created.desc()).limit(5)
+
+    @property
     def ready_for_deployment(self):
         current = self.current_release
         candidate = self.release_candidate

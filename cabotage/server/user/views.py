@@ -492,6 +492,15 @@ def release_detail(release_id):
     return render_template('user/release_detail.html', release=release, docker_pull_credentials=docker_pull_credentials, image_pull_secrets=image_pull_secrets)
 
 
+@user_blueprint.route('/deployment/<deployment_id>')
+@login_required
+def deployment_detail(deployment_id):
+    deployment = Deployment.query.filter_by(id=deployment_id).first()
+    if deployment is None:
+        abort(404)
+    return render_template('user/deployment_detail.html', deployment=deployment)
+
+
 @user_blueprint.route('/applications/<application_id>/release/create', methods=['GET', 'POST'])
 @login_required
 def application_release_create(application_id):
@@ -626,15 +635,27 @@ def release_deploy(release_id):
         release=release.asdict,
     )
     db.session.add(deployment)
+    db.session.flush()
+    activity = Activity(
+        verb='deploy',
+        object=deployment,
+        data={
+            'user_id': str(current_user.id),
+            'timestamp': datetime.datetime.utcnow().isoformat(),
+        }
+    )
+    db.session.add(activity)
     db.session.commit()
     if current_app.config['KUBERNETES_ENABLED']:
         deployment_id = deployment.id
-        run_deploy(deployment_id=deployment.id)
+        run_deploy.delay(deployment_id=deployment.id)
         deployment = Deployment.query.filter_by(id=deployment_id).first()
-        return redirect(url_for('user.project_application', org_slug=deployment.release_object.application.project.organization.slug, project_slug=deployment.release_object.application.project.slug, app_slug=deployment.release_object.application.slug))
     else:
         from cabotage.celery.tasks.deploy import fake_deploy_release
-        return render_template('user/release_render.html', rendered_release=fake_deploy_release(deployment))
+        fake_deploy_release(deployment)
+        deployment.complete = True
+        db.session.commit()
+    return redirect(url_for('user.deployment_detail', deployment_id=deployment.id))
 
 @user_blueprint.route('/signing-cert', methods=['GET'])
 def signing_cert():
