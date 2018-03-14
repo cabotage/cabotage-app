@@ -489,7 +489,7 @@ def run_job(core_api_instance, batch_api_instance, namespace, release, service_a
         raise DeployError(f'Unexpected exception creating Job/{job_object.metadata.name} in {namespace}: {exc}')
     while True:
         job_status = batch_api_instance.read_namespaced_job_status(job_object.metadata.name, namespace)
-        if job_status.status.failed and job.status.failed > 0:
+        if job_status.status.failed and job_status.status.failed > 0:
             sys.stderr.write(f'{fetch_job_logs(core_api_instance, namespace, job_object)}\n')
             raise DeployError(f'Job/{job_object.metadata.name} failed!')
         elif job_status.status.succeeded and job_status.status.succeeded > 0:
