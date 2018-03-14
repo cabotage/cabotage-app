@@ -67,6 +67,4 @@ class Config(metaclass=MetaFlaskEnv):
     KUBERNETES_ENABLED = False
     GITHUB_APP_ID = None
     GITHUB_APP_PRIVATE_KEY = None
-    GITHUB_OAUTH_CLIENT_ID = None
-    GITHUB_OAUTH_CLIENT_SECRET = None
     GITHUB_WEBHOOK_SECRET = None
