@@ -379,11 +379,6 @@ def run_release_build(release_id=None):
         resource_name=release.repository_name,
         resource_actions=["push", "pull"],
     )
-    print(
-        release,
-        registry, f'cabotage-builder-{release.id}', credentials,
-        docker_url, docker_secure
-    )
     try:
         build_metadata = build_release(
             release,
