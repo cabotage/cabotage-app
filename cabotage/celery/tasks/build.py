@@ -27,6 +27,7 @@ from flask import current_app
 from cabotage.server import (
     db,
     celery,
+    github_app,
     minio,
     config_writer,
 )
@@ -45,6 +46,8 @@ from cabotage.utils.docker_auth import (
     parse_docker_scope,
     docker_access_intersection,
 )
+
+from cabotage.utils.github import post_deployment_status_update
 
 Activity = activity_plugin.activity_cls
 
@@ -341,7 +344,13 @@ def run_image_build(image_id=None):
                     image.error = True
                     image.error_detail = str(exc)
         db.session.commit()
-        if image.built and image.image_metadata.get('auto_deploy', False):
+        if image.built and image.image_metadata and image.image_metadata.get('auto_deploy', False):
+            if 'installation_id' in image.image_metadata and 'statuses_url' in image.image_metadata:
+                access_token = github_app.fetch_installation_access_token(image.image_metadata['installation_id'])
+                post_deployment_status_update(
+                    access_token, image.image_metadata['statuses_url'],
+                    'pending', 'Image built, Release build commencing.'
+                )
             release = image.application.create_release()
             release.release_metadata = image.image_metadata
             db.session.add(release)
@@ -396,9 +405,16 @@ def run_release_build(release_id=None):
             raise
         db.session.commit()
         if release.built and release.release_metadata.get('auto_deploy', False):
+            if 'installation_id' in release.release_metadata and 'statuses_url' in release.release_metadata:
+                access_token = github_app.fetch_installation_access_token(release.release_metadata['installation_id'])
+                post_deployment_status_update(
+                    access_token, release.release_metadata['statuses_url'],
+                    'pending', 'Release built, Deployment commencing.'
+                )
             deployment = Deployment(
                 application_id=release.application.id,
                 release=release.asdict,
+                deploy_metadata=release.release_metadata,
             )
             db.session.add(deployment)
             db.session.flush()

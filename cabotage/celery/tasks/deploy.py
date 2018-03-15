@@ -14,10 +14,13 @@ from flask import current_app
 from cabotage.server import (
     celery,
     db,
+    github_app,
     kubernetes as kubernetes_ext,
 )
 
 from cabotage.server.models.projects import Deployment
+
+from cabotage.utils.github import post_deployment_status_update
 
 
 class DeployError(RuntimeError):
@@ -557,11 +560,29 @@ def deploy_release(deployment):
     except DeployError as exc:
         deployment.error = True
         deployment.error_detail = str(exc)
+        if deployment.deploy_metadata and 'installation_id' in deployment.deploy_metadata and 'statuses_url' in deployment.deploy_metadata:
+            access_token = github_app.fetch_installation_access_token(deployment.deploy_metadata['installation_id'])
+            post_deployment_status_update(
+                access_token, deployment.deploy_metadata['statuses_url'],
+                'failure', 'Deployment failed: {exc}'
+            )
     except Exception as exc:
         deployment.error = True
         deployment.error_detail = f'Unexpected Error: {str(exc)}'
+        if deployment.deploy_metadata and 'installation_id' in deployment.deploy_metadata and 'statuses_url' in deployment.deploy_metadata:
+            access_token = github_app.fetch_installation_access_token(deployment.deploy_metadata['installation_id'])
+            post_deployment_status_update(
+                access_token, deployment.deploy_metadata['statuses_url'],
+                'failure', 'Deployment failed: {exc}'
+            )
     deployment.deploy_log = "\n".join(deploy_log)
     db.session.commit()
+    if deployment.deploy_metadata and 'installation_id' in deployment.deploy_metadata and 'statuses_url' in deployment.deploy_metadata:
+        access_token = github_app.fetch_installation_access_token(deployment.deploy_metadata['installation_id'])
+        post_deployment_status_update(
+            access_token, deployment.deploy_metadata['statuses_url'],
+            'success', 'Deployment complete!'
+        )
 
 
 def fake_deploy_release(deployment):
@@ -586,6 +607,12 @@ def fake_deploy_release(deployment):
         deploy_log.append(yaml.dump(remove_none(deployment_object.to_dict())))
     deployment.deploy_log = "\n".join(deploy_log)
     db.session.commit()
+    if deployment.deploy_metadata and 'installation_id' in deployment.deploy_metadata and 'statuses_url' in deployment.deploy_metadata:
+        access_token = github_app.fetch_installation_access_token(deployment.deploy_metadata['installation_id'])
+        post_deployment_status_update(
+            access_token, deployment.deploy_metadata['statuses_url'],
+            'success', 'Deployment complete!'
+        )
 
 
 def remove_none(obj):

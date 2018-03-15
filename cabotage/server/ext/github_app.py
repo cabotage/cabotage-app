@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import time
 
+import requests
 import jwt
 
 from flask import current_app
@@ -60,6 +61,19 @@ class GitHubApp(object):
             self._bearer_token = jwt.encode(payload, self.app_private_key_pem, algorithm='RS256')
             self._bearer_token_exp = issued + 599
         return self._bearer_token.decode()
+
+    def fetch_installation_access_token(self, installation_id):
+        access_token_response = requests.post(
+            f'https://api.github.com/installations/{installation_id}/access_tokens',
+            headers={
+                'Accept': 'application/vnd.github.machine-man-preview+json',
+                'Authorization': f'Bearer {self.bearer_token}',
+            }
+        )
+        if 'token' not in access_token_response.json():
+            print(f'Unable to authenticate for {installation_id}')
+            return None
+        return access_token_response.json()['token']
 
     def teardown(self, exception):
         ctx = stack.top
