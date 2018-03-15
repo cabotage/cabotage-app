@@ -1,3 +1,4 @@
+import datetime
 import gzip
 import io
 import json
@@ -31,6 +32,7 @@ from cabotage.server import (
 )
 
 from cabotage.server.models.projects import (
+    activity_plugin,
     Image,
     Release,
 )
@@ -42,6 +44,8 @@ from cabotage.utils.docker_auth import (
     parse_docker_scope,
     docker_access_intersection,
 )
+
+Activity = activity_plugin.activity_cls
 
 
 class BuildError(RuntimeError):
@@ -328,6 +332,24 @@ def run_image_build(image_id=None):
                     image.error = True
                     image.error_detail = str(exc)
         db.session.commit()
+        if image.built and image.image_metadata.get('auto_deploy', False):
+            release = image.application.create_release()
+            release.release_metadata = image.image_metadata
+            db.session.add(release)
+            db.session.flush()
+            activity = Activity(
+                verb='edit',
+                object=release,
+                data={
+                    'user_id': 'automation',
+                    'deployment_id': image.image_metadata.get('id', None),
+                    'description': image.image_metadata.get('description', None),
+                    'timestamp': datetime.datetime.utcnow().isoformat(),
+                }
+            )
+            db.session.add(activity)
+            db.session.commit()
+            run_release_build.delay(release_id=release.id)
     except Exception:
         raise
 

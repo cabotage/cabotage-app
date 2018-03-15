@@ -233,7 +233,10 @@
             <th style="white-space: nowrap; width: 1%;">Details</th>
           </tr>
           <tr>
-            <td><code>{{ application.latest_release.version }}</code></td>
+            <td>
+              <code>{{ application.latest_release.version }}</code>
+              {% if application.latest_release.release_metadata.get('auto_deploy') %}<span class="glyphicon glyphicon-flash"></span>{% endif %}
+            </td>
             {% if application.latest_release.built %}
             <td><span class="glyphicon glyphicon glyphicon-ok-sign text-success"></span></td>
             {% elif application.latest_release.error %}
@@ -283,7 +286,10 @@
           </tr>
           {% if application.latest_image %}
           <tr>
-            <td><code>{{ application.latest_image.version }}</code></td>
+            <td>
+              <code>{{ application.latest_image.version }}</code>
+              {% if application.latest_image.image_metadata.get('auto_deploy') %}<span class="glyphicon glyphicon-flash"></span>{% endif %}
+            </td>
             {% if application.latest_image.built %}
             <td><span class="glyphicon glyphicon glyphicon-ok-sign text-success"></span></td>
             {% elif application.latest_image.error %}
