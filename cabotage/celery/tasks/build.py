@@ -186,20 +186,28 @@ def build_image(tarfileobj, image,
             try:
                 tar_ball.getmember('./Dockerfile.cabotage')
             except KeyError:
-                pass
-            tar_ball.getmember('./Dockerfile')
+                tar_ball.getmember('./Dockerfile')
         except KeyError:
             raise BuildError(
-                ('must include a Dockerfile or Dockerfile.cabotage '
+                ('must include a Dockerfile.cabotage or Dockerfile'
                  'in top level of archive')
             )
         try:
-            tar_ball.getmember('./Procfile')
+            try:
+                tar_ball.getmember('./Procfile.cabotage')
+            except KeyError:
+                tar_ball.getmember('./Procfile')
         except KeyError:
             raise BuildError(
-                'must include a Procfile in top level of archive'
+                'must include a Procfile.cabotage or Procfile '
+                'in top level of archive'
             )
         tar_ball.extractall(path=temp_dir, numeric_owner=False)
+        if os.path.exists(os.path.join(temp_dir, 'Procfile.cabotage')):
+            shutil.copy(
+                os.path.join(temp_dir, 'Procfile.cabotage'),
+                os.path.join(temp_dir, 'Procfile'),
+            )
         with open(os.path.join(temp_dir, 'Procfile'), 'rU') as img_procfile:
             procfile_body = img_procfile.read()
         if os.path.exists(os.path.join(temp_dir, 'Dockerfile.cabotage')):
