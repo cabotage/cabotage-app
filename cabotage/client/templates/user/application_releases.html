@@ -14,7 +14,10 @@
           </tr>
           {% for release in releases %}
           <tr>
-            <td><code>{{ release.version }}</code></td>
+            <td>
+              <code>{{ release.version }}</code>
+              {% if release.release_metadata and release.release_metadata.get('auto_deploy') %}<span class="glyphicon glyphicon-flash"></span>{% endif %}
+            </td>
             {% if release.built %}
             <td><span class="glyphicon glyphicon glyphicon-ok-sign text-success"></span></td>
             {% elif release.error %}

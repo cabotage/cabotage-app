@@ -14,7 +14,10 @@
           </tr>
           {% for image in images %}
           <tr>
-            <td><code>{{ image.version }}</code></td>
+            <td>
+              <code>{{ image.version }}</code>
+              {% if image.image_metadata and image.image_metadata.get('auto_deploy') %}<span class="glyphicon glyphicon-flash"></span>{% endif %}
+            </td>
             {% if image.built %}
             <td><span class="glyphicon glyphicon glyphicon-ok-sign text-success"></span></td>
             {% elif image.error %}

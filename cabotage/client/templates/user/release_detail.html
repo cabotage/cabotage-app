@@ -12,7 +12,10 @@
           </tr>
           <tr>
             <th>Tag</th>
-            <td><code>{{ release.version }}</code></td>
+            <td>
+              <code>{{ release.version }}</code>
+              {% if release.release_metadata and release.release_metadata.get('auto_deploy') %}<span class="glyphicon glyphicon-flash"></span>{% endif %}
+            </td>
           </tr>
           <tr>
             <th>Identifier</th>
@@ -40,6 +43,12 @@
             <th>Updated </th>
             <td>{{ release.updated|humanize }}</td>
           </tr>
+          {% if release.release_metadata and release.release_metadata.get('description') %}
+          <tr>
+            <th>Build Trigger</th>
+            <td>{{ release.release_metadata.get('description') }}</td>
+          </tr>
+          {% endif %}
         </table>
       </div>
     </div>
@@ -125,14 +134,14 @@
     {% endif %}
     <div class="row">
       <div class="col-md-9">
-        <h3>Metadata</h3>
-        <pre>{{ release.release_metadata }}</pre>
+        <h3>Build Log</h3>
+        <pre>{{ release.release_build_log }}</pre>
       </div>
     </div>
     <div class="row">
       <div class="col-md-9">
-        <h3>Build Log</h3>
-        <pre>{{ release.release_build_log }}</pre>
+        <h3>Metadata</h3>
+        <pre>{{ release.release_metadata|pprint }}</pre>
       </div>
     </div>
     <div class="row">
@@ -151,18 +160,6 @@
         <pre>{{ envconsul_configuration }}</pre>
         {% endfor %}
         <pre>{{ release.dockerfile }}</pre>
-      </div>
-    </div>
-    <div class="row">
-      <div class="col-md-9">
-        <h3>Docker Pull Credentials</h3>
-        <pre>{{ docker_pull_credentials }}</pre>
-      </div>
-    </div>
-    <div class="row">
-      <div class="col-md-9">
-        <h3>Kubernetes Image Pull Secret</h3>
-        <pre>{{ image_pull_secrets }}</pre>
       </div>
     </div>
   </div>

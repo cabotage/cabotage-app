@@ -12,7 +12,10 @@
           </tr>
           <tr>
             <th>Tag</th>
-            <td><code>{{ image.version }}</code></td>
+            <td>
+              <code>{{ image.version }}</code>
+              {% if image.image_metadata and image.image_metadata.get('auto_deploy') %}<span class="glyphicon glyphicon-flash"></span>{% endif %}
+            </td>
           </tr>
           <tr>
             <th>Identifier</th>
@@ -36,6 +39,12 @@
             <th>Updated </th>
             <td>{{ image.updated|humanize }}</td>
           </tr>
+          {% if image.image_metadata and image.image_metadata.get('description') %}
+          <tr>
+            <th>Build Trigger</th>
+            <td>{{ image.image_metadata.get('description') }}</td>
+          </tr>
+          {% endif %}
         </table>
       </div>
     </div>
@@ -89,7 +98,7 @@
     <div class="row">
       <div class="col-md-9">
         <h3>Metadata</h3>
-        <pre>{{ image.image_metadata }}</pre>
+        <pre>{{ image.image_metadata|pprint }}</pre>
       </div>
     </div>
     <div class="row">
@@ -102,12 +111,6 @@
       <div class="col-md-9">
         <h3><code>asdict</code></h3>
         <pre>{{ image.asdict|pprint }}</pre>
-      </div>
-    </div>
-    <div class="row">
-      <div class="col-md-9">
-        <h3>Docker Pull Credentials</h3>
-        <pre>{{ docker_pull_credentials }}</pre>
       </div>
     </div>
   </div>
