@@ -35,6 +35,7 @@ from cabotage.server.models.projects import (
     activity_plugin,
     Image,
     Release,
+    Deployment,
 )
 
 from cabotage.utils.docker_auth import (
@@ -346,7 +347,7 @@ def run_image_build(image_id=None):
             db.session.add(release)
             db.session.flush()
             activity = Activity(
-                verb='edit',
+                verb='create',
                 object=release,
                 data={
                     'user_id': 'automation',
@@ -364,32 +365,63 @@ def run_image_build(image_id=None):
 
 @celery.task()
 def run_release_build(release_id=None):
-    secret = current_app.config['REGISTRY_AUTH_SECRET']
-    registry = current_app.config['REGISTRY']
-    object_bucket = current_app.config['MINIO_BUCKET']
-    docker_url = current_app.config['DOCKER_URL']
-    docker_secure = current_app.config['DOCKER_SECURE']
-    docker_ca = current_app.config['DOCKER_VERIFY']
-    release = Release.query.filter_by(id=release_id).first()
-    if release is None:
-        raise KeyError(f'Release with ID {release_id} not found!')
-    credentials = generate_docker_credentials(
-        secret=secret,
-        resource_type="repository",
-        resource_name=release.repository_name,
-        resource_actions=["push", "pull"],
-    )
     try:
-        build_metadata = build_release(
-            release,
-            registry, f'cabotage-builder-{release.id}', credentials,
-            docker_url, docker_secure, docker_ca
+        secret = current_app.config['REGISTRY_AUTH_SECRET']
+        registry = current_app.config['REGISTRY']
+        object_bucket = current_app.config['MINIO_BUCKET']
+        docker_url = current_app.config['DOCKER_URL']
+        docker_secure = current_app.config['DOCKER_SECURE']
+        docker_ca = current_app.config['DOCKER_VERIFY']
+        release = Release.query.filter_by(id=release_id).first()
+        if release is None:
+            raise KeyError(f'Release with ID {release_id} not found!')
+        credentials = generate_docker_credentials(
+            secret=secret,
+            resource_type="repository",
+            resource_name=release.repository_name,
+            resource_actions=["push", "pull"],
         )
-        release.release_id = build_metadata['release_id']
-        release.built = True
-    except BuildError as exc:
-        release.error = True
-        release.error_detail = str(exc)
+        try:
+            build_metadata = build_release(
+                release,
+                registry, f'cabotage-builder-{release.id}', credentials,
+                docker_url, docker_secure, docker_ca
+            )
+            release.release_id = build_metadata['release_id']
+            release.built = True
+        except BuildError as exc:
+            release.error = True
+            release.error_detail = str(exc)
+        except Exception:
+            raise
+        db.session.commit()
+        if release.built and release.release_metadata.get('auto_deploy', False):
+            deployment = Deployment(
+                application_id=release.application.id,
+                release=release.asdict,
+            )
+            db.session.add(deployment)
+            db.session.flush()
+            activity = Activity(
+                verb='create',
+                object=deployment,
+                data={
+                    'user_id': 'automation',
+                    'deployment_id': release.release_metadata.get('id', None),
+                    'description': release.release_metadata.get('description', None),
+                    'timestamp': datetime.datetime.utcnow().isoformat(),
+                }
+            )
+            db.session.add(activity)
+            db.session.commit()
+            if current_app.config['KUBERNETES_ENABLED']:
+                deployment_id = deployment.id
+                run_deploy.delay(deployment_id=deployment.id)
+                deployment = Deployment.query.filter_by(id=deployment_id).first()
+            else:
+                from cabotage.celery.tasks.deploy import fake_deploy_release
+                fake_deploy_release(deployment)
+                deployment.complete = True
+                db.session.commit()
     except Exception:
         raise
-    db.session.commit()
