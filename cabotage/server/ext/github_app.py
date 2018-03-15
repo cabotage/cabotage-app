@@ -46,7 +46,7 @@ class GitHubApp(object):
         )
 
     def _token_needs_renewed(self):
-        return (self._bearer_token_exp - int(time.time())) > 60
+        return (self._bearer_token_exp - int(time.time())) < 60
 
     @property
     def bearer_token(self):
