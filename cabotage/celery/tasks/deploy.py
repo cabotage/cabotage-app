@@ -419,7 +419,7 @@ def scale_deployment(namespace, release, process_name, replicas):
         deployment = apps_api_instance.read_namespaced_deployment(deployment_name, namespace)
     except ApiException as exc:
         if exc.status == 404:
-            raise DeployError(f'Unexpected exception fetching Deployment/{deployment_name} in {namespace}: {exc}')
+            pass
     if deployment is not None:
         scale = kubernetes.client.AppsV1beta1Scale(
             spec=kubernetes.client.AppsV1beta1ScaleSpec(replicas=replicas)
