@@ -24,6 +24,8 @@ import procfile
 from dockerfile_parse import DockerfileParser
 from flask import current_app
 
+from cabotage.celery.tasks.deploy import run_deploy
+
 from cabotage.server import (
     db,
     celery,
