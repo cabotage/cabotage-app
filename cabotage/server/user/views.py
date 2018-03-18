@@ -702,7 +702,8 @@ def signing_cert():
 @user_blueprint.route('/github/hooks', methods=['POST'])
 def github_hooks():
     if github_app.validate_webhook():
-        hook = Hook(headers=dict(request.headers), payload=request.json)
+        commit_sha = request.json.get('deployment', {}).get('sha', None)
+        hook = Hook(headers=dict(request.headers), payload=request.json, commit_sha=commit_sha)
         db.session.add(hook)
         db.session.commit()
         process_github_hook.delay(hook_id=hook.id)

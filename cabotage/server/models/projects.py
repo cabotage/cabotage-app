@@ -558,6 +558,11 @@ class Hook(db.Model, Timestamp):
         nullable=False,
         primary_key=True,
     )
+    commit_sha = db.Column(
+        db.String(256),
+        index=True,
+        nullable=True,
+    )
     headers = db.Column(
         postgresql.JSONB(),
         nullable=False,
