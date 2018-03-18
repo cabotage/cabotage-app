@@ -406,7 +406,7 @@ def run_release_build(release_id=None):
         except Exception:
             raise
         db.session.commit()
-        if release.built and release.release_metadata.get('auto_deploy', False):
+        if release.built and release.release_metadata and release.release_metadata.get('auto_deploy', False):
             if 'installation_id' in release.release_metadata and 'statuses_url' in release.release_metadata:
                 access_token = github_app.fetch_installation_access_token(release.release_metadata['installation_id'])
                 post_deployment_status_update(

@@ -13,6 +13,7 @@ from flask import current_app
 
 from cabotage.server import (
     celery,
+    config_writer,
     db,
     github_app,
     kubernetes as kubernetes_ext,
@@ -241,7 +242,7 @@ def render_cabotage_sidecar_tls_container(release):
         ),
     )
 
-def render_process_container(release, process_name, with_tls=True):
+def render_process_container(release, process_name, datadog_tags, with_tls=True):
     volume_mounts = [
         kubernetes.client.V1VolumeMount(
             name='vault-secrets',
@@ -264,6 +265,7 @@ def render_process_container(release, process_name, with_tls=True):
             kubernetes.client.V1EnvVar(name='VAULT_CACERT', value='/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'),
             kubernetes.client.V1EnvVar(name='CONSUL_HTTP_ADDR', value='https://consul.cabotage.svc.cluster.local:8443'),
             kubernetes.client.V1EnvVar(name='CONSUL_CACERT', value='/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'),
+            kubernetes.client.V1EnvVar(name='DATADOG_TAGS', value=','.join([f'{k}:{v}' for k, v in datadog_tags.items()])),
         ],
         args=[
             "envconsul",
@@ -282,72 +284,86 @@ def render_process_container(release, process_name, with_tls=True):
         volume_mounts=volume_mounts,
     )
 
+def render_datadog_container(dd_api_key, datadog_tags):
+    return kubernetes.client.V1Container(
+        name='dogstatsd-sidecar',
+        image='datadog/dogstatsd:6.0.3',
+        image_pull_policy='IfNotPresent',
+        env=[
+            kubernetes.client.V1EnvVar(name='DD_API_KEY', value=dd_api_key),
+            kubernetes.client.V1EnvVar(name='DD_SEND_HOST_METADATA', value="false"),
+            kubernetes.client.V1EnvVar(name='DD_ENABLE_METADATA_COLLECTION', value="false"),
+            kubernetes.client.V1EnvVar(name='DD_TAGS', value=' '.join([f'{k}:{v}' for k, v in datadog_tags.items()])),
+        ],
+        resources=kubernetes.client.V1ResourceRequirements(
+            limits={
+                'memory': '256Mi',
+                'cpu': '100m',
+            },
+            requests={
+                'memory': '128Mi',
+                'cpu': '50m',
+            },
+        ),
+    )
+
 
 def render_podspec(release, process_name, service_account_name):
+    datadog_tags = {
+        'organization': release.application.project.organization.slug,
+        'project': release.application.project.slug,
+        'application': release.application.slug,
+        'process': process_name,
+        'app': f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}',
+        'release': str(release.version),
+    }
+    volumes = [
+        kubernetes.client.V1Volume(
+            name='vault-secrets',
+            empty_dir=kubernetes.client.V1EmptyDirVolumeSource(medium="Memory", size_limit="1M")
+        ),
+    ]
+    init_containers = []
+    containers = []
+    restart_policy = None
     if process_name.startswith('web'):
-        return kubernetes.client.V1PodSpec(
-            service_account_name=service_account_name,
-            init_containers=[render_cabotage_enroller_container(release, process_name, with_tls=True)],
-            containers=[
-                render_cabotage_sidecar_container(release, with_tls=True),
-                render_cabotage_sidecar_tls_container(release),
-                render_process_container(release, process_name, with_tls=True),
-            ],
-            volumes=[
-                kubernetes.client.V1Volume(
-                    name='vault-secrets',
-                    empty_dir=kubernetes.client.V1EmptyDirVolumeSource(medium="Memory", size_limit="1M")
-                ),
-                kubernetes.client.V1Volume(
-                    name='cabotage-sock',
-                    empty_dir=kubernetes.client.V1EmptyDirVolumeSource(medium="Memory", size_limit="1M")
-                ),
-            ],
+        volumes.append(
+            kubernetes.client.V1Volume(
+                name='cabotage-sock',
+                empty_dir=kubernetes.client.V1EmptyDirVolumeSource(medium="Memory", size_limit="1M")
+            )
         )
+        containers.append(render_cabotage_sidecar_container(release, with_tls=True))
+        containers.append(render_cabotage_sidecar_tls_container(release))
+        containers.append(render_process_container(release, process_name, datadog_tags, with_tls=True))
+        init_containers.append(render_cabotage_enroller_container(release, process_name, with_tls=True))
     elif process_name.startswith('worker'):
-        return kubernetes.client.V1PodSpec(
-            service_account_name=service_account_name,
-            init_containers=[render_cabotage_enroller_container(release, process_name, with_tls=False)],
-            containers=[
-                render_cabotage_sidecar_container(release, with_tls=False),
-                render_process_container(release, process_name, with_tls=False),
-            ],
-            volumes=[
-                kubernetes.client.V1Volume(
-                    name='vault-secrets',
-                    empty_dir=kubernetes.client.V1EmptyDirVolumeSource(medium="Memory", size_limit="1M")
-                ),
-            ],
-        )
+        init_containers.append(render_cabotage_enroller_container(release, process_name, with_tls=False))
+        containers.append(render_cabotage_sidecar_container(release, with_tls=False))
+        containers.append(render_process_container(release, process_name, datadog_tags, with_tls=False))
     elif process_name.startswith('release'):
-        return kubernetes.client.V1PodSpec(
-            service_account_name=service_account_name,
-            init_containers=[render_cabotage_enroller_container(release, process_name, with_tls=False)],
-            containers=[
-                render_process_container(release, process_name, with_tls=False),
-            ],
-            restart_policy='Never',
-            volumes=[
-                kubernetes.client.V1Volume(
-                    name='vault-secrets',
-                    empty_dir=kubernetes.client.V1EmptyDirVolumeSource(medium="Memory", size_limit="1M")
-                ),
-            ],
-        )
+        init_containers.append(render_cabotage_enroller_container(release, process_name, with_tls=False))
+        containers.append(render_process_container(release, process_name, datadog_tags, with_tls=False))
+        restart_policy = 'Never'
     else:
-        return kubernetes.client.V1PodSpec(
-            service_account_name=service_account_name,
-            init_containers=[render_cabotage_enroller_container(release, process_name, with_tls=False)],
-            containers=[
-                render_process_container(release, process_name, with_tls=False),
-            ],
-            volumes=[
-                kubernetes.client.V1Volume(
-                    name='vault-secrets',
-                    empty_dir=kubernetes.client.V1EmptyDirVolumeSource(medium="Memory", size_limit="1M")
-                ),
-            ],
-        )
+        init_containers.append(render_cabotage_enroller_container(release, process_name, with_tls=False))
+        containers.append(render_process_container(release, process_name, datadog_tags, with_tls=False))
+
+    if not process_name.startswith('release') and 'DD_API_KEY' in release.configuration_objects:
+        try:
+            dd_api_key = release.configuration_objects['DD_API_KEY'].read_value(config_writer)
+        except KeyError:
+            print('unable to read DD_API_KEY')
+        if dd_api_key:
+            containers.append(render_datadog_container(dd_api_key, datadog_tags))
+
+    return kubernetes.client.V1PodSpec(
+        service_account_name=service_account_name,
+        init_containers=init_containers,
+        containers=containers,
+        volumes=volumes,
+        restart_policy=restart_policy,
+    )
 
 
 def render_deployment(namespace, release, service_account_name, process_name):
