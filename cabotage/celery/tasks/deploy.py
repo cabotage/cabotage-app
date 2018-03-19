@@ -170,9 +170,10 @@ def render_cabotage_enroller_container(release, process_name, with_tls=True):
     )
 
 def render_cabotage_sidecar_container(release, with_tls=True):
+    role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
     args = ["maintain"]
     if with_tls:
-        args.append("--vault-pki-role={role_name}")
+        args.append(f"--vault-pki-role={role_name}")
     role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
     return kubernetes.client.V1Container(
         name='cabotage-sidecar',
