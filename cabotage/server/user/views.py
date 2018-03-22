@@ -632,10 +632,10 @@ def application_scale(application_id):
         scaled = {}
         for key, value in request.form.items():
             if key.startswith('process-count-'):
-                process_name = key.lstrip('process-count-')
+                process_name = key[len('process-count-'):]
                 if application.process_counts.get(process_name, 0) != int(value):
                     scaled[process_name] = {
-                        'old_value': application.process_counts.get(process_name),
+                        'old_value': application.process_counts.get(process_name, 0),
                         'new_value': int(value),
                     }
                     application.process_counts[process_name] = int(value)

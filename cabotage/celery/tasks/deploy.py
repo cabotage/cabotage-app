@@ -188,8 +188,24 @@ def render_cabotage_sidecar_container(release, with_tls=True):
         ],
     )
 
-def render_cabotage_sidecar_tls_container(release):
+def render_cabotage_sidecar_tls_container(release, unix=True):
     role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
+    volume_mounts = [
+        kubernetes.client.V1VolumeMount(
+            name='vault-secrets',
+            mount_path='/var/run/secrets/vault'
+        )
+    ]
+    if unix:
+        volume_mounts.append(
+            kubernetes.client.V1VolumeMount(
+                name='cabotage-sock',
+                mount_path='/var/run/cabotage'
+            )
+        )
+        target = 'unix:///var/run/cabotage/cabotage.sock'
+    else:
+        target = '127.0.0.1:8001'
     return kubernetes.client.V1Container(
         name='cabotage-sidecar-tls',
         image='cabotage/sidecar:v1.0.0a2',
@@ -203,19 +219,10 @@ def render_cabotage_sidecar_tls_container(release):
             "--shutdown-timeout=10s",
             "--connect-timeout=10s",
             "--disable-authentication",
-            "--target=unix:///var/run/cabotage/cabotage.sock",
+            f"--target={target}",
             "--listen=0.0.0.0:8000"
         ],
-        volume_mounts=[
-            kubernetes.client.V1VolumeMount(
-                name='vault-secrets',
-                mount_path='/var/run/secrets/vault'
-            ),
-            kubernetes.client.V1VolumeMount(
-                name='cabotage-sock',
-                mount_path='/var/run/cabotage'
-            ),
-        ],
+        volume_mounts=volume_mounts,
         ports=[
             kubernetes.client.V1ContainerPort(
                 protocol='TCP',
@@ -243,14 +250,14 @@ def render_cabotage_sidecar_tls_container(release):
         ),
     )
 
-def render_process_container(release, process_name, datadog_tags, with_tls=True):
+def render_process_container(release, process_name, datadog_tags, with_tls=True, unix=True):
     volume_mounts = [
         kubernetes.client.V1VolumeMount(
             name='vault-secrets',
             mount_path='/var/run/secrets/vault'
         ),
     ]
-    if with_tls:
+    if unix:
         volume_mounts.append(
             kubernetes.client.V1VolumeMount(
                 name='cabotage-sock',
@@ -334,17 +341,22 @@ def render_podspec(release, process_name, service_account_name):
                 empty_dir=kubernetes.client.V1EmptyDirVolumeSource(medium="Memory", size_limit="1M")
             )
         )
-        containers.append(render_cabotage_sidecar_container(release, with_tls=True))
-        containers.append(render_cabotage_sidecar_tls_container(release))
-        containers.append(render_process_container(release, process_name, datadog_tags, with_tls=True))
         init_containers.append(render_cabotage_enroller_container(release, process_name, with_tls=True))
+        containers.append(render_cabotage_sidecar_container(release, with_tls=True))
+        containers.append(render_cabotage_sidecar_tls_container(release, unix=True))
+        containers.append(render_process_container(release, process_name, datadog_tags, with_tls=True, unix=True))
+    elif process_name.startswith('tcp'):
+        init_containers.append(render_cabotage_enroller_container(release, process_name, with_tls=True))
+        containers.append(render_cabotage_sidecar_container(release, with_tls=True))
+        containers.append(render_cabotage_sidecar_tls_container(release, unix=False))
+        containers.append(render_process_container(release, process_name, datadog_tags, with_tls=True, unix=False))
     elif process_name.startswith('worker'):
         init_containers.append(render_cabotage_enroller_container(release, process_name, with_tls=False))
         containers.append(render_cabotage_sidecar_container(release, with_tls=False))
-        containers.append(render_process_container(release, process_name, datadog_tags, with_tls=False))
+        containers.append(render_process_container(release, process_name, datadog_tags, with_tls=False, unix=False))
     elif process_name.startswith('release'):
         init_containers.append(render_cabotage_enroller_container(release, process_name, with_tls=False))
-        containers.append(render_process_container(release, process_name, datadog_tags, with_tls=False))
+        containers.append(render_process_container(release, process_name, datadog_tags, with_tls=False, unix=False))
         restart_policy = 'Never'
     else:
         init_containers.append(render_cabotage_enroller_container(release, process_name, with_tls=False))
