@@ -1,13 +1,19 @@
 # Cabotage App
 
-A deployment infrastructure tool that helps manage Kubernetes security
-credentials.
+Deployment tooling built on top of Kubernetes, Hashicorp Consul,
+Hashicorp Vault, Docker, and Python to power automated rollout and
+management of software and configuration changes, including
+
+* end-to-end verified TLS
+* secure management of secrets
+* continuous delivery of changes
 
 See [a two-minute video
 demo](https://twitter.com/EWDurbin/status/968315460101042176) from
 late February 2018.
 
-See [the PyPI infrastructure pull
+Originally developed for use within Python Software Foundation
+infrastructure. See [the PyPI infrastructure pull
 request](https://github.com/python/pypi-infra/pull/3) for more on
 design goals.
 
