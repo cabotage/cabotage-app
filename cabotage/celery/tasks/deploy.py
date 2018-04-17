@@ -236,8 +236,9 @@ def render_cabotage_sidecar_tls_container(release, unix=True):
                 port=8000,
                 path='/_health/',
             ),
-            initial_delay_seconds=5,
-            period_seconds=1,
+            initial_delay_seconds=3,
+            period_seconds=3,
+            timeout_seconds=2,
         ),
         readiness_probe=kubernetes.client.V1Probe(
             http_get=kubernetes.client.V1HTTPGetAction(
@@ -245,8 +246,9 @@ def render_cabotage_sidecar_tls_container(release, unix=True):
                 port=8000,
                 path='/_health/',
             ),
-            initial_delay_seconds=5,
-            period_seconds=1,
+            initial_delay_seconds=3,
+            period_seconds=3,
+            timeout_seconds=2,
         ),
     )
 
