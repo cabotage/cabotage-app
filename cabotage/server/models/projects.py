@@ -32,6 +32,20 @@ platform_version = postgresql.ENUM(
     name='platform_version',
 )
 
+pod_classes = {
+    'm1.small':  {'cpu': {'requests': '125m',  'limits': '250m'},  'memory': {'requests': '256Mi',  'limits': '384Mi'}},
+    'm1.medium': {'cpu': {'requests': '250m',  'limits': '500m'},  'memory': {'requests': '512Mi',  'limits': '768Mi'}},
+    'm1.large':  {'cpu': {'requests': '500m',  'limits': '1000m'}, 'memory': {'requests': '1024Mi', 'limits': '1536Mi'}},
+    'c1.small':  {'cpu': {'requests': '250m',  'limits': '375m'},  'memory': {'requests': '256Mi',  'limits': '384Mi'}},
+    'c1.medium': {'cpu': {'requests': '500m',  'limits': '750m'},  'memory': {'requests': '512Mi',  'limits': '768Mi'}},
+    'c1.large':  {'cpu': {'requests': '1000m', 'limits': '1500m'}, 'memory': {'requests': '1024Mi', 'limits': '1536Mi'}},
+    'r1.small':  {'cpu': {'requests': '125m',  'limits': '250m'},  'memory': {'requests': '1024Mi', 'limits': '1536Mi'}},
+    'r1.medium': {'cpu': {'requests': '250m',  'limits': '500m'},  'memory': {'requests': '1536Mi', 'limits': '2304Mi'}},
+    'r1.large':  {'cpu': {'requests': '500m',  'limits': '100m'},  'memory': {'requests': '2048Mi', 'limits': '3072Mi'}},
+}
+
+DEFAULT_POD_CLASS = 'm1.large'
+
 
 class Project(db.Model, Timestamp):
 
@@ -85,6 +99,7 @@ class Application(db.Model, Timestamp):
     slug = db.Column(CIText(), nullable=False)
     platform = db.Column(platform_version, nullable=False, default='wind')
     process_counts = db.Column(postgresql.JSONB(), server_default=text("json_object('{}')"))
+    process_pod_classes = db.Column(postgresql.JSONB(), server_default=text("json_object('{}')"))
 
     images = db.relationship(
         "Image",

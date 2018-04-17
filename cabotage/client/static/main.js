@@ -43,6 +43,14 @@ $(".incr-btn").on("click", function (e) {
         }
     }
     $button.parent().find('.quantity').val(newVal);
-    $('.set_process_counts').removeClass('hidden');
+    $('.update_process_settings').removeClass('hidden');
     e.preventDefault();
+});
+
+$(".pod-size").change(function (e) {
+    $('.update_process_settings').removeClass('hidden');
+});
+
+$(function () {
+  $('[data-toggle="popover"]').popover()
 });

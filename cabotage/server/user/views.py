@@ -1,3 +1,4 @@
+import collections
 import os
 import datetime
 
@@ -34,6 +35,7 @@ from cabotage.server.models.auth import (
     Organization,
 )
 from cabotage.server.models.projects import (
+    DEFAULT_POD_CLASS,
     Application,
     Configuration,
     Deployment,
@@ -41,6 +43,7 @@ from cabotage.server.models.projects import (
     Image,
     Project,
     Release,
+    pod_classes,
 )
 from cabotage.server.models.projects import activity_plugin
 
@@ -218,6 +221,11 @@ def project_application(org_slug, project_slug, app_slug):
     if application is None:
         abort(404)
 
+    pod_class_info = '<table class="table"><tr><th>Class</th><th>CPU</th><th>Mem</th></tr>'
+    for pod_class, parameters in pod_classes.items():
+        pod_class_info += f'<tr><td>{pod_class}</td><td>{parameters["cpu"]["requests"]}</td><td>{parameters["memory"]["requests"]}</td></tr>'
+    pod_class_info += '</table>'
+
     scale_form = ApplicationScaleForm()
     scale_form.application_id.data = str(application.id)
     return render_template(
@@ -226,6 +234,9 @@ def project_application(org_slug, project_slug, app_slug):
         deploy_form=ReleaseDeployForm(),
         scale_form=scale_form,
         view_releases=version_class(Release).query.filter_by(application_id=application.id).order_by(desc(version_class(Release).version_id)).limit(5),
+        DEFAULT_POD_CLASS=DEFAULT_POD_CLASS,
+        pod_classes=pod_classes,
+        pod_class_info=pod_class_info,
     )
 
 
@@ -629,17 +640,25 @@ def application_scale(application_id):
     form = ApplicationScaleForm()
     form.application_id.data = str(application.id)
     if form.validate_on_submit():
-        scaled = {}
+        scaled = collections.defaultdict(dict)
         for key, value in request.form.items():
             if key.startswith('process-count-'):
                 process_name = key[len('process-count-'):]
                 if application.process_counts.get(process_name, 0) != int(value):
-                    scaled[process_name] = {
+                    scaled[process_name]['process_count'] = {
                         'old_value': application.process_counts.get(process_name, 0),
                         'new_value': int(value),
                     }
                     application.process_counts[process_name] = int(value)
                     flag_modified(application, "process_counts")
+            if key.startswith('process-pod-class-'):
+                if application.process_pod_classes.get(process_name, 0) != value:
+                    scaled[process_name]['pod_class'] = {
+                        'old_value': application.process_pod_classes.get(process_name, DEFAULT_POD_CLASS),
+                        'new_value': value,
+                    }
+                    application.process_pod_classes[process_name] = value
+                    flag_modified(application, "process_pod_classes")
         if scaled:
             activity = Activity(
                 verb='scale',
@@ -656,7 +675,8 @@ def application_scale(application_id):
 
             if current_app.config['KUBERNETES_ENABLED']:
                 for process_name, change in scaled.items():
-                    scale_deployment(application.project.organization.slug, application.latest_release, process_name, change['new_value'])
+                    if 'process_count' in change.keys():
+                        scale_deployment(application.project.organization.slug, application.latest_release, process_name, change['process_count']['new_value'])
     else:
         return jsonify(form.errors), 400
     return redirect(url_for('user.project_application', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug))

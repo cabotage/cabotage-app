@@ -19,7 +19,7 @@ from cabotage.server import (
     kubernetes as kubernetes_ext,
 )
 
-from cabotage.server.models.projects import Deployment
+from cabotage.server.models.projects import Deployment, DEFAULT_POD_CLASS, pod_classes
 
 from cabotage.utils.github import post_deployment_status_update
 
@@ -266,6 +266,7 @@ def render_process_container(release, process_name, datadog_tags, with_tls=True,
                 mount_path='/var/run/cabotage'
             )
         )
+    pod_class = pod_classes[release.application.process_pod_classes.get(process_name, DEFAULT_POD_CLASS)]
     return kubernetes.client.V1Container(
         name=process_name,
         image=f'localhost:30000/{release.repository_name}:release-{release.version}',
@@ -283,12 +284,12 @@ def render_process_container(release, process_name, datadog_tags, with_tls=True,
         ],
         resources=kubernetes.client.V1ResourceRequirements(
             limits={
-                'memory': '1536Mi',
-                'cpu': '1000m',
+                'memory': pod_class['memory']['limits'],
+                'cpu': pod_class['cpu']['limits'],
             },
             requests={
-                'memory': '1024Mi',
-                'cpu': '500m',
+                'memory': pod_class['memory']['requests'],
+                'cpu': pod_class['cpu']['requests'],
             },
         ),
         volume_mounts=volume_mounts,
