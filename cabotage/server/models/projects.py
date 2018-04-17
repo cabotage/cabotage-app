@@ -41,7 +41,7 @@ pod_classes = {
     'c1.large':  {'cpu': {'requests': '1000m', 'limits': '1500m'}, 'memory': {'requests': '1024Mi', 'limits': '1536Mi'}},
     'r1.small':  {'cpu': {'requests': '125m',  'limits': '250m'},  'memory': {'requests': '1024Mi', 'limits': '1536Mi'}},
     'r1.medium': {'cpu': {'requests': '250m',  'limits': '500m'},  'memory': {'requests': '1536Mi', 'limits': '2304Mi'}},
-    'r1.large':  {'cpu': {'requests': '500m',  'limits': '100m'},  'memory': {'requests': '2048Mi', 'limits': '3072Mi'}},
+    'r1.large':  {'cpu': {'requests': '500m',  'limits': '1000m'}, 'memory': {'requests': '2048Mi', 'limits': '3072Mi'}},
 }
 
 DEFAULT_POD_CLASS = 'm1.large'
