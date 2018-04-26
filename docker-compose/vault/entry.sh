@@ -36,6 +36,6 @@ else
     echo "bootstrapping postgres stufffff"
     VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID vault secrets enable database
     VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID vault write database/config/cabotage plugin_name=postgresql-database-plugin allowed_roles="cabotage" connection_url="postgresql://postgres@db/cabotage_dev?sslmode=disable" verify_connection=false
-    VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID vault write database/roles/cabotage db_name=cabotage default_ttl="168h" max_ttl="720h" creation_statements="CREATE ROLE \"{{name}}\" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}' IN ROLE cabotage;" revocation_statements="REASSIGN OWNED BY \"{{name}}\" TO cabotage"
+    VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID vault write database/roles/cabotage db_name=cabotage default_ttl="60s" max_ttl="120s" creation_statements="CREATE ROLE \"{{name}}\" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}' IN ROLE cabotage;" revocation_statements="REASSIGN OWNED BY \"{{name}}\" TO cabotage" renew_statements="ALTER ROLE \"{{name}}\" VALID UNTIL '{{expiration}}';"
     wait
 fi
