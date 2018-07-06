@@ -166,7 +166,13 @@ def process_github_hook(hook_id):
     event = hook.headers['X-Github-Event']
     if event == 'deployment':
         if hook.commit_sha is not None:
-            existing_hooks = Hook.query.filter_by(commit_sha=hook.commit_sha).count()
+            environment = hook.payload.get('deployment', {}).get('environment')
+            existing_hooks = (
+                Hook.query
+                .filter(Hook.commit_sha == hook.commit_sha)
+                .filter(Hook.payload['deployment']['environment'].astext == environment)
+                .count()
+            )
             if existing_hooks > 1:
                 return True  # we _should_ mark this deploy as complete
         hook.processed = process_deployment_hook(hook)
