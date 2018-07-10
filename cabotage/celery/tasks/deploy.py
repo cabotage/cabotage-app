@@ -1,6 +1,6 @@
+import secrets
 import sys
 import time
-import uuid
 
 from base64 import b64encode
 
@@ -464,7 +464,7 @@ def scale_deployment(namespace, release, process_name, replicas):
 
 def render_job(namespace, release, service_account_name, process_name):
     role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
-    job_id = str(uuid.uuid4())
+    job_id = secrets.token_hex(4)
     job_object = kubernetes.client.V1Job(
         metadata=kubernetes.client.V1ObjectMeta(
             name=f'{release.application.project.slug}-{release.application.slug}-{process_name}-{job_id}',
