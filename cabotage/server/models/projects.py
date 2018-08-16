@@ -469,7 +469,7 @@ class Release(db.Model, Timestamp):
     def commit_sha(self):
         if self.release_metadata is None or self.release_metadata.get('sha') is None:
             return self.image_object.commit_sha
-        return release_metadata.get('sha')
+        return self.release_metadata.get('sha')
 
 
 @listens_for(Release, 'before_insert')
