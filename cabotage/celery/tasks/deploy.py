@@ -297,6 +297,7 @@ def render_process_container(release, process_name, datadog_tags, with_tls=True,
             kubernetes.client.V1EnvVar(name='CONSUL_HTTP_ADDR', value='https://consul.cabotage.svc.cluster.local:8443'),
             kubernetes.client.V1EnvVar(name='CONSUL_CACERT', value='/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'),
             kubernetes.client.V1EnvVar(name='DATADOG_TAGS', value=','.join([f'{k}:{v}' for k, v in datadog_tags.items()])),
+            kubernetes.client.V1EnvVar(name='SOURCE_COMMIT', value=release.commit_sha),
         ],
         args=[
             "envconsul",

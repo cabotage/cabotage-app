@@ -465,6 +465,12 @@ class Release(db.Model, Timestamp):
             resource_actions=["pull"],
         )
 
+    @property
+    def commit_sha(self):
+        if self.release_metadata is None or self.release_metadata.get('sha') is None:
+            return self.image_object.commit_sha
+        return release_metadata.get('sha')
+
 
 @listens_for(Release, 'before_insert')
 def release_before_insert_listener(mapper, connection, target):
@@ -705,6 +711,12 @@ class Image(db.Model, Timestamp):
             c.name: c.read_value(reader)
             for c in self.application.configurations if c.buildtime
         }
+
+    @property
+    def commit_sha(self):
+        if self.image_metadata is None or self.image_metadata.get('sha') is None:
+            return "null"
+        return self.image_metadata.get('sha')
 
 
 @listens_for(Image, 'before_insert')
