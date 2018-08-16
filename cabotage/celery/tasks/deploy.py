@@ -188,7 +188,7 @@ def render_cabotage_sidecar_container(release, with_tls=True):
         ],
     )
 
-def render_cabotage_sidecar_tls_container(release, unix=True):
+def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
     role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
     volume_mounts = [
         kubernetes.client.V1VolumeMount(
@@ -206,6 +206,44 @@ def render_cabotage_sidecar_tls_container(release, unix=True):
         target = 'unix:///var/run/cabotage/cabotage.sock'
     else:
         target = '127.0.0.1:8001'
+    if tcp:
+        liveness_probe = kubernetes.client.V1Probe(
+            tcp_socket=kubernetes.client.V1TCPSocketAction(
+                port=8000,
+            ),
+            initial_delay_seconds=3,
+            period_seconds=3,
+            timeout_seconds=2,
+        )
+        readiness_probe = kubernetes.client.V1Probe(
+            tcp_socket=kubernetes.client.V1TCPSocketAction(
+                port=8000,
+            ),
+            initial_delay_seconds=3,
+            period_seconds=3,
+            timeout_seconds=2,
+        )
+    else:
+        liveness_probe = kubernetes.client.V1Probe(
+            http_get=kubernetes.client.V1HTTPGetAction(
+                scheme='HTTPS',
+                port=8000,
+                path='/_health/',
+            ),
+            initial_delay_seconds=3,
+            period_seconds=3,
+            timeout_seconds=2,
+        )
+        readiness_probe = kubernetes.client.V1Probe(
+            http_get=kubernetes.client.V1HTTPGetAction(
+                scheme='HTTPS',
+                port=8000,
+                path='/_health/',
+            ),
+            initial_delay_seconds=3,
+            period_seconds=3,
+            timeout_seconds=2,
+        )
     return kubernetes.client.V1Container(
         name='cabotage-sidecar-tls',
         image='cabotage/sidecar:v1.0.0a2',
@@ -230,26 +268,8 @@ def render_cabotage_sidecar_tls_container(release, unix=True):
                 container_port=8000,
             ),
         ],
-        liveness_probe=kubernetes.client.V1Probe(
-            http_get=kubernetes.client.V1HTTPGetAction(
-                scheme='HTTPS',
-                port=8000,
-                path='/_health/',
-            ),
-            initial_delay_seconds=3,
-            period_seconds=3,
-            timeout_seconds=2,
-        ),
-        readiness_probe=kubernetes.client.V1Probe(
-            http_get=kubernetes.client.V1HTTPGetAction(
-                scheme='HTTPS',
-                port=8000,
-                path='/_health/',
-            ),
-            initial_delay_seconds=3,
-            period_seconds=3,
-            timeout_seconds=2,
-        ),
+        liveness_probe=liveness_probe,
+        readiness_probe=readiness_probe,
     )
 
 def render_process_container(release, process_name, datadog_tags, with_tls=True, unix=True):
@@ -351,7 +371,7 @@ def render_podspec(release, process_name, service_account_name):
     elif process_name.startswith('tcp'):
         init_containers.append(render_cabotage_enroller_container(release, process_name, with_tls=True))
         containers.append(render_cabotage_sidecar_container(release, with_tls=True))
-        containers.append(render_cabotage_sidecar_tls_container(release, unix=False))
+        containers.append(render_cabotage_sidecar_tls_container(release, unix=False, tcp=True))
         containers.append(render_process_container(release, process_name, datadog_tags, with_tls=True, unix=False))
     elif process_name.startswith('worker'):
         init_containers.append(render_cabotage_enroller_container(release, process_name, with_tls=False))
