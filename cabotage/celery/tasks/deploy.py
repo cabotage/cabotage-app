@@ -500,7 +500,7 @@ def render_job(namespace, release, service_account_name, process_name):
             }
         ),
         spec=kubernetes.client.V1JobSpec(
-            active_deadline_seconds=120,
+            active_deadline_seconds=1800,
             backoff_limit=0,
             parallelism=1,
             template=kubernetes.client.V1PodTemplateSpec(
