@@ -7,6 +7,7 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 
 class Config(metaclass=MetaFlaskEnv):
     ENV_PREFIX = "CABOTAGE_"
+    ENV_LOAD_ALL = True
 
     SECRET_KEY = 'my_precious'
     DEBUG = False
