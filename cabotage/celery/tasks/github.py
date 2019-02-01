@@ -8,6 +8,8 @@ from pathlib import Path
 
 import requests
 
+from sqlalchemy import and_
+
 from cabotage.server import (
     db,
     celery,
@@ -160,6 +162,84 @@ def process_installation_repositories_hook(hook):
         pass
 
 
+def check_combined_status(access_token=None, repository_name=None, ref=None):
+    combined_status = requests.get(
+            f'https://api.github.com/repos/{repository_name}/commits/{ref}/status',
+            headers={
+                'Authorization': f'token {access_token["token"]}',
+            },
+        )
+    return combined_status.json()["state"]
+
+def create_deployment(access_token=None, application=None, repository_name=None, ref=None):
+    deployment_response = requests.post(
+        f'https://api.github.com/repos/{repository_name}/deployments',
+        headers={
+            'Accept': 'application/vnd.github.machine-man-preview+json',
+            'Authorization': f'token {access_token["token"]}',
+        },
+        json={
+            'ref': ref,
+            'auto_merge': False,
+            'environment': f'cabotage/{application.id}',
+        },
+    )
+    print(deployment_response.status_code)
+
+
+def process_status_hook(hook):
+    installation_id = hook.payload['installation']['id']
+    repository_name = hook.payload['name']
+    branch_names = [branch['name'] for branch in hook.payload['branches']]
+    commit_sha = hook.payload['sha']
+    bearer_token = github_app.bearer_token
+    access_token = None
+
+    if hook.payload['state'] == 'success':
+        applications = Application.query.filter(and_(
+            Application.auto_deploy_branch.in_(branch_names),
+            Application.github_app_installation_id == installation_id,
+            Application.github_repository == repository_name,
+        )).all()
+        if len(applications) == 0:
+            print('could not find application')
+            return False
+
+        access_token_response = requests.post(
+            f'https://api.github.com/installations/{installation_id}/access_tokens',
+            headers={
+                'Accept': 'application/vnd.github.machine-man-preview+json',
+                'Authorization': f'Bearer {bearer_token}',
+            }
+        )
+        if 'token' not in access_token_response.json():
+            print(f'Unable to authenticate for {installation_id}')
+            print(access_token_response.json())
+            raise HookError(f'Unable to authenticate for {installation_id}')
+
+        access_token = access_token_response.json()
+
+        combined_status = check_combined_status(
+            access_token=access_token,
+            repository_name=repository_name,
+            ref=commit_sha,
+        )
+        if combined_status == "success":
+            for application in applications:
+                print(f'deploying {repository_name}@{commit_sha} to {application.id}')
+                create_deployment(
+                    access_token=access_token,
+                    application=application,
+                    repository_name=repository_name,
+                    ref=commit_sha,
+                )
+        elif combined_status == "pending":
+            print(f'deploying {repository_name}@{commit_sha} still pending')
+            return False
+        else:
+            print(f'deploying {repository_name}@{commit_sha} in unknown state')
+            return False
+
 @celery.task()
 def process_github_hook(hook_id):
     hook = Hook.query.filter_by(id=hook_id).first()
@@ -176,6 +256,10 @@ def process_github_hook(hook_id):
             if existing_hooks > 1:
                 return True  # we _should_ mark this deploy as complete
         hook.processed = process_deployment_hook(hook)
+        db.session.commit()
+    if event == 'status':
+        process_status_hook(hook)
+        hook.processed = True
         db.session.commit()
     if event == 'installation':
         process_installation_hook(hook)

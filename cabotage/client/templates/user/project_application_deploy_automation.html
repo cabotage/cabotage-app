@@ -13,14 +13,9 @@
       <form action="{{ url_for('user.project_application_deployment_automation', application_id=form.application_id.data) }}" method="POST" name="project_application_deployment_automation_form">
         {{ form.hidden_tag() }}
         {{ form_field(form.application_id, disabled="disabled") }}
+        {{ form_field(form.github_repository) }}
+        {{ form_field(form.auto_deploy_branch) }}
         {{ form_field(form.github_app_installation_id) }}
-        <div class="row">
-          <div class="col-md-12">
-            <p><b>You'll need to configure <a href="https://developer.github.com/v3/guides/automating-deployments-to-integrators/">GitHub's Auto-Deployment</a> for your desired repository to deploy to the environment named:</b></p>
-            <p><code>cabotage/{{ form.application_id.data }}</code></p>
-            <br>
-          </div>
-        </div>
         <div class="row">
           <div class="col-md-6">
             {{ form_button(form.submit, "Update Deploy Automation", method="POST", class="btn btn-primary") }}

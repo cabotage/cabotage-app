@@ -210,6 +210,14 @@ class EditApplicationDeployAutomationForm(FlaskForm):
         [DataRequired()],
         description="Application this Configuration belongs to.",
     )
+    github_repository = StringField(
+        u'GitHub Repository',
+        description=u'GitHub Repository to deploy from',
+    )
+    auto_deploy_branch = StringField(
+        u'Branch',
+        description=u'GitHub Repository branch to auto-deploy from',
+    )
     github_app_installation_id = StringField(
         u'GitHub Application Installation ID',
         description="Application Installation ID from GitHub"

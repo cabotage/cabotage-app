@@ -132,6 +132,14 @@ class Application(db.Model, Timestamp):
         db.Integer,
         nullable=True,
     )
+    github_repository = db.Column(
+        db.Text(),
+        nullable=True,
+    )
+    auto_deploy_branch = db.Column(
+        db.Text(),
+        nullable=True,
+    )
 
     @property
     def release_candidate(self):
