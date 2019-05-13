@@ -213,6 +213,7 @@ class EditApplicationDeployAutomationForm(FlaskForm):
     github_repository = StringField(
         u'GitHub Repository',
         description=u'GitHub Repository to deploy from',
+        render_kw={"placeholder": "org_name/repo_name"},
     )
     auto_deploy_branch = StringField(
         u'Branch',
