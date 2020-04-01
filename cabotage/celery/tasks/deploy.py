@@ -211,7 +211,7 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
             tcp_socket=kubernetes.client.V1TCPSocketAction(
                 port=8000,
             ),
-            initial_delay_seconds=3,
+            initial_delay_seconds=10,
             period_seconds=3,
             timeout_seconds=2,
         )
@@ -219,7 +219,7 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
             tcp_socket=kubernetes.client.V1TCPSocketAction(
                 port=8000,
             ),
-            initial_delay_seconds=3,
+            initial_delay_seconds=10,
             period_seconds=3,
             timeout_seconds=2,
         )
@@ -230,7 +230,7 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
                 port=8000,
                 path='/_health/',
             ),
-            initial_delay_seconds=3,
+            initial_delay_seconds=10,
             period_seconds=3,
             timeout_seconds=2,
         )
@@ -240,7 +240,7 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
                 port=8000,
                 path='/_health/',
             ),
-            initial_delay_seconds=3,
+            initial_delay_seconds=10,
             period_seconds=3,
             timeout_seconds=2,
         )
