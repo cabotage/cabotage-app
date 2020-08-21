@@ -1,25 +1,18 @@
 [[source]]
-
 url = "https://pypi.python.org/simple"
 verify_ssl = true
 name = "pypi"
 
-
 [requires]
-
 python_version = '3.6'
 
-
 [dev-packages]
-
 coverage = "*"
 flask-testing = "*"
 "testing.postgresql" = "*"
 hupper = "*"
 
-
 [packages]
-
 flask = "*"
 flask-bcrypt = "*"
 flask-bootstrap = "*"
@@ -31,7 +24,7 @@ flask-sqlalchemy = "*"
 flask-wtf = "*"
 "psycopg2" = "*"
 unidecode = "*"
-flask-security = {git = "https://github.com/mattupstate/flask-security.git", ref = "3f9b75bad279a129a8f8ee599816cc36db7c2c9a"}
+flask-security = "*"
 flask-mail = "*"
 flask-nav = "*"
 sqlalchemy-citext = "*"
@@ -53,3 +46,5 @@ flask-env = "*"
 gunicorn = "*"
 dockerfile-parse = "*"
 pyjwt = "*"
+flask-babelex = "*"
+email_validator = "*"

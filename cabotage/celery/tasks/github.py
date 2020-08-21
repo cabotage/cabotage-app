@@ -240,6 +240,47 @@ def process_status_hook(hook):
             print(f'deploying {repository_name}@{commit_sha} in unknown state')
             return False
 
+def process_check_suite_hook(hook):
+    installation_id = hook.payload['installation']['id']
+    repository_name = hook.payload['repository']['full_name']
+    branch_names = [hook.payload['check_suite']['head_branch']]
+    commit_sha = hook.payload['check_suite']['head_sha']
+    bearer_token = github_app.bearer_token
+    access_token = None
+
+    if hook.payload['check_suite']['conclusion'] == 'success':
+        applications = Application.query.filter(and_(
+            Application.auto_deploy_branch.in_(branch_names),
+            Application.github_app_installation_id == installation_id,
+            Application.github_repository == repository_name,
+        )).all()
+        if len(applications) == 0:
+            print(f'could not find application! installation_id: {installation_id}, repository_name: {repository_name}, branches: {branch_names}')
+            return False
+
+        access_token_response = requests.post(
+            f'https://api.github.com/installations/{installation_id}/access_tokens',
+            headers={
+                'Accept': 'application/vnd.github.machine-man-preview+json',
+                'Authorization': f'Bearer {bearer_token}',
+            }
+        )
+        if 'token' not in access_token_response.json():
+            print(f'Unable to authenticate for {installation_id}')
+            print(access_token_response.json())
+            raise HookError(f'Unable to authenticate for {installation_id}')
+
+        access_token = access_token_response.json()
+
+        for application in applications:
+            print(f'deploying {repository_name}@{commit_sha} to {application.id}')
+            create_deployment(
+                access_token=access_token,
+                application=application,
+                repository_name=repository_name,
+                ref=commit_sha,
+            )
+
 @celery.task()
 def process_github_hook(hook_id):
     hook = Hook.query.filter_by(id=hook_id).first()
@@ -256,6 +297,10 @@ def process_github_hook(hook_id):
             if existing_hooks > 1:
                 return True  # we _should_ mark this deploy as complete
         hook.processed = process_deployment_hook(hook)
+        db.session.commit()
+    if event == 'check_suite':
+        process_check_suite_hook(hook)
+        hook.processed = True
         db.session.commit()
     if event == 'status':
         process_status_hook(hook)
