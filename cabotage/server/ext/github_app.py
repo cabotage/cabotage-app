@@ -64,7 +64,7 @@ class GitHubApp(object):
 
     def fetch_installation_access_token(self, installation_id):
         access_token_response = requests.post(
-            f'https://api.github.com/installations/{installation_id}/access_tokens',
+            f'https://api.github.com/app/installations/{installation_id}/access_tokens',
             headers={
                 'Accept': 'application/vnd.github.machine-man-preview+json',
                 'Authorization': f'Bearer {self.bearer_token}',

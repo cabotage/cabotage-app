@@ -60,7 +60,7 @@ def process_deployment_hook(hook):
             return False
 
         access_token_response = requests.post(
-            f'https://api.github.com/installations/{installation_id}/access_tokens',
+            f'https://api.github.com/app/installations/{installation_id}/access_tokens',
             headers={
                 'Accept': 'application/vnd.github.machine-man-preview+json',
                 'Authorization': f'Bearer {bearer_token}',
@@ -206,7 +206,7 @@ def process_status_hook(hook):
             return False
 
         access_token_response = requests.post(
-            f'https://api.github.com/installations/{installation_id}/access_tokens',
+            f'https://api.github.com/app/installations/{installation_id}/access_tokens',
             headers={
                 'Accept': 'application/vnd.github.machine-man-preview+json',
                 'Authorization': f'Bearer {bearer_token}',
@@ -259,7 +259,7 @@ def process_check_suite_hook(hook):
             return False
 
         access_token_response = requests.post(
-            f'https://api.github.com/installations/{installation_id}/access_tokens',
+            f'https://api.github.com/app/installations/{installation_id}/access_tokens',
             headers={
                 'Accept': 'application/vnd.github.machine-man-preview+json',
                 'Authorization': f'Bearer {bearer_token}',
