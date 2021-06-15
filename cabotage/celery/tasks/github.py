@@ -39,9 +39,12 @@ def process_deployment_hook(hook):
     deployment = hook.payload['deployment']
     environment = deployment['environment']
     repository = hook.payload['repository']
+    commit_sha = hook.payload['deployment']['sha']
     sender = hook.payload['sender']
     bearer_token = github_app.bearer_token
     access_token = None
+
+    hook.commit_sha = commit_sha
 
     try:
         slugs = environment.split('/')
@@ -162,15 +165,6 @@ def process_installation_repositories_hook(hook):
         pass
 
 
-def check_combined_status(access_token=None, repository_name=None, ref=None):
-    combined_status = requests.get(
-            f'https://api.github.com/repos/{repository_name}/commits/{ref}/status',
-            headers={
-                'Authorization': f'token {access_token["token"]}',
-            },
-        )
-    return combined_status.json()["state"]
-
 def create_deployment(access_token=None, application=None, repository_name=None, ref=None):
     deployment_response = requests.post(
         f'https://api.github.com/repos/{repository_name}/deployments',
@@ -187,58 +181,25 @@ def create_deployment(access_token=None, application=None, repository_name=None,
     print(deployment_response.status_code)
 
 
-def process_status_hook(hook):
+def process_push_hook(hook):
     installation_id = hook.payload['installation']['id']
-    repository_name = hook.payload['name']
-    branch_names = [branch['name'] for branch in hook.payload['branches']]
-    commit_sha = hook.payload['sha']
+    repository_name = hook.payload['repository']['full_name']
+    branch_names = [hook.payload['ref'].lstrip('refs/heads/')]
+    commit_sha = hook.payload['after']
     bearer_token = github_app.bearer_token
     access_token = None
 
-    if hook.payload['state'] == 'success':
-        applications = Application.query.filter(and_(
-            Application.auto_deploy_branch.in_(branch_names),
-            Application.github_app_installation_id == installation_id,
-            Application.github_repository == repository_name,
-        )).all()
-        if len(applications) == 0:
-            print('could not find application')
-            return False
+    applications = Application.query.filter(and_(
+        Application.auto_deploy_branch.in_(branch_names),
+        Application.github_app_installation_id == installation_id,
+        Application.github_repository == repository_name,
+    )).all()
+    if len(applications) == 0:
+        print(f'could not find application! installation_id: {installation_id}, repository_name: {repository_name}, branches: {branch_names}')
+        return False
 
-        access_token_response = requests.post(
-            f'https://api.github.com/app/installations/{installation_id}/access_tokens',
-            headers={
-                'Accept': 'application/vnd.github.machine-man-preview+json',
-                'Authorization': f'Bearer {bearer_token}',
-            }
-        )
-        if 'token' not in access_token_response.json():
-            print(f'Unable to authenticate for {installation_id}')
-            print(access_token_response.json())
-            raise HookError(f'Unable to authenticate for {installation_id}')
+    hook.commit_sha = commit_sha
 
-        access_token = access_token_response.json()
-
-        combined_status = check_combined_status(
-            access_token=access_token,
-            repository_name=repository_name,
-            ref=commit_sha,
-        )
-        if combined_status == "success":
-            for application in applications:
-                print(f'deploying {repository_name}@{commit_sha} to {application.id}')
-                create_deployment(
-                    access_token=access_token,
-                    application=application,
-                    repository_name=repository_name,
-                    ref=commit_sha,
-                )
-        elif combined_status == "pending":
-            print(f'deploying {repository_name}@{commit_sha} still pending')
-            return False
-        else:
-            print(f'deploying {repository_name}@{commit_sha} in unknown state')
-            return False
 
 def process_check_suite_hook(hook):
     installation_id = hook.payload['installation']['id']
@@ -248,7 +209,12 @@ def process_check_suite_hook(hook):
     bearer_token = github_app.bearer_token
     access_token = None
 
+    hook.commit_sha = commit_sha
+
     if hook.payload['check_suite']['conclusion'] == 'success':
+        pushes = Hook.query.filter(Hook.commit_sha == hook.commit_sha).filter(Hook.headers['X-Github-Event'].astext == 'push').count()
+        if pushes == 0:
+            return False
         applications = Application.query.filter(and_(
             Application.auto_deploy_branch.in_(branch_names),
             Application.github_app_installation_id == installation_id,
@@ -298,12 +264,12 @@ def process_github_hook(hook_id):
                 return True  # we _should_ mark this deploy as complete
         hook.processed = process_deployment_hook(hook)
         db.session.commit()
-    if event == 'check_suite':
-        process_check_suite_hook(hook)
+    if event == 'push':
+        process_push_hook(hook)
         hook.processed = True
         db.session.commit()
-    if event == 'status':
-        process_status_hook(hook)
+    if event == 'check_suite':
+        process_check_suite_hook(hook)
         hook.processed = True
         db.session.commit()
     if event == 'installation':
