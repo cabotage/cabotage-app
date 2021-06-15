@@ -60,7 +60,7 @@ class GitHubApp(object):
             }
             self._bearer_token = jwt.encode(payload, self.app_private_key_pem, algorithm='RS256')
             self._bearer_token_exp = issued + 599
-        return self._bearer_token.decode()
+        return self._bearer_token
 
     def fetch_installation_access_token(self, installation_id):
         access_token_response = requests.post(

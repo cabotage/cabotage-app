@@ -57,11 +57,8 @@ class MinioDriver(object):
 
     def create_bucket(self):
         try:
-            self.minio_connection.make_bucket(self.minio_bucket)
-        except minio.error.BucketAlreadyOwnedByYou:
-            pass
-        except minio.error.BucketAlreadyExists:
-            pass
+            if not self.minio_connection.bucket_exists(self.minio_bucket):
+                self.minio_connection.make_bucket(self.minio_bucket)
         except minio.error.ResponseError:
             raise
 
