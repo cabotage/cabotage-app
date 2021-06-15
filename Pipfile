@@ -4,7 +4,7 @@ verify_ssl = true
 name = "pypi"
 
 [requires]
-python_version = '3.6'
+python_version = '3.8'
 
 [dev-packages]
 coverage = "*"
@@ -27,6 +27,7 @@ unidecode = "*"
 flask-security = "*"
 flask-mail = "*"
 flask-nav = "*"
+sqlalchemy = "<1.4"
 sqlalchemy-citext = "*"
 sqlalchemy-utils = "*"
 sqlalchemy-continuum = "*"
@@ -41,7 +42,7 @@ celery = {extras = ["redis"]}
 cryptography = "*"
 flask-celery-helper = "*"
 procfile = "*"
-kubernetes = "==4.0.0"
+kubernetes = "==6.1.0"
 flask-env = "*"
 gunicorn = "*"
 dockerfile-parse = "*"

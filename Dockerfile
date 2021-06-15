@@ -1,4 +1,4 @@
-FROM python:3.6-slim-stretch
+FROM python:3.8-slim-buster
 
 RUN set -x \
     && apt-get update \
@@ -19,6 +19,6 @@ COPY Pipfile.lock /opt/cabotage-app/src/Pipfile.lock
 
 WORKDIR /opt/cabotage-app/src/
 
-RUN pipenv install --dev
+RUN pipenv install --dev --deploy
 
 COPY . /opt/cabotage-app/src/
