@@ -321,22 +321,21 @@ def render_process_container(release, process_name, datadog_tags, with_tls=True,
 def render_datadog_container(dd_api_key, datadog_tags):
     return kubernetes.client.V1Container(
         name='dogstatsd-sidecar',
-        image='datadog/dogstatsd:6.0.3',
+        image='datadog/agent:7.37.1',
         image_pull_policy='IfNotPresent',
         env=[
             kubernetes.client.V1EnvVar(name='DD_API_KEY', value=dd_api_key),
-            kubernetes.client.V1EnvVar(name='DD_SEND_HOST_METADATA', value="false"),
-            kubernetes.client.V1EnvVar(name='DD_ENABLE_METADATA_COLLECTION', value="false"),
-            kubernetes.client.V1EnvVar(name='DD_TAGS', value=' '.join([f'{k}:{v}' for k, v in datadog_tags.items()])),
+            kubernetes.client.V1EnvVar(name='DD_LOGS_ENABLED', value="false"),
+            kubernetes.client.V1EnvVar(name='DD_DOGSTATSD_TAGS', value=' '.join([f'{k}:{v}' for k, v in datadog_tags.items()])),
         ],
         resources=kubernetes.client.V1ResourceRequirements(
             limits={
                 'memory': '256Mi',
-                'cpu': '100m',
+                'cpu': '150m',
             },
             requests={
-                'memory': '128Mi',
-                'cpu': '50m',
+                'memory': '192Mi',
+                'cpu': '75m',
             },
         ),
     )
