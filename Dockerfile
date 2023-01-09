@@ -12,13 +12,11 @@ RUN set -x \
 
 ENV PATH="/opt/cabotage-app/bin:${PATH}"
 
-RUN pip --no-cache-dir --disable-pip-version-check install --upgrade pip setuptools wheel pipenv
-
-COPY Pipfile /opt/cabotage-app/src/Pipfile
-COPY Pipfile.lock /opt/cabotage-app/src/Pipfile.lock
+RUN pip --no-cache-dir --disable-pip-version-check install --upgrade pip setuptools wheel
 
 WORKDIR /opt/cabotage-app/src/
 
-RUN pipenv install --dev --deploy
+COPY requirements.txt requirements.txt
+RUN pip install -r requirements.txt
 
 COPY . /opt/cabotage-app/src/

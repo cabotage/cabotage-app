@@ -14,8 +14,8 @@ if [ -f /vault/file/unseal ]; then
         echo "vault not up yet..."
         sleep .5
     done
-    export UNSEAL_TOKEN=`cat /vault/file/unseal`
-    vault operator unseal ${UNSEAL_TOKEN}
+    export UNSEAL_TOKEN=`cat /vault/file/unseal | tr -d '[:space:]'`
+    vault operator unseal "$UNSEAL_TOKEN"
     wait
 else
     echo "starting vault!"
@@ -31,7 +31,7 @@ else
     done
     echo -n `grep 'Unseal Key: ' $HOME/logfile | awk '{print $NF}' | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]//g"` > /vault/file/unseal
     echo "bootstrapping our transit key"
-    VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID vault mount transit
+    VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID vault secrets enable transit
     VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID vault write transit/restore/cabotage-app backup=`cat /etc/vault/cabotage-vault-key.backup`
     echo "bootstrapping postgres stufffff"
     VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID vault secrets enable database
