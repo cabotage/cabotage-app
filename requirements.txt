@@ -56,7 +56,7 @@ kubernetes==6.1.0
 Mako==1.1.4
 MarkupSafe==2.0.1
 minio==7.0.4
-oauthlib==3.1.1
+oauthlib==3.2.2
 passlib==1.7.4
 pg8000==1.19.5
 platformdirs==2.6.0
