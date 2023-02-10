@@ -6,7 +6,7 @@ bcrypt==3.2.0
 billiard==3.6.4.0
 blinker==1.4
 cachetools==4.2.2
-celery==5.1.0
+celery==5.2.2
 certifi==2021.5.30
 cffi==1.14.5
 chardet==4.0.0
