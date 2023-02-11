@@ -96,6 +96,7 @@ services:
     build: .
     command: hupper -m gunicorn.app.wsgiapp -c gunicorn.conf -w 2 -b 0.0.0.0:8000 cabotage.server.wsgi:app
     environment:
+      - FLASK_APP=cabotage.server.wsgi
       - CABOTAGE_DEBUG=True
       - CABOTAGE_BCRYPT_LOG_ROUNDS=4
       - CABOTAGE_WTF_CSRF_ENABLED=False
@@ -122,6 +123,7 @@ services:
     command: hupper -m celery -A cabotage.celery.worker.celery worker -E --loglevel=INFO
     environment:
       - C_FORCE_ROOT=1
+      - FLASK_APP=cabotage.server.wsgi
       - CABOTAGE_DEBUG=True
       - CABOTAGE_BCRYPT_LOG_ROUNDS=4
       - CABOTAGE_WTF_CSRF_ENABLED=False
