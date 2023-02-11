@@ -606,6 +606,11 @@ class Hook(db.Model, Timestamp):
         nullable=False,
         default=False,
     )
+    deployed = db.Column(
+        db.Boolean,
+        nullable=True,
+        default=None,
+    )
     version_id = db.Column(
         db.Integer,
         nullable=False

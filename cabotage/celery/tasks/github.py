@@ -9,6 +9,7 @@ from pathlib import Path
 import requests
 
 from sqlalchemy import and_
+from sqlalchemy.orm.exc import NoResultFound
 
 from cabotage.server import (
     db,
@@ -238,6 +239,15 @@ def process_check_suite_hook(hook):
 
         access_token = access_token_response.json()
 
+        try:
+            push_event = Hook.query.filter(Hook.commit_sha == commit_sha).filter(Hook.headers.op("->>")('X-Github-Event') == 'push').one()
+        except NoResultFound:
+            print(f'ignoring check_suite without push for {repository_name}@{commit_sha}')
+
+        if push_event.deployed:
+            print(f'skipping auto-deploy for previously deployed {repository_name}@{commit_sha}')
+            return False
+
         for application in applications:
             print(f'deploying {repository_name}@{commit_sha} to {application.id}')
             create_deployment(
@@ -246,6 +256,8 @@ def process_check_suite_hook(hook):
                 repository_name=repository_name,
                 ref=commit_sha,
             )
+        push_event.deployed = True
+        db.session.commit()
 
 @celery.task()
 def process_github_hook(hook_id):
