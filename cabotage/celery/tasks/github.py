@@ -9,7 +9,7 @@ from pathlib import Path
 import requests
 
 from sqlalchemy import and_
-from sqlalchemy.orm.exc import NoResultFound
+from sqlalchemy.orm.exc import MultipleResultsFound, NoResultFound
 
 from cabotage.server import (
     db,
@@ -39,7 +39,7 @@ def process_deployment_hook(hook):
     installation_id = hook.payload['installation']['id']
     deployment = hook.payload['deployment']
     environment = deployment['environment']
-    repository = hook.payload['repository']
+    repository_name = hook.payload['repository']['full_name']
     commit_sha = hook.payload['deployment']['sha']
     sender = hook.payload['sender']
     bearer_token = github_app.bearer_token
@@ -48,19 +48,29 @@ def process_deployment_hook(hook):
     hook.commit_sha = commit_sha
 
     try:
-        slugs = environment.split('/')
-        if len(slugs) != 2 or slugs[0] != 'cabotage':
-            print('not configured for this environment')
-            return False
-        _, application_id = slugs
+        try:
+            application = Application.query.filter(and_(
+                Application.github_app_installation_id == installation_id,
+                Application.github_repository == repository_name,
+                Application.github_environment_name == environment,
+            )).one()
+        except NoResultFound:
+            slugs = environment.split('/')
+            if len(slugs) != 2 or slugs[0] != 'cabotage':
+                print('not configured for this environment')
+                return False
+            _, application_id = slugs
 
-        application = Application.query.filter_by(id=application_id).first()
-        if application is None:
-            print('could not find application')
-            return False
+            application = Application.query.filter_by(id=application_id).first()
+            if application is None:
+                print('could not find application')
+                return False
 
-        if application.github_app_installation_id != installation_id:
-            print('application not configured with installation id')
+            if application.github_app_installation_id != installation_id:
+                print('application not configured with installation id')
+                return False
+        except MultipleResultsFound:
+            print(f'multiple apps configured for installation {installation_id} on {repository_name} with environment {environment}!')
             return False
 
         access_token_response = requests.post(
@@ -84,7 +94,7 @@ def process_deployment_hook(hook):
         )
 
         tarball_request = requests.get(
-            f'https://api.github.com/repos/{repository["full_name"]}/tarball/{deployment["sha"]}',
+            f'https://api.github.com/repos/{repository_name}/tarball/{deployment["sha"]}',
             headers={
                 'Accept': 'application/vnd.github.machine-man-preview+json',
                 'Authorization': f'token {access_token["token"]}',
@@ -167,6 +177,10 @@ def process_installation_repositories_hook(hook):
 
 
 def create_deployment(access_token=None, application=None, repository_name=None, ref=None):
+    environment_string = f'cabotage/{application.id}'
+    if application.github_environment_name is not None:
+        environment_string = application.github_environment_name
+
     deployment_response = requests.post(
         f'https://api.github.com/repos/{repository_name}/deployments',
         headers={
@@ -176,7 +190,7 @@ def create_deployment(access_token=None, application=None, repository_name=None,
         json={
             'ref': ref,
             'auto_merge': False,
-            'environment': f'cabotage/{application.id}',
+            'environment': environment_string,
         },
     )
     print(deployment_response.status_code)
@@ -265,10 +279,12 @@ def process_github_hook(hook_id):
     event = hook.headers['X-Github-Event']
     if event == 'deployment':
         if hook.commit_sha is not None:
+            installation_id = hook.payload.get('installation', {}).get('id')
             environment = hook.payload.get('deployment', {}).get('environment')
             existing_hooks = (
                 Hook.query
                 .filter(Hook.commit_sha == hook.commit_sha)
+                .filter(Hook.payload['installation']['id'].astext == installation_id)
                 .filter(Hook.payload['deployment']['environment'].astext == environment)
                 .count()
             )

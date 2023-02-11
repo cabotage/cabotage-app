@@ -137,6 +137,10 @@ class Application(db.Model, Timestamp):
         db.Text(),
         nullable=True,
     )
+    github_environment_name = db.Column(
+        db.Text(),
+        nullable=True,
+    )
     auto_deploy_branch = db.Column(
         db.Text(),
         nullable=True,
@@ -250,6 +254,17 @@ class Application(db.Model, Timestamp):
         return self.images.filter_by(built=False, error=False).order_by(Image.version.desc()).first()
 
     UniqueConstraint(project_id, slug)
+
+    __table_args__ = (
+        db.Index(
+            'github_deployments_unique',
+            github_app_installation_id,
+            github_repository,
+            github_environment_name,
+            unique=True,
+            postgresql_where=(github_environment_name != None)
+        ),
+    )
 
     __mapper_args__ = {
         "version_id_col": version_id

@@ -16,6 +16,7 @@
         {{ form_field(form.github_repository) }}
         {{ form_field(form.auto_deploy_branch) }}
         {{ form_field(form.github_app_installation_id) }}
+        {{ form_field(form.github_environment_name ) }}
         <div class="row">
           <div class="col-md-6">
             {{ form_button(form.submit, "Update Deploy Automation", method="POST", class="btn btn-primary") }}

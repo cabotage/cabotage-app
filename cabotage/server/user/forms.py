@@ -1,3 +1,5 @@
+import uuid
+
 from flask_security.forms import ConfirmRegisterForm, LoginForm, RegisterForm
 
 from flask_wtf import FlaskForm
@@ -223,6 +225,25 @@ class EditApplicationDeployAutomationForm(FlaskForm):
         u'GitHub Application Installation ID',
         description="Application Installation ID from GitHub"
     )
+    github_environment_name = StringField(
+        u'GitHub Environment Name',
+        description="Environment name for GitHub deploys, default: cabotage/[application uuid]",
+        filters = [(lambda x: x.strip() if x else x), (lambda x: x if x else None)]
+    )
+
+    def validate_github_environment_name(form, field):
+        if field.data is None:
+            return True
+        app = (
+            Application.query
+            .filter_by(github_app_installation_id=form.github_app_installation_id.data)
+            .filter_by(github_repository=form.github_repository.data)
+            .filter_by(github_environment_name=field.data)
+            .first()
+        )
+        if app is not None and app.id != uuid.UUID(form.application_id.data):
+            raise ValidationError('Environment names must be unique within GitHub App Installations and Repositories.')
+        return True
 
 class EditConfigurationForm(FlaskForm):
 
