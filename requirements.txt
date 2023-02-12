@@ -53,7 +53,7 @@ itsdangerous==2.0.1
 Jinja2==3.0.1
 kombu==5.1.0
 kubernetes==6.1.0
-Mako==1.1.4
+Mako==1.2.2
 MarkupSafe==2.0.1
 minio==7.0.4
 oauthlib==3.2.2
