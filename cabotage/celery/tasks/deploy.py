@@ -627,6 +627,9 @@ def deploy_release(deployment):
                 access_token, deployment.deploy_metadata['statuses_url'],
                 'failure', 'Deployment failed: {exc}'
             )
+        deployment.deploy_log = "\n".join(deploy_log)
+        db.session.commit()
+        return False
     deployment.deploy_log = "\n".join(deploy_log)
     db.session.commit()
     if deployment.deploy_metadata and 'installation_id' in deployment.deploy_metadata and 'statuses_url' in deployment.deploy_metadata:
