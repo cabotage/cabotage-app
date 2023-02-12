@@ -548,9 +548,7 @@ def delete_job(batch_api_instance, namespace, job_object):
     try:
         status = batch_api_instance.delete_namespaced_job(
             job_object.metadata.name, namespace,
-            kubernetes.client.V1DeleteOptions(
-                propagation_policy='Foreground',
-            )
+            propagation_policy="Foreground",
         )
     except ApiException as exc:
         raise DeployError(f'Unexpected exception deleting Job/{job_object.metadata.name} in {namespace}: {exc}')
