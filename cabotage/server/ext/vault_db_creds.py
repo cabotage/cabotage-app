@@ -42,7 +42,7 @@ class VaultDBCreds(object):
 
             if self.vault_token is None:
                 if os.path.exists(self.vault_token_file):
-                    with open(self.vault_token_file, 'rU') as vault_token_file:
+                    with open(self.vault_token_file, 'r') as vault_token_file:
                         self.vault_token = vault_token_file.read().lstrip().rstrip()
 
             self.logger = app.logger

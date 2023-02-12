@@ -89,7 +89,7 @@ def build_release(release,
                 fd.write(f'COPY envconsul-{process_name}.hcl /etc/cabotage/envconsul-{process_name}.hcl\n')
             fd.write(f'ENTRYPOINT ["/entrypoint.sh"]\n')
             fd.write(f'CMD []\n')
-        with open(os.path.join(temp_dir, 'Dockerfile'), 'rU') as release_dockerfile:
+        with open(os.path.join(temp_dir, 'Dockerfile'), 'r') as release_dockerfile:
             dockerfile_body = release_dockerfile.read()
         release.dockerfile = dockerfile_body
         db.session.commit()
@@ -214,14 +214,14 @@ def build_image(tarfileobj, image,
                 os.path.join(temp_dir, 'Procfile.cabotage'),
                 os.path.join(temp_dir, 'Procfile'),
             )
-        with open(os.path.join(temp_dir, 'Procfile'), 'rU') as img_procfile:
+        with open(os.path.join(temp_dir, 'Procfile'), 'r') as img_procfile:
             procfile_body = img_procfile.read()
         if os.path.exists(os.path.join(temp_dir, 'Dockerfile.cabotage')):
             shutil.copy(
                 os.path.join(temp_dir, 'Dockerfile.cabotage'),
                 os.path.join(temp_dir, 'Dockerfile'),
             )
-        with open(os.path.join(temp_dir, 'Dockerfile'), 'rU') as img_dockerfile:
+        with open(os.path.join(temp_dir, 'Dockerfile'), 'r') as img_dockerfile:
             dockerfile_body = img_dockerfile.read()
             dockerfile_object = DockerfileParser(temp_dir)
             dockerfile_env_vars = list(dockerfile_object.envs.keys())
