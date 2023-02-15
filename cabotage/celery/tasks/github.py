@@ -177,23 +177,28 @@ def process_installation_repositories_hook(hook):
 
 
 def create_deployment(access_token=None, application=None, repository_name=None, ref=None):
-    environment_string = f'cabotage/{application.id}'
-    if application.github_environment_name is not None:
-        environment_string = application.github_environment_name
+    try:
+        environment_string = f'cabotage/{application.id}'
+        if application.github_environment_name is not None:
+            environment_string = application.github_environment_name
 
-    deployment_response = requests.post(
-        f'https://api.github.com/repos/{repository_name}/deployments',
-        headers={
-            'Accept': 'application/vnd.github.machine-man-preview+json',
-            'Authorization': f'token {access_token["token"]}',
-        },
-        json={
-            'ref': ref,
-            'auto_merge': False,
-            'environment': environment_string,
-        },
-    )
-    print(deployment_response.status_code)
+        deployment_response = requests.post(
+            f'https://api.github.com/repos/{repository_name}/deployments',
+            headers={
+                'Accept': 'application/vnd.github.machine-man-preview+json',
+                'Authorization': f'token {access_token["token"]}',
+            },
+            json={
+                'ref': ref,
+                'auto_merge': False,
+                'environment': environment_string,
+            },
+        )
+        print(deployment_response.status_code)
+        deployment_response.raise_for_status()
+    except Exception:
+        return False
+    return True
 
 
 def process_push_hook(hook):
@@ -262,16 +267,20 @@ def process_check_suite_hook(hook):
             print(f'skipping auto-deploy for previously deployed {repository_name}@{commit_sha}')
             return False
 
+        results = []
         for application in applications:
             print(f'deploying {repository_name}@{commit_sha} to {application.id}')
-            create_deployment(
+            deployment_result = create_deployment(
                 access_token=access_token,
                 application=application,
                 repository_name=repository_name,
                 ref=commit_sha,
             )
-        push_event.deployed = True
-        db.session.commit()
+            results.append(deployment_result)
+
+        if all(results):
+            push_event.deployed = True
+            db.session.commit()
 
 @celery.task()
 def process_github_hook(hook_id):
