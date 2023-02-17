@@ -406,7 +406,7 @@ def render_podspec(release, process_name, service_account_name):
 
 def render_deployment(namespace, release, service_account_name, process_name):
     role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
-    deployment_object = kubernetes.client.AppsV1beta1Deployment(
+    deployment_object = kubernetes.client.V1Deployment(
         metadata=kubernetes.client.V1ObjectMeta(
             name=f'{release.application.project.slug}-{release.application.slug}-{process_name}',
             labels={
@@ -417,7 +417,7 @@ def render_deployment(namespace, release, service_account_name, process_name):
                 'app': role_name,
             }
         ),
-        spec=kubernetes.client.AppsV1beta1DeploymentSpec(
+        spec=kubernetes.client.V1DeploymentSpec(
             replicas=release.application.process_counts.get(process_name, 0),
             selector=kubernetes.client.V1LabelSelector(
                 match_labels={
@@ -469,7 +469,7 @@ def create_deployment(apps_api_instance, namespace, release, service_account_nam
 
 def scale_deployment(namespace, release, process_name, replicas):
     api_client = kubernetes_ext.kubernetes_client
-    apps_api_instance = kubernetes.client.AppsV1beta1Api(api_client)
+    apps_api_instance = kubernetes.client.AppsV1Api(api_client)
     deployment_name = f'{release.application.project.slug}-{release.application.slug}-{process_name}'
     deployment = None
     try:
@@ -478,8 +478,8 @@ def scale_deployment(namespace, release, process_name, replicas):
         if exc.status == 404:
             pass
     if deployment is not None:
-        scale = kubernetes.client.AppsV1beta1Scale(
-            spec=kubernetes.client.AppsV1beta1ScaleSpec(replicas=replicas)
+        scale = kubernetes.client.V1Scale(
+            spec=kubernetes.client.V1ScaleSpec(replicas=replicas)
         )
         api_response = apps_api_instance.patch_namespaced_deployment_scale(deployment_name, namespace, scale)
 
@@ -580,7 +580,7 @@ def deploy_release(deployment):
         deploy_log.append("Constructing API Clients")
         api_client = kubernetes_ext.kubernetes_client
         core_api_instance = kubernetes.client.CoreV1Api(api_client)
-        apps_api_instance = kubernetes.client.AppsV1beta1Api(api_client)
+        apps_api_instance = kubernetes.client.AppsV1Api(api_client)
         batch_api_instance = kubernetes.client.BatchV1Api(api_client)
         deploy_log.append(f"Fetching Namespace")
         namespace = fetch_namespace(core_api_instance, deployment.release_object)

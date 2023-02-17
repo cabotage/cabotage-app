@@ -22,12 +22,10 @@ class Kubernetes(object):
             except Exception:
                 raise
 
-        self.configuration = kubernetes.client.Configuration()
-
         app.teardown_appcontext(self.teardown)
 
     def connect_kubernetes(self):
-        kubernetes_client = kubernetes.client.ApiClient(self.configuration)
+        kubernetes_client = kubernetes.client.ApiClient()
         return kubernetes_client
 
     def teardown(self, exception):
