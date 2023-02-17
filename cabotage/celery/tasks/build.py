@@ -80,13 +80,14 @@ def build_release(release,
         with open(os.path.join(temp_dir, 'entrypoint.sh'), 'w') as fd:
             fd.write(ENTRYPOINT)
         st = os.stat(os.path.join(temp_dir, 'entrypoint.sh'))
-        os.chmod(os.path.join(temp_dir, 'entrypoint.sh'), st.st_mode | stat.S_IEXEC)
+        os.chmod(os.path.join(temp_dir, 'entrypoint.sh'), st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         with open(os.path.join(temp_dir, 'Dockerfile'), 'a') as fd:
             fd.write(RELEASE_DOCKERFILE_TEMPLATE.format(registry=registry, image=release.image_object))
             fd.write(f'COPY envconsul-linux-amd64 /usr/bin/envconsul\n')
             fd.write(f'COPY entrypoint.sh /entrypoint.sh\n')
             for process_name in  release.envconsul_configurations:
                 fd.write(f'COPY envconsul-{process_name}.hcl /etc/cabotage/envconsul-{process_name}.hcl\n')
+            fd.write(f'USER nobody\n')
             fd.write(f'ENTRYPOINT ["/entrypoint.sh"]\n')
             fd.write(f'CMD []\n')
         with open(os.path.join(temp_dir, 'Dockerfile'), 'r') as release_dockerfile:
