@@ -83,7 +83,13 @@ def build_release(release,
         os.chmod(os.path.join(temp_dir, 'entrypoint.sh'), st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         with open(os.path.join(temp_dir, 'Dockerfile'), 'a') as fd:
             fd.write(RELEASE_DOCKERFILE_TEMPLATE.format(registry=registry, image=release.image_object))
-            fd.write(f'COPY envconsul-linux-amd64 /usr/bin/envconsul\n')
+            fd.write(f'COPY envconsul-linux-amd64 /usr/bin/envconsul-linux-amd64\n')
+            fd.write(f'COPY envconsul-linux-arm64 /usr/bin/envconsul-linux-arm64\n')
+            fd.write('RUN case $(uname -m) in \\\n')
+            fd.write('         "x86_64")  ARCH=amd64 ;; \\\n')
+            fd.write('         "aarch64")  ARCH=arm64 ;; \\\n')
+            fd.write('    esac \\\n')
+            fd.write('&& mv /usr/bin/envconsul-linux-${ARCH} /usr/bin/envconsul\n')
             fd.write(f'COPY entrypoint.sh /entrypoint.sh\n')
             for process_name in  release.envconsul_configurations:
                 fd.write(f'COPY envconsul-{process_name}.hcl /etc/cabotage/envconsul-{process_name}.hcl\n')
@@ -97,6 +103,10 @@ def build_release(release,
         shutil.copy(
             'envconsul-linux-amd64',
             os.path.join(temp_dir, 'envconsul-linux-amd64'),
+        )
+        shutil.copy(
+            'envconsul-linux-arm64',
+            os.path.join(temp_dir, 'envconsul-linux-arm64'),
         )
         for process_name, envconsul_configuration in  release.envconsul_configurations.items():
             with open(os.path.join(temp_dir, f'envconsul-{process_name}.hcl'), 'w') as envconsul_config:
