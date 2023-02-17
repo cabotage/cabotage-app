@@ -153,7 +153,7 @@ def render_cabotage_enroller_container(release, process_name, with_tls=True):
 
     return kubernetes.client.V1Container(
         name='cabotage-enroller',
-        image='cabotage/sidecar:v1.1.0a3',
+        image='cabotage/sidecar:v2.0.0a1',
         image_pull_policy='IfNotPresent',
         env=[
             kubernetes.client.V1EnvVar(name='NAMESPACE', value_from=kubernetes.client.V1EnvVarSource(field_ref=kubernetes.client.V1ObjectFieldSelector(field_path='metadata.namespace'))),
@@ -177,7 +177,7 @@ def render_cabotage_sidecar_container(release, with_tls=True):
     role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
     return kubernetes.client.V1Container(
         name='cabotage-sidecar',
-        image='cabotage/sidecar:v1.1.0a3',
+        image='cabotage/sidecar:v2.0.0a1',
         image_pull_policy='IfNotPresent',
         args=args,
         volume_mounts=[
@@ -246,7 +246,7 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
         )
     return kubernetes.client.V1Container(
         name='cabotage-sidecar-tls',
-        image='cabotage/sidecar:v1.1.0a3',
+        image='cabotage/sidecar:v2.0.0a1',
         image_pull_policy='IfNotPresent',
         command=["./ghostunnel"],
         args=[
