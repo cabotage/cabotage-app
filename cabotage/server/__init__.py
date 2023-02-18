@@ -36,7 +36,7 @@ db_metadata = MetaData(
         "pk": "pk_%(table_name)s",
     }
 )
-db = SQLAlchemy(metadata=db_metadata)
+db = SQLAlchemy(metadata=db_metadata, engine_options={'pool_pre_ping': True})
 mail = Mail()
 migrate = Migrate()
 humanize = Humanize()
