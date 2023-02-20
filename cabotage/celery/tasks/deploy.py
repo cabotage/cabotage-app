@@ -104,7 +104,7 @@ def render_image_pull_secrets(release):
             '.dockerconfigjson': b64encode(
                                      release.image_pull_secrets(
                                          registry_auth_secret,
-                                         registry_urls=['localhost:30000'],
+                                         registry_urls=[current_app.config['REGISTRY_PULL']],
                                      ).encode()
                                  ).decode(),
         }
@@ -291,7 +291,7 @@ def render_process_container(release, process_name, datadog_tags, with_tls=True,
     pod_class = pod_classes[release.application.process_pod_classes.get(process_name, DEFAULT_POD_CLASS)]
     return kubernetes.client.V1Container(
         name=process_name,
-        image=f'localhost:30000/{release.repository_name}:release-{release.version}',
+        image=f'{current_app.config["REGISTRY_PULL"]}/{release.repository_name}:release-{release.version}',
         image_pull_policy='Always',
         env=[
             kubernetes.client.V1EnvVar(name='VAULT_ADDR', value='https://vault.cabotage.svc.cluster.local'),

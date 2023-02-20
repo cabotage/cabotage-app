@@ -318,7 +318,7 @@ def build_image(tarfileobj, image,
 @shared_task()
 def run_image_build(image_id=None):
     secret = current_app.config['REGISTRY_AUTH_SECRET']
-    registry = current_app.config['REGISTRY']
+    registry = current_app.config['REGISTRY_BUILD']
     object_bucket = current_app.config['MINIO_BUCKET']
     docker_url = current_app.config['DOCKER_URL']
     docker_secure = current_app.config['DOCKER_SECURE']
@@ -389,7 +389,7 @@ def run_image_build(image_id=None):
 def run_release_build(release_id=None):
     try:
         secret = current_app.config['REGISTRY_AUTH_SECRET']
-        registry = current_app.config['REGISTRY']
+        registry = current_app.config['REGISTRY_BUILD']
         object_bucket = current_app.config['MINIO_BUCKET']
         docker_url = current_app.config['DOCKER_URL']
         docker_secure = current_app.config['DOCKER_SECURE']

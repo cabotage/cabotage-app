@@ -536,7 +536,7 @@ def release_detail(release_id):
         abort(404)
     secret = current_app.config['REGISTRY_AUTH_SECRET']
     docker_pull_credentials = release.docker_pull_credentials(secret)
-    image_pull_secrets = release.image_pull_secrets(secret, registry_urls=['localhost:30000'])
+    image_pull_secrets = release.image_pull_secrets(secret, registry_urls=[current_app.config['REGISTRY_PULL'], current_app.config['REGISTRY_BUILD']])
     return render_template('user/release_detail.html', release=release, docker_pull_credentials=docker_pull_credentials, image_pull_secrets=image_pull_secrets)
 
 
