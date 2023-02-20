@@ -223,7 +223,8 @@ class EditApplicationDeployAutomationForm(FlaskForm):
     )
     github_app_installation_id = StringField(
         u'GitHub Application Installation ID',
-        description="Application Installation ID from GitHub"
+        description="Application Installation ID from GitHub",
+        filters = [(lambda x: x.strip() if (x and isinstance(x, str)) else x), (lambda x: x if x else None)]
     )
     github_environment_name = StringField(
         u'GitHub Environment Name',
