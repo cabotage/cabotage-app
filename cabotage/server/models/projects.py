@@ -1,7 +1,7 @@
 import json
 
 from citext import CIText
-from sqlalchemy import text, UniqueConstraint
+from sqlalchemy import CheckConstraint, text, UniqueConstraint
 from sqlalchemy.event import listens_for
 from sqlalchemy.dialects import postgresql
 from sqlalchemy_continuum import make_versioned
@@ -691,7 +691,11 @@ class Image(db.Model, Timestamp):
     )
     build_slug = db.Column(
         db.String(1024),
-        nullable=False,
+        nullable=True,
+    )
+    build_ref = db.Column(
+        db.String(1024),
+        nullable=True,
     )
     dockerfile = db.Column(
         db.Text(),
@@ -717,6 +721,9 @@ class Image(db.Model, Timestamp):
     __mapper_args__ = {
         "version_id_col": version_id
     }
+    __table_args__ = (
+        CheckConstraint('NOT(build_ref IS NULL AND build_slug IS NULL)', name='image_has_build_target'),
+    )
 
     @property
     def asdict(self):

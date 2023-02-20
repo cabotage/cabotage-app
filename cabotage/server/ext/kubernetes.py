@@ -20,7 +20,8 @@ class Kubernetes(object):
             try:
                 kubernetes.config.load_kube_config()
             except Exception:
-                raise
+                if app.config['KUBERNETES_ENABLED']:
+                    raise
 
         app.teardown_appcontext(self.teardown)
 

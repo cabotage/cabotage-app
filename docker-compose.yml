@@ -69,6 +69,15 @@ services:
       - "5001:5001"
     volumes:
       - ./docker-compose/registry:/etc/docker/registry-local
+  cabotage-buildkitd:
+    image: moby/buildkit:rootless
+    command: --addr tcp://0.0.0.0:1234
+    restart: always
+    ports:
+      - "1234:1234"
+    privileged: true
+    volumes:
+      - ./docker-compose/buildkitd:/home/user/.config/buildkit
   cabotage-dind:
     image: docker:dind
     command: --insecure-registry registry:5001
@@ -109,9 +118,11 @@ services:
       - CABOTAGE_GITHUB_APP_ID=
       - CABOTAGE_GITHUB_APP_PRIVATE_KEY=
       - CABOTAGE_GITHUB_WEBHOOK_SECRET=
+      - KUBECONFIG=/var/run/kube/config
+      - CABOTAGE_KUBERNETES_ENABLED=False
     volumes:
       - .:/opt/cabotage-app/src
-      - $HOME/.kube:/root/.kube
+      - $HOME/.kube:/var/run/kube
     ports:
       - "8000:8000"
     links:
@@ -137,9 +148,11 @@ services:
       - CABOTAGE_GITHUB_APP_ID=
       - CABOTAGE_GITHUB_APP_PRIVATE_KEY=
       - CABOTAGE_GITHUB_WEBHOOK_SECRET=
+      - KUBECONFIG=/var/run/kube/config
+      - CABOTAGE_KUBERNETES_ENABLED=False
     volumes:
       - .:/opt/cabotage-app/src
-      - $HOME/.kube:/root/.kube
+      - $HOME/.kube:/var/run/kube
     links:
       - db
       - redis

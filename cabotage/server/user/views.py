@@ -631,6 +631,41 @@ def application_images_build_submit(application_id):
         return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
     return render_template('user/application_images_build_submit.html', form=form, application=application)
 
+@user_blueprint.route('/applications/<application_id>/images/fromsource', methods=['POST'])
+@login_required
+def application_images_build_fromsource(application_id):
+    application = Application.query.filter_by(id=application_id).first()
+    if application is None:
+        abort(404)
+    project = application.project
+    organization = application.project.organization
+
+    organization_slug = organization.slug
+    project_slug = project.slug
+    application_slug = application.slug
+    repository_name = f"cabotage/{organization_slug}/{project_slug}/{application_slug}"
+
+    image = Image(
+        application_id=application.id,
+        repository_name=repository_name,
+        build_ref=application.auto_deploy_branch,
+    )
+    db.session.add(image)
+    db.session.flush()
+    activity = Activity(
+        verb='fromsource',
+        object=image,
+        data={
+            'user_id': str(current_user.id),
+            'timestamp': datetime.datetime.utcnow().isoformat(),
+        }
+    )
+    db.session.add(activity)
+    db.session.commit()
+    run_image_build.delay(image_id=image.id, buildkit=True)
+    return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
+
+
 @user_blueprint.route('/application/<application_id>/scale', methods=['POST'])
 @login_required
 def application_scale(application_id):

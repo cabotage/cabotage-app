@@ -554,8 +554,7 @@ def delete_job(batch_api_instance, namespace, job_object):
         raise DeployError(f'Unexpected exception deleting Job/{job_object.metadata.name} in {namespace}: {exc}')
 
 
-def run_job(core_api_instance, batch_api_instance, namespace, release, service_account_name, process_name):
-    job_object = render_job(namespace, release, service_account_name, process_name)
+def run_job(core_api_instance, batch_api_instance, namespace, job_object):
     try:
         job = batch_api_instance.create_namespaced_job(namespace, job_object)
     except ApiException as exc:
@@ -598,7 +597,8 @@ def deploy_release(deployment):
         )
         for release_command in deployment.release_object.release_commands:
             deploy_log.append(f"Running release command {release_command}")
-            job_complete, job_logs = run_job(core_api_instance, batch_api_instance, namespace.metadata.name, deployment.release_object, service_account.metadata.name, release_command)
+            job_object = render_job(namespace.metadata.name, deployment.release_object, service_account.metadata.name, release_command)
+            job_complete, job_logs = run_job(core_api_instance, batch_api_instance, namespace.metadata.name, job_object)
             deploy_log.append(job_logs)
             if not job_complete:
                 raise DeployError(f'Release command {release_command} failed!')
