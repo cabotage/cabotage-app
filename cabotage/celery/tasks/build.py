@@ -70,7 +70,12 @@ class BuildError(RuntimeError):
 
 RELEASE_DOCKERFILE_TEMPLATE = """
 FROM {registry}/{image.repository_name}:image-{image.version}
-
+COPY --from=hashicorp/envconsul:0.13.1 /bin/envconsul /usr/bin/envconsul
+COPY entrypoint.sh /entrypoint.sh
+{process_commands}
+USER nobody
+ENTRYPOINT ["/entrypoint.sh"]
+CMD []
 """
 
 ENTRYPOINT = """#!/bin/sh
@@ -91,33 +96,14 @@ def build_release(release,
             fd.write(ENTRYPOINT)
         st = os.stat(os.path.join(temp_dir, 'entrypoint.sh'))
         os.chmod(os.path.join(temp_dir, 'entrypoint.sh'), st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+        process_commands = "\n".join([f'COPY envconsul-{process_name}.hcl /etc/cabotage/envconsul-{process_name}.hcl' for process_name in  release.envconsul_configurations])
         with open(os.path.join(temp_dir, 'Dockerfile'), 'a') as fd:
-            fd.write(RELEASE_DOCKERFILE_TEMPLATE.format(registry=registry, image=release.image_object))
-            fd.write(f'COPY envconsul-linux-amd64 /usr/bin/envconsul-linux-amd64\n')
-            fd.write(f'COPY envconsul-linux-arm64 /usr/bin/envconsul-linux-arm64\n')
-            fd.write('RUN case $(uname -m) in \\\n')
-            fd.write('         "x86_64")  ARCH=amd64 ;; \\\n')
-            fd.write('         "aarch64")  ARCH=arm64 ;; \\\n')
-            fd.write('    esac \\\n')
-            fd.write('&& mv /usr/bin/envconsul-linux-${ARCH} /usr/bin/envconsul\n')
-            fd.write(f'COPY entrypoint.sh /entrypoint.sh\n')
-            for process_name in  release.envconsul_configurations:
-                fd.write(f'COPY envconsul-{process_name}.hcl /etc/cabotage/envconsul-{process_name}.hcl\n')
-            fd.write(f'USER nobody\n')
-            fd.write(f'ENTRYPOINT ["/entrypoint.sh"]\n')
-            fd.write(f'CMD []\n')
+            fd.write(RELEASE_DOCKERFILE_TEMPLATE.format(registry=registry, image=release.image_object, process_commands=process_commands))
         with open(os.path.join(temp_dir, 'Dockerfile'), 'r') as release_dockerfile:
             dockerfile_body = release_dockerfile.read()
         release.dockerfile = dockerfile_body
         db.session.commit()
-        shutil.copy(
-            'envconsul-linux-amd64',
-            os.path.join(temp_dir, 'envconsul-linux-amd64'),
-        )
-        shutil.copy(
-            'envconsul-linux-arm64',
-            os.path.join(temp_dir, 'envconsul-linux-arm64'),
-        )
         for process_name, envconsul_configuration in  release.envconsul_configurations.items():
             with open(os.path.join(temp_dir, f'envconsul-{process_name}.hcl'), 'w') as envconsul_config:
                 envconsul_config.write(envconsul_configuration)
