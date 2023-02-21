@@ -420,6 +420,8 @@ def build_image_buildkit(image=None):
         f"type=image,name={registry}/{image.repository_name}:image-{image.version},push=true{insecure_reg}",
     ]
 
+    if buildkitd_ca is not None:
+        buildctl_args.insert(0, '--tlscacert=/home/user/.docker/ca.crt')
 
     if current_app.config['KUBERNETES_ENABLED']:
         job_id = secrets.token_hex(4)
@@ -505,6 +507,11 @@ def build_image_buildkit(image=None):
                 ),
             ),
         )
+
+        if buildkitd_ca is not None:
+            with open(buildkitd_ca, 'rb') as f:
+                secret_object.data['.dockercacrt'] = b64encode(f.read()).decode()
+            job_object.spec.template.spec.volumes[1].secret.items.append(kubernetes.client.V1KeyToPath(key='.dockercacrt', path='ca.crt'))
 
         api_client = kubernetes_ext.kubernetes_client
         core_api_instance = kubernetes.client.CoreV1Api(api_client)
