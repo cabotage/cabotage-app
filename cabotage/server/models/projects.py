@@ -453,7 +453,7 @@ class Release(db.Model, Timestamp):
                 f'  command = {json.dumps(proc["cmd"])}\n'
                  '  env = {\n'
                 f'    custom = {custom_env}\n'
-                 '    blacklist = ["CONSUL_*", "VAULT_*", "KUBERNETES_*"]\n'
+                 '    denylist = ["CONSUL_*", "VAULT_*", "KUBERNETES_*"]\n'
                  '  }\n'
                  '}'
             )
