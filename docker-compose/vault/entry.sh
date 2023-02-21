@@ -29,6 +29,8 @@ else
         echo "vault not up and initialized yet..."
         sleep .5
     done
+    echo "bootstrapping cabotage secret storage"
+    VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID vault secrets enable -path=cabotage-secrets -version=1 kv
     echo "bootstrapping our transit key"
     VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID vault secrets enable transit
     VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID vault write transit/restore/cabotage-app backup=`cat /etc/vault/cabotage-vault-key.backup`
