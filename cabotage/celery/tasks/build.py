@@ -4,6 +4,7 @@ import io
 import json
 import os
 import secrets
+import shlex
 import shutil
 import stat
 import subprocess
@@ -418,6 +419,10 @@ def build_image_buildkit(image=None):
         "--output",
         f"type=image,name={registry}/{image.repository_name}:image-{image.version},push=true{insecure_reg}",
     ]
+
+    for k, v in image.buildargs(config_writer).items():
+        buildctl_args.append('--opt')
+        buildctl_args.append(shlex.quote(f'build-arg:{k}={v}'))
 
     if current_app.config['KUBERNETES_ENABLED']:
         if buildkitd_ca is not None:
