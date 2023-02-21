@@ -120,7 +120,7 @@ services:
       - vault
   cabotage-app-worker:
     build: .
-    command: hupper -m celery -A cabotage.celery.worker.celery worker -E --loglevel=INFO
+    command: hupper -m celery -A cabotage.celery.worker.celery_app worker -E --loglevel=INFO
     environment:
       - C_FORCE_ROOT=1
       - FLASK_APP=cabotage.server.wsgi

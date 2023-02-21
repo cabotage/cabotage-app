@@ -8,12 +8,12 @@ from pathlib import Path
 
 import requests
 
+from celery import shared_task
 from sqlalchemy import and_
 from sqlalchemy.orm.exc import MultipleResultsFound, NoResultFound
 
 from cabotage.server import (
     db,
-    celery,
     github_app,
     minio,
 )
@@ -282,7 +282,7 @@ def process_check_suite_hook(hook):
             push_event.deployed = True
             db.session.commit()
 
-@celery.task()
+@shared_task()
 def process_github_hook(hook_id):
     hook = Hook.query.filter_by(id=hook_id).first()
     event = hook.headers['X-Github-Event']

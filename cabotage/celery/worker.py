@@ -1,5 +1,5 @@
 import os
-from cabotage.server import celery, create_app
+from cabotage.server import create_app
 
 app = create_app()
-app.app_context().push()
+celery_app = app.extensions["celery"]

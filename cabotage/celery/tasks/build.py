@@ -7,6 +7,7 @@ import shutil
 import stat
 import sys
 
+from celery import shared_task
 from contextlib import ExitStack
 from tarfile import (
     TarFile,
@@ -28,7 +29,6 @@ from cabotage.celery.tasks.deploy import run_deploy
 
 from cabotage.server import (
     db,
-    celery,
     github_app,
     minio,
     config_writer,
@@ -304,7 +304,7 @@ def build_image(tarfileobj, image,
         }
 
 
-@celery.task()
+@shared_task()
 def run_image_build(image_id=None):
     secret = current_app.config['REGISTRY_AUTH_SECRET']
     registry = current_app.config['REGISTRY']
@@ -374,7 +374,7 @@ def run_image_build(image_id=None):
         raise
 
 
-@celery.task()
+@shared_task()
 def run_release_build(release_id=None):
     try:
         secret = current_app.config['REGISTRY_AUTH_SECRET']

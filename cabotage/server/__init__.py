@@ -3,7 +3,6 @@ import os
 from flask import Flask, render_template
 from flask_bcrypt import Bcrypt
 from flask_bootstrap import Bootstrap
-from flask_celery import Celery
 from flask_debugtoolbar import DebugToolbarExtension
 from flask_humanize import Humanize
 from flask_mail import Mail
@@ -11,6 +10,8 @@ from flask_migrate import Migrate
 from flask_security import Security, SQLAlchemyUserDatastore
 from flask_sqlalchemy import SQLAlchemy
 
+from celery import Celery
+from celery import Task
 from sqlalchemy import MetaData
 
 from cabotage.server.ext.consul import Consul
@@ -45,9 +46,18 @@ vault_db_creds = VaultDBCreds()
 kubernetes = Kubernetes()
 config_writer = ConfigWriter(consul=consul, vault=vault)
 minio = MinioDriver()
-celery = Celery()
 github_app = GitHubApp()
 
+def celery_init_app(app):
+    class FlaskTask(Task):
+        def __call__(self, *args: object, **kwargs: object) -> object:
+            with app.app_context():
+                return self.run(*args, **kwargs)
+
+    celery_app = Celery(app.name, broker=app.config['CELERY_BROKER_URL'], task_cls=FlaskTask)
+    celery_app.set_default()
+    app.extensions["celery"] = celery_app
+    return celery_app
 
 def create_app():
 
@@ -122,8 +132,8 @@ def create_app():
     kubernetes.init_app(app)
     config_writer.init_app(app, consul, vault)
     minio.init_app(app)
-    celery.init_app(app)
     github_app.init_app(app)
+    celery_init_app(app)
 
     # register blueprints
     from cabotage.server.user.views import user_blueprint

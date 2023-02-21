@@ -7,12 +7,12 @@ from base64 import b64encode
 import kubernetes
 import yaml
 
+from celery import shared_task
 from kubernetes.client.rest import ApiException
 
 from flask import current_app
 
 from cabotage.server import (
-    celery,
     config_writer,
     db,
     github_app,
@@ -680,7 +680,7 @@ def remove_none(obj):
         return obj
 
 
-@celery.task()
+@shared_task()
 def run_deploy(deployment_id=None):
     deployment = Deployment.query.filter_by(id=deployment_id).first()
     if deployment is None:

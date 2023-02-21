@@ -1,4 +1,4 @@
-from cabotage.server import celery
+from celery import shared_task
 
 from .build import (
     run_image_build,
@@ -14,6 +14,6 @@ from .github import (
 )
 
 
-@celery.task()
+@shared_task()
 def is_this_thing_on():
     print('mic check!')
