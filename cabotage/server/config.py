@@ -59,7 +59,6 @@ class Config(metaclass=MetaFlaskEnv):
     DOCKER_SECURE = False
     DOCKER_VERIFY = None
     BUILDKITD_URL = 'tcp://cabotage-buildkitd:1234'
-    BUILDKITD_SECURE = False
     BUILDKITD_VERIFY = None
     MINIO_ENDPOINT = 'minio:9000'
     MINIO_BUCKET = 'cabotage-registry'

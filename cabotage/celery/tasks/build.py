@@ -337,7 +337,6 @@ def build_image_buildkit(image=None):
     registry = current_app.config['REGISTRY_BUILD']
     registry_secure = current_app.config['REGISTRY_SECURE']
     buildkitd_url = docker_url = current_app.config['BUILDKITD_URL']
-    buildkitd_secure = current_app.config['BUILDKITD_SECURE']
     buildkitd_ca = current_app.config['BUILDKITD_VERIFY']
 
     access_token = None
@@ -420,10 +419,9 @@ def build_image_buildkit(image=None):
         f"type=image,name={registry}/{image.repository_name}:image-{image.version},push=true{insecure_reg}",
     ]
 
-    if buildkitd_ca is not None:
-        buildctl_args.insert(0, '--tlscacert=/home/user/.docker/ca.crt')
-
     if current_app.config['KUBERNETES_ENABLED']:
+        if buildkitd_ca is not None:
+            buildctl_args.insert(0, '--tlscacert=/home/user/.docker/ca.crt')
         job_id = secrets.token_hex(4)
         secret_object = kubernetes.client.V1Secret(
             type='kubernetes.io/dockerconfigjson',
@@ -522,20 +520,25 @@ def build_image_buildkit(image=None):
 
         image.image_build_log = job_logs
         db.session.commit()
+        db.session.flush()
         if not job_complete:
             raise BuildError(f'Image build failed!')
-        db.session.commit()
     else:
+        if buildkitd_ca is not None:
+            buildctl_args.insert(0, f'--tlscacert={buildkitd_ca}')
         with TemporaryDirectory() as tempdir:
             os.makedirs(os.path.join(tempdir, '.docker'), exist_ok=True)
             with open(os.path.join(tempdir, '.docker', 'config.json'), 'w') as f:
                 f.write(dockerconfigjson)
-            completed_subprocess = subprocess.run(
-                " ".join(buildctl_command + buildctl_args),
-                env={'BUILDKIT_HOST': buildkitd_url, 'HOME': tempdir},
-                shell=True, cwd="/tmp",
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-            )
+            try:
+                completed_subprocess = subprocess.run(
+                    " ".join(buildctl_command + buildctl_args),
+                    env={'BUILDKIT_HOST': buildkitd_url, 'HOME': tempdir},
+                    shell=True, cwd="/tmp", check=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                )
+            except subprocess.CalledProcessError as exc:
+                raise BuildError(f'Build subprocess failed: {exc}')
         image.image_build_log = " ".join(buildctl_command + buildctl_args) + "\n" + completed_subprocess.stdout
         db.session.commit()
 
@@ -578,14 +581,17 @@ def run_image_build(image_id=None, buildkit=False):
     if image is None:
         raise KeyError(f'Image with ID {image_id} not found!')
 
+    db.session.add(image)
     if buildkit:
         try:
             try:
                 build_metadata = build_image_buildkit(image)
             except BuildError as exc:
+                db.session.add(image)
                 image.error = True
                 image.error_detail = str(exc)
-            db.session.commit()
+                db.session.commit()
+                raise
         except Exception:
             raise
     else:
@@ -612,10 +618,12 @@ def run_image_build(image_id=None, buildkit=False):
                     except BuildError as exc:
                         image.error = True
                         image.error_detail = str(exc)
-            db.session.commit()
+                        db.session.commit()
+                        raise
         except Exception:
             raise
 
+    db.session.add(image)
     image.image_id = build_metadata['image_id']
     image.processes = build_metadata['processes']
     image.built = True
