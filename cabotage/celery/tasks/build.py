@@ -445,6 +445,8 @@ def build_image_buildkit(image=None):
                         'organization': image.application.project.organization.slug,
                         'project': image.application.project.slug,
                         'application': image.application.slug,
+                        'process': 'build',
+                        'build_id': job_id,
                     }
                 ),
                 spec=kubernetes.client.V1JobSpec(
@@ -459,6 +461,7 @@ def build_image_buildkit(image=None):
                                 'project': image.application.project.slug,
                                 'application': image.application.slug,
                                 'process': 'build',
+                                'build_id': job_id,
                             },
                         ),
                         spec=kubernetes.client.V1PodSpec(
@@ -522,7 +525,10 @@ def build_image_buildkit(image=None):
             batch_api_instance = kubernetes.client.BatchV1Api(api_client)
             core_api_instance.create_namespaced_secret('default', secret_object)
 
-            job_complete, job_logs = run_job(core_api_instance, batch_api_instance, 'default', job_object)
+            try:
+                job_complete, job_logs = run_job(core_api_instance, batch_api_instance, 'default', job_object)
+            finally:
+                core_api_instance.delete_namespaced_secret(f'buildkit-registry-auth-{job_id}', 'default', propagation_policy='Foreground')
 
             image.image_build_log = job_logs
             db.session.commit()
