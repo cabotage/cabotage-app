@@ -38,6 +38,7 @@ flask-nav3==0.7.0
 Flask-Principal==0.4.0
 Flask-Script==2.0.6
 Flask-Security==3.0.0
+flask-sock==0.6.0
 Flask-SQLAlchemy==2.5.1
 Flask-Testing==0.8.1
 Flask-WTF==0.15.1

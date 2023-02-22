@@ -552,7 +552,6 @@ def stream_job_logs(namespace, job_name):
     job_object = batch_api_instance.read_namespaced_job(job_name, namespace)
 
     label_selector = ','.join([f'{k}={v}' for k, v in job_object.metadata.labels.items()])
-    logs = {}
     try:
         pods = core_api_instance.list_namespaced_pod(namespace, label_selector=label_selector)
     except ApiException as exc:

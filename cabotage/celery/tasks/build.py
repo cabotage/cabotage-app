@@ -428,11 +428,10 @@ def build_image_buildkit(image=None):
         if current_app.config['KUBERNETES_ENABLED']:
             if buildkitd_ca is not None:
                 buildctl_args.insert(0, '--tlscacert=/home/user/.docker/ca.crt')
-            job_id = secrets.token_hex(4)
             secret_object = kubernetes.client.V1Secret(
                 type='kubernetes.io/dockerconfigjson',
                 metadata=kubernetes.client.V1ObjectMeta(
-                    name=f'buildkit-registry-auth-{job_id}',
+                    name=f'buildkit-registry-auth-{image.build_job_id}',
                 ),
                 data={
                     '.dockerconfigjson': b64encode(dockerconfigjson.encode()).decode(),
@@ -440,13 +439,13 @@ def build_image_buildkit(image=None):
             )
             job_object = kubernetes.client.V1Job(
                 metadata=kubernetes.client.V1ObjectMeta(
-                    name=f'imagebuild-{job_id}',
+                    name=f'imagebuild-{image.build_job_id}',
                     labels={
                         'organization': image.application.project.organization.slug,
                         'project': image.application.project.slug,
                         'application': image.application.slug,
                         'process': 'build',
-                        'build_id': job_id,
+                        'build_id': image.build_job_id,
                     }
                 ),
                 spec=kubernetes.client.V1JobSpec(
@@ -461,7 +460,7 @@ def build_image_buildkit(image=None):
                                 'project': image.application.project.slug,
                                 'application': image.application.slug,
                                 'process': 'build',
-                                'build_id': job_id,
+                                'build_id': image.build_job_id,
                             },
                         ),
                         spec=kubernetes.client.V1PodSpec(
@@ -500,7 +499,7 @@ def build_image_buildkit(image=None):
                                 kubernetes.client.V1Volume(
                                     name="buildkit-registry-auth",
                                     secret=kubernetes.client.V1SecretVolumeSource(
-                                        secret_name=f"buildkit-registry-auth-{job_id}",
+                                        secret_name=f"buildkit-registry-auth-{image.build_job_id}",
                                         items=[
                                             kubernetes.client.V1KeyToPath(
                                                 key='.dockerconfigjson',
@@ -528,7 +527,7 @@ def build_image_buildkit(image=None):
             try:
                 job_complete, job_logs = run_job(core_api_instance, batch_api_instance, 'default', job_object)
             finally:
-                core_api_instance.delete_namespaced_secret(f'buildkit-registry-auth-{job_id}', 'default', propagation_policy='Foreground')
+                core_api_instance.delete_namespaced_secret(f'buildkit-registry-auth-{image.build_job_id}', 'default', propagation_policy='Foreground')
 
             image.image_build_log = job_logs
             db.session.commit()
@@ -596,10 +595,12 @@ def run_image_build(image_id=None, buildkit=False):
     docker_secure = current_app.config['DOCKER_SECURE']
     docker_ca = current_app.config['DOCKER_VERIFY']
     image = Image.query.filter_by(id=image_id).first()
+    image.build_job_id = secrets.token_hex(4)
     if image is None:
         raise KeyError(f'Image with ID {image_id} not found!')
 
     db.session.add(image)
+    db.session.commit()
     if buildkit:
         try:
             try:

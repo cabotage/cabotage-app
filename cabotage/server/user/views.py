@@ -1,6 +1,7 @@
 import collections
 import os
 import datetime
+import time
 
 from flask import (
     Blueprint,
@@ -18,6 +19,8 @@ from flask_security import (
     login_required,
 )
 
+import kubernetes
+
 from sqlalchemy import desc
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy_continuum import version_class
@@ -26,9 +29,10 @@ from cabotage.server import (
     config_writer,
     db,
     github_app,
-    kubernetes,
+    kubernetes as kubernetes_ext,
     minio,
     vault,
+    sock,
 )
 
 from cabotage.server.models.auth import (
@@ -516,6 +520,54 @@ def image_detail(image_id):
     docker_pull_credentials = image.docker_pull_credentials(secret)
     return render_template('user/image_detail.html', image=image, docker_pull_credentials=docker_pull_credentials)
 
+
+@login_required
+@sock.route('/image/<image_id>/livelogs', bp=user_blueprint)
+def image_build_livelogs(ws, image_id):
+    image = Image.query.filter_by(id=image_id).first()
+    if image is None:
+        abort(404)
+    if image.image_build_log is not None:
+        for line in image.image_build_log.split('\n'):
+            ws.send(line)
+        ws.send('=================END OF LOGS=================')
+
+    api_client = kubernetes_ext.kubernetes_client
+    core_api_instance = kubernetes.client.CoreV1Api(api_client)
+    batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+
+    job_name, namespace = (f'imagebuild-{image.build_job_id}', 'default')
+
+    job_object = None
+    while job_object is None:
+        try:
+            job_object = batch_api_instance.read_namespaced_job(job_name, namespace)
+        except kubernetes.client.exceptions.ApiException:
+            time.sleep(.1)
+
+    label_selector = ','.join([f'{k}={v}' for k, v in job_object.metadata.labels.items()])
+    try:
+        pods = core_api_instance.list_namespaced_pod(namespace, label_selector=label_selector)
+    except kubernetes.client.exceptions.ApiException as exc:
+        print(f'Encountered exception: {exc}')
+        return False
+
+    if len(pods.items) != 1:
+        print(f'Found too many pods!')
+        return False
+
+    pod = pods.items[0]
+    while True:
+        pod = core_api_instance.read_namespaced_pod(pod.metadata.name, pod.metadata.namespace)
+        if pod.status.phase == 'Running':
+            break
+        time.sleep(1)
+    w = kubernetes.watch.Watch()
+    for line in w.stream(core_api_instance.read_namespaced_pod_log, name=pod.metadata.name, namespace=namespace, container=job_object.metadata.labels['process'], follow=True, _preload_content=False, pretty="true"):
+        print((line,))
+        ws.send(line)
+
+    ws.send('=================END OF LOGS=================')
 
 @user_blueprint.route('/applications/<application_id>/releases')
 @login_required

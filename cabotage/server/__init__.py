@@ -9,6 +9,7 @@ from flask_mail import Mail
 from flask_migrate import Migrate
 from flask_security import Security, SQLAlchemyUserDatastore
 from flask_sqlalchemy import SQLAlchemy
+from flask_sock import Sock
 
 from celery import Celery
 from celery import Task
@@ -47,6 +48,7 @@ kubernetes = Kubernetes()
 config_writer = ConfigWriter(consul=consul, vault=vault)
 minio = MinioDriver()
 github_app = GitHubApp()
+sock = Sock()
 
 def celery_init_app(app):
     class FlaskTask(Task):
@@ -134,6 +136,7 @@ def create_app():
     minio.init_app(app)
     github_app.init_app(app)
     celery_init_app(app)
+    sock.init_app(app)
 
     # register blueprints
     from cabotage.server.user.views import user_blueprint

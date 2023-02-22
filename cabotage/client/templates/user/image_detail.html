@@ -1,5 +1,25 @@
 {% extends "_base.html" %}
 
+{% block js %}
+<script>
+  var logsPre = document.getElementById('buildLog');
+  if (logsPre.innerHTML == 'None') {
+    var protocol = (window.location.protocol == 'https:') ? 'wss://' : 'ws://';
+    const socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/livelogs');
+    socket.addEventListener('message', ev => {
+      if (ev.data == '=================END OF LOGS=================') {
+          socket.close();
+      }
+      logsPre.innerHTML += '\n' + ev.data;
+    });
+    socket.addEventListener('close', ev => {
+      console.log('<<< closed');
+      setTimeout(() => {window.location.reload()}, 3000);
+    });
+  }
+</script>
+{% endblock %}
+
 {% block content %}
   <div class="container" id="content">
     <div class="row">
@@ -85,6 +105,12 @@
     {% endif %}
     <div class="row">
       <div class="col-md-9">
+        <h3>Build Log</h3>
+        <pre id="buildLog">{{ image.image_build_log }}</pre>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-md-9">
         <h3>Dockerfile</h3>
         <pre>{{ image.dockerfile }}</pre>
       </div>
@@ -99,12 +125,6 @@
       <div class="col-md-9">
         <h3>Metadata</h3>
         <pre>{{ image.image_metadata|pprint }}</pre>
-      </div>
-    </div>
-    <div class="row">
-      <div class="col-md-9">
-        <h3>Build Log</h3>
-        <pre>{{ image.image_build_log }}</pre>
       </div>
     </div>
     <div class="row">

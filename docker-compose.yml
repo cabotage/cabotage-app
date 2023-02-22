@@ -103,7 +103,7 @@ services:
       - miniodata:/export
   cabotage-app:
     build: .
-    command: hupper -m gunicorn.app.wsgiapp -c gunicorn.conf -w 2 -b 0.0.0.0:8000 cabotage.server.wsgi:app
+    command: hupper -m gunicorn.app.wsgiapp -c gunicorn.conf -w 4 --threads 100 -b 0.0.0.0:8000 cabotage.server.wsgi:app
     environment:
       - FLASK_APP=cabotage.server.wsgi
       - CABOTAGE_DEBUG=True
