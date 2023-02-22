@@ -70,6 +70,7 @@ class Config(metaclass=MetaFlaskEnv):
     CELERY_BROKER_URL = 'redis://redis:6379',
     CELERY_RESULT_BACKEND = 'redis://redis:6379'
     KUBERNETES_ENABLED = False
+    KUBERNETES_CONTEXT = 'cabotage'
     GITHUB_APP_ID = None
     GITHUB_APP_PRIVATE_KEY = None
     GITHUB_WEBHOOK_SECRET = None

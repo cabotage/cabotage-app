@@ -120,6 +120,7 @@ services:
       - CABOTAGE_GITHUB_WEBHOOK_SECRET=
       - KUBECONFIG=/var/run/kube/config
       - CABOTAGE_KUBERNETES_ENABLED=False
+      - CABOTAGE_KUBERNETES_CONTEXT=minikube
     volumes:
       - .:/opt/cabotage-app/src
       - $HOME/.kube:/var/run/kube
@@ -150,6 +151,7 @@ services:
       - CABOTAGE_GITHUB_WEBHOOK_SECRET=
       - KUBECONFIG=/var/run/kube/config
       - CABOTAGE_KUBERNETES_ENABLED=False
+      - CABOTAGE_KUBERNETES_CONTEXT=minikube
     volumes:
       - .:/opt/cabotage-app/src
       - $HOME/.kube:/var/run/kube

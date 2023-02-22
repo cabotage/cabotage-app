@@ -18,7 +18,7 @@ class Kubernetes(object):
             kubernetes.config.load_incluster_config()
         except Exception:
             try:
-                kubernetes.config.load_kube_config()
+                kubernetes.config.load_kube_config(context=app.config['KUBERNETES_CONTEXT'])
             except Exception:
                 if app.config['KUBERNETES_ENABLED']:
                     raise
