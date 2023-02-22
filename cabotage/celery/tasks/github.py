@@ -209,6 +209,8 @@ def process_push_hook(hook):
     bearer_token = github_app.bearer_token
     access_token = None
 
+    hook.commit_sha = commit_sha
+
     applications = Application.query.filter(and_(
         Application.auto_deploy_branch.in_(branch_names),
         Application.github_app_installation_id == installation_id,
@@ -217,8 +219,6 @@ def process_push_hook(hook):
     if len(applications) == 0:
         print(f'could not find application! installation_id: {installation_id}, repository_name: {repository_name}, branches: {branch_names}')
         return False
-
-    hook.commit_sha = commit_sha
 
 
 def process_check_suite_hook(hook):
