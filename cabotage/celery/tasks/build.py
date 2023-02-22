@@ -424,147 +424,154 @@ def build_image_buildkit(image=None):
         buildctl_args.append('--opt')
         buildctl_args.append(shlex.quote(f'build-arg:{k}={v}'))
 
-    if current_app.config['KUBERNETES_ENABLED']:
-        if buildkitd_ca is not None:
-            buildctl_args.insert(0, '--tlscacert=/home/user/.docker/ca.crt')
-        job_id = secrets.token_hex(4)
-        secret_object = kubernetes.client.V1Secret(
-            type='kubernetes.io/dockerconfigjson',
-            metadata=kubernetes.client.V1ObjectMeta(
-                name=f'buildkit-registry-auth-{job_id}',
-            ),
-            data={
-                '.dockerconfigjson': b64encode(dockerconfigjson.encode()).decode(),
-            }
-        )
-        job_object = kubernetes.client.V1Job(
-            metadata=kubernetes.client.V1ObjectMeta(
-                name=f'imagebuild-{job_id}',
-                labels={
-                    'organization': image.application.project.organization.slug,
-                    'project': image.application.project.slug,
-                    'application': image.application.slug,
+    try:
+        if current_app.config['KUBERNETES_ENABLED']:
+            if buildkitd_ca is not None:
+                buildctl_args.insert(0, '--tlscacert=/home/user/.docker/ca.crt')
+            job_id = secrets.token_hex(4)
+            secret_object = kubernetes.client.V1Secret(
+                type='kubernetes.io/dockerconfigjson',
+                metadata=kubernetes.client.V1ObjectMeta(
+                    name=f'buildkit-registry-auth-{job_id}',
+                ),
+                data={
+                    '.dockerconfigjson': b64encode(dockerconfigjson.encode()).decode(),
                 }
-            ),
-            spec=kubernetes.client.V1JobSpec(
-                active_deadline_seconds=1800,
-                backoff_limit=0,
-                parallelism=1,
-                completions=1,
-                template=kubernetes.client.V1PodTemplateSpec(
-                    metadata=kubernetes.client.V1ObjectMeta(
-                        labels={
-                            'organization': image.application.project.organization.slug,
-                            'project': image.application.project.slug,
-                            'application': image.application.slug,
-                            'process': 'build',
-                        },
-                    ),
-                    spec=kubernetes.client.V1PodSpec(
-                        restart_policy="Never",
-                        containers=[
-                            kubernetes.client.V1Container(
-                                name="build",
-                                image="moby/buildkit:v0.11.3-rootless",
-                                command=buildctl_command,
-                                args=buildctl_args,
-                                env=[
-                                    kubernetes.client.V1EnvVar(name="BUILDKIT_HOST", value=buildkitd_url),
-                                ],
-                                security_context=kubernetes.client.V1SecurityContext(
-                                    allow_privilege_escalation=False,
-                                    run_as_user=1000,
-                                    run_as_group=1000,
-                                ),
-                                volume_mounts=[
-                                    kubernetes.client.V1VolumeMount(
-                                        mount_path="/home/user/.local/share/buildkit",
-                                        name="buildkitd",
+            )
+            job_object = kubernetes.client.V1Job(
+                metadata=kubernetes.client.V1ObjectMeta(
+                    name=f'imagebuild-{job_id}',
+                    labels={
+                        'organization': image.application.project.organization.slug,
+                        'project': image.application.project.slug,
+                        'application': image.application.slug,
+                    }
+                ),
+                spec=kubernetes.client.V1JobSpec(
+                    active_deadline_seconds=1800,
+                    backoff_limit=0,
+                    parallelism=1,
+                    completions=1,
+                    template=kubernetes.client.V1PodTemplateSpec(
+                        metadata=kubernetes.client.V1ObjectMeta(
+                            labels={
+                                'organization': image.application.project.organization.slug,
+                                'project': image.application.project.slug,
+                                'application': image.application.slug,
+                                'process': 'build',
+                            },
+                        ),
+                        spec=kubernetes.client.V1PodSpec(
+                            restart_policy="Never",
+                            containers=[
+                                kubernetes.client.V1Container(
+                                    name="build",
+                                    image="moby/buildkit:v0.11.3-rootless",
+                                    command=buildctl_command,
+                                    args=buildctl_args,
+                                    env=[
+                                        kubernetes.client.V1EnvVar(name="BUILDKIT_HOST", value=buildkitd_url),
+                                    ],
+                                    security_context=kubernetes.client.V1SecurityContext(
+                                        allow_privilege_escalation=False,
+                                        run_as_user=1000,
+                                        run_as_group=1000,
                                     ),
-                                    kubernetes.client.V1VolumeMount(
-                                        mount_path="/home/user/.docker",
-                                        name="buildkit-registry-auth",
-                                    ),
-                                ]
-                            ),
-                        ],
-                        volumes=[
-                            kubernetes.client.V1Volume(
-                                name="buildkitd",
-                                empty_dir=kubernetes.client.V1EmptyDirVolumeSource(),
-                            ),
-                            kubernetes.client.V1Volume(
-                                name="buildkit-registry-auth",
-                                secret=kubernetes.client.V1SecretVolumeSource(
-                                    secret_name=f"buildkit-registry-auth-{job_id}",
-                                    items=[
-                                        kubernetes.client.V1KeyToPath(
-                                            key='.dockerconfigjson',
-                                            path='config.json',
+                                    volume_mounts=[
+                                        kubernetes.client.V1VolumeMount(
+                                            mount_path="/home/user/.local/share/buildkit",
+                                            name="buildkitd",
+                                        ),
+                                        kubernetes.client.V1VolumeMount(
+                                            mount_path="/home/user/.docker",
+                                            name="buildkit-registry-auth",
                                         ),
                                     ]
-                                )
-                            ),
-                        ]
+                                ),
+                            ],
+                            volumes=[
+                                kubernetes.client.V1Volume(
+                                    name="buildkitd",
+                                    empty_dir=kubernetes.client.V1EmptyDirVolumeSource(),
+                                ),
+                                kubernetes.client.V1Volume(
+                                    name="buildkit-registry-auth",
+                                    secret=kubernetes.client.V1SecretVolumeSource(
+                                        secret_name=f"buildkit-registry-auth-{job_id}",
+                                        items=[
+                                            kubernetes.client.V1KeyToPath(
+                                                key='.dockerconfigjson',
+                                                path='config.json',
+                                            ),
+                                        ]
+                                    )
+                                ),
+                            ]
+                        ),
                     ),
                 ),
-            ),
-        )
+            )
 
-        if buildkitd_ca is not None:
-            with open(buildkitd_ca, 'rb') as f:
-                secret_object.data['.dockercacrt'] = b64encode(f.read()).decode()
-            job_object.spec.template.spec.volumes[1].secret.items.append(kubernetes.client.V1KeyToPath(key='.dockercacrt', path='ca.crt'))
+            if buildkitd_ca is not None:
+                with open(buildkitd_ca, 'rb') as f:
+                    secret_object.data['.dockercacrt'] = b64encode(f.read()).decode()
+                job_object.spec.template.spec.volumes[1].secret.items.append(kubernetes.client.V1KeyToPath(key='.dockercacrt', path='ca.crt'))
 
-        api_client = kubernetes_ext.kubernetes_client
-        core_api_instance = kubernetes.client.CoreV1Api(api_client)
-        batch_api_instance = kubernetes.client.BatchV1Api(api_client)
-        core_api_instance.create_namespaced_secret('default', secret_object)
+            api_client = kubernetes_ext.kubernetes_client
+            core_api_instance = kubernetes.client.CoreV1Api(api_client)
+            batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+            core_api_instance.create_namespaced_secret('default', secret_object)
 
-        job_complete, job_logs = run_job(core_api_instance, batch_api_instance, 'default', job_object)
+            job_complete, job_logs = run_job(core_api_instance, batch_api_instance, 'default', job_object)
 
-        image.image_build_log = job_logs
-        db.session.commit()
-        db.session.flush()
-        if not job_complete:
-            raise BuildError(f'Image build failed!')
-    else:
-        if buildkitd_ca is not None:
-            buildctl_args.insert(0, f'--tlscacert={buildkitd_ca}')
-        with TemporaryDirectory() as tempdir:
-            os.makedirs(os.path.join(tempdir, '.docker'), exist_ok=True)
-            with open(os.path.join(tempdir, '.docker', 'config.json'), 'w') as f:
-                f.write(dockerconfigjson)
-            try:
-                completed_subprocess = subprocess.run(
-                    " ".join(buildctl_command + buildctl_args),
-                    env={'BUILDKIT_HOST': buildkitd_url, 'HOME': tempdir},
-                    shell=True, cwd="/tmp", check=True,
-                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                )
-            except subprocess.CalledProcessError as exc:
-                raise BuildError(f'Build subprocess failed: {exc}')
-        image.image_build_log = " ".join(buildctl_command + buildctl_args) + "\n" + completed_subprocess.stdout
-        db.session.commit()
+            image.image_build_log = job_logs
+            db.session.commit()
+            db.session.flush()
+            if not job_complete:
+                raise BuildError(f'Image build failed!')
+        else:
+            if buildkitd_ca is not None:
+                buildctl_args.insert(0, f'--tlscacert={buildkitd_ca}')
+            with TemporaryDirectory() as tempdir:
+                os.makedirs(os.path.join(tempdir, '.docker'), exist_ok=True)
+                with open(os.path.join(tempdir, '.docker', 'config.json'), 'w') as f:
+                    f.write(dockerconfigjson)
+                try:
+                    completed_subprocess = subprocess.run(
+                        " ".join(buildctl_command + buildctl_args),
+                        env={'BUILDKIT_HOST': buildkitd_url, 'HOME': tempdir},
+                        shell=True, cwd="/tmp", check=True,
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                    )
+                except subprocess.CalledProcessError as exc:
+                    raise BuildError(f'Build subprocess failed: {exc}')
+            image.image_build_log = " ".join(buildctl_command + buildctl_args) + "\n" + completed_subprocess.stdout
+            db.session.commit()
+    except Exception as exc:
+        raise BuildError(f'Build failed: {exc}')
 
     def auth(dxf, response):
         dxf.token = generate_docker_registry_jwt(access=[{"type": "repository", "name": image.repository_name, "actions": ["pull"]}])
 
-    _tlsverify = False
-    if registry_secure:
-        _tlsverify = current_app.config['REGISTRY_VERIFY']
-        if _tlsverify == 'True':
-            _tlsverify = True
-    client = DXF(
-        host=registry,
-        repo=image.repository_name,
-        auth=auth,
-        insecure=(not registry_secure),
-        tlsverify=_tlsverify,
-    )
-    pushed_image = client.get_digest(
-        f'image-{image.version}'
-    )
+    try:
+        _tlsverify = False
+        if registry_secure:
+            _tlsverify = current_app.config['REGISTRY_VERIFY']
+            if _tlsverify == 'True':
+                _tlsverify = True
+        client = DXF(
+            host=registry,
+            repo=image.repository_name,
+            auth=auth,
+            insecure=(not registry_secure),
+            tlsverify=_tlsverify,
+        )
+        pushed_image = client.get_digest(
+            f'image-{image.version}'
+        )
+    except Exception as exc:
+        raise BuildError(f'Image push failed: {exc}')
+
     return {
         'image_id': pushed_image,
         'processes': processes,
