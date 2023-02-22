@@ -570,7 +570,7 @@ def application_release_create(application_id):
     db.session.add(activity)
     db.session.commit()
     run_release_build.delay(release_id=release.id)
-    return redirect(url_for('user.project_application', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug))
+    return redirect(url_for('user.release_detail', release_id=release.id))
 
 
 @user_blueprint.route('/docker/auth')
@@ -628,6 +628,7 @@ def application_images_build_submit(application_id):
             db.session.add(activity)
             db.session.commit()
             run_image_build.delay(image_id=image.id)
+            return redirect(url_for('user.image_detail', image_id=image.id))
         return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
     return render_template('user/application_images_build_submit.html', form=form, application=application)
 
@@ -663,7 +664,7 @@ def application_images_build_fromsource(application_id):
     db.session.add(activity)
     db.session.commit()
     run_image_build.delay(image_id=image.id, buildkit=True)
-    return redirect(url_for('user.project_application', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug))
+    return redirect(url_for('user.image_detail', image_id=image.id))
 
 
 @user_blueprint.route('/application/<application_id>/scale', methods=['POST'])
