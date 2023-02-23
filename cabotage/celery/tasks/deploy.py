@@ -543,34 +543,6 @@ def fetch_job_logs(core_api_instance, namespace, job_object):
             log_string += f"  {log_line}\n"
     return log_string
 
-@shared_task()
-def stream_job_logs(namespace, job_name):
-    api_client = kubernetes_ext.kubernetes_client
-    core_api_instance = kubernetes.client.CoreV1Api(api_client)
-    batch_api_instance = kubernetes.client.BatchV1Api(api_client)
-
-    job_object = batch_api_instance.read_namespaced_job(job_name, namespace)
-
-    label_selector = ','.join([f'{k}={v}' for k, v in job_object.metadata.labels.items()])
-    try:
-        pods = core_api_instance.list_namespaced_pod(namespace, label_selector=label_selector)
-    except ApiException as exc:
-        print(f'Encountered exception: {exc}')
-        return False
-
-    if len(pods.items) != 1:
-        print(f'Found too many pods!')
-        return False
-
-    pod = pods.items[0]
-    while True:
-        pod = core_api_instance.read_namespaced_pod(pod.metadata.name, pod.metadata.namespace)
-        if pod.status.phase == 'Running':
-            break
-        time.sleep(1)
-    w = kubernetes.watch.Watch()
-    for line in w.stream(core_api_instance.read_namespaced_pod_log, name=pod.metadata.name, namespace=namespace, container=job_object.metadata.labels['process'], follow=True, _preload_content=False):
-        print(line)
 
 def delete_job(batch_api_instance, namespace, job_object):
     try:
@@ -587,8 +559,6 @@ def run_job(core_api_instance, batch_api_instance, namespace, job_object):
         job = batch_api_instance.create_namespaced_job(namespace, job_object)
     except ApiException as exc:
         raise DeployError(f'Unexpected exception creating Job/{job_object.metadata.name} in {namespace}: {exc}')
-
-    stream_job_logs.delay(namespace, job_object.metadata.name)
 
     try:
         while True:

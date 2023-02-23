@@ -542,8 +542,9 @@ def image_build_livelogs(ws, image_id):
     while job_object is None:
         try:
             job_object = batch_api_instance.read_namespaced_job(job_name, namespace)
-        except kubernetes.client.exceptions.ApiException:
-            time.sleep(.1)
+        except kubernetes.client.exceptions.ApiException as exc:
+            print('pod not ready yet... {exc}')
+        time.sleep(.25)
 
     label_selector = ','.join([f'{k}={v}' for k, v in job_object.metadata.labels.items()])
     try:
@@ -564,7 +565,6 @@ def image_build_livelogs(ws, image_id):
         time.sleep(1)
     w = kubernetes.watch.Watch()
     for line in w.stream(core_api_instance.read_namespaced_pod_log, name=pod.metadata.name, namespace=namespace, container=job_object.metadata.labels['process'], follow=True, _preload_content=False, pretty="true"):
-        print((line,))
         ws.send(line)
 
     ws.send('=================END OF LOGS=================')
