@@ -595,8 +595,9 @@ def image_build_livelogs(ws, image_id):
     if image is None or image.error:
         abort(404)
     if image.image_build_log is not None:
+        ws.send(f'Job Pod imagebuild-{image.build_job_id}')
         for line in image.image_build_log.split('\n'):
-            ws.send(line)
+            ws.send(f'  {line}')
         ws.send('=================END OF LOGS=================')
 
     api_client = kubernetes_ext.kubernetes_client
@@ -630,9 +631,10 @@ def image_build_livelogs(ws, image_id):
         if pod.status.phase == 'Running':
             break
         time.sleep(1)
+    ws.send(f'Job Pod imagebuild-{image.build_job_id}')
     w = kubernetes.watch.Watch()
     for line in w.stream(core_api_instance.read_namespaced_pod_log, name=pod.metadata.name, namespace=namespace, container=job_object.metadata.labels['process'], follow=True, _preload_content=False, pretty="true"):
-        ws.send(line)
+        ws.send(f'  {line}')
 
     ws.send('=================END OF LOGS=================')
 
