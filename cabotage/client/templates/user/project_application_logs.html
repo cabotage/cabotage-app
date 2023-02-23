@@ -4,6 +4,20 @@
 <script>
   var autoScroll = true;
   var logsPre = document.getElementById('appLogs');
+  var paused = false;
+
+  function appendLog(data) {
+    logsPre.innerHTML += '\n' + renderLogLine(data);
+    console.log(logsPre.childElementCount)
+    while (logsPre.childElementCount > 1000) {
+      logsPre.removeChild(logsPre.firstChild);
+    }
+    if (autoScroll) {
+      scrollToBottom();
+    }
+  }
+
+  var backLog = [];
   if (logsPre.innerHTML == '') {
     var protocol = (window.location.protocol == 'https:') ? 'wss://' : 'ws://';
     const socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/live');
@@ -11,9 +25,13 @@
       if (ev.data == '=================END OF LOGS=================') {
           socket.close();
       }
-      logsPre.innerHTML += '\n' + ev.data;
-      if (autoScroll) {
-        scrollToBottom();
+      if (paused) {
+        backLog.push(ev.data);
+        while (backLog.length > 1000) {
+          backLog.shift();
+        }
+      } else {
+        appendLog(ev.data);
       }
     });
     socket.addEventListener('close', ev => {
@@ -21,9 +39,25 @@
       setTimeout(() => {window.location.reload()}, 3000);
     });
   }
+  function stringToColor(str) {
+    var hash = 0;
+    for (var i = 0; i < str.length; i++) {
+      hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    var colour = '#';
+    for (var i = 0; i < 3; i++) {
+      var value = (hash >> (i * 8)) & 0xFF;
+      colour += ('00' + value.toString(16)).substr(-2);
+    }
+    return colour;
+  }
+  function renderLogLine(logLine) {
+    var logArray = logLine.split(" ");
+    return '<span style="color:' + stringToColor(logArray[0]) + '">' + logLine + '</span>';
+  }
   function scrollToBottom() {
     var scrollAnchor = document.getElementById('scroll-anchor');
-    scrollAnchor.scrollIntoView({ behavior: "smooth", block: "end" });
+    scrollAnchor.scrollIntoView({ block: "end" });
   }
   function toggleAutoScroll() {
     autoScroll = !autoScroll;
@@ -37,6 +71,20 @@
         scrollToBottomButton.style.visibility = 'visible';
     }
   }
+  function togglePaused() {
+    paused = !paused;
+    var togglePausedButton = document.getElementById('togglePausedButton');
+    if (paused) {
+      togglePausedButton.innerHTML = "Resume logs";
+      appendLog('**** paused ****');
+    } else {
+      appendLog('**** resumed ****');
+      while (backLog.length > 0) {
+        appendLog(backLog.shift());
+      }
+      togglePausedButton.innerHTML = "Pause logs";
+    }
+  }
 </script>
 {% endblock %}
 
@@ -44,6 +92,9 @@
   <div class="container" id="content">
     <div class="row">
       <button onclick="toggleAutoScroll()" id="toggleAutoScrollButton">Disable Auto-scroll</button>
+    </div>
+    <div class="row">
+      <button onclick="togglePaused()" id="togglePausedButton">Pause logs</button>
     </div>
     <div class="row">
       <div class="col-12">
