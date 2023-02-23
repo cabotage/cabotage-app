@@ -1,0 +1,35 @@
+{% extends "_base.html" %}
+
+{% block js %}
+<script>
+  var logsPre = document.getElementById('appLogs');
+  if (logsPre.innerHTML == '') {
+    var protocol = (window.location.protocol == 'https:') ? 'wss://' : 'ws://';
+    const socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/live');
+    socket.addEventListener('message', ev => {
+      if (ev.data == '=================END OF LOGS=================') {
+          socket.close();
+      }
+      logsPre.innerHTML += '\n' + ev.data;
+      var scrollAnchor = document.getElementById('scroll-anchor');
+      scrollAnchor.scrollIntoView({ behavior: "smooth", block: "end" });
+    });
+    socket.addEventListener('close', ev => {
+      console.log('<<< closed');
+      setTimeout(() => {window.location.reload()}, 3000);
+    });
+  }
+</script>
+{% endblock %}
+
+{% block content %}
+  <div class="container" id="content">
+    <div class="row">
+      <div class="col-12">
+        <pre style="height: 85vh;">
+          <div id="appLogs"></div>
+          <div id="scroll-anchor"></div>
+        </pre>
+      </div>
+    </div>
+{% endblock %}

@@ -21,9 +21,11 @@
             </div>
           </div>
         </form>
+        <br>
         {% endif %}
         <div>
-          <a href="{{ url_for('user.project_application_deployment_automation', application_id=application.id) }}" class="btn btn-primary pull-right">{% if application.github_app_installation_id %}<span style="margin-right: 5px;" class="glyphicon glyphicon glyphicon-ok-sign"></span>{% endif %}Deploy Automation</a>
+          <a href="{{ url_for('user.project_application_deployment_automation', application_id=application.id) }}" class="btn btn-primary pull-right">{% if application.github_app_installation_id %}<span style="padding-right: 5px;" class="glyphicon glyphicon glyphicon-ok-sign"></span>{% endif %}Deploy Automation</a>
+          <a href="{{ url_for('user.project_application_logs', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}" class="btn btn-primary">Logs</a>
         </div>
       </div>
     </div>

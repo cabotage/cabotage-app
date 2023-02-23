@@ -245,7 +245,14 @@ def project_application(org_slug, project_slug, app_slug):
         pod_class_info=pod_class_info,
     )
 
-@sock.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/livelogs', bp=user_blueprint)
+@user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/logs')
+@login_required
+def project_application_logs(org_slug, project_slug, app_slug):
+    return render_template('user/project_application_logs.html', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug)
+
+
+@sock.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/logs/live', bp=user_blueprint)
+@login_required
 def project_application_livelogs(ws, org_slug, project_slug, app_slug):
     organization = Organization.query.filter_by(slug=org_slug).first()
     if organization is None:
@@ -582,8 +589,8 @@ def image_detail(image_id):
     return render_template('user/image_detail.html', image=image, docker_pull_credentials=docker_pull_credentials)
 
 
-@login_required
 @sock.route('/image/<image_id>/livelogs', bp=user_blueprint)
+@login_required
 def image_build_livelogs(ws, image_id):
     image = Image.query.filter_by(id=image_id).first()
     if image is None:
