@@ -2,6 +2,7 @@
 
 {% block js %}
 <script>
+  var autoScroll = true;
   var logsPre = document.getElementById('appLogs');
   if (logsPre.innerHTML == '') {
     var protocol = (window.location.protocol == 'https:') ? 'wss://' : 'ws://';
@@ -11,13 +12,30 @@
           socket.close();
       }
       logsPre.innerHTML += '\n' + ev.data;
-      var scrollAnchor = document.getElementById('scroll-anchor');
-      scrollAnchor.scrollIntoView({ behavior: "smooth", block: "end" });
+      if (autoScroll) {
+        scrollToBottom();
+      }
     });
     socket.addEventListener('close', ev => {
       console.log('<<< closed');
       setTimeout(() => {window.location.reload()}, 3000);
     });
+  }
+  function scrollToBottom() {
+    var scrollAnchor = document.getElementById('scroll-anchor');
+    scrollAnchor.scrollIntoView({ behavior: "smooth", block: "end" });
+  }
+  function toggleAutoScroll() {
+    autoScroll = !autoScroll;
+    var toggleAutoScrollButton = document.getElementById('toggleAutoScrollButton');
+    var scrollToBottomButton = document.getElementById('scrollToBottomButton');
+    if (autoScroll) {
+        toggleAutoScrollButton.innerHTML = 'Disable auto-scroll';
+        scrollToBottomButton.style.visibility = 'hidden';
+    } else {
+        toggleAutoScrollButton.innerHTML = 'Enable auto-scroll';
+        scrollToBottomButton.style.visibility = 'visible';
+    }
   }
 </script>
 {% endblock %}
@@ -25,11 +43,17 @@
 {% block content %}
   <div class="container" id="content">
     <div class="row">
+      <button onclick="toggleAutoScroll()" id="toggleAutoScrollButton">Disable Auto-scroll</button>
+    </div>
+    <div class="row">
       <div class="col-12">
         <pre style="height: 85vh;">
           <div id="appLogs"></div>
           <div id="scroll-anchor"></div>
         </pre>
       </div>
+    </div>
+    <div class="row">
+      <button onclick="scrollToBottom()" id="scrollToBottomButton" style="visibility: hidden">Scroll to bottom</button>
     </div>
 {% endblock %}
