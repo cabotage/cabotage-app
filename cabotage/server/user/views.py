@@ -285,14 +285,11 @@ def project_application_livelogs(ws, org_slug, project_slug, app_slug):
         pod_watch = kubernetes.watch.Watch()
         for response in pod_watch.stream(core_api_instance.list_namespaced_pod, namespace=organization.slug, label_selector=label_selector):
             pod = response['object']
-            if response['type'] == "ADDED" and pod.status.phase == "Running":
-                w = kubernetes.watch.Watch()
-                stream_handler = w.stream(core_api_instance.read_namespaced_pod_log, name=pod.metadata.name, namespace=pod.metadata.namespace, container=pod.metadata.labels['process'], follow=True, _preload_content=False, pretty="true", timestamps=True, tail_lines=10)
-                thread = threading.Thread(target=worker, args=(pod.metadata.name.lstrip(f'{organization.slug}-{application.slug}-'), stream_handler), daemon=True)
-                worker_threads[pod.metadata.name] = thread
-                q.put(f'started following {pod.metadata.name}...')
-                thread.start()
-            if response['type'] == "MODIFIED" and pod.status.phase == "Running" and pod.metadata.name not in worker_threads.keys():
+            create = (
+                (response['type'] == "ADDED" and pod.status.phase == "Running") or
+                (response['type'] == "MODIFIED" and pod.status.phase == "Running" and pod.metadata.name not in worker_threads.keys())
+            )
+            if create:
                 w = kubernetes.watch.Watch()
                 stream_handler = w.stream(core_api_instance.read_namespaced_pod_log, name=pod.metadata.name, namespace=pod.metadata.namespace, container=pod.metadata.labels['process'], follow=True, _preload_content=False, pretty="true", timestamps=True, tail_lines=10)
                 thread = threading.Thread(target=worker, args=(pod.metadata.name.lstrip(f'{organization.slug}-{application.slug}-'), stream_handler), daemon=True)
