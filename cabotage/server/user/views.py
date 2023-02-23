@@ -2,6 +2,8 @@ import collections
 import os
 import datetime
 import time
+import threading
+import queue
 
 from flask import (
     Blueprint,
@@ -242,6 +244,65 @@ def project_application(org_slug, project_slug, app_slug):
         pod_classes=pod_classes,
         pod_class_info=pod_class_info,
     )
+
+@sock.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/livelogs', bp=user_blueprint)
+def project_application_livelogs(ws, org_slug, project_slug, app_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first()
+    if organization is None:
+        abort(404)
+    project = Project.query.filter_by(organization_id=organization.id, slug=project_slug).first()
+    if project is None:
+        abort(404)
+    application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
+    if application is None:
+        abort(404)
+
+    api_client = kubernetes_ext.kubernetes_client
+    core_api_instance = kubernetes.client.CoreV1Api(api_client)
+
+    labels = {
+        'organization': organization.slug,
+        'project': project.slug,
+        'application': application.slug,
+    }
+    label_selector = ','.join([f'{k}={v}' for k, v in labels.items()])
+
+    q = queue.Queue()
+
+    def worker(pod_name, stream_handler):
+        for line in stream_handler:
+            q.put(f'{pod_name}: {line}')
+
+    def update_pods():
+        worker_threads = {}
+        while True:
+            try:
+                pods = core_api_instance.list_namespaced_pod(organization.slug, label_selector=label_selector)
+            except kubernetes.client.exceptions.ApiException as exc:
+                print(f'Encountered exception: {exc}')
+
+            for pod in [p for p in pods.items if p.status.phase == "Running"]:
+                if pod.metadata.name not in worker_threads.keys():
+                    w = kubernetes.watch.Watch()
+                    stream_handler = w.stream(core_api_instance.read_namespaced_pod_log, name=pod.metadata.name, namespace=pod.metadata.namespace, container=pod.metadata.labels['process'], follow=True, _preload_content=False, pretty="true", timestamps=True, tail_lines=10)
+                    thread = threading.Thread(target=worker, args=(pod.metadata.name.lstrip(f'{organization.slug}-{application.slug}-'), stream_handler), daemon=True)
+                    worker_threads[pod.metadata.name] = thread
+                    q.put(f'{pod.metadata.name} started...')
+                    thread.start()
+            for pod in pods.items:
+                if pod.metadata.name in worker_threads.keys() and not worker_threads[pod.metadata.name].is_alive():
+                    worker_threads[pod.metadata.name].join()
+                    q.put(f'{pod.metadata.name} terminated...')
+                    del(worker_threads[pod.metadata.name])
+                    continue
+
+            time.sleep(1)
+
+    update_thread = threading.Thread(target=update_pods, daemon=True)
+    update_thread.start()
+
+    while True:
+        ws.send(q.get())
 
 
 @user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/create', methods=["GET", "POST"])
