@@ -5,8 +5,12 @@
   var autoScroll = true;
   var logsPre = document.getElementById('appLogs');
   var paused = false;
+  var filterKubeProbe = true;
 
   function appendLog(data) {
+    if (/"kube-probe\/\d+.\d+"/.test(data) && filterKubeProbe) {
+      return
+    }
     logsPre.innerHTML += '\n' + renderLogLine(data);
     console.log(logsPre.childElementCount)
     while (logsPre.childElementCount > 1000) {
@@ -59,6 +63,15 @@
     var scrollAnchor = document.getElementById('scroll-anchor');
     scrollAnchor.scrollIntoView({ block: "end" });
   }
+  function toggleKubeProbe() {
+    filterKubeProbe = !filterKubeProbe;
+    var toggleKubeProbeButton = document.getElementById('toggleKubeProbeButton');
+    if (filterKubeProbe) {
+      toggleKubeProbeButton.innerHTML = "Show kube-probe requests";
+    } else {
+      toggleKubeProbeButton.innerHTML = "Hide kube-probe requests";
+    }
+  }
   function toggleAutoScroll() {
     autoScroll = !autoScroll;
     var toggleAutoScrollButton = document.getElementById('toggleAutoScrollButton');
@@ -95,6 +108,9 @@
     </div>
     <div class="row">
       <button onclick="togglePaused()" id="togglePausedButton">Pause logs</button>
+    </div>
+    <div class="row">
+      <button onclick="toggleKubeProbe()" id="toggleKubeProbeButton">Show kube-probe requests</button>
     </div>
     <div class="row">
       <div class="col-12">
