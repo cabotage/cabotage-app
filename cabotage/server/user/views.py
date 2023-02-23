@@ -275,28 +275,28 @@ def project_application_livelogs(ws, org_slug, project_slug, app_slug):
 
     def update_pods():
         worker_threads = {}
-        while True:
-            try:
-                pods = core_api_instance.list_namespaced_pod(organization.slug, label_selector=label_selector)
-            except kubernetes.client.exceptions.ApiException as exc:
-                print(f'Encountered exception: {exc}')
-
-            for pod in [p for p in pods.items if p.status.phase == "Running"]:
-                if pod.metadata.name not in worker_threads.keys():
-                    w = kubernetes.watch.Watch()
-                    stream_handler = w.stream(core_api_instance.read_namespaced_pod_log, name=pod.metadata.name, namespace=pod.metadata.namespace, container=pod.metadata.labels['process'], follow=True, _preload_content=False, pretty="true", timestamps=True, tail_lines=10)
-                    thread = threading.Thread(target=worker, args=(pod.metadata.name.lstrip(f'{organization.slug}-{application.slug}-'), stream_handler), daemon=True)
-                    worker_threads[pod.metadata.name] = thread
-                    q.put(f'{pod.metadata.name} started...')
-                    thread.start()
-            for pod in pods.items:
+        pod_watch = kubernetes.watch.Watch()
+        for response in pod_watch.stream(core_api_instance.list_namespaced_pod, namespace=organization.slug, label_selector=label_selector):
+            pod = response['object']
+            if response['type'] == "ADDED" and pod.status.phase == "Running":
+                w = kubernetes.watch.Watch()
+                stream_handler = w.stream(core_api_instance.read_namespaced_pod_log, name=pod.metadata.name, namespace=pod.metadata.namespace, container=pod.metadata.labels['process'], follow=True, _preload_content=False, pretty="true", timestamps=True, tail_lines=10)
+                thread = threading.Thread(target=worker, args=(pod.metadata.name.lstrip(f'{organization.slug}-{application.slug}-'), stream_handler), daemon=True)
+                worker_threads[pod.metadata.name] = thread
+                q.put(f'started following {pod.metadata.name}...')
+                thread.start()
+            if response['type'] == "MODIFIED" and pod.status.phase == "Running" and pod.metadata.name not in worker_threads.keys():
+                w = kubernetes.watch.Watch()
+                stream_handler = w.stream(core_api_instance.read_namespaced_pod_log, name=pod.metadata.name, namespace=pod.metadata.namespace, container=pod.metadata.labels['process'], follow=True, _preload_content=False, pretty="true", timestamps=True, tail_lines=10)
+                thread = threading.Thread(target=worker, args=(pod.metadata.name.lstrip(f'{organization.slug}-{application.slug}-'), stream_handler), daemon=True)
+                worker_threads[pod.metadata.name] = thread
+                q.put(f'started following {pod.metadata.name}...')
+                thread.start()
+            if response['type'] == "DELETED":
                 if pod.metadata.name in worker_threads.keys() and not worker_threads[pod.metadata.name].is_alive():
                     worker_threads[pod.metadata.name].join()
                     q.put(f'{pod.metadata.name} terminated...')
                     del(worker_threads[pod.metadata.name])
-                    continue
-
-            time.sleep(1)
 
     update_thread = threading.Thread(target=update_pods, daemon=True)
     update_thread.start()
