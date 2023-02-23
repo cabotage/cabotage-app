@@ -574,8 +574,10 @@ def run_job(core_api_instance, batch_api_instance, namespace, job_object):
             else:
                 time.sleep(1)
     finally:
-        delete_job(batch_api_instance, namespace, job_object)
-
+        try:
+            delete_job(batch_api_instance, namespace, job_object)
+        except (DeployError, ApiException) as exc:
+            pass
 
 def deploy_release(deployment):
     deploy_log = []

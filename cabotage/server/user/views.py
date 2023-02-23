@@ -584,6 +584,8 @@ def image_detail(image_id):
     image = Image.query.filter_by(id=image_id).first()
     if image is None:
         abort(404)
+    if image.error:
+        image.image_build_log = f"{image.image_build_log}\n**Error!**"
     secret = current_app.config['REGISTRY_AUTH_SECRET']
     docker_pull_credentials = image.docker_pull_credentials(secret)
     return render_template('user/image_detail.html', image=image, docker_pull_credentials=docker_pull_credentials)
@@ -593,7 +595,7 @@ def image_detail(image_id):
 @login_required
 def image_build_livelogs(ws, image_id):
     image = Image.query.filter_by(id=image_id).first()
-    if image is None:
+    if image is None or image.error:
         abort(404)
     if image.image_build_log is not None:
         for line in image.image_build_log.split('\n'):
@@ -611,7 +613,7 @@ def image_build_livelogs(ws, image_id):
         try:
             job_object = batch_api_instance.read_namespaced_job(job_name, namespace)
         except kubernetes.client.exceptions.ApiException as exc:
-            print('pod not ready yet... {exc}')
+            print(f'pod not ready yet... {exc}')
         time.sleep(.25)
 
     label_selector = ','.join([f'{k}={v}' for k, v in job_object.metadata.labels.items()])
