@@ -103,6 +103,7 @@ services:
       - miniodata:/export
   cabotage-app:
     build: .
+    image: cabotage-app-web:docker-compose
     command: hupper -m gunicorn.app.wsgiapp -c gunicorn.conf -w 4 --threads 100 -b 0.0.0.0:8000 cabotage.server.wsgi:app
     environment:
       - FLASK_APP=cabotage.server.wsgi
@@ -131,7 +132,7 @@ services:
       - redis
       - vault
   cabotage-app-worker:
-    build: .
+    image: cabotage-app-web:docker-compose
     command: hupper -m celery -A cabotage.celery.worker.celery_app worker -E --loglevel=INFO
     environment:
       - C_FORCE_ROOT=1
