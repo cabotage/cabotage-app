@@ -292,7 +292,7 @@ def project_application_livelogs(ws, org_slug, project_slug, app_slug):
             if create:
                 w = kubernetes.watch.Watch()
                 stream_handler = w.stream(core_api_instance.read_namespaced_pod_log, name=pod.metadata.name, namespace=pod.metadata.namespace, container=pod.metadata.labels['process'], follow=True, _preload_content=False, pretty="true", timestamps=True, tail_lines=10)
-                thread = threading.Thread(target=worker, args=(pod.metadata.name.lstrip(f'{organization.slug}-{application.slug}-'), stream_handler), daemon=True)
+                thread = threading.Thread(target=worker, args=(pod.metadata.name.removeprefix(f'{project.slug}-{application.slug}-'), stream_handler), daemon=True)
                 worker_threads[pod.metadata.name] = thread
                 q.put(f'started following {pod.metadata.name}...')
                 thread.start()
