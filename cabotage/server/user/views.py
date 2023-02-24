@@ -74,6 +74,7 @@ from cabotage.utils.docker_auth import (
     parse_docker_scope,
     docker_access_intersection,
 )
+from cabotage.utils.logs import filter_secrets
 
 from cabotage.celery.tasks import (
     is_this_thing_on,
@@ -307,7 +308,7 @@ def project_application_livelogs(ws, org_slug, project_slug, app_slug):
     update_thread.start()
 
     while True:
-        ws.send(q.get())
+        ws.send(filter_secrets(q.get()))
 
 
 @user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/create', methods=["GET", "POST"])
@@ -598,7 +599,7 @@ def image_build_livelogs(ws, image_id):
     if image.image_build_log is not None:
         ws.send(f'Job Pod imagebuild-{image.build_job_id}')
         for line in image.image_build_log.split('\n'):
-            ws.send(f'  {line}')
+            ws.send(f'  {filter_secrets(line)}')
         ws.send('=================END OF LOGS=================')
 
     api_client = kubernetes_ext.kubernetes_client
@@ -635,7 +636,7 @@ def image_build_livelogs(ws, image_id):
     ws.send(f'Job Pod imagebuild-{image.build_job_id}')
     w = kubernetes.watch.Watch()
     for line in w.stream(core_api_instance.read_namespaced_pod_log, name=pod.metadata.name, namespace=namespace, container=job_object.metadata.labels['process'], follow=True, _preload_content=False, pretty="true"):
-        ws.send(f'  {line}')
+        ws.send(f'  {filter_secrets(line)}')
 
     ws.send('=================END OF LOGS=================')
 

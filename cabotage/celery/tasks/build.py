@@ -60,6 +60,7 @@ from cabotage.utils.docker_auth import (
     docker_access_intersection,
 )
 
+from cabotage.utils.logs import filter_secrets
 from cabotage.utils.release_build_context import RELEASE_DOCKERFILE_TEMPLATE
 from cabotage.utils.github import post_deployment_status_update
 
@@ -304,7 +305,7 @@ def build_release_buildkit(release):
             finally:
                 core_api_instance.delete_namespaced_secret(f'buildkit-registry-auth-{release.build_job_id}', 'default', propagation_policy='Foreground')
 
-            release.release_build_log = job_logs
+            release.release_build_log = filter_secrets(job_logs)
             db.session.commit()
             db.session.flush()
             if not job_complete:
@@ -713,7 +714,7 @@ def build_image_buildkit(image=None):
             finally:
                 core_api_instance.delete_namespaced_secret(f'buildkit-registry-auth-{image.build_job_id}', 'default', propagation_policy='Foreground')
 
-            image.image_build_log = job_logs
+            image.image_build_log = filter_secrets(job_logs)
             db.session.commit()
             db.session.flush()
             if not job_complete:
