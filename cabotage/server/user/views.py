@@ -22,6 +22,7 @@ from flask_security import (
     login_required,
 )
 
+import backoff
 import kubernetes
 
 from sqlalchemy import desc
@@ -608,13 +609,15 @@ def image_build_livelogs(ws, image_id):
 
     job_name, namespace = (f'imagebuild-{image.build_job_id}', 'default')
 
-    job_object = None
-    while job_object is None:
-        try:
-            job_object = batch_api_instance.read_namespaced_job(job_name, namespace)
-        except kubernetes.client.exceptions.ApiException as exc:
-            print(f'pod not ready yet... {exc}')
-        time.sleep(.25)
+    @backoff.on_exception(backoff.constant, kubernetes.client.exceptions.ApiException, max_tries=20, interval=.25)
+    def fetch_job_object():
+        return batch_api_instance.read_namespaced_job(job_name, namespace)
+
+    try:
+        job_object = fetch_job_object()
+    except kubernetes.client.exceptions.ApiException:
+        ws.send('=================END OF LOGS=================')
+        return
 
     label_selector = ','.join([f'{k}={v}' for k, v in job_object.metadata.labels.items()])
     try:
@@ -682,13 +685,15 @@ def release_build_livelogs(ws, release_id):
 
     job_name, namespace = (f'releasebuild-{release.build_job_id}', 'default')
 
-    job_object = None
-    while job_object is None:
-        try:
-            job_object = batch_api_instance.read_namespaced_job(job_name, namespace)
-        except kubernetes.client.exceptions.ApiException as exc:
-            print(f'pod not ready yet... {exc}')
-        time.sleep(.25)
+    @backoff.on_exception(backoff.constant, kubernetes.client.exceptions.ApiException, max_tries=20, interval=.25)
+    def fetch_job_object():
+        return batch_api_instance.read_namespaced_job(job_name, namespace)
+
+    try:
+        job_object = fetch_job_object()
+    except kubernetes.client.exceptions.ApiException:
+        ws.send('=================END OF LOGS=================')
+        return
 
     label_selector = ','.join([f'{k}={v}' for k, v in job_object.metadata.labels.items()])
     try:
@@ -742,19 +747,19 @@ def deployment_livelogs(ws, deployment_id):
 
     job_name, namespace = (f'deployment-{deployment.job_id}', deployment.application.project.organization.slug)
 
-    job_object = None
-    while job_object is None:
-        try:
-            job_object = batch_api_instance.read_namespaced_job(job_name, namespace)
-            print(f'found {job_name} in {namespace}')
-        except kubernetes.client.exceptions.ApiException as exc:
-            print(f'pod not ready yet... {exc}')
-        time.sleep(.25)
+    @backoff.on_exception(backoff.constant, kubernetes.client.exceptions.ApiException, max_tries=20, interval=.25)
+    def fetch_job_object():
+        return batch_api_instance.read_namespaced_job(job_name, namespace)
+
+    try:
+        job_object = fetch_job_object()
+    except kubernetes.client.exceptions.ApiException:
+        ws.send('=================END OF LOGS=================')
+        return
 
     label_selector = ','.join([f'{k}={v}' for k, v in job_object.metadata.labels.items()])
     try:
         pods = core_api_instance.list_namespaced_pod(namespace, label_selector=label_selector)
-        print(f'found pods with {label_selector} in {namespace}')
     except kubernetes.client.exceptions.ApiException as exc:
         ws.send('=================END OF LOGS=================')
         print(f'Encountered exception: {exc}')
@@ -770,7 +775,6 @@ def deployment_livelogs(ws, deployment_id):
         try:
             pod = core_api_instance.read_namespaced_pod(pod.metadata.name, pod.metadata.namespace)
             if pod.status.phase == 'Running':
-                print('found pod!')
                 break
             time.sleep(.25)
         except kubernetes.client.exceptions.ApiException as exc:
