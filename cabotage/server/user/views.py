@@ -662,6 +662,56 @@ def release_detail(release_id):
     image_pull_secrets = release.image_pull_secrets(secret, registry_urls=[current_app.config['REGISTRY_PULL'], current_app.config['REGISTRY_BUILD']])
     return render_template('user/release_detail.html', release=release, docker_pull_credentials=docker_pull_credentials, image_pull_secrets=image_pull_secrets)
 
+@sock.route('/release/<release_id>/livelogs', bp=user_blueprint)
+@login_required
+def release_build_livelogs(ws, release_id):
+    release = Release.query.filter_by(id=release_id).first()
+    if release is None or release.error:
+        abort(404)
+    if release.release_build_log is not None:
+        ws.send(f'Job Pod releasebuild-{release.build_job_id}')
+        for line in release.release_build_log.split('\n'):
+            ws.send(f'  {filter_secrets(line)}')
+        ws.send('=================END OF LOGS=================')
+
+    api_client = kubernetes_ext.kubernetes_client
+    core_api_instance = kubernetes.client.CoreV1Api(api_client)
+    batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+
+    job_name, namespace = (f'releasebuild-{release.build_job_id}', 'default')
+
+    job_object = None
+    while job_object is None:
+        try:
+            job_object = batch_api_instance.read_namespaced_job(job_name, namespace)
+        except kubernetes.client.exceptions.ApiException as exc:
+            print(f'pod not ready yet... {exc}')
+        time.sleep(.25)
+
+    label_selector = ','.join([f'{k}={v}' for k, v in job_object.metadata.labels.items()])
+    try:
+        pods = core_api_instance.list_namespaced_pod(namespace, label_selector=label_selector)
+    except kubernetes.client.exceptions.ApiException as exc:
+        print(f'Encountered exception: {exc}')
+        return False
+
+    if len(pods.items) != 1:
+        print(f'Found too many pods!')
+        return False
+
+    pod = pods.items[0]
+    while True:
+        pod = core_api_instance.read_namespaced_pod(pod.metadata.name, pod.metadata.namespace)
+        if pod.status.phase == 'Running':
+            break
+        time.sleep(1)
+    ws.send(f'Job Pod releasebuild-{release.build_job_id}')
+    w = kubernetes.watch.Watch()
+    for line in w.stream(core_api_instance.read_namespaced_pod_log, name=pod.metadata.name, namespace=namespace, container=job_object.metadata.labels['process'], follow=True, _preload_content=False, pretty="true"):
+        ws.send(f'  {filter_secrets(line)}')
+
+    ws.send('=================END OF LOGS=================')
+
 @user_blueprint.route('/release/<release_id>/context.tar.gz')
 def release_build_context_tarfile(release_id):
     release = Release.query.filter_by(id=release_id).first()
