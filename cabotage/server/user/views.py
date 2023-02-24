@@ -14,6 +14,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_file,
     url_for,
 )
 from flask_security import (
@@ -659,6 +660,13 @@ def release_detail(release_id):
     docker_pull_credentials = release.docker_pull_credentials(secret)
     image_pull_secrets = release.image_pull_secrets(secret, registry_urls=[current_app.config['REGISTRY_PULL'], current_app.config['REGISTRY_BUILD']])
     return render_template('user/release_detail.html', release=release, docker_pull_credentials=docker_pull_credentials, image_pull_secrets=image_pull_secrets)
+
+@user_blueprint.route('/release/<release_id>/context.tar.gz')
+def release_build_context_tarfile(release_id):
+    release = Release.query.filter_by(id=release_id).first()
+    if release is None:
+        abort(404)
+    return send_file(release.release_build_context_tarfile, as_attachment=True, download_name=f'context.tar.gz')
 
 
 @user_blueprint.route('/deployment/<deployment_id>')

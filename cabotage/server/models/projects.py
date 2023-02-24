@@ -1,6 +1,7 @@
 import json
 
 from citext import CIText
+from flask import current_app
 from sqlalchemy import CheckConstraint, text, UniqueConstraint
 from sqlalchemy.event import listens_for
 from sqlalchemy.dialects import postgresql
@@ -17,6 +18,10 @@ from cabotage.server.models.utils import (
 from cabotage.utils.docker_auth import (
     generate_docker_credentials,
     generate_kubernetes_imagepullsecrets,
+)
+from cabotage.utils.release_build_context import (
+    tarfile_context_for_release,
+    RELEASE_DOCKERFILE_TEMPLATE,
 )
 
 activity_plugin = ActivityPlugin()
@@ -394,6 +399,10 @@ class Release(db.Model, Timestamp):
         db.Text(),
         nullable=True,
     )
+    build_job_id = db.Column(
+        db.String(64),
+        nullable=True,
+    )
 
     __mapper_args__ = {
         "version_id_col": version_id
@@ -495,6 +504,13 @@ class Release(db.Model, Timestamp):
             return self.image_object.commit_sha
         return self.release_metadata.get('sha')
 
+    @property
+    def release_build_context_tarfile(self):
+        process_commands = "\n".join([f'COPY envconsul-{process_name}.hcl /etc/cabotage/envconsul-{process_name}.hcl' for process_name in  self.envconsul_configurations])
+        dockerfile = RELEASE_DOCKERFILE_TEMPLATE.format(registry=current_app.config['REGISTRY_BUILD'], image=self.image_object, process_commands=process_commands)
+        if self.dockerfile:
+            dockerfile = self.dockerfile
+        return tarfile_context_for_release(self, dockerfile)
 
 @listens_for(Release, 'before_insert')
 def release_before_insert_listener(mapper, connection, target):

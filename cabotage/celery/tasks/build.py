@@ -31,7 +31,7 @@ import docker.tls
 import procfile
 
 from dockerfile_parse import DockerfileParser
-from flask import current_app
+from flask import current_app, url_for
 from dxf import DXF
 
 from cabotage.celery.tasks.deploy import run_deploy, run_job
@@ -60,6 +60,7 @@ from cabotage.utils.docker_auth import (
     docker_access_intersection,
 )
 
+from cabotage.utils.release_build_context import RELEASE_DOCKERFILE_TEMPLATE
 from cabotage.utils.github import post_deployment_status_update
 
 Activity = activity_plugin.activity_cls
@@ -69,28 +70,10 @@ class BuildError(RuntimeError):
     pass
 
 
-RELEASE_DOCKERFILE_TEMPLATE = """
-FROM {registry}/{image.repository_name}:image-{image.version}
-COPY --from=hashicorp/envconsul:0.13.1 /bin/envconsul /usr/bin/envconsul
-COPY entrypoint.sh /entrypoint.sh
-{process_commands}
-USER nobody
-ENTRYPOINT ["/entrypoint.sh"]
-CMD []
-"""
-
-ENTRYPOINT = """#!/bin/sh
-
-export VAULT_TOKEN=$(cat /var/run/secrets/vault/vault-token)
-export CONSUL_TOKEN=$(cat /var/run/secrets/vault/consul-token)
-
-exec "${@}"
-"""
-
-
 def build_release(release,
                   registry, registry_username, registry_password,
                   docker_url, docker_secure, docker_ca):
+    from cabotage.utils.release_build_context import ENTRYPOINT
     with ExitStack() as stack:
         temp_dir = stack.enter_context(TemporaryDirectory())
         with open(os.path.join(temp_dir, 'entrypoint.sh'), 'w') as fd:
@@ -172,6 +155,207 @@ def build_release(release,
             'release_id': pushed_release.id,
             'dockerfile': dockerfile_body,
         }
+
+def build_release_buildkit(release):
+    secret = current_app.config['REGISTRY_AUTH_SECRET']
+    registry = current_app.config['REGISTRY_BUILD']
+    registry_secure = current_app.config['REGISTRY_SECURE']
+    buildkitd_url = docker_url = current_app.config['BUILDKITD_URL']
+    buildkitd_ca = current_app.config['BUILDKITD_VERIFY']
+
+    process_commands = "\n".join([f'COPY envconsul-{process_name}.hcl /etc/cabotage/envconsul-{process_name}.hcl' for process_name in  release.envconsul_configurations])
+    release.dockerfile = RELEASE_DOCKERFILE_TEMPLATE.format(registry=registry, image=release.image_object, process_commands=process_commands)
+    db.session.commit()
+
+    insecure_reg=""
+    registry_url=f"https://{registry}/v2"
+    if not registry_secure:
+        insecure_reg=",registry.insecure=true"
+        registry_url=f"http://{registry}/v2"
+
+    dockerconfigjson = generate_kubernetes_imagepullsecrets(
+        secret=secret,
+        registry_urls=[registry_url],
+        resource_type='repository',
+        resource_name=release.repository_name,
+        resource_actions=['push', 'pull'],
+    )
+
+    buildctl_command = [
+        "/usr/bin/buildctl",
+    ]
+    buildctl_args = [
+        "build",
+        "--progress=plain",
+        "--frontend",
+        "dockerfile.v0",
+        "--opt",
+        f"context={current_app.url_for('user.release_build_context_tarfile', release_id=release.id, _external=True)}",
+        "--import-cache",
+        f"type=registry,ref={registry}/{release.repository_name}:buildcache-release{insecure_reg}",
+        "--export-cache",
+        f"type=registry,ref={registry}/{release.repository_name}:buildcache-release{insecure_reg}",
+        "--output",
+        f"type=image,name={registry}/{release.repository_name}:release-{release.version},push=true{insecure_reg}",
+    ]
+
+    try:
+        if current_app.config['KUBERNETES_ENABLED']:
+            if buildkitd_ca is not None:
+                buildctl_args.insert(0, '--tlscacert=/home/user/.docker/ca.crt')
+            secret_object = kubernetes.client.V1Secret(
+                type='kubernetes.io/dockerconfigjson',
+                metadata=kubernetes.client.V1ObjectMeta(
+                    name=f'buildkit-registry-auth-{release.build_job_id}',
+                ),
+                data={
+                    '.dockerconfigjson': b64encode(dockerconfigjson.encode()).decode(),
+                }
+            )
+            job_object = kubernetes.client.V1Job(
+                metadata=kubernetes.client.V1ObjectMeta(
+                    name=f'releasebuild-{release.build_job_id}',
+                    labels={
+                        'organization': release.application.project.organization.slug,
+                        'project': release.application.project.slug,
+                        'application': release.application.slug,
+                        'process': 'build',
+                        'build_id': release.build_job_id,
+                    }
+                ),
+                spec=kubernetes.client.V1JobSpec(
+                    active_deadline_seconds=1800,
+                    backoff_limit=0,
+                    parallelism=1,
+                    completions=1,
+                    template=kubernetes.client.V1PodTemplateSpec(
+                        metadata=kubernetes.client.V1ObjectMeta(
+                            labels={
+                                'organization': release.application.project.organization.slug,
+                                'project': release.application.project.slug,
+                                'application': release.application.slug,
+                                'process': 'build',
+                                'build_id': release.build_job_id,
+                            },
+                        ),
+                        spec=kubernetes.client.V1PodSpec(
+                            restart_policy="Never",
+                            containers=[
+                                kubernetes.client.V1Container(
+                                    name="build",
+                                    image="moby/buildkit:v0.11.3-rootless",
+                                    command=buildctl_command,
+                                    args=buildctl_args,
+                                    env=[
+                                        kubernetes.client.V1EnvVar(name="BUILDKIT_HOST", value=buildkitd_url),
+                                    ],
+                                    security_context=kubernetes.client.V1SecurityContext(
+                                        allow_privilege_escalation=False,
+                                        run_as_user=1000,
+                                        run_as_group=1000,
+                                    ),
+                                    volume_mounts=[
+                                        kubernetes.client.V1VolumeMount(
+                                            mount_path="/home/user/.local/share/buildkit",
+                                            name="buildkitd",
+                                        ),
+                                        kubernetes.client.V1VolumeMount(
+                                            mount_path="/home/user/.docker",
+                                            name="buildkit-registry-auth",
+                                        ),
+                                    ]
+                                ),
+                            ],
+                            volumes=[
+                                kubernetes.client.V1Volume(
+                                    name="buildkitd",
+                                    empty_dir=kubernetes.client.V1EmptyDirVolumeSource(),
+                                ),
+                                kubernetes.client.V1Volume(
+                                    name="buildkit-registry-auth",
+                                    secret=kubernetes.client.V1SecretVolumeSource(
+                                        secret_name=f"buildkit-registry-auth-{release.build_job_id}",
+                                        items=[
+                                            kubernetes.client.V1KeyToPath(
+                                                key='.dockerconfigjson',
+                                                path='config.json',
+                                            ),
+                                        ]
+                                    )
+                                ),
+                            ]
+                        ),
+                    ),
+                ),
+            )
+
+            if buildkitd_ca is not None:
+                with open(buildkitd_ca, 'rb') as f:
+                    secret_object.data['.dockercacrt'] = b64encode(f.read()).decode()
+                job_object.spec.template.spec.volumes[1].secret.items.append(kubernetes.client.V1KeyToPath(key='.dockercacrt', path='ca.crt'))
+
+            api_client = kubernetes_ext.kubernetes_client
+            core_api_instance = kubernetes.client.CoreV1Api(api_client)
+            batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+            core_api_instance.create_namespaced_secret('default', secret_object)
+
+            try:
+                job_complete, job_logs = run_job(core_api_instance, batch_api_instance, 'default', job_object)
+            finally:
+                core_api_instance.delete_namespaced_secret(f'buildkit-registry-auth-{release.build_job_id}', 'default', propagation_policy='Foreground')
+
+            release.release_build_log = job_logs
+            db.session.commit()
+            db.session.flush()
+            if not job_complete:
+                raise BuildError(f'Image build failed!')
+        else:
+            if buildkitd_ca is not None:
+                buildctl_args.insert(0, f'--tlscacert={buildkitd_ca}')
+            with TemporaryDirectory() as tempdir:
+                os.makedirs(os.path.join(tempdir, '.docker'), exist_ok=True)
+                with open(os.path.join(tempdir, '.docker', 'config.json'), 'w') as f:
+                    f.write(dockerconfigjson)
+                try:
+                    completed_subprocess = subprocess.run(
+                        " ".join(buildctl_command + buildctl_args),
+                        env={'BUILDKIT_HOST': buildkitd_url, 'HOME': tempdir},
+                        shell=True, cwd="/tmp", check=True,
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                    )
+                except subprocess.CalledProcessError as exc:
+                    raise BuildError(f'Build subprocess failed: {exc}')
+            release.release_build_log = " ".join(buildctl_command + buildctl_args) + "\n" + completed_subprocess.stdout
+            db.session.commit()
+    except Exception as exc:
+        raise BuildError(f'Build failed: {exc}')
+
+    def auth(dxf, response):
+        dxf.token = generate_docker_registry_jwt(access=[{"type": "repository", "name": release.repository_name, "actions": ["pull"]}])
+
+    try:
+        _tlsverify = False
+        if registry_secure:
+            _tlsverify = current_app.config['REGISTRY_VERIFY']
+            if _tlsverify == 'True':
+                _tlsverify = True
+        client = DXF(
+            host=registry,
+            repo=release.repository_name,
+            auth=auth,
+            insecure=(not registry_secure),
+            tlsverify=_tlsverify,
+        )
+        pushed_release = client.get_digest(
+            f'release-{release.version}'
+        )
+    except Exception as exc:
+        raise BuildError(f'Release push failed: {exc}')
+
+    return {
+        'release_id': pushed_release,
+        'dockerfile': release.dockerfile,
+    }
 
 
 def build_image(tarfileobj, image,
@@ -413,9 +597,9 @@ def build_image_buildkit(image=None):
         "--opt",
         f"context=https://github.com/{image.application.github_repository}.git#{image.build_ref}",
         "--import-cache",
-        f"type=registry,ref={registry}/{image.repository_name}:buildcache{insecure_reg}",
+        f"type=registry,ref={registry}/{image.repository_name}:image-buildcache{insecure_reg}",
         "--export-cache",
-        f"type=registry,ref={registry}/{image.repository_name}:buildcache{insecure_reg}",
+        f"type=registry,ref={registry}/{image.repository_name}:image-buildcache{insecure_reg}",
         "--output",
         f"type=image,name={registry}/{image.repository_name}:image-{image.version},push=true{insecure_reg}",
     ]
@@ -595,10 +779,10 @@ def run_image_build(image_id=None, buildkit=False):
     docker_secure = current_app.config['DOCKER_SECURE']
     docker_ca = current_app.config['DOCKER_VERIFY']
     image = Image.query.filter_by(id=image_id).first()
-    image.build_job_id = secrets.token_hex(4)
     if image is None:
         raise KeyError(f'Image with ID {image_id} not found!')
 
+    image.build_job_id = secrets.token_hex(4)
     db.session.add(image)
     db.session.commit()
     if buildkit:
@@ -691,6 +875,11 @@ def run_release_build(release_id=None):
         release = Release.query.filter_by(id=release_id).first()
         if release is None:
             raise KeyError(f'Release with ID {release_id} not found!')
+
+        release.build_job_id = secrets.token_hex(4)
+        db.session.add(release)
+        db.session.commit()
+
         credentials = generate_docker_credentials(
             secret=secret,
             resource_type="repository",
@@ -698,10 +887,8 @@ def run_release_build(release_id=None):
             resource_actions=["push", "pull"],
         )
         try:
-            build_metadata = build_release(
+            build_metadata = build_release_buildkit(
                 release,
-                registry, f'cabotage-builder-{release.id}', credentials,
-                docker_url, docker_secure, docker_ca
             )
             release.release_id = build_metadata['release_id']
             release.built = True

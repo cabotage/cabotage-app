@@ -9,6 +9,9 @@ class Config(metaclass=MetaFlaskEnv):
     ENV_PREFIX = "CABOTAGE_"
     ENV_LOAD_ALL = True
 
+    SERVER_NAME = 'cabotage-app:8000'
+    PREFERRED_URL_SCHEME = 'http'
+
     SECRET_KEY = 'my_precious'
     DEBUG = False
     MAX_CONTENT_LENGTH = 32 * 1024 * 1024
