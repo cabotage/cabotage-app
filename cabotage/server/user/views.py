@@ -620,10 +620,12 @@ def image_build_livelogs(ws, image_id):
     try:
         pods = core_api_instance.list_namespaced_pod(namespace, label_selector=label_selector)
     except kubernetes.client.exceptions.ApiException as exc:
+        ws.send('=================END OF LOGS=================')
         print(f'Encountered exception: {exc}')
         return False
 
     if len(pods.items) != 1:
+        ws.send('=================END OF LOGS=================')
         print(f'Found too many pods!')
         return False
 
@@ -692,10 +694,12 @@ def release_build_livelogs(ws, release_id):
     try:
         pods = core_api_instance.list_namespaced_pod(namespace, label_selector=label_selector)
     except kubernetes.client.exceptions.ApiException as exc:
+        ws.send('=================END OF LOGS=================')
         print(f'Encountered exception: {exc}')
         return False
 
     if len(pods.items) != 1:
+        ws.send('=================END OF LOGS=================')
         print(f'Found too many pods!')
         return False
 
@@ -719,6 +723,67 @@ def release_build_context_tarfile(release_id):
         abort(404)
     return send_file(release.release_build_context_tarfile, as_attachment=True, download_name=f'context.tar.gz')
 
+@sock.route('/deployment/<deployment_id>/livelogs', bp=user_blueprint)
+@login_required
+def deployment_livelogs(ws, deployment_id):
+    deployment = Deployment.query.filter_by(id=deployment_id).first()
+    if deployment is None:
+        abort(404)
+
+    if deployment.deploy_log is not None:
+        ws.send(f'Job Pod deployment-{deployment.job_id}')
+        for line in deployment.deploy_log.split('\n'):
+            ws.send(f'  {filter_secrets(line)}')
+        ws.send('=================END OF LOGS=================')
+
+    api_client = kubernetes_ext.kubernetes_client
+    core_api_instance = kubernetes.client.CoreV1Api(api_client)
+    batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+
+    job_name, namespace = (f'deployment-{deployment.job_id}', deployment.application.project.organization.slug)
+
+    job_object = None
+    while job_object is None:
+        try:
+            job_object = batch_api_instance.read_namespaced_job(job_name, namespace)
+            print(f'found {job_name} in {namespace}')
+        except kubernetes.client.exceptions.ApiException as exc:
+            print(f'pod not ready yet... {exc}')
+        time.sleep(.25)
+
+    label_selector = ','.join([f'{k}={v}' for k, v in job_object.metadata.labels.items()])
+    try:
+        pods = core_api_instance.list_namespaced_pod(namespace, label_selector=label_selector)
+        print(f'found pods with {label_selector} in {namespace}')
+    except kubernetes.client.exceptions.ApiException as exc:
+        ws.send('=================END OF LOGS=================')
+        print(f'Encountered exception: {exc}')
+        return False
+
+    if len(pods.items) != 1:
+        ws.send('=================END OF LOGS=================')
+        print(f'Found too many pods!')
+        return False
+
+    pod = pods.items[0]
+    while True:
+        try:
+            pod = core_api_instance.read_namespaced_pod(pod.metadata.name, pod.metadata.namespace)
+            if pod.status.phase == 'Running':
+                print('found pod!')
+                break
+            time.sleep(.25)
+        except kubernetes.client.exceptions.ApiException as exc:
+            ws.send('=================END OF LOGS=================')
+            print(f'Encountered exception: {exc}')
+            return False
+
+    ws.send(f'Job Pod deployment-{deployment.job_id}')
+    w = kubernetes.watch.Watch()
+    for line in w.stream(core_api_instance.read_namespaced_pod_log, name=pod.metadata.name, namespace=namespace, container=job_object.metadata.labels['process'], follow=True, _preload_content=False, pretty="true"):
+        ws.send(f'  {filter_secrets(line)}')
+
+    ws.send('=================END OF LOGS=================')
 
 @user_blueprint.route('/deployment/<deployment_id>')
 @login_required

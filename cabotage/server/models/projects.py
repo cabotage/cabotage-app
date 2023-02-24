@@ -319,6 +319,10 @@ class Deployment(db.Model, Timestamp):
         db.Text(),
         nullable=True,
     )
+    job_id = db.Column(
+        db.String(64),
+        nullable=True,
+    )
 
     __mapper_args__ = {
         "version_id_col": version_id

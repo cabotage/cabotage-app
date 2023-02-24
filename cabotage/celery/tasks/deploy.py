@@ -484,12 +484,11 @@ def scale_deployment(namespace, release, process_name, replicas):
         api_response = apps_api_instance.patch_namespaced_deployment_scale(deployment_name, namespace, scale)
 
 
-def render_job(namespace, release, service_account_name, process_name):
+def render_job(namespace, release, service_account_name, process_name, job_id):
     role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
-    job_id = secrets.token_hex(4)
     job_object = kubernetes.client.V1Job(
         metadata=kubernetes.client.V1ObjectMeta(
-            name=f'{release.application.project.slug}-{release.application.slug}-{process_name}-{job_id}',
+            name=f'deployment-{job_id}',
             labels={
                 'organization': release.application.project.organization.slug,
                 'project': release.application.project.slug,
@@ -580,6 +579,10 @@ def run_job(core_api_instance, batch_api_instance, namespace, job_object):
             pass
 
 def deploy_release(deployment):
+    job_id = secrets.token_hex(4)
+    deployment.job_id = job_id
+    db.session.add(deployment)
+    db.session.commit()
     deploy_log = []
     try:
         deploy_log.append("Constructing API Clients")
@@ -603,7 +606,7 @@ def deploy_release(deployment):
         )
         for release_command in deployment.release_object.release_commands:
             deploy_log.append(f"Running release command {release_command}")
-            job_object = render_job(namespace.metadata.name, deployment.release_object, service_account.metadata.name, release_command)
+            job_object = render_job(namespace.metadata.name, deployment.release_object, service_account.metadata.name, release_command, deployment.job_id)
             job_complete, job_logs = run_job(core_api_instance, batch_api_instance, namespace.metadata.name, job_object)
             deploy_log.append(job_logs)
             if not job_complete:
@@ -659,7 +662,7 @@ def fake_deploy_release(deployment):
     deploy_log.append(yaml.dump(remove_none(image_pull_secrets.to_dict())))
     deploy_log.append(f"Patching ServiceAccount/{service_account.metadata.name} with ImagePullSecrets/{image_pull_secrets.metadata.name} in Namespace/{namespace.metadata.name}")
     for release_command in deployment.release_object.release_commands:
-        job_object = render_job(namespace.metadata.name, deployment.release_object, service_account.metadata.name, release_command)
+        job_object = render_job(namespace.metadata.name, deployment.release_object, service_account.metadata.name, release_command, deployment.job_id)
         deploy_log.append(f"Running Job/{job_object.metadata.name} in Namespace/{namespace.metadata.name}")
         deploy_log.append(yaml.dump(remove_none(job_object.to_dict())))
     for process in deployment.release_object.processes:
