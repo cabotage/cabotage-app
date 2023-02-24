@@ -78,16 +78,6 @@ services:
     privileged: true
     volumes:
       - ./docker-compose/buildkitd:/home/user/.config/buildkit
-  cabotage-dind:
-    image: docker:dind
-    command: --insecure-registry registry:5001
-    restart: always
-    ports:
-      - "2375:2375"
-    privileged: true
-    environment:
-      DOCKER_TLS_VERIFY: ""
-      DOCKER_TLS_CERTDIR: ""
   minio:
     image: minio/minio
     command: server /export --console-address ":9001"

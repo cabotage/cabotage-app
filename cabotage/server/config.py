@@ -9,8 +9,8 @@ class Config(metaclass=MetaFlaskEnv):
     ENV_PREFIX = "CABOTAGE_"
     ENV_LOAD_ALL = True
 
-    SERVER_NAME = 'cabotage-app:8000'
-    PREFERRED_URL_SCHEME = 'http'
+    EXT_SERVER_NAME = 'cabotage-app:8000'
+    EXT_PREFERRED_URL_SCHEME = 'http'
 
     SECRET_KEY = 'my_precious'
     DEBUG = False
@@ -58,9 +58,6 @@ class Config(metaclass=MetaFlaskEnv):
     REGISTRY_SECURE = False
     REGISTRY_VERIFY = False
     REGISTRY_AUTH_SECRET = 'v3rys3cur3'
-    DOCKER_URL = 'tcp://cabotage-dind:2375'
-    DOCKER_SECURE = False
-    DOCKER_VERIFY = None
     BUILDKITD_URL = 'tcp://cabotage-buildkitd:1234'
     BUILDKITD_VERIFY = None
     MINIO_ENDPOINT = 'minio:9000'

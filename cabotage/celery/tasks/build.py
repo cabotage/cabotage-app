@@ -71,92 +71,6 @@ class BuildError(RuntimeError):
     pass
 
 
-def build_release(release,
-                  registry, registry_username, registry_password,
-                  docker_url, docker_secure, docker_ca):
-    from cabotage.utils.release_build_context import ENTRYPOINT
-    with ExitStack() as stack:
-        temp_dir = stack.enter_context(TemporaryDirectory())
-        with open(os.path.join(temp_dir, 'entrypoint.sh'), 'w') as fd:
-            fd.write(ENTRYPOINT)
-        st = os.stat(os.path.join(temp_dir, 'entrypoint.sh'))
-        os.chmod(os.path.join(temp_dir, 'entrypoint.sh'), st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-
-        process_commands = "\n".join([f'COPY envconsul-{process_name}.hcl /etc/cabotage/envconsul-{process_name}.hcl' for process_name in  release.envconsul_configurations])
-        with open(os.path.join(temp_dir, 'Dockerfile'), 'a') as fd:
-            fd.write(RELEASE_DOCKERFILE_TEMPLATE.format(registry=registry, image=release.image_object, process_commands=process_commands))
-        with open(os.path.join(temp_dir, 'Dockerfile'), 'r') as release_dockerfile:
-            dockerfile_body = release_dockerfile.read()
-        release.dockerfile = dockerfile_body
-        db.session.commit()
-        for process_name, envconsul_configuration in  release.envconsul_configurations.items():
-            with open(os.path.join(temp_dir, f'envconsul-{process_name}.hcl'), 'w') as envconsul_config:
-                envconsul_config.write(envconsul_configuration)
-        tls_config = False
-        if docker_secure:
-            tls_config = docker.tls.TLSConfig(client_cert=None, ca_cert=docker_ca, verify=True, ssl_version='PROTOCOL_TLSv1_2')
-        client = docker.DockerClient(base_url=docker_url, tls=tls_config)
-        client.login(
-            username=registry_username,
-            password=registry_password,
-            registry=registry,
-            reauth=True,
-        )
-        response = client.api.build(
-            path=temp_dir,
-            tag=f'{registry}/{release.repository_name}:release-{release.version}',
-            rm=True,
-            forcerm=True,
-            dockerfile="Dockerfile",
-        )
-        build_errored = False
-        log_lines = []
-        for chunk in response:
-            for line in chunk.split(b'\r\n'):
-                if line:
-                    payload = json.loads(line.decode())
-                    stream = payload.get('stream')
-                    status = payload.get('status')
-                    aux = payload.get('aux')
-                    error = payload.get('error')
-                    if stream:
-                        log_lines.append(stream)
-                    if status:
-                        if payload.get('progressDetail'):
-                            continue
-                        if payload.get("id"):
-                          log_lines.append(f'{payload.get("id")}: {status}\n')
-                        else:
-                          log_lines.append(f'{status}\n')
-                    if error is not None:
-                        errorDetail = payload.get('errorDetail', {})
-                        message = errorDetail.get('message', 'unknown error')
-                        build_errored = (
-                            f'Error building release: {message}'
-                        )
-                    if aux:
-                        if 'ID' in aux:
-                            built_id = aux['ID']
-                            log_lines.append(f'Built Image with ID: {built_id}\n')
-        release.release_build_log = ''.join(log_lines)
-        db.session.commit()
-        if build_errored:
-            raise BuildError(build_errored)
-        built_release = client.images.get(
-            f'{registry}/{release.repository_name}:release-{release.version}'
-        )
-        client.images.push(
-            f'{registry}/{release.repository_name}',
-            f'release-{release.version}'
-        )
-        pushed_release = client.images.get(
-            f'{registry}/{release.repository_name}:release-{release.version}'
-        )
-        return {
-            'release_id': pushed_release.id,
-            'dockerfile': dockerfile_body,
-        }
-
 def build_release_buildkit(release):
     secret = current_app.config['REGISTRY_AUTH_SECRET']
     registry = current_app.config['REGISTRY_BUILD']
@@ -166,6 +80,7 @@ def build_release_buildkit(release):
 
     process_commands = "\n".join([f'COPY envconsul-{process_name}.hcl /etc/cabotage/envconsul-{process_name}.hcl' for process_name in  release.envconsul_configurations])
     release.dockerfile = RELEASE_DOCKERFILE_TEMPLATE.format(registry=registry, image=release.image_object, process_commands=process_commands)
+    db.session.add(release)
     db.session.commit()
 
     insecure_reg=""
@@ -182,6 +97,10 @@ def build_release_buildkit(release):
         resource_actions=['push', 'pull'],
     )
 
+    with current_app.app_context(), current_app.test_request_context():
+        context_path = url_for('user.release_build_context_tarfile', release_id=release.id, _external=False)
+    context_url = f'{current_app.config["EXT_PREFERRED_URL_SCHEME"]}://{current_app.config["EXT_SERVER_NAME"]}{context_path}'
+
     buildctl_command = [
         "/usr/bin/buildctl",
     ]
@@ -191,7 +110,7 @@ def build_release_buildkit(release):
         "--frontend",
         "dockerfile.v0",
         "--opt",
-        f"context={current_app.url_for('user.release_build_context_tarfile', release_id=release.id, _external=True)}",
+        f"context={context_url}",
         "--import-cache",
         f"type=registry,ref={registry}/{release.repository_name}:buildcache-release{insecure_reg}",
         "--export-cache",
@@ -200,6 +119,7 @@ def build_release_buildkit(release):
         f"type=image,name={registry}/{release.repository_name}:release-{release.version},push=true{insecure_reg}",
     ]
 
+    db.session.add(release)
     try:
         if current_app.config['KUBERNETES_ENABLED']:
             if buildkitd_ca is not None:
@@ -355,146 +275,8 @@ def build_release_buildkit(release):
 
     return {
         'release_id': pushed_release,
-        'dockerfile': release.dockerfile,
     }
 
-
-def build_image(tarfileobj, image,
-                registry, registry_username, registry_password,
-                docker_url, docker_secure, docker_ca):
-    with ExitStack() as stack:
-        temp_dir = stack.enter_context(TemporaryDirectory())
-        try:
-            tar_ball = stack.enter_context(TarFile(fileobj=tarfileobj, mode='r'))
-        except Exception as exc:
-            raise BuildError(f'{exc}')
-        for tarinfo in tar_ball:
-            if os.path.normpath(tarinfo.name).startswith((os.sep, '/', '..')):
-                raise BuildError(
-                    ('refusing to touch sketchy tarball, '
-                     'no relative paths outside of root directory allowed '
-                     f'{tarinfo.name} exits top level directory')
-                )
-            if not (tarinfo.isfile() or tarinfo.isdir()):
-                raise BuildError(
-                    ('refusing to touch sketchy tarball, '
-                     'only regular files and directories allowed '
-                     f'{tarinfo.name} is not a regular file or directory')
-                )
-        try:
-            try:
-                tar_ball.getmember('./Dockerfile.cabotage')
-            except KeyError:
-                tar_ball.getmember('./Dockerfile')
-        except KeyError:
-            raise BuildError(
-                ('must include a Dockerfile.cabotage or Dockerfile'
-                 'in top level of archive')
-            )
-        try:
-            try:
-                tar_ball.getmember('./Procfile.cabotage')
-            except KeyError:
-                tar_ball.getmember('./Procfile')
-        except KeyError:
-            raise BuildError(
-                'must include a Procfile.cabotage or Procfile '
-                'in top level of archive'
-            )
-        tar_ball.extractall(path=temp_dir, numeric_owner=False)
-        if os.path.exists(os.path.join(temp_dir, 'Procfile.cabotage')):
-            shutil.copy(
-                os.path.join(temp_dir, 'Procfile.cabotage'),
-                os.path.join(temp_dir, 'Procfile'),
-            )
-        with open(os.path.join(temp_dir, 'Procfile'), 'r') as img_procfile:
-            procfile_body = img_procfile.read()
-        if os.path.exists(os.path.join(temp_dir, 'Dockerfile.cabotage')):
-            shutil.copy(
-                os.path.join(temp_dir, 'Dockerfile.cabotage'),
-                os.path.join(temp_dir, 'Dockerfile'),
-            )
-        with open(os.path.join(temp_dir, 'Dockerfile'), 'r') as img_dockerfile:
-            dockerfile_body = img_dockerfile.read()
-            dockerfile_object = DockerfileParser(temp_dir)
-            dockerfile_env_vars = list(dockerfile_object.envs.keys())
-        image.dockerfile = dockerfile_body
-        image.procfile = procfile_body
-        db.session.commit()
-        try:
-            processes = procfile.loads(procfile_body)
-        except ValueError as exc:
-            raise BuildError(
-                f'error parsing Procfile: {exc}'
-            )
-        tls_config = False
-        if docker_secure:
-            tls_config = docker.tls.TLSConfig(client_cert=None, ca_cert=docker_ca, verify=True, ssl_version='PROTOCOL_TLSv1_2')
-        client = docker.DockerClient(base_url=docker_url, tls=tls_config)
-        response = client.api.build(
-            path=temp_dir,
-            tag=f'{registry}/{image.repository_name}:image-{image.version}',
-            rm=True,
-            forcerm=True,
-            dockerfile="Dockerfile",
-            buildargs=image.buildargs(config_writer),
-        )
-        build_errored = False
-        log_lines = []
-        for chunk in response:
-            for line in chunk.split(b'\r\n'):
-                if line:
-                    payload = json.loads(line.decode())
-                    stream = payload.get('stream')
-                    status = payload.get('status')
-                    aux = payload.get('aux')
-                    error = payload.get('error')
-                    if stream:
-                        log_lines.append(stream)
-                    if status:
-                        if payload.get('progressDetail'):
-                            continue
-                        if payload.get("id"):
-                          log_lines.append(f'{payload.get("id")}: {status}\n')
-                        else:
-                          log_lines.append(f'{status}\n')
-                    if error is not None:
-                        errorDetail = payload.get('errorDetail', {})
-                        message = errorDetail.get('message', 'unknown error')
-                        build_errored = (
-                            f'Error building image: {message}'
-                        )
-                    if aux:
-                        if 'ID' in aux:
-                            built_id = aux['ID']
-                            log_lines.append(f'Built Image with ID: {built_id}\n')
-        image.image_build_log = ''.join(log_lines)
-        db.session.commit()
-        if build_errored:
-            raise BuildError(build_errored)
-        built_image = client.images.get(
-            f'{registry}/{image.repository_name}:image-{image.version}'
-        )
-        client.login(
-            username=registry_username,
-            password=registry_password,
-            registry=registry,
-            reauth=True,
-        )
-        client.images.push(
-            f'{registry}/{image.repository_name}',
-            f'image-{image.version}'
-        )
-        pushed_image = client.images.get(
-            f'{registry}/{image.repository_name}:image-{image.version}'
-        )
-        return {
-            'image_id': pushed_image.id,
-            'processes': processes,
-            'dockerfile': dockerfile_body,
-            'procfile': procfile_body,
-            'dockerfile_env_vars': dockerfile_env_vars,
-        }
 
 def _fetch_github_file(github_repository="owner/repo", ref="main", access_token=None, filename="Dockerfile"):
     headers = {
@@ -776,9 +558,6 @@ def run_image_build(image_id=None, buildkit=False):
     secret = current_app.config['REGISTRY_AUTH_SECRET']
     registry = current_app.config['REGISTRY_BUILD']
     object_bucket = current_app.config['MINIO_BUCKET']
-    docker_url = current_app.config['DOCKER_URL']
-    docker_secure = current_app.config['DOCKER_SECURE']
-    docker_ca = current_app.config['DOCKER_VERIFY']
     image = Image.query.filter_by(id=image_id).first()
     if image is None:
         raise KeyError(f'Image with ID {image_id} not found!')
@@ -786,46 +565,17 @@ def run_image_build(image_id=None, buildkit=False):
     image.build_job_id = secrets.token_hex(4)
     db.session.add(image)
     db.session.commit()
-    if buildkit:
+    try:
         try:
-            try:
-                build_metadata = build_image_buildkit(image)
-            except BuildError as exc:
-                db.session.add(image)
-                image.error = True
-                image.error_detail = str(exc)
-                db.session.commit()
-                raise
-        except Exception:
+            build_metadata = build_image_buildkit(image)
+        except BuildError as exc:
+            db.session.add(image)
+            image.error = True
+            image.error_detail = str(exc)
+            db.session.commit()
             raise
-    else:
-        credentials = generate_docker_credentials(
-            secret=secret,
-            resource_type="repository",
-            resource_name=image.repository_name,
-            resource_actions=["push", "pull"],
-        )
-        minio_client = minio.minio_connection
-        try:
-            data = minio_client.get_object(object_bucket, image.build_slug)
-            with TemporaryFile() as fp:
-                for chunk in data.stream(32*1024):
-                    fp.write(chunk)
-                fp.seek(0)
-                with gzip.open(fp, 'rb') as fd:
-                    try:
-                        build_metadata = build_image(
-                            fd, image,
-                            registry, f'cabotage-builder-{image.id}', credentials,
-                            docker_url, docker_secure, docker_ca
-                        )
-                    except BuildError as exc:
-                        image.error = True
-                        image.error_detail = str(exc)
-                        db.session.commit()
-                        raise
-        except Exception:
-            raise
+    except Exception:
+        raise
 
     db.session.add(image)
     image.image_id = build_metadata['image_id']
@@ -869,10 +619,6 @@ def run_release_build(release_id=None):
     try:
         secret = current_app.config['REGISTRY_AUTH_SECRET']
         registry = current_app.config['REGISTRY_BUILD']
-        object_bucket = current_app.config['MINIO_BUCKET']
-        docker_url = current_app.config['DOCKER_URL']
-        docker_secure = current_app.config['DOCKER_SECURE']
-        docker_ca = current_app.config['DOCKER_VERIFY']
         release = Release.query.filter_by(id=release_id).first()
         if release is None:
             raise KeyError(f'Release with ID {release_id} not found!')
@@ -881,16 +627,8 @@ def run_release_build(release_id=None):
         db.session.add(release)
         db.session.commit()
 
-        credentials = generate_docker_credentials(
-            secret=secret,
-            resource_type="repository",
-            resource_name=release.repository_name,
-            resource_actions=["push", "pull"],
-        )
         try:
-            build_metadata = build_release_buildkit(
-                release,
-            )
+            build_metadata = build_release_buildkit(release)
             release.release_id = build_metadata['release_id']
             release.built = True
         except BuildError as exc:
@@ -898,7 +636,9 @@ def run_release_build(release_id=None):
             release.error_detail = str(exc)
         except Exception:
             raise
+        db.session.add(release)
         db.session.commit()
+
         if release.built and release.release_metadata and release.release_metadata.get('auto_deploy', False):
             if 'installation_id' in release.release_metadata and 'statuses_url' in release.release_metadata:
                 access_token = github_app.fetch_installation_access_token(release.release_metadata['installation_id'])
