@@ -102,7 +102,7 @@ def build_release_buildkit(release):
     context_url = f'{current_app.config["EXT_PREFERRED_URL_SCHEME"]}://{current_app.config["EXT_SERVER_NAME"]}{context_path}'
 
     buildctl_command = [
-        "/usr/bin/buildctl",
+        "buildctl-daemonless.sh",
     ]
     buildctl_args = [
         "build",
@@ -111,10 +111,6 @@ def build_release_buildkit(release):
         "dockerfile.v0",
         "--opt",
         f"context={context_url}",
-        "--import-cache",
-        f"type=registry,ref={registry}/{release.repository_name}:buildcache-release{insecure_reg}",
-        "--export-cache",
-        f"type=registry,ref={registry}/{release.repository_name}:buildcache-release{insecure_reg}",
         "--output",
         f"type=image,name={registry}/{release.repository_name}:release-{release.version},push=true{insecure_reg}",
     ]
@@ -122,8 +118,6 @@ def build_release_buildkit(release):
     db.session.add(release)
     try:
         if current_app.config['KUBERNETES_ENABLED']:
-            if buildkitd_ca is not None:
-                buildctl_args.insert(0, '--tlscacert=/home/user/.docker/ca.crt')
             secret_object = kubernetes.client.V1Secret(
                 type='kubernetes.io/dockerconfigjson',
                 metadata=kubernetes.client.V1ObjectMeta(
@@ -158,6 +152,9 @@ def build_release_buildkit(release):
                                 'process': 'build',
                                 'build_id': release.build_job_id,
                             },
+                            annotations={
+                                'container.apparmor.security.beta.kubernetes.io/build': 'unconfined',
+                            },
                         ),
                         spec=kubernetes.client.V1PodSpec(
                             restart_policy="Never",
@@ -168,10 +165,12 @@ def build_release_buildkit(release):
                                     command=buildctl_command,
                                     args=buildctl_args,
                                     env=[
-                                        kubernetes.client.V1EnvVar(name="BUILDKIT_HOST", value=buildkitd_url),
+                                        kubernetes.client.V1EnvVar(name="BUILDKITD_FLAGS", value="--oci-worker-no-process-sandbox"),
                                     ],
                                     security_context=kubernetes.client.V1SecurityContext(
-                                        allow_privilege_escalation=False,
+                                        seccomp_profile=kubernetes.client.V1SeccompProfile(
+                                            type="Unconfined",
+                                        ),
                                         run_as_user=1000,
                                         run_as_group=1000,
                                     ),
@@ -209,11 +208,6 @@ def build_release_buildkit(release):
                     ),
                 ),
             )
-
-            if buildkitd_ca is not None:
-                with open(buildkitd_ca, 'rb') as f:
-                    secret_object.data['.dockercacrt'] = b64encode(f.read()).decode()
-                job_object.spec.template.spec.volumes[1].secret.items.append(kubernetes.client.V1KeyToPath(key='.dockercacrt', path='ca.crt'))
 
             api_client = kubernetes_ext.kubernetes_client
             core_api_instance = kubernetes.client.CoreV1Api(api_client)
@@ -370,7 +364,7 @@ def build_image_buildkit(image=None):
     )
 
     buildctl_command = [
-        "/usr/bin/buildctl",
+        "buildctl-daemonless.sh",
     ]
     buildctl_args = [
         "build",
@@ -382,7 +376,7 @@ def build_image_buildkit(image=None):
         "--import-cache",
         f"type=registry,ref={registry}/{image.repository_name}:image-buildcache{insecure_reg}",
         "--export-cache",
-        f"type=registry,ref={registry}/{image.repository_name}:image-buildcache{insecure_reg}",
+        f"type=registry,ref={registry}/{image.repository_name}:image-buildcache{insecure_reg},mode=min",
         "--output",
         f"type=image,name={registry}/{image.repository_name}:image-{image.version},push=true{insecure_reg}",
     ]
@@ -393,8 +387,6 @@ def build_image_buildkit(image=None):
 
     try:
         if current_app.config['KUBERNETES_ENABLED']:
-            if buildkitd_ca is not None:
-                buildctl_args.insert(0, '--tlscacert=/home/user/.docker/ca.crt')
             secret_object = kubernetes.client.V1Secret(
                 type='kubernetes.io/dockerconfigjson',
                 metadata=kubernetes.client.V1ObjectMeta(
@@ -429,6 +421,9 @@ def build_image_buildkit(image=None):
                                 'process': 'build',
                                 'build_id': image.build_job_id,
                             },
+                            annotations={
+                                'container.apparmor.security.beta.kubernetes.io/build': 'unconfined',
+                            },
                         ),
                         spec=kubernetes.client.V1PodSpec(
                             restart_policy="Never",
@@ -439,10 +434,12 @@ def build_image_buildkit(image=None):
                                     command=buildctl_command,
                                     args=buildctl_args,
                                     env=[
-                                        kubernetes.client.V1EnvVar(name="BUILDKIT_HOST", value=buildkitd_url),
+                                        kubernetes.client.V1EnvVar(name="BUILDKITD_FLAGS", value="--oci-worker-no-process-sandbox"),
                                     ],
                                     security_context=kubernetes.client.V1SecurityContext(
-                                        allow_privilege_escalation=False,
+                                        seccomp_profile=kubernetes.client.V1SeccompProfile(
+                                            type="Unconfined",
+                                        ),
                                         run_as_user=1000,
                                         run_as_group=1000,
                                     ),
@@ -480,11 +477,6 @@ def build_image_buildkit(image=None):
                     ),
                 ),
             )
-
-            if buildkitd_ca is not None:
-                with open(buildkitd_ca, 'rb') as f:
-                    secret_object.data['.dockercacrt'] = b64encode(f.read()).decode()
-                job_object.spec.template.spec.volumes[1].secret.items.append(kubernetes.client.V1KeyToPath(key='.dockercacrt', path='ca.crt'))
 
             api_client = kubernetes_ext.kubernetes_client
             core_api_instance = kubernetes.client.CoreV1Api(api_client)
