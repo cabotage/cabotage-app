@@ -74,3 +74,4 @@ class Config(metaclass=MetaFlaskEnv):
     GITHUB_APP_ID = None
     GITHUB_APP_PRIVATE_KEY = None
     GITHUB_WEBHOOK_SECRET = None
+    SHELLZ_ENABLED = False

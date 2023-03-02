@@ -252,8 +252,16 @@ def project_application(org_slug, project_slug, app_slug):
 @user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/logs')
 @login_required
 def project_application_logs(org_slug, project_slug, app_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first()
+    if organization is None:
+        abort(404)
+    project = Project.query.filter_by(organization_id=organization.id, slug=project_slug).first()
+    if project is None:
+        abort(404)
+    application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
+    if application is None:
+        abort(404)
     return render_template('user/project_application_logs.html', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug)
-
 
 @sock.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/logs/live', bp=user_blueprint)
 @login_required
@@ -311,6 +319,72 @@ def project_application_livelogs(ws, org_slug, project_slug, app_slug):
 
     while True:
         ws.send(filter_secrets(q.get()))
+
+@user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/shell')
+@login_required
+def project_application_shell(org_slug, project_slug, app_slug):
+    if not current_app.config.get('SHELLZ_ENABLED', False):
+        abort(404)
+    organization = Organization.query.filter_by(slug=org_slug).first()
+    if organization is None:
+        abort(404)
+    project = Project.query.filter_by(organization_id=organization.id, slug=project_slug).first()
+    if project is None:
+        abort(404)
+    application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
+    if application is None:
+        abort(404)
+    return render_template('user/project_application_shell.html', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug)
+
+
+@sock.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/shell/socket', bp=user_blueprint)
+@login_required
+def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
+    if not current_app.config.get('SHELLZ_ENABLED', False):
+        abort(404)
+    """
+    demo by disabling login_required and running:
+    stty raw -echo; websocat -E -b ws://localhost:8000/projects/test/test/applications/test/shell; stty sane cooked
+    """
+    organization = Organization.query.filter_by(slug=org_slug).first()
+    if organization is None:
+        abort(404)
+    project = Project.query.filter_by(organization_id=organization.id, slug=project_slug).first()
+    if project is None:
+        abort(404)
+    application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
+    if application is None:
+        abort(404)
+
+    api_client = kubernetes_ext.kubernetes_client
+    core_api_instance = kubernetes.client.CoreV1Api(api_client)
+
+    labels = {
+        'organization': organization.slug,
+        'project': project.slug,
+        'application': application.slug,
+    }
+    label_selector = ','.join([f'{k}={v}' for k, v in labels.items()])
+    pod = core_api_instance.list_namespaced_pod(namespace=organization.slug, label_selector=label_selector).items[0]
+
+    resp = kubernetes.stream.stream(core_api_instance.connect_get_namespaced_pod_exec,
+        pod.metadata.name, namespace=pod.metadata.namespace,
+        command=["/bin/sh"], container='web',
+        stderr=True, stdin=True, stdout=True, tty=True,
+        _preload_content=False
+    )
+
+    while resp.is_open():
+        resp.update()
+        if data := resp.read_stdout(timeout=0.01):
+            ws.send(data)
+        if data := resp.read_stderr(timeout=0.01):
+            ws.send(data)
+        if data := ws.receive(timeout=0.01):
+            resp.write_stdin(data)
+
+    resp.close()
+    ws.close()
 
 
 @user_blueprint.route('/projects/<org_slug>/<project_slug>/applications/create', methods=["GET", "POST"])

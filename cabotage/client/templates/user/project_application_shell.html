@@ -1,0 +1,29 @@
+{% extends "_base.html" %}
+{% block styles %}
+{{ super() }}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.1.0/css/xterm.min.css" />
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.1.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-attach@5.0.0-beta.2/lib/xterm-addon-attach.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.7.0/lib/xterm-addon-fit.min.js"></script>
+{% endblock %}
+
+{% block content %}
+  <div class="container" id="content">
+    <div id="terminal" style="margin: auto; width: 720px; height: 432px;"></div>
+    <script>
+      window.onload = function() {
+        const protocol = (window.location.protocol == 'https:') ? 'wss://' : 'ws://';
+        const socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/socket');
+
+        const term = new Terminal();
+        const attachAddon = new AttachAddon.AttachAddon(socket, true);
+        term.loadAddon(attachAddon);
+        term.resize(80, 24);
+        term.open(document.getElementById('terminal'));
+      }
+    </script>
+  </div>
+{% endblock %}
