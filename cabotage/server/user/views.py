@@ -25,6 +25,7 @@ from flask_security import (
 import backoff
 import kubernetes
 
+from dxf import DXF
 from sqlalchemy import desc
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy_continuum import version_class
@@ -915,6 +916,45 @@ def application_images_build_fromsource(application_id):
     run_image_build.delay(image_id=image.id, buildkit=True)
     return redirect(url_for('user.image_detail', image_id=image.id))
 
+@user_blueprint.route('/applications/<application_id>/clearcache', methods=['POST'])
+@login_required
+def application_clear_cache(application_id):
+    application = Application.query.filter_by(id=application_id).first()
+    if application is None:
+        abort(404)
+
+    project = application.project
+    organization = application.project.organization
+
+    organization_slug = organization.slug
+    project_slug = project.slug
+    application_slug = application.slug
+    repository_name = f"cabotage/{organization_slug}/{project_slug}/{application_slug}"
+
+    def auth(dxf, response):
+        dxf.token = generate_docker_registry_jwt(access=[{"type": "repository", "name": repository_name, "actions": ["*"]}])
+
+    registry = current_app.config['REGISTRY_BUILD']
+    registry_secure = current_app.config['REGISTRY_SECURE']
+    _tlsverify = False
+    if registry_secure:
+        _tlsverify = current_app.config['REGISTRY_VERIFY']
+        if _tlsverify == 'True':
+            _tlsverify = True
+    client = DXF(
+        host=registry,
+        repo=repository_name,
+        auth=auth,
+        insecure=(not registry_secure),
+        tlsverify=_tlsverify,
+    )
+    client.del_alias(
+        f'image-buildcache'
+    )
+    client.del_alias(
+        f'release-buildcache'
+    )
+    return redirect(url_for('user.project_application', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug))
 
 @user_blueprint.route('/application/<application_id>/scale', methods=['POST'])
 @login_required
