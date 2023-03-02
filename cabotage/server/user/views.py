@@ -377,11 +377,16 @@ def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
     while resp.is_open():
         resp.update()
         if data := resp.read_stdout(timeout=0.01):
-            ws.send(data)
+            ws.send('\x00' + data)
         if data := resp.read_stderr(timeout=0.01):
-            ws.send(data)
+            ws.send('\x00' + data)
         if data := ws.receive(timeout=0.01):
-            resp.write_stdin(data)
+            if data[0] == '\x00':
+                resp.write_stdin(data[1:])
+            elif data[0] == '\x01':
+                resp.write_channel(kubernetes.stream.ws_client.RESIZE_CHANNEL, data[1:])
+            else:
+                print((data[0],))
 
     resp.close()
     ws.close()

@@ -12,17 +12,60 @@
 
 {% block content %}
   <div class="container" id="content">
-    <div id="terminal" style="margin: auto; width: 720px; height: 432px;"></div>
+    <div class="row">
+      <div class="col-12">
+        <div style="height: 50vh; min-height: 512px; padding: .25rem; background-color: black; border-radius: .5rem;">
+          <div id="terminal" style="margin: auto; height: 90%;"></div>
+        </div>
+      </div>
+    </div>
     <script>
+      function wrap(object, method, wrapper) {
+          var fn = object[method];
+          return object[method] = function() {
+              return wrapper.apply(this, [fn.bind(this)].concat(
+                  Array.prototype.slice.call(arguments)));
+          };
+      }
       window.onload = function() {
-        const protocol = (window.location.protocol == 'https:') ? 'wss://' : 'ws://';
-        const socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/socket');
+          const protocol = (window.location.protocol == 'https:') ? 'wss://' : 'ws://';
+          const socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/socket');
 
-        const term = new Terminal();
-        const attachAddon = new AttachAddon.AttachAddon(socket, true);
-        term.loadAddon(attachAddon);
-        term.resize(80, 24);
-        term.open(document.getElementById('terminal'));
+          const term = new Terminal({
+              fontFamily: '"Cascadia Code", Menlo, monospace',
+              fontSize: 13,
+              cursorBlink: true,
+              allowProposedApi: true
+          });
+          const attachAddon = new AttachAddon.AttachAddon(socket, true);
+          wrap(attachAddon, "_sendData", function(original, data) {
+              original('\x00' + data);
+          });
+          const fitAddon = new FitAddon.FitAddon(socket, true);
+          term.loadAddon(attachAddon);
+          term.loadAddon(fitAddon);
+          term.open(document.getElementById('terminal'));
+          fitAddon.fit();
+
+          const debounce = (callback, wait) => {
+              let timeoutId = null;
+              return (...args) => {
+                  window.clearTimeout(timeoutId);
+                  timeoutId = window.setTimeout(() => {
+                      callback.apply(null, args);
+                  }, wait);
+              };
+          }
+          const sendResize = debounce((event) => {
+              fitAddon.fit();
+              socket.send("\x01" + JSON.stringify({
+                  Width: term.cols,
+                  Height: term.rows
+              }));
+              console.log(event);
+          }, 100);
+          window.addEventListener("resize", sendResize);
+          sendResize(null);
       }
     </script>
   </div>
