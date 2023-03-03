@@ -80,7 +80,8 @@ services:
       - ./docker-compose/buildkitd:/home/user/.config/buildkit
   minio:
     image: minio/minio
-    command: server /export --console-address ":9001"
+    entrypoint: sh
+    command: -c 'mkdir -p /export/cabotage-registry && /usr/bin/docker-entrypoint.sh server /export --console-address ":9001"'
     restart: always
     environment:
       MINIO_ROOT_USER: MINIOACCESSKEY
