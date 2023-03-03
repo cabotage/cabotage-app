@@ -40,6 +40,15 @@ from cabotage.server import (
     sock,
 )
 
+from cabotage.server.acl import(
+    ViewOrganizationPermission,
+    ViewProjectPermission,
+    ViewApplicationPermission,
+    AdministerOrganizationPermission,
+    AdministerProjectPermission,
+    AdministerApplicationPermission,
+)
+
 from cabotage.server.models.auth import (
     Organization,
 )
@@ -107,6 +116,8 @@ def organization(org_slug):
     organization = Organization.query.filter_by(slug=org_slug).first()
     if organization is None:
         abort(404)
+    if not ViewOrganizationPermission(organization.id).can():
+        abort(403)
     return render_template('user/organization.html', organization=organization)
 
 
@@ -142,6 +153,8 @@ def organization_projects(org_slug):
     organization = Organization.query.filter_by(slug=org_slug).first()
     if organization is None:
         abort(404)
+    if not ViewOrganizationPermission(organization.id).can():
+        abort(403)
     return render_template('user/organization_projects.html', organization=organization)
 
 
@@ -152,6 +165,8 @@ def organization_project_create(org_slug):
     organization = Organization.query.filter_by(slug=org_slug).first()
     if organization is None:
         abort(404)
+    if not ViewOrganizationPermission(organization.id).can():
+        abort(403)
 
     form = CreateProjectForm()
     form.organization_id.choices = [(str(organization.id), organization.name)]
@@ -190,6 +205,9 @@ def project(org_slug, project_slug):
     project = Project.query.filter_by(organization_id=organization.id, slug=project_slug).first()
     if project is None:
         abort(404)
+    if not ViewProjectPermission(project.id).can():
+        abort(403)
+
     return render_template('user/project.html', project=project)
 
 
@@ -201,6 +219,11 @@ def project_create():
     form.organization_id.choices = [(str(o.organization_id), o.organization.name) for o in user.organizations]
 
     if form.validate_on_submit():
+        organization = Organization.query.filter_by(id=form.organization_id.data).first()
+        if organization is None:
+            abort(404)
+        if not AdministerOrganizationPermission(organization.id).can():
+            abort(403)
         project = Project(organization_id=form.organization_id.data, name=form.name.data, slug=form.slug.data)
         db.session.add(project)
         db.session.flush()
@@ -230,6 +253,8 @@ def project_application(org_slug, project_slug, app_slug):
     application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
     if application is None:
         abort(404)
+    if not ViewApplicationPermission(application.id).can():
+        abort(403)
 
     pod_class_info = '<table class="table"><tr><th>Class</th><th>CPU</th><th>Mem</th></tr>'
     for pod_class, parameters in pod_classes.items():
@@ -261,6 +286,9 @@ def project_application_logs(org_slug, project_slug, app_slug):
     application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
     if application is None:
         abort(404)
+    if not ViewApplicationPermission(application.id).can():
+        abort(403)
+
     return render_template('user/project_application_logs.html', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug)
 
 @sock.route('/projects/<org_slug>/<project_slug>/applications/<app_slug>/logs/live', bp=user_blueprint)
@@ -275,6 +303,8 @@ def project_application_livelogs(ws, org_slug, project_slug, app_slug):
     application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
     if application is None:
         abort(404)
+    if not ViewApplicationPermission(application.id).can():
+        abort(403)
 
     api_client = kubernetes_ext.kubernetes_client
     core_api_instance = kubernetes.client.CoreV1Api(api_client)
@@ -334,6 +364,9 @@ def project_application_shell(org_slug, project_slug, app_slug):
     application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
     if application is None:
         abort(404)
+    if not AdministerApplicationPermission(application.id).can():
+        abort(403)
+
     return render_template('user/project_application_shell.html', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug)
 
 
@@ -355,6 +388,8 @@ def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
     application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
     if application is None:
         abort(404)
+    if not AdministerApplicationPermission(application.id).can():
+        abort(403)
 
     api_client = kubernetes_ext.kubernetes_client
     core_api_instance = kubernetes.client.CoreV1Api(api_client)
@@ -403,6 +438,8 @@ def project_application_create(org_slug, project_slug):
     project = Project.query.filter_by(organization_id=organization.id, slug=project_slug).first()
     if project is None:
         abort(404)
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
 
     form.organization_id.choices = [(str(organization.id), organization.name)]
     form.project_id.choices = [(str(project.id), project.name)]
@@ -436,6 +473,8 @@ def project_applications(org_slug, project_slug):
     project = Project.query.filter_by(organization_id=organization.id, slug=project_slug).first()
     if project is None:
         abort(404)
+    if not ViewProjectPermission(project.id).can():
+        abort(403)
     return render_template('user/project_applications.html', project=project)
 
 
@@ -454,6 +493,8 @@ def project_application_configuration(org_slug, project_slug, app_slug, config_i
     configuration = Configuration.query.filter_by(application_id=application.id, id=config_id).first()
     if configuration is None:
         abort(404)
+    if not AdministerApplicationPermission(application.id).can():
+        abort(403)
 
     return render_template('user/project_application_configuration.html', configuration=configuration)
 
@@ -470,6 +511,8 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
     application = Application.query.filter_by(project_id=project.id, slug=app_slug).first()
     if application is None:
         abort(404)
+    if not AdministerApplicationPermission(application.id).can():
+        abort(403)
 
     form = CreateConfigurationForm()
     form.application_id.choices = [(str(application.id), f'{organization.slug}/{project.slug}: {application.slug}')]
@@ -527,6 +570,8 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
     configuration = Configuration.query.filter_by(application_id=application.id, id=config_id).first()
     if configuration is None:
         abort(404)
+    if not AdministerApplicationPermission(application.id).can():
+        abort(403)
 
     form = EditConfigurationForm(obj=configuration)
     form.application_id.choices = [(str(configuration.application.id), f'{organization.slug}/{project.slug}: {application.slug}')]
@@ -574,6 +619,9 @@ def project_application_deployment_automation(application_id):
     application = Application.query.filter_by(id=application_id).first()
     if application is None:
         abort(404)
+    if not AdministerApplicationPermission(application.id).can():
+        abort(403)
+
     form = EditApplicationDeployAutomationForm(obj=application)
     form.application_id.choices = [(str(application.id), f'{application.project.organization.slug}/{application.project.slug}: {application.slug}')]
     form.application_id.data = str(application.id)
@@ -611,6 +659,8 @@ def project_application_configuration_delete(org_slug, project_slug, app_slug, c
     configuration = Configuration.query.filter_by(application_id=application.id, id=config_id).first()
     if configuration is None:
         abort(404)
+    if not AdministerApplicationPermission(application.id).can():
+        abort(403)
 
     if request.method == 'GET':
         form = DeleteConfigurationForm(obj=configuration)
@@ -653,6 +703,8 @@ def application_images(application_id):
     application = Application.query.filter_by(id=application_id).first()
     if application is None:
         abort(404)
+    if not ViewApplicationPermission(application.id).can():
+        abort(403)
     page = request.args.get('page', 1, type=int)
     images = application.images.order_by(Image.version.desc()).paginate(page, 20, False)
     return render_template('user/application_images.html', page=page, application=application, images=images.items)
@@ -664,6 +716,8 @@ def image_detail(image_id):
     image = Image.query.filter_by(id=image_id).first()
     if image is None:
         abort(404)
+    if not ViewApplicationPermission(image.application.id).can():
+        abort(403)
     if image.error:
         image.image_build_log = f"{image.image_build_log}\n**Error!**"
     secret = current_app.config['REGISTRY_AUTH_SECRET']
@@ -677,6 +731,8 @@ def image_build_livelogs(ws, image_id):
     image = Image.query.filter_by(id=image_id).first()
     if image is None or image.error:
         abort(404)
+    if not ViewApplicationPermission(image.application.id).can():
+        abort(403)
     if image.image_build_log is not None:
         ws.send(f'Job Pod imagebuild-{image.build_job_id}')
         for line in image.image_build_log.split('\n'):
@@ -731,6 +787,8 @@ def application_releases(application_id):
     application = Application.query.filter_by(id=application_id).first()
     if application is None:
         abort(404)
+    if not ViewApplicationPermission(application.id).can():
+        abort(403)
     page = request.args.get('page', 1, type=int)
     releases = application.releases.order_by(Release.version.desc()).paginate(page, 20, False)
     return render_template('user/application_releases.html', page=page, application=application, releases=releases.items)
@@ -742,6 +800,8 @@ def release_detail(release_id):
     release = Release.query.filter_by(id=release_id).first()
     if release is None:
         abort(404)
+    if not ViewApplicationPermission(release.application.id).can():
+        abort(403)
     secret = current_app.config['REGISTRY_AUTH_SECRET']
     docker_pull_credentials = release.docker_pull_credentials(secret)
     image_pull_secrets = release.image_pull_secrets(secret, registry_urls=[current_app.config['REGISTRY_PULL'], current_app.config['REGISTRY_BUILD']])
@@ -753,6 +813,8 @@ def release_build_livelogs(ws, release_id):
     release = Release.query.filter_by(id=release_id).first()
     if release is None or release.error:
         abort(404)
+    if not ViewApplicationPermission(release.application.id).can():
+        abort(403)
     if release.release_build_log is not None:
         ws.send(f'Job Pod releasebuild-{release.build_job_id}')
         for line in release.release_build_log.split('\n'):
@@ -814,6 +876,8 @@ def deployment_livelogs(ws, deployment_id):
     deployment = Deployment.query.filter_by(id=deployment_id).first()
     if deployment is None:
         abort(404)
+    if not ViewApplicationPermission(deployment.application.id).can():
+        abort(403)
 
     if deployment.deploy_log is not None:
         ws.send(f'Job Pod deployment-{deployment.job_id}')
@@ -875,6 +939,8 @@ def deployment_detail(deployment_id):
     deployment = Deployment.query.filter_by(id=deployment_id).first()
     if deployment is None:
         abort(404)
+    if not ViewApplicationPermission(deployment.application.id).can():
+        abort(403)
     return render_template('user/deployment_detail.html', deployment=deployment)
 
 
@@ -884,6 +950,8 @@ def application_release_create(application_id):
     application = Application.query.filter_by(id=application_id).first()
     if application is None:
         abort(404)
+    if not ViewApplicationPermission(application.id).can():
+        abort(403)
 
     release = application.create_release()
     db.session.add(release)
@@ -923,6 +991,8 @@ def application_images_build_submit(application_id):
     application = Application.query.filter_by(id=application_id).first()
     if application is None:
         abort(404)
+    if not AdministerApplicationPermission(application.id).can():
+        abort(403)
     project = application.project
     organization = application.project.organization
 
@@ -967,6 +1037,8 @@ def application_images_build_fromsource(application_id):
     application = Application.query.filter_by(id=application_id).first()
     if application is None:
         abort(404)
+    if not AdministerApplicationPermission(application.id).can():
+        abort(403)
     project = application.project
     organization = application.project.organization
 
@@ -1001,6 +1073,8 @@ def application_clear_cache(application_id):
     application = Application.query.filter_by(id=application_id).first()
     if application is None:
         abort(404)
+    if not AdministerApplicationPermission(application.id).can():
+        abort(403)
 
     project = application.project
     organization = application.project.organization
@@ -1041,6 +1115,8 @@ def application_scale(application_id):
     application = Application.query.filter_by(id=application_id).first()
     if application is None:
         abort(404)
+    if not AdministerApplicationPermission(application.id).can():
+        abort(403)
     form = ApplicationScaleForm()
     form.application_id.data = str(application.id)
     if form.validate_on_submit():
@@ -1091,6 +1167,8 @@ def release_deploy(release_id):
     release = Release.query.filter_by(id=release_id).first()
     if release is None:
         abort(404)
+    if not AdministerApplicationPermission(release.application.id).can():
+        abort(403)
     deployment = Deployment(
         application_id=release.application.id,
         release=release.asdict,

@@ -5,15 +5,19 @@ from flask_bcrypt import Bcrypt
 from flask_bootstrap import Bootstrap
 from flask_debugtoolbar import DebugToolbarExtension
 from flask_humanize import Humanize
+from flask_login import LoginManager
 from flask_mail import Mail
 from flask_migrate import Migrate
 from flask_security import Security, SQLAlchemyUserDatastore
+from flask_principal import Principal, identity_loaded
 from flask_sqlalchemy import SQLAlchemy
 from flask_sock import Sock
 
 from celery import Celery
 from celery import Task
 from sqlalchemy import MetaData
+
+from cabotage.server.acl import cabotage_on_identity_loaded
 
 from cabotage.server.ext.consul import Consul
 from cabotage.server.ext.vault import Vault
@@ -38,6 +42,8 @@ db_metadata = MetaData(
     }
 )
 db = SQLAlchemy(metadata=db_metadata, engine_options={'pool_pre_ping': True})
+principal = Principal()
+login_manager = LoginManager()
 mail = Mail()
 migrate = Migrate()
 humanize = Humanize()
@@ -125,6 +131,9 @@ def create_app():
     )
     vault_db_creds.init_app(app)
     db.init_app(app)
+    principal.init_app(app)
+    identity_loaded.connect(cabotage_on_identity_loaded, app)
+    login_manager.init_app(app)
     mail.init_app(app)
     migrate.init_app(app, db)
     nav.init_app(app)
@@ -137,6 +146,10 @@ def create_app():
     github_app.init_app(app)
     celery_init_app(app)
     sock.init_app(app)
+
+    @login_manager.user_loader
+    def load_user(userid):
+        return user_datastore.find_user(id=userid)
 
     # register blueprints
     from cabotage.server.user.views import user_blueprint
