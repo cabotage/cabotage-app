@@ -1,6 +1,7 @@
 import os
 
-from flask import Flask, render_template
+from flask import Flask, render_template, url_for
+from flask_admin import Admin, helpers
 from flask_bcrypt import Bcrypt
 from flask_bootstrap import Bootstrap
 from flask_debugtoolbar import DebugToolbarExtension
@@ -77,6 +78,9 @@ def create_app():
         static_folder='../client/static'
     )
 
+    from cabotage.server.models.admin import AdminIndexView
+    admin = Admin(name='cabotage_admin', index_view=AdminIndexView(), template_mode='bootstrap3')
+
     from cabotage.server.models.auth import User, Role
     user_datastore = SQLAlchemyUserDatastore(db, User, Role)
 
@@ -91,6 +95,7 @@ def create_app():
     app.config.from_object(app_settings)
 
     # set up extensions
+    admin.init_app(app)
     bcrypt.init_app(app)
     toolbar.init_app(app)
     bootstrap.init_app(app)
@@ -144,5 +149,20 @@ def create_app():
     @app.errorhandler(500)
     def server_error_page(error):
         return render_template('errors/500.html'), 500
+
+    from cabotage.server.models.admin import AdminModelView
+    from cabotage.server.models.auth import Organization, Team
+    from cabotage.server.models.projects import Project, Application, Configuration, Image, Release, Deployment, Hook
+    admin.add_view(AdminModelView(Role, db.session))
+    admin.add_view(AdminModelView(Organization, db.session))
+    admin.add_view(AdminModelView(Team, db.session))
+    admin.add_view(AdminModelView(Project, db.session))
+    admin.add_view(AdminModelView(Application, db.session))
+    admin.add_view(AdminModelView(Configuration, db.session))
+    admin.add_view(AdminModelView(Image, db.session))
+    admin.add_view(AdminModelView(Release, db.session))
+    admin.add_view(AdminModelView(Deployment, db.session))
+    admin.add_view(AdminModelView(Hook, db.session))
+    admin.add_view(AdminModelView(User, db.session))
 
     return app
