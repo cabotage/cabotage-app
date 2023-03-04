@@ -11,6 +11,7 @@ from flask import (
     current_app,
     flash,
     jsonify,
+    make_response,
     redirect,
     render_template,
     request,
@@ -1199,6 +1200,11 @@ def release_deploy(release_id):
 @user_blueprint.route('/signing-cert', methods=['GET'])
 def signing_cert():
     cert = vault.signing_cert
+    raw = request.args.get("raw", None)
+    if raw is not None:
+        response = make_response(cert, 200)
+        response.mimetype = "text/plain"
+        return response
     return render_template('user/signing_cert.html', signing_certificate=cert)
 
 @user_blueprint.route('/github/hooks', methods=['POST'])
