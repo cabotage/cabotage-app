@@ -150,6 +150,10 @@ def create_app():
     def server_error_page(error):
         return render_template('errors/500.html'), 500
 
+    @app.cli.command("create-bucket")
+    def create_bucket():
+        minio.create_bucket()
+
     from cabotage.server.models.admin import AdminModelView
     from cabotage.server.models.auth import Organization, Team
     from cabotage.server.models.projects import Project, Application, Configuration, Image, Release, Deployment, Hook
