@@ -3,6 +3,8 @@ import time
 
 from tarfile import TarInfo, TarFile
 
+import kubernetes
+
 RELEASE_DOCKERFILE_TEMPLATE = """
 FROM {registry}/{image.repository_name}:image-{image.version}
 COPY --from=hashicorp/envconsul:0.13.1 /bin/envconsul /usr/bin/envconsul
@@ -60,3 +62,22 @@ def tarfile_context_for_release(release, dockerfile):
     tar_fh.seek(0)
 
     return tar_fh
+
+
+def configmap_context_for_release(release, dockerfile):
+    data = {
+        "Dockerfile": dockerfile,
+        "entrypoint.sh": ENTRYPOINT,
+    }
+    for (
+        process_name,
+        envconsul_configuration,
+    ) in release.envconsul_configurations.items():
+        data[f"envconsul-{process_name}.hcl"] = envconsul_configuration
+
+    return kubernetes.client.V1ConfigMap(
+        metadata=kubernetes.client.V1ObjectMeta(
+            name=f"build-context-{release.build_job_id}",
+        ),
+        data=data,
+    )

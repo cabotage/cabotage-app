@@ -58,6 +58,42 @@ def fetch_namespace(core_api_instance, release):
     return namespace
 
 
+def render_cabotage_ca_configmap(release):
+    namespace_name = release.application.project.organization.slug
+    with open('/var/run/secrets/cabotage.io/ca.crt', 'r') as f:
+        ca_crt = f.read()
+    configmap_object = kubernetes.client.V1ConfigMap(
+        metadata=kubernetes.client.V1ObjectMeta(
+            name='cabotage-ca',
+        ),
+        data={
+            "ca.crt": ca_crt,
+        }
+    )
+    return configmap_object
+
+
+def create_cabotage_ca_configmap(core_api_instance, release):
+    configmap_object = render_cabotage_ca_configmap(release)
+    namespace_name = release.application.project.organization.slug
+    try:
+        return core_api_instance.create_namespaced_config_map(namespace_name, configmap_object)
+    except Exception as exc:
+        raise DeployError(f'Unexpected exception creating ConfigMap/cabotage-ca in {namespace_name}: {exc}')
+
+
+def fetch_cabotage_ca_configmap(core_api_instance, release):
+    namespace_name = release.application.project.organization.slug
+    try:
+        configmap = core_api_instance.read_namespaced_config_map("cabotage-ca", namespace_name)
+    except ApiException as exc:
+        if exc.status == 404:
+            configmap = create_cabotage_ca_configmap(core_api_instance, release)
+        else:
+            raise DeployError(f'Unexpected exception fetching ConfigMap/cabotage-ca in {namespace_name}: {exc}')
+    return configmap
+
+
 def render_service_account(release):
     service_account_name = f'{release.application.project.slug}-{release.application.slug}'
     service_account_object = kubernetes.client.V1ServiceAccount(
@@ -153,7 +189,7 @@ def render_cabotage_enroller_container(release, process_name, with_tls=True):
 
     return kubernetes.client.V1Container(
         name='cabotage-enroller',
-        image='cabotage/sidecar:v2.0.0a1',
+        image='cabotage/sidecar:3',
         image_pull_policy='IfNotPresent',
         env=[
             kubernetes.client.V1EnvVar(name='NAMESPACE', value_from=kubernetes.client.V1EnvVarSource(field_ref=kubernetes.client.V1ObjectFieldSelector(field_path='metadata.namespace'))),
@@ -177,7 +213,7 @@ def render_cabotage_sidecar_container(release, with_tls=True):
     role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
     return kubernetes.client.V1Container(
         name='cabotage-sidecar',
-        image='cabotage/sidecar:v2.0.0a1',
+        image='cabotage/sidecar:3',
         image_pull_policy='IfNotPresent',
         args=args,
         volume_mounts=[
@@ -246,13 +282,13 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
         )
     return kubernetes.client.V1Container(
         name='cabotage-sidecar-tls',
-        image='cabotage/sidecar:v2.0.0a1',
+        image='cabotage/sidecar:3',
         image_pull_policy='IfNotPresent',
-        command=["./ghostunnel"],
+        command=["/usr/bin/ghostunnel"],
         args=[
             "server",
             "--keystore=/var/run/secrets/vault/combined.pem",
-            "--cacert=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt",
+            "--cacert=/var/run/secrets/cabotage.io/ca.crt",
             "--timed-reload=300s",
             "--shutdown-timeout=10s",
             "--connect-timeout=10s",
@@ -295,9 +331,9 @@ def render_process_container(release, process_name, datadog_tags, with_tls=True,
         image_pull_policy='Always',
         env=[
             kubernetes.client.V1EnvVar(name='VAULT_ADDR', value='https://vault.cabotage.svc.cluster.local'),
-            kubernetes.client.V1EnvVar(name='VAULT_CACERT', value='/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'),
+            kubernetes.client.V1EnvVar(name='VAULT_CACERT', value='/var/run/secrets/cabotage.io/ca.crt'),
             kubernetes.client.V1EnvVar(name='CONSUL_HTTP_ADDR', value='https://consul.cabotage.svc.cluster.local:8443'),
-            kubernetes.client.V1EnvVar(name='CONSUL_CACERT', value='/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'),
+            kubernetes.client.V1EnvVar(name='CONSUL_CACERT', value='/var/run/secrets/cabotage.io/ca.crt'),
             kubernetes.client.V1EnvVar(name='DATADOG_TAGS', value=','.join([f'{k}:{v}' for k, v in datadog_tags.items()])),
             kubernetes.client.V1EnvVar(name='SOURCE_COMMIT', value=release.commit_sha),
         ],
@@ -436,6 +472,7 @@ def render_deployment(namespace, release, service_account_name, process_name):
                         'application': release.application.slug,
                         'process': process_name,
                         'app': role_name,
+                        'ca-admission.cabotage.io': 'true',
                     }
                 ),
                 spec=render_podspec(release, process_name, service_account_name),
@@ -513,6 +550,7 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
                         'app': role_name,
                         'release': str(release.version),
                         'deployment': job_id,
+                        'ca-admission.cabotage.io': "true",
                     }
                 ),
                 spec=render_podspec(release, process_name, service_account_name),
@@ -592,6 +630,8 @@ def deploy_release(deployment):
         batch_api_instance = kubernetes.client.BatchV1Api(api_client)
         deploy_log.append(f"Fetching Namespace")
         namespace = fetch_namespace(core_api_instance, deployment.release_object)
+        deploy_log.append(f"Fetching Cabotage CA Cert ConfigMap")
+        cabotage_ca_configmap = fetch_cabotage_ca_configmap(core_api_instance, deployment.release_object)
         deploy_log.append(f"Fetching ServiceAccount")
         service_account = fetch_service_account(core_api_instance, deployment.release_object)
         deploy_log.append(f"Fetching ImagePullSecrets")

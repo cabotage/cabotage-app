@@ -107,10 +107,6 @@ def build_release_buildkit(release):
         },
     })
 
-    with current_app.app_context(), current_app.test_request_context():
-        context_path = url_for('user.release_build_context_tarfile', release_id=release.id, _external=False)
-    context_url = f'{current_app.config["EXT_PREFERRED_URL_SCHEME"]}://{current_app.config["EXT_SERVER_NAME"]}{context_path}'
-
     buildctl_command = [
         "buildctl-daemonless.sh",
     ]
@@ -119,8 +115,10 @@ def build_release_buildkit(release):
         "--progress=plain",
         "--frontend",
         "dockerfile.v0",
-        "--opt",
-        f"context={context_url}",
+        "--local",
+        "dockerfile=/context",
+        "--local",
+        "context=/context",
         "--output",
         f"type=image,name={registry}/{release.repository_name}:release-{release.version},push=true{insecure_reg}",
     ]
@@ -141,7 +139,7 @@ def build_release_buildkit(release):
                     '.dockerconfigjson': b64encode(dockerconfigjson.encode()).decode(),
                 },
             )
-            configmap_object = kubernetes.client.V1ConfigMap(
+            buildkitd_toml_configmap_object = kubernetes.client.V1ConfigMap(
                 metadata=kubernetes.client.V1ObjectMeta(
                     name=f'buildkitd-toml-{release.build_job_id}',
                 ),
@@ -149,6 +147,7 @@ def build_release_buildkit(release):
                     'buildkitd.toml': buildkitd_toml,
                 },
             )
+            context_configmap_object = release.release_build_context_configmap
             job_object = kubernetes.client.V1Job(
                 metadata=kubernetes.client.V1ObjectMeta(
                     name=f'releasebuild-{release.build_job_id}',
@@ -210,6 +209,23 @@ def build_release_buildkit(release):
                                             mount_path="/home/user/.docker",
                                             name="buildkit-registry-auth",
                                         ),
+                                        kubernetes.client.V1VolumeMount(
+                                            mount_path="/context/Dockerfile",
+                                            sub_path="Dockerfile",
+                                            name="build-context",
+                                        ),
+                                        kubernetes.client.V1VolumeMount(
+                                            mount_path="/context/entrypoint.sh",
+                                            sub_path="entrypoint.sh",
+                                            name="build-context",
+                                        ),
+                                        *[
+                                            kubernetes.client.V1VolumeMount(
+                                                mount_path=f"/context/envconsul-{process_name}.hcl",
+                                                sub_path=f"envconsul-{process_name}.hcl",
+                                                name="build-context",
+                                            ) for process_name in release.envconsul_configurations
+                                        ]
                                     ]
                                 ),
                             ],
@@ -242,6 +258,12 @@ def build_release_buildkit(release):
                                         ]
                                     )
                                 ),
+                                kubernetes.client.V1Volume(
+                                    name="build-context",
+                                    config_map=kubernetes.client.V1ConfigMapVolumeSource(
+                                        name=f"build-context-{release.build_job_id}"
+                                    ),
+                                ),
                             ]
                         ),
                     ),
@@ -251,7 +273,8 @@ def build_release_buildkit(release):
             api_client = kubernetes_ext.kubernetes_client
             core_api_instance = kubernetes.client.CoreV1Api(api_client)
             batch_api_instance = kubernetes.client.BatchV1Api(api_client)
-            core_api_instance.create_namespaced_config_map('default', configmap_object)
+            core_api_instance.create_namespaced_config_map('default', context_configmap_object)
+            core_api_instance.create_namespaced_config_map('default', buildkitd_toml_configmap_object)
             core_api_instance.create_namespaced_secret('default', secret_object)
 
             try:
@@ -259,6 +282,7 @@ def build_release_buildkit(release):
             finally:
                 core_api_instance.delete_namespaced_secret(f'buildkit-registry-auth-{release.build_job_id}', 'default', propagation_policy='Foreground')
                 core_api_instance.delete_namespaced_config_map(f'buildkitd-toml-{release.build_job_id}', 'default', propagation_policy='Foreground')
+                core_api_instance.delete_namespaced_config_map(f'build-context-{release.build_job_id}', 'default', propagation_policy='Foreground')
 
             release.release_build_log = filter_secrets(job_logs)
             db.session.commit()
@@ -450,7 +474,7 @@ def build_image_buildkit(image=None):
                     '.dockerconfigjson': b64encode(dockerconfigjson.encode()).decode(),
                 }
             )
-            configmap_object = kubernetes.client.V1ConfigMap(
+            buildkitd_toml_configmap_object = kubernetes.client.V1ConfigMap(
                 metadata=kubernetes.client.V1ObjectMeta(
                     name=f'buildkitd-toml-{image.build_job_id}',
                 ),
@@ -560,7 +584,7 @@ def build_image_buildkit(image=None):
             api_client = kubernetes_ext.kubernetes_client
             core_api_instance = kubernetes.client.CoreV1Api(api_client)
             batch_api_instance = kubernetes.client.BatchV1Api(api_client)
-            core_api_instance.create_namespaced_config_map('default', configmap_object)
+            core_api_instance.create_namespaced_config_map('default', buildkitd_toml_configmap_object)
             core_api_instance.create_namespaced_secret('default', secret_object)
 
             try:

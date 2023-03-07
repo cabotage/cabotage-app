@@ -20,6 +20,7 @@ from cabotage.utils.docker_auth import (
     generate_kubernetes_imagepullsecrets,
 )
 from cabotage.utils.release_build_context import (
+    configmap_context_for_release,
     tarfile_context_for_release,
     RELEASE_DOCKERFILE_TEMPLATE,
 )
@@ -515,6 +516,14 @@ class Release(db.Model, Timestamp):
         if self.dockerfile:
             dockerfile = self.dockerfile
         return tarfile_context_for_release(self, dockerfile)
+
+    @property
+    def release_build_context_configmap(self):
+        process_commands = "\n".join([f'COPY envconsul-{process_name}.hcl /etc/cabotage/envconsul-{process_name}.hcl' for process_name in  self.envconsul_configurations])
+        dockerfile = RELEASE_DOCKERFILE_TEMPLATE.format(registry=current_app.config['REGISTRY_BUILD'], image=self.image_object, process_commands=process_commands)
+        if self.dockerfile:
+            dockerfile = self.dockerfile
+        return configmap_context_for_release(self, dockerfile)
 
 @listens_for(Release, 'before_insert')
 def release_before_insert_listener(mapper, connection, target):
