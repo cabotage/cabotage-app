@@ -15,6 +15,7 @@ from base64 import b64encode, b64decode
 
 import kubernetes
 import requests
+import toml
 
 from contextlib import ExitStack
 from tarfile import (
@@ -75,6 +76,7 @@ def build_release_buildkit(release):
     secret = current_app.config['REGISTRY_AUTH_SECRET']
     registry = current_app.config['REGISTRY_BUILD']
     registry_secure = current_app.config['REGISTRY_SECURE']
+    registry_ca = current_app.config['REGISTRY_VERIFY']
     buildkitd_url = docker_url = current_app.config['BUILDKITD_URL']
     buildkitd_ca = current_app.config['BUILDKITD_VERIFY']
 
@@ -96,6 +98,14 @@ def build_release_buildkit(release):
         resource_name=release.repository_name,
         resource_actions=['push', 'pull'],
     )
+    buildkitd_toml = toml.dumps({
+        "registry": {
+            registry: {
+                "insecure": not registry_secure,
+                "ca": [ca for ca in [registry_ca] if registry_secure and not isinstance(ca, bool)],
+            }
+        },
+    })
 
     with current_app.app_context(), current_app.test_request_context():
         context_path = url_for('user.release_build_context_tarfile', release_id=release.id, _external=False)
@@ -115,6 +125,10 @@ def build_release_buildkit(release):
         f"type=image,name={registry}/{release.repository_name}:release-{release.version},push=true{insecure_reg}",
     ]
 
+    if registry_ca and not isinstance(registry_ca, bool):
+        buildctl_args.append('--registry-auth-tlscacert')
+        buildctl_args.append(registry_ca)
+
     db.session.add(release)
     try:
         if current_app.config['KUBERNETES_ENABLED']:
@@ -125,7 +139,15 @@ def build_release_buildkit(release):
                 ),
                 data={
                     '.dockerconfigjson': b64encode(dockerconfigjson.encode()).decode(),
-                }
+                },
+            )
+            configmap_object = kubernetes.client.V1ConfigMap(
+                metadata=kubernetes.client.V1ObjectMeta(
+                    name=f'buildkitd-toml-{release.build_job_id}',
+                ),
+                data={
+                    'buildkitd.toml': buildkitd_toml,
+                },
             )
             job_object = kubernetes.client.V1Job(
                 metadata=kubernetes.client.V1ObjectMeta(
@@ -151,6 +173,7 @@ def build_release_buildkit(release):
                                 'application': release.application.slug,
                                 'process': 'build',
                                 'build_id': release.build_job_id,
+                                'ca-admission.cabotage.io': 'true',
                             },
                             annotations={
                                 'container.apparmor.security.beta.kubernetes.io/build': 'unconfined',
@@ -161,11 +184,11 @@ def build_release_buildkit(release):
                             containers=[
                                 kubernetes.client.V1Container(
                                     name="build",
-                                    image="moby/buildkit:v0.11.3-rootless",
+                                    image="cabotage/buildkit:lastest-rootless",
                                     command=buildctl_command,
                                     args=buildctl_args,
                                     env=[
-                                        kubernetes.client.V1EnvVar(name="BUILDKITD_FLAGS", value="--oci-worker-no-process-sandbox"),
+                                        kubernetes.client.V1EnvVar(name="BUILDKITD_FLAGS", value="--config /home/user/.config/buildkit/buildkitd.toml --oci-worker-no-process-sandbox"),
                                     ],
                                     security_context=kubernetes.client.V1SecurityContext(
                                         seccomp_profile=kubernetes.client.V1SeccompProfile(
@@ -180,6 +203,10 @@ def build_release_buildkit(release):
                                             name="buildkitd",
                                         ),
                                         kubernetes.client.V1VolumeMount(
+                                            mount_path="/home/user/.config/buildkit",
+                                            name="buildkitd-toml",
+                                        ),
+                                        kubernetes.client.V1VolumeMount(
                                             mount_path="/home/user/.docker",
                                             name="buildkit-registry-auth",
                                         ),
@@ -190,6 +217,18 @@ def build_release_buildkit(release):
                                 kubernetes.client.V1Volume(
                                     name="buildkitd",
                                     empty_dir=kubernetes.client.V1EmptyDirVolumeSource(),
+                                ),
+                                kubernetes.client.V1Volume(
+                                    name="buildkitd-toml",
+                                    config_map=kubernetes.client.V1ConfigMapVolumeSource(
+                                        name=f"buildkitd-toml-{release.build_job_id}",
+                                        items=[
+                                            kubernetes.client.V1KeyToPath(
+                                                key='buildkitd.toml',
+                                                path='buildkitd.toml',
+                                            ),
+                                        ],
+                                    ),
                                 ),
                                 kubernetes.client.V1Volume(
                                     name="buildkit-registry-auth",
@@ -212,12 +251,14 @@ def build_release_buildkit(release):
             api_client = kubernetes_ext.kubernetes_client
             core_api_instance = kubernetes.client.CoreV1Api(api_client)
             batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+            core_api_instance.create_namespaced_config_map('default', configmap_object)
             core_api_instance.create_namespaced_secret('default', secret_object)
 
             try:
                 job_complete, job_logs = run_job(core_api_instance, batch_api_instance, 'default', job_object)
             finally:
                 core_api_instance.delete_namespaced_secret(f'buildkit-registry-auth-{release.build_job_id}', 'default', propagation_policy='Foreground')
+                core_api_instance.delete_namespaced_config_map(f'buildkitd-toml-{release.build_job_id}', 'default', propagation_policy='Foreground')
 
             release.release_build_log = filter_secrets(job_logs)
             db.session.commit()
@@ -251,7 +292,7 @@ def build_release_buildkit(release):
     try:
         _tlsverify = False
         if registry_secure:
-            _tlsverify = current_app.config['REGISTRY_VERIFY']
+            _tlsverify = registry_ca
             if _tlsverify == 'True':
                 _tlsverify = True
         client = DXF(
@@ -298,6 +339,7 @@ def build_image_buildkit(image=None):
     secret = current_app.config['REGISTRY_AUTH_SECRET']
     registry = current_app.config['REGISTRY_BUILD']
     registry_secure = current_app.config['REGISTRY_SECURE']
+    registry_ca = current_app.config['REGISTRY_VERIFY']
     buildkitd_url = docker_url = current_app.config['BUILDKITD_URL']
     buildkitd_ca = current_app.config['BUILDKITD_VERIFY']
 
@@ -362,6 +404,14 @@ def build_image_buildkit(image=None):
         resource_name=image.repository_name,
         resource_actions=['push', 'pull'],
     )
+    buildkitd_toml = toml.dumps({
+        "registry": {
+            registry: {
+                "insecure": not registry_secure,
+                "ca": [ca for ca in [registry_ca] if registry_secure and not isinstance(ca, bool)],
+            }
+        },
+    })
 
     buildctl_command = [
         "buildctl-daemonless.sh",
@@ -385,6 +435,10 @@ def build_image_buildkit(image=None):
         buildctl_args.append('--opt')
         buildctl_args.append(shlex.quote(f'build-arg:{k}={v}'))
 
+    if registry_ca and not isinstance(registry_ca, bool):
+        buildctl_args.append(registry_ca)
+        buildctl_args.append('--registry-auth-tlscacert')
+
     try:
         if current_app.config['KUBERNETES_ENABLED']:
             secret_object = kubernetes.client.V1Secret(
@@ -395,6 +449,14 @@ def build_image_buildkit(image=None):
                 data={
                     '.dockerconfigjson': b64encode(dockerconfigjson.encode()).decode(),
                 }
+            )
+            configmap_object = kubernetes.client.V1ConfigMap(
+                metadata=kubernetes.client.V1ObjectMeta(
+                    name=f'buildkitd-toml-{image.build_job_id}',
+                ),
+                data={
+                    'buildkitd.toml': buildkitd_toml,
+                },
             )
             job_object = kubernetes.client.V1Job(
                 metadata=kubernetes.client.V1ObjectMeta(
@@ -420,6 +482,7 @@ def build_image_buildkit(image=None):
                                 'application': image.application.slug,
                                 'process': 'build',
                                 'build_id': image.build_job_id,
+                                'ca-admission.cabotage.io': "true",
                             },
                             annotations={
                                 'container.apparmor.security.beta.kubernetes.io/build': 'unconfined',
@@ -430,11 +493,11 @@ def build_image_buildkit(image=None):
                             containers=[
                                 kubernetes.client.V1Container(
                                     name="build",
-                                    image="moby/buildkit:v0.11.3-rootless",
+                                    image="cabotage/buildkit:lastest-rootless",
                                     command=buildctl_command,
                                     args=buildctl_args,
                                     env=[
-                                        kubernetes.client.V1EnvVar(name="BUILDKITD_FLAGS", value="--oci-worker-no-process-sandbox"),
+                                        kubernetes.client.V1EnvVar(name="BUILDKITD_FLAGS", value="--config /home/user/.config/buildkit/buildkitd.toml --oci-worker-no-process-sandbox"),
                                     ],
                                     security_context=kubernetes.client.V1SecurityContext(
                                         seccomp_profile=kubernetes.client.V1SeccompProfile(
@@ -449,6 +512,10 @@ def build_image_buildkit(image=None):
                                             name="buildkitd",
                                         ),
                                         kubernetes.client.V1VolumeMount(
+                                            mount_path="/home/user/.config/buildkit",
+                                            name="buildkitd-toml",
+                                        ),
+                                        kubernetes.client.V1VolumeMount(
                                             mount_path="/home/user/.docker",
                                             name="buildkit-registry-auth",
                                         ),
@@ -459,6 +526,18 @@ def build_image_buildkit(image=None):
                                 kubernetes.client.V1Volume(
                                     name="buildkitd",
                                     empty_dir=kubernetes.client.V1EmptyDirVolumeSource(),
+                                ),
+                                kubernetes.client.V1Volume(
+                                    name="buildkitd-toml",
+                                    config_map=kubernetes.client.V1ConfigMapVolumeSource(
+                                        name=f"buildkitd-toml-{image.build_job_id}",
+                                        items=[
+                                            kubernetes.client.V1KeyToPath(
+                                                key='buildkitd.toml',
+                                                path='buildkitd.toml',
+                                            ),
+                                        ],
+                                    ),
                                 ),
                                 kubernetes.client.V1Volume(
                                     name="buildkit-registry-auth",
@@ -481,12 +560,14 @@ def build_image_buildkit(image=None):
             api_client = kubernetes_ext.kubernetes_client
             core_api_instance = kubernetes.client.CoreV1Api(api_client)
             batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+            core_api_instance.create_namespaced_config_map('default', configmap_object)
             core_api_instance.create_namespaced_secret('default', secret_object)
 
             try:
                 job_complete, job_logs = run_job(core_api_instance, batch_api_instance, 'default', job_object)
             finally:
                 core_api_instance.delete_namespaced_secret(f'buildkit-registry-auth-{image.build_job_id}', 'default', propagation_policy='Foreground')
+                core_api_instance.delete_namespaced_config_map(f'buildkitd-toml-{image.build_job_id}', 'default', propagation_policy='Foreground')
 
             image.image_build_log = filter_secrets(job_logs)
             db.session.commit()
@@ -520,7 +601,7 @@ def build_image_buildkit(image=None):
     try:
         _tlsverify = False
         if registry_secure:
-            _tlsverify = current_app.config['REGISTRY_VERIFY']
+            _tlsverify = registry_ca
             if _tlsverify == 'True':
                 _tlsverify = True
         client = DXF(
