@@ -183,7 +183,7 @@ def build_release_buildkit(release):
                             containers=[
                                 kubernetes.client.V1Container(
                                     name="build",
-                                    image="cabotage/buildkit:lastest-rootless",
+                                    image="cabotage/buildkit:2-rootless",
                                     command=buildctl_command,
                                     args=buildctl_args,
                                     env=[
@@ -517,7 +517,7 @@ def build_image_buildkit(image=None):
                             containers=[
                                 kubernetes.client.V1Container(
                                     name="build",
-                                    image="cabotage/buildkit:lastest-rootless",
+                                    image="cabotage/buildkit:2-rootless",
                                     command=buildctl_command,
                                     args=buildctl_args,
                                     env=[
