@@ -460,6 +460,15 @@ class Release(db.Model, Timestamp):
             c.envconsul_statement for c in self.configuration_objects.values()
             if c is not None
         ])
+        exec_statement = (
+            'exec {\n'
+            '  command = "/bin/sh"\n'
+            '  env = {\n'
+            '    denylist = ["CONSUL_*", "VAULT_*", "KUBERNETES_*"]\n'
+            '  }\n'
+            '}'
+        )
+        configurations['shell'] = '\n'.join([exec_statement, environment_statements])
         for proc_name, proc in self.image_object.processes.items():
             custom_env = json.dumps([f"{key}={value}" for key, value in proc['env']])
             exec_statement = (

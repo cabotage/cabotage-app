@@ -376,10 +376,6 @@ def project_application_shell(org_slug, project_slug, app_slug):
 def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
     if not current_app.config.get('SHELLZ_ENABLED', False):
         abort(404)
-    """
-    demo by disabling login_required and running:
-    stty raw -echo; websocat -E -b ws://localhost:8000/projects/test/test/applications/test/shell; stty sane cooked
-    """
     organization = Organization.query.filter_by(slug=org_slug).first()
     if organization is None:
         abort(404)
@@ -395,6 +391,9 @@ def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
     api_client = kubernetes_ext.kubernetes_client
     core_api_instance = kubernetes.client.CoreV1Api(api_client)
 
+    # =============================================================================== #
+    #  everything below should be replaced with the creation/monitoring of a new pod  #
+    # =============================================================================== #
     labels = {
         'organization': organization.slug,
         'project': project.slug,
@@ -402,27 +401,31 @@ def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
     }
     label_selector = ','.join([f'{k}={v}' for k, v in labels.items()])
     pod = core_api_instance.list_namespaced_pod(namespace=organization.slug, label_selector=label_selector).items[0]
+    # =============================================================================== #
 
     resp = kubernetes.stream.stream(core_api_instance.connect_get_namespaced_pod_exec,
         pod.metadata.name, namespace=pod.metadata.namespace,
-        command=["/bin/sh"], container='web',
+        command=["/bin/bash"], container='web',
         stderr=True, stdin=True, stdout=True, tty=True,
         _preload_content=False
     )
 
     while resp.is_open():
         resp.update()
-        if data := resp.read_stdout(timeout=0.01):
-            ws.send('\x00' + data)
-        if data := resp.read_stderr(timeout=0.01):
-            ws.send('\x00' + data)
         if data := ws.receive(timeout=0.01):
+            print((data,))
             if data[0] == '\x00':
                 resp.write_stdin(data[1:])
             elif data[0] == '\x01':
                 resp.write_channel(kubernetes.stream.ws_client.RESIZE_CHANNEL, data[1:])
             else:
                 print((data[0],))
+        if data := resp.read_stdout(timeout=0.01):
+            print((data,))
+            ws.send('\x00' + data)
+        if data := resp.read_stderr(timeout=0.01):
+            print((data,))
+            ws.send('\x00' + data)
 
     resp.close()
     ws.close()
