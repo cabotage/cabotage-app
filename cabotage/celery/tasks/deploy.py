@@ -189,7 +189,7 @@ def render_cabotage_enroller_container(release, process_name, with_tls=True):
 
     return kubernetes.client.V1Container(
         name='cabotage-enroller',
-        image='cabotage/sidecar:3',
+        image=current_app.config['SIDECAR_IMAGE'],
         image_pull_policy='IfNotPresent',
         env=[
             kubernetes.client.V1EnvVar(name='NAMESPACE', value_from=kubernetes.client.V1EnvVarSource(field_ref=kubernetes.client.V1ObjectFieldSelector(field_path='metadata.namespace'))),
@@ -213,7 +213,7 @@ def render_cabotage_sidecar_container(release, with_tls=True):
     role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
     return kubernetes.client.V1Container(
         name='cabotage-sidecar',
-        image='cabotage/sidecar:3',
+        image=current_app.config['SIDECAR_IMAGE'],
         image_pull_policy='IfNotPresent',
         args=args,
         volume_mounts=[
@@ -282,7 +282,7 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
         )
     return kubernetes.client.V1Container(
         name='cabotage-sidecar-tls',
-        image='cabotage/sidecar:3',
+        image=current_app.config['SIDECAR_IMAGE'],
         image_pull_policy='IfNotPresent',
         command=["/usr/bin/ghostunnel"],
         args=[
@@ -357,7 +357,7 @@ def render_process_container(release, process_name, datadog_tags, with_tls=True,
 def render_datadog_container(dd_api_key, datadog_tags):
     return kubernetes.client.V1Container(
         name='dogstatsd-sidecar',
-        image='datadog/agent:7.37.1',
+        image=current_app.config['DATADOG_IMAGE'],
         image_pull_policy='IfNotPresent',
         env=[
             kubernetes.client.V1EnvVar(name='DD_API_KEY', value=dd_api_key),

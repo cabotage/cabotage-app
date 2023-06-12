@@ -76,3 +76,5 @@ class Config(metaclass=MetaFlaskEnv):
     GITHUB_APP_PRIVATE_KEY = None
     GITHUB_WEBHOOK_SECRET = None
     SHELLZ_ENABLED = False
+    SIDECAR_IMAGE = 'cabotage/sidecar:3'
+    DATADOG_IMAGE = 'datadog/agent:7.37.1'
