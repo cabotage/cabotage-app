@@ -115,10 +115,6 @@ def build_release_buildkit(release):
         "--progress=plain",
         "--frontend",
         "dockerfile.v0",
-        "--local",
-        "dockerfile=/context",
-        "--local",
-        "context=/context",
         "--output",
         f"type=image,name={registry}/{release.repository_name}:release-{release.version},push=true{insecure_reg}",
     ]
@@ -130,6 +126,12 @@ def build_release_buildkit(release):
     db.session.add(release)
     try:
         if current_app.config['KUBERNETES_ENABLED']:
+            buildctl_args += [
+                "--local",
+                "dockerfile=/context",
+                "--local",
+                "context=/context",
+            ]
             secret_object = kubernetes.client.V1Secret(
                 type='kubernetes.io/dockerconfigjson',
                 metadata=kubernetes.client.V1ObjectMeta(
@@ -290,9 +292,21 @@ def build_release_buildkit(release):
             if not job_complete:
                 raise BuildError(f'Image build failed!')
         else:
+            buildctl_args += [
+                "--local",
+                "dockerfile=context",
+                "--local",
+                "context=context",
+            ]
+            context_configmap_object = release.release_build_context_configmap
+            buildctl_command = ["buildctl"]
             if buildkitd_ca is not None:
                 buildctl_args.insert(0, f'--tlscacert={buildkitd_ca}')
             with TemporaryDirectory() as tempdir:
+                os.makedirs(os.path.join(tempdir, 'context'), exist_ok=True)
+                for file, contents in context_configmap_object.data.items():
+                    with open(os.path.join(tempdir, 'context', file), 'w') as f:
+                        f.write(contents)
                 os.makedirs(os.path.join(tempdir, '.docker'), exist_ok=True)
                 with open(os.path.join(tempdir, '.docker', 'config.json'), 'w') as f:
                     f.write(dockerconfigjson)
@@ -300,7 +314,7 @@ def build_release_buildkit(release):
                     completed_subprocess = subprocess.run(
                         " ".join(buildctl_command + buildctl_args),
                         env={'BUILDKIT_HOST': buildkitd_url, 'HOME': tempdir},
-                        shell=True, cwd="/tmp", check=True,
+                        shell=True, cwd=tempdir, check=True,
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                     )
                 except subprocess.CalledProcessError as exc:
@@ -599,6 +613,7 @@ def build_image_buildkit(image=None):
             if not job_complete:
                 raise BuildError(f'Image build failed!')
         else:
+            buildctl_command = ["buildctl"]
             if buildkitd_ca is not None:
                 buildctl_args.insert(0, f'--tlscacert={buildkitd_ca}')
             with TemporaryDirectory() as tempdir:
