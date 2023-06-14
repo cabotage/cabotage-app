@@ -152,6 +152,12 @@ class Application(db.Model, Timestamp):
         nullable=True,
     )
 
+    health_check_path = db.Column(
+        db.String(64),
+        nullable=False,
+        server_default='/_health/',
+    )
+
     @property
     def release_candidate(self):
         release = Release(
@@ -240,6 +246,7 @@ class Application(db.Model, Timestamp):
             image_changes=image_diff.asdict,
             configuration_changes=configuration_diff.asdict,
             platform=self.platform,
+            health_check_path=self.health_check_path,
         )
         return release
 
@@ -407,6 +414,11 @@ class Release(db.Model, Timestamp):
     build_job_id = db.Column(
         db.String(64),
         nullable=True,
+    )
+    health_check_path = db.Column(
+        db.String(64),
+        nullable=False,
+        server_default='/_health/',
     )
 
     __mapper_args__ = {

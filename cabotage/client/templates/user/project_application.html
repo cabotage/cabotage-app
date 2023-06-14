@@ -24,7 +24,7 @@
         <br>
         {% endif %}
         <div>
-          <a href="{{ url_for('user.project_application_deployment_automation', application_id=application.id) }}" class="btn btn-primary pull-right">{% if application.github_app_installation_id %}<span style="padding-right: 5px;" class="glyphicon glyphicon glyphicon-ok-sign"></span>{% endif %}Deploy Automation</a>
+          <a href="{{ url_for('user.project_application_settings', application_id=application.id) }}" class="btn btn-primary pull-right">{% if application.github_app_installation_id %}<span style="padding-right: 5px;" class="glyphicon glyphicon glyphicon-ok-sign"></span>{% endif %}Configure Settings</a>
           <a href="{{ url_for('user.project_application_logs', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}" class="btn btn-primary">Logs</a>
           {% if config.SHELLZ_ENABLED %}<a href="{{ url_for('user.project_application_shell', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}" class="btn btn-primary">Shell</a>{% endif %}
           <form style="padding-top: 0.5em;" action="{{ url_for('user.application_clear_cache', application_id=application.id) }}" method="POST">

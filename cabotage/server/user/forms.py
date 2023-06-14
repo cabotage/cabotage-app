@@ -206,7 +206,7 @@ class CreateConfigurationForm(FlaskForm):
             raise ValidationError('Configuration names must be unique (case insensitive) within Applications')
         return True
 
-class EditApplicationDeployAutomationForm(FlaskForm):
+class EditApplicationSettingsForm(FlaskForm):
     application_id = SelectField(
         u'Application',
         [DataRequired()],
@@ -245,6 +245,15 @@ class EditApplicationDeployAutomationForm(FlaskForm):
         if app is not None and app.id != uuid.UUID(form.application_id.data):
             raise ValidationError('Environment names must be unique within GitHub App Installations and Repositories.')
         return True
+
+    health_check_path = StringField(
+        'HTTP Health Check Path',
+        description=(
+            "Path that probes should hit with a simple HTTP request to determine health. "
+            "Should respond quickly with a simple HTTP 200 OK. "
+            "Requires a new release to take effect."
+        ),
+    )
 
 class EditConfigurationForm(FlaskForm):
 

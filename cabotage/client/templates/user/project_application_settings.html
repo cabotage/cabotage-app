@@ -8,18 +8,23 @@
 <div class="container-fluid clearfix" id="content">
   <div class="row">
     <div class="col-md-6 col-md-offset-6 col-sm-8 col-xs-8 col-xs-offset-2 col-sm-offset-2 col-md-offset-3">
-      <h1>Update Application Deployment Automation</h1>
-      <p><b>Before you begin, you need to install <a href="{{ app_url }}">This Application</a> and grant it access to your desired repo</b></p>
-      <form action="{{ url_for('user.project_application_deployment_automation', application_id=form.application_id.data) }}" method="POST" name="project_application_deployment_automation_form">
+      <h1>Update Application Settings</h1>
+      <hr>
+      <form action="{{ url_for('user.project_application_settings', application_id=form.application_id.data) }}" method="POST" name="project_application_settings_form">
         {{ form.hidden_tag() }}
         {{ form_field(form.application_id, disabled="disabled") }}
+        <h2>Health checks</h2>
+        {{ form_field(form.health_check_path) }}
+        <hr>
+        <h2>Deployment Automation</h2>
+        <p><b>Before you begin, you need to install <a href="{{ app_url }}">This Application</a> and grant it access to your desired repo</b></p>
         {{ form_field(form.github_repository) }}
         {{ form_field(form.auto_deploy_branch) }}
         {{ form_field(form.github_app_installation_id) }}
         {{ form_field(form.github_environment_name ) }}
         <div class="row">
           <div class="col-md-6">
-            {{ form_button(form.submit, "Update Deploy Automation", method="POST", class="btn btn-primary") }}
+            {{ form_button(form.submit, "Update Application Settings", method="POST", class="btn btn-primary") }}
           </div>
           <div class="col-md-6">
             <a class="btn btn-info pull-right" onclick="window.history.back()">Cancel</a>
