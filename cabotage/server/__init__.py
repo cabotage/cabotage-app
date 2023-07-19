@@ -1,18 +1,25 @@
 import os
 
-from flask import Flask, render_template
+from flask import Flask, render_template, url_for
+from flask_admin import Admin, helpers
 from flask_bcrypt import Bcrypt
 from flask_bootstrap import Bootstrap
 from flask_debugtoolbar import DebugToolbarExtension
 from flask_humanize import Humanize
+from flask_login import LoginManager
 from flask_mail import Mail
 from flask_migrate import Migrate
 from flask_security import Security, SQLAlchemyUserDatastore
+from flask_principal import Principal, identity_loaded
 from flask_sqlalchemy import SQLAlchemy
+from flask_sock import Sock
 
 from celery import Celery
 from celery import Task
 from sqlalchemy import MetaData
+
+from cabotage.server.acl import cabotage_on_identity_loaded
+from cabotage.server.nav import nav
 
 from cabotage.server.ext.consul import Consul
 from cabotage.server.ext.vault import Vault
@@ -36,7 +43,9 @@ db_metadata = MetaData(
         "pk": "pk_%(table_name)s",
     }
 )
-db = SQLAlchemy(metadata=db_metadata)
+db = SQLAlchemy(metadata=db_metadata, engine_options={'pool_pre_ping': True})
+principal = Principal()
+login_manager = LoginManager()
 mail = Mail()
 migrate = Migrate()
 humanize = Humanize()
@@ -47,6 +56,7 @@ kubernetes = Kubernetes()
 config_writer = ConfigWriter(consul=consul, vault=vault)
 minio = MinioDriver()
 github_app = GitHubApp()
+sock = Sock()
 
 def celery_init_app(app):
     class FlaskTask(Task):
@@ -68,6 +78,9 @@ def create_app():
         static_folder='../client/static'
     )
 
+    from cabotage.server.models.admin import AdminIndexView
+    admin = Admin(name='cabotage_admin', index_view=AdminIndexView(), template_mode='bootstrap3')
+
     from cabotage.server.models.auth import User, Role
     user_datastore = SQLAlchemyUserDatastore(db, User, Role)
 
@@ -77,41 +90,12 @@ def create_app():
         ExtendedRegisterForm,
     )
 
-    from flask_nav3 import Nav
-    from flask_nav3.elements import Navbar, View, Separator, Subgroup
-
-    nav = Nav()
-
-    anonymous_nav = Navbar(
-        'Cabotage',
-        View('Register', 'security.register'),
-        View('Log In', 'security.login'),
-    )
-    logged_in_nav = Navbar(
-        'Cabotage',
-        Subgroup(
-            'Orgs',
-            View('All My Orgs', 'user.organizations'),
-        ),
-        Subgroup(
-            'Projects',
-            View('All My Projects', 'user.projects'),
-        ),
-        Subgroup(
-          'Account',
-          Separator(),
-          View('Change Password', 'security.change_password'),
-          View('Log Out', 'security.logout'),
-        ),
-    )
-    nav.register_element('anonymous', anonymous_nav)
-    nav.register_element('logged_in', logged_in_nav)
-
     # set config
     app_settings = os.getenv('APP_SETTINGS', 'cabotage.server.config.Config')
     app.config.from_object(app_settings)
 
     # set up extensions
+    admin.init_app(app)
     bcrypt.init_app(app)
     toolbar.init_app(app)
     bootstrap.init_app(app)
@@ -123,6 +107,9 @@ def create_app():
     )
     vault_db_creds.init_app(app)
     db.init_app(app)
+    principal.init_app(app)
+    identity_loaded.connect(cabotage_on_identity_loaded, app)
+    login_manager.init_app(app)
     mail.init_app(app)
     migrate.init_app(app, db)
     nav.init_app(app)
@@ -134,6 +121,11 @@ def create_app():
     minio.init_app(app)
     github_app.init_app(app)
     celery_init_app(app)
+    sock.init_app(app)
+
+    @login_manager.user_loader
+    def load_user(userid):
+        return user_datastore.find_user(id=userid)
 
     # register blueprints
     from cabotage.server.user.views import user_blueprint
@@ -157,5 +149,24 @@ def create_app():
     @app.errorhandler(500)
     def server_error_page(error):
         return render_template('errors/500.html'), 500
+
+    @app.cli.command("create-bucket")
+    def create_bucket():
+        minio.create_bucket()
+
+    from cabotage.server.models.admin import AdminModelView
+    from cabotage.server.models.auth import Organization, Team
+    from cabotage.server.models.projects import Project, Application, Configuration, Image, Release, Deployment, Hook
+    admin.add_view(AdminModelView(Role, db.session))
+    admin.add_view(AdminModelView(Organization, db.session))
+    admin.add_view(AdminModelView(Team, db.session))
+    admin.add_view(AdminModelView(Project, db.session))
+    admin.add_view(AdminModelView(Application, db.session))
+    admin.add_view(AdminModelView(Configuration, db.session))
+    admin.add_view(AdminModelView(Image, db.session))
+    admin.add_view(AdminModelView(Release, db.session))
+    admin.add_view(AdminModelView(Deployment, db.session))
+    admin.add_view(AdminModelView(Hook, db.session))
+    admin.add_view(AdminModelView(User, db.session))
 
     return app

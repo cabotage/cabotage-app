@@ -58,6 +58,42 @@ def fetch_namespace(core_api_instance, release):
     return namespace
 
 
+def render_cabotage_ca_configmap(release):
+    namespace_name = release.application.project.organization.slug
+    with open('/var/run/secrets/cabotage.io/ca.crt', 'r') as f:
+        ca_crt = f.read()
+    configmap_object = kubernetes.client.V1ConfigMap(
+        metadata=kubernetes.client.V1ObjectMeta(
+            name='cabotage-ca',
+        ),
+        data={
+            "ca.crt": ca_crt,
+        }
+    )
+    return configmap_object
+
+
+def create_cabotage_ca_configmap(core_api_instance, release):
+    configmap_object = render_cabotage_ca_configmap(release)
+    namespace_name = release.application.project.organization.slug
+    try:
+        return core_api_instance.create_namespaced_config_map(namespace_name, configmap_object)
+    except Exception as exc:
+        raise DeployError(f'Unexpected exception creating ConfigMap/cabotage-ca in {namespace_name}: {exc}')
+
+
+def fetch_cabotage_ca_configmap(core_api_instance, release):
+    namespace_name = release.application.project.organization.slug
+    try:
+        configmap = core_api_instance.read_namespaced_config_map("cabotage-ca", namespace_name)
+    except ApiException as exc:
+        if exc.status == 404:
+            configmap = create_cabotage_ca_configmap(core_api_instance, release)
+        else:
+            raise DeployError(f'Unexpected exception fetching ConfigMap/cabotage-ca in {namespace_name}: {exc}')
+    return configmap
+
+
 def render_service_account(release):
     service_account_name = f'{release.application.project.slug}-{release.application.slug}'
     service_account_object = kubernetes.client.V1ServiceAccount(
@@ -104,7 +140,7 @@ def render_image_pull_secrets(release):
             '.dockerconfigjson': b64encode(
                                      release.image_pull_secrets(
                                          registry_auth_secret,
-                                         registry_urls=['localhost:30000'],
+                                         registry_urls=[current_app.config['REGISTRY_PULL']],
                                      ).encode()
                                  ).decode(),
         }
@@ -153,7 +189,7 @@ def render_cabotage_enroller_container(release, process_name, with_tls=True):
 
     return kubernetes.client.V1Container(
         name='cabotage-enroller',
-        image='cabotage/sidecar:v1.1.0a3',
+        image=current_app.config['SIDECAR_IMAGE'],
         image_pull_policy='IfNotPresent',
         env=[
             kubernetes.client.V1EnvVar(name='NAMESPACE', value_from=kubernetes.client.V1EnvVarSource(field_ref=kubernetes.client.V1ObjectFieldSelector(field_path='metadata.namespace'))),
@@ -177,7 +213,7 @@ def render_cabotage_sidecar_container(release, with_tls=True):
     role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
     return kubernetes.client.V1Container(
         name='cabotage-sidecar',
-        image='cabotage/sidecar:v1.1.0a3',
+        image=current_app.config['SIDECAR_IMAGE'],
         image_pull_policy='IfNotPresent',
         args=args,
         volume_mounts=[
@@ -228,7 +264,7 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
             http_get=kubernetes.client.V1HTTPGetAction(
                 scheme='HTTPS',
                 port=8000,
-                path='/_health/',
+                path=release.health_check_path,
             ),
             initial_delay_seconds=10,
             period_seconds=3,
@@ -238,7 +274,7 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
             http_get=kubernetes.client.V1HTTPGetAction(
                 scheme='HTTPS',
                 port=8000,
-                path='/_health/',
+                path=release.health_check_path,
             ),
             initial_delay_seconds=10,
             period_seconds=3,
@@ -246,13 +282,13 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
         )
     return kubernetes.client.V1Container(
         name='cabotage-sidecar-tls',
-        image='cabotage/sidecar:v1.1.0a3',
+        image=current_app.config['SIDECAR_IMAGE'],
         image_pull_policy='IfNotPresent',
-        command=["./ghostunnel"],
+        command=["/usr/bin/ghostunnel"],
         args=[
             "server",
             "--keystore=/var/run/secrets/vault/combined.pem",
-            "--cacert=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt",
+            "--cacert=/var/run/secrets/cabotage.io/ca.crt",
             "--timed-reload=300s",
             "--shutdown-timeout=10s",
             "--connect-timeout=10s",
@@ -291,13 +327,13 @@ def render_process_container(release, process_name, datadog_tags, with_tls=True,
     pod_class = pod_classes[release.application.process_pod_classes.get(process_name, DEFAULT_POD_CLASS)]
     return kubernetes.client.V1Container(
         name=process_name,
-        image=f'localhost:30000/{release.repository_name}:release-{release.version}',
+        image=f'{current_app.config["REGISTRY_PULL"]}/{release.repository_name}:release-{release.version}',
         image_pull_policy='Always',
         env=[
             kubernetes.client.V1EnvVar(name='VAULT_ADDR', value='https://vault.cabotage.svc.cluster.local'),
-            kubernetes.client.V1EnvVar(name='VAULT_CACERT', value='/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'),
+            kubernetes.client.V1EnvVar(name='VAULT_CACERT', value='/var/run/secrets/cabotage.io/ca.crt'),
             kubernetes.client.V1EnvVar(name='CONSUL_HTTP_ADDR', value='https://consul.cabotage.svc.cluster.local:8443'),
-            kubernetes.client.V1EnvVar(name='CONSUL_CACERT', value='/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'),
+            kubernetes.client.V1EnvVar(name='CONSUL_CACERT', value='/var/run/secrets/cabotage.io/ca.crt'),
             kubernetes.client.V1EnvVar(name='DATADOG_TAGS', value=','.join([f'{k}:{v}' for k, v in datadog_tags.items()])),
             kubernetes.client.V1EnvVar(name='SOURCE_COMMIT', value=release.commit_sha),
         ],
@@ -321,7 +357,7 @@ def render_process_container(release, process_name, datadog_tags, with_tls=True,
 def render_datadog_container(dd_api_key, datadog_tags):
     return kubernetes.client.V1Container(
         name='dogstatsd-sidecar',
-        image='datadog/agent:7.37.1',
+        image=current_app.config['DATADOG_IMAGE'],
         image_pull_policy='IfNotPresent',
         env=[
             kubernetes.client.V1EnvVar(name='DD_API_KEY', value=dd_api_key),
@@ -406,7 +442,7 @@ def render_podspec(release, process_name, service_account_name):
 
 def render_deployment(namespace, release, service_account_name, process_name):
     role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
-    deployment_object = kubernetes.client.AppsV1beta1Deployment(
+    deployment_object = kubernetes.client.V1Deployment(
         metadata=kubernetes.client.V1ObjectMeta(
             name=f'{release.application.project.slug}-{release.application.slug}-{process_name}',
             labels={
@@ -417,7 +453,7 @@ def render_deployment(namespace, release, service_account_name, process_name):
                 'app': role_name,
             }
         ),
-        spec=kubernetes.client.AppsV1beta1DeploymentSpec(
+        spec=kubernetes.client.V1DeploymentSpec(
             replicas=release.application.process_counts.get(process_name, 0),
             selector=kubernetes.client.V1LabelSelector(
                 match_labels={
@@ -436,6 +472,7 @@ def render_deployment(namespace, release, service_account_name, process_name):
                         'application': release.application.slug,
                         'process': process_name,
                         'app': role_name,
+                        'ca-admission.cabotage.io': 'true',
                     }
                 ),
                 spec=render_podspec(release, process_name, service_account_name),
@@ -469,7 +506,7 @@ def create_deployment(apps_api_instance, namespace, release, service_account_nam
 
 def scale_deployment(namespace, release, process_name, replicas):
     api_client = kubernetes_ext.kubernetes_client
-    apps_api_instance = kubernetes.client.AppsV1beta1Api(api_client)
+    apps_api_instance = kubernetes.client.AppsV1Api(api_client)
     deployment_name = f'{release.application.project.slug}-{release.application.slug}-{process_name}'
     deployment = None
     try:
@@ -478,18 +515,17 @@ def scale_deployment(namespace, release, process_name, replicas):
         if exc.status == 404:
             pass
     if deployment is not None:
-        scale = kubernetes.client.AppsV1beta1Scale(
-            spec=kubernetes.client.AppsV1beta1ScaleSpec(replicas=replicas)
+        scale = kubernetes.client.V1Scale(
+            spec=kubernetes.client.V1ScaleSpec(replicas=replicas)
         )
         api_response = apps_api_instance.patch_namespaced_deployment_scale(deployment_name, namespace, scale)
 
 
-def render_job(namespace, release, service_account_name, process_name):
+def render_job(namespace, release, service_account_name, process_name, job_id):
     role_name = f'{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}'
-    job_id = secrets.token_hex(4)
     job_object = kubernetes.client.V1Job(
         metadata=kubernetes.client.V1ObjectMeta(
-            name=f'{release.application.project.slug}-{release.application.slug}-{process_name}-{job_id}',
+            name=f'deployment-{job_id}',
             labels={
                 'organization': release.application.project.organization.slug,
                 'project': release.application.project.slug,
@@ -514,6 +550,7 @@ def render_job(namespace, release, service_account_name, process_name):
                         'app': role_name,
                         'release': str(release.version),
                         'deployment': job_id,
+                        'ca-admission.cabotage.io': "true",
                     }
                 ),
                 spec=render_podspec(release, process_name, service_account_name),
@@ -554,36 +591,47 @@ def delete_job(batch_api_instance, namespace, job_object):
         raise DeployError(f'Unexpected exception deleting Job/{job_object.metadata.name} in {namespace}: {exc}')
 
 
-def run_job(core_api_instance, batch_api_instance, namespace, release, service_account_name, process_name):
-    job_object = render_job(namespace, release, service_account_name, process_name)
+def run_job(core_api_instance, batch_api_instance, namespace, job_object):
     try:
         job = batch_api_instance.create_namespaced_job(namespace, job_object)
     except ApiException as exc:
         raise DeployError(f'Unexpected exception creating Job/{job_object.metadata.name} in {namespace}: {exc}')
-    while True:
-        job_status = batch_api_instance.read_namespaced_job_status(job_object.metadata.name, namespace)
-        if job_status.status.failed and job_status.status.failed > 0:
-            job_logs = fetch_job_logs(core_api_instance, namespace, job_status)
-            delete_job(batch_api_instance, namespace, job_object)
-            return False, job_logs
-        elif job_status.status.succeeded and job_status.status.succeeded > 0:
-            job_logs = fetch_job_logs(core_api_instance, namespace, job_status)
-            delete_job(batch_api_instance, namespace, job_object)
-            return True, job_logs
-        else:
-            time.sleep(1)
 
+    try:
+        while True:
+            job_status = batch_api_instance.read_namespaced_job_status(job_object.metadata.name, namespace)
+            if job_status.status.failed and job_status.status.failed > 0:
+                job_logs = fetch_job_logs(core_api_instance, namespace, job_status)
+                delete_job(batch_api_instance, namespace, job_object)
+                return False, job_logs
+            elif job_status.status.succeeded and job_status.status.succeeded > 0:
+                job_logs = fetch_job_logs(core_api_instance, namespace, job_status)
+                delete_job(batch_api_instance, namespace, job_object)
+                return True, job_logs
+            else:
+                time.sleep(1)
+    finally:
+        try:
+            delete_job(batch_api_instance, namespace, job_object)
+        except (DeployError, ApiException) as exc:
+            pass
 
 def deploy_release(deployment):
+    job_id = secrets.token_hex(4)
+    deployment.job_id = job_id
+    db.session.add(deployment)
+    db.session.commit()
     deploy_log = []
     try:
         deploy_log.append("Constructing API Clients")
         api_client = kubernetes_ext.kubernetes_client
         core_api_instance = kubernetes.client.CoreV1Api(api_client)
-        apps_api_instance = kubernetes.client.AppsV1beta1Api(api_client)
+        apps_api_instance = kubernetes.client.AppsV1Api(api_client)
         batch_api_instance = kubernetes.client.BatchV1Api(api_client)
         deploy_log.append(f"Fetching Namespace")
         namespace = fetch_namespace(core_api_instance, deployment.release_object)
+        deploy_log.append(f"Fetching Cabotage CA Cert ConfigMap")
+        cabotage_ca_configmap = fetch_cabotage_ca_configmap(core_api_instance, deployment.release_object)
         deploy_log.append(f"Fetching ServiceAccount")
         service_account = fetch_service_account(core_api_instance, deployment.release_object)
         deploy_log.append(f"Fetching ImagePullSecrets")
@@ -598,7 +646,8 @@ def deploy_release(deployment):
         )
         for release_command in deployment.release_object.release_commands:
             deploy_log.append(f"Running release command {release_command}")
-            job_complete, job_logs = run_job(core_api_instance, batch_api_instance, namespace.metadata.name, deployment.release_object, service_account.metadata.name, release_command)
+            job_object = render_job(namespace.metadata.name, deployment.release_object, service_account.metadata.name, release_command, deployment.job_id)
+            job_complete, job_logs = run_job(core_api_instance, batch_api_instance, namespace.metadata.name, job_object)
             deploy_log.append(job_logs)
             if not job_complete:
                 raise DeployError(f'Release command {release_command} failed!')
@@ -653,7 +702,7 @@ def fake_deploy_release(deployment):
     deploy_log.append(yaml.dump(remove_none(image_pull_secrets.to_dict())))
     deploy_log.append(f"Patching ServiceAccount/{service_account.metadata.name} with ImagePullSecrets/{image_pull_secrets.metadata.name} in Namespace/{namespace.metadata.name}")
     for release_command in deployment.release_object.release_commands:
-        job_object = render_job(namespace.metadata.name, deployment.release_object, service_account.metadata.name, release_command)
+        job_object = render_job(namespace.metadata.name, deployment.release_object, service_account.metadata.name, release_command, deployment.job_id)
         deploy_log.append(f"Running Job/{job_object.metadata.name} in Namespace/{namespace.metadata.name}")
         deploy_log.append(yaml.dump(remove_none(job_object.to_dict())))
     for process in deployment.release_object.processes:

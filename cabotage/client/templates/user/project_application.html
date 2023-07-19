@@ -21,9 +21,17 @@
             </div>
           </div>
         </form>
+        <br>
         {% endif %}
         <div>
-          <a href="{{ url_for('user.project_application_deployment_automation', application_id=application.id) }}" class="btn btn-primary pull-right">{% if application.github_app_installation_id %}<span style="margin-right: 5px;" class="glyphicon glyphicon glyphicon-ok-sign"></span>{% endif %}Deploy Automation</a>
+          <a href="{{ url_for('user.project_application_settings', application_id=application.id) }}" class="btn btn-primary pull-right">{% if application.github_app_installation_id %}<span style="padding-right: 5px;" class="glyphicon glyphicon glyphicon-ok-sign"></span>{% endif %}Configure Settings</a>
+          <a href="{{ url_for('user.project_application_logs', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}" class="btn btn-primary">Logs</a>
+          {% if config.SHELLZ_ENABLED %}<a href="{{ url_for('user.project_application_shell', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}" class="btn btn-primary">Shell</a>{% endif %}
+          <form style="padding-top: 0.5em;" action="{{ url_for('user.application_clear_cache', application_id=application.id) }}" method="POST">
+            <button class="btn btn-primary" type="submit">
+              Clear build cache
+            </button>
+          </form>
         </div>
       </div>
     </div>
@@ -319,8 +327,13 @@
           <tr>
             <td colspan="2">
               <a class="btn btn-primary" href="{{ url_for('user.application_images_build_submit', application_id=application.id) }}">
-                Submit New Image Build
+                New Image Build From Tarball
               </a>
+              <form style="padding-top: 0.5em;" action="{{ url_for('user.application_images_build_fromsource', application_id=application.id) }}" method="POST">
+                <button class="btn btn-primary" type="submit">
+                  New Image Build From Source
+                </button>
+              </form>
             </td>
             <td colspan="2">
               {% if application.images.count() > 0 %}

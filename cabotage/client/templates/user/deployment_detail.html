@@ -1,5 +1,26 @@
 {% extends "_base.html" %}
 
+{% block js %}
+<script>
+  var logsPre = document.getElementById('buildLog');
+  if (logsPre.innerHTML == 'None') {
+    logsPre.innerHTML = "";
+    var protocol = (window.location.protocol == 'https:') ? 'wss://' : 'ws://';
+    const socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/livelogs');
+    socket.addEventListener('message', ev => {
+      if (ev.data == '=================END OF LOGS=================') {
+          socket.close();
+      }
+      logsPre.innerHTML += '\n' + ev.data;
+    });
+    socket.addEventListener('close', ev => {
+      console.log('<<< closed');
+      setTimeout(() => {window.location.reload()}, 5000);
+    });
+  }
+</script>
+{% endblock %}
+
 {% block content %}
   <div class="container" id="content">
     <div class="row">
@@ -37,14 +58,14 @@
     {% endif %}
     <div class="row">
       <div class="col-md-9">
-        <h3>Metadata</h3>
-        <pre>{{ deployment.deploy_metadata|pprint }}</pre>
+        <h3>Deployment Log</h3>
+        <pre id="buildLog">{{ deployment.deploy_log }}</pre>
       </div>
     </div>
     <div class="row">
       <div class="col-md-9">
-        <h3>Deployment Log</h3>
-        <pre>{{ deployment.deploy_log }}</pre>
+        <h3>Metadata</h3>
+        <pre>{{ deployment.deploy_metadata|pprint }}</pre>
       </div>
     </div>
     <div class="row">

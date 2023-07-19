@@ -5,6 +5,8 @@ RUN set -x \
     && apt-get install --no-install-recommends -y \
         git build-essential libffi-dev libpq-dev
 
+COPY --from=moby/buildkit:v0.11.3-rootless /usr/bin/buildctl /usr/bin/buildctl
+
 ENV PYTHONUNBUFFERED 1
 
 RUN set -x \
@@ -20,3 +22,5 @@ COPY requirements.txt requirements.txt
 RUN pip install -r requirements.txt
 
 COPY . /opt/cabotage-app/src/
+
+USER nobody

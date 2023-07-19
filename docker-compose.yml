@@ -27,7 +27,7 @@ services:
     volumes:
       - redisdata:/var/lib/redis/
   consul:
-    image: consul
+    image: consul:1.14
     restart: always
     environment:
       CONSUL_CLIENT_INTERFACE: eth0
@@ -36,8 +36,8 @@ services:
     volumes:
       - consuldata:/consul/data
   vault:
-    image: vault:1.9.10
-    restart: on-failure
+    image: vault:1.12.3
+    restart: always
     entrypoint: /bin/sh
     command: ["/etc/vault/entry.sh"]
     environment:
@@ -69,19 +69,19 @@ services:
       - "5001:5001"
     volumes:
       - ./docker-compose/registry:/etc/docker/registry-local
-  cabotage-dind:
-    image: docker:dind
-    command: --insecure-registry registry:5001
+  cabotage-buildkitd:
+    image: moby/buildkit:rootless
+    command: --addr tcp://0.0.0.0:1234
     restart: always
     ports:
-      - "2375:2375"
+      - "1234:1234"
     privileged: true
-    environment:
-      DOCKER_TLS_VERIFY: ""
-      DOCKER_TLS_CERTDIR: ""
+    volumes:
+      - ./docker-compose/buildkitd:/home/user/.config/buildkit
   minio:
     image: minio/minio
-    command: server /export --console-address ":9001"
+    entrypoint: sh
+    command: -c 'mkdir -p /export/cabotage-registry && /usr/bin/docker-entrypoint.sh server /export --console-address ":9001"'
     restart: always
     environment:
       MINIO_ROOT_USER: MINIOACCESSKEY
@@ -94,7 +94,8 @@ services:
       - miniodata:/export
   cabotage-app:
     build: .
-    command: hupper -m gunicorn.app.wsgiapp -c gunicorn.conf -w 2 -b 0.0.0.0:8000 cabotage.server.wsgi:app
+    image: cabotage-app-web:docker-compose
+    command: hupper -m gunicorn.app.wsgiapp -c gunicorn.conf -w 4 --threads 100 -b 0.0.0.0:8000 cabotage.server.wsgi:app
     environment:
       - FLASK_APP=cabotage.server.wsgi
       - CABOTAGE_DEBUG=True
@@ -109,9 +110,12 @@ services:
       - CABOTAGE_GITHUB_APP_ID=
       - CABOTAGE_GITHUB_APP_PRIVATE_KEY=
       - CABOTAGE_GITHUB_WEBHOOK_SECRET=
+      - KUBECONFIG=/var/run/kube/config
+      - CABOTAGE_KUBERNETES_ENABLED=False
+      - CABOTAGE_KUBERNETES_CONTEXT=minikube
     volumes:
       - .:/opt/cabotage-app/src
-      - $HOME/.kube:/root/.kube
+      - $HOME/.kube:/var/run/kube
     ports:
       - "8000:8000"
     links:
@@ -119,7 +123,7 @@ services:
       - redis
       - vault
   cabotage-app-worker:
-    build: .
+    image: cabotage-app-web:docker-compose
     command: hupper -m celery -A cabotage.celery.worker.celery_app worker -E --loglevel=INFO
     environment:
       - C_FORCE_ROOT=1
@@ -137,9 +141,12 @@ services:
       - CABOTAGE_GITHUB_APP_ID=
       - CABOTAGE_GITHUB_APP_PRIVATE_KEY=
       - CABOTAGE_GITHUB_WEBHOOK_SECRET=
+      - KUBECONFIG=/var/run/kube/config
+      - CABOTAGE_KUBERNETES_ENABLED=False
+      - CABOTAGE_KUBERNETES_CONTEXT=minikube
     volumes:
       - .:/opt/cabotage-app/src
-      - $HOME/.kube:/root/.kube
+      - $HOME/.kube:/var/run/kube
     links:
       - db
       - redis

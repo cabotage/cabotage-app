@@ -1,7 +1,8 @@
 import json
 
 from citext import CIText
-from sqlalchemy import text, UniqueConstraint
+from flask import current_app
+from sqlalchemy import CheckConstraint, text, UniqueConstraint
 from sqlalchemy.event import listens_for
 from sqlalchemy.dialects import postgresql
 from sqlalchemy_continuum import make_versioned
@@ -17,6 +18,11 @@ from cabotage.server.models.utils import (
 from cabotage.utils.docker_auth import (
     generate_docker_credentials,
     generate_kubernetes_imagepullsecrets,
+)
+from cabotage.utils.release_build_context import (
+    configmap_context_for_release,
+    tarfile_context_for_release,
+    RELEASE_DOCKERFILE_TEMPLATE,
 )
 
 activity_plugin = ActivityPlugin()
@@ -146,6 +152,12 @@ class Application(db.Model, Timestamp):
         nullable=True,
     )
 
+    health_check_path = db.Column(
+        db.String(64),
+        nullable=False,
+        server_default='/_health/',
+    )
+
     @property
     def release_candidate(self):
         release = Release(
@@ -234,6 +246,7 @@ class Application(db.Model, Timestamp):
             image_changes=image_diff.asdict,
             configuration_changes=configuration_diff.asdict,
             platform=self.platform,
+            health_check_path=self.health_check_path,
         )
         return release
 
@@ -312,6 +325,10 @@ class Deployment(db.Model, Timestamp):
     )
     deploy_log = db.Column(
         db.Text(),
+        nullable=True,
+    )
+    job_id = db.Column(
+        db.String(64),
         nullable=True,
     )
 
@@ -394,6 +411,15 @@ class Release(db.Model, Timestamp):
         db.Text(),
         nullable=True,
     )
+    build_job_id = db.Column(
+        db.String(64),
+        nullable=True,
+    )
+    health_check_path = db.Column(
+        db.String(64),
+        nullable=False,
+        server_default='/_health/',
+    )
 
     __mapper_args__ = {
         "version_id_col": version_id
@@ -446,6 +472,15 @@ class Release(db.Model, Timestamp):
             c.envconsul_statement for c in self.configuration_objects.values()
             if c is not None
         ])
+        exec_statement = (
+            'exec {\n'
+            '  command = "/bin/sh"\n'
+            '  env = {\n'
+            '    denylist = ["CONSUL_*", "VAULT_*", "KUBERNETES_*"]\n'
+            '  }\n'
+            '}'
+        )
+        configurations['shell'] = '\n'.join([exec_statement, environment_statements])
         for proc_name, proc in self.image_object.processes.items():
             custom_env = json.dumps([f"{key}={value}" for key, value in proc['env']])
             exec_statement = (
@@ -453,7 +488,7 @@ class Release(db.Model, Timestamp):
                 f'  command = {json.dumps(proc["cmd"])}\n'
                  '  env = {\n'
                 f'    custom = {custom_env}\n'
-                 '    blacklist = ["CONSUL_*", "VAULT_*", "KUBERNETES_*"]\n'
+                 '    denylist = ["CONSUL_*", "VAULT_*", "KUBERNETES_*"]\n'
                  '  }\n'
                  '}'
             )
@@ -495,6 +530,21 @@ class Release(db.Model, Timestamp):
             return self.image_object.commit_sha
         return self.release_metadata.get('sha')
 
+    @property
+    def release_build_context_tarfile(self):
+        process_commands = "\n".join([f'COPY envconsul-{process_name}.hcl /etc/cabotage/envconsul-{process_name}.hcl' for process_name in  self.envconsul_configurations])
+        dockerfile = RELEASE_DOCKERFILE_TEMPLATE.format(registry=current_app.config['REGISTRY_BUILD'], image=self.image_object, process_commands=process_commands)
+        if self.dockerfile:
+            dockerfile = self.dockerfile
+        return tarfile_context_for_release(self, dockerfile)
+
+    @property
+    def release_build_context_configmap(self):
+        process_commands = "\n".join([f'COPY envconsul-{process_name}.hcl /etc/cabotage/envconsul-{process_name}.hcl' for process_name in  self.envconsul_configurations])
+        dockerfile = RELEASE_DOCKERFILE_TEMPLATE.format(registry=current_app.config['REGISTRY_BUILD'], image=self.image_object, process_commands=process_commands)
+        if self.dockerfile:
+            dockerfile = self.dockerfile
+        return configmap_context_for_release(self, dockerfile)
 
 @listens_for(Release, 'before_insert')
 def release_before_insert_listener(mapper, connection, target):
@@ -691,7 +741,11 @@ class Image(db.Model, Timestamp):
     )
     build_slug = db.Column(
         db.String(1024),
-        nullable=False,
+        nullable=True,
+    )
+    build_ref = db.Column(
+        db.String(1024),
+        nullable=True,
     )
     dockerfile = db.Column(
         db.Text(),
@@ -713,10 +767,17 @@ class Image(db.Model, Timestamp):
         db.Text(),
         nullable=True,
     )
+    build_job_id = db.Column(
+        db.String(64),
+        nullable=True,
+    )
 
     __mapper_args__ = {
         "version_id_col": version_id
     }
+    __table_args__ = (
+        CheckConstraint('NOT(build_ref IS NULL AND build_slug IS NULL)', name='image_has_build_target'),
+    )
 
     @property
     def asdict(self):

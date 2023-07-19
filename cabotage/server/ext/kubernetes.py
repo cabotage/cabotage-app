@@ -18,16 +18,15 @@ class Kubernetes(object):
             kubernetes.config.load_incluster_config()
         except Exception:
             try:
-                kubernetes.config.load_kube_config()
+                kubernetes.config.load_kube_config(context=app.config['KUBERNETES_CONTEXT'])
             except Exception:
-                raise
-
-        self.configuration = kubernetes.client.Configuration()
+                if app.config['KUBERNETES_ENABLED']:
+                    raise
 
         app.teardown_appcontext(self.teardown)
 
     def connect_kubernetes(self):
-        kubernetes_client = kubernetes.client.ApiClient(self.configuration)
+        kubernetes_client = kubernetes.client.ApiClient()
         return kubernetes_client
 
     def teardown(self, exception):

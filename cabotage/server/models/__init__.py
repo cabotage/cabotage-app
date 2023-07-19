@@ -8,6 +8,14 @@ from .projects import (
     Project
 )
 
+from .resources import (
+    CertificateResource,
+    IngressResource,
+    PostgresResource,
+    RedisResource,
+    Resource,
+)
+
 from cabotage.server import db
 
 db.configure_mappers()
