@@ -264,6 +264,7 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
             http_get=kubernetes.client.V1HTTPGetAction(
                 scheme='HTTPS',
                 port=8000,
+                http_headers=[kubernetes.client.V1HTTPHeader(name="Host", value=release.health_check_host)] if release.health_check_host else None,
                 path=release.health_check_path,
             ),
             initial_delay_seconds=10,
@@ -274,6 +275,7 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
             http_get=kubernetes.client.V1HTTPGetAction(
                 scheme='HTTPS',
                 port=8000,
+                http_headers=[kubernetes.client.V1HTTPHeader(name="Host", value=release.health_check_host)] if release.health_check_host else None,
                 path=release.health_check_path,
             ),
             initial_delay_seconds=10,

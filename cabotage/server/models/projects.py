@@ -157,6 +157,11 @@ class Application(db.Model, Timestamp):
         nullable=False,
         server_default='/_health/',
     )
+    health_check_host = db.Column(
+        db.String(256),
+        nullable=True,
+        server_default=None,
+    )
 
     @property
     def release_candidate(self):
@@ -247,6 +252,7 @@ class Application(db.Model, Timestamp):
             configuration_changes=configuration_diff.asdict,
             platform=self.platform,
             health_check_path=self.health_check_path,
+            health_check_host=self.health_check_host,
         )
         return release
 
@@ -419,6 +425,11 @@ class Release(db.Model, Timestamp):
         db.String(64),
         nullable=False,
         server_default='/_health/',
+    )
+    health_check_host = db.Column(
+        db.String(256),
+        nullable=True,
+        server_default=None,
     )
 
     __mapper_args__ = {

@@ -254,6 +254,13 @@ class EditApplicationSettingsForm(FlaskForm):
             "Requires a new release to take effect."
         ),
     )
+    health_check_host = StringField(
+        'HTTP Health Check Host Header',
+        description=(
+            "Host header that probes should use when request to determine health. "
+            "Requires a new release to take effect."
+        ),
+    )
 
 class EditConfigurationForm(FlaskForm):
 
