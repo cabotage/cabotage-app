@@ -398,19 +398,19 @@ def build_image_buildkit(image=None):
     #access_token = access_token_response.json()
 
     dockerfile_name = None
-    dockerfile_body = _fetch_github_file(image.application.github_repository, image.build_ref, access_token=access_token, filename='Dockerfile.cabotage')
+    dockerfile_body = _fetch_github_file(image.application.github_repository, image.commit_sha, access_token=access_token, filename='Dockerfile.cabotage')
     dockerfile_name = 'Dockerfile.cabotage'
     if dockerfile_body is None:
-        dockerfile_body = _fetch_github_file(image.application.github_repository, image.build_ref, access_token=access_token, filename='Dockerfile')
+        dockerfile_body = _fetch_github_file(image.application.github_repository, image.commit_sha, access_token=access_token, filename='Dockerfile')
         dockerfile_name = 'Dockerfile'
     if dockerfile_body is None:
-       raise BuildError(f'No Dockerfile.cabotage or Dockerfile found in root of {image.application.github_repository}@{image.build_ref}')
+       raise BuildError(f'No Dockerfile.cabotage or Dockerfile found in root of {image.application.github_repository}@{image.commit_sha}')
 
-    procfile_body = _fetch_github_file(image.application.github_repository, image.build_ref, access_token=access_token, filename='Procfile.cabotage')
+    procfile_body = _fetch_github_file(image.application.github_repository, image.commit_sha, access_token=access_token, filename='Procfile.cabotage')
     if procfile_body is None:
-        procfile_body = _fetch_github_file(image.application.github_repository, image.build_ref, access_token=access_token, filename='Procfile')
+        procfile_body = _fetch_github_file(image.application.github_repository, image.commit_sha, access_token=access_token, filename='Procfile')
     if procfile_body is None:
-       raise BuildError(f'No Procfile.cabotage or Procfile found in root of {image.application.github_repository}@{image.build_ref}')
+       raise BuildError(f'No Procfile.cabotage or Procfile found in root of {image.application.github_repository}@{image.commit_sha}')
 
     image.dockerfile = dockerfile_body
     image.procfile = procfile_body
@@ -465,7 +465,7 @@ def build_image_buildkit(image=None):
         "--opt",
         f"filename=./{dockerfile_name}",
         "--opt",
-        f"context=https://github.com/{image.application.github_repository}.git#{image.build_ref}",
+        f"context=https://github.com/{image.application.github_repository}.git#{image.commit_sha}",
         "--import-cache",
         f"type=registry,ref={registry}/{image.repository_name}:image-buildcache{insecure_reg}",
         "--export-cache",
