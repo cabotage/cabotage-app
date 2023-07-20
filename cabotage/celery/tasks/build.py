@@ -373,6 +373,28 @@ def _fetch_github_file(github_repository="owner/repo", ref="main", access_token=
             return b64decode(response.json()['content']).decode()
     response.raise_for_status()
 
+
+def _fetch_commit_sha_for_ref(github_repository="owner/repo", ref="main", access_token=None):
+    headers = {
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+    }
+    if access_token is not None:
+        headers['Authorization'] = f'token {access_token}'
+    response = requests.get(
+        f"https://api.github.com/repos/{github_repository}/commits/{ref}",
+        params={
+            'ref': ref
+        },
+        headers=headers,
+    )
+    if response.status_code == 404:
+        return None
+    if response.status_code == 200:
+        return response.json()['sha']
+    response.raise_for_status()
+
+
 def build_image_buildkit(image=None):
     secret = current_app.config['REGISTRY_AUTH_SECRET']
     registry = current_app.config['REGISTRY_BUILD']
@@ -396,6 +418,13 @@ def build_image_buildkit(image=None):
     #    print(access_token_response.json())
     #    raise BuildError(f'Unable to authenticate for {installation_id}')
     #access_token = access_token_response.json()
+
+    if image.commit_sha == "null":
+        commit_sha = _fetch_commit_sha_for_ref(image.application.github_repository, image.build_ref, access_token=access_token)
+        if image.image_metadata is None:
+            image.image_metadata = {"sha": commit_sha}
+        else:
+            image.image_metadata['sha'] = commit_sha
 
     dockerfile_name = None
     dockerfile_body = _fetch_github_file(image.application.github_repository, image.commit_sha, access_token=access_token, filename='Dockerfile.cabotage')
