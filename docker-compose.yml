@@ -99,6 +99,7 @@ services:
     environment:
       - FLASK_APP=cabotage.server.wsgi
       - CABOTAGE_DEBUG=True
+      - CABOTAGE_TESTING=True
       - CABOTAGE_BCRYPT_LOG_ROUNDS=4
       - CABOTAGE_WTF_CSRF_ENABLED=False
       - CABOTAGE_VAULT_DB_CREDS_PATH=database/creds/cabotage
@@ -129,6 +130,7 @@ services:
       - C_FORCE_ROOT=1
       - FLASK_APP=cabotage.server.wsgi
       - CABOTAGE_DEBUG=True
+      - CABOTAGE_TESTING=True
       - CABOTAGE_BCRYPT_LOG_ROUNDS=4
       - CABOTAGE_WTF_CSRF_ENABLED=False
       - CABOTAGE_SQLALCHEMY_DATABASE_URI=postgresql://postgres@db/cabotage_dev

@@ -2,6 +2,7 @@ import os
 
 from flask import Flask, render_template, url_for
 from flask_admin import Admin, helpers
+from flask_babel import Babel
 from flask_bcrypt import Bcrypt
 from flask_bootstrap import Bootstrap
 from flask_debugtoolbar import DebugToolbarExtension
@@ -57,6 +58,7 @@ config_writer = ConfigWriter(consul=consul, vault=vault)
 minio = MinioDriver()
 github_app = GitHubApp()
 sock = Sock()
+babel = Babel()
 
 def celery_init_app(app):
     class FlaskTask(Task):
@@ -122,6 +124,7 @@ def create_app():
     github_app.init_app(app)
     celery_init_app(app)
     sock.init_app(app)
+    babel.init_app(app)
 
     @login_manager.user_loader
     def load_user(userid):

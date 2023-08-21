@@ -2,7 +2,7 @@ import datetime
 
 from flask import current_app
 
-from flask_security import RoleMixin, UserMixin
+from flask_security.models.fsqla_v3 import FsRoleMixin, FsUserMixin
 
 
 from cabotage.server import db, bcrypt
@@ -34,7 +34,7 @@ roles_users = db.Table(
 )
 
 
-class Role(db.Model, RoleMixin):
+class Role(db.Model, FsRoleMixin):
 
     __versioned__ = {}
     __tablename__ = 'roles'
@@ -55,7 +55,7 @@ class Role(db.Model, RoleMixin):
         return hash(self.name)
 
 
-class User(db.Model, UserMixin):
+class User(db.Model, FsUserMixin):
 
     __versioned__ = {
         'exclude': ['password'],
@@ -69,30 +69,16 @@ class User(db.Model, UserMixin):
         primary_key=True
     )
     username = db.Column(db.String(255), unique=True, nullable=False)
-    email = db.Column(db.String(255), unique=True, nullable=False)
     password = db.Column(db.String(255), nullable=False)
-    active = db.Column(db.Boolean, nullable=False, default=False)
+
     admin = db.Column(db.Boolean, nullable=False, default=False)
-    registered_at = db.Column(db.DateTime, nullable=False)
-    confirmed_at = db.Column(db.DateTime)
-    last_login_at = db.Column(db.DateTime)
-    current_login_at = db.Column(db.DateTime)
-    last_login_ip = db.Column(postgresql.INET)
-    current_login_ip = db.Column(postgresql.INET)
-    login_count = db.Column(db.Integer)
+    registered_at = db.Column(db.DateTime, nullable=False, default=datetime.datetime.now)
 
     roles = db.relationship('Role', secondary=roles_users,
                             backref=db.backref('users', lazy='dynamic'))
 
     organizations = db.relationship("OrganizationMember", back_populates="user")
     teams = db.relationship("TeamMember", back_populates="user")
-
-    def __init__(self, username, email, password, active=False, roles=None, admin=False):
-        self.username = username
-        self.email = email
-        self.password = password
-        self.registered_at = datetime.datetime.now()
-        self.admin = admin
 
     def is_authenticated(self):
         return True

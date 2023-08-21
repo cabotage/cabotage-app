@@ -1,6 +1,7 @@
 import os
 
 from flask_env import MetaFlaskEnv
+from flask_security import uia_username_mapper, uia_email_mapper
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 
@@ -28,7 +29,17 @@ class Config(metaclass=MetaFlaskEnv):
     SECURITY_REGISTERABLE = True
     SECURITY_RECOVERABLE = True
     SECURITY_EMAIL_SENDER = 'noreply@localhost'
-    SECURITY_USER_IDENTITY_ATTRIBUTES = ['email', 'username']
+    SECURITY_TOTP_SECRETS = {1: "my_precious"}
+    SECURITY_TOTP_ISSUER = "cabotage"
+    SECURITY_UNIFIED_SIGNIN = True
+    SECURITY_US_SIGNIN_REPLACES_LOGIN = True
+    SECURITY_US_ENABLED_METHODS = ["password"]
+    SECURITY_USER_IDENTITY_ATTRIBUTES = [
+        {'email': {"mapper": uia_email_mapper, "case_insensitive": True}},
+        {'username': {"mapper": uia_username_mapper, "case_insensitive": True}},
+    ]
+    SECURITY_USERNAME_ENABLE = True
+    SECURITY_USERNAME_MIN_LENGTH = 2
     SECURITY_POST_REGISTER_VIEW = 'security.login'
     MAIL_SERVER = 'app.debugmail.io'
     MAIL_PORT = 25
