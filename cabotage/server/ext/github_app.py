@@ -42,8 +42,8 @@ class GitHubApp(object):
         if self.webhook_secret is None:
             return True
         return hmac.compare_digest(
-            request.headers.get('X-Hub-Signature').split('=')[1],
-            hmac.new(self.webhook_secret.encode(), msg=request.data, digestmod=hashlib.sha1).hexdigest()
+            request.headers.get('X-Hub-Signature-256').split('=')[1],
+            hmac.new(self.webhook_secret.encode(), msg=request.data, digestmod=hashlib.sha256).hexdigest()
         )
 
     def _token_needs_renewed(self):
