@@ -106,22 +106,24 @@ def process_deployment_hook(hook):
         release_tarball_fd, release_tarball_path = tempfile.mkstemp()
         try:
             print('rewriting tarfile... for reasons')
-            with open(github_tarball_path, 'wb') as handle:
-                for chunk in tarball_request.iter_content(4096):
-                    handle.write(chunk)
-            with tarfile.open(github_tarball_path, 'r') as github_tarfile:
-                with tarfile.open(release_tarball_path, 'w|gz') as release_tarfile:
-                    for member in github_tarfile:
-                        tar_info = member
-                        tar_info.name = f'./{str(Path(*Path(member.name).parts[1:]))}'
-                        release_tarfile.addfile(
-                            tar_info,
-                            github_tarfile.extractfile(member)
-                        )
-            print('uploading tar to minio')
-            with open(release_tarball_path, 'rb') as handle:
-                minio_response = minio.write_object(application.project.organization.slug, application.project.slug, application.slug, handle)
-            print(f'uploaded tar to {minio_response["path"]}')
+            with open(github_tarball_path, 'r+b') as gh_tarball_handle:
+                with open(release_tarball_path, 'r+b') as release_tarball_handle:
+                    for chunk in tarball_request.iter_content(4096):
+                        gh_tarball_handle.write(chunk)
+                    gh_tarball_handle.seek(0)
+                    with tarfile.open(fileobj=gh_tarball_handle, mode='r') as github_tarfile:
+                        with tarfile.open(fileobj=release_tarball_handle, mode='w|gz') as release_tarfile:
+                            for member in github_tarfile:
+                                tar_info = member
+                                tar_info.name = f'./{str(Path(*Path(member.name).parts[1:]))}'
+                                release_tarfile.addfile(
+                                    tar_info,
+                                    github_tarfile.extractfile(member)
+                                )
+                    print('uploading tar to minio')
+                    release_tarball_handle.seek(0)
+                    minio_response = minio.write_object(application.project.organization.slug, application.project.slug, application.slug, release_tarball_handle)
+                    print(f'uploaded tar to {minio_response["path"]}')
         finally:
             os.remove(github_tarball_path)
             os.remove(release_tarball_path)
