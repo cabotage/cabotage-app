@@ -867,13 +867,6 @@ def release_build_livelogs(ws, release_id):
 
     ws.send('=================END OF LOGS=================')
 
-@user_blueprint.route('/release/<release_id>/context.tar.gz')
-def release_build_context_tarfile(release_id):
-    release = Release.query.filter_by(id=release_id).first()
-    if release is None:
-        abort(404)
-    return send_file(release.release_build_context_tarfile, as_attachment=True, download_name=f'context.tar.gz')
-
 @sock.route('/deployment/<deployment_id>/livelogs', bp=user_blueprint)
 @login_required
 def deployment_livelogs(ws, deployment_id):
