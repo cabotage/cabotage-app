@@ -18,10 +18,6 @@ import requests
 import toml
 
 from contextlib import ExitStack
-from tarfile import (
-    TarFile,
-    TarError,
-)
 from tempfile import (
     TemporaryDirectory,
     TemporaryFile,
