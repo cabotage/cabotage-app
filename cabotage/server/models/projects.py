@@ -118,6 +118,7 @@ class Application(db.Model, Timestamp):
         "Configuration",
         backref="application",
         cascade="all, delete-orphan",
+        order_by="Configuration.name",
     )
     releases = db.relationship(
         "Release",
