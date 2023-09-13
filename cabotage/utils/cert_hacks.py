@@ -9,6 +9,16 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 
+"""
+TODO
+
+Reference: TOB-PYPI-21
+
+Replace this with built in vault support for x509 when 1.15 is released.
+
+See: https://github.com/hashicorp/vault/issues/3845#event-10158156553
+"""
+
 
 def issue_dummy_cert(public_key_pem, common_name):
     """A kind courtesy of @reaperhulk
