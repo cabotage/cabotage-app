@@ -3,6 +3,7 @@ import gzip
 import io
 import json
 import os
+import re
 import secrets
 import shlex
 import shutil
@@ -460,6 +461,10 @@ def build_image_buildkit(image=None):
         raise BuildError(
             f'error parsing Procfile: {exc}'
         )
+
+    for process_name in processes.keys():
+        if re.search("\s", process_name) is not None:
+            raise BuildError(f"Invalid process name: \"{process_name}\" in Procfile, may not contain whitespace.")
 
     insecure_reg=""
     registry_url=f"https://{registry}/v2"
