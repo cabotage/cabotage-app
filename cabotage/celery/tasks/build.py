@@ -312,9 +312,9 @@ def build_release_buildkit(release):
                     f.write(dockerconfigjson)
                 try:
                     completed_subprocess = subprocess.run(
-                        " ".join(buildctl_command + buildctl_args),
+                        buildctl_command + buildctl_args,
                         env={'BUILDKIT_HOST': buildkitd_url, 'HOME': tempdir},
-                        shell=True, cwd=tempdir, check=True,
+                        cwd=tempdir, check=True,
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                     )
                 except subprocess.CalledProcessError as exc:
@@ -656,9 +656,9 @@ def build_image_buildkit(image=None):
                     f.write(dockerconfigjson)
                 try:
                     completed_subprocess = subprocess.run(
-                        " ".join(buildctl_command + buildctl_args),
+                        buildctl_command + buildctl_args,
                         env={'BUILDKIT_HOST': buildkitd_url, 'HOME': tempdir},
-                        shell=True, cwd="/tmp", check=True,
+                        cwd="/tmp", check=True,
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                     )
                 except subprocess.CalledProcessError as exc:
