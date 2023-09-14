@@ -44,7 +44,6 @@ from cabotage.utils.docker_auth import (
     generate_kubernetes_imagepullsecrets,
 )
 
-from cabotage.utils.logs import filter_secrets
 from cabotage.utils.release_build_context import RELEASE_DOCKERFILE_TEMPLATE
 from cabotage.utils.github import post_deployment_status_update
 
@@ -310,7 +309,7 @@ def build_release_buildkit(release):
                     propagation_policy="Foreground",
                 )
 
-            release.release_build_log = filter_secrets(job_logs)
+            release.release_build_log = job_logs
             db.session.commit()
             db.session.flush()
             if not job_complete:
@@ -459,6 +458,18 @@ def build_image_buildkit(image=None):
     #    print(access_token_response.json())
     #    raise BuildError(f'Unable to authenticate for {installation_id}')
     # access_token = access_token_response.json()
+    #
+    # CRITICAL
+    # add f"--secret GIT_AUTH_TOKEN={access_token}" to buildx command
+    # This will pass it in to the buildx environment in such a way that it is
+    # not leaked to logs.
+    #
+    # Since we are using an up-to-date version of buildkit we can use the
+    # --secret flag in buildctl_args to pass the access token rather than
+    # constructing a URL.
+    #
+    # Ref: https://www.cve.org/CVERecord?id=CVE-2023-26054
+    # Ref: https://github.com/moby/buildkit/security/advisories/GHSA-gc89-7gcr-jxqc
 
     if image.commit_sha == "null":
         commit_sha = _fetch_commit_sha_for_ref(
@@ -750,7 +761,7 @@ def build_image_buildkit(image=None):
                     propagation_policy="Foreground",
                 )
 
-            image.image_build_log = filter_secrets(job_logs)
+            image.image_build_log = job_logs
             db.session.commit()
             db.session.flush()
             if not job_complete:
