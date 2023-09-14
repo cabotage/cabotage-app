@@ -4,15 +4,15 @@ from functools import partial
 from flask_security import current_user
 from flask_principal import Permission, UserNeed, RoleNeed
 
-OrganizationNeed = namedtuple("organization", ["method", "value"])
+OrganizationNeed = namedtuple("OrganizationNeed", ["method", "value"])
 ViewOrganizationNeed = partial(OrganizationNeed, "view")
 AdministerOrganizationNeed = partial(OrganizationNeed, "administer")
 
-ProjectNeed = namedtuple("project", ["method", "value"])
+ProjectNeed = namedtuple("ProjectNeed", ["method", "value"])
 ViewProjectNeed = partial(ProjectNeed, "view")
 AdministerProjectNeed = partial(ProjectNeed, "administer")
 
-ApplicationNeed = namedtuple("application", ["method", "value"])
+ApplicationNeed = namedtuple("ApplicationNeed", ["method", "value"])
 ViewApplicationNeed = partial(ApplicationNeed, "view")
 AdministerApplicationNeed = partial(ApplicationNeed, "administer")
 
