@@ -7,7 +7,7 @@ from urllib.parse import urlsplit, urlunsplit
 import hvac
 
 from flask import current_app
-from flask import _app_ctx_stack as stack
+from flask import g
 
 
 class VaultDBCreds(object):
@@ -106,14 +106,10 @@ class VaultDBCreds(object):
         return vault_db_creds_client
 
     def teardown(self, exception):
-        ctx = stack.top
-        if hasattr(ctx, "vault_db_creds_client"):
-            del ctx.vault_client
+        g.pop("vault_db_creds_client", None)
 
     @property
     def vault_connection(self):
-        ctx = stack.top
-        if ctx is not None:
-            if not hasattr(ctx, "vault_db_creds_client"):
-                ctx.vault_client = self.connect_vault()
-            return ctx.vault_client
+        if "vault_db_creds_client" not in g:
+            g.vault_db_creds_client = self.connect_vault()
+        return g.vault_db_creds_client
