@@ -80,7 +80,7 @@ class Vault(object):
             "cabotage-app",
         )
 
-    def sign_payload(self, payload, algorithm="sha2-256"):
+    def sign_payload(self, payload, algorithm="sha2-256", marshaling_algorithm="asn1"):
         if algorithm not in ("sha2-224", "sha2-256", "sha2-384", "sha2-512"):
             raise KeyError(f"Specified algorithm ({algorithm}) not supported!")
         VAULT_TRANSIT_SIGNING = (
@@ -89,6 +89,9 @@ class Vault(object):
         signature_response = self.vault_connection.write(
             VAULT_TRANSIT_SIGNING,
             input=b64encode(payload.encode()).decode(),
+            marshaling_algorithm=marshaling_algorithm,
         )
+        if marshaling_algorithm == "jws":
+            return signature_response["data"]["signature"].split(":")[2]
         signature_encoded = signature_response["data"]["signature"].split(":")[2]
         return b64decode(signature_encoded)

@@ -11,10 +11,6 @@ from base64 import (
 
 
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives.asymmetric.utils import (
-    decode_dss_signature,
-)
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
     PublicFormat,
@@ -32,15 +28,6 @@ def number_to_bytes(num, num_bytes):
     padded_hex = "%0*x" % (2 * num_bytes, num)
     big_endian = binascii.a2b_hex(padded_hex.encode("ascii"))
     return big_endian
-
-
-def der_to_raw_signature(der_sig, curve):
-    num_bits = curve.key_size
-    num_bytes = (num_bits + 7) // 8
-
-    r, s = decode_dss_signature(der_sig)
-
-    return number_to_bytes(r, num_bytes) + number_to_bytes(s, num_bytes)
 
 
 def generate_libcrypt_key_id(public_key_pem):
@@ -195,6 +182,5 @@ def generate_docker_registry_jwt(access=None):
         f'.{claim_set_encoded.rstrip(b"=").decode()}'
     )
 
-    signature_bytes = vault.sign_payload(payload)
-    signature = der_to_raw_signature(signature_bytes, ec.SECP256R1)
-    return f'{payload}.{urlsafe_b64encode(signature).rstrip(b"=").decode()}'
+    signature = vault.sign_payload(payload, marshaling_algorithm="jws")
+    return f"{payload}.{signature}"
