@@ -26,6 +26,7 @@ kubernetes
 minio
 procfile
 psycopg2
+pygithub
 pyjwt
 python-consul
 python-dxf
