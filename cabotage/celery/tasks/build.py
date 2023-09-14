@@ -401,9 +401,7 @@ def _fetch_github_file(
         return None
 
 
-def _is_imposter_commit(
-    github_repository="owner/repo", *, ref, sha, access_token=None
-):
+def _is_imposter_commit(github_repository="owner/repo", *, ref, sha, access_token=None):
     g = Github(access_token)
 
     try:
