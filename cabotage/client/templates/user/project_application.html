@@ -326,9 +326,6 @@
           {% endif %}
           <tr>
             <td colspan="2">
-              <a class="btn btn-primary" href="{{ url_for('user.application_images_build_submit', application_id=application.id) }}">
-                New Image Build From Tarball
-              </a>
               <form style="padding-top: 0.5em;" action="{{ url_for('user.application_images_build_fromsource', application_id=application.id) }}" method="POST">
                 <button class="btn btn-primary" type="submit">
                   New Image Build From Source

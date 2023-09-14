@@ -25,7 +25,6 @@ from cabotage.server.nav import nav
 from cabotage.server.ext.consul import Consul
 from cabotage.server.ext.vault import Vault
 from cabotage.server.ext.config_writer import ConfigWriter
-from cabotage.server.ext.minio_driver import MinioDriver
 from cabotage.server.ext.kubernetes import Kubernetes
 from cabotage.server.ext.vault_db_creds import VaultDBCreds
 from cabotage.server.ext.github_app import GitHubApp
@@ -55,7 +54,6 @@ vault = Vault()
 vault_db_creds = VaultDBCreds()
 kubernetes = Kubernetes()
 config_writer = ConfigWriter(consul=consul, vault=vault)
-minio = MinioDriver()
 github_app = GitHubApp()
 sock = Sock()
 babel = Babel()
@@ -128,7 +126,6 @@ def create_app():
     vault.init_app(app)
     kubernetes.init_app(app)
     config_writer.init_app(app, consul, vault)
-    minio.init_app(app)
     github_app.init_app(app)
     celery_init_app(app)
     sock.init_app(app)
@@ -161,10 +158,6 @@ def create_app():
     @app.errorhandler(500)
     def server_error_page(error):
         return render_template("errors/500.html"), 500
-
-    @app.cli.command("create-bucket")
-    def create_bucket():
-        minio.create_bucket()
 
     from cabotage.server.models.admin import AdminModelView
     from cabotage.server.models.auth import Organization, Team

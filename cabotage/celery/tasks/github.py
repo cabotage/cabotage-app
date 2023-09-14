@@ -1,9 +1,4 @@
 import datetime
-import os
-import tarfile
-import tempfile
-
-from pathlib import Path
 
 import requests
 
@@ -14,7 +9,6 @@ from sqlalchemy.orm.exc import MultipleResultsFound, NoResultFound
 from cabotage.server import (
     db,
     github_app,
-    minio,
 )
 from cabotage.server.models.projects import (
     activity_plugin,
@@ -98,61 +92,12 @@ def process_deployment_hook(hook):
             "Deployment is starting!",
         )
 
-        tarball_request = requests.get(
-            (
-                "https://api.github.com/repos/"
-                f'{repository_name}/tarball/{deployment["sha"]}'
-            ),
-            headers={
-                "Accept": "application/vnd.github.machine-man-preview+json",
-                "Authorization": f'token {access_token["token"]}',
-            },
-            stream=True,
-        )
-
-        github_tarball_fd, github_tarball_path = tempfile.mkstemp()
-        release_tarball_fd, release_tarball_path = tempfile.mkstemp()
-        try:
-            print("rewriting tarfile... for reasons")
-            with open(github_tarball_path, "r+b") as gh_tarball_handle:
-                with open(release_tarball_path, "r+b") as release_tarball_handle:
-                    for chunk in tarball_request.iter_content(4096):
-                        gh_tarball_handle.write(chunk)
-                    gh_tarball_handle.seek(0)
-                    with tarfile.open(
-                        fileobj=gh_tarball_handle, mode="r"
-                    ) as github_tarfile:
-                        with tarfile.open(
-                            fileobj=release_tarball_handle, mode="w|gz"
-                        ) as release_tarfile:
-                            for member in github_tarfile:
-                                tar_info = member
-                                tar_info.name = (
-                                    f"./{str(Path(*Path(member.name).parts[1:]))}"
-                                )
-                                release_tarfile.addfile(
-                                    tar_info, github_tarfile.extractfile(member)
-                                )
-                    print("uploading tar to minio")
-                    release_tarball_handle.seek(0)
-                    minio_response = minio.write_object(
-                        application.project.organization.slug,
-                        application.project.slug,
-                        application.slug,
-                        release_tarball_handle,
-                    )
-                    print(f'uploaded tar to {minio_response["path"]}')
-        finally:
-            os.remove(github_tarball_path)
-            os.remove(release_tarball_path)
-
         image = Image(
             application_id=application.id,
             repository_name=(
                 f"cabotage/{application.project.organization.slug}/"
                 f"{application.project.slug}/{application.slug}"
             ),
-            build_slug=minio_response["path"],
             image_metadata={
                 **deployment,
                 "installation_id": installation_id,
@@ -178,7 +123,7 @@ def process_deployment_hook(hook):
             access_token["token"],
             deployment["statuses_url"],
             "pending",
-            "Code retrieved! Image build commencing.",
+            "Image build commencing.",
         )
         return True
     except HookError as exc:
