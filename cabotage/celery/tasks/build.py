@@ -820,7 +820,6 @@ def build_image_buildkit(image=None):
 def run_image_build(image_id=None, buildkit=False):
     current_app.config["REGISTRY_AUTH_SECRET"]
     current_app.config["REGISTRY_BUILD"]
-    current_app.config["MINIO_BUCKET"]
     image = Image.query.filter_by(id=image_id).first()
     if image is None:
         raise KeyError(f"Image with ID {image_id} not found!")

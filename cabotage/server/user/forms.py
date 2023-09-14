@@ -6,7 +6,6 @@ from flask_wtf import FlaskForm
 
 from wtforms import (
     BooleanField,
-    FileField,
     HiddenField,
     SelectField,
     StringField,
@@ -392,19 +391,6 @@ class DeleteConfigurationForm(FlaskForm):
                 message="Must confirm the *exact* name of the Environment Variable!",
             )
         ],
-    )
-
-
-class ImageBuildSubmitForm(FlaskForm):
-    application_id = SelectField(
-        "Application",
-        [DataRequired()],
-        description="Application this Image is built for.",
-    )
-    build_file = FileField(
-        "Build File",
-        [DataRequired()],
-        description="Gzipped Tarball matching {documentation_url}.",
     )
 
 

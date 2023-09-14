@@ -33,7 +33,6 @@ from cabotage.server import (
     db,
     github_app,
     kubernetes as kubernetes_ext,
-    minio,
     vault,
     sock,
 )
@@ -72,7 +71,6 @@ from cabotage.server.user.forms import (
     DeleteConfigurationForm,
     EditApplicationSettingsForm,
     EditConfigurationForm,
-    ImageBuildSubmitForm,
     ReleaseDeployForm,
 )
 
@@ -1316,70 +1314,6 @@ def docker_auth():
         return jsonify({"error": "unauthorized"}), 401
     access = docker_access_intersection(granted_access, requested_access)
     return jsonify({"token": generate_docker_registry_jwt(access=access)})
-
-
-@user_blueprint.route(
-    "/applications/<application_id>/images/submit", methods=["GET", "POST"]
-)
-@login_required
-def application_images_build_submit(application_id):
-    application = Application.query.filter_by(id=application_id).first()
-    if application is None:
-        abort(404)
-    if not AdministerApplicationPermission(application.id).can():
-        abort(403)
-    project = application.project
-    organization = application.project.organization
-
-    form = ImageBuildSubmitForm()
-    form.application_id.choices = [
-        (str(application.id), f"{organization.slug}/{project.slug}: {application.slug}")
-    ]
-    form.application_id.data = str(application.id)
-
-    if form.validate_on_submit():
-        organization_slug = organization.slug
-        project_slug = project.slug
-        application_slug = application.slug
-        repository_name = (
-            f"cabotage/{organization_slug}/{project_slug}/{application_slug}"
-        )
-
-        fileobj = request.files["build_file"]
-        if fileobj:
-            minio_response = minio.write_object(
-                organization_slug, project_slug, application_slug, fileobj
-            )
-            image = Image(
-                application_id=application.id,
-                repository_name=repository_name,
-                build_slug=minio_response["path"],
-            )
-            db.session.add(image)
-            db.session.flush()
-            activity = Activity(
-                verb="submit",
-                object=image,
-                data={
-                    "user_id": str(current_user.id),
-                    "timestamp": datetime.datetime.utcnow().isoformat(),
-                },
-            )
-            db.session.add(activity)
-            db.session.commit()
-            run_image_build.delay(image_id=image.id)
-            return redirect(url_for("user.image_detail", image_id=image.id))
-        return redirect(
-            url_for(
-                "user.project_application",
-                org_slug=organization.slug,
-                project_slug=project.slug,
-                app_slug=application.slug,
-            )
-        )
-    return render_template(
-        "user/application_images_build_submit.html", form=form, application=application
-    )
 
 
 @user_blueprint.route(
