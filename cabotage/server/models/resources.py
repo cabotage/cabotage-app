@@ -1,6 +1,5 @@
 from sqlalchemy import text
 from sqlalchemy.dialects import postgresql
-from sqlalchemy_continuum import make_versioned
 from sqlalchemy_utils.models import Timestamp
 
 from cabotage.server import db

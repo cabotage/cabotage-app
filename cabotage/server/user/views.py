@@ -1,5 +1,4 @@
 import collections
-import os
 import datetime
 import time
 import threading
@@ -9,13 +8,11 @@ from flask import (
     Blueprint,
     abort,
     current_app,
-    flash,
     jsonify,
     make_response,
     redirect,
     render_template,
     request,
-    send_file,
     url_for,
 )
 from flask_security import (
@@ -81,7 +78,6 @@ from cabotage.server.user.forms import (
 
 from cabotage.utils.docker_auth import (
     check_docker_credentials,
-    generate_docker_credentials,
     generate_docker_registry_jwt,
     parse_docker_scope,
     docker_access_intersection,
@@ -89,7 +85,6 @@ from cabotage.utils.docker_auth import (
 from cabotage.utils.logs import filter_secrets
 
 from cabotage.celery.tasks import (
-    is_this_thing_on,
     process_github_hook,
     run_deploy,
     run_image_build,
@@ -116,7 +111,6 @@ def organizations():
 @user_blueprint.route("/organizations/<org_slug>")
 @login_required
 def organization(org_slug):
-    user = current_user
     organization = Organization.query.filter_by(slug=org_slug).first()
     if organization is None:
         abort(404)
@@ -155,7 +149,6 @@ def organization_create():
 @user_blueprint.route("/organizations/<org_slug>/projects")
 @login_required
 def organization_projects(org_slug):
-    user = current_user
     organization = Organization.query.filter_by(slug=org_slug).first()
     if organization is None:
         abort(404)
@@ -169,7 +162,6 @@ def organization_projects(org_slug):
 )
 @login_required
 def organization_project_create(org_slug):
-    user = current_user
     organization = Organization.query.filter_by(slug=org_slug).first()
     if organization is None:
         abort(404)
@@ -300,7 +292,10 @@ def project_application(org_slug, project_slug, app_slug):
         '<table class="table"><tr><th>Class</th><th>CPU</th><th>Mem</th></tr>'
     )
     for pod_class, parameters in pod_classes.items():
-        pod_class_info += f'<tr><td>{pod_class}</td><td>{parameters["cpu"]["requests"]}</td><td>{parameters["memory"]["requests"]}</td></tr>'
+        pod_class_info += (
+            f'<tr><td>{pod_class}</td><td>{parameters["cpu"]["requests"]}</td>'
+            f'<td>{parameters["memory"]["requests"]}</td></tr>'
+        )
     pod_class_info += "</table>"
 
     scale_form = ApplicationScaleForm()
@@ -556,7 +551,6 @@ def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
 )
 @login_required
 def project_application_create(org_slug, project_slug):
-    user = current_user
     form = CreateApplicationForm()
     organization = Organization.query.filter_by(slug=org_slug).first()
     if organization is None:
@@ -696,7 +690,7 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
                 app_slug,
                 configuration,
             )
-        except Exception as exc:
+        except Exception:
             raise  # No, we should def not do this
         configuration.key_slug = key_slugs["config_key_slug"]
         configuration.build_key_slug = key_slugs["build_key_slug"]
@@ -778,7 +772,7 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
                 app_slug,
                 configuration,
             )
-        except Exception as exc:
+        except Exception:
             raise  # No, we should def not do this
         configuration.key_slug = key_slugs["config_key_slug"]
         configuration.build_key_slug = key_slugs["build_key_slug"]
@@ -832,7 +826,10 @@ def project_application_settings(application_id):
     form.application_id.choices = [
         (
             str(application.id),
-            f"{application.project.organization.slug}/{application.project.slug}: {application.slug}",
+            (
+                f"{application.project.organization.slug}/{application.project.slug}: "
+                f"{application.slug}"
+            ),
         )
     ]
     form.application_id.data = str(application.id)
@@ -924,7 +921,7 @@ def project_application_configuration_delete(
                 app_slug,
                 configuration,
             )
-        except Exception as exc:
+        except Exception:
             pass  # No, we should def not do this
         return redirect(
             url_for(
@@ -1030,7 +1027,7 @@ def image_build_livelogs(ws, image_id):
 
     if len(pods.items) != 1:
         ws.send("=================END OF LOGS=================")
-        print(f"Found too many pods!")
+        print("Found too many pods!")
         return False
 
     pod = pods.items[0]
@@ -1151,7 +1148,7 @@ def release_build_livelogs(ws, release_id):
 
     if len(pods.items) != 1:
         ws.send("=================END OF LOGS=================")
-        print(f"Found too many pods!")
+        print("Found too many pods!")
         return False
 
     pod = pods.items[0]
@@ -1231,7 +1228,7 @@ def deployment_livelogs(ws, deployment_id):
 
     if len(pods.items) != 1:
         ws.send("=================END OF LOGS=================")
-        print(f"Found too many pods!")
+        print("Found too many pods!")
         return False
 
     pod = pods.items[0]
@@ -1306,7 +1303,7 @@ def application_release_create(application_id):
 @user_blueprint.route("/docker/auth")
 def docker_auth():
     secret = current_app.config["REGISTRY_AUTH_SECRET"]
-    username, password = request.authorization.username, request.authorization.password
+    password = request.authorization.password
     scope = request.args.get("scope", "registry:catalog:*")
     requested_access = parse_docker_scope(scope)
     max_age = None
@@ -1460,8 +1457,8 @@ def application_clear_cache(application_id):
         insecure=(not registry_secure),
         tlsverify=_tlsverify,
     )
-    client.del_alias(f"image-buildcache")
-    client.del_alias(f"release-buildcache")
+    client.del_alias("image-buildcache")
+    client.del_alias("release-buildcache")
     return redirect(
         url_for(
             "user.project_application",

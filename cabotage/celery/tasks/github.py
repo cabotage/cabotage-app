@@ -1,5 +1,4 @@
 import datetime
-import io
 import os
 import tarfile
 import tempfile
@@ -73,7 +72,8 @@ def process_deployment_hook(hook):
                 return False
         except MultipleResultsFound:
             print(
-                f"multiple apps configured for installation {installation_id} on {repository_name} with environment {environment}!"
+                f"multiple apps configured for installation {installation_id} "
+                f"on {repository_name} with environment {environment}!"
             )
             return False
 
@@ -99,7 +99,10 @@ def process_deployment_hook(hook):
         )
 
         tarball_request = requests.get(
-            f'https://api.github.com/repos/{repository_name}/tarball/{deployment["sha"]}',
+            (
+                "https://api.github.com/repos/"
+                f'{repository_name}/tarball/{deployment["sha"]}'
+            ),
             headers={
                 "Accept": "application/vnd.github.machine-man-preview+json",
                 "Authorization": f'token {access_token["token"]}',
@@ -145,7 +148,10 @@ def process_deployment_hook(hook):
 
         image = Image(
             application_id=application.id,
-            repository_name=f"cabotage/{application.project.organization.slug}/{application.project.slug}/{application.slug}",
+            repository_name=(
+                f"cabotage/{application.project.organization.slug}/"
+                f"{application.project.slug}/{application.slug}"
+            ),
             build_slug=minio_response["path"],
             image_metadata={
                 **deployment,
@@ -228,8 +234,6 @@ def process_push_hook(hook):
     repository_name = hook.payload["repository"]["full_name"]
     branch_names = [hook.payload["ref"].lstrip("refs/heads/")]
     commit_sha = hook.payload["after"]
-    bearer_token = github_app.bearer_token
-    access_token = None
 
     hook.commit_sha = commit_sha
 
@@ -242,7 +246,10 @@ def process_push_hook(hook):
     ).all()
     if len(applications) == 0:
         print(
-            f"could not find application! installation_id: {installation_id}, repository_name: {repository_name}, branches: {branch_names}"
+            f"could not find application! "
+            f"installation_id: {installation_id}, "
+            f"repository_name: {repository_name}, "
+            f"branches: {branch_names}"
         )
         return False
 
@@ -274,7 +281,10 @@ def process_check_suite_hook(hook):
         ).all()
         if len(applications) == 0:
             print(
-                f"could not find application! installation_id: {installation_id}, repository_name: {repository_name}, branches: {branch_names}"
+                f"could not find application! "
+                f"installation_id: {installation_id}, "
+                f"repository_name: {repository_name}, "
+                f"branches: {branch_names}"
             )
             return False
 
@@ -305,7 +315,8 @@ def process_check_suite_hook(hook):
 
         if push_event.deployed:
             print(
-                f"skipping auto-deploy for previously deployed {repository_name}@{commit_sha}"
+                "skipping auto-deploy for previously deployed "
+                f"{repository_name}@{commit_sha}"
             )
             return False
 

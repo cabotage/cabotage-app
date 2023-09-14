@@ -1,5 +1,4 @@
 import secrets
-import sys
 import time
 
 from base64 import b64encode
@@ -44,7 +43,8 @@ def create_namespace(core_api_instance, release):
         return core_api_instance.create_namespace(namespace_object)
     except Exception as exc:
         raise DeployError(
-            f"Unexpected exception creating Namespace/{namespace_name}: {exc}"
+            "Unexpected exception creating Namespace/"
+            f"{namespace_object.metadata.name}: {exc}"
         )
 
 
@@ -63,7 +63,6 @@ def fetch_namespace(core_api_instance, release):
 
 
 def render_cabotage_ca_configmap(release):
-    namespace_name = release.application.project.organization.slug
     with open("/var/run/secrets/cabotage.io/ca.crt", "r") as f:
         ca_crt = f.read()
     configmap_object = kubernetes.client.V1ConfigMap(
@@ -86,7 +85,8 @@ def create_cabotage_ca_configmap(core_api_instance, release):
         )
     except Exception as exc:
         raise DeployError(
-            f"Unexpected exception creating ConfigMap/cabotage-ca in {namespace_name}: {exc}"
+            "Unexpected exception creating ConfigMap/cabotage-ca in "
+            f"{namespace_name}: {exc}"
         )
 
 
@@ -101,7 +101,8 @@ def fetch_cabotage_ca_configmap(core_api_instance, release):
             configmap = create_cabotage_ca_configmap(core_api_instance, release)
         else:
             raise DeployError(
-                f"Unexpected exception fetching ConfigMap/cabotage-ca in {namespace_name}: {exc}"
+                "Unexpected exception fetching ConfigMap/cabotage-ca in "
+                f"{namespace_name}: {exc}"
             )
     return configmap
 
@@ -130,7 +131,8 @@ def create_service_account(core_api_instance, release):
         )
     except Exception as exc:
         raise DeployError(
-            f"Unexpected exception creating ServiceAccount/{service_account_name} in {namespace}: {exc}"
+            "Unexpected exception creating ServiceAccount/"
+            f"{service_account_object.name} in {namespace}: {exc}"
         )
 
 
@@ -148,7 +150,8 @@ def fetch_service_account(core_api_instance, release):
             service_account = create_service_account(core_api_instance, release)
         else:
             raise DeployError(
-                f"Unexpected exception fetching ServiceAccount/{service_account_name} in {namespace}: {exc}"
+                "Unexpected exception fetching ServiceAccount/"
+                f"{service_account_name} in {namespace}: {exc}"
             )
     return service_account
 
@@ -194,13 +197,18 @@ def fetch_image_pull_secrets(core_api_instance, release):
             secret = create_image_pull_secret(core_api_instance, release)
         else:
             raise DeployError(
-                f"Unexpected exception fetching ServiceAccount/{secret_name} in {namespace}: {exc}"
+                "Unexpected exception fetching ServiceAccount/"
+                f"{secret_name} in {namespace}: {exc}"
             )
     return secret
 
 
 def render_cabotage_enroller_container(release, process_name, with_tls=True):
-    role_name = f"{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}"
+    role_name = (
+        f"{release.application.project.organization.slug}"
+        f"-{release.application.project.slug}"
+        f"-{release.application.slug}"
+    )
 
     args = [
         "kube-login",
@@ -257,11 +265,14 @@ def render_cabotage_enroller_container(release, process_name, with_tls=True):
 
 
 def render_cabotage_sidecar_container(release, with_tls=True):
-    role_name = f"{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}"
+    role_name = (
+        f"{release.application.project.organization.slug}"
+        f"-{release.application.project.slug}"
+        f"-{release.application.slug}"
+    )
     args = ["maintain"]
     if with_tls:
         args.append(f"--vault-pki-role={role_name}")
-    role_name = f"{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}"
     return kubernetes.client.V1Container(
         name="cabotage-sidecar",
         image=current_app.config["SIDECAR_IMAGE"],
@@ -276,7 +287,6 @@ def render_cabotage_sidecar_container(release, with_tls=True):
 
 
 def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
-    role_name = f"{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}"
     volume_mounts = [
         kubernetes.client.V1VolumeMount(
             name="vault-secrets", mount_path="/var/run/secrets/vault"
@@ -465,7 +475,11 @@ def render_podspec(release, process_name, service_account_name):
         "project": release.application.project.slug,
         "application": release.application.slug,
         "process": process_name,
-        "app": f"{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}",
+        "app": (
+            f"{release.application.project.organization.slug}"
+            f"-{release.application.project.slug}"
+            f"-{release.application.slug}"
+        ),
         "release": str(release.version),
     }
     volumes = [
@@ -564,10 +578,18 @@ def render_podspec(release, process_name, service_account_name):
 
 
 def render_deployment(namespace, release, service_account_name, process_name):
-    role_name = f"{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}"
+    role_name = (
+        f"{release.application.project.organization.slug}"
+        f"-{release.application.project.slug}"
+        f"-{release.application.slug}"
+    )
     deployment_object = kubernetes.client.V1Deployment(
         metadata=kubernetes.client.V1ObjectMeta(
-            name=f"{release.application.project.slug}-{release.application.slug}-{process_name}",
+            name=(
+                f"{release.application.project.slug}"
+                f"-{release.application.slug}"
+                f"-{process_name}"
+            ),
             labels={
                 "organization": release.application.project.organization.slug,
                 "project": release.application.project.slug,
@@ -621,7 +643,8 @@ def create_deployment(
             pass
         else:
             raise DeployError(
-                f"Unexpected exception fetching Deployment/{deployment_object.metadata.name} in {namespace}: {exc}"
+                "Unexpected exception fetching Deployment/"
+                f"{deployment_object.metadata.name} in {namespace}: {exc}"
             )
     if deployment is None:
         try:
@@ -630,7 +653,8 @@ def create_deployment(
             )
         except Exception as exc:
             raise DeployError(
-                f"Unexpected exception creating Deployment/{deployment_object.metadata.name} in {namespace}: {exc}"
+                "Unexpected exception fetching Deployment/"
+                f"{deployment_object.metadata.name} in {namespace}: {exc}"
             )
     else:
         try:
@@ -639,7 +663,8 @@ def create_deployment(
             )
         except Exception as exc:
             raise DeployError(
-                f"Unexpected exception patching Deployment/{deployment_object.metadata.name} in {namespace}: {exc}"
+                "Unexpected exception fetching Deployment/"
+                f"{deployment_object.metadata.name} in {namespace}: {exc}"
             )
 
 
@@ -661,13 +686,17 @@ def scale_deployment(namespace, release, process_name, replicas):
         scale = kubernetes.client.V1Scale(
             spec=kubernetes.client.V1ScaleSpec(replicas=replicas)
         )
-        api_response = apps_api_instance.patch_namespaced_deployment_scale(
+        apps_api_instance.patch_namespaced_deployment_scale(
             deployment_name, namespace, scale
         )
 
 
 def render_job(namespace, release, service_account_name, process_name, job_id):
-    role_name = f"{release.application.project.organization.slug}-{release.application.project.slug}-{release.application.slug}"
+    role_name = (
+        f"{release.application.project.organization.slug}"
+        f"-{release.application.project.slug}"
+        f"-{release.application.slug}"
+    )
     job_object = kubernetes.client.V1Job(
         metadata=kubernetes.client.V1ObjectMeta(
             name=f"deployment-{job_id}",
@@ -716,7 +745,8 @@ def fetch_job_logs(core_api_instance, namespace, job_object):
         )
     except ApiException as exc:
         raise DeployError(
-            f"Unexpected exception listing Pods for Job/{job_object.metadata.name} in {namespace}: {exc}"
+            "Unexpected exception listing Pods for Job/"
+            f"{job_object.metadata.name} in {namespace}: {exc}"
         )
     for pod in pods.items:
         try:
@@ -726,7 +756,8 @@ def fetch_job_logs(core_api_instance, namespace, job_object):
             logs[pod.metadata.name] = pod_logs
         except ApiException as exc:
             raise DeployError(
-                f"Unexpected exception reading Pod logs for Job/{job_object.metadata.name}/{pod.metadata.name} in {namespace}: {exc}"
+                "Unexpected exception reading Pod logs for Job/"
+                f"{job_object.metadata.name}/{pod.metadata.name} in {namespace}: {exc}"
             )
     log_string = ""
     for pod_name, log_data in logs.items():
@@ -738,23 +769,25 @@ def fetch_job_logs(core_api_instance, namespace, job_object):
 
 def delete_job(batch_api_instance, namespace, job_object):
     try:
-        status = batch_api_instance.delete_namespaced_job(
+        batch_api_instance.delete_namespaced_job(
             job_object.metadata.name,
             namespace,
             propagation_policy="Foreground",
         )
     except ApiException as exc:
         raise DeployError(
-            f"Unexpected exception deleting Job/{job_object.metadata.name} in {namespace}: {exc}"
+            "Unexpected exception deleting Job/"
+            f"{job_object.metadata.name} in {namespace}: {exc}"
         )
 
 
 def run_job(core_api_instance, batch_api_instance, namespace, job_object):
     try:
-        job = batch_api_instance.create_namespaced_job(namespace, job_object)
+        batch_api_instance.create_namespaced_job(namespace, job_object)
     except ApiException as exc:
         raise DeployError(
-            f"Unexpected exception creating Job/{job_object.metadata.name} in {namespace}: {exc}"
+            "Unexpected exception creating Job/"
+            f"{job_object.metadata.name} in {namespace}: {exc}"
         )
 
     try:
@@ -775,7 +808,7 @@ def run_job(core_api_instance, batch_api_instance, namespace, job_object):
     finally:
         try:
             delete_job(batch_api_instance, namespace, job_object)
-        except (DeployError, ApiException) as exc:
+        except (DeployError, ApiException):
             pass
 
 
@@ -791,21 +824,19 @@ def deploy_release(deployment):
         core_api_instance = kubernetes.client.CoreV1Api(api_client)
         apps_api_instance = kubernetes.client.AppsV1Api(api_client)
         batch_api_instance = kubernetes.client.BatchV1Api(api_client)
-        deploy_log.append(f"Fetching Namespace")
+        deploy_log.append("Fetching Namespace")
         namespace = fetch_namespace(core_api_instance, deployment.release_object)
-        deploy_log.append(f"Fetching Cabotage CA Cert ConfigMap")
-        cabotage_ca_configmap = fetch_cabotage_ca_configmap(
-            core_api_instance, deployment.release_object
-        )
-        deploy_log.append(f"Fetching ServiceAccount")
+        deploy_log.append("Fetching Cabotage CA Cert ConfigMap")
+        fetch_cabotage_ca_configmap(core_api_instance, deployment.release_object)
+        deploy_log.append("Fetching ServiceAccount")
         service_account = fetch_service_account(
             core_api_instance, deployment.release_object
         )
-        deploy_log.append(f"Fetching ImagePullSecrets")
+        deploy_log.append("Fetching ImagePullSecrets")
         image_pull_secrets = fetch_image_pull_secrets(
             core_api_instance, deployment.release_object
         )
-        deploy_log.append(f"Patching ServiceAccount with ImagePullSecrets")
+        deploy_log.append("Patching ServiceAccount with ImagePullSecrets")
         service_account = core_api_instance.patch_namespaced_service_account(
             service_account.metadata.name,
             namespace.metadata.name,
@@ -839,9 +870,11 @@ def deploy_release(deployment):
                 deploy_log.append(f"Release command {release_command} complete!")
         for process_name in deployment.release_object.processes:
             deploy_log.append(
-                f"Creating deployment for {process_name} with {deployment.application.process_counts.get(process_name, 0)} replicas"
+                f"Creating deployment for {process_name} "
+                f"with {deployment.application.process_counts.get(process_name, 0)} "
+                "replicas"
             )
-            deployment_object = create_deployment(
+            create_deployment(
                 apps_api_instance,
                 namespace.metadata.name,
                 deployment.release_object,
@@ -912,16 +945,20 @@ def fake_deploy_release(deployment):
     deploy_log.append(yaml.dump(remove_none(namespace.to_dict())))
     service_account = render_service_account(deployment.release_object)
     deploy_log.append(
-        f"Creating ServiceAccount/{service_account.metadata.name} in Namespace/{namespace.metadata.name}"
+        f"Creating ServiceAccount/{service_account.metadata.name} "
+        f"in Namespace/{namespace.metadata.name}"
     )
     deploy_log.append(yaml.dump(remove_none(service_account.to_dict())))
     image_pull_secrets = render_image_pull_secrets(deployment.release_object)
     deploy_log.append(
-        f"Creating ImagePullSecrets/{image_pull_secrets.metadata.name} in Namespace/{namespace.metadata.name}"
+        f"Creating ImagePullSecrets/{image_pull_secrets.metadata.name} "
+        f"in Namespace/{namespace.metadata.name}"
     )
     deploy_log.append(yaml.dump(remove_none(image_pull_secrets.to_dict())))
     deploy_log.append(
-        f"Patching ServiceAccount/{service_account.metadata.name} with ImagePullSecrets/{image_pull_secrets.metadata.name} in Namespace/{namespace.metadata.name}"
+        f"Patching ServiceAccount/{service_account.metadata.name} "
+        f"with ImagePullSecrets/{image_pull_secrets.metadata.name} "
+        f"in Namespace/{namespace.metadata.name}"
     )
     for release_command in deployment.release_object.release_commands:
         job_object = render_job(
@@ -932,7 +969,8 @@ def fake_deploy_release(deployment):
             deployment.job_id,
         )
         deploy_log.append(
-            f"Running Job/{job_object.metadata.name} in Namespace/{namespace.metadata.name}"
+            f"Running Job/{job_object.metadata.name} "
+            f"in Namespace/{namespace.metadata.name}"
         )
         deploy_log.append(yaml.dump(remove_none(job_object.to_dict())))
     for process in deployment.release_object.processes:
@@ -943,7 +981,8 @@ def fake_deploy_release(deployment):
             process,
         )
         deploy_log.append(
-            f"Creating Deployment/{deployment_object.metadata.name} in Namespace/{namespace.metadata.name}"
+            f"Creating Deployment/{deployment_object.metadata.name} "
+            f"in Namespace/{namespace.metadata.name}"
         )
         deploy_log.append(yaml.dump(remove_none(deployment_object.to_dict())))
     deployment.deploy_log = "\n".join(deploy_log)
@@ -982,12 +1021,10 @@ def run_deploy(deployment_id=None):
     deployment = Deployment.query.filter_by(id=deployment_id).first()
     if deployment is None:
         raise KeyError(f"Deployment with ID {deployment_id} not found!")
-    error = False
     error_detail = ""
     try:
         deploy_release(deployment)
     except DeployError as exc:
-        error = True
         error_detail = str(exc)
         print(error_detail)
         print(exc)

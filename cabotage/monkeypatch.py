@@ -17,7 +17,7 @@ def _iter_resp_lines(resp):
             yield line
 
 
-import kubernetes
+import kubernetes  # noqa: E402
 
 print("patching kubernetes.watch.watch.iter_resp_lines")
 kubernetes.watch.watch.iter_resp_lines = _iter_resp_lines

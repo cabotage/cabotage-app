@@ -6,9 +6,7 @@ from flask_wtf import FlaskForm
 
 from wtforms import (
     BooleanField,
-    FieldList,
     FileField,
-    FormField,
     HiddenField,
     SelectField,
     StringField,
@@ -21,7 +19,6 @@ from wtforms.validators import (
     ValidationError,
 )
 
-from cabotage.server import db
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import (
     Application,
@@ -66,7 +63,9 @@ class CreateOrganizationForm(FlaskForm):
             DataRequired(),
             Regexp("^[-a-z0-9]+$", message="Invalid Slug! Must match ^[-a-z0-9]+$"),
         ],
-        description="URL Safe short name for your Organization, must be globally unique.",
+        description=(
+            "URL Safe short name for your Organization, must be globally unique."
+        ),
     )
 
     def validate_slug(form, field):
@@ -93,7 +92,10 @@ class CreateProjectForm(FlaskForm):
             DataRequired(),
             Regexp("^[-a-z0-9]+$", message="Invalid Slug! Must match ^[-a-z0-9]+$"),
         ],
-        description="URL Safe short name for your Project, must be unique within the Organization.",
+        description=(
+            "URL Safe short name for your Project, "
+            "must be unique within the Organization."
+        ),
     )
 
     def validate_slug(form, field):
@@ -146,7 +148,10 @@ class CreateApplicationForm(FlaskForm):
             DataRequired(),
             Regexp("^[-a-z0-9]+$", message="Invalid Slug! Must match ^[-a-z0-9]+$"),
         ],
-        description="URL Safe short name for your Application, must be unique within the Project.",
+        description=(
+            "URL Safe short name for your Application, "
+            "must be unique within the Project."
+        ),
     )
 
     def validate_slug(form, field):
@@ -189,7 +194,10 @@ class CreateConfigurationForm(FlaskForm):
             DataRequired(),
             Regexp(
                 "^[a-zA-Z_]+[a-zA-Z0-9_]*$",
-                message="Invalid Environment Variable Name! Must match ^[a-zA-Z_]+[a-zA-Z0-9_]*$",
+                message=(
+                    "Invalid Environment Variable Name! "
+                    "Must match ^[a-zA-Z_]+[a-zA-Z0-9_]*$"
+                ),
             ),
         ],
         description="Name for the Environment Variable.",
@@ -202,7 +210,10 @@ class CreateConfigurationForm(FlaskForm):
     secure = BooleanField(
         "Secure",
         [],
-        description="Store this Environment Variable Securely. It will not be recoverable again via the UI.",
+        description=(
+            "Store this Environment Variable Securely. "
+            "It will not be recoverable again via the UI."
+        ),
     )
     buildtime = BooleanField(
         "Expose during Build",
@@ -218,7 +229,8 @@ class CreateConfigurationForm(FlaskForm):
             if form.name.data.lower() != configuration.name.lower():
                 return True
             raise ValidationError(
-                "Configuration names must be unique (case insensitive) within Applications"
+                "Configuration names must be unique (case insensitive) "
+                "within Applications"
             )
         return True
 
@@ -248,7 +260,10 @@ class EditApplicationSettingsForm(FlaskForm):
     )
     github_environment_name = StringField(
         "GitHub Environment Name",
-        description="Environment name for GitHub deploys, default: cabotage/[application uuid]",
+        description=(
+            "Environment name for GitHub deploys, "
+            "default: cabotage/[application uuid]"
+        ),
         filters=[(lambda x: x.strip() if x else x), (lambda x: x if x else None)],
     )
 
@@ -265,15 +280,17 @@ class EditApplicationSettingsForm(FlaskForm):
         )
         if app is not None and app.id != uuid.UUID(form.application_id.data):
             raise ValidationError(
-                "Environment names must be unique within GitHub App Installations and Repositories."
+                "Environment names must be unique within "
+                "GitHub App Installations and Repositories."
             )
         return True
 
     health_check_path = StringField(
         "HTTP Health Check Path",
         description=(
-            "Path that probes should hit with a simple HTTP request to determine health. "
-            "Should respond quickly with a simple HTTP 200 OK. "
+            "Path that probes should hit with a simple HTTP request "
+            "to determine health. "
+            "It should respond quickly with a simple HTTP 200 OK. "
             "Requires a new release to take effect."
         ),
     )
@@ -298,7 +315,10 @@ class EditConfigurationForm(FlaskForm):
             DataRequired(),
             Regexp(
                 "^[a-zA-Z_]+[a-zA-Z0-9_]*$",
-                message="Invalid Environment Variable Name! Must match ^[a-zA-Z_]+[a-zA-Z0-9_]*$",
+                message=(
+                    "Invalid Environment Variable Name! "
+                    "Must match ^[a-zA-Z_]+[a-zA-Z0-9_]*$"
+                ),
             ),
         ],
         description="Name for the Environment Variable.",
@@ -311,7 +331,10 @@ class EditConfigurationForm(FlaskForm):
     secure = BooleanField(
         "Secure",
         [],
-        description="Store this Environment Variable Securely. It will not be recoverable again via the UI.",
+        description=(
+            "Store this Environment Variable Securely. "
+            "It will not be recoverable again via the UI."
+        ),
     )
     buildtime = BooleanField(
         "Expose during Build",
@@ -330,7 +353,10 @@ class EditConfigurationForm(FlaskForm):
                 "Configuration names cannot be changed! Delete and re-create"
             )
         raise ValidationError(
-            "Configurations must be created from the Create Application Configuration form"
+            (
+                "Configurations must be created from the "
+                "Create Application Configuration form"
+            )
         )
 
 
@@ -353,7 +379,10 @@ class DeleteConfigurationForm(FlaskForm):
     secure = BooleanField(
         "Secure",
         [],
-        description="Store this Environment Variable Securely. It will not be recoverable again via the UI.",
+        description=(
+            "Store this Environment Variable Securely. "
+            "It will not be recoverable again via the UI."
+        ),
     )
     confirm = StringField(
         "Type the name of the Environment Variable.",

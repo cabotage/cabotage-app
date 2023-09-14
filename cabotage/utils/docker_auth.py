@@ -6,17 +6,11 @@ import uuid
 
 from base64 import (
     b32encode,
-    b32decode,
-    b64encode,
-    b64decode,
     urlsafe_b64encode,
 )
 
-import hvac
 
-from cryptography import x509
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import (
     decode_dss_signature,
@@ -25,7 +19,6 @@ from cryptography.hazmat.primitives.serialization import (
     Encoding,
     PublicFormat,
     load_pem_public_key,
-    load_pem_private_key,
 )
 from itsdangerous import (
     BadData,

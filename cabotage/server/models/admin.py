@@ -1,4 +1,4 @@
-from flask import abort, url_for, redirect
+from flask import abort
 from flask_admin.base import AdminIndexView as _AdminIndexView
 from flask_admin.contrib import sqla
 from flask_admin.form import SecureForm

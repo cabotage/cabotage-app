@@ -1,9 +1,3 @@
-import os
-
-from flask import current_app
-from flask import _app_ctx_stack as stack
-
-
 class ConfigWriter(object):
     def __init__(self, app=None, consul=None, vault=None):
         self.app = app

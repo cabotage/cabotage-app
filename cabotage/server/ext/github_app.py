@@ -6,9 +6,7 @@ import time
 import requests
 import jwt
 
-from flask import current_app
 from flask import request
-from flask import _app_ctx_stack as stack
 
 
 class GitHubApp(object):
@@ -81,4 +79,4 @@ class GitHubApp(object):
         return access_token_response.json()["token"]
 
     def teardown(self, exception):
-        ctx = stack.top
+        pass

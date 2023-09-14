@@ -1,18 +1,15 @@
 import datetime
 
-from flask import current_app
 
 from flask_security.models.fsqla_v3 import FsRoleMixin, FsUserMixin
 
 
-from cabotage.server import db, bcrypt
+from cabotage.server import db
 from sqlalchemy import text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy_continuum import make_versioned
 
 from citext import CIText
-
-from .utils import slugify
 
 from .auth_associations import (
     OrganizationMember,

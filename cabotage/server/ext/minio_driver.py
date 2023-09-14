@@ -64,7 +64,10 @@ class MinioDriver(object):
         file_length = fileobj.tell()
         fileobj.seek(0)
         self.create_bucket()
-        path = f"{self.minio_prefix}/{org_slug}/{proj_slug}/{app_slug}/{secrets.token_urlsafe(8)}.tar.gz"
+        path = (
+            f"{self.minio_prefix}/{org_slug}/{proj_slug}/{app_slug}/"
+            f"{secrets.token_urlsafe(8)}.tar.gz"
+        )
         etag = self.minio_connection.put_object(
             self.minio_bucket,
             path,
@@ -79,7 +82,10 @@ class MinioDriver(object):
         file_length = fileobj.tell()
         fileobj.seek(0)
         self.create_bucket()
-        path = f"{self.minio_prefix}/{org_slug}/{proj_slug}/{app_slug}/{secrets.token_urlsafe(8)}.tar.gz"
+        path = (
+            f"{self.minio_prefix}/{org_slug}/{proj_slug}/{app_slug}/"
+            f"{secrets.token_urlsafe(8)}.tar.gz"
+        )
         etag = self.minio_connection.put_object(
             self.minio_bucket,
             path,

@@ -10,7 +10,6 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 import citext
-from citext import CIText
 import sqlalchemy_utils.types.json
 
 # revision identifiers, used by Alembic.

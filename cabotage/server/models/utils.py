@@ -76,7 +76,13 @@ class DictDiffer(object):
         return self.added() or self.removed() or self.changed()
 
     def __repr__(self):
-        return f"<DictDiffer Added: {self.added()}, Removed: {self.removed()}, Changed: {self.changed()}>"
+        return (
+            "<DictDiffer "
+            f"Added: {self.added()}, "
+            f"Removed: {self.removed()}, "
+            f"Changed: {self.changed()}"
+            ">"
+        )
 
     @property
     def asdict(self):

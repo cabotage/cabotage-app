@@ -7,7 +7,6 @@ from base64 import (
 
 import hvac
 
-from flask import current_app
 from flask import _app_ctx_stack as stack
 
 from cabotage.utils.cert_hacks import construct_cert_from_public_key

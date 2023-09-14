@@ -1,15 +1,9 @@
 import datetime
-import gzip
-import io
-import json
 import os
 import re
 import secrets
 import shlex
-import shutil
-import stat
 import subprocess
-import sys
 
 from celery import shared_task
 from base64 import b64encode, b64decode
@@ -18,18 +12,14 @@ import kubernetes
 import requests
 import toml
 
-from contextlib import ExitStack
 from tempfile import (
     TemporaryDirectory,
-    TemporaryFile,
 )
 
-import docker
-import docker.tls
 import procfile
 
 from dockerfile_parse import DockerfileParser
-from flask import current_app, url_for
+from flask import current_app
 from dxf import DXF
 
 from cabotage.celery.tasks.deploy import run_deploy, run_job
@@ -37,7 +27,6 @@ from cabotage.celery.tasks.deploy import run_deploy, run_job
 from cabotage.server import (
     db,
     github_app,
-    minio,
     config_writer,
     kubernetes as kubernetes_ext,
 )
@@ -50,12 +39,8 @@ from cabotage.server.models.projects import (
 )
 
 from cabotage.utils.docker_auth import (
-    check_docker_credentials,
-    generate_docker_credentials,
     generate_docker_registry_jwt,
     generate_kubernetes_imagepullsecrets,
-    parse_docker_scope,
-    docker_access_intersection,
 )
 
 from cabotage.utils.logs import filter_secrets
@@ -74,12 +59,15 @@ def build_release_buildkit(release):
     registry = current_app.config["REGISTRY_BUILD"]
     registry_secure = current_app.config["REGISTRY_SECURE"]
     registry_ca = current_app.config["REGISTRY_VERIFY"]
-    buildkitd_url = docker_url = current_app.config["BUILDKITD_URL"]
+    buildkitd_url = current_app.config["BUILDKITD_URL"]
     buildkitd_ca = current_app.config["BUILDKITD_VERIFY"]
 
     process_commands = "\n".join(
         [
-            f"COPY envconsul-{process_name}.hcl /etc/cabotage/envconsul-{process_name}.hcl"
+            (
+                f"COPY envconsul-{process_name}.hcl "
+                f"/etc/cabotage/envconsul-{process_name}.hcl"
+            )
             for process_name in release.envconsul_configurations
         ]
     )
@@ -126,7 +114,10 @@ def build_release_buildkit(release):
         "--frontend",
         "dockerfile.v0",
         "--output",
-        f"type=image,name={registry}/{release.repository_name}:release-{release.version},push=true{insecure_reg}",
+        (
+            f"type=image,name={registry}/{release.repository_name}"
+            f":release-{release.version},push=true{insecure_reg}"
+        ),
     ]
 
     if registry_ca and not isinstance(registry_ca, bool):
@@ -179,7 +170,7 @@ def build_release_buildkit(release):
                     template=kubernetes.client.V1PodTemplateSpec(
                         metadata=kubernetes.client.V1ObjectMeta(
                             labels={
-                                "organization": release.application.project.organization.slug,
+                                "organization": release.application.project.organization.slug,  # noqa: E501
                                 "project": release.application.project.slug,
                                 "application": release.application.slug,
                                 "process": "build",
@@ -187,7 +178,7 @@ def build_release_buildkit(release):
                                 "ca-admission.cabotage.io": "true",
                             },
                             annotations={
-                                "container.apparmor.security.beta.kubernetes.io/build": "unconfined",
+                                "container.apparmor.security.beta.kubernetes.io/build": "unconfined",  # noqa: E501
                             },
                         ),
                         spec=kubernetes.client.V1PodSpec(
@@ -201,7 +192,7 @@ def build_release_buildkit(release):
                                     env=[
                                         kubernetes.client.V1EnvVar(
                                             name="BUILDKITD_FLAGS",
-                                            value="--config /home/user/.config/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",
+                                            value="--config /home/user/.config/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",  # noqa: E501
                                         ),
                                     ],
                                     security_context=kubernetes.client.V1SecurityContext(
@@ -240,7 +231,7 @@ def build_release_buildkit(release):
                                                 sub_path=f"envconsul-{process_name}.hcl",
                                                 name="build-context",
                                             )
-                                            for process_name in release.envconsul_configurations
+                                            for process_name in release.envconsul_configurations  # noqa: E501
                                         ],
                                     ],
                                 ),
@@ -322,7 +313,7 @@ def build_release_buildkit(release):
             db.session.commit()
             db.session.flush()
             if not job_complete:
-                raise BuildError(f"Image build failed!")
+                raise BuildError("Image build failed!")
         else:
             buildctl_args += [
                 "--local",
@@ -445,7 +436,7 @@ def build_image_buildkit(image=None):
     registry = current_app.config["REGISTRY_BUILD"]
     registry_secure = current_app.config["REGISTRY_SECURE"]
     registry_ca = current_app.config["REGISTRY_VERIFY"]
-    buildkitd_url = docker_url = current_app.config["BUILDKITD_URL"]
+    buildkitd_url = current_app.config["BUILDKITD_URL"]
     buildkitd_ca = current_app.config["BUILDKITD_VERIFY"]
 
     access_token = None
@@ -493,7 +484,8 @@ def build_image_buildkit(image=None):
         dockerfile_name = "Dockerfile"
     if dockerfile_body is None:
         raise BuildError(
-            f"No Dockerfile.cabotage or Dockerfile found in root of {image.application.github_repository}@{image.commit_sha}"
+            "No Dockerfile.cabotage or Dockerfile found in root of "
+            f"{image.application.github_repository}@{image.commit_sha}"
         )
 
     procfile_body = _fetch_github_file(
@@ -511,7 +503,8 @@ def build_image_buildkit(image=None):
         )
     if procfile_body is None:
         raise BuildError(
-            f"No Procfile.cabotage or Procfile found in root of {image.application.github_repository}@{image.commit_sha}"
+            "No Procfile.cabotage or Procfile found in root of "
+            "{image.application.github_repository}@{image.commit_sha}"
         )
 
     image.dockerfile = dockerfile_body
@@ -535,7 +528,8 @@ def build_image_buildkit(image=None):
     for process_name in processes.keys():
         if re.search("\s", process_name) is not None:
             raise BuildError(
-                f'Invalid process name: "{process_name}" in Procfile, may not contain whitespace.'
+                f'Invalid process name: "{process_name}" in Procfile, '
+                "may not contain whitespace."
             )
 
     insecure_reg = ""
@@ -577,13 +571,25 @@ def build_image_buildkit(image=None):
         "--opt",
         f"filename=./{dockerfile_name}",
         "--opt",
-        f"context=https://github.com/{image.application.github_repository}.git#{image.commit_sha}",
+        (
+            "context=https://github.com/"
+            f"{image.application.github_repository}.git#{image.commit_sha}"
+        ),
         "--import-cache",
-        f"type=registry,ref={registry}/{image.repository_name}:image-buildcache{insecure_reg}",
+        (
+            f"type=registry,ref={registry}/{image.repository_name}"
+            f":image-buildcache{insecure_reg}"
+        ),
         "--export-cache",
-        f"type=registry,ref={registry}/{image.repository_name}:image-buildcache{insecure_reg},mode=min",
+        (
+            f"type=registry,ref={registry}/{image.repository_name}"
+            f":image-buildcache{insecure_reg},mode=min"
+        ),
         "--output",
-        f"type=image,name={registry}/{image.repository_name}:image-{image.version},push=true{insecure_reg}",
+        (
+            f"type=image,name={registry}/{image.repository_name}"
+            f":image-{image.version},push=true{insecure_reg}"
+        ),
     ]
 
     for k, v in image.buildargs(config_writer).items():
@@ -632,7 +638,7 @@ def build_image_buildkit(image=None):
                     template=kubernetes.client.V1PodTemplateSpec(
                         metadata=kubernetes.client.V1ObjectMeta(
                             labels={
-                                "organization": image.application.project.organization.slug,
+                                "organization": image.application.project.organization.slug,  # noqa: E501
                                 "project": image.application.project.slug,
                                 "application": image.application.slug,
                                 "process": "build",
@@ -640,7 +646,7 @@ def build_image_buildkit(image=None):
                                 "ca-admission.cabotage.io": "true",
                             },
                             annotations={
-                                "container.apparmor.security.beta.kubernetes.io/build": "unconfined",
+                                "container.apparmor.security.beta.kubernetes.io/build": "unconfined",  # noqa: E501
                             },
                         ),
                         spec=kubernetes.client.V1PodSpec(
@@ -654,7 +660,7 @@ def build_image_buildkit(image=None):
                                     env=[
                                         kubernetes.client.V1EnvVar(
                                             name="BUILDKITD_FLAGS",
-                                            value="--config /home/user/.config/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",
+                                            value="--config /home/user/.config/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",  # noqa: E501
                                         ),
                                     ],
                                     security_context=kubernetes.client.V1SecurityContext(
@@ -743,7 +749,7 @@ def build_image_buildkit(image=None):
             db.session.commit()
             db.session.flush()
             if not job_complete:
-                raise BuildError(f"Image build failed!")
+                raise BuildError("Image build failed!")
         else:
             buildctl_command = ["buildctl"]
             if buildkitd_ca is not None:
@@ -812,9 +818,9 @@ def build_image_buildkit(image=None):
 
 @shared_task()
 def run_image_build(image_id=None, buildkit=False):
-    secret = current_app.config["REGISTRY_AUTH_SECRET"]
-    registry = current_app.config["REGISTRY_BUILD"]
-    object_bucket = current_app.config["MINIO_BUCKET"]
+    current_app.config["REGISTRY_AUTH_SECRET"]
+    current_app.config["REGISTRY_BUILD"]
+    current_app.config["MINIO_BUCKET"]
     image = Image.query.filter_by(id=image_id).first()
     if image is None:
         raise KeyError(f"Image with ID {image_id} not found!")
@@ -890,8 +896,8 @@ def run_image_build(image_id=None, buildkit=False):
 @shared_task()
 def run_release_build(release_id=None):
     try:
-        secret = current_app.config["REGISTRY_AUTH_SECRET"]
-        registry = current_app.config["REGISTRY_BUILD"]
+        current_app.config["REGISTRY_AUTH_SECRET"]
+        current_app.config["REGISTRY_BUILD"]
         release = Release.query.filter_by(id=release_id).first()
         if release is None:
             raise KeyError(f"Release with ID {release_id} not found!")

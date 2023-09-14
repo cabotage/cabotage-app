@@ -336,7 +336,7 @@ class Application(db.Model, Timestamp):
             github_repository,
             github_environment_name,
             unique=True,
-            postgresql_where=(github_environment_name != None),
+            postgresql_where=(github_environment_name is not None),
         ),
     )
 
@@ -472,7 +472,8 @@ class Release(db.Model, Timestamp):
         reasons = []
         if self.image_object is None:
             reasons.append(
-                f'<code>Image {self.image["repository"]}:{self.image["tag"]} no longer exists!</code>'
+                f'<code>Image {self.image["repository"]}:{self.image["tag"]} '
+                "no longer exists!</code>"
             )
         for configuration, configuration_serialized in self.configuration.items():
             configuration_object = Configuration.query.filter_by(
@@ -583,7 +584,10 @@ class Release(db.Model, Timestamp):
     def release_build_context_configmap(self):
         process_commands = "\n".join(
             [
-                f"COPY envconsul-{process_name}.hcl /etc/cabotage/envconsul-{process_name}.hcl"
+                (
+                    f"COPY envconsul-{process_name}.hcl "
+                    "/etc/cabotage/envconsul-{process_name}.hcl"
+                )
                 for process_name in self.envconsul_configurations
             ]
         )

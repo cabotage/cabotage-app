@@ -9,8 +9,6 @@ import hvac
 from flask import current_app
 from flask import _app_ctx_stack as stack
 
-from cabotage.utils.cert_hacks import construct_cert_from_public_key
-
 
 class VaultDBCreds(object):
     def __init__(self, app=None):
@@ -42,7 +40,9 @@ class VaultDBCreds(object):
 
             if self.vault_db_database_uri is None:
                 raise RuntimeError(
-                    "Unable to configure a database uri, VAULT_DB_DATABASE_URI is required when VAULT_DB_CREDS_PATH is specified"
+                    "Unable to configure a database uri, "
+                    "VAULT_DB_DATABASE_URI is required when "
+                    "VAULT_DB_CREDS_PATH is specified"
                 )
 
             if self.vault_token is None:
@@ -56,7 +56,9 @@ class VaultDBCreds(object):
             atexit.register(self.revoke_credentials)
         else:
             raise RuntimeError(
-                "Unable to configure a database uri, one of SQLALCHEMY_DATABASE_URI or VAULT_DB_CREDS_PATH must  be specified"
+                "Unable to configure a database uri, "
+                "one of SQLALCHEMY_DATABASE_URI or "
+                "VAULT_DB_CREDS_PATH must  be specified"
             )
 
         app.teardown_appcontext(self.teardown)
@@ -69,7 +71,10 @@ class VaultDBCreds(object):
     def fetch_database_credentials(self):
         response = self.vault_connection.read(self.vault_db_creds_path)
         parsed_uri = urlsplit(self.vault_db_database_uri)
-        new_netloc = f"{response['data']['username']}:{response['data']['password']}@{parsed_uri.hostname}"
+        new_netloc = (
+            f"{response['data']['username']}:{response['data']['password']}"
+            f"@{parsed_uri.hostname}"
+        )
         constructed = urlunsplit(parsed_uri._replace(netloc=new_netloc))
         self.rendered_uri = constructed
         self.vault_lease_id = response["lease_id"]
@@ -81,11 +86,13 @@ class VaultDBCreds(object):
             ) as lease_file:
                 lease_file.write(self.vault_lease_id.encode("utf-8"))
             self.logger.info(
-                f'wrote lease file to {os.path.join(self.vault_lease_path, "leases", lease_sha)}'
+                "wrote lease file to "
+                f'{os.path.join(self.vault_lease_path, "leases", lease_sha)}'
             )
         else:
             self.logger.warning(
-                f"no lease file written for {self.vault_lease_id}! someone needs to renew it!"
+                "no lease file written for "
+                f"{self.vault_lease_id}! someone needs to renew it!"
             )
         current_app.config["SQLALCHEMY_DATABASE_URI"] = constructed
 
