@@ -9,7 +9,6 @@ from celery import shared_task
 from base64 import b64encode, b64decode
 
 import kubernetes
-import requests
 import toml
 
 from tempfile import (
@@ -21,6 +20,8 @@ import procfile
 from dockerfile_parse import DockerfileParser
 from flask import current_app
 from dxf import DXF
+from github import Github
+from github.GithubException import UnknownObjectException
 
 from cabotage.celery.tasks.deploy import run_deploy, run_job
 
@@ -390,45 +391,51 @@ def build_release_buildkit(release):
 def _fetch_github_file(
     github_repository="owner/repo", ref="main", access_token=None, filename="Dockerfile"
 ):
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
-    if access_token is not None:
-        headers["Authorization"] = f"token {access_token}"
-    response = requests.get(
-        f"https://api.github.com/repos/{github_repository}/contents/{filename}",
-        params={"ref": ref},
-        headers=headers,
-    )
-    if response.status_code == 404:
+    g = Github(access_token)
+    try:
+        content_file = g.get_repo(github_repository).get_contents(filename, ref=ref)
+        if content_file.encoding == "base64":
+            return b64decode(content_file.content).decode()
+        return content_file.content
+    except UnknownObjectException:
         return None
-    if response.status_code == 200:
-        data = response.json()
-        if data["encoding"] == "base64":
-            return b64decode(response.json()["content"]).decode()
-    response.raise_for_status()
+
+
+def _is_imposter_commit(
+    github_repository="owner/repo", ref=None, sha=None, access_token=None
+):
+    g = Github(access_token)
+
+    try:
+        repo = g.get_repo(github_repository)
+    except UnknownObjectException:
+        return True
+
+    try:
+        result = repo.compare(f"refs/heads/{ref}", sha).status
+    except UnknownObjectException:
+        raise BuildError(f"branch: {ref} does not exist in {github_repository}")
+
+    return not (result == "behind" or result == "identical")
 
 
 def _fetch_commit_sha_for_ref(
     github_repository="owner/repo", ref="main", access_token=None
 ):
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
-    if access_token is not None:
-        headers["Authorization"] = f"token {access_token}"
-    response = requests.get(
-        f"https://api.github.com/repos/{github_repository}/commits/{ref}",
-        params={"ref": ref},
-        headers=headers,
-    )
-    if response.status_code == 404:
+    g = Github(access_token)
+    try:
+        sha = g.get_repo(github_repository).get_commit(ref).sha
+    except UnknownObjectException:
         return None
-    if response.status_code == 200:
-        return response.json()["sha"]
-    response.raise_for_status()
+
+    if _is_imposter_commit(
+        github_repository=github_repository, ref=ref, sha=sha, access_token=access_token
+    ):
+        raise BuildError(
+            f"ref: {ref} does not resolve to a valid commit in {github_repository}"
+        )
+
+    return sha
 
 
 def build_image_buildkit(image=None):
