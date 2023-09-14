@@ -80,7 +80,6 @@ from cabotage.utils.docker_auth import (
     parse_docker_scope,
     docker_access_intersection,
 )
-from cabotage.utils.logs import filter_secrets
 
 from cabotage.celery.tasks import (
     process_github_hook,
@@ -435,7 +434,7 @@ def project_application_livelogs(ws, org_slug, project_slug, app_slug):
     update_thread.start()
 
     while True:
-        ws.send(filter_secrets(q.get()))
+        ws.send(q.get())
 
 
 @user_blueprint.route(
@@ -987,7 +986,7 @@ def image_build_livelogs(ws, image_id):
     if image.image_build_log is not None:
         ws.send(f"Job Pod imagebuild-{image.build_job_id}")
         for line in image.image_build_log.split("\n"):
-            ws.send(f"  {filter_secrets(line)}")
+            ws.send(f"  {line}")
         ws.send("=================END OF LOGS=================")
 
     api_client = kubernetes_ext.kubernetes_client
@@ -1047,7 +1046,7 @@ def image_build_livelogs(ws, image_id):
         _preload_content=False,
         pretty="true",
     ):
-        ws.send(f"  {filter_secrets(line)}")
+        ws.send(f"  {line}")
 
     ws.send("=================END OF LOGS=================")
 
@@ -1108,7 +1107,7 @@ def release_build_livelogs(ws, release_id):
     if release.release_build_log is not None:
         ws.send(f"Job Pod releasebuild-{release.build_job_id}")
         for line in release.release_build_log.split("\n"):
-            ws.send(f"  {filter_secrets(line)}")
+            ws.send(f"  {line}")
         ws.send("=================END OF LOGS=================")
 
     api_client = kubernetes_ext.kubernetes_client
@@ -1168,7 +1167,7 @@ def release_build_livelogs(ws, release_id):
         _preload_content=False,
         pretty="true",
     ):
-        ws.send(f"  {filter_secrets(line)}")
+        ws.send(f"  {line}")
 
     ws.send("=================END OF LOGS=================")
 
@@ -1185,7 +1184,7 @@ def deployment_livelogs(ws, deployment_id):
     if deployment.deploy_log is not None:
         ws.send(f"Job Pod deployment-{deployment.job_id}")
         for line in deployment.deploy_log.split("\n"):
-            ws.send(f"  {filter_secrets(line)}")
+            ws.send(f"  {line}")
         ws.send("=================END OF LOGS=================")
 
     api_client = kubernetes_ext.kubernetes_client
@@ -1254,7 +1253,7 @@ def deployment_livelogs(ws, deployment_id):
         _preload_content=False,
         pretty="true",
     ):
-        ws.send(f"  {filter_secrets(line)}")
+        ws.send(f"  {line}")
 
     ws.send("=================END OF LOGS=================")
 
