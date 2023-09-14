@@ -185,7 +185,7 @@ class DeleteApplicationForm(FlaskForm):
 class CreateConfigurationForm(FlaskForm):
     application_id = SelectField(
         "Application",
-        [InputRequired()],
+        [DataRequired()],
         description="Application this Configuration belongs to.",
     )
     name = StringField(

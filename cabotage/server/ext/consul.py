@@ -2,7 +2,7 @@ import os
 
 import consul
 
-from flask import _app_ctx_stack as stack
+from flask import g
 
 
 class Consul(object):
@@ -42,14 +42,10 @@ class Consul(object):
         return consul_client
 
     def teardown(self, exception):
-        ctx = stack.top
-        if hasattr(ctx, "consul_client"):
-            del ctx.consul_client
+        g.pop("consul_client", None)
 
     @property
     def consul_connection(self):
-        ctx = stack.top
-        if ctx is not None:
-            if not hasattr(ctx, "consul_client"):
-                ctx.consul_client = self.connect_consul()
-            return ctx.consul_client
+        if "consul_client" not in g:
+            g.consul_client = self.connect_consul()
+        return g.consul_client

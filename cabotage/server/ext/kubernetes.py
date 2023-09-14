@@ -1,4 +1,4 @@
-from flask import _app_ctx_stack as stack
+from flask import g
 
 import kubernetes
 
@@ -28,14 +28,10 @@ class Kubernetes(object):
         return kubernetes_client
 
     def teardown(self, exception):
-        ctx = stack.top
-        if hasattr(ctx, "kubernetes_client"):
-            del ctx.kubernetes_client
+        g.pop("kubernetes_client", None)
 
     @property
     def kubernetes_client(self):
-        ctx = stack.top
-        if ctx is not None:
-            if not hasattr(ctx, "kubernetes_client"):
-                ctx.kubernetes_client = self.connect_kubernetes()
-            return ctx.kubernetes_client
+        if "kubernetes_client" not in g:
+            g.kubernetes_client = self.connect_kubernetes()
+        return g.kubernetes_client
