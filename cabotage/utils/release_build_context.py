@@ -1,6 +1,3 @@
-import io
-import time
-
 import kubernetes
 
 RELEASE_DOCKERFILE_TEMPLATE = """

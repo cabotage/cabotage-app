@@ -9,17 +9,16 @@ app = create_app()
 
 
 class BaseTestCase(TestCase):
-
     def create_app(self):
-        app.config.from_object('cabotage.server.config.TestingConfig')
-        app.config['SQLALCHEMY_DATABASE_URI'] = self.postgresql.url()
+        app.config.from_object("cabotage.server.config.TestingConfig")
+        app.config["SQLALCHEMY_DATABASE_URI"] = self.postgresql.url()
         return app
 
     def setUp(self):
-        db.engine.execute('CREATE EXTENSION IF NOT EXISTS citext')
-        db.engine.execute('CREATE EXTENSION IF NOT EXISTS pgcrypto')
+        db.engine.execute("CREATE EXTENSION IF NOT EXISTS citext")
+        db.engine.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
         db.create_all()
-        user = User(email="ad@min.com", username='admin', password="admin_user")
+        user = User(email="ad@min.com", username="admin", password="admin_user")
         db.session.add(user)
         db.session.commit()
 

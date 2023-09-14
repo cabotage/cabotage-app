@@ -1,18 +1,15 @@
 import datetime
 
-from flask import current_app
 
 from flask_security.models.fsqla_v3 import FsRoleMixin, FsUserMixin
 
 
-from cabotage.server import db, bcrypt
+from cabotage.server import db
 from sqlalchemy import text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy_continuum import make_versioned
 
 from citext import CIText
-
-from .utils import slugify
 
 from .auth_associations import (
     OrganizationMember,
@@ -28,22 +25,21 @@ make_versioned(plugins=[activity_plugin])
 
 
 roles_users = db.Table(
-    'roles_users',
-    db.Column('user_id', postgresql.UUID(as_uuid=True), db.ForeignKey('users.id')),
-    db.Column('role_id', postgresql.UUID(as_uuid=True), db.ForeignKey('roles.id'))
+    "roles_users",
+    db.Column("user_id", postgresql.UUID(as_uuid=True), db.ForeignKey("users.id")),
+    db.Column("role_id", postgresql.UUID(as_uuid=True), db.ForeignKey("roles.id")),
 )
 
 
 class Role(db.Model, FsRoleMixin):
-
     __versioned__ = {}
-    __tablename__ = 'roles'
+    __tablename__ = "roles"
 
     id = db.Column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
         nullable=False,
-        primary_key=True
+        primary_key=True,
     )
     name = db.Column(db.String(80), unique=True)
     description = db.Column(db.String(255))
@@ -56,26 +52,28 @@ class Role(db.Model, FsRoleMixin):
 
 
 class User(db.Model, FsUserMixin):
-
     __versioned__ = {
-        'exclude': ['password'],
+        "exclude": ["password"],
     }
-    __tablename__ = 'users'
+    __tablename__ = "users"
 
     id = db.Column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
         nullable=False,
-        primary_key=True
+        primary_key=True,
     )
     username = db.Column(db.String(255), unique=True, nullable=False)
     password = db.Column(db.String(255), nullable=False)
 
     admin = db.Column(db.Boolean, nullable=False, default=False)
-    registered_at = db.Column(db.DateTime, nullable=False, default=datetime.datetime.now)
+    registered_at = db.Column(
+        db.DateTime, nullable=False, default=datetime.datetime.now
+    )
 
-    roles = db.relationship('Role', secondary=roles_users,
-                            backref=db.backref('users', lazy='dynamic'))
+    roles = db.relationship(
+        "Role", secondary=roles_users, backref=db.backref("users", lazy="dynamic")
+    )
 
     organizations = db.relationship("OrganizationMember", back_populates="user")
     teams = db.relationship("TeamMember", back_populates="user")
@@ -93,7 +91,7 @@ class User(db.Model, FsUserMixin):
         return self.id
 
     def __repr__(self):
-        return '<User {0}>'.format(self.username)
+        return "<User {0}>".format(self.username)
 
     @property
     def projects(self):
@@ -106,20 +104,19 @@ class User(db.Model, FsUserMixin):
 
 
 class Organization(db.Model):
-
     __versioned__ = {}
-    __tablename__ = 'organizations'
+    __tablename__ = "organizations"
 
     def __init__(self, *args, **kwargs):
-        if 'slug' not in kwargs:
-            kwargs['slug'] = slugify(kwargs.get('name'))
+        if "slug" not in kwargs:
+            kwargs["slug"] = slugify(kwargs.get("name"))
         super().__init__(*args, **kwargs)
 
     id = db.Column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
         nullable=False,
-        primary_key=True
+        primary_key=True,
     )
     name = db.Column(db.Text(), nullable=False)
     slug = db.Column(CIText(), nullable=False, unique=True)
@@ -136,7 +133,9 @@ class Organization(db.Model):
         db.session.add(association)
 
     def remove_user(self, user):
-        association = OrganizationMember.query.filter_by(user_id=user.id, organization_id=self.id)
+        association = OrganizationMember.query.filter_by(
+            user_id=user.id, organization_id=self.id
+        )
         if association:
             db.session.delete(association)
 
@@ -148,20 +147,19 @@ class Organization(db.Model):
 
 
 class Team(db.Model):
-
     __versioned__ = {}
-    __tablename__ = 'teams'
+    __tablename__ = "teams"
 
     def __init__(self, *args, **kwargs):
-        if 'slug' not in kwargs:
-            kwargs['slug'] = slugify(kwargs.get('name'))
+        if "slug" not in kwargs:
+            kwargs["slug"] = slugify(kwargs.get("name"))
         super().__init__(*args, **kwargs)
 
     id = db.Column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
         nullable=False,
-        primary_key=True
+        primary_key=True,
     )
 
     name = db.Column(db.String(64), nullable=False)

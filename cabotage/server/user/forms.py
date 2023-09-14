@@ -6,9 +6,7 @@ from flask_wtf import FlaskForm
 
 from wtforms import (
     BooleanField,
-    FieldList,
     FileField,
-    FormField,
     HiddenField,
     SelectField,
     StringField,
@@ -21,7 +19,6 @@ from wtforms.validators import (
     ValidationError,
 )
 
-from cabotage.server import db
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import (
     Application,
@@ -31,330 +28,397 @@ from cabotage.server.models.projects import (
 
 
 class ExtendedLoginForm(LoginForm):
-
-    email = StringField('Username or Email Address', [DataRequired()])
+    email = StringField("Username or Email Address", [DataRequired()])
 
 
 class ExtendedRegisterForm(RegisterForm):
-
     username = StringField(
-        'Username',
+        "Username",
         validators=[
             DataRequired(),
             Length(min=1, max=64),
-        ]
+        ],
     )
 
-class ExtendedConfirmRegisterForm(ConfirmRegisterForm):
 
+class ExtendedConfirmRegisterForm(ConfirmRegisterForm):
     username = StringField(
-        'Username',
+        "Username",
         validators=[
             DataRequired(),
             Length(min=1, max=64),
-        ]
+        ],
     )
 
 
 class CreateOrganizationForm(FlaskForm):
-
     name = StringField(
-        u'Organization Name',
+        "Organization Name",
         [DataRequired()],
         description="Friendly and descriptive name for your Organization.",
     )
     slug = StringField(
-        u'Organization Slug',
-        [DataRequired(),
-         Regexp('^[-a-z0-9]+$', message="Invalid Slug! Must match ^[-a-z0-9]+$")],
-        description="URL Safe short name for your Organization, must be globally unique.",
+        "Organization Slug",
+        [
+            DataRequired(),
+            Regexp("^[-a-z0-9]+$", message="Invalid Slug! Must match ^[-a-z0-9]+$"),
+        ],
+        description=(
+            "URL Safe short name for your Organization, must be globally unique."
+        ),
     )
 
     def validate_slug(form, field):
         organization = Organization.query.filter_by(slug=field.data).first()
         if organization is not None:
-            raise ValidationError('Organization slugs must be globally unique.')
+            raise ValidationError("Organization slugs must be globally unique.")
         return True
 
 
 class CreateProjectForm(FlaskForm):
-
     organization_id = SelectField(
-        u'Organization',
+        "Organization",
         [DataRequired()],
         description="Organization this Project belongs to.",
     )
     name = StringField(
-        u'Project Name',
+        "Project Name",
         [DataRequired()],
         description="Friendly and descriptive name for your Project.",
     )
     slug = StringField(
-        u'Project Slug',
-        [DataRequired(),
-         Regexp('^[-a-z0-9]+$', message="Invalid Slug! Must match ^[-a-z0-9]+$")],
-        description="URL Safe short name for your Project, must be unique within the Organization.",
+        "Project Slug",
+        [
+            DataRequired(),
+            Regexp("^[-a-z0-9]+$", message="Invalid Slug! Must match ^[-a-z0-9]+$"),
+        ],
+        description=(
+            "URL Safe short name for your Project, "
+            "must be unique within the Organization."
+        ),
     )
 
     def validate_slug(form, field):
-        project = Project.query.filter_by(organization_id=form.organization_id.data).filter_by(slug=field.data).first()
+        project = (
+            Project.query.filter_by(organization_id=form.organization_id.data)
+            .filter_by(slug=field.data)
+            .first()
+        )
         if project is not None:
-            raise ValidationError('Project slugs must be unique within organizations.')
+            raise ValidationError("Project slugs must be unique within organizations.")
         return True
 
 
 class DeleteProjectForm(FlaskForm):
-
     application_id = HiddenField(
-        u'Project ID',
+        "Project ID",
         [DataRequired()],
         description="ID of the Project to delete.",
     )
     name = StringField(
-        u'Name',
+        "Name",
         [DataRequired()],
         description="Name for the Project being deleted.",
     )
     confirm = StringField(
-        u'Type the name of the Project.',
-        [EqualTo('name', message='Must confirm the *exact* name of the Project!')],
+        "Type the name of the Project.",
+        [EqualTo("name", message="Must confirm the *exact* name of the Project!")],
     )
 
 
 class CreateApplicationForm(FlaskForm):
-
     organization_id = SelectField(
-        u'Organization',
+        "Organization",
         [DataRequired()],
         description="Organization this Application belongs to.",
     )
     project_id = SelectField(
-        u'Project',
+        "Project",
         [DataRequired()],
         description="Project this Application belongs to.",
     )
     name = StringField(
-        u'Application Name',
+        "Application Name",
         [DataRequired()],
         description="Friendly and descriptive name for your Application.",
     )
     slug = StringField(
-        u'Application Slug',
-        [DataRequired(),
-         Regexp('^[-a-z0-9]+$', message="Invalid Slug! Must match ^[-a-z0-9]+$")],
-        description="URL Safe short name for your Application, must be unique within the Project.",
+        "Application Slug",
+        [
+            DataRequired(),
+            Regexp("^[-a-z0-9]+$", message="Invalid Slug! Must match ^[-a-z0-9]+$"),
+        ],
+        description=(
+            "URL Safe short name for your Application, "
+            "must be unique within the Project."
+        ),
     )
 
     def validate_slug(form, field):
-        project = Application.query.filter_by(project_id=form.project_id.data).filter_by(slug=field.data).first()
+        project = (
+            Application.query.filter_by(project_id=form.project_id.data)
+            .filter_by(slug=field.data)
+            .first()
+        )
         if project is not None:
-            raise ValidationError('Application slugs must be unique within Projects.')
+            raise ValidationError("Application slugs must be unique within Projects.")
         return True
 
 
 class DeleteApplicationForm(FlaskForm):
-
     application_id = HiddenField(
-        u'Application ID',
+        "Application ID",
         [DataRequired()],
         description="ID of the Application to delete.",
     )
     name = StringField(
-        u'Name',
+        "Name",
         [DataRequired()],
         description="Name for the Application being deleted.",
     )
     confirm = StringField(
-        u'Type the name of the Application.',
-        [EqualTo('name', message='Must confirm the *exact* name of the Application!')],
+        "Type the name of the Application.",
+        [EqualTo("name", message="Must confirm the *exact* name of the Application!")],
     )
 
-class CreateConfigurationForm(FlaskForm):
 
+class CreateConfigurationForm(FlaskForm):
     application_id = SelectField(
-        u'Application',
+        "Application",
         [DataRequired()],
         description="Application this Configuration belongs to.",
     )
     name = StringField(
-        u'Name',
-        [DataRequired(),
-         Regexp('^[a-zA-Z_]+[a-zA-Z0-9_]*$', message="Invalid Environment Variable Name! Must match ^[a-zA-Z_]+[a-zA-Z0-9_]*$")],
+        "Name",
+        [
+            DataRequired(),
+            Regexp(
+                "^[a-zA-Z_]+[a-zA-Z0-9_]*$",
+                message=(
+                    "Invalid Environment Variable Name! "
+                    "Must match ^[a-zA-Z_]+[a-zA-Z0-9_]*$"
+                ),
+            ),
+        ],
         description="Name for the Environment Variable.",
     )
     value = StringField(
-        u'Value',
+        "Value",
         [DataRequired()],
         description="Value for the Environment Variable.",
     )
     secure = BooleanField(
-        u'Secure',
+        "Secure",
         [],
-        description="Store this Environment Variable Securely. It will not be recoverable again via the UI.",
+        description=(
+            "Store this Environment Variable Securely. "
+            "It will not be recoverable again via the UI."
+        ),
     )
     buildtime = BooleanField(
-        u'Expose during Build',
+        "Expose during Build",
         [],
         description="Set this Enviornment Variable during Image builds.",
     )
 
     def validate_name(form, field):
-        configuration = Configuration.query.filter_by(application_id=form.application_id.data, name=field.data).first()
+        configuration = Configuration.query.filter_by(
+            application_id=form.application_id.data, name=field.data
+        ).first()
         if configuration is not None:
             if form.name.data.lower() != configuration.name.lower():
                 return True
-            raise ValidationError('Configuration names must be unique (case insensitive) within Applications')
+            raise ValidationError(
+                "Configuration names must be unique (case insensitive) "
+                "within Applications"
+            )
         return True
+
 
 class EditApplicationSettingsForm(FlaskForm):
     application_id = SelectField(
-        u'Application',
+        "Application",
         [DataRequired()],
         description="Application this Configuration belongs to.",
     )
     github_repository = StringField(
-        u'GitHub Repository',
-        description=u'GitHub Repository to deploy from',
+        "GitHub Repository",
+        description="GitHub Repository to deploy from",
         render_kw={"placeholder": "org_name/repo_name"},
     )
     auto_deploy_branch = StringField(
-        u'Branch',
-        description=u'GitHub Repository branch to auto-deploy from',
+        "Branch",
+        description="GitHub Repository branch to auto-deploy from",
     )
     github_app_installation_id = StringField(
-        u'GitHub Application Installation ID',
+        "GitHub Application Installation ID",
         description="Application Installation ID from GitHub",
-        filters = [(lambda x: x.strip() if (x and isinstance(x, str)) else x), (lambda x: x if x else None)]
+        filters=[
+            (lambda x: x.strip() if (x and isinstance(x, str)) else x),
+            (lambda x: x if x else None),
+        ],
     )
     github_environment_name = StringField(
-        u'GitHub Environment Name',
-        description="Environment name for GitHub deploys, default: cabotage/[application uuid]",
-        filters = [(lambda x: x.strip() if x else x), (lambda x: x if x else None)]
+        "GitHub Environment Name",
+        description=(
+            "Environment name for GitHub deploys, "
+            "default: cabotage/[application uuid]"
+        ),
+        filters=[(lambda x: x.strip() if x else x), (lambda x: x if x else None)],
     )
 
     def validate_github_environment_name(form, field):
         if field.data is None:
             return True
         app = (
-            Application.query
-            .filter_by(github_app_installation_id=form.github_app_installation_id.data)
+            Application.query.filter_by(
+                github_app_installation_id=form.github_app_installation_id.data
+            )
             .filter_by(github_repository=form.github_repository.data)
             .filter_by(github_environment_name=field.data)
             .first()
         )
         if app is not None and app.id != uuid.UUID(form.application_id.data):
-            raise ValidationError('Environment names must be unique within GitHub App Installations and Repositories.')
+            raise ValidationError(
+                "Environment names must be unique within "
+                "GitHub App Installations and Repositories."
+            )
         return True
 
     health_check_path = StringField(
-        'HTTP Health Check Path',
+        "HTTP Health Check Path",
         description=(
-            "Path that probes should hit with a simple HTTP request to determine health. "
-            "Should respond quickly with a simple HTTP 200 OK. "
+            "Path that probes should hit with a simple HTTP request "
+            "to determine health. "
+            "It should respond quickly with a simple HTTP 200 OK. "
             "Requires a new release to take effect."
         ),
     )
     health_check_host = StringField(
-        'HTTP Health Check Host Header',
+        "HTTP Health Check Host Header",
         description=(
             "Host header that probes should use when request to determine health. "
             "Requires a new release to take effect."
         ),
     )
 
-class EditConfigurationForm(FlaskForm):
 
+class EditConfigurationForm(FlaskForm):
     application_id = SelectField(
-        u'Application',
+        "Application",
         [DataRequired()],
         description="Application this Configuration belongs to.",
     )
     name = StringField(
-        u'Name',
-        [DataRequired(),
-         Regexp('^[a-zA-Z_]+[a-zA-Z0-9_]*$', message="Invalid Environment Variable Name! Must match ^[a-zA-Z_]+[a-zA-Z0-9_]*$")],
+        "Name",
+        [
+            DataRequired(),
+            Regexp(
+                "^[a-zA-Z_]+[a-zA-Z0-9_]*$",
+                message=(
+                    "Invalid Environment Variable Name! "
+                    "Must match ^[a-zA-Z_]+[a-zA-Z0-9_]*$"
+                ),
+            ),
+        ],
         description="Name for the Environment Variable.",
     )
     value = StringField(
-        u'Value',
+        "Value",
         [DataRequired()],
         description="Value for the Environment Variable.",
     )
     secure = BooleanField(
-        u'Secure',
+        "Secure",
         [],
-        description="Store this Environment Variable Securely. It will not be recoverable again via the UI.",
+        description=(
+            "Store this Environment Variable Securely. "
+            "It will not be recoverable again via the UI."
+        ),
     )
     buildtime = BooleanField(
-        u'Expose during Build',
+        "Expose during Build",
         [],
         description="Set this Enviornment Variable during Image builds.",
     )
 
     def validate_name(form, field):
-        configuration = Configuration.query.filter_by(application_id=form.application_id.data, name=field.data).first()
+        configuration = Configuration.query.filter_by(
+            application_id=form.application_id.data, name=field.data
+        ).first()
         if configuration is not None:
             if form.name.data == configuration.name:
                 return True
-            raise ValidationError('Configuration names cannot be changed! Delete and re-create')
-        raise ValidationError('Configurations must be created from the Create Application Configuration form')
+            raise ValidationError(
+                "Configuration names cannot be changed! Delete and re-create"
+            )
+        raise ValidationError(
+            (
+                "Configurations must be created from the "
+                "Create Application Configuration form"
+            )
+        )
 
 
 class DeleteConfigurationForm(FlaskForm):
-
     configuration_id = HiddenField(
-        u'Configuration ID',
+        "Configuration ID",
         [DataRequired()],
         description="ID of the Environment Variable to delete.",
     )
     name = StringField(
-        u'Name',
+        "Name",
         [DataRequired()],
         description="Name for the Environment Variable.",
     )
     value = StringField(
-        u'Value',
+        "Value",
         [DataRequired()],
         description="Value for the Environment Variable.",
     )
     secure = BooleanField(
-        u'Secure',
+        "Secure",
         [],
-        description="Store this Environment Variable Securely. It will not be recoverable again via the UI.",
+        description=(
+            "Store this Environment Variable Securely. "
+            "It will not be recoverable again via the UI."
+        ),
     )
     confirm = StringField(
-        u'Type the name of the Environment Variable.',
-        [EqualTo('name', message='Must confirm the *exact* name of the Environment Variable!')],
+        "Type the name of the Environment Variable.",
+        [
+            EqualTo(
+                "name",
+                message="Must confirm the *exact* name of the Environment Variable!",
+            )
+        ],
     )
 
 
 class ImageBuildSubmitForm(FlaskForm):
-
     application_id = SelectField(
-        u'Application',
+        "Application",
         [DataRequired()],
         description="Application this Image is built for.",
     )
     build_file = FileField(
-        u'Build File',
+        "Build File",
         [DataRequired()],
         description="Gzipped Tarball matching {documentation_url}.",
     )
 
 
 class ReleaseDeployForm(FlaskForm):
-
     release_id = StringField(
-        u'Release ID',
+        "Release ID",
         [DataRequired()],
         description="Release to deploy.",
     )
 
 
 class ApplicationScaleForm(FlaskForm):
-
     application_id = StringField(
-        u'Application ID',
+        "Application ID",
         [DataRequired()],
         description="Application to scale.",
     )

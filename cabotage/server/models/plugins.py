@@ -11,9 +11,9 @@ from sqlalchemy_continuum.utils import version_class, version_obj
 class ActivityBase(object):
     id = sa.Column(
         sa.BigInteger,
-        sa.schema.Sequence('activity_id_seq'),
+        sa.schema.Sequence("activity_id_seq"),
         primary_key=True,
-        autoincrement=True
+        autoincrement=True,
     )
 
     verb = sa.Column(sa.Unicode(255))
@@ -24,24 +24,18 @@ class ActivityBase(object):
 
 
 class ActivityFactory(ModelFactory):
-    model_name = 'Activity'
+    model_name = "Activity"
 
     def create_class(self, manager):
         """
         Create Activity class.
         """
-        class Activity(
-            manager.declarative_base,
-            ActivityBase
-        ):
-            __tablename__ = 'activity'
+
+        class Activity(manager.declarative_base, ActivityBase):
+            __tablename__ = "activity"
             manager = self
 
-            transaction_id = sa.Column(
-                sa.BigInteger,
-                index=True,
-                nullable=False
-            )
+            transaction_id = sa.Column(sa.BigInteger, index=True, nullable=False)
 
             data = sa.Column(JSONType)
 
@@ -65,11 +59,11 @@ class ActivityFactory(ModelFactory):
                         return object_version.transaction_id
 
                     version_cls = version_class(obj.__class__)
-                    return session.query(
-                        sa.func.max(version_cls.transaction_id)
-                    ).filter(
-                        version_cls.id == obj.id
-                    ).scalar()
+                    return (
+                        session.query(sa.func.max(version_cls.transaction_id))
+                        .filter(version_cls.id == obj.id)
+                        .scalar()
+                    )
 
             def calculate_object_tx_id(self):
                 self.object_tx_id = self._calculate_tx_id(self.object)
@@ -77,33 +71,29 @@ class ActivityFactory(ModelFactory):
             def calculate_target_tx_id(self):
                 self.target_tx_id = self._calculate_tx_id(self.target)
 
-            object = generic_relationship(
-                object_type, object_id
-            )
+            object = generic_relationship(object_type, object_id)
 
             @hybrid_property
             def object_version_type(self):
-                return self.object_type + 'Version'
+                return self.object_type + "Version"
 
             @object_version_type.expression
             def object_version_type(cls):
-                return sa.func.concat(cls.object_type, 'Version')
+                return sa.func.concat(cls.object_type, "Version")
 
             object_version = generic_relationship(
                 object_version_type, (object_id, object_tx_id)
             )
 
-            target = generic_relationship(
-                target_type, target_id
-            )
+            target = generic_relationship(target_type, target_id)
 
             @hybrid_property
             def target_version_type(self):
-                return self.target_type + 'Version'
+                return self.target_type + "Version"
 
             @target_version_type.expression
             def target_version_type(cls):
-                return sa.func.concat(cls.target_type, 'Version')
+                return sa.func.concat(cls.target_type, "Version")
 
             target_version = generic_relationship(
                 target_version_type, (target_id, target_tx_id)
@@ -112,13 +102,12 @@ class ActivityFactory(ModelFactory):
         Activity.transaction = sa.orm.relationship(
             manager.transaction_cls,
             backref=sa.orm.backref(
-                'activities',
+                "activities",
             ),
             primaryjoin=(
-                '%s.id == Activity.transaction_id' %
-                manager.transaction_cls.__name__
+                "%s.id == Activity.transaction_id" % manager.transaction_cls.__name__
             ),
-            foreign_keys=[Activity.transaction_id]
+            foreign_keys=[Activity.transaction_id],
         )
         return Activity
 

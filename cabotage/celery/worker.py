@@ -1,4 +1,3 @@
-import os
 from cabotage.server import create_app
 
 app = create_app()

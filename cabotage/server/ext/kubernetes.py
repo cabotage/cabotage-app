@@ -1,13 +1,9 @@
-import os
-
-from flask import current_app
 from flask import _app_ctx_stack as stack
 
 import kubernetes
 
 
 class Kubernetes(object):
-
     def __init__(self, app=None):
         self.app = app
         if app is not None:
@@ -18,9 +14,11 @@ class Kubernetes(object):
             kubernetes.config.load_incluster_config()
         except Exception:
             try:
-                kubernetes.config.load_kube_config(context=app.config['KUBERNETES_CONTEXT'])
+                kubernetes.config.load_kube_config(
+                    context=app.config["KUBERNETES_CONTEXT"]
+                )
             except Exception:
-                if app.config['KUBERNETES_ENABLED']:
+                if app.config["KUBERNETES_ENABLED"]:
                     raise
 
         app.teardown_appcontext(self.teardown)
@@ -31,13 +29,13 @@ class Kubernetes(object):
 
     def teardown(self, exception):
         ctx = stack.top
-        if hasattr(ctx, 'kubernetes_client'):
-            del(ctx.kubernetes_client)
+        if hasattr(ctx, "kubernetes_client"):
+            del ctx.kubernetes_client
 
     @property
     def kubernetes_client(self):
         ctx = stack.top
         if ctx is not None:
-            if not hasattr(ctx, 'kubernetes_client'):
+            if not hasattr(ctx, "kubernetes_client"):
                 ctx.kubernetes_client = self.connect_kubernetes()
             return ctx.kubernetes_client
