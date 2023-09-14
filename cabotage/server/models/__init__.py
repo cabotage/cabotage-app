@@ -4,9 +4,7 @@ from .auth import (
     User,
 )
 
-from .projects import (
-    Project
-)
+from .projects import Project
 
 from .resources import (
     CertificateResource,

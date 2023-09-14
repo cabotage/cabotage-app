@@ -5,7 +5,7 @@ from unidecode import unidecode
 _punct_re = re.compile(r'[\t !"#$%&\'()*\-/<=>?@\[\\\]^_`{|},.]+')
 
 
-def slugify(text, delim=u'-'):
+def slugify(text, delim="-"):
     """Generates an ASCII-only slug."""
     result = []
     for word in _punct_re.split(text.lower()):
@@ -45,6 +45,7 @@ class DictDiffer(object):
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
     THE SOFTWARE.
     """
+
     def __init__(self, current_dict, past_dict, ignored_keys=None):
         if ignored_keys is None:
             ignored_keys = []
@@ -62,23 +63,25 @@ class DictDiffer(object):
         return self.past_keys - self.intersect
 
     def changed(self):
-        return set(o for o in self.intersect
-                   if self.past_dict[o] != self.current_dict[o])
+        return set(
+            o for o in self.intersect if self.past_dict[o] != self.current_dict[o]
+        )
 
     def unchanged(self):
-        return set(o for o in self.intersect
-                   if self.past_dict[o] == self.current_dict[o])
+        return set(
+            o for o in self.intersect if self.past_dict[o] == self.current_dict[o]
+        )
 
     def has_changes(self):
         return self.added() or self.removed() or self.changed()
 
     def __repr__(self):
-        return f'<DictDiffer Added: {self.added()}, Removed: {self.removed()}, Changed: {self.changed()}>'
+        return f"<DictDiffer Added: {self.added()}, Removed: {self.removed()}, Changed: {self.changed()}>"
 
     @property
     def asdict(self):
         return {
-            'added': list(self.added()),
-            'removed': list(self.removed()),
-            'changed': list(self.changed()),
+            "added": list(self.added()),
+            "removed": list(self.removed()),
+            "changed": list(self.changed()),
         }

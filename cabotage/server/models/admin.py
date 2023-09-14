@@ -4,6 +4,7 @@ from flask_admin.contrib import sqla
 from flask_admin.form import SecureForm
 from flask_security import current_user
 
+
 class AdminIndexView(_AdminIndexView):
     def is_accessible(self):
         return current_user.is_authenticated and current_user.admin
@@ -31,4 +32,4 @@ class AdminModelView(sqla.ModelView):
             abort(403)
 
     def _get_endpoint(self, endpoint):
-        return f'_{super()._get_endpoint(endpoint)}'
+        return f"_{super()._get_endpoint(endpoint)}"

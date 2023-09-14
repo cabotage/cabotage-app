@@ -25,13 +25,13 @@ migrate = Migrate(app, db)
 manager = Manager(app)
 
 # migrations
-manager.add_command('db', MigrateCommand)
+manager.add_command("db", MigrateCommand)
 
 
 @manager.command
 def test():
     """Runs the unit tests without test coverage."""
-    tests = unittest.TestLoader().discover('cabotage/tests', pattern='test*.py')
+    tests = unittest.TestLoader().discover("cabotage/tests", pattern="test*.py")
     result = unittest.TextTestRunner(verbosity=2).run(tests)
     if result.wasSuccessful():
         return 0
@@ -42,23 +42,24 @@ def test():
 def cov():
     """Runs the unit tests with coverage."""
     import coverage
+
     # code coverage
     COV = coverage.coverage(
         branch=True,
-        include='cabotage/*',
+        include="cabotage/*",
         omit=[
-            'cabotage/tests/*',
-            'cabotage/server/config.py',
-            'cabotage/server/*/__init__.py'
-        ]
+            "cabotage/tests/*",
+            "cabotage/server/config.py",
+            "cabotage/server/*/__init__.py",
+        ],
     )
     COV.start()
-    tests = unittest.TestLoader().discover('cabotage/tests')
+    tests = unittest.TestLoader().discover("cabotage/tests")
     result = unittest.TextTestRunner(verbosity=2).run(tests)
     if result.wasSuccessful():
         COV.stop()
         COV.save()
-        print('Coverage Summary:')
+        print("Coverage Summary:")
         COV.report()
         COV.html_report()
         COV.erase()
@@ -69,8 +70,8 @@ def cov():
 @manager.command
 def create_db():
     """Creates the db tables."""
-    db.engine.execute('CREATE EXTENSION IF NOT EXISTS citext')
-    db.engine.execute('CREATE EXTENSION IF NOT EXISTS pgcrypto')
+    db.engine.execute("CREATE EXTENSION IF NOT EXISTS citext")
+    db.engine.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
     db.create_all()
 
 
@@ -83,7 +84,7 @@ def drop_db():
 @manager.command
 def create_admin():
     """Creates the admin user."""
-    user = User(email='ad@min.com', password='admin', username='admin', admin=True)
+    user = User(email="ad@min.com", password="admin", username="admin", admin=True)
     db.session.add(user)
     db.session.flush()
     db.session.flush()
@@ -111,19 +112,18 @@ def create_data():
 def list_routes():
     output = []
     for rule in app.url_map.iter_rules():
-
         options = {}
         for arg in rule.arguments:
             options[arg] = "[{0}]".format(arg)
 
-        methods = ','.join(rule.methods)
+        methods = ",".join(rule.methods)
         url = url_for(rule.endpoint, **options)
         line = unquote("{:50s} {:20s} {}".format(rule.endpoint, methods, url))
         output.append(line)
-    
+
     for line in sorted(output):
         print(line)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     manager.run()

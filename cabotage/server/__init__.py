@@ -37,14 +37,14 @@ bootstrap = Bootstrap()
 security = Security()
 db_metadata = MetaData(
     naming_convention={
-        "ix": 'ix_%(column_0_label)s',
+        "ix": "ix_%(column_0_label)s",
         "uq": "uq_%(table_name)s_%(column_0_name)s",
         "ck": "ck_%(table_name)s_%(constraint_name)s",
         "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
         "pk": "pk_%(table_name)s",
     }
 )
-db = SQLAlchemy(metadata=db_metadata, engine_options={'pool_pre_ping': True})
+db = SQLAlchemy(metadata=db_metadata, engine_options={"pool_pre_ping": True})
 principal = Principal()
 login_manager = LoginManager()
 mail = Mail()
@@ -60,30 +60,37 @@ github_app = GitHubApp()
 sock = Sock()
 babel = Babel()
 
+
 def celery_init_app(app):
     class FlaskTask(Task):
         def __call__(self, *args: object, **kwargs: object) -> object:
             with app.app_context():
                 return self.run(*args, **kwargs)
 
-    celery_app = Celery(app.name, broker=app.config['CELERY_BROKER_URL'], task_cls=FlaskTask)
+    celery_app = Celery(
+        app.name, broker=app.config["CELERY_BROKER_URL"], task_cls=FlaskTask
+    )
     celery_app.set_default()
     app.extensions["celery"] = celery_app
     return celery_app
 
-def create_app():
 
+def create_app():
     # instantiate the app
     app = Flask(
         __name__,
-        template_folder='../client/templates',
-        static_folder='../client/static'
+        template_folder="../client/templates",
+        static_folder="../client/static",
     )
 
     from cabotage.server.models.admin import AdminIndexView
-    admin = Admin(name='cabotage_admin', index_view=AdminIndexView(), template_mode='bootstrap3')
+
+    admin = Admin(
+        name="cabotage_admin", index_view=AdminIndexView(), template_mode="bootstrap3"
+    )
 
     from cabotage.server.models.auth import User, Role
+
     user_datastore = SQLAlchemyUserDatastore(db, User, Role)
 
     from cabotage.server.user.forms import (
@@ -93,7 +100,7 @@ def create_app():
     )
 
     # set config
-    app_settings = os.getenv('APP_SETTINGS', 'cabotage.server.config.Config')
+    app_settings = os.getenv("APP_SETTINGS", "cabotage.server.config.Config")
     app.config.from_object(app_settings)
 
     # set up extensions
@@ -102,7 +109,8 @@ def create_app():
     toolbar.init_app(app)
     bootstrap.init_app(app)
     security.init_app(
-        app, user_datastore,
+        app,
+        user_datastore,
         confirm_register_form=ExtendedConfirmRegisterForm,
         register_form=ExtendedRegisterForm,
         login_form=ExtendedLoginForm,
@@ -133,25 +141,26 @@ def create_app():
     # register blueprints
     from cabotage.server.user.views import user_blueprint
     from cabotage.server.main.views import main_blueprint
+
     app.register_blueprint(user_blueprint)
     app.register_blueprint(main_blueprint)
 
     # error handlers
     @app.errorhandler(401)
     def unauthorized_page(error):
-        return render_template('errors/401.html'), 401
+        return render_template("errors/401.html"), 401
 
     @app.errorhandler(403)
     def forbidden_page(error):
-        return render_template('errors/403.html'), 403
+        return render_template("errors/403.html"), 403
 
     @app.errorhandler(404)
     def page_not_found(error):
-        return render_template('errors/404.html'), 404
+        return render_template("errors/404.html"), 404
 
     @app.errorhandler(500)
     def server_error_page(error):
-        return render_template('errors/500.html'), 500
+        return render_template("errors/500.html"), 500
 
     @app.cli.command("create-bucket")
     def create_bucket():
@@ -159,7 +168,16 @@ def create_app():
 
     from cabotage.server.models.admin import AdminModelView
     from cabotage.server.models.auth import Organization, Team
-    from cabotage.server.models.projects import Project, Application, Configuration, Image, Release, Deployment, Hook
+    from cabotage.server.models.projects import (
+        Project,
+        Application,
+        Configuration,
+        Image,
+        Release,
+        Deployment,
+        Hook,
+    )
+
     admin.add_view(AdminModelView(Role, db.session))
     admin.add_view(AdminModelView(Organization, db.session))
     admin.add_view(AdminModelView(Team, db.session))

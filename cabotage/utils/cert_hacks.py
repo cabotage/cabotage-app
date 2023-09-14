@@ -21,8 +21,7 @@ See: https://github.com/hashicorp/vault/issues/3845#event-10158156553
 
 
 def issue_dummy_cert(public_key_pem, common_name):
-    """A kind courtesy of @reaperhulk
-    """
+    """A kind courtesy of @reaperhulk"""
     discarding_private_key = ec.generate_private_key(
         curve=ec.SECP256R1(), backend=default_backend()
     )
@@ -36,12 +35,20 @@ def issue_dummy_cert(public_key_pem, common_name):
     one_year = datetime.timedelta(365, 0, 0)
 
     builder = x509.CertificateBuilder()
-    builder = builder.subject_name(x509.Name([
-        x509.NameAttribute(NameOID.COMMON_NAME, common_name),
-    ]))
-    builder = builder.issuer_name(x509.Name([
-        x509.NameAttribute(NameOID.COMMON_NAME, common_name),
-    ]))
+    builder = builder.subject_name(
+        x509.Name(
+            [
+                x509.NameAttribute(NameOID.COMMON_NAME, common_name),
+            ]
+        )
+    )
+    builder = builder.issuer_name(
+        x509.Name(
+            [
+                x509.NameAttribute(NameOID.COMMON_NAME, common_name),
+            ]
+        )
+    )
     builder = builder.not_valid_before(datetime.datetime.today() - one_day)
     builder = builder.not_valid_after(datetime.datetime.today() + one_year)
     builder = builder.serial_number(x509.random_serial_number())
@@ -66,7 +73,7 @@ def certificate_squisher(cert, signature):
     cert_bytes[-len(cert.signature) - 2] = len(signature) + 1
     # Fix the SEQUENCE length
     cert_bytes[3] += len(signature) - len(cert.signature)
-    return bytes(cert_bytes)[:-len(cert.signature)] + signature
+    return bytes(cert_bytes)[: -len(cert.signature)] + signature
 
 
 def construct_cert_from_public_key(signer, public_key_pem, common_name):

@@ -9,11 +9,9 @@ from .deploy import (
     run_deploy,
 )
 
-from .github import (
-    process_github_hook
-)
+from .github import process_github_hook
 
 
 @shared_task()
 def is_this_thing_on():
-    print('mic check!')
+    print("mic check!")

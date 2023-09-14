@@ -28,39 +28,68 @@ activity_plugin = ActivityPlugin()
 make_versioned(plugins=[activity_plugin])
 
 platform_version = postgresql.ENUM(
-    'wind',
-    'steam',
-    'diesel',
-    'stirling',
-    'nuclear',
-    'electric',
-    name='platform_version',
+    "wind",
+    "steam",
+    "diesel",
+    "stirling",
+    "nuclear",
+    "electric",
+    name="platform_version",
 )
 
 pod_classes = {
-    'm1.small':   {'cpu': {'requests': '125m',  'limits': '250m'},  'memory': {'requests': '256Mi',  'limits': '384Mi'}},
-    'm1.medium':  {'cpu': {'requests': '250m',  'limits': '500m'},  'memory': {'requests': '512Mi',  'limits': '768Mi'}},
-    'm1.large':   {'cpu': {'requests': '500m',  'limits': '1000m'}, 'memory': {'requests': '1024Mi', 'limits': '1536Mi'}},
-    'c1.small':   {'cpu': {'requests': '250m',  'limits': '375m'},  'memory': {'requests': '256Mi',  'limits': '384Mi'}},
-    'c1.medium':  {'cpu': {'requests': '500m',  'limits': '750m'},  'memory': {'requests': '512Mi',  'limits': '768Mi'}},
-    'c1.large':   {'cpu': {'requests': '1000m', 'limits': '1500m'}, 'memory': {'requests': '1024Mi', 'limits': '1536Mi'}},
-    'r1.small':   {'cpu': {'requests': '125m',  'limits': '250m'},  'memory': {'requests': '1024Mi', 'limits': '1536Mi'}},
-    'r1.medium':  {'cpu': {'requests': '250m',  'limits': '500m'},  'memory': {'requests': '1536Mi', 'limits': '2304Mi'}},
-    'r1.large':   {'cpu': {'requests': '500m',  'limits': '1000m'}, 'memory': {'requests': '2048Mi', 'limits': '3072Mi'}},
-    'r1.xlarge':  {'cpu': {'requests': '750m',  'limits': '1500m'}, 'memory': {'requests': '2048Mi', 'limits': '3072Mi'}},
+    "m1.small": {
+        "cpu": {"requests": "125m", "limits": "250m"},
+        "memory": {"requests": "256Mi", "limits": "384Mi"},
+    },
+    "m1.medium": {
+        "cpu": {"requests": "250m", "limits": "500m"},
+        "memory": {"requests": "512Mi", "limits": "768Mi"},
+    },
+    "m1.large": {
+        "cpu": {"requests": "500m", "limits": "1000m"},
+        "memory": {"requests": "1024Mi", "limits": "1536Mi"},
+    },
+    "c1.small": {
+        "cpu": {"requests": "250m", "limits": "375m"},
+        "memory": {"requests": "256Mi", "limits": "384Mi"},
+    },
+    "c1.medium": {
+        "cpu": {"requests": "500m", "limits": "750m"},
+        "memory": {"requests": "512Mi", "limits": "768Mi"},
+    },
+    "c1.large": {
+        "cpu": {"requests": "1000m", "limits": "1500m"},
+        "memory": {"requests": "1024Mi", "limits": "1536Mi"},
+    },
+    "r1.small": {
+        "cpu": {"requests": "125m", "limits": "250m"},
+        "memory": {"requests": "1024Mi", "limits": "1536Mi"},
+    },
+    "r1.medium": {
+        "cpu": {"requests": "250m", "limits": "500m"},
+        "memory": {"requests": "1536Mi", "limits": "2304Mi"},
+    },
+    "r1.large": {
+        "cpu": {"requests": "500m", "limits": "1000m"},
+        "memory": {"requests": "2048Mi", "limits": "3072Mi"},
+    },
+    "r1.xlarge": {
+        "cpu": {"requests": "750m", "limits": "1500m"},
+        "memory": {"requests": "2048Mi", "limits": "3072Mi"},
+    },
 }
 
-DEFAULT_POD_CLASS = 'm1.large'
+DEFAULT_POD_CLASS = "m1.large"
 
 
 class Project(db.Model, Timestamp):
-
     __versioned__ = {}
-    __tablename__ = 'projects'
+    __tablename__ = "projects"
 
     def __init__(self, *args, **kwargs):
-        if 'slug' not in kwargs:
-            kwargs['slug'] = slugify(kwargs.get('name'))
+        if "slug" not in kwargs:
+            kwargs["slug"] = slugify(kwargs.get("name"))
         super().__init__(*args, **kwargs)
 
     id = db.Column(
@@ -71,7 +100,7 @@ class Project(db.Model, Timestamp):
     )
     organization_id = db.Column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey('organizations.id'),
+        db.ForeignKey("organizations.id"),
     )
     name = db.Column(db.Text(), nullable=False)
     slug = db.Column(CIText(), nullable=False)
@@ -86,26 +115,29 @@ class Project(db.Model, Timestamp):
 
 
 class Application(db.Model, Timestamp):
-
     __versioned__ = {}
-    __tablename__ = 'project_applications'
+    __tablename__ = "project_applications"
 
     id = db.Column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
         nullable=False,
-        primary_key=True
+        primary_key=True,
     )
     project_id = db.Column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey('projects.id'),
+        db.ForeignKey("projects.id"),
         nullable=False,
     )
     name = db.Column(db.Text(), nullable=False)
     slug = db.Column(CIText(), nullable=False)
-    platform = db.Column(platform_version, nullable=False, default='wind')
-    process_counts = db.Column(postgresql.JSONB(), server_default=text("json_object('{}')"))
-    process_pod_classes = db.Column(postgresql.JSONB(), server_default=text("json_object('{}')"))
+    platform = db.Column(platform_version, nullable=False, default="wind")
+    process_counts = db.Column(
+        postgresql.JSONB(), server_default=text("json_object('{}')")
+    )
+    process_pod_classes = db.Column(
+        postgresql.JSONB(), server_default=text("json_object('{}')")
+    )
 
     images = db.relationship(
         "Image",
@@ -131,10 +163,7 @@ class Application(db.Model, Timestamp):
         cascade="all, delete-orphan",
         lazy="dynamic",
     )
-    version_id = db.Column(
-        db.Integer,
-        nullable=False
-    )
+    version_id = db.Column(db.Integer, nullable=False)
     github_app_installation_id = db.Column(
         db.Integer,
         nullable=True,
@@ -155,7 +184,7 @@ class Application(db.Model, Timestamp):
     health_check_path = db.Column(
         db.String(64),
         nullable=False,
-        server_default='/_health/',
+        server_default="/_health/",
     )
     health_check_host = db.Column(
         db.String(256),
@@ -179,15 +208,23 @@ class Application(db.Model, Timestamp):
 
     @property
     def latest_release_built(self):
-        return self.releases.filter_by(built=True).order_by(Release.version.desc()).first()
+        return (
+            self.releases.filter_by(built=True).order_by(Release.version.desc()).first()
+        )
 
     @property
     def latest_release_error(self):
-        return self.releases.filter_by(error=True).order_by(Release.version.desc()).first()
+        return (
+            self.releases.filter_by(error=True).order_by(Release.version.desc()).first()
+        )
 
     @property
     def latest_release_building(self):
-        return self.releases.filter_by(built=False, error=False).order_by(Release.version.desc()).first()
+        return (
+            self.releases.filter_by(built=False, error=False)
+            .order_by(Release.version.desc())
+            .first()
+        )
 
     @property
     def current_release(self):
@@ -201,15 +238,27 @@ class Application(db.Model, Timestamp):
 
     @property
     def latest_deployment_completed(self):
-        return self.deployments.filter_by(complete=True).order_by(Deployment.version.desc()).first()
+        return (
+            self.deployments.filter_by(complete=True)
+            .order_by(Deployment.version.desc())
+            .first()
+        )
 
     @property
     def latest_deployment_error(self):
-        return self.deployments.filter_by(error=True).order_by(Deployment.version.desc()).first()
+        return (
+            self.deployments.filter_by(error=True)
+            .order_by(Deployment.version.desc())
+            .first()
+        )
 
     @property
     def latest_deployment_running(self):
-        return self.deployments.filter_by(complete=False, error=False).order_by(Deployment.version.desc()).first()
+        return (
+            self.deployments.filter_by(complete=False, error=False)
+            .order_by(Deployment.version.desc())
+            .first()
+        )
 
     @property
     def current_deployment(self):
@@ -226,14 +275,14 @@ class Application(db.Model, Timestamp):
         current = self.current_release
         candidate = self.release_candidate
         configuration_diff = DictDiffer(
-            candidate.get('configuration', {}),
-            current.get('configuration', {}),
-            ignored_keys=['id', 'version_id'],
+            candidate.get("configuration", {}),
+            current.get("configuration", {}),
+            ignored_keys=["id", "version_id"],
         )
         image_diff = DictDiffer(
-            candidate.get('image', {}),
-            current.get('image', {}),
-            ignored_keys=['id', 'version_id'],
+            candidate.get("image", {}),
+            current.get("image", {}),
+            ignored_keys=["id", "version_id"],
         )
         return image_diff, configuration_diff
 
@@ -242,7 +291,9 @@ class Application(db.Model, Timestamp):
         organization_slug = self.project.organization.slug
         project_slug = self.project.slug
         application_slug = self.slug
-        repository_name = f"cabotage/{organization_slug}/{project_slug}/{application_slug}"
+        repository_name = (
+            f"cabotage/{organization_slug}/{project_slug}/{application_slug}"
+        )
         release = Release(
             application_id=self.id,
             image=self.latest_image.asdict,
@@ -270,57 +321,47 @@ class Application(db.Model, Timestamp):
 
     @property
     def latest_image_building(self):
-        return self.images.filter_by(built=False, error=False).order_by(Image.version.desc()).first()
+        return (
+            self.images.filter_by(built=False, error=False)
+            .order_by(Image.version.desc())
+            .first()
+        )
 
     UniqueConstraint(project_id, slug)
 
     __table_args__ = (
         db.Index(
-            'github_deployments_unique',
+            "github_deployments_unique",
             github_app_installation_id,
             github_repository,
             github_environment_name,
             unique=True,
-            postgresql_where=(github_environment_name != None)
+            postgresql_where=(github_environment_name != None),
         ),
     )
 
-    __mapper_args__ = {
-        "version_id_col": version_id
-    }
+    __mapper_args__ = {"version_id_col": version_id}
 
 
 class Deployment(db.Model, Timestamp):
-
     __versioned__ = {}
-    __tablename__ = 'deployments'
+    __tablename__ = "deployments"
 
     id = db.Column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
         nullable=False,
-        primary_key=True
+        primary_key=True,
     )
     application_id = db.Column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey('project_applications.id'),
+        db.ForeignKey("project_applications.id"),
         nullable=False,
     )
     release = db.Column(postgresql.JSONB(), nullable=False)
-    version_id = db.Column(
-        db.Integer,
-        nullable=False
-    )
-    complete = db.Column(
-        db.Boolean,
-        nullable=False,
-        default=False
-    )
-    error = db.Column(
-        db.Boolean,
-        nullable=False,
-        default=False
-    )
+    version_id = db.Column(db.Integer, nullable=False)
+    complete = db.Column(db.Boolean, nullable=False, default=False)
+    error = db.Column(db.Boolean, nullable=False, default=False)
     error_detail = db.Column(
         db.String(2048),
         nullable=True,
@@ -338,9 +379,7 @@ class Deployment(db.Model, Timestamp):
         nullable=True,
     )
 
-    __mapper_args__ = {
-        "version_id_col": version_id
-    }
+    __mapper_args__ = {"version_id_col": version_id}
 
     @property
     def release_object(self):
@@ -348,30 +387,26 @@ class Deployment(db.Model, Timestamp):
 
 
 class Release(db.Model, Timestamp):
-
     __versioned__ = {}
-    __tablename__ = 'project_app_releases'
+    __tablename__ = "project_app_releases"
 
     id = db.Column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
         nullable=False,
-        primary_key=True
+        primary_key=True,
     )
     application_id = db.Column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey('project_applications.id'),
+        db.ForeignKey("project_applications.id"),
         nullable=False,
     )
-    platform = db.Column(platform_version, nullable=False, default='wind')
+    platform = db.Column(platform_version, nullable=False, default="wind")
     image = db.Column(postgresql.JSONB(), nullable=False)
     configuration = db.Column(postgresql.JSONB(), nullable=False)
     image_changes = db.Column(postgresql.JSONB(), nullable=False)
     configuration_changes = db.Column(postgresql.JSONB(), nullable=False)
-    version_id = db.Column(
-        db.Integer,
-        nullable=False
-    )
+    version_id = db.Column(db.Integer, nullable=False)
 
     repository_name = db.Column(
         db.String(256),
@@ -386,25 +421,13 @@ class Release(db.Model, Timestamp):
         nullable=False,
     )
 
-    built = db.Column(
-        db.Boolean,
-        nullable=False,
-        default=False
-    )
-    error = db.Column(
-        db.Boolean,
-        nullable=False,
-        default=False
-    )
+    built = db.Column(db.Boolean, nullable=False, default=False)
+    error = db.Column(db.Boolean, nullable=False, default=False)
     error_detail = db.Column(
         db.String(2048),
         nullable=True,
     )
-    deleted = db.Column(
-        db.Boolean,
-        nullable=False,
-        default=False
-    )
+    deleted = db.Column(db.Boolean, nullable=False, default=False)
     dockerfile = db.Column(
         db.Text(),
         nullable=True,
@@ -424,7 +447,7 @@ class Release(db.Model, Timestamp):
     health_check_path = db.Column(
         db.String(64),
         nullable=False,
-        server_default='/_health/',
+        server_default="/_health/",
     )
     health_check_host = db.Column(
         db.String(256),
@@ -432,16 +455,12 @@ class Release(db.Model, Timestamp):
         server_default=None,
     )
 
-    __mapper_args__ = {
-        "version_id_col": version_id
-    }
+    __mapper_args__ = {"version_id_col": version_id}
 
     @property
     def valid(self):
-        return (
-            (self.image_object is not None)
-            and
-            all(v is not None for v in self.configuration_objects.values())
+        return (self.image_object is not None) and all(
+            v is not None for v in self.configuration_objects.values()
         )
 
     @property
@@ -452,11 +471,17 @@ class Release(db.Model, Timestamp):
     def deposed_reason(self):
         reasons = []
         if self.image_object is None:
-            reasons.append(f'<code>Image {self.image["repository"]}:{self.image["tag"]} no longer exists!</code>')
+            reasons.append(
+                f'<code>Image {self.image["repository"]}:{self.image["tag"]} no longer exists!</code>'
+            )
         for configuration, configuration_serialized in self.configuration.items():
-            configuration_object = Configuration.query.filter_by(id=configuration_serialized["id"]).first()
+            configuration_object = Configuration.query.filter_by(
+                id=configuration_serialized["id"]
+            ).first()
             if configuration_object is None:
-                reasons.append(f'<code>Configuration for {configuration} no longer exists!</code>')
+                reasons.append(
+                    f"<code>Configuration for {configuration} no longer exists!</code>"
+                )
         return reasons
 
     @property
@@ -479,31 +504,36 @@ class Release(db.Model, Timestamp):
     @property
     def envconsul_configurations(self):
         configurations = {}
-        environment_statements = '\n'.join([
-            c.envconsul_statement for c in self.configuration_objects.values()
-            if c is not None
-        ])
-        exec_statement = (
-            'exec {\n'
-            '  command = "/bin/sh"\n'
-            '  env = {\n'
-            '    denylist = ["CONSUL_*", "VAULT_*", "KUBERNETES_*"]\n'
-            '  }\n'
-            '}'
+        environment_statements = "\n".join(
+            [
+                c.envconsul_statement
+                for c in self.configuration_objects.values()
+                if c is not None
+            ]
         )
-        configurations['shell'] = '\n'.join([exec_statement, environment_statements])
+        exec_statement = (
+            "exec {\n"
+            '  command = "/bin/sh"\n'
+            "  env = {\n"
+            '    denylist = ["CONSUL_*", "VAULT_*", "KUBERNETES_*"]\n'
+            "  }\n"
+            "}"
+        )
+        configurations["shell"] = "\n".join([exec_statement, environment_statements])
         for proc_name, proc in self.image_object.processes.items():
-            custom_env = json.dumps([f"{key}={value}" for key, value in proc['env']])
+            custom_env = json.dumps([f"{key}={value}" for key, value in proc["env"]])
             exec_statement = (
-                 'exec {\n'
+                "exec {\n"
                 f'  command = {json.dumps(proc["cmd"])}\n'
-                 '  env = {\n'
-                f'    custom = {custom_env}\n'
-                 '    denylist = ["CONSUL_*", "VAULT_*", "KUBERNETES_*"]\n'
-                 '  }\n'
-                 '}'
+                "  env = {\n"
+                f"    custom = {custom_env}\n"
+                '    denylist = ["CONSUL_*", "VAULT_*", "KUBERNETES_*"]\n'
+                "  }\n"
+                "}"
             )
-            configurations[proc_name] = '\n'.join([exec_statement, environment_statements])
+            configurations[proc_name] = "\n".join(
+                [exec_statement, environment_statements]
+            )
         return configurations
 
     @property
@@ -512,11 +542,19 @@ class Release(db.Model, Timestamp):
 
     @property
     def processes(self):
-        return {k: v for k, v in self.image_object.processes.items() if not k.startswith('release')}
+        return {
+            k: v
+            for k, v in self.image_object.processes.items()
+            if not k.startswith("release")
+        }
 
     @property
     def release_commands(self):
-        return {k: v for k, v in self.image_object.processes.items() if k.startswith('release')}
+        return {
+            k: v
+            for k, v in self.image_object.processes.items()
+            if k.startswith("release")
+        }
 
     def docker_pull_credentials(self, secret):
         return generate_docker_credentials(
@@ -537,40 +575,54 @@ class Release(db.Model, Timestamp):
 
     @property
     def commit_sha(self):
-        if self.release_metadata is None or self.release_metadata.get('sha') is None:
+        if self.release_metadata is None or self.release_metadata.get("sha") is None:
             return self.image_object.commit_sha
-        return self.release_metadata.get('sha')
+        return self.release_metadata.get("sha")
 
     @property
     def release_build_context_configmap(self):
-        process_commands = "\n".join([f'COPY envconsul-{process_name}.hcl /etc/cabotage/envconsul-{process_name}.hcl' for process_name in  self.envconsul_configurations])
-        dockerfile = RELEASE_DOCKERFILE_TEMPLATE.format(registry=current_app.config['REGISTRY_BUILD'], image=self.image_object, process_commands=process_commands)
+        process_commands = "\n".join(
+            [
+                f"COPY envconsul-{process_name}.hcl /etc/cabotage/envconsul-{process_name}.hcl"
+                for process_name in self.envconsul_configurations
+            ]
+        )
+        dockerfile = RELEASE_DOCKERFILE_TEMPLATE.format(
+            registry=current_app.config["REGISTRY_BUILD"],
+            image=self.image_object,
+            process_commands=process_commands,
+        )
         if self.dockerfile:
             dockerfile = self.dockerfile
         return configmap_context_for_release(self, dockerfile)
 
-@listens_for(Release, 'before_insert')
+
+@listens_for(Release, "before_insert")
 def release_before_insert_listener(mapper, connection, target):
-    most_recent_release = mapper.class_.query.filter_by(application_id=target.application_id).order_by(mapper.class_.version.desc()).first()
+    most_recent_release = (
+        mapper.class_.query.filter_by(application_id=target.application_id)
+        .order_by(mapper.class_.version.desc())
+        .first()
+    )
     if most_recent_release is None:
         target.version = 1
     else:
         target.version = most_recent_release.version + 1
 
-class Configuration(db.Model, Timestamp):
 
+class Configuration(db.Model, Timestamp):
     __versioned__ = {}
-    __tablename__ = 'project_app_configurations'
+    __tablename__ = "project_app_configurations"
 
     id = db.Column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
         nullable=False,
-        primary_key=True
+        primary_key=True,
     )
     application_id = db.Column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey('project_applications.id'),
+        db.ForeignKey("project_applications.id"),
         nullable=False,
     )
 
@@ -590,31 +642,14 @@ class Configuration(db.Model, Timestamp):
         db.Text(),
         nullable=True,
     )
-    version_id = db.Column(
-        db.Integer,
-        nullable=False
-    )
-    deleted = db.Column(
-        db.Boolean,
-        nullable=False,
-        default=False
-    )
-    secret = db.Column(
-        db.Boolean,
-        nullable=False,
-        default=False
-    )
-    buildtime = db.Column(
-        db.Boolean,
-        nullable=False,
-        default=False
-    )
+    version_id = db.Column(db.Integer, nullable=False)
+    deleted = db.Column(db.Boolean, nullable=False, default=False)
+    secret = db.Column(db.Boolean, nullable=False, default=False)
+    buildtime = db.Column(db.Boolean, nullable=False, default=False)
 
     UniqueConstraint(application_id, name)
 
-    __mapper_args__ = {
-        "version_id_col": version_id
-    }
+    __mapper_args__ = {"version_id_col": version_id}
 
     @property
     def asdict(self):
@@ -627,28 +662,24 @@ class Configuration(db.Model, Timestamp):
 
     @property
     def envconsul_statement(self):
-        directive = 'secret' if self.secret else 'prefix'
-        path = self.key_slug.split(':', 1)[1]
-        return (
-            f'{directive} {{\n'
-             '  no_prefix = true\n'
-            f'  path = "{path}"\n'
-             '}'
-        )
+        directive = "secret" if self.secret else "prefix"
+        path = self.key_slug.split(":", 1)[1]
+        return f"{directive} {{\n" "  no_prefix = true\n" f'  path = "{path}"\n' "}"
 
     def read_value(self, reader):
         if self.secret:
             if self.buildtime:
-                payload = reader.read(self.build_key_slug.split(':', 1)[1], build=True, secret=True)
-                return payload['data'][self.name]
-            return '**secret**'
+                payload = reader.read(
+                    self.build_key_slug.split(":", 1)[1], build=True, secret=True
+                )
+                return payload["data"][self.name]
+            return "**secret**"
         return self.value
 
 
 class Hook(db.Model, Timestamp):
-
     __versioned__ = {}
-    __tablename__ = 'hooks'
+    __tablename__ = "hooks"
 
     id = db.Column(
         postgresql.UUID(as_uuid=True),
@@ -679,30 +710,24 @@ class Hook(db.Model, Timestamp):
         nullable=True,
         default=None,
     )
-    version_id = db.Column(
-        db.Integer,
-        nullable=False
-    )
+    version_id = db.Column(db.Integer, nullable=False)
 
-    __mapper_args__ = {
-        "version_id_col": version_id
-    }
+    __mapper_args__ = {"version_id_col": version_id}
 
 
 class Image(db.Model, Timestamp):
-
     __versioned__ = {}
-    __tablename__ = 'project_app_images'
+    __tablename__ = "project_app_images"
 
     id = db.Column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
         nullable=False,
-        primary_key=True
+        primary_key=True,
     )
     application_id = db.Column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey('project_applications.id'),
+        db.ForeignKey("project_applications.id"),
         nullable=False,
     )
 
@@ -723,25 +748,13 @@ class Image(db.Model, Timestamp):
         db.Integer,
         nullable=False,
     )
-    built = db.Column(
-        db.Boolean,
-        nullable=False,
-        default=False
-    )
-    error = db.Column(
-        db.Boolean,
-        nullable=False,
-        default=False
-    )
+    built = db.Column(db.Boolean, nullable=False, default=False)
+    error = db.Column(db.Boolean, nullable=False, default=False)
     error_detail = db.Column(
         db.String(2048),
         nullable=True,
     )
-    deleted = db.Column(
-        db.Boolean,
-        nullable=False,
-        default=False
-    )
+    deleted = db.Column(db.Boolean, nullable=False, default=False)
     build_slug = db.Column(
         db.String(1024),
         nullable=True,
@@ -775,11 +788,12 @@ class Image(db.Model, Timestamp):
         nullable=True,
     )
 
-    __mapper_args__ = {
-        "version_id_col": version_id
-    }
+    __mapper_args__ = {"version_id_col": version_id}
     __table_args__ = (
-        CheckConstraint('NOT(build_ref IS NULL AND build_slug IS NULL)', name='image_has_build_target'),
+        CheckConstraint(
+            "NOT(build_ref IS NULL AND build_slug IS NULL)",
+            name="image_has_build_target",
+        ),
     )
 
     @property
@@ -802,19 +816,24 @@ class Image(db.Model, Timestamp):
     def buildargs(self, reader):
         return {
             c.name: c.read_value(reader)
-            for c in self.application.configurations if c.buildtime
+            for c in self.application.configurations
+            if c.buildtime
         }
 
     @property
     def commit_sha(self):
-        if self.image_metadata is None or self.image_metadata.get('sha') is None:
+        if self.image_metadata is None or self.image_metadata.get("sha") is None:
             return "null"
-        return self.image_metadata.get('sha')
+        return self.image_metadata.get("sha")
 
 
-@listens_for(Image, 'before_insert')
+@listens_for(Image, "before_insert")
 def image_before_insert_listener(mapper, connection, target):
-    most_recent_image = mapper.class_.query.filter_by(application_id=target.application_id).order_by(mapper.class_.version.desc()).first()
+    most_recent_image = (
+        mapper.class_.query.filter_by(application_id=target.application_id)
+        .order_by(mapper.class_.version.desc())
+        .first()
+    )
     if most_recent_image is None:
         target.version = 1
     else:
