@@ -108,9 +108,7 @@ def organizations():
 @user_blueprint.route("/organizations/<org_slug>")
 @login_required
 def organization(org_slug):
-    organization = Organization.query.filter_by(slug=org_slug).first()
-    if organization is None:
-        abort(404)
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     if not ViewOrganizationPermission(organization.id).can():
         abort(403)
     return render_template("user/organization.html", organization=organization)
@@ -146,9 +144,7 @@ def organization_create():
 @user_blueprint.route("/organizations/<org_slug>/projects")
 @login_required
 def organization_projects(org_slug):
-    organization = Organization.query.filter_by(slug=org_slug).first()
-    if organization is None:
-        abort(404)
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     if not ViewOrganizationPermission(organization.id).can():
         abort(403)
     return render_template("user/organization_projects.html", organization=organization)
@@ -159,9 +155,7 @@ def organization_projects(org_slug):
 )
 @login_required
 def organization_project_create(org_slug):
-    organization = Organization.query.filter_by(slug=org_slug).first()
-    if organization is None:
-        abort(404)
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     if not ViewOrganizationPermission(organization.id).can():
         abort(403)
 
@@ -208,14 +202,10 @@ def projects():
 @user_blueprint.route("/projects/<org_slug>/<project_slug>")
 @login_required
 def project(org_slug, project_slug):
-    organization = Organization.query.filter_by(slug=org_slug).first()
-    if organization is None:
-        abort(404)
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     project = Project.query.filter_by(
         organization_id=organization.id, slug=project_slug
-    ).first()
-    if project is None:
-        abort(404)
+    ).first_or_404()
     if not ViewProjectPermission(project.id).can():
         abort(403)
 
@@ -234,9 +224,7 @@ def project_create():
     if form.validate_on_submit():
         organization = Organization.query.filter_by(
             id=form.organization_id.data
-        ).first()
-        if organization is None:
-            abort(404)
+        ).first_or_404()
         if not AdministerOrganizationPermission(organization.id).can():
             abort(403)
         project = Project(
@@ -269,19 +257,13 @@ def project_create():
 @user_blueprint.route("/projects/<org_slug>/<project_slug>/applications/<app_slug>")
 @login_required
 def project_application(org_slug, project_slug, app_slug):
-    organization = Organization.query.filter_by(slug=org_slug).first()
-    if organization is None:
-        abort(404)
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     project = Project.query.filter_by(
         organization_id=organization.id, slug=project_slug
-    ).first()
-    if project is None:
-        abort(404)
+    ).first_or_404()
     application = Application.query.filter_by(
         project_id=project.id, slug=app_slug
-    ).first()
-    if application is None:
-        abort(404)
+    ).first_or_404()
     if not ViewApplicationPermission(application.id).can():
         abort(403)
 
@@ -317,19 +299,13 @@ def project_application(org_slug, project_slug, app_slug):
 )
 @login_required
 def project_application_logs(org_slug, project_slug, app_slug):
-    organization = Organization.query.filter_by(slug=org_slug).first()
-    if organization is None:
-        abort(404)
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     project = Project.query.filter_by(
         organization_id=organization.id, slug=project_slug
-    ).first()
-    if project is None:
-        abort(404)
+    ).first_or_404()
     application = Application.query.filter_by(
         project_id=project.id, slug=app_slug
-    ).first()
-    if application is None:
-        abort(404)
+    ).first_or_404()
     if not ViewApplicationPermission(application.id).can():
         abort(403)
 
@@ -347,19 +323,13 @@ def project_application_logs(org_slug, project_slug, app_slug):
 )
 @login_required
 def project_application_livelogs(ws, org_slug, project_slug, app_slug):
-    organization = Organization.query.filter_by(slug=org_slug).first()
-    if organization is None:
-        abort(404)
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     project = Project.query.filter_by(
         organization_id=organization.id, slug=project_slug
-    ).first()
-    if project is None:
-        abort(404)
+    ).first_or_404()
     application = Application.query.filter_by(
         project_id=project.id, slug=app_slug
-    ).first()
-    if application is None:
-        abort(404)
+    ).first_or_404()
     if not ViewApplicationPermission(application.id).can():
         abort(403)
 
@@ -444,19 +414,13 @@ def project_application_livelogs(ws, org_slug, project_slug, app_slug):
 def project_application_shell(org_slug, project_slug, app_slug):
     if not current_app.config.get("SHELLZ_ENABLED", False):
         abort(404)
-    organization = Organization.query.filter_by(slug=org_slug).first()
-    if organization is None:
-        abort(404)
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     project = Project.query.filter_by(
         organization_id=organization.id, slug=project_slug
-    ).first()
-    if project is None:
-        abort(404)
+    ).first_or_404()
     application = Application.query.filter_by(
         project_id=project.id, slug=app_slug
-    ).first()
-    if application is None:
-        abort(404)
+    ).first_or_404()
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
 
@@ -476,19 +440,13 @@ def project_application_shell(org_slug, project_slug, app_slug):
 def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
     if not current_app.config.get("SHELLZ_ENABLED", False):
         abort(404)
-    organization = Organization.query.filter_by(slug=org_slug).first()
-    if organization is None:
-        abort(404)
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     project = Project.query.filter_by(
         organization_id=organization.id, slug=project_slug
-    ).first()
-    if project is None:
-        abort(404)
+    ).first_or_404()
     application = Application.query.filter_by(
         project_id=project.id, slug=app_slug
-    ).first()
-    if application is None:
-        abort(404)
+    ).first_or_404()
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
 
@@ -549,14 +507,10 @@ def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
 @login_required
 def project_application_create(org_slug, project_slug):
     form = CreateApplicationForm()
-    organization = Organization.query.filter_by(slug=org_slug).first()
-    if organization is None:
-        abort(404)
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     project = Project.query.filter_by(
         organization_id=organization.id, slug=project_slug
-    ).first()
-    if project is None:
-        abort(404)
+    ).first_or_404()
     if not AdministerProjectPermission(project.id).can():
         abort(403)
 
@@ -600,14 +554,10 @@ def project_application_create(org_slug, project_slug):
 @user_blueprint.route("/projects/<org_slug>/<project_slug>/applications")
 @login_required
 def project_applications(org_slug, project_slug):
-    organization = Organization.query.filter_by(slug=org_slug).first()
-    if organization is None:
-        abort(404)
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     project = Project.query.filter_by(
         organization_id=organization.id, slug=project_slug
-    ).first()
-    if project is None:
-        abort(404)
+    ).first_or_404()
     if not ViewProjectPermission(project.id).can():
         abort(403)
     return render_template("user/project_applications.html", project=project)
@@ -618,24 +568,16 @@ def project_applications(org_slug, project_slug):
 )
 @login_required
 def project_application_configuration(org_slug, project_slug, app_slug, config_id):
-    organization = Organization.query.filter_by(slug=org_slug).first()
-    if organization is None:
-        abort(404)
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     project = Project.query.filter_by(
         organization_id=organization.id, slug=project_slug
-    ).first()
-    if project is None:
-        abort(404)
+    ).first_or_404()
     application = Application.query.filter_by(
         project_id=project.id, slug=app_slug
-    ).first()
-    if application is None:
-        abort(404)
+    ).first_or_404()
     configuration = Configuration.query.filter_by(
         application_id=application.id, id=config_id
-    ).first()
-    if configuration is None:
-        abort(404)
+    ).first_or_404()
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
 
@@ -650,19 +592,13 @@ def project_application_configuration(org_slug, project_slug, app_slug, config_i
 )
 @login_required
 def project_application_configuration_create(org_slug, project_slug, app_slug):
-    organization = Organization.query.filter_by(slug=org_slug).first()
-    if organization is None:
-        abort(404)
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     project = Project.query.filter_by(
         organization_id=organization.id, slug=project_slug
-    ).first()
-    if project is None:
-        abort(404)
+    ).first_or_404()
     application = Application.query.filter_by(
         project_id=project.id, slug=app_slug
-    ).first()
-    if application is None:
-        abort(404)
+    ).first_or_404()
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
 
@@ -728,24 +664,16 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
 )
 @login_required
 def project_application_configuration_edit(org_slug, project_slug, app_slug, config_id):
-    organization = Organization.query.filter_by(slug=org_slug).first()
-    if organization is None:
-        abort(404)
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     project = Project.query.filter_by(
         organization_id=organization.id, slug=project_slug
-    ).first()
-    if project is None:
-        abort(404)
+    ).first_or_404()
     application = Application.query.filter_by(
         project_id=project.id, slug=app_slug
-    ).first()
-    if application is None:
-        abort(404)
+    ).first_or_404()
     configuration = Configuration.query.filter_by(
         application_id=application.id, id=config_id
-    ).first()
-    if configuration is None:
-        abort(404)
+    ).first_or_404()
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
 
@@ -813,9 +741,7 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
 )
 @login_required
 def project_application_settings(application_id):
-    application = Application.query.filter_by(id=application_id).first()
-    if application is None:
-        abort(404)
+    application = Application.query.filter_by(id=application_id).first_or_404()
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
 
@@ -868,24 +794,16 @@ def project_application_settings(application_id):
 def project_application_configuration_delete(
     org_slug, project_slug, app_slug, config_id
 ):
-    organization = Organization.query.filter_by(slug=org_slug).first()
-    if organization is None:
-        abort(404)
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     project = Project.query.filter_by(
         organization_id=organization.id, slug=project_slug
-    ).first()
-    if project is None:
-        abort(404)
+    ).first_or_404()
     application = Application.query.filter_by(
         project_id=project.id, slug=app_slug
-    ).first()
-    if application is None:
-        abort(404)
+    ).first_or_404()
     configuration = Configuration.query.filter_by(
         application_id=application.id, id=config_id
-    ).first()
-    if configuration is None:
-        abort(404)
+    ).first_or_404()
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
 
@@ -941,9 +859,7 @@ def project_application_configuration_delete(
 @user_blueprint.route("/applications/<application_id>/images")
 @login_required
 def application_images(application_id):
-    application = Application.query.filter_by(id=application_id).first()
-    if application is None:
-        abort(404)
+    application = Application.query.filter_by(id=application_id).first_or_404()
     if not ViewApplicationPermission(application.id).can():
         abort(403)
     page = request.args.get("page", 1, type=int)
@@ -959,9 +875,7 @@ def application_images(application_id):
 @user_blueprint.route("/image/<image_id>")
 @login_required
 def image_detail(image_id):
-    image = Image.query.filter_by(id=image_id).first()
-    if image is None:
-        abort(404)
+    image = Image.query.filter_by(id=image_id).first_or_404()
     if not ViewApplicationPermission(image.application.id).can():
         abort(403)
     if image.error:
@@ -978,8 +892,8 @@ def image_detail(image_id):
 @sock.route("/image/<image_id>/livelogs", bp=user_blueprint)
 @login_required
 def image_build_livelogs(ws, image_id):
-    image = Image.query.filter_by(id=image_id).first()
-    if image is None or image.error:
+    image = Image.query.filter_by(id=image_id).first_or_404()
+    if image.error:
         abort(404)
     if not ViewApplicationPermission(image.application.id).can():
         abort(403)
@@ -1054,9 +968,7 @@ def image_build_livelogs(ws, image_id):
 @user_blueprint.route("/applications/<application_id>/releases")
 @login_required
 def application_releases(application_id):
-    application = Application.query.filter_by(id=application_id).first()
-    if application is None:
-        abort(404)
+    application = Application.query.filter_by(id=application_id).first_or_404()
     if not ViewApplicationPermission(application.id).can():
         abort(403)
     page = request.args.get("page", 1, type=int)
@@ -1074,9 +986,7 @@ def application_releases(application_id):
 @user_blueprint.route("/release/<release_id>")
 @login_required
 def release_detail(release_id):
-    release = Release.query.filter_by(id=release_id).first()
-    if release is None:
-        abort(404)
+    release = Release.query.filter_by(id=release_id).first_or_404()
     if not ViewApplicationPermission(release.application.id).can():
         abort(403)
     secret = current_app.config["REGISTRY_AUTH_SECRET"]
@@ -1099,8 +1009,8 @@ def release_detail(release_id):
 @sock.route("/release/<release_id>/livelogs", bp=user_blueprint)
 @login_required
 def release_build_livelogs(ws, release_id):
-    release = Release.query.filter_by(id=release_id).first()
-    if release is None or release.error:
+    release = Release.query.filter_by(id=release_id).first_or_404()
+    if release.error:
         abort(404)
     if not ViewApplicationPermission(release.application.id).can():
         abort(403)
@@ -1175,9 +1085,7 @@ def release_build_livelogs(ws, release_id):
 @sock.route("/deployment/<deployment_id>/livelogs", bp=user_blueprint)
 @login_required
 def deployment_livelogs(ws, deployment_id):
-    deployment = Deployment.query.filter_by(id=deployment_id).first()
-    if deployment is None:
-        abort(404)
+    deployment = Deployment.query.filter_by(id=deployment_id).first_or_404()
     if not ViewApplicationPermission(deployment.application.id).can():
         abort(403)
 
@@ -1261,9 +1169,7 @@ def deployment_livelogs(ws, deployment_id):
 @user_blueprint.route("/deployment/<deployment_id>")
 @login_required
 def deployment_detail(deployment_id):
-    deployment = Deployment.query.filter_by(id=deployment_id).first()
-    if deployment is None:
-        abort(404)
+    deployment = Deployment.query.filter_by(id=deployment_id).first_or_404()
     if not ViewApplicationPermission(deployment.application.id).can():
         abort(403)
     return render_template("user/deployment_detail.html", deployment=deployment)
@@ -1274,9 +1180,7 @@ def deployment_detail(deployment_id):
 )
 @login_required
 def application_release_create(application_id):
-    application = Application.query.filter_by(id=application_id).first()
-    if application is None:
-        abort(404)
+    application = Application.query.filter_by(id=application_id).first_or_404()
     if not ViewApplicationPermission(application.id).can():
         abort(403)
 
@@ -1320,9 +1224,7 @@ def docker_auth():
 )
 @login_required
 def application_images_build_fromsource(application_id):
-    application = Application.query.filter_by(id=application_id).first()
-    if application is None:
-        abort(404)
+    application = Application.query.filter_by(id=application_id).first_or_404()
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
     project = application.project
@@ -1357,9 +1259,7 @@ def application_images_build_fromsource(application_id):
 @user_blueprint.route("/applications/<application_id>/clearcache", methods=["POST"])
 @login_required
 def application_clear_cache(application_id):
-    application = Application.query.filter_by(id=application_id).first()
-    if application is None:
-        abort(404)
+    application = Application.query.filter_by(id=application_id).first_or_404()
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
 
@@ -1405,9 +1305,7 @@ def application_clear_cache(application_id):
 @user_blueprint.route("/application/<application_id>/scale", methods=["POST"])
 @login_required
 def application_scale(application_id):
-    application = Application.query.filter_by(id=application_id).first()
-    if application is None:
-        abort(404)
+    application = Application.query.filter_by(id=application_id).first_or_404()
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
     form = ApplicationScaleForm()
@@ -1472,9 +1370,7 @@ def application_scale(application_id):
 @user_blueprint.route("/release/<release_id>/deploy", methods=["POST"])
 @login_required
 def release_deploy(release_id):
-    release = Release.query.filter_by(id=release_id).first()
-    if release is None:
-        abort(404)
+    release = Release.query.filter_by(id=release_id).first_or_404()
     if not AdministerApplicationPermission(release.application.id).can():
         abort(403)
     deployment = Deployment(
@@ -1496,7 +1392,7 @@ def release_deploy(release_id):
     if current_app.config["KUBERNETES_ENABLED"]:
         deployment_id = deployment.id
         run_deploy.delay(deployment_id=deployment.id)
-        deployment = Deployment.query.filter_by(id=deployment_id).first()
+        deployment = Deployment.query.filter_by(id=deployment_id).first_or_404()
     else:
         from cabotage.celery.tasks.deploy import fake_deploy_release
 
