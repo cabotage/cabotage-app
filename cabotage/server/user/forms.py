@@ -12,6 +12,7 @@ from wtforms import (
 )
 from wtforms.validators import (
     DataRequired,
+    InputRequired,
     EqualTo,
     Length,
     Regexp,
@@ -27,14 +28,14 @@ from cabotage.server.models.projects import (
 
 
 class ExtendedLoginForm(LoginForm):
-    email = StringField("Username or Email Address", [DataRequired()])
+    email = StringField("Username or Email Address", [InputRequired()])
 
 
 class ExtendedRegisterForm(RegisterForm):
     username = StringField(
         "Username",
         validators=[
-            DataRequired(),
+            InputRequired(),
             Length(min=1, max=64),
         ],
     )
@@ -44,7 +45,7 @@ class ExtendedConfirmRegisterForm(ConfirmRegisterForm):
     username = StringField(
         "Username",
         validators=[
-            DataRequired(),
+            InputRequired(),
             Length(min=1, max=64),
         ],
     )
@@ -53,13 +54,13 @@ class ExtendedConfirmRegisterForm(ConfirmRegisterForm):
 class CreateOrganizationForm(FlaskForm):
     name = StringField(
         "Organization Name",
-        [DataRequired()],
+        [InputRequired()],
         description="Friendly and descriptive name for your Organization.",
     )
     slug = StringField(
         "Organization Slug",
         [
-            DataRequired(),
+            InputRequired(),
             Regexp("^[-a-z0-9]+$", message="Invalid Slug! Must match ^[-a-z0-9]+$"),
         ],
         description=(
@@ -82,13 +83,13 @@ class CreateProjectForm(FlaskForm):
     )
     name = StringField(
         "Project Name",
-        [DataRequired()],
+        [InputRequired()],
         description="Friendly and descriptive name for your Project.",
     )
     slug = StringField(
         "Project Slug",
         [
-            DataRequired(),
+            InputRequired(),
             Regexp("^[-a-z0-9]+$", message="Invalid Slug! Must match ^[-a-z0-9]+$"),
         ],
         description=(
@@ -116,7 +117,7 @@ class DeleteProjectForm(FlaskForm):
     )
     name = StringField(
         "Name",
-        [DataRequired()],
+        [InputRequired()],
         description="Name for the Project being deleted.",
     )
     confirm = StringField(
@@ -138,13 +139,13 @@ class CreateApplicationForm(FlaskForm):
     )
     name = StringField(
         "Application Name",
-        [DataRequired()],
+        [InputRequired()],
         description="Friendly and descriptive name for your Application.",
     )
     slug = StringField(
         "Application Slug",
         [
-            DataRequired(),
+            InputRequired(),
             Regexp("^[-a-z0-9]+$", message="Invalid Slug! Must match ^[-a-z0-9]+$"),
         ],
         description=(
@@ -172,7 +173,7 @@ class DeleteApplicationForm(FlaskForm):
     )
     name = StringField(
         "Name",
-        [DataRequired()],
+        [InputRequired()],
         description="Name for the Application being deleted.",
     )
     confirm = StringField(
@@ -184,13 +185,13 @@ class DeleteApplicationForm(FlaskForm):
 class CreateConfigurationForm(FlaskForm):
     application_id = SelectField(
         "Application",
-        [DataRequired()],
+        [InputRequired()],
         description="Application this Configuration belongs to.",
     )
     name = StringField(
         "Name",
         [
-            DataRequired(),
+            InputRequired(),
             Regexp(
                 "^[a-zA-Z_]+[a-zA-Z0-9_]*$",
                 message=(
@@ -203,7 +204,7 @@ class CreateConfigurationForm(FlaskForm):
     )
     value = StringField(
         "Value",
-        [DataRequired()],
+        [InputRequired()],
         description="Value for the Environment Variable.",
     )
     secure = BooleanField(
@@ -311,7 +312,7 @@ class EditConfigurationForm(FlaskForm):
     name = StringField(
         "Name",
         [
-            DataRequired(),
+            InputRequired(),
             Regexp(
                 "^[a-zA-Z_]+[a-zA-Z0-9_]*$",
                 message=(
@@ -324,7 +325,7 @@ class EditConfigurationForm(FlaskForm):
     )
     value = StringField(
         "Value",
-        [DataRequired()],
+        [InputRequired()],
         description="Value for the Environment Variable.",
     )
     secure = BooleanField(
@@ -367,12 +368,12 @@ class DeleteConfigurationForm(FlaskForm):
     )
     name = StringField(
         "Name",
-        [DataRequired()],
+        [InputRequired()],
         description="Name for the Environment Variable.",
     )
     value = StringField(
         "Value",
-        [DataRequired()],
+        [InputRequired()],
         description="Value for the Environment Variable.",
     )
     secure = BooleanField(
@@ -397,7 +398,7 @@ class DeleteConfigurationForm(FlaskForm):
 class ReleaseDeployForm(FlaskForm):
     release_id = StringField(
         "Release ID",
-        [DataRequired()],
+        [InputRequired()],
         description="Release to deploy.",
     )
 
@@ -405,6 +406,6 @@ class ReleaseDeployForm(FlaskForm):
 class ApplicationScaleForm(FlaskForm):
     application_id = StringField(
         "Application ID",
-        [DataRequired()],
+        [InputRequired()],
         description="Application to scale.",
     )
