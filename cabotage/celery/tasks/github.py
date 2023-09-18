@@ -103,6 +103,7 @@ def process_deployment_hook(hook):
                 "installation_id": installation_id,
                 "auto_deploy": True,
             },
+            build_ref=deployment["sha"],
         )
         db.session.add(image)
         db.session.flush()
