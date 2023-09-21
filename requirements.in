@@ -32,6 +32,7 @@ python-consul
 python-dxf
 qrcode
 redis
+sentry-sdk[flask]
 sqlalchemy
 sqlalchemy-citext
 sqlalchemy-continuum

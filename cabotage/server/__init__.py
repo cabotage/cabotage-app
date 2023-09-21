@@ -1,5 +1,7 @@
 import os
 
+import sentry_sdk
+
 from flask import Flask, render_template
 from flask_admin import Admin
 from flask_babel import Babel
@@ -17,6 +19,7 @@ from flask_sock import Sock
 
 from celery import Celery
 from celery import Task
+from sentry_sdk.integrations.flask import FlaskIntegration
 from sqlalchemy import MetaData
 
 from cabotage.server.acl import cabotage_on_identity_loaded
@@ -57,6 +60,11 @@ config_writer = ConfigWriter(consul=consul, vault=vault)
 github_app = GitHubApp()
 sock = Sock()
 babel = Babel()
+sentry_sdk.init(
+    dsn=os.getenv("SENTRY_DSN"),
+    integrations=[FlaskIntegration()],
+    release=os.getenv("SOURCE_COMMIT"),
+)
 
 
 def celery_init_app(app):
