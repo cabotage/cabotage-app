@@ -19,6 +19,7 @@ from flask_sock import Sock
 
 from celery import Celery
 from celery import Task
+from sentry_sdk.integrations.flask import FlaskIntegration
 from sqlalchemy import MetaData
 
 from cabotage.server.acl import cabotage_on_identity_loaded
@@ -61,6 +62,7 @@ sock = Sock()
 babel = Babel()
 sentry_sdk.init(
     dsn=os.getenv("SENTRY_DSN"),
+    integrations=[FlaskIntegration()],
     release=os.getenv("SOURCE_COMMIT"),
 )
 
