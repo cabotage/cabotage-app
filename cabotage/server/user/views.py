@@ -24,6 +24,7 @@ import backoff
 import kubernetes
 
 from dxf import DXF
+from requests.exceptions import HTTPError
 from sqlalchemy import desc
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy_continuum import version_class
@@ -1290,8 +1291,48 @@ def application_clear_cache(application_id):
         insecure=(not registry_secure),
         tlsverify=_tlsverify,
     )
-    client.del_alias("image-buildcache")
-    client.del_alias("release-buildcache")
+
+    try:
+        client.get_alias("image-buildcache")
+        try:
+            client.del_alias("image-buildcache")
+        except (
+            HTTPError
+        ) as e:  # Exception based error handling vs returning a None :upsidedownsmile:
+            if e.response.status_code == 404:
+                pass  # Suppose there could be a race that the get_alias didn't find
+            elif e.response.status_code == 405:
+                pass  # The registry may not be configured to allow deletes
+            else:
+                raise
+    except (
+        HTTPError
+    ) as e:  # Exception based error handling vs just returning a None :upsidedownsmile:
+        if e.response.status_code == 404:
+            pass
+        else:
+            raise
+    try:
+        client.get_alias("release-buildcache")
+        try:
+            client.del_alias("release-buildcache")
+        except (
+            HTTPError
+        ) as e:  # Exception based error handling vs returning a None :upsidedownsmile:
+            if e.response.status_code == 404:
+                pass  # Suppose there could be a race that the get_alias didn't find
+            elif e.response.status_code == 405:
+                pass  # The registry may not be configured to allow deletes
+            else:
+                raise
+    except (
+        HTTPError
+    ) as e:  # Exception based error handling vs just returning a None :upsidedownsmile:
+        if e.response.status_code == 404:
+            pass
+        else:
+            raise
+
     return redirect(
         url_for(
             "user.project_application",
