@@ -1,5 +1,7 @@
 import os
 
+import sentry_sdk
+
 from flask import Flask, render_template
 from flask_admin import Admin
 from flask_babel import Babel
@@ -57,6 +59,10 @@ config_writer = ConfigWriter(consul=consul, vault=vault)
 github_app = GitHubApp()
 sock = Sock()
 babel = Babel()
+sentry_sdk.init(
+    dsn=os.getenv("SENTRY_DSN"),
+    release=os.getenv("SOURCE_COMMIT"),
+)
 
 
 def celery_init_app(app):

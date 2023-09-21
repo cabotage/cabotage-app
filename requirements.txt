@@ -24,6 +24,7 @@ blinker==1.6.2
     #   flask-debugtoolbar
     #   flask-mail
     #   flask-principal
+    #   sentry-sdk
 cachetools==4.2.2
     # via google-auth
 celery==5.2.2
@@ -33,6 +34,7 @@ certifi==2023.7.22
     #   kubernetes
     #   minio
     #   requests
+    #   sentry-sdk
 cffi==1.14.5
     # via
     #   bcrypt
@@ -95,6 +97,7 @@ flask==2.3.2
     #   flask-sock
     #   flask-sqlalchemy
     #   flask-wtf
+    #   sentry-sdk
 flask-admin==1.6.1
     # via -r requirements.in
 flask-babel==3.1.0
@@ -235,6 +238,8 @@ requests-oauthlib==1.3.0
     # via kubernetes
 rsa==4.7.2
     # via google-auth
+sentry-sdk[flask]==1.9.0
+    # via -r requirements.in
 simple-websocket==0.10.1
     # via flask-sock
 six==1.16.0
@@ -276,6 +281,7 @@ urllib3==1.26.5
     #   kubernetes
     #   minio
     #   requests
+    #   sentry-sdk
 vine==5.0.0
     # via
     #   amqp
