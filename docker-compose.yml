@@ -65,6 +65,7 @@ services:
       REGISTRY_STORAGE_S3_SECURE: "true"
       REGISTRY_STORAGE_S3_V4AUTH: "true"
       REGISTRY_STORAGE_S3_CHUNKSIZE: 5242880
+      REGISTRY_STORAGE_DELETE_ENABLED: true
     ports:
       - "5001:5001"
     volumes:
