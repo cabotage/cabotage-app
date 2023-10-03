@@ -136,6 +136,8 @@ flask-wtf==1.1.1
     # via flask-security-too
 google-auth==1.31.0
     # via kubernetes
+greenlet==3.0.0
+    # via sqlalchemy
 gunicorn==20.1.0
     # via -r requirements.in
 h11==0.14.0
@@ -276,7 +278,7 @@ typing-extensions==4.7.1
     # via qrcode
 unidecode==1.2.0
     # via -r requirements.in
-urllib3==1.26.5
+urllib3==1.26.17
     # via
     #   kubernetes
     #   minio
