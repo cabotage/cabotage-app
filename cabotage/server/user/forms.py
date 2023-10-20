@@ -246,6 +246,13 @@ class EditApplicationSettingsForm(FlaskForm):
         description="GitHub Repository to deploy from",
         render_kw={"placeholder": "org_name/repo_name"},
     )
+    github_repository_is_private = BooleanField(
+        "Private Repository",
+        description=(
+            "This is a private GitHub repository "
+            "(requires a valid GitHub Application Installation ID)"
+        ),
+    )
     auto_deploy_branch = StringField(
         "Branch",
         description="GitHub Repository branch to auto-deploy from",

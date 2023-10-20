@@ -21,7 +21,9 @@ from dockerfile_parse import DockerfileParser
 from flask import current_app
 from dxf import DXF
 from github import Github
+from github.Auth import AppAuth as GithubAppAuth
 from github.GithubException import UnknownObjectException
+from github.GithubIntegration import GithubIntegration
 
 from cabotage.celery.tasks.deploy import run_deploy, run_job
 
@@ -133,7 +135,7 @@ def build_release_buildkit(release):
                 "--local",
                 "context=/context",
             ]
-            secret_object = kubernetes.client.V1Secret(
+            docker_secret_object = kubernetes.client.V1Secret(
                 type="kubernetes.io/dockerconfigjson",
                 metadata=kubernetes.client.V1ObjectMeta(
                     name=f"buildkit-registry-auth-{release.build_job_id}",
@@ -286,7 +288,7 @@ def build_release_buildkit(release):
             core_api_instance.create_namespaced_config_map(
                 "default", buildkitd_toml_configmap_object
             )
-            core_api_instance.create_namespaced_secret("default", secret_object)
+            core_api_instance.create_namespaced_secret("default", docker_secret_object)
 
             try:
                 job_complete, job_logs = run_job(
@@ -444,32 +446,21 @@ def build_image_buildkit(image=None):
     buildkitd_ca = current_app.config["BUILDKITD_VERIFY"]
 
     access_token = None
-    # TODO: Do the GitHub Dance we'll want to auth if we ever do private repoz
-    # bearer_token = github_app.bearer_token
-    # access_token_response = requests.post(
-    #    f'https://api.github.com/app/installations/{installation_id}/access_tokens',
-    #    headers={
-    #        'Accept': 'application/vnd.github.machine-man-preview+json',
-    #        'Authorization': f'Bearer {bearer_token}',
-    #    }
-    # )
-    # if 'token' not in access_token_response.json():
-    #    print(f'Unable to authenticate for {installation_id}')
-    #    print(access_token_response.json())
-    #    raise BuildError(f'Unable to authenticate for {installation_id}')
-    # access_token = access_token_response.json()
-    #
-    # CRITICAL
-    # add f"--secret GIT_AUTH_TOKEN={access_token}" to buildx command
-    # This will pass it in to the buildx environment in such a way that it is
-    # not leaked to logs.
-    #
-    # Since we are using an up-to-date version of buildkit we can use the
-    # --secret flag in buildctl_args to pass the access token rather than
-    # constructing a URL.
-    #
-    # Ref: https://www.cve.org/CVERecord?id=CVE-2023-26054
-    # Ref: https://github.com/moby/buildkit/security/advisories/GHSA-gc89-7gcr-jxqc
+
+    if image.application.github_repository_is_private:
+        try:
+            auth = GithubAppAuth(github_app.app_id, github_app.app_private_key_pem)
+            gi = GithubIntegration(auth=auth)
+            access_token = gi.get_access_token(
+                image.application.github_app_installation_id
+            ).token
+            if access_token is None:
+                raise Exception
+        except Exception:
+            raise BuildError(
+                "Unable to authenticate for Installation ID "
+                f"{image.application.github_app_installation_id}"
+            )
 
     if image.commit_sha == "null":
         commit_sha = _fetch_commit_sha_for_ref(
@@ -588,7 +579,7 @@ def build_image_buildkit(image=None):
         f"filename=./{dockerfile_name}",
         "--opt",
         (
-            "context=https://github.com/"
+            "context=https://x-access-token@github.com/"
             f"{image.application.github_repository}.git#{image.commit_sha}"
         ),
         "--import-cache",
@@ -618,13 +609,28 @@ def build_image_buildkit(image=None):
 
     try:
         if current_app.config["KUBERNETES_ENABLED"]:
-            secret_object = kubernetes.client.V1Secret(
+            if image.application.github_repository_is_private:
+                buildctl_args.append("--secret")
+                buildctl_args.append(
+                    "id=GIT_AUTH_TOKEN,src=/home/user/.secret/github_access_token"
+                )
+            docker_secret_object = kubernetes.client.V1Secret(
                 type="kubernetes.io/dockerconfigjson",
                 metadata=kubernetes.client.V1ObjectMeta(
                     name=f"buildkit-registry-auth-{image.build_job_id}",
                 ),
                 data={
                     ".dockerconfigjson": b64encode(dockerconfigjson.encode()).decode(),
+                },
+            )
+            github_secret_object = kubernetes.client.V1Secret(
+                metadata=kubernetes.client.V1ObjectMeta(
+                    name=f"github-access-token-{image.build_job_id}",
+                ),
+                data={
+                    "github_access_token": b64encode(
+                        str(access_token).encode()
+                    ).decode(),
                 },
             )
             buildkitd_toml_configmap_object = kubernetes.client.V1ConfigMap(
@@ -635,6 +641,7 @@ def build_image_buildkit(image=None):
                     "buildkitd.toml": buildkitd_toml,
                 },
             )
+            print(buildctl_command, buildctl_args)
             job_object = kubernetes.client.V1Job(
                 metadata=kubernetes.client.V1ObjectMeta(
                     name=f"imagebuild-{image.build_job_id}",
@@ -699,6 +706,10 @@ def build_image_buildkit(image=None):
                                             mount_path="/home/user/.docker",
                                             name="buildkit-registry-auth",
                                         ),
+                                        kubernetes.client.V1VolumeMount(
+                                            mount_path="/home/user/.secret",
+                                            name="build-secrets",
+                                        ),
                                     ],
                                 ),
                             ],
@@ -731,6 +742,18 @@ def build_image_buildkit(image=None):
                                         ],
                                     ),
                                 ),
+                                kubernetes.client.V1Volume(
+                                    name="build-secrets",
+                                    secret=kubernetes.client.V1SecretVolumeSource(
+                                        secret_name=f"github-access-token-{image.build_job_id}",
+                                        items=[
+                                            kubernetes.client.V1KeyToPath(
+                                                key="github_access_token",
+                                                path="github_access_token",
+                                            ),
+                                        ],
+                                    ),
+                                ),
                             ],
                         ),
                     ),
@@ -743,7 +766,8 @@ def build_image_buildkit(image=None):
             core_api_instance.create_namespaced_config_map(
                 "default", buildkitd_toml_configmap_object
             )
-            core_api_instance.create_namespaced_secret("default", secret_object)
+            core_api_instance.create_namespaced_secret("default", docker_secret_object)
+            core_api_instance.create_namespaced_secret("default", github_secret_object)
 
             try:
                 job_complete, job_logs = run_job(
@@ -752,6 +776,11 @@ def build_image_buildkit(image=None):
             finally:
                 core_api_instance.delete_namespaced_secret(
                     f"buildkit-registry-auth-{image.build_job_id}",
+                    "default",
+                    propagation_policy="Foreground",
+                )
+                core_api_instance.delete_namespaced_secret(
+                    f"github-access-token-{image.build_job_id}",
                     "default",
                     propagation_policy="Foreground",
                 )
@@ -770,21 +799,35 @@ def build_image_buildkit(image=None):
             buildctl_command = ["buildctl"]
             if buildkitd_ca is not None:
                 buildctl_args.insert(0, f"--tlscacert={buildkitd_ca}")
+            if image.application.github_repository_is_private:
+                buildctl_args.append("--secret")
+                buildctl_args.append(
+                    "id=GIT_AUTH_TOKEN,src=.secret/github_access_token"
+                )
             with TemporaryDirectory() as tempdir:
                 os.makedirs(os.path.join(tempdir, ".docker"), exist_ok=True)
                 with open(os.path.join(tempdir, ".docker", "config.json"), "w") as f:
                     f.write(dockerconfigjson)
+                os.makedirs(os.path.join(tempdir, ".secret"), exist_ok=True)
+                with open(
+                    os.path.join(tempdir, ".secret", "github_access_token"), "w"
+                ) as f:
+                    f.write(access_token)
                 try:
                     completed_subprocess = subprocess.run(
                         buildctl_command + buildctl_args,
                         env={"BUILDKIT_HOST": buildkitd_url, "HOME": tempdir},
-                        cwd="/tmp",
+                        cwd=tempdir,
                         check=True,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
                         text=True,
                     )
                 except subprocess.CalledProcessError as exc:
+                    image.image_build_log = (
+                        " ".join(buildctl_command + buildctl_args) + "\n" + exc.output
+                    )
+                    db.session.commit()
                     raise BuildError(f"Build subprocess failed: {exc}")
             image.image_build_log = (
                 " ".join(buildctl_command + buildctl_args)

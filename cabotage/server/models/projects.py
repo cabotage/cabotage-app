@@ -172,6 +172,11 @@ class Application(db.Model, Timestamp):
         db.Text(),
         nullable=True,
     )
+    github_repository_is_private = db.Column(
+        db.Boolean,
+        default=False,
+        nullable=False,
+    )
     github_environment_name = db.Column(
         db.Text(),
         nullable=True,
