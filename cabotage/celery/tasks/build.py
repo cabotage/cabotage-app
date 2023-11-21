@@ -121,8 +121,8 @@ def build_release_buildkit(release):
     ]
 
     if registry_ca and not isinstance(registry_ca, bool):
-        buildctl_args.append("--registry-auth-tlscacert")
-        buildctl_args.append(registry_ca)
+        buildctl_args.append("--registry-auth-tlscontext")
+        buildctl_args.append(f"host={registry},ca={registry_ca}")
 
     db.session.add(release)
     try:
@@ -186,7 +186,7 @@ def build_release_buildkit(release):
                             containers=[
                                 kubernetes.client.V1Container(
                                     name="build",
-                                    image="cabotage/buildkit:4-rootless",
+                                    image="moby/buildkit:v0.13.0-beta1-rootless",
                                     command=buildctl_command,
                                     args=buildctl_args,
                                     env=[
@@ -613,8 +613,8 @@ def build_image_buildkit(image=None):
         buildctl_args.append(shlex.quote(f"build-arg:{k}={v}"))
 
     if registry_ca and not isinstance(registry_ca, bool):
-        buildctl_args.append(registry_ca)
-        buildctl_args.append("--registry-auth-tlscacert")
+        buildctl_args.append("--registry-auth-tlscontext")
+        buildctl_args.append(f"host={registry},ca={registry_ca}")
 
     try:
         if current_app.config["KUBERNETES_ENABLED"]:
@@ -670,7 +670,7 @@ def build_image_buildkit(image=None):
                             containers=[
                                 kubernetes.client.V1Container(
                                     name="build",
-                                    image="cabotage/buildkit:4-rootless",
+                                    image="moby/buildkit:v0.13.0-beta1-rootless",
                                     command=buildctl_command,
                                     args=buildctl_args,
                                     env=[
