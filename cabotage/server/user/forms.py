@@ -413,6 +413,6 @@ class ReleaseDeployForm(FlaskForm):
 class ApplicationScaleForm(FlaskForm):
     application_id = StringField(
         "Application ID",
-        [InputRequired()],
+        [DataRequired()],
         description="Application to scale.",
     )

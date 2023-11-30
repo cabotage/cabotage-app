@@ -809,10 +809,14 @@ def build_image_buildkit(image=None):
                 with open(os.path.join(tempdir, ".docker", "config.json"), "w") as f:
                     f.write(dockerconfigjson)
                 os.makedirs(os.path.join(tempdir, ".secret"), exist_ok=True)
-                with open(
-                    os.path.join(tempdir, ".secret", "github_access_token"), "w"
-                ) as f:
-                    f.write(access_token)
+                if (
+                    image.application.github_repository_is_private
+                    and access_token is not None
+                ):
+                    with open(
+                        os.path.join(tempdir, ".secret", "github_access_token"), "w"
+                    ) as f:
+                        f.write(access_token)
                 try:
                     completed_subprocess = subprocess.run(
                         buildctl_command + buildctl_args,
