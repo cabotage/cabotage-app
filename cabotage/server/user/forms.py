@@ -319,7 +319,7 @@ class EditConfigurationForm(FlaskForm):
     name = StringField(
         "Name",
         [
-            InputRequired(),
+            DataRequired(),
             Regexp(
                 "^[a-zA-Z_]+[a-zA-Z0-9_]*$",
                 message=(
@@ -375,12 +375,12 @@ class DeleteConfigurationForm(FlaskForm):
     )
     name = StringField(
         "Name",
-        [InputRequired()],
+        [DataRequired()],
         description="Name for the Environment Variable.",
     )
     value = StringField(
         "Value",
-        [InputRequired()],
+        [DataRequired()],
         description="Value for the Environment Variable.",
     )
     secure = BooleanField(
