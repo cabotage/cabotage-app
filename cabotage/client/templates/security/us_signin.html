@@ -18,5 +18,12 @@
       </form>
     </div>
   </div>
+  <div class="row">
+    <div class="col-md-4 col-md-offset-7 col-sm-8 col-xs-8 col-xs-offset-8 col-sm-offset-8">
+      {% if security.registerable %}
+        <a class="btn btn-primary" href="{{ url_for_security('register') }}{% if 'next' in request.args %}?next={{ request.args.next|urlencode }}{% endif %}">{{ _('Register') }}</a>
+      {% endif %}
+    </div>
+  </div>
 </div>
 {% endblock %}
