@@ -596,6 +596,7 @@ def render_deployment(namespace, release, service_account_name, process_name):
                 "application": release.application.slug,
                 "process": process_name,
                 "app": role_name,
+                "resident-deployment.cabotage.io": "true",
             },
         ),
         spec=kubernetes.client.V1DeploymentSpec(
@@ -618,6 +619,7 @@ def render_deployment(namespace, release, service_account_name, process_name):
                         "process": process_name,
                         "app": role_name,
                         "ca-admission.cabotage.io": "true",
+                        "resident-pod.cabotage.io": "true",
                     }
                 ),
                 spec=render_podspec(release, process_name, service_account_name),
@@ -708,6 +710,7 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
                 "app": role_name,
                 "release": str(release.version),
                 "deployment": job_id,
+                "resident-job.cabotage.io": "true",
             },
         ),
         spec=kubernetes.client.V1JobSpec(
@@ -725,6 +728,7 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
                         "release": str(release.version),
                         "deployment": job_id,
                         "ca-admission.cabotage.io": "true",
+                        "resident-pod.cabotage.io": "true",
                     }
                 ),
                 spec=render_podspec(release, process_name, service_account_name),

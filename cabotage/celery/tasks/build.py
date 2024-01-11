@@ -162,6 +162,7 @@ def build_release_buildkit(release):
                         "application": release.application.slug,
                         "process": "build",
                         "build_id": release.build_job_id,
+                        "resident-job.cabotage.io": "true",
                     },
                 ),
                 spec=kubernetes.client.V1JobSpec(
@@ -178,6 +179,7 @@ def build_release_buildkit(release):
                                 "process": "build",
                                 "build_id": release.build_job_id,
                                 "ca-admission.cabotage.io": "true",
+                                "resident-pod.cabotage.io": "true",
                             },
                             annotations={
                                 "container.apparmor.security.beta.kubernetes.io/build": "unconfined",  # noqa: E501
@@ -651,6 +653,7 @@ def build_image_buildkit(image=None):
                         "application": image.application.slug,
                         "process": "build",
                         "build_id": image.build_job_id,
+                        "resident-job.cabotage.io": "true",
                     },
                 ),
                 spec=kubernetes.client.V1JobSpec(
@@ -667,6 +670,7 @@ def build_image_buildkit(image=None):
                                 "process": "build",
                                 "build_id": image.build_job_id,
                                 "ca-admission.cabotage.io": "true",
+                                "resident-pod.cabotage.io": "true",
                             },
                             annotations={
                                 "container.apparmor.security.beta.kubernetes.io/build": "unconfined",  # noqa: E501
