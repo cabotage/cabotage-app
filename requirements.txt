@@ -112,7 +112,7 @@ flask-env==2.0.0
     # via -r requirements.in
 flask-humanize==0.3.0
     # via -r requirements.in
-flask-login==0.6.2
+flask-login==0.6.3
     # via flask-security-too
 flask-mail==0.9.1
     # via -r requirements.in
