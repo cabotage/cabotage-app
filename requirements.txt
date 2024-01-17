@@ -106,7 +106,7 @@ flask-bcrypt==1.0.1
     # via -r requirements.in
 flask-bootstrap==3.3.7.1
     # via -r requirements.in
-flask-debugtoolbar==0.13.1
+flask-debugtoolbar==0.14.1
     # via -r requirements.in
 flask-env==2.0.0
     # via -r requirements.in
@@ -173,6 +173,7 @@ mako==1.2.2
     # via alembic
 markupsafe==2.1.2
     # via
+    #   flask-debugtoolbar
     #   flask-security-too
     #   jinja2
     #   mako
@@ -182,6 +183,8 @@ minio==7.0.4
     # via -r requirements.in
 oauthlib==3.2.2
     # via requests-oauthlib
+packaging==23.2
+    # via flask-debugtoolbar
 passlib==1.7.4
     # via flask-security-too
 procfile==0.1.0
