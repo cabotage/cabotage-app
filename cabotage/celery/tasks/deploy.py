@@ -740,7 +740,7 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
 
 def fetch_job_logs(core_api_instance, namespace, job_object):
     label_selector = ",".join(
-        [f"{k}={v}" for k, v in job_object.metadata.labels.items()]
+        [f"{k}={v}" for k, v in job_object.spec.template.metadata.labels.items()]
     )
     logs = {}
     try:

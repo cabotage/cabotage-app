@@ -926,7 +926,7 @@ def image_build_livelogs(ws, image_id):
         return
 
     label_selector = ",".join(
-        [f"{k}={v}" for k, v in job_object.metadata.labels.items()]
+        [f"{k}={v}" for k, v in job_object.spec.template.metadata.labels.items()]
     )
     try:
         pods = core_api_instance.list_namespaced_pod(
@@ -1043,7 +1043,7 @@ def release_build_livelogs(ws, release_id):
         return
 
     label_selector = ",".join(
-        [f"{k}={v}" for k, v in job_object.metadata.labels.items()]
+        [f"{k}={v}" for k, v in job_object.spec.template.metadata.labels.items()]
     )
     try:
         pods = core_api_instance.list_namespaced_pod(
@@ -1121,7 +1121,7 @@ def deployment_livelogs(ws, deployment_id):
         return
 
     label_selector = ",".join(
-        [f"{k}={v}" for k, v in job_object.metadata.labels.items()]
+        [f"{k}={v}" for k, v in job_object.spec.template.metadata.labels.items()]
     )
     try:
         pods = core_api_instance.list_namespaced_pod(
