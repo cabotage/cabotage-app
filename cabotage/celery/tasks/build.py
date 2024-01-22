@@ -92,20 +92,21 @@ def build_release_buildkit(release):
         resource_name=release.repository_name,
         resource_actions=["push", "pull"],
     )
-    buildkitd_toml = toml.dumps(
-        {
-            "registry": {
-                registry: {
-                    "insecure": not registry_secure,
-                    "ca": [
-                        ca
-                        for ca in [registry_ca]
-                        if registry_secure and not isinstance(ca, bool)
-                    ],
-                }
-            },
-        }
-    )
+    buildkitd_config = {
+        "registry": {
+            registry: {
+                "insecure": not registry_secure,
+                "ca": [
+                    ca
+                    for ca in [registry_ca]
+                    if registry_secure and not isinstance(ca, bool)
+                ],
+            }
+        },
+    }
+    if not registry_secure:
+        buildkitd_config["registry"][registry]["http"] = True
+    buildkitd_toml = toml.dumps(buildkitd_config)
 
     buildctl_command = [
         "buildctl-daemonless.sh",
@@ -554,20 +555,21 @@ def build_image_buildkit(image=None):
         resource_name=image.repository_name,
         resource_actions=["push", "pull"],
     )
-    buildkitd_toml = toml.dumps(
-        {
-            "registry": {
-                registry: {
-                    "insecure": not registry_secure,
-                    "ca": [
-                        ca
-                        for ca in [registry_ca]
-                        if registry_secure and not isinstance(ca, bool)
-                    ],
-                }
-            },
-        }
-    )
+    buildkitd_config = {
+        "registry": {
+            registry: {
+                "insecure": not registry_secure,
+                "ca": [
+                    ca
+                    for ca in [registry_ca]
+                    if registry_secure and not isinstance(ca, bool)
+                ],
+            }
+        },
+    }
+    if not registry_secure:
+        buildkitd_config["registry"][registry]["http"] = True
+    buildkitd_toml = toml.dumps(buildkitd_config)
 
     buildctl_command = [
         "buildctl-daemonless.sh",
