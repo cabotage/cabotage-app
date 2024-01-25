@@ -19,6 +19,7 @@ from flask_sock import Sock
 
 from celery import Celery
 from celery import Task
+from celery.schedules import crontab
 from sentry_sdk.integrations.flask import FlaskIntegration
 from sqlalchemy import MetaData
 
@@ -77,6 +78,13 @@ def celery_init_app(app):
         app.name, broker=app.config["CELERY_BROKER_URL"], task_cls=FlaskTask
     )
     celery_app.set_default()
+    celery_app.conf.beat_schedule = {
+        "pod-reaper": {
+            "task": "cabotage.celery.tasks.maintain.reap_pods",
+            "schedule": crontab(minute="*/5"),
+            "args": None,
+        }
+    }
     app.extensions["celery"] = celery_app
     return celery_app
 

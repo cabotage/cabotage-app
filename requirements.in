@@ -1,6 +1,7 @@
 backoff
 bleach
 celery
+celery-redbeat
 cryptography
 docker
 dockerfile-parse
