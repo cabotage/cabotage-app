@@ -472,7 +472,15 @@ def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
         core_api_instance.connect_get_namespaced_pod_exec,
         pod.metadata.name,
         namespace=pod.metadata.namespace,
-        command=["/bin/bash"],
+        command=[
+            "/bin/sh",
+            "-c",
+            (
+                "export CONSUL_TOKEN=$(cat /var/run/secrets/vault/consul-token) && "
+                "export VAULT_TOKEN=$(cat /var/run/secrets/vault/vault-token) && "
+                "envconsul -config /etc/cabotage/envconsul-shell.hcl /bin/bash"
+            ),
+        ],
         container="web",
         stderr=True,
         stdin=True,
