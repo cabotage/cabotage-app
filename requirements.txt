@@ -152,7 +152,7 @@ hupper==1.10.3
     # via -r requirements.in
 hvac==0.10.14
     # via -r requirements.in
-idna==2.10
+idna==3.7
     # via
     #   email-validator
     #   requests
