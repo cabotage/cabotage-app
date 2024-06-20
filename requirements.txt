@@ -285,7 +285,7 @@ tenacity==8.2.3
     # via celery-redbeat
 toml==0.10.2
     # via -r requirements.in
-tqdm==4.66.1
+tqdm==4.66.3
     # via python-dxf
 typing-extensions==4.7.1
     # via qrcode
