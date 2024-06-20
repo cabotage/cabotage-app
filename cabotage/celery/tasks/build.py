@@ -11,6 +11,8 @@ from base64 import b64encode, b64decode
 import kubernetes
 import toml
 
+from kubernetes.client.rest import ApiException
+
 from tempfile import (
     TemporaryDirectory,
 )
@@ -440,6 +442,40 @@ def _fetch_commit_sha_for_ref(
     return sha
 
 
+def fetch_image_build_cache_volume_claim(core_api_instance, image):
+    volume_claim_name = (
+        "build-image-cache-"
+        f"{image.application.project.organization.slug}-"
+        f"{image.application.project.slug}-"
+        f"{image.application.slug}"
+    )
+    try:
+        volume_claim = core_api_instance.read_namespaced_persistent_volume_claim(
+            volume_claim_name, "default"
+        )
+    except ApiException as exc:
+        if exc.status == 404:
+            volume_claim = core_api_instance.create_namespaced_persistent_volume_claim(
+                "default",
+                kubernetes.client.V1PersistentVolumeClaim(
+                    metadata=kubernetes.client.V1ObjectMeta(
+                        name=volume_claim_name,
+                    ),
+                    spec=kubernetes.client.V1PersistentVolumeClaimSpec(
+                        access_modes=["ReadWriteOncePod"],
+                        resources=kubernetes.client.V1VolumeResourceRequirements(
+                            requests={"storage": "50Gi"},
+                        ),
+                    ),
+                ),
+            )
+        else:
+            raise BuildError(
+                f"Unexpected exception fetching PersistentVolumeClaim/{volume_claim_name}: {exc}"
+            )
+    return volume_claim
+
+
 def build_image_buildkit(image=None):
     secret = current_app.config["REGISTRY_AUTH_SECRET"]
     registry = current_app.config["REGISTRY_BUILD"]
@@ -613,6 +649,13 @@ def build_image_buildkit(image=None):
 
     try:
         if current_app.config["KUBERNETES_ENABLED"]:
+            api_client = kubernetes_ext.kubernetes_client
+            core_api_instance = kubernetes.client.CoreV1Api(api_client)
+            batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+            # Create PersistentVolumeClaim
+            volume_claim = fetch_image_build_cache_volume_claim(
+                core_api_instance, image
+            )
             if image.application.github_repository_is_private:
                 buildctl_args.append("--secret")
                 buildctl_args.append(
@@ -680,6 +723,9 @@ def build_image_buildkit(image=None):
                         ),
                         spec=kubernetes.client.V1PodSpec(
                             restart_policy="Never",
+                            security_context=kubernetes.client.V1PodSecurityContext(
+                                fs_group=1000,
+                            ),
                             containers=[
                                 kubernetes.client.V1Container(
                                     name="build",
@@ -701,10 +747,6 @@ def build_image_buildkit(image=None):
                                     ),
                                     volume_mounts=[
                                         kubernetes.client.V1VolumeMount(
-                                            mount_path="/home/user/.local/share/buildkit",
-                                            name="buildkitd",
-                                        ),
-                                        kubernetes.client.V1VolumeMount(
                                             mount_path="/home/user/.config/buildkit",
                                             name="buildkitd-toml",
                                         ),
@@ -716,14 +758,14 @@ def build_image_buildkit(image=None):
                                             mount_path="/home/user/.secret",
                                             name="build-secrets",
                                         ),
+                                        kubernetes.client.V1VolumeMount(
+                                            mount_path="/home/user/.local/share/buildkit",
+                                            name="build-cache",
+                                        ),
                                     ],
                                 ),
                             ],
                             volumes=[
-                                kubernetes.client.V1Volume(
-                                    name="buildkitd",
-                                    empty_dir=kubernetes.client.V1EmptyDirVolumeSource(),
-                                ),
                                 kubernetes.client.V1Volume(
                                     name="buildkitd-toml",
                                     config_map=kubernetes.client.V1ConfigMapVolumeSource(
@@ -760,15 +802,18 @@ def build_image_buildkit(image=None):
                                         ],
                                     ),
                                 ),
+                                kubernetes.client.V1Volume(
+                                    name="build-cache",
+                                    persistent_volume_claim=kubernetes.client.V1PersistentVolumeClaimVolumeSource(
+                                        claim_name=volume_claim.metadata.name
+                                    ),
+                                ),
                             ],
                         ),
                     ),
                 ),
             )
 
-            api_client = kubernetes_ext.kubernetes_client
-            core_api_instance = kubernetes.client.CoreV1Api(api_client)
-            batch_api_instance = kubernetes.client.BatchV1Api(api_client)
             core_api_instance.create_namespaced_config_map(
                 "default", buildkitd_toml_configmap_object
             )

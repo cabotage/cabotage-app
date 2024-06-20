@@ -1280,6 +1280,84 @@ def application_clear_cache(application_id):
     application_slug = application.slug
     repository_name = f"cabotage/{organization_slug}/{project_slug}/{application_slug}"
 
+    api_client = kubernetes_ext.kubernetes_client
+    core_api_instance = kubernetes.client.CoreV1Api(api_client)
+    batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+    image = application.images.first()
+    if image is not None and current_app.config["KUBERNETES_ENABLED"]:
+        from cabotage.celery.tasks.deploy import run_job
+        from cabotage.celery.tasks.build import fetch_image_build_cache_volume_claim
+
+        volume_claim = fetch_image_build_cache_volume_claim(core_api_instance, image)
+        job_object = kubernetes.client.V1Job(
+            metadata=kubernetes.client.V1ObjectMeta(
+                name=f"clear-cache-{volume_claim.metadata.name}",
+                labels={
+                    "organization": image.application.project.organization.slug,
+                    "project": image.application.project.slug,
+                    "application": image.application.slug,
+                    "process": "clear-cache",
+                    "resident-job.cabotage.io": "true",
+                },
+            ),
+            spec=kubernetes.client.V1JobSpec(
+                active_deadline_seconds=1800,
+                backoff_limit=0,
+                parallelism=1,
+                completions=1,
+                template=kubernetes.client.V1PodTemplateSpec(
+                    metadata=kubernetes.client.V1ObjectMeta(
+                        labels={
+                            "organization": image.application.project.organization.slug,  # noqa: E501
+                            "project": image.application.project.slug,
+                            "application": image.application.slug,
+                            "process": "clear-cache",
+                            "ca-admission.cabotage.io": "true",
+                            "resident-pod.cabotage.io": "true",
+                        },
+                    ),
+                    spec=kubernetes.client.V1PodSpec(
+                        restart_policy="Never",
+                        security_context=kubernetes.client.V1PodSecurityContext(
+                            fs_group=1000,
+                        ),
+                        containers=[
+                            kubernetes.client.V1Container(
+                                name="clear-cache",
+                                image="busybox",
+                                command=["find", "/build-cache", "-delete"],
+                                security_context=kubernetes.client.V1SecurityContext(
+                                    seccomp_profile=kubernetes.client.V1SeccompProfile(
+                                        type="Unconfined",
+                                    ),
+                                    run_as_user=1000,
+                                    run_as_group=1000,
+                                ),
+                                volume_mounts=[
+                                    kubernetes.client.V1VolumeMount(
+                                        mount_path="/build-cache",
+                                        name="build-cache",
+                                    ),
+                                ],
+                            ),
+                        ],
+                        volumes=[
+                            kubernetes.client.V1Volume(
+                                name="build-cache",
+                                persistent_volume_claim=kubernetes.client.V1PersistentVolumeClaimVolumeSource(
+                                    claim_name=volume_claim.metadata.name
+                                ),
+                            ),
+                        ],
+                    ),
+                ),
+            ),
+        )
+
+        job_complete, job_logs = run_job(
+            core_api_instance, batch_api_instance, "default", job_object
+        )
+
     def auth(dxf, response):
         dxf.token = generate_docker_registry_jwt(
             access=[{"type": "repository", "name": repository_name, "actions": ["*"]}]
