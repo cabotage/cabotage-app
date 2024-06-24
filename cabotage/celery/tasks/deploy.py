@@ -549,6 +549,16 @@ def render_podspec(release, process_name, service_account_name):
             )
         )
         restart_policy = "Never"
+    elif process_name.startswith("postdeploy"):
+        init_containers.append(
+            render_cabotage_enroller_container(release, process_name, with_tls=False)
+        )
+        containers.append(
+            render_process_container(
+                release, process_name, datadog_tags, with_tls=False, unix=False
+            )
+        )
+        restart_policy = "Never"
     else:
         init_containers.append(
             render_cabotage_enroller_container(release, process_name, with_tls=False)
@@ -560,7 +570,9 @@ def render_podspec(release, process_name, service_account_name):
         )
 
     if (
-        not process_name.startswith("release")
+        not (
+            process_name.startswith("release") or process_name.startswith("postdeploy")
+        )
         and "DD_API_KEY" in release.configuration_objects
     ):
         try:
@@ -631,6 +643,28 @@ def render_deployment(namespace, release, service_account_name, process_name):
         ),
     )
     return deployment_object
+
+
+def fetch_deployment(
+    apps_api_instance, namespace, release, service_account_name, process_name
+):
+    deployment_object = render_deployment(
+        namespace, release, service_account_name, process_name
+    )
+    deployment = None
+    try:
+        deployment = apps_api_instance.read_namespaced_deployment(
+            deployment_object.metadata.name, namespace
+        )
+    except ApiException as exc:
+        if exc.status == 404:
+            pass
+        else:
+            raise DeployError(
+                "Unexpected exception fetching Deployment/"
+                f"{deployment_object.metadata.name} in {namespace}: {exc}"
+            )
+    return deployment
 
 
 def create_deployment(
@@ -889,6 +923,60 @@ def deploy_release(deployment):
                 service_account.metadata.name,
                 process_name,
             )
+        deploy_log.append("Waiting on deployment to rollout...")
+        time.sleep(1)
+        tries = 0
+        _go = {
+            process_name: False for process_name in deployment.release_object.processes
+        }
+        while True:
+            for process_name in deployment.release_object.processes:
+                process_deployment = fetch_deployment(
+                    apps_api_instance,
+                    namespace.metadata.name,
+                    deployment.release_object,
+                    service_account.metadata.name,
+                    process_name,
+                )
+                for condition in process_deployment.status.conditions:
+                    if condition.type == "Progressing":
+                        if condition.reason in [
+                            "NewReplicaSetCreated",
+                            "FoundNewReplicaSet",
+                            "ReplicaSetUpdated",
+                        ]:
+                            continue
+                        elif condition.reason == "NewReplicaSetAvailable":
+                            _go[process_name] = True
+            tries += 1
+            if all(_go.values()):
+                break
+            if tries > 30:
+                deploy_log.append("Unable to launch replicas in time")
+                deploy_log.append(str(_go))
+                raise DeployError("Unable to launch replicas in time")
+            deploy_log.append(f"Checking again in {max(tries, 5)}")
+            time.sleep(max(tries, 5))
+        for postdeploy_command in deployment.release_object.postdeploy_commands:
+            deploy_log.append(f"Running postdeploy command {postdeploy_command}")
+            job_object = render_job(
+                namespace.metadata.name,
+                deployment.release_object,
+                service_account.metadata.name,
+                postdeploy_command,
+                deployment.job_id,
+            )
+            job_complete, job_logs = run_job(
+                core_api_instance,
+                batch_api_instance,
+                namespace.metadata.name,
+                job_object,
+            )
+            deploy_log.append(job_logs)
+            if not job_complete:
+                raise DeployError(f"Release command {postdeploy_command} failed!")
+            else:
+                deploy_log.append(f"Release command {postdeploy_command} complete!")
         deployment.complete = True
         deploy_log.append(f"Deployment {deployment.id} complete")
     except DeployError as exc:

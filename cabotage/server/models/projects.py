@@ -551,7 +551,7 @@ class Release(db.Model, Timestamp):
         return {
             k: v
             for k, v in self.image_object.processes.items()
-            if not k.startswith("release")
+            if not (k.startswith("release") or k.startswith("postdeploy"))
         }
 
     @property
@@ -560,6 +560,14 @@ class Release(db.Model, Timestamp):
             k: v
             for k, v in self.image_object.processes.items()
             if k.startswith("release")
+        }
+
+    @property
+    def postdeploy_commands(self):
+        return {
+            k: v
+            for k, v in self.image_object.processes.items()
+            if k.startswith("postdeploy")
         }
 
     def docker_pull_credentials(self, secret):
