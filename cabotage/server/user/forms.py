@@ -7,6 +7,7 @@ from flask_wtf import FlaskForm
 from wtforms import (
     BooleanField,
     HiddenField,
+    IntegerField,
     SelectField,
     StringField,
 )
@@ -291,6 +292,11 @@ class EditApplicationSettingsForm(FlaskForm):
                 "GitHub App Installations and Repositories."
             )
         return True
+
+    deployment_timeout = IntegerField(
+        "Deployment Timeout",
+        description=("Timeout (in seconds) when waiting for a deployment to complete"),
+    )
 
     health_check_path = StringField(
         "HTTP Health Check Path",

@@ -17,6 +17,9 @@
         {{ form_field(form.health_check_path) }}
         {{ form_field(form.health_check_host) }}
         <hr>
+        <h2>Deployment Settings</h2>
+        {{ form_field(form.deployment_timeout) }}
+        <hr>
         <h2>Deployment Automation</h2>
         <p><b>Before you begin, you need to install <a href="{{ app_url }}">This Application</a> and grant it access to your desired repo</b></p>
         {{ form_field(form.github_repository) }}

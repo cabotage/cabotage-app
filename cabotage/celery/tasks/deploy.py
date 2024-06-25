@@ -947,7 +947,7 @@ def deploy_release(deployment):
 
         deploy_log.append("Waiting on deployment to rollout...")
         start = time.time()
-        timeout = 180
+        timeout = deployment.release_object.application.deployment_timeout
         _go = {
             process_name: False for process_name in deployment.release_object.processes
         }

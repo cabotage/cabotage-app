@@ -164,6 +164,7 @@ class Application(db.Model, Timestamp):
         lazy="dynamic",
     )
     version_id = db.Column(db.Integer, nullable=False)
+
     github_app_installation_id = db.Column(
         db.Integer,
         nullable=True,
@@ -181,9 +182,15 @@ class Application(db.Model, Timestamp):
         db.Text(),
         nullable=True,
     )
+
     auto_deploy_branch = db.Column(
         db.Text(),
         nullable=True,
+    )
+    deployment_timeout = db.Column(
+        db.Integer,
+        nullable=True,
+        server_default="180",
     )
 
     health_check_path = db.Column(
