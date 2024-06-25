@@ -667,6 +667,27 @@ def fetch_deployment(
     return deployment
 
 
+def _zero_if_none(value):
+    return value if value is not None else 0
+
+
+def deployment_is_complete(
+    apps_api_instance, namespace, release, service_account_name, process_name
+):
+    deployment = fetch_deployment(
+        apps_api_instance, namespace, release, service_account_name, process_name
+    )
+    return (
+        _zero_if_none(deployment.status.updated_replicas)
+        == _zero_if_none(deployment.spec.replicas)
+        and _zero_if_none(deployment.status.replicas)
+        == _zero_if_none(deployment.spec.replicas)
+        and _zero_if_none(deployment.status.available_replicas)
+        == _zero_if_none(deployment.spec.replicas)
+        and deployment.status.observed_generation >= deployment.metadata.generation
+    )
+
+
 def create_deployment(
     apps_api_instance, namespace, release, service_account_name, process_name
 ):
@@ -923,40 +944,33 @@ def deploy_release(deployment):
                 service_account.metadata.name,
                 process_name,
             )
+
         deploy_log.append("Waiting on deployment to rollout...")
-        time.sleep(1)
-        tries = 0
+        start = time.time()
+        timeout = deployment.release_object.application.deployment_timeout
         _go = {
             process_name: False for process_name in deployment.release_object.processes
         }
-        while True:
+        while time.time() - start < timeout:
+            time.sleep(2)
             for process_name in deployment.release_object.processes:
-                process_deployment = fetch_deployment(
+                if deployment_is_complete(
                     apps_api_instance,
                     namespace.metadata.name,
                     deployment.release_object,
                     service_account.metadata.name,
                     process_name,
-                )
-                for condition in process_deployment.status.conditions:
-                    if condition.type == "Progressing":
-                        if condition.reason in [
-                            "NewReplicaSetCreated",
-                            "FoundNewReplicaSet",
-                            "ReplicaSetUpdated",
-                        ]:
-                            continue
-                        elif condition.reason == "NewReplicaSetAvailable":
-                            _go[process_name] = True
-            tries += 1
+                ):
+                    _go[process_name] = True
+                else:
+                    continue
             if all(_go.values()):
                 break
-            if tries > 30:
-                deploy_log.append("Unable to launch replicas in time")
-                deploy_log.append(str(_go))
-                raise DeployError("Unable to launch replicas in time")
-            deploy_log.append(f"Checking again in {max(tries, 5)}")
-            time.sleep(max(tries, 5))
+        else:
+            deploy_log.append("Unable to launch replicas in time")
+            deploy_log.append(str(_go))
+            raise DeployError("Unable to launch replicas in time")
+
         for postdeploy_command in deployment.release_object.postdeploy_commands:
             deploy_log.append(f"Running postdeploy command {postdeploy_command}")
             job_object = render_job(
