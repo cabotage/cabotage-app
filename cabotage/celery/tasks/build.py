@@ -486,7 +486,10 @@ def build_image_buildkit(image=None):
 
     access_token = None
 
-    if image.application.github_repository_is_private:
+    if (
+        image.application.github_repository_is_private
+        or image.application.github_app_installation_id
+    ):
         try:
             auth = GithubAppAuth(github_app.app_id, github_app.app_private_key_pem)
             gi = GithubIntegration(auth=auth)
