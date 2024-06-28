@@ -204,6 +204,12 @@ class Application(db.Model, Timestamp):
         server_default=None,
     )
 
+    privileged = db.Column(
+        db.Boolean,
+        default=False,
+        nullable=False,
+    )
+
     @property
     def release_candidate(self):
         release = Release(
@@ -524,26 +530,26 @@ class Release(db.Model, Timestamp):
                 if c is not None
             ]
         )
-        exec_statement = (
-            "exec {\n"
-            '  command = "/bin/sh"\n'
-            "  env = {\n"
-            '    denylist = ["CONSUL_*", "VAULT_*", "KUBERNETES_*"]\n'
-            "  }\n"
-            "}"
-        )
+        exec_statement = "exec {\n" '  command = "/bin/sh"\n'
+        if not self.application.privileged:
+            exec_statement += (
+                "  env = {\n"
+                '    denylist = ["CONSUL_*", "VAULT_*", "KUBERNETES_*"]\n'
+                "  }\n"
+            )
+        exec_statement += "}"
         configurations["shell"] = "\n".join([exec_statement, environment_statements])
         for proc_name, proc in self.image_object.processes.items():
             custom_env = json.dumps([f"{key}={value}" for key, value in proc["env"]])
-            exec_statement = (
-                "exec {\n"
-                f'  command = {json.dumps(proc["cmd"])}\n'
-                "  env = {\n"
-                f"    custom = {custom_env}\n"
-                '    denylist = ["CONSUL_*", "VAULT_*", "KUBERNETES_*"]\n'
-                "  }\n"
-                "}"
-            )
+            exec_statement = "exec {\n" f'  command = {json.dumps(proc["cmd"])}\n'
+            if not self.application.privileged:
+                exec_statement += (
+                    "  env = {\n"
+                    f"    custom = {custom_env}\n"
+                    '    denylist = ["CONSUL_*", "VAULT_*", "KUBERNETES_*"]\n'
+                    "  }\n"
+                )
+            exec_statement += "}"
             configurations[proc_name] = "\n".join(
                 [exec_statement, environment_statements]
             )
