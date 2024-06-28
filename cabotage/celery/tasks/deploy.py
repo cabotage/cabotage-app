@@ -1238,7 +1238,7 @@ def remove_none(obj):
         return obj
 
 
-@shared_task()
+@shared_task(acks_late=True)
 def run_deploy(deployment_id=None):
     deployment = Deployment.query.filter_by(id=deployment_id).first()
     if deployment is None:
