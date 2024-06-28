@@ -157,6 +157,7 @@ def fetch_service_account(core_api_instance, release):
 
 
 def render_service(release, process_name):
+    namespace = release.application.project.organization.slug
     service_name = (
         f"{release.application.project.slug}-{release.application.slug}-{process_name}"
     )
@@ -177,7 +178,7 @@ def render_service(release, process_name):
                 )
             ],
             selector={
-                "app": f"{release.application.project.slug}-{release.application.slug}",
+                "app": f"{namespace}-{release.application.project.slug}-{release.application.slug}",
                 "process": process_name,
             },
         ),
