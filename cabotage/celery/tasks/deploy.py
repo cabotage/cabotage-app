@@ -223,7 +223,9 @@ def render_cabotage_enroller_container(release, process_name, with_tls=True):
     if with_tls:
         args.append("--fetch-cert")
         args.append(f"--vault-pki-role={role_name}")
-        args.append(f"--service-names={process_name}.{release.application.slug}")
+        args.append(
+            f"--service-names={release.application.project.slug}-{release.application.slug}-{process_name}"
+        )
 
     return kubernetes.client.V1Container(
         name="cabotage-enroller",
