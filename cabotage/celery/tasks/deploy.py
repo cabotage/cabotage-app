@@ -156,6 +156,65 @@ def fetch_service_account(core_api_instance, release):
     return service_account
 
 
+def render_service(release, process_name):
+    service_name = (
+        f"{release.application.project.slug}-{release.application.slug}-{process_name}"
+    )
+    service_object = kubernetes.client.V1Service(
+        metadata=kubernetes.client.V1ObjectMeta(
+            name=service_name,
+            labels={
+                "resident-service.cabotage.io": "true",
+                "app": f"{release.application.project.slug}-{release.application.slug}",
+                "process": process_name,
+            },
+        ),
+        spec=kubernetes.client.V1ServiceSpec(
+            ports=[
+                kubernetes.client.V1ServicePort(
+                    port=8000,
+                    target_port=8000,
+                )
+            ],
+            selector={
+                "app": f"{release.application.project.slug}-{release.application.slug}",
+                "process": process_name,
+            },
+        ),
+    )
+    return service_object
+
+
+def create_service(core_api_instance, release, process_name):
+    namespace = release.application.project.organization.slug
+    service_object = render_service(release, process_name)
+    try:
+        return core_api_instance.create_namespaced_service(namespace, service_object)
+    except Exception as exc:
+        raise DeployError(
+            "Unexpected exception creating Service/"
+            f"{service_object.name} in {namespace}: {exc}"
+        )
+
+
+def fetch_service(core_api_instance, release, process_name):
+    namespace = release.application.project.organization.slug
+    service_name = (
+        f"{release.application.project.slug}-{release.application.slug}-{process_name}"
+    )
+    try:
+        service = core_api_instance.read_namespaced_service(service_name, namespace)
+    except ApiException as exc:
+        if exc.status == 404:
+            service = create_service(core_api_instance, release, process_name)
+        else:
+            raise DeployError(
+                "Unexpected exception fetching Service/"
+                f"{service_name} in {namespace}: {exc}"
+            )
+    return service
+
+
 def render_image_pull_secrets(release):
     registry_auth_secret = current_app.config["REGISTRY_AUTH_SECRET"]
     secret = kubernetes.client.V1Secret(
@@ -897,6 +956,32 @@ def deploy_release(deployment):
         service_account = fetch_service_account(
             core_api_instance, deployment.release_object
         )
+        if any(
+            [
+                process_name.startswith("web")
+                for process_name in deployment.release_object.processes
+            ]
+        ):
+            deploy_log.append("Fetching web Service(s)")
+            for process_name in deployment.release_object.processes:
+                if process_name.startswith("web"):
+                    deploy_log.append(f"Fetching {process_name} Service")
+                    fetch_service(
+                        core_api_instance, deployment.release_object, process_name
+                    )
+        if any(
+            [
+                process_name.startswith("tcp")
+                for process_name in deployment.release_object.processes
+            ]
+        ):
+            deploy_log.append("Fetching tcp Service(s)")
+            for process_name in deployment.release_object.processes:
+                if process_name.startswith("tcp"):
+                    deploy_log.append(f"Fetching {process_name} Service")
+                    fetch_service(
+                        core_api_instance, deployment.release_object, process_name
+                    )
         deploy_log.append("Fetching ImagePullSecrets")
         image_pull_secrets = fetch_image_pull_secrets(
             core_api_instance, deployment.release_object
@@ -1061,6 +1146,30 @@ def fake_deploy_release(deployment):
         f"in Namespace/{namespace.metadata.name}"
     )
     deploy_log.append(yaml.dump(remove_none(service_account.to_dict())))
+    if any(
+        [
+            process_name.startswith("web")
+            for process_name in deployment.release_object.processes
+        ]
+    ):
+        deploy_log.append("Fetching web Service(s)")
+        for process_name in deployment.release_object.processes:
+            if process_name.startswith("web"):
+                deploy_log.append(f"Fetching {process_name} Service")
+                service = render_service(deployment.release_object, process_name)
+                deploy_log.append(yaml.dump(remove_none(service.to_dict())))
+    if any(
+        [
+            process_name.startswith("tcp")
+            for process_name in deployment.release_object.processes
+        ]
+    ):
+        deploy_log.append("Fetching tcp Service(s)")
+        for process_name in deployment.release_object.processes:
+            if process_name.startswith("tcp"):
+                deploy_log.append(f"Fetching {process_name} Service")
+                service = render_service(deployment.release_object, process_name)
+                deploy_log.append(yaml.dump(remove_none(service.to_dict())))
     image_pull_secrets = render_image_pull_secrets(deployment.release_object)
     deploy_log.append(
         f"Creating ImagePullSecrets/{image_pull_secrets.metadata.name} "
