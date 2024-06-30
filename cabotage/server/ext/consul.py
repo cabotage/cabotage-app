@@ -2,6 +2,7 @@ import os
 
 import consul
 
+from cabotage.utils.context import modified_environ
 from flask import g
 
 
@@ -31,14 +32,18 @@ class Consul(object):
         app.teardown_appcontext(self.teardown)
 
     def connect_consul(self):
-        consul_client = consul.Consul(
-            host=self.consul_host,
-            port=self.consul_port,
-            scheme=self.consul_scheme,
-            verify=self.consul_verify,
-            cert=self.consul_cert,
-            token=self.consul_token,
-        )
+        # Ignore default environment variables
+        with modified_environ(
+            "CONSUL_HTTP_ADDR", "CONSUL_HTTP_SSL", "CONSUL_HTTP_SSL_VERIFY"
+        ):
+            consul_client = consul.Consul(
+                host=self.consul_host,
+                port=self.consul_port,
+                scheme=self.consul_scheme,
+                verify=self.consul_verify,
+                cert=self.consul_cert,
+                token=self.consul_token,
+            )
         return consul_client
 
     def teardown(self, exception):
