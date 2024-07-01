@@ -29,7 +29,7 @@ procfile
 psycopg2
 pygithub
 pyjwt
-python-consul
+py-consul
 python-dxf
 qrcode
 redis
