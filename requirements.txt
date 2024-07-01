@@ -36,7 +36,6 @@ celery-redbeat==2.2.0
 certifi==2023.7.22
     # via
     #   kubernetes
-    #   minio
     #   requests
     #   sentry-sdk
 cffi==1.14.5
@@ -68,10 +67,6 @@ deprecated==1.2.14
     # via pygithub
 dnspython==2.6.1
     # via email-validator
-docker==2.7.0
-    # via -r requirements.in
-docker-pycreds==0.4.0
-    # via docker
 dockerfile-parse==2.0.0
     # via -r requirements.in
 dominate==2.7.0
@@ -146,7 +141,7 @@ humanize==3.9.0
     # via flask-humanize
 hupper==1.10.3
     # via -r requirements.in
-hvac==0.10.14
+hvac==2.3.0
     # via -r requirements.in
 idna==3.7
     # via
@@ -180,8 +175,6 @@ markupsafe==2.1.2
     #   sentry-sdk
     #   werkzeug
     #   wtforms
-minio==7.0.4
-    # via -r requirements.in
 oauthlib==3.2.2
     # via
     #   kubernetes
@@ -241,7 +234,6 @@ redis==3.5.3
     #   celery-redbeat
 requests==2.32.3
     # via
-    #   docker
     #   hvac
     #   kubernetes
     #   py-consul
@@ -261,10 +253,7 @@ six==1.16.0
     #   bcrypt
     #   bleach
     #   click-repl
-    #   docker
-    #   docker-pycreds
     #   google-auth
-    #   hvac
     #   kubernetes
     #   python-dateutil
 sqlalchemy==1.4.48
@@ -296,7 +285,6 @@ unidecode==1.2.0
 urllib3==1.26.19
     # via
     #   kubernetes
-    #   minio
     #   requests
     #   sentry-sdk
 vine==5.0.0
@@ -313,9 +301,7 @@ wcwidth==0.2.5
 webencodings==0.5.1
     # via bleach
 websocket-client==1.1.0
-    # via
-    #   docker
-    #   kubernetes
+    # via kubernetes
 werkzeug==3.0.3
     # via
     #   flask

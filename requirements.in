@@ -3,7 +3,6 @@ bleach
 celery
 celery-redbeat
 cryptography
-docker
 dockerfile-parse
 flask
 flask-admin
@@ -24,7 +23,6 @@ gunicorn
 hupper
 hvac
 kubernetes
-minio
 procfile
 psycopg2
 pygithub
