@@ -1,3 +1,5 @@
+.PHONY: default lint reformat start stop rebuild
+
 default:
 	@echo "Call a specific subcommand:"
 	@echo
@@ -14,3 +16,11 @@ lint:
 
 reformat:
 	tox -e reformat
+
+start:
+	docker-compose up --build --detach
+
+rebuild: start
+
+stop:
+	docker-compose down
