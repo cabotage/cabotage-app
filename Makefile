@@ -1,4 +1,8 @@
-.PHONY: default lint reformat start stop rebuild destroy migrate create-admin
+.PHONY: default \
+	lint reformat \
+	start stop rebuild destroy \
+	migrate create-admin \
+	routes
 
 default:
 	@echo "Call a specific subcommand:"
@@ -33,3 +37,6 @@ migrate:
 
 create-admin:
 	docker-compose exec cabotage-app python3 -m cabotage.scripts.create_admin
+
+routes:
+	docker-compose exec cabotage-app python3 -m flask routes
