@@ -59,17 +59,3 @@ Access the application at the address [http://localhost:5000/](http://localhost:
 > ```sh
 > $ python manage.py runserver -h 0.0.0.0 -p 8080
 > ```
-
-### Testing
-
-Without coverage:
-
-```sh
-$ python manage.py test
-```
-
-With coverage:
-
-```sh
-$ python manage.py cov
-```
