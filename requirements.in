@@ -15,7 +15,6 @@ flask-humanize
 flask-mail
 flask-migrate
 flask-nav3
-flask-script
 flask-security-too
 flask-sock
 flask-sqlalchemy
