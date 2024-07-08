@@ -40,3 +40,6 @@ create-admin:
 
 routes:
 	docker-compose exec cabotage-app python3 -m flask routes
+
+requirements/%.txt: requirements/%.in
+	docker compose run --build --rm base pip-compile --generate-hashes --output-file=$@ $(F) $<

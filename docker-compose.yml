@@ -94,30 +94,45 @@ services:
       - "9001:9001"
     volumes:
       - miniodata:/export
-  cabotage-app:
-    build: .
-    image: cabotage-app-web:docker-compose
-    command: hupper -m gunicorn.app.wsgiapp -c gunicorn.conf -w 4 --threads 100 -b 0.0.0.0:8000 cabotage.server.wsgi:app
-    environment:
-      - FLASK_APP=cabotage.server.wsgi
-      - CABOTAGE_DEBUG=True
-      - CABOTAGE_TESTING=True
+  base:
+    build:
+      context: .
+      args:
+        DEVEL: yes
+    image: cabotage-app:docker-compose
+    environment: &base_environment
+      # Runs as `nobody`, override the home directory
+      - PIP_CACHE_DIR=/opt/cabotage-app/src/dev/.pip-cache
+      - PIP_TOOLS_CACHE_DIR=/opt/cabotage-app/src/dev/.pip-tools-cache
+      # Application configuration
       - CABOTAGE_BCRYPT_LOG_ROUNDS=4
-      - CABOTAGE_WTF_CSRF_ENABLED=False
+      - CABOTAGE_DEBUG=True
+      - CABOTAGE_DEBUG_TB_ENABLED=True
+      - CABOTAGE_GITHUB_APP_ID=
+      - CABOTAGE_GITHUB_APP_PRIVATE_KEY=
+      - CABOTAGE_GITHUB_APP_URL=https://github.com/apps/cabotage-local
+      - CABOTAGE_GITHUB_WEBHOOK_SECRET=
+      - CABOTAGE_KUBERNETES_CONTEXT=minikube
+      - CABOTAGE_KUBERNETES_ENABLED=False
+      - CABOTAGE_SECURITY_CONFIRMABLE=False
+      - CABOTAGE_SQLALCHEMY_DATABASE_URI=postgresql://postgres@db/cabotage_dev
+      - CABOTAGE_TESTING=True
       - CABOTAGE_VAULT_DB_CREDS_PATH=database/creds/cabotage
       - CABOTAGE_VAULT_DB_DATABASE_URI=postgresql://postgres@db/cabotage_dev
       - CABOTAGE_VAULT_TOKEN=deadbeef-dead-beef-dead-beefdeadbeef
-      - CABOTAGE_DEBUG_TB_ENABLED=True
-      - CABOTAGE_SECURITY_CONFIRMABLE=False
-      - CABOTAGE_GITHUB_APP_URL=https://github.com/apps/cabotage-local
-      - CABOTAGE_GITHUB_APP_ID=
-      - CABOTAGE_GITHUB_APP_PRIVATE_KEY=
-      - CABOTAGE_GITHUB_WEBHOOK_SECRET=
+      - CABOTAGE_WTF_CSRF_ENABLED=False
+      - C_FORCE_ROOT=1
+      - FLASK_APP=cabotage.server.wsgi
       - KUBECONFIG=/var/run/kube/config
-      - CABOTAGE_KUBERNETES_ENABLED=False
-      - CABOTAGE_KUBERNETES_CONTEXT=minikube
     volumes:
-      - .:/opt/cabotage-app/src
+      - .:/opt/cabotage-app/src:z
+
+  cabotage-app:
+    image: cabotage-app:docker-compose
+    command: hupper -m gunicorn.app.wsgiapp -c gunicorn.conf -w 4 --threads 100 -b 0.0.0.0:8000 cabotage.server.wsgi:app
+    environment: *base_environment
+    volumes:
+      - .:/opt/cabotage-app/src:z
       - $HOME/.kube:/var/run/kube
     ports:
       - "8000:8000"
@@ -125,31 +140,13 @@ services:
       - db
       - redis
       - vault
+
   cabotage-app-worker:
-    image: cabotage-app-web:docker-compose
+    image: cabotage-app:docker-compose
     command: hupper -m celery -A cabotage.celery.worker.celery_app worker -E --loglevel=INFO
-    environment:
-      - C_FORCE_ROOT=1
-      - FLASK_APP=cabotage.server.wsgi
-      - CABOTAGE_DEBUG=True
-      - CABOTAGE_TESTING=True
-      - CABOTAGE_BCRYPT_LOG_ROUNDS=4
-      - CABOTAGE_WTF_CSRF_ENABLED=False
-      - CABOTAGE_SQLALCHEMY_DATABASE_URI=postgresql://postgres@db/cabotage_dev
-      - CABOTAGE_VAULT_DB_CREDS_PATH=database/creds/cabotage
-      - CABOTAGE_VAULT_DB_DATABASE_URI=postgresql://postgres@db/cabotage_dev
-      - CABOTAGE_VAULT_TOKEN=deadbeef-dead-beef-dead-beefdeadbeef
-      - CABOTAGE_DEBUG_TB_ENABLED=True
-      - CABOTAGE_SECURITY_CONFIRMABLE=False
-      - CABOTAGE_GITHUB_APP_URL=https://github.com/apps/cabotage-local
-      - CABOTAGE_GITHUB_APP_ID=
-      - CABOTAGE_GITHUB_APP_PRIVATE_KEY=
-      - CABOTAGE_GITHUB_WEBHOOK_SECRET=
-      - KUBECONFIG=/var/run/kube/config
-      - CABOTAGE_KUBERNETES_ENABLED=False
-      - CABOTAGE_KUBERNETES_CONTEXT=minikube
+    environment: *base_environment
     volumes:
-      - .:/opt/cabotage-app/src
+      - .:/opt/cabotage-app/src:z
       - $HOME/.kube:/var/run/kube
     links:
       - db
