@@ -1,0 +1,4 @@
+#!/bin/bash
+
+black --check --diff .
+ruff check .
