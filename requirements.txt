@@ -33,7 +33,7 @@ celery==5.2.2
     #   celery-redbeat
 celery-redbeat==2.2.0
     # via -r requirements.in
-certifi==2023.7.22
+certifi==2024.7.4
     # via
     #   kubernetes
     #   requests
@@ -133,6 +133,8 @@ flask-wtf==1.2.1
     # via flask-security-too
 google-auth==1.31.0
     # via kubernetes
+greenlet==3.0.3
+    # via sqlalchemy
 gunicorn==22.0.0
     # via -r requirements.in
 h11==0.14.0
