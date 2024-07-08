@@ -1,8 +1,6 @@
 # manage.py
 
 
-import unittest
-
 from urllib.parse import unquote
 
 from flask import url_for
@@ -26,45 +24,6 @@ manager = Manager(app)
 
 # migrations
 manager.add_command("db", MigrateCommand)
-
-
-@manager.command
-def test():
-    """Runs the unit tests without test coverage."""
-    tests = unittest.TestLoader().discover("cabotage/tests", pattern="test*.py")
-    result = unittest.TextTestRunner(verbosity=2).run(tests)
-    if result.wasSuccessful():
-        return 0
-    return 1
-
-
-@manager.command
-def cov():
-    """Runs the unit tests with coverage."""
-    import coverage
-
-    # code coverage
-    COV = coverage.coverage(
-        branch=True,
-        include="cabotage/*",
-        omit=[
-            "cabotage/tests/*",
-            "cabotage/server/config.py",
-            "cabotage/server/*/__init__.py",
-        ],
-    )
-    COV.start()
-    tests = unittest.TestLoader().discover("cabotage/tests")
-    result = unittest.TextTestRunner(verbosity=2).run(tests)
-    if result.wasSuccessful():
-        COV.stop()
-        COV.save()
-        print("Coverage Summary:")
-        COV.report()
-        COV.html_report()
-        COV.erase()
-        return 0
-    return 1
 
 
 @manager.command
