@@ -9,7 +9,7 @@ volumes:
 
 services:
   db:
-    image: postgres:14
+    image: postgres:16
     restart: always
     environment:
       POSTGRES_DB: cabotage_dev
@@ -27,7 +27,7 @@ services:
     volumes:
       - redisdata:/var/lib/redis/
   consul:
-    image: consul:1.14
+    image: hashicorp/consul:1.18
     restart: always
     environment:
       CONSUL_CLIENT_INTERFACE: eth0
@@ -36,7 +36,7 @@ services:
     volumes:
       - consuldata:/consul/data
   vault:
-    image: vault:1.12.3
+    image: hashicorp/vault:1.17
     restart: always
     entrypoint: /bin/sh
     command: /etc/vault/entry.sh
