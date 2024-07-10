@@ -117,8 +117,6 @@ services:
       - CABOTAGE_SECURITY_CONFIRMABLE=False
       - CABOTAGE_SQLALCHEMY_DATABASE_URI=postgresql://postgres@db/cabotage_dev
       - CABOTAGE_TESTING=True
-      - CABOTAGE_VAULT_DB_CREDS_PATH=database/creds/cabotage
-      - CABOTAGE_VAULT_DB_DATABASE_URI=postgresql://postgres@db/cabotage_dev
       - CABOTAGE_VAULT_TOKEN=deadbeef-dead-beef-dead-beefdeadbeef
       - CABOTAGE_WTF_CSRF_ENABLED=False
       - C_FORCE_ROOT=1
