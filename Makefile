@@ -14,13 +14,6 @@ default:
 	@echo
 	@exit 1
 
-lint:
-	tox -e black
-	tox -e ruff
-
-reformat:
-	tox -e reformat
-
 start:
 	docker-compose up --build --detach
 
@@ -40,3 +33,12 @@ create-admin:
 
 routes:
 	docker-compose exec cabotage-app python3 -m flask routes
+
+requirements/%.txt: requirements/%.in
+	docker compose run --build --rm base pip-compile --generate-hashes --output-file=$@ $(F) $<
+
+reformat:
+	docker compose run --build --rm base black .
+
+lint:
+	docker compose run --build --rm base bin/lint

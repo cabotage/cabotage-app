@@ -10,7 +10,14 @@ if not app.config["DEBUG"]:
     exit(1)
 
 with app.app_context():
-    user = User(email="ad@min.com", password="admin", username="admin", admin=True, active=True, fs_uniquifier="admin")
+    user = User(
+        email="ad@min.com",
+        password="admin",
+        username="admin",
+        admin=True,
+        active=True,
+        fs_uniquifier="admin",
+    )
     db.session.add(user)
     db.session.flush()
 

@@ -58,6 +58,16 @@ base application image. For example, changing the dependencies in the
 after making such changes to rebuild images and restart containers.
 
 
+## `make requirements/{base,dev}.txt`
+
+Recompiles dependency files.
+Additional arguments can be passed to pip-compile with `F=`:
+
+```shell
+make requirements/base.txt F='--upgrade-package flask'
+```
+
+
 ### `make stop`
 
 Stops all running containers, but keeps any volumes containing database files,

@@ -1,5 +1,7 @@
 FROM python:3.11-slim-bullseye
 
+ARG DEVEL=no
+
 # By default, Docker has special steps to avoid keeping APT caches in the layers, which
 # is good, but in our case, we're going to mount a special cache volume (kept between
 # builds), so we WANT the cache to persist.
@@ -27,12 +29,12 @@ ENV PATH="/opt/cabotage-app/bin:${PATH}"
 
 RUN pip --no-cache-dir --disable-pip-version-check install --upgrade pip setuptools wheel
 
-WORKDIR /opt/cabotage-app/src/
+COPY requirements /tmp/requirements
 
-COPY requirements.txt requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install -r requirements.txt
+    pip install -r /tmp/requirements/base.txt \
+    $(if [ "$DEVEL" = "yes" ]; then echo '-r /tmp/requirements/dev.txt'; fi)
 
 COPY . /opt/cabotage-app/src/
+WORKDIR /opt/cabotage-app/src/
 
-USER nobody

@@ -1,6 +1,6 @@
 *.swp
 __pycache__
 .DS_Store
-.tox
 /buildanddeploy
 /celerybeat-schedule
+/dev

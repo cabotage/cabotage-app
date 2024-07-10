@@ -1,6 +1,6 @@
 /.git
-/.tox
 /.ruff_cache
+/dev
 __pycache__
 .swp
 buildanddeploy
