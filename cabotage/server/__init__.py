@@ -47,7 +47,7 @@ db_metadata = MetaData(
         "pk": "pk_%(table_name)s",
     }
 )
-db = SQLAlchemy(metadata=db_metadata, engine_options={"pool_pre_ping": True})
+db: SQLAlchemy = SQLAlchemy(metadata=db_metadata, engine_options={"pool_pre_ping": True})
 principal = Principal()
 login_manager = LoginManager()
 mail = Mail()

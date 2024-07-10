@@ -84,7 +84,7 @@ DEFAULT_POD_CLASS = "m1.large"
 
 
 class Project(db.Model, Timestamp):
-    __versioned__ = {}
+    __versioned__: dict = {}
     __tablename__ = "projects"
 
     def __init__(self, *args, **kwargs):
@@ -115,7 +115,7 @@ class Project(db.Model, Timestamp):
 
 
 class Application(db.Model, Timestamp):
-    __versioned__ = {}
+    __versioned__: dict = {}
     __tablename__ = "project_applications"
 
     id = db.Column(
@@ -362,7 +362,7 @@ class Application(db.Model, Timestamp):
 
 
 class Deployment(db.Model, Timestamp):
-    __versioned__ = {}
+    __versioned__: dict = {}
     __tablename__ = "deployments"
 
     id = db.Column(
@@ -405,7 +405,7 @@ class Deployment(db.Model, Timestamp):
 
 
 class Release(db.Model, Timestamp):
-    __versioned__ = {}
+    __versioned__: dict = {}
     __tablename__ = "project_app_releases"
 
     id = db.Column(
@@ -641,7 +641,7 @@ def release_before_insert_listener(mapper, connection, target):
 
 
 class Configuration(db.Model, Timestamp):
-    __versioned__ = {}
+    __versioned__: dict = {}
     __tablename__ = "project_app_configurations"
 
     id = db.Column(
@@ -708,7 +708,7 @@ class Configuration(db.Model, Timestamp):
 
 
 class Hook(db.Model, Timestamp):
-    __versioned__ = {}
+    __versioned__: dict = {}
     __tablename__ = "hooks"
 
     id = db.Column(
@@ -746,7 +746,7 @@ class Hook(db.Model, Timestamp):
 
 
 class Image(db.Model, Timestamp):
-    __versioned__ = {}
+    __versioned__: dict = {}
     __tablename__ = "project_app_images"
 
     id = db.Column(

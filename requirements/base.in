@@ -1,3 +1,4 @@
+
 backoff
 bleach
 celery
@@ -17,6 +18,7 @@ flask-migrate
 flask-nav3
 flask-security-too
 flask-sock
+urllib3==2.2.2
 flask-sqlalchemy
 gunicorn
 hupper
@@ -24,13 +26,14 @@ hvac
 kubernetes
 procfile
 psycopg2
+py-consul
 pygithub
 pyjwt
-py-consul
 python-dxf
 qrcode
 redis
 sentry-sdk[flask]
+setuptools
 sqlalchemy
 sqlalchemy-citext
 sqlalchemy-continuum

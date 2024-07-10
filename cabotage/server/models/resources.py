@@ -6,7 +6,7 @@ from cabotage.server import db
 
 
 class Resource(db.Model, Timestamp):
-    __versioned__ = {}
+    __versioned__: dict = {}
     __tablename__ = "resources"
 
     id = db.Column(
@@ -31,7 +31,7 @@ class Resource(db.Model, Timestamp):
 
 
 class PostgresResource(Resource):
-    __versioned__ = {}
+    __versioned__: dict = {}
     __tablename__ = "resources_postgres"
 
     id = db.Column(
@@ -49,7 +49,7 @@ class PostgresResource(Resource):
 
 
 class RedisResource(Resource):
-    __versioned__ = {}
+    __versioned__: dict = {}
     __tablename__ = "resources_redis"
 
     id = db.Column(
@@ -67,7 +67,7 @@ class RedisResource(Resource):
 
 
 class IngressResource(Resource):
-    __versioned__ = {}
+    __versioned__: dict = {}
     __tablename__ = "resources_ingress"
 
     id = db.Column(
@@ -85,7 +85,7 @@ class IngressResource(Resource):
 
 
 class CertificateResource(Resource):
-    __versioned__ = {}
+    __versioned__: dict = {}
     __tablename__ = "resources_certificate"
 
     id = db.Column(

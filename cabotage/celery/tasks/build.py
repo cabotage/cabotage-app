@@ -3,7 +3,7 @@ import os
 import re
 import secrets
 import shlex
-import subprocess
+import subprocess # nosec
 
 from celery import shared_task
 from base64 import b64encode, b64decode
@@ -341,7 +341,7 @@ def build_release_buildkit(release):
                 with open(os.path.join(tempdir, ".docker", "config.json"), "w") as f:
                     f.write(dockerconfigjson)
                 try:
-                    completed_subprocess = subprocess.run(
+                    completed_subprocess = subprocess.run( # nosec
                         buildctl_command + buildctl_args,
                         env={"BUILDKIT_HOST": buildkitd_url, "HOME": tempdir},
                         cwd=tempdir,
@@ -872,7 +872,7 @@ def build_image_buildkit(image=None):
                     ) as f:
                         f.write(access_token)
                 try:
-                    completed_subprocess = subprocess.run(
+                    completed_subprocess = subprocess.run( # nosec
                         buildctl_command + buildctl_args,
                         env={"BUILDKIT_HOST": buildkitd_url, "HOME": tempdir},
                         cwd=tempdir,
