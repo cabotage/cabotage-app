@@ -78,7 +78,7 @@ caches, and other persistent state.
 
 Stops all running containers and removes any volumes containing databases and
 other persistent state. This essentially returns the environment to a blank
-state as though you had just cloned the respository.
+state as though you had just cloned the repository.
 
 
 ### `make migrate`
