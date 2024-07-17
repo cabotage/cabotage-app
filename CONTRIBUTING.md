@@ -86,19 +86,11 @@ Make sure to add tests for any new features or improvements made to the code. De
 
 
 ### Code formatting
-Before committing changes, you can lint and reformat your code using [ruff](https://github.com/astral-sh/ruff) and [black](https://github.com/psf/black). To install these tools on your local machine or a virtual environment:
+Before committing changes, you can lint and reformat your code. Please ensure you have [Docker](https://www.docker.com/) and [Compose](https://docs.docker.com/compose/) installed, and then run:
 
 ```sh
-pip install black ruff
-```
-
-You can then run:
-```sh
-# lint
-bin/lint
-
-# format
-black .
+make lint
+make reformat
 ```
 
 
