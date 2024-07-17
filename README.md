@@ -78,7 +78,7 @@ caches, and other persistent state.
 
 Stops all running containers and removes any volumes containing databases and
 other persistent state. This essentially returns the environment to a blank
-state as though you had just cloned the respository.
+state as though you had just cloned the repository.
 
 
 ### `make migrate`
@@ -96,17 +96,24 @@ containers to already be running.
 
 ### `make routes`
 
-Displays all the application's HTTP routes.
+Displays all the application’s HTTP routes.
+
+
+## Testing
+
+We currently have a shortage of test coverage. However, we are working on 
+addressing this. We welcome and appreciate any contributions you can make to 
+assist with this task.
 
 
 ## Contributing
 
-Before committing changes, you can lint and reformat your code using
-[tox](https://tox.wiki/). To install this tool on your local machine or a
-virtual environment:
+Thank you very much for your interest! We have a guide designed for you, 
+please take a moment to read it at [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-```sh
-$ pip install tox
-```
 
-You can then run `make lint` and `make reformat` to check your code.
+## Code of conduct
+
+All participants in the Cabotage project are expected to adhere to the 
+[PSF Code of Conduct](https://policies.python.org/python.org/code-of-conduct/).
+
