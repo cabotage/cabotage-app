@@ -1,5 +1,5 @@
 .PHONY: default \
-	lint reformat \
+	lint reformat type-check security-check \
 	start stop rebuild destroy \
 	migrate create-admin \
 	routes
@@ -42,3 +42,9 @@ reformat:
 
 lint:
 	docker compose run --build --rm base bin/lint
+
+security-check:
+	docker compose run --build --rm base bandit -c pyproject.toml -r .
+
+type-check:
+	docker compose run --build --rm base mypy --config-file pyproject.toml .

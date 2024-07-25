@@ -10,4 +10,5 @@ def post_deployment_status_update(access_token, status_url, state, description):
             "Content-Type": "application/json",
         },
         json={"state": state, "description": description},
+        timeout=10
     )

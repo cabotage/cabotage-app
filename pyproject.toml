@@ -1,0 +1,5 @@
+[tool.bandit]
+exclude_dirs = ["bin", "lib"]
+
+[tool.mypy]
+ignore_missing_imports = true

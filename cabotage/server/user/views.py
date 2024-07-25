@@ -845,8 +845,8 @@ def project_application_configuration_delete(
                 app_slug,
                 configuration,
             )
-        except Exception:
-            pass  # No, we should def not do this
+        except Exception :
+            raise # TODO: Coordinate configuration deletion between db and config_writer
         return redirect(
             url_for(
                 "user.project_application",

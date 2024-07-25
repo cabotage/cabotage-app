@@ -77,6 +77,7 @@ def process_deployment_hook(hook):
                 "Accept": "application/vnd.github.machine-man-preview+json",
                 "Authorization": f"Bearer {bearer_token}",
             },
+            timeout=10
         )
         if "token" not in access_token_response.json():
             print(f"Unable to authenticate for {installation_id}")
@@ -167,6 +168,7 @@ def create_deployment(
                 "auto_merge": False,
                 "environment": environment_string,
             },
+            timeout=10
         )
         print(deployment_response.status_code)
         deployment_response.raise_for_status()
@@ -240,6 +242,7 @@ def process_check_suite_hook(hook):
                 "Accept": "application/vnd.github.machine-man-preview+json",
                 "Authorization": f"Bearer {bearer_token}",
             },
+            timeout=10
         )
         if "token" not in access_token_response.json():
             print(f"Unable to authenticate for {installation_id}")

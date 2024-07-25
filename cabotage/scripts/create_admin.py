@@ -10,7 +10,7 @@ if not app.config["DEBUG"]:
     exit(1)
 
 with app.app_context():
-    user = User(
+    user = User( # nosec
         email="ad@min.com",
         password="admin",
         username="admin",

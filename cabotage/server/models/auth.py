@@ -32,7 +32,7 @@ roles_users = db.Table(
 
 
 class Role(db.Model, FsRoleMixin):
-    __versioned__ = {}
+    __versioned__: dict = {}
     __tablename__ = "roles"
 
     id = db.Column(
@@ -52,7 +52,7 @@ class Role(db.Model, FsRoleMixin):
 
 
 class User(db.Model, FsUserMixin):
-    __versioned__ = {
+    __versioned__: dict = {
         "exclude": ["password"],
     }
     __tablename__ = "users"
@@ -104,7 +104,7 @@ class User(db.Model, FsUserMixin):
 
 
 class Organization(db.Model):
-    __versioned__ = {}
+    __versioned__: dict = {}
     __tablename__ = "organizations"
 
     def __init__(self, *args, **kwargs):
@@ -147,7 +147,7 @@ class Organization(db.Model):
 
 
 class Team(db.Model):
-    __versioned__ = {}
+    __versioned__: dict = {}
     __tablename__ = "teams"
 
     def __init__(self, *args, **kwargs):

@@ -1,23 +1,37 @@
 name: CI
+
 on:
-  - push
-  - pull_request
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
 jobs:
   test:
+    runs-on: ubuntu-latest
     strategy:
       matrix:
+        python-version: [3.11]
         include:
           - name: Lint
-            command: bin/lint
-    runs-on: ubuntu-latest
+            command: make lint
+          - name: Type-Check
+            command: make type-check
+          - name: Security-Check
+            command: make security-check
+
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: 3.11
-    - name: Install dependencies
-      run: |
-        python -m pip install -r requirements/dev.txt
-    - name: Run ${{ matrix.name }}
-      run: ${{ matrix.command }}
+      - uses: actions/checkout@v3
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install tox tox-ignore-env-name-mismatch
+          pip install -r requirements/dev.txt
+      - name: Run ${{ matrix.name }}
+        run: ${{ matrix.command }}

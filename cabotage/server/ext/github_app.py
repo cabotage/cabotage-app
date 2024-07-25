@@ -72,6 +72,7 @@ class GitHubApp(object):
                 "Accept": "application/vnd.github.machine-man-preview+json",
                 "Authorization": f"Bearer {self.bearer_token}",
             },
+            timeout=10
         )
         if "token" not in access_token_response.json():
             print(f"Unable to authenticate for {installation_id}")
