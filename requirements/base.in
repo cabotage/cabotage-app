@@ -1,4 +1,3 @@
-
 backoff
 bleach
 celery
@@ -18,7 +17,6 @@ flask-migrate
 flask-nav3
 flask-security-too
 flask-sock
-urllib3==2.2.2
 flask-sqlalchemy
 gunicorn
 hupper
@@ -39,3 +37,4 @@ sqlalchemy-citext
 sqlalchemy-continuum
 toml
 unidecode
+urllib3
