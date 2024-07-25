@@ -838,15 +838,16 @@ def project_application_configuration_delete(
         )
         db.session.add(activity)
         db.session.commit()
-        try:
-            config_writer.delete_configuration(
-                org_slug,
-                project_slug,
-                app_slug,
-                configuration,
-            )
-        except Exception :
-            raise # TODO: Coordinate configuration deletion between db and config_writer
+        # TODO: Coordinate configuration deletion between db and config_writer
+        # try:
+        #     config_writer.delete_configuration(
+        #         org_slug,
+        #         project_slug,
+        #         app_slug,
+        #         configuration,
+        #     )
+        # except Exception :
+        #     raise
         return redirect(
             url_for(
                 "user.project_application",
