@@ -133,6 +133,8 @@ First of all, :hugs:  thank you for your contribution! Sit back and relax :coffe
 
 As soon as possible, usually within a few weeks, a team member will review your pull request and provide comments.
 
+When addressing our requested changes in the pull request, please push your changes into separate commits instead of overwriting history with rebasing and force-pushing. We use the "squash and merge" merge strategy, so the entire changeset of the pull request will be merged into `main` as a single commit. Force pushing complicates the review process by making changes difficult to track, leaving reviews made for the pull request harder to understand.
+
 
 ## Reporting bugs
 
