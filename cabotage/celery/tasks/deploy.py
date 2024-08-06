@@ -510,10 +510,10 @@ def render_process_container(
     )
 
 
-def render_datadog_container(dd_api_key, datadog_tags):
+def render_datadog_container(dd_image, dd_api_key, datadog_tags):
     return kubernetes.client.V1Container(
         name="dogstatsd-sidecar",
-        image=current_app.config["DATADOG_IMAGE"],
+        image=dd_image,
         image_pull_policy="IfNotPresent",
         env=[
             kubernetes.client.V1EnvVar(name="DD_API_KEY", value=dd_api_key),
@@ -644,8 +644,19 @@ def render_podspec(release, process_name, service_account_name):
             )
         except KeyError:
             print("unable to read DD_API_KEY")
+
+        dd_image = current_app.config["DATADOG_IMAGE"]
+        try:
+            dd_image = release.configuration_objects["DATADOG_IMAGE"].read_value(
+                config_writer
+            )
+        except KeyError:
+            pass
+
         if dd_api_key:
-            containers.append(render_datadog_container(dd_api_key, datadog_tags))
+            containers.append(
+                render_datadog_container(dd_image, dd_api_key, datadog_tags)
+            )
 
     return kubernetes.client.V1PodSpec(
         service_account_name=service_account_name,
