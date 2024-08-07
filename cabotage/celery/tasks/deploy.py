@@ -521,7 +521,7 @@ def render_datadog_container(dd_api_key, datadog_tags):
                 name="DD_HOSTNAME",
                 value_from=kubernetes.client.V1EnvVarSource(
                     field_ref=kubernetes.client.V1ObjectFieldSelector(
-                        api_version="1", field_path="spec.nodeName"
+                        api_version="v1", field_path="spec.nodeName"
                     )
                 ),
             ),
