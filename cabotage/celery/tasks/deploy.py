@@ -517,10 +517,50 @@ def render_datadog_container(dd_api_key, datadog_tags):
         image_pull_policy="IfNotPresent",
         env=[
             kubernetes.client.V1EnvVar(name="DD_API_KEY", value=dd_api_key),
-            kubernetes.client.V1EnvVar(name="DD_LOGS_ENABLED", value="false"),
+            kubernetes.client.V1EnvVar(
+                name="DD_HOSTNAME",
+                value_from=kubernetes.client.V1EnvVarSource(
+                    field_ref=kubernetes.client.V1ObjectFieldSelector(
+                        api_version="1", field_path="spec.nodeName"
+                    )
+                ),
+            ),
             kubernetes.client.V1EnvVar(
                 name="DD_DOGSTATSD_TAGS",
                 value=" ".join([f"{k}:{v}" for k, v in datadog_tags.items()]),
+            ),
+            kubernetes.client.V1EnvVar(
+                name="DD_TAGS",
+                value=" ".join([f"{k}:{v}" for k, v in datadog_tags.items()]),
+            ),
+            kubernetes.client.V1EnvVar(name="DD_USE_DOGSTATSD", value="true"),
+            kubernetes.client.V1EnvVar(name="DD_APM_ENABLED", value="true"),
+            kubernetes.client.V1EnvVar(name="DD_LOGS_ENABLED", value="false"),
+            kubernetes.client.V1EnvVar(name="DD_CONFD_PATH", value="/tmp/null"),
+            kubernetes.client.V1EnvVar(
+                name="DD_AUTOCONF_TEMPLATE_DIR", value="/tmp/null"
+            ),
+            kubernetes.client.V1EnvVar(name="DD_ENABLE_GOHAI", value="false"),
+            kubernetes.client.V1EnvVar(
+                name="DD_COLLECT_KUBERNETES_EVENTS", value="false"
+            ),
+            kubernetes.client.V1EnvVar(
+                name="DD_ENABLE_METADATA_COLLECTION", value="false"
+            ),
+            kubernetes.client.V1EnvVar(name="DD_ENABLE_PAYLOADS_EVENTS", value="true"),
+            kubernetes.client.V1EnvVar(name="DD_ENABLE_PAYLOADS_SERIES", value="true"),
+            kubernetes.client.V1EnvVar(
+                name="DD_ENABLE_PAYLOADS_SERVICE_CHECKS", value="false"
+            ),
+            kubernetes.client.V1EnvVar(
+                name="DD_ENABLE_PAYLOADS_SKETCHES", value="false"
+            ),
+            kubernetes.client.V1EnvVar(
+                name="DD_PROCESS_CONFIG_PROCESS_COLLECTION_ENABLED", value="false"
+            ),
+            kubernetes.client.V1EnvVar(
+                name="DD_AUTOCONFIG_EXCLUDE_FEATURES",
+                value="cloudfoundry cri docker ecsec2 ecsfargate eksfargate kubernetes orchestratorexplorer podman",
             ),
         ],
         resources=kubernetes.client.V1ResourceRequirements(
