@@ -536,9 +536,11 @@ def render_datadog_container(dd_api_key, datadog_tags):
             kubernetes.client.V1EnvVar(name="DD_USE_DOGSTATSD", value="true"),
             kubernetes.client.V1EnvVar(name="DD_APM_ENABLED", value="true"),
             kubernetes.client.V1EnvVar(name="DD_LOGS_ENABLED", value="false"),
-            kubernetes.client.V1EnvVar(name="DD_CONFD_PATH", value="/tmp/null"),
             kubernetes.client.V1EnvVar(
-                name="DD_AUTOCONF_TEMPLATE_DIR", value="/tmp/null"
+                name="DD_CONFD_PATH", value="/tmp/null"  # nosec
+            ),
+            kubernetes.client.V1EnvVar(
+                name="DD_AUTOCONF_TEMPLATE_DIR", value="/tmp/null"  # nosec
             ),
             kubernetes.client.V1EnvVar(name="DD_ENABLE_GOHAI", value="false"),
             kubernetes.client.V1EnvVar(
