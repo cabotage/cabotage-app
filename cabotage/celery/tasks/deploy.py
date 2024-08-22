@@ -1139,8 +1139,11 @@ def deploy_release(deployment):
                 access_token,
                 deployment.deploy_metadata["statuses_url"],
                 "failure",
-                "Deployment failed: {exc}",
+                f"Deployment failed: {exc}",
             )
+        deployment.deploy_log = "\n".join(deploy_log)
+        db.session.commit()
+        return False
     except Exception as exc:
         deployment.error = True
         deployment.error_detail = f"Unexpected Error: {str(exc)}"
@@ -1156,7 +1159,7 @@ def deploy_release(deployment):
                 access_token,
                 deployment.deploy_metadata["statuses_url"],
                 "failure",
-                "Deployment failed: {exc}",
+                f"Deployment failed: {exc}",
             )
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
