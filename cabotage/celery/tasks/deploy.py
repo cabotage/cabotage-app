@@ -1141,6 +1141,9 @@ def deploy_release(deployment):
                 "failure",
                 "Deployment failed: {exc}",
             )
+        deployment.deploy_log = "\n".join(deploy_log)
+        db.session.commit()
+        return False
     except Exception as exc:
         deployment.error = True
         deployment.error_detail = f"Unexpected Error: {str(exc)}"
