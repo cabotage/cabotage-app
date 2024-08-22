@@ -1139,7 +1139,7 @@ def deploy_release(deployment):
                 access_token,
                 deployment.deploy_metadata["statuses_url"],
                 "failure",
-                "Deployment failed: {exc}",
+                f"Deployment failed: {exc}",
             )
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
@@ -1159,7 +1159,7 @@ def deploy_release(deployment):
                 access_token,
                 deployment.deploy_metadata["statuses_url"],
                 "failure",
-                "Deployment failed: {exc}",
+                f"Deployment failed: {exc}",
             )
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
