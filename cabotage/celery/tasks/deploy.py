@@ -1158,7 +1158,7 @@ def deploy_release(deployment):
             post_deployment_status_update(
                 access_token,
                 deployment.deploy_metadata["statuses_url"],
-                "failure",
+                "error",
                 f"Deployment failed: {exc}",
             )
         deployment.deploy_log = "\n".join(deploy_log)
