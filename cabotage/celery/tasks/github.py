@@ -89,7 +89,7 @@ def process_deployment_hook(hook):
         post_deployment_status_update(
             access_token["token"],
             deployment["statuses_url"],
-            "pending",
+            "in_progress",
             "Deployment is starting!",
         )
 
@@ -124,7 +124,7 @@ def process_deployment_hook(hook):
         post_deployment_status_update(
             access_token["token"],
             deployment["statuses_url"],
-            "pending",
+            "in_progress",
             "Image build commencing.",
         )
         return True
@@ -170,7 +170,12 @@ def create_deployment(
             },
             timeout=10,
         )
-        print(deployment_response.status_code)
+        post_deployment_status_update(
+            access_token["token"],
+            deployment_response.json()["statuses_url"],
+            "pending",
+            "Deployment created.",
+        )
         deployment_response.raise_for_status()
     except Exception:
         return False

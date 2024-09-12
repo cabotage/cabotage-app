@@ -987,7 +987,7 @@ def run_image_build(image_id=None, buildkit=False):
             post_deployment_status_update(
                 access_token,
                 image.image_metadata["statuses_url"],
-                "pending",
+                "in_progress",
                 "Image built, Release build commencing.",
             )
         release = image.application.create_release()
@@ -1049,7 +1049,7 @@ def run_release_build(release_id=None):
                 post_deployment_status_update(
                     access_token,
                     release.release_metadata["statuses_url"],
-                    "pending",
+                    "in_progress",
                     "Release built, Deployment commencing.",
                 )
             deployment = Deployment(
