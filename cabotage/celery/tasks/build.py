@@ -947,11 +947,37 @@ def run_image_build(image_id=None, buildkit=False):
     try:
         try:
             build_metadata = build_image_buildkit(image)
+            if (
+                "installation_id" in image.image_metadata
+                and "statuses_url" in image.image_metadata
+            ):
+                access_token = github_app.fetch_installation_access_token(
+                    image.image_metadata["installation_id"]
+                )
+                post_deployment_status_update(
+                    access_token,
+                    image.image_metadata["statuses_url"],
+                    "in_progress",
+                    "Image built, Release build commencing.",
+                )
         except BuildError as exc:
             db.session.add(image)
             image.error = True
             image.error_detail = str(exc)
             db.session.commit()
+            if (
+                "installation_id" in image.image_metadata
+                and "statuses_url" in image.image_metadata
+            ):
+                access_token = github_app.fetch_installation_access_token(
+                    image.image_metadata["installation_id"]
+                )
+                post_deployment_status_update(
+                    access_token,
+                    image.image_metadata["statuses_url"],
+                    "failure",
+                    "Image build failed.",
+                )
             raise
     except Exception:
         raise
@@ -977,19 +1003,6 @@ def run_image_build(image_id=None, buildkit=False):
         and image.image_metadata
         and image.image_metadata.get("auto_deploy", False)
     ):
-        if (
-            "installation_id" in image.image_metadata
-            and "statuses_url" in image.image_metadata
-        ):
-            access_token = github_app.fetch_installation_access_token(
-                image.image_metadata["installation_id"]
-            )
-            post_deployment_status_update(
-                access_token,
-                image.image_metadata["statuses_url"],
-                "in_progress",
-                "Image built, Release build commencing.",
-            )
         release = image.application.create_release()
         release.release_metadata = image.image_metadata
         db.session.add(release)
@@ -1026,19 +1039,6 @@ def run_release_build(release_id=None):
             build_metadata = build_release_buildkit(release)
             release.release_id = build_metadata["release_id"]
             release.built = True
-        except BuildError as exc:
-            release.error = True
-            release.error_detail = str(exc)
-        except Exception:
-            raise
-        db.session.add(release)
-        db.session.commit()
-
-        if (
-            release.built
-            and release.release_metadata
-            and release.release_metadata.get("auto_deploy", False)
-        ):
             if (
                 "installation_id" in release.release_metadata
                 and "statuses_url" in release.release_metadata
@@ -1052,6 +1052,45 @@ def run_release_build(release_id=None):
                     "in_progress",
                     "Release built, Deployment commencing.",
                 )
+        except BuildError as exc:
+            release.error = True
+            release.error_detail = str(exc)
+            if (
+                "installation_id" in release.release_metadata
+                and "statuses_url" in release.release_metadata
+            ):
+                access_token = github_app.fetch_installation_access_token(
+                    release.release_metadata["installation_id"]
+                )
+                post_deployment_status_update(
+                    access_token,
+                    release.release_metadata["statuses_url"],
+                    "failure",
+                    "Release build failed.",
+                )
+        except Exception:
+            if (
+                "installation_id" in release.release_metadata
+                and "statuses_url" in release.release_metadata
+            ):
+                access_token = github_app.fetch_installation_access_token(
+                    release.release_metadata["installation_id"]
+                )
+                post_deployment_status_update(
+                    access_token,
+                    release.release_metadata["statuses_url"],
+                    "error",
+                    "Release build failed.",
+                )
+            raise
+        db.session.add(release)
+        db.session.commit()
+
+        if (
+            release.built
+            and release.release_metadata
+            and release.release_metadata.get("auto_deploy", False)
+        ):
             deployment = Deployment(
                 application_id=release.application.id,
                 release=release.asdict,
