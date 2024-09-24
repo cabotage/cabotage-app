@@ -22,7 +22,6 @@ gunicorn
 hupper
 hvac
 kubernetes
-procfile
 psycopg2
 py-consul
 pygithub

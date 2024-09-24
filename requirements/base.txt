@@ -561,9 +561,6 @@ passlib==1.7.4 \
     --hash=sha256:aa6bca462b8d8bda89c70b382f0c298a20b5560af6cbfa2dce410c0a2fb669f1 \
     --hash=sha256:defd50f72b65c5402ab2c573830a6978e5f202ad0d984793c8dde2c4152ebe04
     # via flask-security-too
-procfile==0.1.0 \
-    --hash=sha256:1cdfff5702e455f72855c747ec8a7546a39f696e4334de0fd35e2a2072684919
-    # via -r requirements/base.in
 prompt-toolkit==3.0.18 \
     --hash=sha256:bf00f22079f5fadc949f42ae8ff7f05702826a97059ffcc6281036ad40ac6f04 \
     --hash=sha256:e1b4f11b9336a28fa11810bc623c357420f69dfdb6d2dac41ca2c21a55c033bc
