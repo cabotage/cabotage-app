@@ -17,8 +17,6 @@ from tempfile import (
     TemporaryDirectory,
 )
 
-import procfile
-
 from dockerfile_parse import DockerfileParser
 from flask import current_app
 from dxf import DXF
@@ -50,6 +48,7 @@ from cabotage.utils.docker_auth import (
 
 from cabotage.utils.release_build_context import RELEASE_DOCKERFILE_TEMPLATE
 from cabotage.utils.github import post_deployment_status_update
+from cabotage.utils import procfile
 
 Activity = activity_plugin.activity_cls
 
@@ -691,7 +690,6 @@ def build_image_buildkit(image=None):
                     "buildkitd.toml": buildkitd_toml,
                 },
             )
-            print(buildctl_command, buildctl_args)
             job_object = kubernetes.client.V1Job(
                 metadata=kubernetes.client.V1ObjectMeta(
                     name=f"imagebuild-{image.build_job_id}",
