@@ -1029,6 +1029,9 @@ def run_release_build(release_id=None):
         if release is None:
             raise KeyError(f"Release with ID {release_id} not found!")
 
+        if release.release_metadata is None:
+            release.release_metadata = {}
+
         release.build_job_id = secrets.token_hex(4)
         db.session.add(release)
         db.session.commit()
