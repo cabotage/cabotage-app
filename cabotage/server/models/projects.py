@@ -377,6 +377,9 @@ class Deployment(db.Model, Timestamp):
         nullable=False,
     )
     release = db.Column(postgresql.JSONB(), nullable=False)
+    is_rollback = db.Column(
+        db.Boolean, nullable=False, default=False, server_default="false"
+    )
     version_id = db.Column(db.Integer, nullable=False)
     complete = db.Column(db.Boolean, nullable=False, default=False)
     error = db.Column(db.Boolean, nullable=False, default=False)
