@@ -10,6 +10,7 @@
             <th>Version</th>
             <th>Built</th>
             <th>Updated</th>
+            <th>Status</th>
             <th style="white-space: nowrap; width: 1%;">Details</th>
           </tr>
           {% for release in releases %}
@@ -26,6 +27,17 @@
             <td><span class="glyphicon glyphicon-question-sign text-info"></span></td>
             {% endif %}
             <td>{{ release.updated |humanize }}</td>
+            {% if release.valid %}
+              {% if release.built %}
+              <td><span class="glyphicon glyphicon glyphicon-ok-sign text-success"></span> Built</td>
+              {% elif release.error %}
+              <td><span class="glyphicon glyphicon-exclamation-sign text-danger"></span> Error</td>
+              {% else %}
+              <td><span class="glyphicon glyphicon-question-sign text-info"></span> Building...</td>
+              {% endif %}
+            {% else %}
+              <td><span class="glyphicon glyphicon-exclamation-sign text-danger"></span> Release Invalid!</td>
+            {% endif %}
             <td><a class="btn btn-info" href="{{ url_for('user.release_detail', release_id=release.id) }}"><span class="glyphicon glyphicon-search"></a></td>
           </tr>
           {% endfor %}
