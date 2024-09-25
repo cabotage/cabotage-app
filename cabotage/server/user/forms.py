@@ -414,6 +414,11 @@ class ReleaseDeployForm(FlaskForm):
         [DataRequired()],
         description="Release to deploy.",
     )
+    is_rollback = BooleanField(
+        "Rollback",
+        [],
+        description="Deployment is a rollback",
+    )
 
 
 class ApplicationScaleForm(FlaskForm):

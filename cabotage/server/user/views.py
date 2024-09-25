@@ -1503,13 +1503,14 @@ def release_deploy(release_id):
         abort(403)
 
     form = ReleaseDeployForm(
-        release_id=release.id
+        release_id=release.id, is_rollback=request.args.get("rollback")
     )
 
     if form.validate_on_submit():
         deployment = Deployment(
             application_id=release.application.id,
             release=release.asdict,
+            is_rollback=form.is_rollback.data,
         )
         db.session.add(deployment)
         db.session.flush()

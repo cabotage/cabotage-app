@@ -61,6 +61,8 @@
             <th>Status</th>
             <th>Started</th>
             <th>Updated</th>
+            <th>Release</th>
+            <th>Options</th>
             <th style="white-space: nowrap; width: 1%;">Details</th>
           </tr>
           {% for deployment in application.recent_deployments %}
@@ -75,6 +77,10 @@
 
             <td>{{ deployment.created |humanize }}</td>
             <td>{{ deployment.updated |humanize }}</td>
+            <td><code>{{ deployment.release_object.version }}</code></td>
+            <td>
+              {% if deployment.release_object.valid and deployment.release_object != application.latest_deployment_completed.release_object %}<a class="btn btn-info" title="Rollback to this release" href="{{ url_for('user.release_deploy', release_id=deployment.release_object.id, rollback=True) }}"><span class="glyphicon glyphicon-repeat"></span></a>{% endif %}
+            </td>
             <td><a class="btn btn-info" href="{{ url_for('user.deployment_detail', deployment_id=deployment.id) }}"><span class="glyphicon glyphicon-search"></a></td>
           </tr>
           {% endfor %}
