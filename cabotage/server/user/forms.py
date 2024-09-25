@@ -411,7 +411,7 @@ class DeleteConfigurationForm(FlaskForm):
 class ReleaseDeployForm(FlaskForm):
     release_id = StringField(
         "Release ID",
-        [InputRequired()],
+        [DataRequired()],
         description="Release to deploy.",
     )
 

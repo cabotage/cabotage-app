@@ -1495,39 +1495,49 @@ def application_scale(application_id):
     )
 
 
-@user_blueprint.route("/release/<release_id>/deploy", methods=["POST"])
+@user_blueprint.route("/release/<release_id>/deploy", methods=["POST", "GET"])
 @login_required
 def release_deploy(release_id):
     release = Release.query.filter_by(id=release_id).first_or_404()
     if not AdministerApplicationPermission(release.application.id).can():
         abort(403)
-    deployment = Deployment(
-        application_id=release.application.id,
-        release=release.asdict,
-    )
-    db.session.add(deployment)
-    db.session.flush()
-    activity = Activity(
-        verb="deploy",
-        object=deployment,
-        data={
-            "user_id": str(current_user.id),
-            "timestamp": datetime.datetime.utcnow().isoformat(),
-        },
-    )
-    db.session.add(activity)
-    db.session.commit()
-    if current_app.config["KUBERNETES_ENABLED"]:
-        deployment_id = deployment.id
-        run_deploy.delay(deployment_id=deployment.id)
-        deployment = Deployment.query.filter_by(id=deployment_id).first_or_404()
-    else:
-        from cabotage.celery.tasks.deploy import fake_deploy_release
 
-        fake_deploy_release(deployment)
-        deployment.complete = True
+    form = ReleaseDeployForm(
+        release_id=release.id
+    )
+
+    if form.validate_on_submit():
+        deployment = Deployment(
+            application_id=release.application.id,
+            release=release.asdict,
+        )
+        db.session.add(deployment)
+        db.session.flush()
+        activity = Activity(
+            verb="deploy",
+            object=deployment,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            },
+        )
+        db.session.add(activity)
         db.session.commit()
-    return redirect(url_for("user.deployment_detail", deployment_id=deployment.id))
+        if current_app.config["KUBERNETES_ENABLED"]:
+            deployment_id = deployment.id
+            run_deploy.delay(deployment_id=deployment.id)
+            deployment = Deployment.query.filter_by(id=deployment_id).first_or_404()
+        else:
+            from cabotage.celery.tasks.deploy import fake_deploy_release
+
+            fake_deploy_release(deployment)
+            deployment.complete = True
+            db.session.commit()
+        return redirect(url_for("user.deployment_detail", deployment_id=deployment.id))
+
+    return render_template(
+        "user/release_deploy.html", deploy_form=form, release=release
+    )
 
 
 @user_blueprint.route("/signing-cert", methods=["GET"])

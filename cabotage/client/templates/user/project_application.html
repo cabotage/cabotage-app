@@ -15,6 +15,7 @@
         {% if application.latest_release.built %}
         <form action="{{ url_for('user.release_deploy', release_id=application.latest_release.id) }}" method="POST" name="deploy_release_form" enctype="multipart/form-data">
           {{ deploy_form.hidden_tag() }}
+          <input class="form-control" id="release_id" name="release_id" required="" type="text" value="{{ application.latest_release.id }}" style="display: none">
           <div class="row">
             <div class="col-md-6">
               {{ form_button(deploy_form.submit, "Do It!", method="POST", class="btn btn-primary") }}

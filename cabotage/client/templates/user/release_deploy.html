@@ -1,0 +1,21 @@
+{% extends "_base.html" %}
+{% from "security/_macros.html" import render_field_with_errors, render_field %}
+{% from "bootstrap/wtf.html" import form_errors, form_field %}
+{% from "bootstrap/utils.html" import form_button %}
+
+{% block content %}
+{% include "security/_messages.html" %}
+<div class="container-fluid clearfix" id="content">
+  <div class="row">
+    <div class="col-md-4 col-md-offset-4 col-sm-8 col-xs-8 col-xs-offset-2 col-sm-offset-2">
+      <h1>Deploy Release</h1>
+      <form action="{{ url_for('user.release_deploy', release_id=release.id) }}" method="POST" name="release_deploy">
+        {{ deploy_form.hidden_tag() }}
+        {{ form_field(deploy_form.release_id, disabled="disabled") }}
+        {{ form_field(deploy_form.is_rollback, disabled=True) }}
+        {{ form_button(deploy_form.submit, "Create", method="POST", class="btn btn-primary") }}
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
