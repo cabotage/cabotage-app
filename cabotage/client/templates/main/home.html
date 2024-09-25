@@ -2,10 +2,35 @@
 
 {% block content %}
 
-<div class="container" id="content">
-  <div class="row">
-    <h1>Welcome!</h1>
-  </div>
-</div>
+    <div class="container" id="content">
+        <div class="row">
+            <h1>Welcome{% if current_user.is_authenticated %} {{ current_user.username }}{% endif %}!</h1>
+        </div>
+        <hr>
+        {% if current_user.is_authenticated %}
+            <h2>Your Organizations</h2>
+            <table class="table">
+                {% for organization in organizations %}
+                    <tr>
+                        <td>
+                            <a href="{{ url_for("user.organization", org_slug=organization.organization.slug) }}">{{ organization.organization.slug }}</a>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </table>
+            <h2>Your Projects</h2>
+            <table class="table">
+                {% for project in projects %}
+                    <tr>
+                        <td>
+                            <a href="{{ url_for("user.project", org_slug=project.organization.slug, project_slug=project.slug) }}">{{ project.organization.slug }}/{{ project.slug }}</a>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </table>
+        {% else %}
+            <p>Please log in to see your organizations and projects.</p>
+        {% endif %}
+    </div>
 
 {% endblock %}
