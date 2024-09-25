@@ -252,13 +252,13 @@ class Application(db.Model, Timestamp):
 
     @property
     def latest_deployment(self):
-        return self.deployments.filter_by().order_by(Deployment.version.desc()).first()
+        return self.deployments.filter_by().order_by(Deployment.created.desc()).first()
 
     @property
     def latest_deployment_completed(self):
         return (
             self.deployments.filter_by(complete=True)
-            .order_by(Deployment.version.desc())
+            .order_by(Deployment.created.desc())
             .first()
         )
 
@@ -266,7 +266,7 @@ class Application(db.Model, Timestamp):
     def latest_deployment_error(self):
         return (
             self.deployments.filter_by(error=True)
-            .order_by(Deployment.version.desc())
+            .order_by(Deployment.created.desc())
             .first()
         )
 
@@ -274,7 +274,7 @@ class Application(db.Model, Timestamp):
     def latest_deployment_running(self):
         return (
             self.deployments.filter_by(complete=False, error=False)
-            .order_by(Deployment.version.desc())
+            .order_by(Deployment.created.desc())
             .first()
         )
 
