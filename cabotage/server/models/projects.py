@@ -629,6 +629,19 @@ class Release(db.Model, Timestamp):
             dockerfile = self.dockerfile
         return configmap_context_for_release(self, dockerfile)
 
+    def compare_to_release(self, other):
+        configuration_diff = DictDiffer(
+            other.asdict.get("configuration", {}),
+            self.asdict.get("configuration", {}),
+            ignored_keys=["id", "version_id"],
+        )
+        image_diff = DictDiffer(
+            other.asdict.get("image", {}),
+            self.asdict.get("image", {}),
+            ignored_keys=["id", "version_id"],
+        )
+        return image_diff, configuration_diff
+
 
 @listens_for(Release, "before_insert")
 def release_before_insert_listener(mapper, connection, target):

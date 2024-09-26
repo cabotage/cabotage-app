@@ -8,12 +8,139 @@
 <div class="container-fluid clearfix" id="content">
   <div class="row">
     <div class="col-md-4 col-md-offset-4 col-sm-8 col-xs-8 col-xs-offset-2 col-sm-offset-2">
-      <h1>Deploy Release</h1>
+      {% if is_rollback %}
+        <h1>Rollback to Release</h1>
+
+        <p>Rolling back from <code>{{ release.application.latest_deployment.release_object.version }}</code> to <code>{{ release.version }}</code>.
+
+        {% set image_diff, config_diff = release.application.latest_deployment.release_object.compare_to_release(release) %}
+        {% if image_diff.has_changes() or config_diff.has_changes() %}
+          <div class="row">
+            <div class="alert alert-info">
+              <p>Rollback will have the following implications:</p>
+            </div>
+          </div>
+          {% if image_diff.has_changes() %}
+          {% set added = image_diff.added() %}
+          {% set removed = image_diff.removed() %}
+          {% set changed = image_diff.changed() %}
+          <div class="row">
+            <h5>Image Changes</h5>
+            <div class="col-md-12">
+              <table class="table">
+                <tr>
+                  <th></th>
+                  <th>Attribute</th>
+                  <th>Operation</th>
+                </tr>
+                {% for image_added in added %}
+                <tr>
+                  <td><span class="glyphicon glyphicon-plus text-success"></span></td>
+                  <td><code>{{ image_added }}</code></td>
+                  <td>Added</td>
+                </tr>
+                {% endfor %}
+                {% for image_changed in changed %}
+                <tr>
+                  <td><span class="glyphicon glyphicon-pencil text-info"></span></td>
+                  <td><code>{{ image_changed }}</code></td>
+                  <td>Edited</td>
+                </tr>
+                {% endfor %}
+                {% for image_removed in removed %}
+                <tr>
+                  <td><span class="glyphicon glyphicon-minus text-danger"></span></rd>
+                  <td><code>{{ image_removed }}</code></td>
+                  <td>Removed</td>
+                </tr>
+                {% endfor %}
+              </table>
+            </div>
+          </div>
+          {% endif %}
+          {% if config_diff.has_changes() %}
+          {% set added = config_diff.added() %}
+          {% set removed = config_diff.removed() %}
+          {% set changed = config_diff.changed() %}
+          <div class="row">
+            <h5>Configuration Changes</h5>
+            <div class="col-md-12">
+              <table class="table">
+                <tr>
+                  <th></th>
+                  <th>Environment Variable</th>
+                  <th>Operation</th>
+                </tr>
+              {% if added %}
+                {% for config_added in added %}
+                <tr>
+                  <td><span class="glyphicon glyphicon-plus text-success"></span></td>
+                  <td><code>{{ config_added }}</code></td>
+                  <td>Added</td>
+                </tr>
+                {% endfor %}
+              {% endif %}
+              {% if removed  %}
+                {% for config_removed in removed %}
+                <tr>
+                  <td><span class="glyphicon glyphicon-minus text-danger"></span></rd>
+                  <td><code>{{ config_removed }}</code></td>
+                  <td>Removed</td>
+                </tr>
+                {% endfor %}
+              {% endif %}
+              {% if changed %}
+                {% for config_changed in changed %}
+                <tr>
+                  <td><span class="glyphicon glyphicon-pencil text-info"></span></td>
+                  <td><code>{{ config_changed }}</code></td>
+                  <td>Edited</td>
+                </tr>
+                {% endfor %}
+              {% endif %}
+              </table>
+            </div>
+          </div>
+          {% endif %}
+        {% endif %}
+
+        {% if release.application.latest_deployment.release_object.release_commands
+           or release.application.latest_deployment.release_object.postdeploy_commands
+           or release.release_commands
+           or release.postdeploy_commands %}
+        <div class="row">
+          <div class="alert alert-warning">
+            <p>This will re-deploy a previous release <b>without</b> running any of the following <code>release</code> or <code>postdeploy</code> targets.</p>
+          </div>
+        </div>
+        <ul>
+           {% if release.application.latest_deployment.release_object.release_commands
+              or release.application.latest_deployment.release_object.postdeploy_commands %}
+           <li>Currently running release (<code>{{ release.application.latest_deployment.release_object.version }}</code>)</li>
+           <ul>
+             {% for command, value in release.application.latest_deployment.release_object.release_commands.items() %}<li>{{ command }}: <code>{{ value.cmd }}</code></li>{% endfor %}
+             {% for command, value in release.application.latest_deployment.release_object.postdeploy_commands.items() %}<li>{{ command }}: <code>{{ value.cmd }}</code></li>{% endfor %}
+           </ul>
+           {% endif %}
+           {% if release.release_commands
+              or release.postdeploy_commands %}
+           <li>Target release (<code>{{ release.version }}</code>)</li>
+           <ul>
+             {% for command, value in release.release_commands.items() %}<li>{{ command }}: <code>{{ value.cmd }}</code></li>{% endfor %}
+             {% for command, value in release.postdeploy_commands.items() %}<li>{{ command }}: <code>{{ value.cmd }}</code></li>{% endfor %}
+           </ul>
+           {% endif %}
+        </ul>
+        {% endif %}
+
+      {% else %}
+        <h1>Deploy Release</h1>
+      {% endif %}
       <form action="{{ url_for('user.release_deploy', release_id=release.id) }}" method="POST" name="release_deploy">
         {{ deploy_form.hidden_tag() }}
         {{ form_field(deploy_form.release_id, disabled="disabled") }}
         {{ form_field(deploy_form.is_rollback, disabled=True) }}
-        {{ form_button(deploy_form.submit, "Create", method="POST", class="btn btn-primary") }}
+        {{ form_button(deploy_form.submit, "Deploy", method="POST", class="btn btn-primary") }}
       </form>
     </div>
   </div>

@@ -1505,6 +1505,7 @@ def release_deploy(release_id):
     form = ReleaseDeployForm(
         release_id=release.id, is_rollback=request.args.get("rollback")
     )
+    form.release_id.data = release.id
 
     if form.validate_on_submit():
         deployment = Deployment(
@@ -1537,7 +1538,10 @@ def release_deploy(release_id):
         return redirect(url_for("user.deployment_detail", deployment_id=deployment.id))
 
     return render_template(
-        "user/release_deploy.html", deploy_form=form, release=release
+        "user/release_deploy.html",
+        deploy_form=form,
+        release=release,
+        is_rollback=request.args.get("rollback"),
     )
 
 
