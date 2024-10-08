@@ -2,7 +2,7 @@
 	lint reformat type-check security-check \
 	start stop rebuild destroy \
 	migrate create-admin \
-	routes
+	routes migrations
 
 default:
 	@echo "Call a specific subcommand:"
@@ -24,6 +24,9 @@ stop:
 
 destroy:
 	docker-compose down --volumes
+
+migrations:
+	docker-compose exec cabotage-app python3 -m flask db revision --autogenerate -m "$(filter-out $@,$(MAKECMDGOALS))"
 
 migrate:
 	docker-compose exec cabotage-app python3 -m flask db upgrade
