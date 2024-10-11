@@ -1,5 +1,8 @@
 name: Publish
-on: [push]
+on:
+  push:
+    branches:
+      - 'main'
 permissions:
   contents: write
   packages: write
@@ -30,6 +33,6 @@ jobs:
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: false
+          push: true
           tags: |
             ghcr.io/cabotage/cabotage-app:latest
