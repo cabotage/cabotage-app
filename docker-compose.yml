@@ -70,7 +70,7 @@ services:
     volumes:
       - ./docker-compose/registry:/etc/docker/registry-local
   cabotage-buildkitd:
-    image: moby/buildkit:v0.13.0-beta1-rootless
+    image: moby/buildkit:v0.17.1-rootless
     command: --addr tcp://0.0.0.0:1234
     restart: always
     ports:
