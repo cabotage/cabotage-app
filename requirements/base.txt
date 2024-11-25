@@ -32,9 +32,9 @@ bcrypt==3.2.0 \
     --hash=sha256:cd1ea2ff3038509ea95f687256c46b79f5fc382ad0aa3664d200047546d511d1 \
     --hash=sha256:cdcdcb3972027f83fe24a48b1e90ea4b584d35f1cc279d76de6fc4b13376239d
     # via flask-bcrypt
-billiard==3.6.4.0 \
-    --hash=sha256:299de5a8da28a783d51b197d496bef4f1595dd023a93a4f59dde1886ae905547 \
-    --hash=sha256:87103ea78fa6ab4d5c751c4909bcff74617d985de7fa8b672cf8618afd5a875b
+billiard==4.2.1 \
+    --hash=sha256:12b641b0c539073fc8d3f5b8b7be998956665c4233c7c1fcd66a7e677c4fb36f \
+    --hash=sha256:40b59a4ac8806ba2c2369ea98d876bc6108b051c227baffd928c644d15d8f3cb
     # via celery
 bleach==6.0.0 \
     --hash=sha256:1a1a85c1595e07d8db14c5f09f09e6433502c51c595970edc090551f0db99414 \
@@ -53,9 +53,9 @@ cachetools==4.2.2 \
     --hash=sha256:2cc0b89715337ab6dbba85b5b50effe2b0c74e035d83ee8ed637cf52f12ae001 \
     --hash=sha256:61b5ed1e22a0924aed1d23b478f37e8d52549ff8a961de2909c69bf950020cff
     # via google-auth
-celery==5.2.2 \
-    --hash=sha256:2844eb040e915398623a43253a8e1016723442ece6b0751a3c416d8a2b34216f \
-    --hash=sha256:5a68a351076cfac4f678fa5ffd898105c28825a2224902da006970005196d061
+celery==5.4.0 \
+    --hash=sha256:369631eb580cf8c51a82721ec538684994f8277637edde2dfc0dacd73ed97f64 \
+    --hash=sha256:504a19140e8d3029d5acad88330c541d4c3f64c789d85f94756762d8bca7e706
     # via
     #   -r requirements/base.in
     #   celery-redbeat
@@ -209,8 +209,9 @@ click==8.1.7 \
     #   click-plugins
     #   click-repl
     #   flask
-click-didyoumean==0.0.3 \
-    --hash=sha256:112229485c9704ff51362fe34b2d4f0b12fc71cc20f6d2b3afabed4b8bfa6aeb
+click-didyoumean==0.3.1 \
+    --hash=sha256:4f82fdff0dbe64ef8ab2279bd6aa3f6a99c3b28c05aa09cbfc07c9d7fbb5a463 \
+    --hash=sha256:5c4bb6007cfea5f2fd6583a2fb6701a22a41eb98957e63d0fac41c10e7c3117c
     # via celery
 click-plugins==1.1.1 \
     --hash=sha256:46ab999744a9d831159c3411bb0c79346d94a444df9a3a3742e9ed63645f264b \
@@ -474,9 +475,9 @@ jwcrypto==1.5.6 \
     --hash=sha256:150d2b0ebbdb8f40b77f543fb44ffd2baeff48788be71f67f03566692fd55789 \
     --hash=sha256:771a87762a0c081ae6166958a954f80848820b2ab066937dc8b8379d65b1b039
     # via python-dxf
-kombu==5.2.4 \
-    --hash=sha256:37cee3ee725f94ea8bb173eaab7c1760203ea53bbebae226328600f9d2799610 \
-    --hash=sha256:8b213b24293d3417bcf0d2f5537b7f756079e3ea232a8386dcc89a59fd2361a4
+kombu==5.4.2 \
+    --hash=sha256:14212f5ccf022fc0a70453bb025a1dcc32782a588c49ea866884047d66e14763 \
+    --hash=sha256:eef572dd2fd9fc614b37580e3caeafdd5af46c1eff31e7fba89138cdb406f2cf
     # via celery
 kubernetes==30.1.0 \
     --hash=sha256:41e4c77af9f28e7a6c314e3bd06a8c6229ddd787cad684e0ab9f69b498e98ebc \
@@ -624,11 +625,12 @@ pypng==0.20220715.0 \
     --hash=sha256:4a43e969b8f5aaafb2a415536c1a8ec7e341cd6a3f957fd5b5f32a4cfeed902c \
     --hash=sha256:739c433ba96f078315de54c0db975aee537cbc3e1d0ae4ed9aab0ca1e427e2c1
     # via qrcode
-python-dateutil==2.8.1 \
-    --hash=sha256:73ebfe9dbf22e832286dafa60473e4cd239f8592f699aa5adaf10050e6e1823c \
-    --hash=sha256:75bb3f31ea686f1197762692a9ee6a7550b59fc6ca3a1f4b5d7e32fb98e2da2a
+python-dateutil==2.9.0.post0 \
+    --hash=sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3 \
+    --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
     # via
     #   alembic
+    #   celery
     #   celery-redbeat
     #   kubernetes
 python-dxf==10.0.0 \
@@ -642,9 +644,7 @@ python-editor==1.0.4 \
 pytz==2023.3 \
     --hash=sha256:1d8ce29db189191fb55338ee6d0387d82ab59f3d00eac103412d64e0ebd0c588 \
     --hash=sha256:a151b3abb88eda1d4e34a9814df37de2a80e301e68ba0fd856fb9b46bfbbbffb
-    # via
-    #   celery
-    #   flask-babel
+    # via flask-babel
 pyyaml==6.0.1 \
     --hash=sha256:04ac92ad1925b2cff1db0cfebffb6ffc43457495c9b3c39d3fcae417d7125dc5 \
     --hash=sha256:062582fca9fabdd2c8b54a3ef1c978d786e0f6b3a1510e0ac93ef59e0ddae2bc \
@@ -822,6 +822,12 @@ typing-extensions==4.7.1 \
     # via
     #   jwcrypto
     #   qrcode
+tzdata==2024.2 \
+    --hash=sha256:7d85cc416e9382e69095b7bdf4afd9e3880418a2413feec7069d533d6b4e31cc \
+    --hash=sha256:a48093786cdcde33cad18c2555e8532f34422074448fbc874186f0abd79565cd
+    # via
+    #   celery
+    #   kombu
 unidecode==1.2.0 \
     --hash=sha256:12435ef2fc4cdfd9cf1035a1db7e98b6b047fe591892e81f34e94959591fad00 \
     --hash=sha256:8d73a97d387a956922344f6b74243c2c6771594659778744b2dbdaad8f6b727d
@@ -834,9 +840,9 @@ urllib3==2.2.2 \
     #   kubernetes
     #   requests
     #   sentry-sdk
-vine==5.0.0 \
-    --hash=sha256:4c9dceab6f76ed92105027c49c823800dd33cacce13bdedc5b914e3514b7fb30 \
-    --hash=sha256:7d3b1624a953da82ef63462013bbd271d3eb75751489f9807598e8f340bd637e
+vine==5.1.0 \
+    --hash=sha256:40fdf3c48b2cfe1c38a49e9ae2da6fda88e4794c810050a728bd7413811fb1dc \
+    --hash=sha256:8b62e981d35c41049211cf62a0a1242d8c1ee9bd15bb196ce38aefd6799e61e0
     # via
     #   amqp
     #   celery
