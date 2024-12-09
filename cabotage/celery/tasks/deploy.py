@@ -345,6 +345,16 @@ def render_cabotage_sidecar_container(release, with_tls=True):
                 name="vault-secrets", mount_path="/var/run/secrets/vault"
             ),
         ],
+        resources=kubernetes.client.V1ResourceRequirements(
+            limits={
+                "memory": "64Mi",
+                "cpu": "20m",
+            },
+            requests={
+                "memory": "32Mi",
+                "cpu": "10m",
+            },
+        ),
     )
 
 
@@ -447,6 +457,16 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
         ],
         liveness_probe=liveness_probe,
         readiness_probe=readiness_probe,
+        resources=kubernetes.client.V1ResourceRequirements(
+            limits={
+                "memory": "32Mi",
+                "cpu": "20m",
+            },
+            requests={
+                "memory": "16Mi",
+                "cpu": "10m",
+            },
+        ),
     )
 
 
@@ -568,11 +588,11 @@ def render_datadog_container(dd_api_key, datadog_tags):
         resources=kubernetes.client.V1ResourceRequirements(
             limits={
                 "memory": "256Mi",
-                "cpu": "150m",
+                "cpu": "50m",
             },
             requests={
                 "memory": "192Mi",
-                "cpu": "75m",
+                "cpu": "25m",
             },
         ),
     )
