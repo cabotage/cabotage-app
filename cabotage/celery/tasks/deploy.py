@@ -347,7 +347,7 @@ def render_cabotage_sidecar_container(release, with_tls=True):
         ],
         resources=kubernetes.client.V1ResourceRequirements(
             limits={
-                "memory": "64Mi",
+                "memory": "48Mi",
                 "cpu": "20m",
             },
             requests={
@@ -459,11 +459,11 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
         readiness_probe=readiness_probe,
         resources=kubernetes.client.V1ResourceRequirements(
             limits={
-                "memory": "32Mi",
+                "memory": "128Mi",
                 "cpu": "20m",
             },
             requests={
-                "memory": "16Mi",
+                "memory": "64Mi",
                 "cpu": "10m",
             },
         ),
