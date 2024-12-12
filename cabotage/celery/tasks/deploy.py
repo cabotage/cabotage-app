@@ -337,6 +337,7 @@ def render_cabotage_sidecar_container(release, with_tls=True):
         args.append(f"--vault-pki-role={role_name}")
     return kubernetes.client.V1Container(
         name="cabotage-sidecar",
+        restart_policy="Always",
         image=current_app.config["SIDECAR_IMAGE"],
         image_pull_policy="IfNotPresent",
         args=args,
@@ -431,6 +432,7 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
         )
     return kubernetes.client.V1Container(
         name="cabotage-sidecar-tls",
+        restart_policy="Always",
         image=current_app.config["SIDECAR_IMAGE"],
         image_pull_policy="IfNotPresent",
         command=["/usr/bin/ghostunnel"],
@@ -533,6 +535,7 @@ def render_process_container(
 def render_datadog_container(dd_api_key, datadog_tags):
     return kubernetes.client.V1Container(
         name="dogstatsd-sidecar",
+        restart_policy="Always",
         image=current_app.config["DATADOG_IMAGE"],
         image_pull_policy="IfNotPresent",
         env=[
@@ -621,6 +624,7 @@ def render_podspec(release, process_name, service_account_name):
     init_containers = []
     containers = []
     restart_policy = None
+
     if process_name.startswith("web"):
         volumes.append(
             kubernetes.client.V1Volume(
@@ -633,8 +637,12 @@ def render_podspec(release, process_name, service_account_name):
         init_containers.append(
             render_cabotage_enroller_container(release, process_name, with_tls=True)
         )
-        containers.append(render_cabotage_sidecar_container(release, with_tls=True))
-        containers.append(render_cabotage_sidecar_tls_container(release, unix=True))
+        init_containers.append(
+            render_cabotage_sidecar_container(release, with_tls=True)
+        )
+        init_containers.append(
+            render_cabotage_sidecar_tls_container(release, unix=True)
+        )
         containers.append(
             render_process_container(
                 release, process_name, datadog_tags, with_tls=True, unix=True
@@ -644,8 +652,10 @@ def render_podspec(release, process_name, service_account_name):
         init_containers.append(
             render_cabotage_enroller_container(release, process_name, with_tls=True)
         )
-        containers.append(render_cabotage_sidecar_container(release, with_tls=True))
-        containers.append(
+        init_containers.append(
+            render_cabotage_sidecar_container(release, with_tls=True)
+        )
+        init_containers.append(
             render_cabotage_sidecar_tls_container(release, unix=False, tcp=True)
         )
         containers.append(
@@ -657,7 +667,9 @@ def render_podspec(release, process_name, service_account_name):
         init_containers.append(
             render_cabotage_enroller_container(release, process_name, with_tls=False)
         )
-        containers.append(render_cabotage_sidecar_container(release, with_tls=False))
+        init_containers.append(
+            render_cabotage_sidecar_container(release, with_tls=False)
+        )
         containers.append(
             render_process_container(
                 release, process_name, datadog_tags, with_tls=False, unix=False
@@ -706,7 +718,7 @@ def render_podspec(release, process_name, service_account_name):
         except KeyError:
             print("unable to read DD_API_KEY")
         if dd_api_key:
-            containers.append(render_datadog_container(dd_api_key, datadog_tags))
+            init_containers.append(render_datadog_container(dd_api_key, datadog_tags))
 
     return kubernetes.client.V1PodSpec(
         service_account_name=service_account_name,
