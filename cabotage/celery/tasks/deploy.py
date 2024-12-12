@@ -856,7 +856,10 @@ def create_deployment(
     else:
         try:
             return apps_api_instance.patch_namespaced_deployment(
-                deployment_object.metadata.name, namespace, deployment_object
+                deployment_object.metadata.name,
+                namespace,
+                deployment_object,
+                field_validation="Ignore",
             )
         except Exception as exc:
             raise DeployError(
