@@ -379,7 +379,6 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
             tcp_socket=kubernetes.client.V1TCPSocketAction(
                 port=8000,
             ),
-            initial_delay_seconds=10,
             period_seconds=3,
             timeout_seconds=2,
         )
@@ -387,7 +386,14 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
             tcp_socket=kubernetes.client.V1TCPSocketAction(
                 port=8000,
             ),
-            initial_delay_seconds=10,
+            period_seconds=3,
+            timeout_seconds=2,
+        )
+        startup_probe = kubernetes.client.V1.Probe(
+            tcp_socket=kubernetes.client.V1TCPSocketAction(
+                port=8000,
+            ),
+            failure_threshold=20,
             period_seconds=3,
             timeout_seconds=2,
         )
@@ -407,7 +413,6 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
                 ),
                 path=release.health_check_path,
             ),
-            initial_delay_seconds=10,
             period_seconds=3,
             timeout_seconds=2,
         )
@@ -426,7 +431,25 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
                 ),
                 path=release.health_check_path,
             ),
-            initial_delay_seconds=10,
+            period_seconds=2,
+            timeout_seconds=1,
+        )
+        startup_probe = kubernetes.client.V1Probe(
+            http_get=kubernetes.client.V1HTTPGetAction(
+                scheme="HTTPS",
+                port=8000,
+                http_headers=(
+                    [
+                        kubernetes.client.V1HTTPHeader(
+                            name="Host", value=release.health_check_host
+                        )
+                    ]
+                    if release.health_check_host
+                    else None
+                ),
+                path=release.health_check_path,
+            ),
+            failure_threshold=20,
             period_seconds=3,
             timeout_seconds=2,
         )
@@ -459,6 +482,7 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
         ],
         liveness_probe=liveness_probe,
         readiness_probe=readiness_probe,
+        startup_probe=startup_probe,
         resources=kubernetes.client.V1ResourceRequirements(
             limits={
                 "memory": "128Mi",
