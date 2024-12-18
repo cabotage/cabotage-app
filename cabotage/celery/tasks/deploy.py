@@ -850,7 +850,7 @@ def create_deployment(
             )
         except Exception as exc:
             raise DeployError(
-                "Unexpected exception fetching Deployment/"
+                "Unexpected exception creating Deployment/"
                 f"{deployment_object.metadata.name} in {namespace}: {exc}"
             )
     else:
@@ -863,7 +863,7 @@ def create_deployment(
             )
         except Exception as exc:
             raise DeployError(
-                "Unexpected exception fetching Deployment/"
+                "Unexpected exception patching Deployment/"
                 f"{deployment_object.metadata.name} in {namespace}: {exc}"
             )
 
