@@ -18,7 +18,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && apt-get install --no-install-recommends -y \
         git build-essential libffi-dev libpq-dev
 
-COPY --from=moby/buildkit:v0.17.1-rootless /usr/bin/buildctl /usr/bin/buildctl
+COPY --from=moby/buildkit:v0.18.2-rootless /usr/bin/buildctl /usr/bin/buildctl
 
 ENV PYTHONUNBUFFERED 1
 
