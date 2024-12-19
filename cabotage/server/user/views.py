@@ -1292,7 +1292,7 @@ def application_clear_cache(application_id):
         volume_claim = fetch_image_build_cache_volume_claim(core_api_instance, image)
         job_object = kubernetes.client.V1Job(
             metadata=kubernetes.client.V1ObjectMeta(
-                name=f"clear-cache-{volume_claim.metadata.name}",
+                name=f"clear-cache-{volume_claim.metadata.name}"[:63],
                 labels={
                     "organization": image.application.project.organization.slug,
                     "project": image.application.project.slug,
