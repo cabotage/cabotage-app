@@ -72,6 +72,7 @@ class Config(metaclass=MetaFlaskEnv):
     REGISTRY_AUTH_SECRET = "v3rys3cur3"  # nosec
     BUILDKITD_URL = "tcp://cabotage-buildkitd:1234"
     BUILDKITD_VERIFY = None
+    BUILDKIT_IMAGE = "moby/buildkit:v0.18.2-rootless"
     CELERY_BROKER_URL = ("redis://redis:6379",)
     CELERY_RESULT_BACKEND = "redis://redis:6379"
     KUBERNETES_ENABLED = False

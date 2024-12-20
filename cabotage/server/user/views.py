@@ -1289,6 +1289,8 @@ def application_clear_cache(application_id):
         from cabotage.celery.tasks.deploy import run_job
         from cabotage.celery.tasks.build import fetch_image_build_cache_volume_claim
 
+        buildkit_image = current_app.config["BUILDKIT_IMAGE"]
+
         volume_claim = fetch_image_build_cache_volume_claim(core_api_instance, image)
         job_object = kubernetes.client.V1Job(
             metadata=kubernetes.client.V1ObjectMeta(
@@ -1316,6 +1318,9 @@ def application_clear_cache(application_id):
                             "ca-admission.cabotage.io": "true",
                             "resident-pod.cabotage.io": "true",
                         },
+                        annotations={
+                            "container.apparmor.security.beta.kubernetes.io/clear-cache": "unconfined",  # noqa: E501
+                        },
                     ),
                     spec=kubernetes.client.V1PodSpec(
                         restart_policy="Never",
@@ -1325,8 +1330,15 @@ def application_clear_cache(application_id):
                         containers=[
                             kubernetes.client.V1Container(
                                 name="clear-cache",
-                                image="busybox",
-                                command=["find", "/build-cache", "-delete"],
+                                image=buildkit_image,
+                                command=["buildctl-daemonless.sh"],
+                                args=["prune", "--all"],
+                                env=[
+                                    kubernetes.client.V1EnvVar(
+                                        name="BUILDKITD_FLAGS",
+                                        value="--oci-worker-no-process-sandbox",  # noqa: E501
+                                    ),
+                                ],
                                 security_context=kubernetes.client.V1SecurityContext(
                                     seccomp_profile=kubernetes.client.V1SeccompProfile(
                                         type="Unconfined",
@@ -1336,7 +1348,7 @@ def application_clear_cache(application_id):
                                 ),
                                 volume_mounts=[
                                     kubernetes.client.V1VolumeMount(
-                                        mount_path="/build-cache",
+                                        mount_path="/home/user/.local/share/buildkit",
                                         name="build-cache",
                                     ),
                                 ],
