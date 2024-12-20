@@ -11,4 +11,8 @@ from .maintain import (
     reap_pods,  # noqa: F401
 )
 
+from .prune_images import (
+    prune_images,  # noqa: F401
+)
+
 from .github import process_github_hook  # noqa: F401
