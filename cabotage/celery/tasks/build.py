@@ -64,6 +64,7 @@ def build_release_buildkit(release):
     registry_ca = current_app.config["REGISTRY_VERIFY"]
     buildkitd_url = current_app.config["BUILDKITD_URL"]
     buildkitd_ca = current_app.config["BUILDKITD_VERIFY"]
+    buildkit_image = current_app.config["BUILDKIT_IMAGE"]
 
     process_commands = "\n".join(
         [
@@ -192,7 +193,7 @@ def build_release_buildkit(release):
                             containers=[
                                 kubernetes.client.V1Container(
                                     name="build",
-                                    image="moby/buildkit:v0.18.2-rootless",
+                                    image=buildkit_image,
                                     command=buildctl_command,
                                     args=buildctl_args,
                                     env=[
@@ -482,6 +483,7 @@ def build_image_buildkit(image=None):
     registry_ca = current_app.config["REGISTRY_VERIFY"]
     buildkitd_url = current_app.config["BUILDKITD_URL"]
     buildkitd_ca = current_app.config["BUILDKITD_VERIFY"]
+    buildkit_image = current_app.config["BUILDKIT_IMAGE"]
 
     access_token = None
 
@@ -730,7 +732,7 @@ def build_image_buildkit(image=None):
                             containers=[
                                 kubernetes.client.V1Container(
                                     name="build",
-                                    image="moby/buildkit:v0.18.2-rootless",
+                                    image=buildkit_image,
                                     command=buildctl_command,
                                     args=buildctl_args,
                                     env=[
