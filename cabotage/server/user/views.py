@@ -47,6 +47,7 @@ from cabotage.server.acl import (
     AdministerProjectPermission,
     AdministerApplicationPermission,
 )
+from cabotage.server.ext.grafana import create_org, create_app_dashboard, create_team
 
 from cabotage.server.models.auth import (
     Organization,
@@ -101,12 +102,21 @@ user_blueprint = Blueprint(
     __name__,
 )
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+
 
 @user_blueprint.route("/organizations")
 @login_required
 def organizations():
+    logger.info("User is viewing organizations.")
     user = current_user
+    logger.info(f"User: {user}")
     organizations = user.organizations
+    logger.info(f"Organizations: {organizations}")
     return render_template("user/organizations.html", organizations=organizations)
 
 
@@ -140,6 +150,10 @@ def organization_create():
         )
         db.session.add(org_create)
         db.session.commit()
+
+        # Grafanafication
+        create_org(organization.name)
+
         return redirect(url_for("user.organization", org_slug=organization.slug))
     return render_template(
         "user/organization_create.html", organization_create_form=form
@@ -184,6 +198,12 @@ def organization_project_create(org_slug):
         )
         db.session.add(activity)
         db.session.commit()
+
+        # Grafanafication
+        print("*"*80)
+        create_team(form.name.data, organization.name)
+        print("*"*80)
+
         return redirect(
             url_for(
                 "user.project",
@@ -548,6 +568,10 @@ def project_application_create(org_slug, project_slug):
         )
         db.session.add(activity)
         db.session.commit()
+
+        # Grafanafication
+        create_app_dashboard(application.name, organization.name, project.name)
+
         return redirect(
             url_for(
                 "user.project_application",
