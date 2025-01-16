@@ -2,8 +2,7 @@ name: Publish
 on:
   push:
     branches:
-      #- 'main'
-      - '*'
+      - 'main'
 permissions:
   contents: write
   packages: write
@@ -32,7 +31,6 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          #push: true
-          push: false
+          push: true
           tags: |
             ghcr.io/cabotage/cabotage-app:latest
