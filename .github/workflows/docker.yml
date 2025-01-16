@@ -54,7 +54,7 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     - name: Create SHA image and push
-      run:
+      run: |
         docker buildx imagetools create \
           --tag ghcr.io/cabotage/cabotage-app:${{ github.sha }} \
           ghcr.io/cabotage/cabotage-app:${{ github.sha }}-amd64 \
