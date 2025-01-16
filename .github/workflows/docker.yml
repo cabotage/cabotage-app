@@ -53,18 +53,16 @@ jobs:
         registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-    - name: Create SHA manifest and push
+    - name: Create SHA image and push
       run:
-        docker manifest create \
-          ghcr.io/cabotage/cabotage-app:${{ github.sha }} \
-          --amend ghcr.io/cabotage/cabotage-app:${{ github.sha }}-amd64 \
-          --amend ghcr.io/cabotage/cabotage-app:${{ github.sha }}-arm64
-        docker manifest push ghcr.io/cabotage/cabotage-app:${{ github.sha }}
+        docker buildx imagetools create \
+          -t ghcr.io/cabotage/cabotage-app:${{ github.sha }} \
+          ghcr.io/cabotage/cabotage-app:${{ github.sha }}-amd64 \
+          ghcr.io/cabotage/cabotage-app:${{ github.sha }}-arm64
 
     - name: Create latest manifest and push
       run: |
-        docker manifest create \
-          ghcr.io/cabotage/cabotage-app:latest \
-          --amend ghcr.io/cabotage/cabotage-app:latest-amd64 \
-          --amend ghcr.io/cabotage/cabotage-app:latest-arm64
-        docker manifest push ghcr.io/cabotage/cabotage-app:latest
+        docker buildx imagetools create \
+          -t ghcr.io/cabotage/cabotage-app:latest \
+          ghcr.io/cabotage/cabotage-app:latest-amd64 \
+          ghcr.io/cabotage/cabotage-app:latest-arm64
