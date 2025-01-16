@@ -11,10 +11,12 @@ jobs:
     concurrency:
       group: release-to-ghcr
       cancel-in-progress: false
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.config.os }}
     strategy:
       matrix:
-        os: [ubuntu-24.04, ubuntu-24.04-arm]
+        config:
+          - { os: ubuntu-24.04, arch: amd64 }
+          - { os: ubuntu-24.04-arm, arch: arm64 }
     steps:
       # Checkout push-to-registry action github repository
       - name: Checkout Push to Registry action
@@ -33,4 +35,36 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/cabotage/cabotage-app:latest
+            ghcr.io/cabotage/cabotage-app:${{ github.sha }}-${{ matrix.config.arch }}
+            ghcr.io/cabotage/cabotage-app:latest-${{ matrix.config.arch }}
+
+    create-manifests:
+      runs-on: ubuntu-24.04-arm
+      needs: [release-to-ghcr]
+
+      steps:
+      - name: Checkout Push to Registry action
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login To GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create SHA manifest and push
+        run:
+          docker manifest create \
+            ghcr.io/cabotage/cabotage-app:${{ github.sha }} \
+            --amend ghcr.io/cabotage/cabotage-app:${{ github.sha }}-amd64 \
+            --amend ghcr.io/cabotage/cabotage-app:${{ github.sha }}-arm64
+          docker manifest push ghcr.io/cabotage/cabotage-app:${{ github.sha }}
+
+      - name: Create latest manifest and push
+        run: |
+          docker manifest create \
+            ghcr.io/cabotage/cabotage-app:latest \
+            --amend ghcr.io/cabotage/cabotage-app:latest-amd64 \
+            --amend ghcr.io/cabotage/cabotage-app:latest-arm64
+          docker manifest push ghcr.io/cabotage/cabotage-app:latest
