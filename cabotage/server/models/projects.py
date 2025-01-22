@@ -138,6 +138,9 @@ class Application(db.Model, Timestamp):
     process_pod_classes = db.Column(
         postgresql.JSONB(), server_default=text("json_object('{}')")
     )
+    process_ingresses = db.Column(
+        postgresql.JSONB(), server_default=text("json_object('{}')")
+    )
 
     images = db.relationship(
         "Image",
@@ -344,6 +347,12 @@ class Application(db.Model, Timestamp):
             .order_by(Image.version.desc())
             .first()
         )
+
+    @property
+    def ingresses(self):
+        return {
+          v["process_name"]: v for v in self.process_ingresses if v["enabled"]
+        }
 
     UniqueConstraint(project_id, slug)
 
@@ -565,6 +574,12 @@ class Release(db.Model, Timestamp):
             k: v
             for k, v in self.image_object.processes.items()
             if not (k.startswith("release") or k.startswith("postdeploy"))
+        }
+
+    @property
+    def web_processes(self):
+        return {
+            k: v for k, v in self.image_object.processes.items() if k.startswith("web")
         }
 
     @property

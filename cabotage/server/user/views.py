@@ -71,6 +71,7 @@ from cabotage.server.user.forms import (
     CreateProjectForm,
     DeleteConfigurationForm,
     EditApplicationSettingsForm,
+    EditIngressForm,
     EditConfigurationForm,
     ReleaseDeployForm,
 )
@@ -792,6 +793,61 @@ def project_application_settings(application_id):
         "user/project_application_settings.html",
         form=form,
         app_url=current_app.config.get("GITHUB_APP_URL", "https://github.com"),
+    )
+
+
+@user_blueprint.route(
+    "/application/<application_id>/ingress/settings/edit", methods=["GET", "POST"]
+)
+@login_required
+def project_ingress_settings(application_id):
+    application = Application.query.filter_by(id=application_id).first_or_404()
+    if not AdministerApplicationPermission(application.id).can():
+        abort(403)
+
+    form = EditIngressForm(ingresses=application.process_ingresses)
+    form.application_id.choices = [
+        (
+            str(application.id),
+            (
+                f"{application.project.organization.slug}/{application.project.slug}: "
+                f"{application.slug}"
+            ),
+        )
+    ]
+    form.application_id.data = str(application.id)
+
+    if form.validate_on_submit():
+        from pprint import pprint as pp
+
+        pp(form.data)
+        application.process_ingresses = form.data["ingresses"]
+        activity = Activity(
+            verb="edit_ingress",
+            object=application,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            },
+        )
+        db.session.add(activity)
+        db.session.commit()
+        return redirect(
+            url_for(
+                "user.project_application",
+                org_slug=application.project.organization.slug,
+                project_slug=application.project.slug,
+                app_slug=application.slug,
+            )
+        )
+
+    if not application.process_ingresses:
+        for process in application.latest_release.web_processes:
+            form.ingresses.append_entry({"process_name": process})
+
+    return render_template(
+        "user/project_ingress_settings.html",
+        form=form,
     )
 
 
