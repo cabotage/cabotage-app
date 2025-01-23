@@ -124,7 +124,7 @@
                 {{ form_button(scale_form.submit, "Update Process Settings", method="POST", class="btn btn-primary pull-right") }}
               </td>
             </tr>
-            {% if application.latest_release.web_processes %}
+            {% if application.latest_release.web_processes and config.INGRESS_DOMAIN %}
             <tr>
               <td colspan=3><a href="{{ url_for('user.project_ingress_settings', application_id=application.id) }}" class="btn btn-primary">Configure Ingress</a></td>
             </tr>

@@ -801,6 +801,9 @@ def project_application_settings(application_id):
 )
 @login_required
 def project_ingress_settings(application_id):
+    if not current_app.config.get("INGRESS_DOMAIN", False):
+        abort(404)
+
     application = Application.query.filter_by(id=application_id).first_or_404()
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
