@@ -352,9 +352,17 @@ class Application(db.Model, Timestamp):
     def ingresses(self):
         return {
             v["process_name"]: v
-            for v in self.process_ingresses
+            for v in (self.process_ingresses if self.process_ingresses else {}).values()
             if v.get("enabled", False)
         }
+
+    def default_ingress_domain(self, process_name):
+        if ingress_domain := current_app.config["INGRESS_DOMAIN"]:
+            return (
+                f"{self.project.organization.slug}-{self.project.slug}-{self.slug}-"
+                f"{process_name}.{ingress_domain}"
+            )
+        return None
 
     UniqueConstraint(project_id, slug)
 

@@ -813,12 +813,10 @@ def project_ingress_settings(application_id):
         for process in application.latest_release.web_processes:
             ingresses.append({"process_name": process})
     else:
-        processes = [k for k, v in application.latest_release.web_processes.items()]
-        configured_ingresses = [
-            i["process_name"] for i in application.process_ingresses
-        ]
-        for ingress in application.process_ingresses:
-            if ingress["process_name"] not in processes:
+        processes = application.latest_release.web_processes.keys()
+        configured_ingresses = application.process_ingresses.keys()
+        for process_name, ingress in application.process_ingresses.items():
+            if process_name not in processes:
                 ingress["deposed"] = True
             ingresses.append(ingress)
         for process_name in processes:
@@ -828,7 +826,8 @@ def project_ingress_settings(application_id):
     form = EditIngressForm(ingresses=ingresses)
 
     if form.validate_on_submit():
-        application.process_ingresses = form.data["ingresses"]
+        ingresses = {i["process_name"]: i for i in form.data["ingresses"]}
+        application.process_ingresses = ingresses
         activity = Activity(
             verb="edit_ingress",
             object=application,

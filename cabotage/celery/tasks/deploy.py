@@ -223,7 +223,23 @@ def render_ingress(release, process_name):
     service_name = (
         f"{release.application.project.slug}-{release.application.slug}-{process_name}"
     )
-    default_ingress_host = f"{release.application.project.organization.slug}-{ingress_name}.{current_app.config['INGRESS_DOMAIN']}"
+    default_ingress_host = release.application.default_ingress_domain(process_name)
+    additional_hosts = [
+        h["hostname"]
+        for h in release.application.process_ingresses.get(process_name, {}).get(
+            "additional_hosts", []
+        )
+        if h.get("hostname")
+    ]
+    hosts = [default_ingress_host] + additional_hosts
+    additional_tls_hosts = [
+        h["hostname"]
+        for h in release.application.process_ingresses.get(process_name, {}).get(
+            "additional_hosts", []
+        )
+        if h.get("tls")
+    ]
+    tls_hosts = [default_ingress_host] + additional_tls_hosts
     tls_secret_name = (
         f"ingress-{release.application.project.organization.slug}-{ingress_name}"
     )
@@ -251,7 +267,7 @@ def render_ingress(release, process_name):
             ingress_class_name="nginx",
             rules=[
                 kubernetes.client.V1IngressRule(
-                    host=default_ingress_host,
+                    host=_host,
                     http=kubernetes.client.V1HTTPIngressRuleValue(
                         paths=[
                             kubernetes.client.V1HTTPIngressPath(
@@ -268,15 +284,14 @@ def render_ingress(release, process_name):
                             )
                         ]
                     ),
-                ),
+                )
+                for _host in hosts
             ],
             tls=[
                 kubernetes.client.V1IngressTLS(
-                    hosts=[
-                        default_ingress_host,
-                    ],
+                    hosts=tls_hosts,
                     secret_name=tls_secret_name,
-                )
+                ),
             ],
         ),
     )
@@ -1354,7 +1369,13 @@ def fake_deploy_release(deployment):
         if current_app.config["INGRESS_DOMAIN"]:
             deploy_log.append("Fetching web Ingress(es)")
             for process_name in deployment.release_object.processes:
-                if process_name.startswith("web"):
+                if process_name.startswith(
+                    "web"
+                ) and deployment.release_object.application.process_ingresses.get(
+                    process_name, {}
+                ).get(
+                    "enabled"
+                ):
                     deploy_log.append(f"Fetching {process_name} Ingress")
                     ingress = render_ingress(deployment.release_object, process_name)
                     deploy_log.append(yaml.dump(remove_none(ingress.to_dict())))
