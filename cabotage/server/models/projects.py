@@ -351,7 +351,9 @@ class Application(db.Model, Timestamp):
     @property
     def ingresses(self):
         return {
-          v["process_name"]: v for v in self.process_ingresses if v["enabled"]
+            v["process_name"]: v
+            for v in self.process_ingresses
+            if v.get("enabled", False)
         }
 
     UniqueConstraint(project_id, slug)

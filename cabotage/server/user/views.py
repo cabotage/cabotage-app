@@ -808,7 +808,24 @@ def project_ingress_settings(application_id):
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
 
-    form = EditIngressForm(ingresses=application.process_ingresses)
+    ingresses = []
+    if not application.process_ingresses:
+        for process in application.latest_release.web_processes:
+            ingresses.append({"process_name": process})
+    else:
+        processes = [k for k, v in application.latest_release.web_processes.items()]
+        configured_ingresses = [
+            i["process_name"] for i in application.process_ingresses
+        ]
+        for ingress in application.process_ingresses:
+            if ingress["process_name"] not in processes:
+                ingress["deposed"] = True
+            ingresses.append(ingress)
+        for process_name in processes:
+            if process_name not in configured_ingresses:
+                ingresses.append({"process_name": process_name})
+
+    form = EditIngressForm(ingresses=ingresses)
 
     if form.validate_on_submit():
         application.process_ingresses = form.data["ingresses"]
@@ -830,10 +847,6 @@ def project_ingress_settings(application_id):
                 app_slug=application.slug,
             )
         )
-
-    if not application.process_ingresses:
-        for process in application.latest_release.web_processes:
-            form.ingresses.append_entry({"process_name": process})
 
     return render_template(
         "user/project_ingress_settings.html",
