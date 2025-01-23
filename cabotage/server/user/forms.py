@@ -331,11 +331,6 @@ class IngressEntryForm(WTFForm):
 
 
 class EditIngressForm(FlaskForm):
-    application_id = SelectField(
-        "Application",
-        [DataRequired()],
-        description="Application these Ingresses belong to.",
-    )
     ingresses = FieldList(FormField(IngressEntryForm))
 
 

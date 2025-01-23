@@ -809,21 +809,8 @@ def project_ingress_settings(application_id):
         abort(403)
 
     form = EditIngressForm(ingresses=application.process_ingresses)
-    form.application_id.choices = [
-        (
-            str(application.id),
-            (
-                f"{application.project.organization.slug}/{application.project.slug}: "
-                f"{application.slug}"
-            ),
-        )
-    ]
-    form.application_id.data = str(application.id)
 
     if form.validate_on_submit():
-        from pprint import pprint as pp
-
-        pp(form.data)
         application.process_ingresses = form.data["ingresses"]
         activity = Activity(
             verb="edit_ingress",
@@ -850,6 +837,7 @@ def project_ingress_settings(application_id):
 
     return render_template(
         "user/project_ingress_settings.html",
+        application=application,
         form=form,
     )
 

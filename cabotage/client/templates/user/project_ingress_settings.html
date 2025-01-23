@@ -9,10 +9,10 @@
   <div class="row">
     <div class="col-md-6 col-md-offset-6 col-sm-8 col-xs-8 col-xs-offset-2 col-sm-offset-2 col-md-offset-3">
       <h1>Ingress Settings</h1>
+      <b>{{ application.project.organization.name }} - {{application.project.name }}/{{ application.name }}</b>
       <hr>
-      <form action="{{ url_for('user.project_ingress_settings', application_id=form.application_id.data) }}" method="POST" name="project_ingress_settings_form">
+      <form action="{{ url_for('user.project_ingress_settings', application_id=application.id) }}" method="POST" name="project_ingress_settings_form">
         {{ form.hidden_tag() }}
-        {{ form_field(form.application_id, disabled="disabled") }}
         {% for ingress_form in form.ingresses %}
             <h3>Process: <code>{{ ingress_form.process_name.data }}</code></h3>
             <div style="display: none;">
