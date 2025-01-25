@@ -14,11 +14,13 @@
       <form action="{{ url_for('user.project_ingress_settings', application_id=application.id) }}" method="POST" name="project_ingress_settings_form">
         {{ form.hidden_tag() }}
         {% for ingress_form in form.ingresses %}
-            <h3>Process: <code>{{ ingress_form.process_name.data }}</code></h3>
-            <div style="display: none;">
-              {{ form_field(ingress_form.process_name) }}
-            </div>
-            {{ form_field(ingress_form.enabled) }}
+          <h3>Process: <code>{{ ingress_form.process_name.data }}</code></h3>
+          <div style="display: none;">
+            {{ form_field(ingress_form.process_name) }}
+          </div>
+          {{ form_field(ingress_form.enabled) }}
+          <div id="{{ ingress_form.id }}-configuration" data-ingress-form-id="{{ ingress_form.id }}" class="ingress-configuration">
+            <p><b>Default Hostname</b>:<br><code>{{ application.default_ingress_domain(ingress_form.process_name.data) }}</code></b></p>
             <b>Additional Hostnames</b>
             <table class="table" id="{{ ingress_form.id }}-hostnames" data-ingress-hostnames={{ ingress_form.additional_hosts.__len__() }}>
               <tr><th>Hostname</th><th>TLS</th><td></td></tr>
@@ -27,6 +29,7 @@
             {% endfor %}
               <tr id="{{ ingress_form.id }}-add-hostname"><td colspan=3><a class="btn add-additional-host-button" data-ingress-id={{ ingress_form.id }} id="addAdditionalHost-{{ ingress_form.id }}">Add another</a></td></tr>
             </table>
+          </div>
         {% endfor %}
         <div class="row">
           <div class="col-md-6">
@@ -51,11 +54,30 @@ rm = function(row) {
   }
 }
 
+toggleConfiguration = function(formId) {
+  console.log('here');
+  let input = document.getElementById(formId + '-enabled');
+  let configuration = document.getElementById(formId + '-configuration');
+  if (input.checked) {
+    configuration.style.display = "";
+  } else {
+    configuration.style.display = "none";
+  }
+}
+
 window.addEventListener('load', function () {
+  console.log('load');
+  document.querySelectorAll(".ingress-configuration").forEach(function(configuration) {
+    const formId = configuration.dataset.ingressFormId;
+    let input = document.getElementById(formId + '-enabled');
+    toggleConfiguration(formId);
+    input.addEventListener('change', function(event) {
+        toggleConfiguration(formId);
+    });
+  });
   document.querySelectorAll(".add-additional-host-button").forEach(function(button) {
     button.onclick = function () {
       const ingressId = button.dataset.ingressId;
-      console.log(ingressId + '-hostnames');
       let table = document.getElementById(ingressId + '-hostnames');
       let target = document.getElementById(ingressId + '-add-hostname');
       let newElement = document.createElement('tr');
@@ -87,7 +109,7 @@ window.addEventListener('load', function () {
 
       table.dataset.ingressHostnames = parseInt(table.dataset.ingressHostnames) + 1;
     };
-  })
+  });
 })
 </script>
 {% endblock %}
