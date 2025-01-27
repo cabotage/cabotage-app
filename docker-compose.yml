@@ -112,6 +112,7 @@ services:
       - CABOTAGE_GITHUB_WEBHOOK_SECRET=
       - CABOTAGE_KUBERNETES_CONTEXT=minikube
       - CABOTAGE_KUBERNETES_ENABLED=False
+      - CABOTAGE_INGRESS_DOMAIN=ingress.cabotage.local
       - CABOTAGE_SECURITY_CONFIRMABLE=False
       - CABOTAGE_SQLALCHEMY_DATABASE_URI=postgresql://postgres@db/cabotage_dev
       - CABOTAGE_TESTING=True

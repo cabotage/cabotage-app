@@ -75,6 +75,7 @@ class Config(metaclass=MetaFlaskEnv):
     BUILDKIT_IMAGE = "moby/buildkit:v0.18.2-rootless"
     CELERY_BROKER_URL = ("redis://redis:6379",)
     CELERY_RESULT_BACKEND = "redis://redis:6379"
+    INGRESS_DOMAIN = None
     KUBERNETES_ENABLED = False
     KUBERNETES_CONTEXT = "cabotage"
     GITHUB_APP_ID = None

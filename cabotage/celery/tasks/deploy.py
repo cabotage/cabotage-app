@@ -216,6 +216,122 @@ def fetch_service(core_api_instance, release, process_name):
     return service
 
 
+def render_ingress(release, process_name):
+    ingress_name = (
+        f"{release.application.project.slug}-{release.application.slug}-{process_name}"
+    )
+    service_name = (
+        f"{release.application.project.slug}-{release.application.slug}-{process_name}"
+    )
+    default_ingress_host = release.application.default_ingress_domain(process_name)
+    additional_hosts = [
+        h["hostname"]
+        for h in release.application.process_ingresses.get(process_name, {}).get(
+            "additional_hosts", []
+        )
+        if h.get("hostname")
+    ]
+    hosts = [default_ingress_host] + additional_hosts
+    additional_tls_hosts = [
+        h["hostname"]
+        for h in release.application.process_ingresses.get(process_name, {}).get(
+            "additional_hosts", []
+        )
+        if h.get("tls")
+    ]
+    tls_hosts = [default_ingress_host] + additional_tls_hosts
+    tls_secret_name = (
+        f"ingress-{release.application.project.organization.slug}-{ingress_name}"
+    )
+    ingress_object = kubernetes.client.V1Ingress(
+        metadata=kubernetes.client.V1ObjectMeta(
+            name=service_name,
+            labels={
+                "resident-service.cabotage.io": "true",
+                "app": f"{release.application.project.slug}-{release.application.slug}",
+                "process": process_name,
+            },
+            annotations={
+                "cert-manager.io/cluster-issuer": "letsencrypt",
+                "nginx.ingress.kubernetes.io/backend-protocol": "HTTPS",
+                "nginx.ingress.kubernetes.io/force-ssl-redirect": "true",
+                "nginx.ingress.kubernetes.io/proxy-connect-timeout": "10s",
+                "nginx.ingress.kubernetes.io/proxy-next-upstream": "error",
+                "nginx.ingress.kubernetes.io/proxy-read-timeout": "10s",
+                "nginx.ingress.kubernetes.io/proxy-request-buffering": "on",
+                "nginx.ingress.kubernetes.io/proxy-send-timeout": "10s",
+                "nginx.ingress.kubernetes.io/service-upstream": "true",
+            },
+        ),
+        spec=kubernetes.client.V1IngressSpec(
+            ingress_class_name="nginx",
+            rules=[
+                kubernetes.client.V1IngressRule(
+                    host=_host,
+                    http=kubernetes.client.V1HTTPIngressRuleValue(
+                        paths=[
+                            kubernetes.client.V1HTTPIngressPath(
+                                backend=kubernetes.client.V1IngressBackend(
+                                    service=kubernetes.client.V1IngressServiceBackend(
+                                        name=service_name,
+                                        port=kubernetes.client.V1ServiceBackendPort(
+                                            number=8000,
+                                        ),
+                                    )
+                                ),
+                                path="/",
+                                path_type="Prefix",
+                            )
+                        ]
+                    ),
+                )
+                for _host in hosts
+            ],
+            tls=[
+                kubernetes.client.V1IngressTLS(
+                    hosts=tls_hosts,
+                    secret_name=tls_secret_name,
+                ),
+            ],
+        ),
+    )
+    return ingress_object
+
+
+def create_ingress(networking_api_instance, release, process_name):
+    namespace = release.application.project.organization.slug
+    ingress_object = render_ingress(release, process_name)
+    try:
+        return networking_api_instance.create_namespaced_ingress(
+            namespace, ingress_object
+        )
+    except Exception as exc:
+        raise DeployError(
+            "Unexpected exception creating Ingress/"
+            f"{ingress_object.name} in {namespace}: {exc}"
+        )
+
+
+def fetch_ingress(networking_api_instance, release, process_name):
+    namespace = release.application.project.organization.slug
+    ingress_name = (
+        f"{release.application.project.slug}-{release.application.slug}-{process_name}"
+    )
+    try:
+        ingress = networking_api_instance.read_namespaced_ingress(
+            ingress_name, namespace
+        )
+    except ApiException as exc:
+        if exc.status == 404:
+            ingress = create_ingress(networking_api_instance, release, process_name)
+        else:
+            raise DeployError(
+                "Unexpected exception fetching Ingress/"
+                f"{ingress_name} in {namespace}: {exc}"
+            )
+    return ingress
+
+
 def render_image_pull_secrets(release):
     registry_auth_secret = current_app.config["REGISTRY_AUTH_SECRET"]
     secret = kubernetes.client.V1Secret(
@@ -1026,6 +1142,7 @@ def deploy_release(deployment):
         core_api_instance = kubernetes.client.CoreV1Api(api_client)
         apps_api_instance = kubernetes.client.AppsV1Api(api_client)
         batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+        networking_api_instance = kubernetes.client.NetworkingV1Api(api_client)
         deploy_log.append("Fetching Namespace")
         namespace = fetch_namespace(core_api_instance, deployment.release_object)
         deploy_log.append("Fetching Cabotage CA Cert ConfigMap")
@@ -1047,6 +1164,16 @@ def deploy_release(deployment):
                     fetch_service(
                         core_api_instance, deployment.release_object, process_name
                     )
+            if current_app.config["INGRESS_DOMAIN"]:
+                deploy_log.append("Fetching web Ingress(es)")
+                for process_name in deployment.release_object.processes:
+                    if process_name.startswith("web"):
+                        deploy_log.append(f"Fetching {process_name} Ingress")
+                        fetch_ingress(
+                            networking_api_instance,
+                            deployment.release_object,
+                            process_name,
+                        )
         if any(
             [
                 process_name.startswith("tcp")
@@ -1239,6 +1366,19 @@ def fake_deploy_release(deployment):
                 deploy_log.append(f"Fetching {process_name} Service")
                 service = render_service(deployment.release_object, process_name)
                 deploy_log.append(yaml.dump(remove_none(service.to_dict())))
+        if current_app.config["INGRESS_DOMAIN"]:
+            deploy_log.append("Fetching web Ingress(es)")
+            for process_name in deployment.release_object.processes:
+                if process_name.startswith(
+                    "web"
+                ) and deployment.release_object.application.process_ingresses.get(
+                    process_name, {}
+                ).get(
+                    "enabled"
+                ):
+                    deploy_log.append(f"Fetching {process_name} Ingress")
+                    ingress = render_ingress(deployment.release_object, process_name)
+                    deploy_log.append(yaml.dump(remove_none(ingress.to_dict())))
     if any(
         [
             process_name.startswith("tcp")

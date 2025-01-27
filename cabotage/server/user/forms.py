@@ -10,6 +10,9 @@ from wtforms import (
     IntegerField,
     SelectField,
     StringField,
+    FieldList,
+    FormField,
+    Form as WTFForm,
 )
 from wtforms.validators import (
     DataRequired,
@@ -314,6 +317,21 @@ class EditApplicationSettingsForm(FlaskForm):
             "Requires a new release to take effect."
         ),
     )
+
+
+class HostEntryForm(WTFForm):
+    hostname = StringField("hostname")
+    tls = BooleanField("tls")
+
+
+class IngressEntryForm(WTFForm):
+    process_name = StringField("process")
+    enabled = BooleanField("Enable Ingress")
+    additional_hosts = FieldList(FormField(HostEntryForm))
+
+
+class EditIngressForm(FlaskForm):
+    ingresses = FieldList(FormField(IngressEntryForm))
 
 
 class EditConfigurationForm(FlaskForm):
