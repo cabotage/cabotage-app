@@ -22,7 +22,7 @@ from flask import current_app
 from dxf import DXF
 from github import Github
 from github.Auth import AppAuth as GithubAppAuth
-from github.GithubException import UnknownObjectException
+from github.GithubException import GithubException, UnknownObjectException
 from github.GithubIntegration import GithubIntegration
 
 from cabotage.celery.tasks.deploy import run_deploy, run_job
@@ -403,6 +403,9 @@ def _fetch_github_file(
         if content_file.encoding == "base64":
             return b64decode(content_file.content).decode()
         return content_file.content
+    except GithubException as e:
+        if e.status == 404:
+            return None
     except UnknownObjectException:
         return None
 
@@ -412,11 +415,17 @@ def _is_imposter_commit(github_repository="owner/repo", *, ref, sha, access_toke
 
     try:
         repo = g.get_repo(github_repository)
+    except GithubException as e:
+        if e.status == 404:
+            return None
     except UnknownObjectException:
         return True
 
     try:
         result = repo.compare(f"refs/heads/{ref}", sha).status
+    except GithubException as e:
+        if e.status == 404:
+            return None
     except UnknownObjectException:
         raise BuildError(f"branch: {ref} does not exist in {github_repository}")
 
@@ -429,6 +438,9 @@ def _fetch_commit_sha_for_ref(
     g = Github(access_token)
     try:
         sha = g.get_repo(github_repository).get_commit(ref).sha
+    except GithubException as e:
+        if e.status == 404:
+            return None
     except UnknownObjectException:
         return None
 
