@@ -379,9 +379,11 @@
               </a>
             </td>
             <td style="white-space: nowrap; width: 1%;">
+              {% if application.configurations|length > 1 %}
               <a class="btn btn-sm btn-danger narrow" href="{{ url_for('user.project_application_configuration_delete', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}">
                 <span class="glyphicon glyphicon-trash"></span>
               </a>
+              {% endif %}
             </td>
           </tr>
           {% endfor %}
