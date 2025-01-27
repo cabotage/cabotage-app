@@ -2,7 +2,7 @@ import kubernetes
 
 RELEASE_DOCKERFILE_TEMPLATE = """
 FROM {registry}/{image.repository_name}:image-{image.version}
-COPY --from=hashicorp/envconsul:0.13.2 /bin/envconsul /usr/bin/envconsul
+COPY --from=hashicorp/envconsul:0.13.3 /bin/envconsul /usr/bin/envconsul
 COPY --chown=root:root --chmod=755 entrypoint.sh /entrypoint.sh
 {process_commands}
 USER nobody
