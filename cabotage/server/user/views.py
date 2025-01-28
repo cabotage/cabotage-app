@@ -534,6 +534,26 @@ def project_application_create(org_slug, project_slug):
         )
         db.session.add(application)
         db.session.flush()
+        configuration = Configuration(
+            application_id=application.id,
+            name="CABOTAGE_SENTINEL",
+            value="at least one environment variable must exist",
+            secret=False,
+            buildtime=False,
+        )
+        try:
+            key_slugs = config_writer.write_configuration(
+                application.project.organization,
+                application.project.slug,
+                application.slug,
+                configuration,
+            )
+        except Exception:
+            raise  # No, we should def not do this
+        configuration.key_slug = key_slugs["config_key_slug"]
+        configuration.build_key_slug = key_slugs["build_key_slug"]
+        db.session.add(configuration)
+        db.session.flush()
         activity = Activity(
             verb="create",
             object=application,
@@ -815,6 +835,9 @@ def project_application_configuration_delete(
     ).first_or_404()
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
+
+    if len(application.configurations) <= 1:
+        abort(400)
 
     if request.method == "GET":
         form = DeleteConfigurationForm(obj=configuration)
