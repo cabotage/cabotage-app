@@ -99,7 +99,7 @@
             </tr>
             {% for process_name in application.latest_release.processes %}
             <tr>
-              <td><code>{{ process_name }}</code></td>
+              <td><code>{{ process_name }}</code>{% if process_name in application.ingresses %} <span class="glyphicon glyphicon-globe text-info"></span>{% endif %}</td>
               <td>
                 <div class="count-input count-input-sm">
                   <a class="incr-btn" data-action="decrease" href="#">–</a>
@@ -119,11 +119,16 @@
               </td>
             </tr>
             {% endfor %}
-            <tr>
+            <tr class="update_process_settings hidden">
               <td colspan=3>
-                {{ form_button(scale_form.submit, "Update Process Settings", method="POST", class="btn btn-primary pull-right update_process_settings hidden") }}
+                {{ form_button(scale_form.submit, "Update Process Settings", method="POST", class="btn btn-primary pull-right") }}
               </td>
             </tr>
+            {% if application.latest_release.web_processes and config.INGRESS_DOMAIN %}
+            <tr>
+              <td colspan=3><a href="{{ url_for('user.project_ingress_settings', application_id=application.id) }}" class="btn btn-primary">Configure Ingress</a></td>
+            </tr>
+            {% endif %}
           </table>
         </form>
         <h3>Release Commands</h3>
