@@ -543,7 +543,7 @@ def project_application_create(org_slug, project_slug):
         )
         try:
             key_slugs = config_writer.write_configuration(
-                application.project.organization,
+                application.project.organization.slug,
                 application.project.slug,
                 application.slug,
                 configuration,
