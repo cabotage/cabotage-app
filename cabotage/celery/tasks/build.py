@@ -740,6 +740,7 @@ def build_image_buildkit(image=None):
                             restart_policy="Never",
                             security_context=kubernetes.client.V1PodSecurityContext(
                                 fs_group=1000,
+                                fs_group_change_policy="OnRootMismatch",
                             ),
                             containers=[
                                 kubernetes.client.V1Container(
@@ -759,7 +760,6 @@ def build_image_buildkit(image=None):
                                         ),
                                         run_as_user=1000,
                                         run_as_group=1000,
-                                        fs_group=1000,
                                     ),
                                     volume_mounts=[
                                         kubernetes.client.V1VolumeMount(
