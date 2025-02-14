@@ -25,7 +25,7 @@ services:
     volumes:
       - redisdata:/var/lib/redis/
   consul:
-    image: hashicorp/consul:1.18
+    image: hashicorp/consul:1.20
     restart: always
     environment:
       CONSUL_CLIENT_INTERFACE: eth0
@@ -34,7 +34,7 @@ services:
     volumes:
       - consuldata:/consul/data
   vault:
-    image: hashicorp/vault:1.17
+    image: hashicorp/vault:1.18
     restart: always
     entrypoint: /bin/sh
     command: /etc/vault/entry.sh
