@@ -114,9 +114,6 @@ def render_service_account(release):
     service_account_object = kubernetes.client.V1ServiceAccount(
         metadata=kubernetes.client.V1ObjectMeta(
             name=service_account_name,
-            labels={
-                "org.pypi.infra.vault-access": "true",
-            },
         ),
     )
     return service_account_object
@@ -154,6 +151,58 @@ def fetch_service_account(core_api_instance, release):
                 f"{service_account_name} in {namespace}: {exc}"
             )
     return service_account
+
+
+def render_cabotage_enrollment(release):
+    cabotage_enrollment_name = (
+        f"{release.application.project.slug}-{release.application.slug}"
+    )
+    cabotage_enrollment_object = {
+        "apiVersion": "cabotage.io/v1",
+        "kind": "CabotageEnrollment",
+        "metadata": {
+            "name": cabotage_enrollment_name,
+        },
+    }
+    return cabotage_enrollment_object
+
+
+def create_cabotage_enrollment(custom_objects_api_instance, release):
+    namespace = release.application.project.organization.slug
+    cabotage_enrollment_object = render_cabotage_enrollment(release)
+    try:
+        return custom_objects_api_instance.create_namespaced_custom_object(
+            "cabotage.io",
+            "v1",
+            namespace,
+            "cabotageenrollments",
+            cabotage_enrollment_object,
+        )
+    except Exception as exc:
+        raise DeployError(
+            "Unexpected exception creating CabotageEnrollment/"
+            f"{cabotage_enrollment_object.name} in {namespace}: {exc}"
+        )
+
+
+def fetch_cabotage_enrollment(custom_objects_api_instance, release):
+    namespace = release.application.project.organization.slug
+    name = f"{release.application.project.slug}-{release.application.slug}"
+    try:
+        cabotage_enrollment = custom_objects_api_instance.get_namespaced_custom_object(
+            "cabotage.io", "v1", namespace, "cabotageenrollments", name
+        )
+    except ApiException as exc:
+        if exc.status == 404:
+            cabotage_enrollment = create_cabotage_enrollment(
+                custom_objects_api_instance, release
+            )
+        else:
+            raise DeployError(
+                "Unexpected exception fetching CabotageEnrollment/"
+                f"{name} in {namespace}: {exc}"
+            )
+    return cabotage_enrollment
 
 
 def render_service(release, process_name):
@@ -1026,6 +1075,7 @@ def deploy_release(deployment):
         core_api_instance = kubernetes.client.CoreV1Api(api_client)
         apps_api_instance = kubernetes.client.AppsV1Api(api_client)
         batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+        custom_objects_api_instance = kubernetes.client.CustomObjectsApi(api_client)
         deploy_log.append("Fetching Namespace")
         namespace = fetch_namespace(core_api_instance, deployment.release_object)
         deploy_log.append("Fetching Cabotage CA Cert ConfigMap")
@@ -1033,6 +1083,10 @@ def deploy_release(deployment):
         deploy_log.append("Fetching ServiceAccount")
         service_account = fetch_service_account(
             core_api_instance, deployment.release_object
+        )
+        deploy_log.append("Fetching CabotageEnrollment")
+        fetch_cabotage_enrollment(
+            custom_objects_api_instance, deployment.release_object
         )
         if any(
             [
@@ -1227,6 +1281,12 @@ def fake_deploy_release(deployment):
         f"in Namespace/{namespace.metadata.name}"
     )
     deploy_log.append(yaml.dump(remove_none(service_account.to_dict())))
+    cabotage_enrollment = render_cabotage_enrollment(deployment.release_object)
+    deploy_log.append(
+        f"Creating CabotageEnrollment/{cabotage_enrollment['metadata']['name']} "
+        f"in Namespace/{namespace.metadata.name}"
+    )
+    deploy_log.append(yaml.dump(remove_none(cabotage_enrollment)))
     if any(
         [
             process_name.startswith("web")
