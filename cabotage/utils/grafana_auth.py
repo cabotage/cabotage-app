@@ -23,39 +23,45 @@ def generate_grafana_jose_header(public_key_pem):
 
 
 def generate_grafana_claim_set(
-    issuer="cabotage-app",
-    subject="cabotage-user",
-    audience="grafana",
-    access=None,
+        user,
+        issuer="cabotage-app",
+        audience="grafana",
+        access=None,
+        org_role="Viewer"
 ):
     if access is None:
         access = []
 
     jti = str(uuid.uuid4())
     issued_at = int(time.time())
+
     return json.dumps(
         {
             "iss": issuer,
-            "sub": subject,
+            "sub": user.email,
+            "name": user.username,
+            "email": user.email,
             "aud": audience,
-            "exp": int(issued_at + 600),  # Effectively limits builds to 10 minutes
+            "exp": int(issued_at + 600),
             "nbf": issued_at,
             "iat": issued_at,
             "jti": jti,
+            # "org_id": 11, # doesnt seem to work
+            "roles": [org_role],
             "access": access,
         },
         separators=(",", ":"),
     )
 
 
-def generate_grafana_jwt(access=None):
+def generate_grafana_jwt(user=None, access=None, org_role="Viewer"):
     if access is None:
         access = []
 
     public_key_pem = vault.signing_public_key
 
     header = generate_grafana_jose_header(public_key_pem)
-    claim_set = generate_grafana_claim_set(access=access)
+    claim_set = generate_grafana_claim_set(user, access=access, org_role=org_role)
     header_encoded = urlsafe_b64encode(header.encode("utf-8"))
     claim_set_encoded = urlsafe_b64encode(claim_set.encode("utf-8"))
     payload = (

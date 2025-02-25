@@ -1,3 +1,5 @@
+import os
+
 import collections
 import datetime
 import time
@@ -13,7 +15,7 @@ from flask import (
     redirect,
     render_template,
     request,
-    url_for,
+    url_for, Response,
 )
 from flask_security import (
     current_user,
@@ -47,10 +49,11 @@ from cabotage.server.acl import (
     AdministerProjectPermission,
     AdministerApplicationPermission,
 )
-from cabotage.server.ext.grafana import create_org, create_app_dashboard, create_team
+from cabotage.server.ext.grafana import create_grafana_app_dashboard, create_grafana_team, \
+    assign_user_to_grafana_org, setup_grafana_integration
 
 from cabotage.server.models.auth import (
-    Organization,
+    Organization, User,
 )
 from cabotage.server.models.projects import (
     DEFAULT_POD_CLASS,
@@ -105,18 +108,15 @@ user_blueprint = Blueprint(
 import logging
 
 logger = logging.getLogger(__name__)
-
-
+logger.setLevel(os.getenv("CABOTAGE_GRAFANA_LOG_LEVEL", 10))
+logger.addHandler(logging.StreamHandler())
 
 
 @user_blueprint.route("/organizations")
 @login_required
 def organizations():
-    logger.info("User is viewing organizations.")
     user = current_user
-    logger.info(f"User: {user}")
     organizations = user.organizations
-    logger.info(f"Organizations: {organizations}")
     return render_template("user/organizations.html", organizations=organizations)
 
 
@@ -136,27 +136,31 @@ def organization_create():
     form = CreateOrganizationForm()
 
     if form.validate_on_submit():
-        organization = Organization(name=form.name.data, slug=form.slug.data)
-        organization.add_user(user, admin=True)
-        db.session.add(organization)
-        db.session.flush()
-        org_create = Activity(
-            verb="create",
-            object=organization,
-            data={
-                "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
-            },
-        )
-        db.session.add(org_create)
-        db.session.commit()
+        try:
+            organization = Organization(name=form.name.data, slug=form.slug.data)
+            organization.add_user(user, admin=True)
+            db.session.add(organization)
+            db.session.flush()
 
-        # Grafanafication
-        create_org(organization.name)
+            org_create = Activity(
+                verb="create",
+                object=organization,
+                data={
+                    "user_id": str(current_user.id),
+                    "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                },
+            )
+            db.session.add(org_create)
+            db.session.commit()
+            setup_grafana_integration(organization, user)
+            return redirect(url_for("user.organization", org_slug=organization.slug))
+        except Exception as exc:
+            db.session.rollback()
+            logger.exception(f"Failed to create organization: {str(exc)}")
 
-        return redirect(url_for("user.organization", org_slug=organization.slug))
     return render_template(
-        "user/organization_create.html", organization_create_form=form
+        "user/organization_create.html",
+        organization_create_form=form
     )
 
 
@@ -200,9 +204,8 @@ def organization_project_create(org_slug):
         db.session.commit()
 
         # Grafanafication
-        print("*"*80)
-        create_team(form.name.data, organization.name)
-        print("*"*80)
+        create_grafana_team(project, form.name.data, organization.name)
+        db.session.commit()
 
         return redirect(
             url_for(
@@ -570,7 +573,7 @@ def project_application_create(org_slug, project_slug):
         db.session.commit()
 
         # Grafanafication
-        create_app_dashboard(application.name, organization.name, project.name)
+        create_grafana_app_dashboard(organization.name, project.name)
 
         return redirect(
             url_for(
@@ -1579,6 +1582,7 @@ def jwks():
 
 
 @user_blueprint.route("/grafana", methods=["GET"])
+@login_required
 def jwt():
     jwt = generate_grafana_jwt()
     return redirect(f"http://localhost:3000/?auth_token={jwt}", code=302)

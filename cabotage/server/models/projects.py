@@ -104,6 +104,7 @@ class Project(db.Model, Timestamp):
     )
     name = db.Column(db.Text(), nullable=False)
     slug = db.Column(CIText(), nullable=False)
+    grafana_team_id = db.Column(db.Integer, unique=True, nullable=True)
 
     project_applications = db.relationship(
         "Application",

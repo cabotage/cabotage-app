@@ -18,5 +18,6 @@
         <td>{{ form_button(url_for('user.organization_project_create', org_slug=organization.slug), "Create a new Project", method="GET", class="btn btn-primary pull-right") }}</td>
       </tr>
     </table>
+    <a href="{{ url_for('user.jwt') }}" class="btn btn-primary pull-right">View Grafana Dashboard</a>
   </div>
 {% endblock %}
