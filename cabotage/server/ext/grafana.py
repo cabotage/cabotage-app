@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("CABOTAGE_GRAFANA_LOG_LEVEL", 10))
 logger.addHandler(logging.StreamHandler())
 
+# Note: disable when developing in standalone Docker
 ssl_ctx = ssl.create_default_context(
     ssl.Purpose.SERVER_AUTH,
     cafile="/var/run/secrets/cabotage.io/ca.crt"
@@ -32,12 +33,10 @@ ssl_ctx.verify_mode = ssl.CERT_REQUIRED
 
 grafana = APIModel(
     # TODO: investigate configmap envvar exposure
-    host=os.getenv("CABOTAGE_GRAFANA_URL"), #"http://grafana:3000",
-    # token=os.getenv("CABOTAGE_GRAFANA_API_KEY"),
-    # TODO: Figure out how we can store user/pass since grafana open source only allows
-    #       to do us to CRUD resources with the org admin user via basic auth (no api access) :(
+    host=os.getenv("CABOTAGE_GRAFANA_URL") or "http://grafana:3000",
     username=os.getenv("CABOTAGE_GRAFANA_ORG_ADMIN_USER"),
     password=os.getenv("CABOTAGE_GRAFANA_ORG_ADMIN_PASS"),
+    # Note: disable when developing in standalone Docker
     ssl_context=ssl_ctx
 )
 
@@ -70,6 +69,7 @@ def create_datasource(org: str, org_id: int) -> None:
             },
             "secureJsonData": {
                 "httpHeaderValue1": org,
+                # Note: disable when developing in standalone Docker
                 "tlsCACert": Path("/var/run/secrets/cabotage.io/ca.crt").read_text()
                 }
             }

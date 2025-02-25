@@ -201,7 +201,6 @@ def organization_project_create(org_slug):
             },
         )
         db.session.add(activity)
-        db.session.commit()
 
         # Grafanafication
         create_grafana_team(project, form.name.data, organization.name)
