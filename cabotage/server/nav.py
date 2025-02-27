@@ -5,7 +5,7 @@ from flask_nav3.elements import Navbar, View, Separator, Subgroup
 nav = Nav()
 
 anonymous_nav = Navbar(
-    "Cabotage",
+    View("Cabotage", "main.home"),
     View("Log In", "security.login"),
 )
 
@@ -32,7 +32,7 @@ def get_logged_in_nav():
             View("Admin", "admin.index"),
         )
     
-    return Navbar("Cabotage", *items)
+    return Navbar(View("Cabotage", "main.home"), *items)
 
 nav.register_element("anonymous", anonymous_nav)
 nav.register_element("logged_in", get_logged_in_nav)
