@@ -3,7 +3,7 @@
 {% block content %}
   <div class="container" id="content">
     <div class="row pull-right">
-      <p>Organization: {{ project.organization.name }}</p>
+      <p>Organization: <a href="{{ url_for('user.organization', org_slug=project.organization.slug) }}">{{ project.organization.name }}</a></p>
     </div>
     <div class="row">
       <h1>Project: {{ project.name }}</h1>
