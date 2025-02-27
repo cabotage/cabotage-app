@@ -13,7 +13,7 @@ from flask import (
     redirect,
     render_template,
     request,
-    url_for,
+    url_for, flash,
 )
 from flask_security import (
     current_user,
@@ -48,8 +48,9 @@ from cabotage.server.acl import (
 )
 
 from cabotage.server.models.auth import (
-    Organization,
+    Organization, User,
 )
+from cabotage.server.models.auth_associations import OrganizationMember
 from cabotage.server.models.projects import (
     DEFAULT_POD_CLASS,
     Application,
@@ -72,7 +73,7 @@ from cabotage.server.user.forms import (
     DeleteConfigurationForm,
     EditApplicationSettingsForm,
     EditConfigurationForm,
-    ReleaseDeployForm,
+    ReleaseDeployForm, AddOrganizationUserForm,
 )
 
 from cabotage.utils.docker_auth import (
@@ -1550,3 +1551,88 @@ def github_hooks():
         process_github_hook.delay(hook_id=hook.id)
         return jsonify({"hook_id": hook.id})
     abort(403)
+
+
+@user_blueprint.route("/organizations/<org_slug>/users/add", methods=["GET", "POST"])
+@login_required
+def organization_add_user(org_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    if not AdministerOrganizationPermission(organization.id).can():
+        abort(403)
+
+    form = AddOrganizationUserForm()
+    all_users = User.query.all() if current_user.admin else None
+
+    if form.validate_on_submit():
+        if user := User.query.filter_by(email=form.email.data).first():
+            organization.add_user(user)
+            db.session.commit()
+            flash("User has been added to the organization.", "success")
+            return redirect(url_for("user.organization", org_slug=org_slug))
+        else:
+            flash("User with this email address does not exist.", "error")
+    return render_template(
+        "user/organization_add_user.html",
+        organization=organization,
+        form=form,
+        all_users=all_users
+    )
+
+@user_blueprint.route("/organizations/<org_slug>/users/remove", methods=["POST"])
+@login_required
+def organization_remove_user(org_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    if not AdministerOrganizationPermission(organization.id).can():
+        abort(403)
+
+    user_id = request.form.get("user_id")
+    if user := User.query.get(user_id):
+        org_user_count = len(organization.members)
+        if org_user_count <= 1:
+            flash("Cannot remove the last user from an organization. Add someone else first!", "warning")
+        else:
+            organization.remove_user(user)
+            db.session.commit()
+            flash(f"User {user.email} removed from organization {organization.name}.", "success")
+    else:
+        flash("User not found.", "error")
+    return redirect(url_for("user.organization", org_slug=org_slug))
+
+@user_blueprint.route("/organizations/<org_slug>/users/promote", methods=["POST"])
+@login_required
+def organization_promote_user(org_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    if not AdministerOrganizationPermission(organization.id).can():
+        abort(403)
+
+    user_id = request.form.get("user_id")
+    if user := User.query.get(user_id):
+        if member := OrganizationMember.query.filter_by(
+            user_id=user.id, organization_id=organization.id
+        ).first():
+            member.admin = True
+            db.session.commit()
+            flash(f"User {user.email} promoted to admin in {organization.name}.", "success")
+    else:
+        flash("User not found.", "error")
+    return redirect(url_for("user.organization", org_slug=org_slug))
+
+@user_blueprint.route("/organizations/<org_slug>/users/demote", methods=["POST"])
+@login_required
+def organization_demote_user(org_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    if not current_user.admin:
+        # Only global admins (User.admin) can demote, not just organization admins
+        abort(403)
+
+    user_id = request.form.get("user_id")
+    if user := User.query.get(user_id):
+        if member := OrganizationMember.query.filter_by(
+            user_id=user.id, organization_id=organization.id
+        ).first():
+            member.admin = False
+            db.session.commit()
+            flash(f"User {user.email} demoted to member in {organization.name}.", "success")
+    else:
+        flash("User not found.", "error")
+    return redirect(url_for("user.organization", org_slug=org_slug))
