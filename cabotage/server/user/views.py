@@ -1585,6 +1585,7 @@ def jwks():
 @login_required
 def jwt():
     jwt = generate_grafana_jwt()
+    jwt = generate_grafana_jwt(current_user)
     return redirect(f"http://localhost:3000/?auth_token={jwt}", code=302)
 
 
