@@ -21,7 +21,7 @@
             <tr>
                 <td colspan="2" class="text-right">
                     {{ form_button(url_for('user.organization_project_create', org_slug=organization.slug), "Create a new Project", method="GET", class="btn btn-primary") }}
-                    {{ form_button(url_for('user.jwt'), "View Grafana Dashboard", method="GET", class="btn btn-primary") }}
+                    {{ form_button(url_for('user.jwt', org_slug=organization.slug), "View Grafana Dashboard", method="GET", class="btn btn-primary") }}
                 </td>
             </tr>
         </table>

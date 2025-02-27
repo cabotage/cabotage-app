@@ -8,7 +8,14 @@
     <table class="table">
     {% for project in projects %}
       <tr>
-        <td><a href="{{ url_for("user.project", org_slug=project.organization.slug, project_slug=project.slug) }}">{{ project.organization.slug }}/{{ project.slug }}</a></td>
+        <td>
+          <a href="{{ url_for("user.project", org_slug=project.organization.slug, project_slug=project.slug) }}">{{ project.organization.slug }}/{{ project.slug }}</a>
+          {% if project.grafana_team_id or project.organization.grafana_org_id %}
+            {{ form_button(url_for('user.jwt', org_slug=project.organization.slug), "View Grafana Dashboard", method="GET", class="btn btn-primary btn-sm pull-right") }}
+          {% else %}
+            <span class="text-muted pull-right">No Grafana Dashboard</span>
+          {% endif %}
+        </td>
       </tr>
     {% endfor %}
       <tr>

@@ -18,7 +18,10 @@
       </tr>
     {% endfor %}
       <tr>
-        <td>{{ form_button(url_for('user.project_application_create', org_slug=project.organization.slug, project_slug=project.slug), "Create a new Application", method="GET", class="btn btn-primary pull-right") }}</td>
+        <td colspan="2" class="text-right">
+          {{ form_button(url_for('user.project_application_create', org_slug=project.organization.slug, project_slug=project.slug), "Create a new Application", method="GET", class="btn btn-primary") }}
+          <a href="{{ url_for('user.jwt', org_slug=project.organization.slug, project_slug=project.slug) }}" class="btn btn-primary">View Project Dashboard</a>
+        </td>
       </tr>
     </table>
   </div>

@@ -79,35 +79,48 @@ def create_datasource(org: str, org_id: int) -> None:
         raise exc
 
 
-def create_grafana_org(org_name: str) -> int | None:
-    """Create a Grafana organization AND it's datasource, given a name
-
-    Returns:
-        The created organization's ID or None if creation fails.
-    """
+def create_grafana_org(org_name: str) -> int:
+    """Create a Grafana organization AND it's datasource, given a name."""
     try:
         logger.info(f"Creating Grafana organization: {org_name}")
-        org = OrganisationAdmin(grafana)
-        if org_id := org.create_organization(org_name):
-            try:
-                create_datasource(org_name, org_id)
-            except Exception as exc:
-                logger.exception(f"Error creating datasource for org {org_name}, but org was created")
+        org_admin = OrganisationAdmin(grafana)
+        
+        # First try to find if org already exists
+        try:
+            existing_org = org_admin.get_organization_by_name(org_name)
+            if existing_org and 'id' in existing_org:
+                logger.info(f"Found existing Grafana org with ID: {existing_org['id']}")
+                return existing_org['id']
+        except Exception:
+            logger.info(f"No existing organization found with name: {org_name}")
+
+        # Create a new org since we couldn't find an existing one
+        org_id = org_admin.create_organization(org_name)
+        logger.info(f"Successfully created new Grafana org with ID: {org_id}")
+
+        try:
+            create_datasource(org_name, org_id)
+            logger.info(f"Created default datasource for org ID: {org_id}")
+        except Exception as ds_exc:
+            logger.exception("Failed to create datasource")
+            # Don't fail the whole operation if datasource creation fails
+
         return org_id
     except Exception as exc:
         logger.exception(f"Error creating Grafana organization: {org_name}")
-        return None
+        raise ValueError(f"Failed to create Grafana organization: {str(exc)}")
 
 
 def create_grafana_team(project: Project, team_name: str, org_id: int) -> int:
     try:
-        project = Project(name=project.name)
-        logger.info(f"Creating Grafana team: {team_name}")
+        logger.info(f"Creating Grafana team: {team_name} for org_id: {org_id}")
         team_api = Team(grafana)
         team_email = f"{team_name.lower().replace(' ', '-')}@cabo.local"
         team_obj = TeamObject(name=team_name, email=team_email, org_id=org_id)
         team_id = team_api.add_team(team_obj)
-        project.grafana_team_id = team_id
+        if not team_id:
+            logger.error("Grafana API returned falsy team_id")
+            raise ValueError("Invalid team_id returned from Grafana API")
         return team_id
     except Exception as exc:
         logger.exception("Error creating Grafana team")
@@ -222,8 +235,11 @@ def setup_grafana_integration(organization: CabotageOrganization, user: Cabotage
     try:
         if grafana_org_id := create_grafana_org(organization.name):
             organization.grafana_org_id = grafana_org_id
+            db.session.add(organization)
+            db.session.flush()
 
             # Add the user to the Grafana org as an admin
+            logger.info(f"Adding user {user.email} as admin to Grafana org {grafana_org_id}")
             admin_jwt = generate_grafana_jwt(user, org_role="Admin")
             assign_user_to_grafana_org(
                 user.email,
@@ -232,7 +248,8 @@ def setup_grafana_integration(organization: CabotageOrganization, user: Cabotage
                 # auth_token=admin_jwt
             )
         else:
-            logger.warning(f"Failed to get Grafana org ID for organization: {organization.name}")
+            logger.error(f"Failed to get Grafana org ID for organization: {organization.name}")
+            raise ValueError("Failed to create Grafana organization")
     except Exception as exc:
         logger.exception("Failed to complete Grafana integration")
         raise

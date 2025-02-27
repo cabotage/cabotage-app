@@ -204,7 +204,7 @@ def organization_project_create(org_slug):
         db.session.add(activity)
 
         # Grafanafication
-        create_grafana_team(project, form.name.data, organization.name)
+        create_grafana_team(project, form.name.data, organization.grafana_org_id)
         db.session.commit()
 
         return redirect(
@@ -236,6 +236,20 @@ def project(org_slug, project_slug):
     ).first_or_404()
     if not ViewProjectPermission(project.id).can():
         abort(403)
+
+    # Check if org exists in Grafana and create if needed
+    # TODO: We could move some checks in jwt into higher level routes like this one
+    #       ie., /orgs/... could get this, etc.
+    #       we could also just move this into a helper func and call it on each
+    if not organization.grafana_org_id:
+        try:
+            logger.info(f"Setting up Grafana integration for org: {organization.name}")
+            setup_grafana_integration(organization, current_user)
+            db.session.commit()
+        except Exception as exc:
+            logger.exception("Failed to setup Grafana integration")
+            flash("Failed to setup Grafana integration", "error")
+            return redirect(url_for('user.organization', org_slug=org_slug))
 
     return render_template("user/project.html", project=project)
 
@@ -1581,11 +1595,55 @@ def jwks():
     return jsonify({"keys": [_jwk]})
 
 
-@user_blueprint.route("/grafana", methods=["GET"])
+@user_blueprint.route("/grafana/<org_slug>", methods=["GET"])
 @login_required
-def jwt():
-    jwt = generate_grafana_jwt()
+def jwt(org_slug):
+    logger.info(f"JWT endpoint called for org_slug: {org_slug}")
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    if not ViewOrganizationPermission(organization.id).can():
+        abort(403)
+
+    # Check if org exists in Grafana and create if needed
+    if not organization.grafana_org_id:
+        try:
+            logger.info(f"Setting up Grafana integration for org: {organization.name}")
+            setup_grafana_integration(organization, current_user)
+            db.session.commit()
+        except Exception as exc:
+            logger.exception("Failed to setup Grafana integration")
+            flash("Failed to setup Grafana integration", "error")
+            return redirect(url_for('user.organization', org_slug=org_slug))
+
+    # Ensure project's grafana team exists
+    if project_slug := request.args.get('project_slug'):
+        project = Project.query.filter_by(organization_id=organization.id, slug=project_slug).first_or_404()
+        try:
+            if not project.grafana_team_id:
+                team_id = create_grafana_team(project, f"{project.name}", organization.grafana_org_id)
+                project.grafana_team_id = team_id
+                db.session.add(project)
+                db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            logger.exception("Failed to create Grafana team")
+            flash("Failed to create Grafana team", "error")
+            return redirect(url_for('user.project', org_slug=org_slug, project_slug=project.slug))
+
+    # Generate JWT for user access
     jwt = generate_grafana_jwt(current_user)
+    
+    # Ensure user has access to the org
+    try:
+        assign_user_to_grafana_org(
+            current_user.email,
+            organization.grafana_org_id,
+            role="Viewer"
+        )
+    except Exception as exc:
+        logger.exception("Failed to assign user to Grafana org")
+        flash("Failed to assign user to Grafana organization", "error")
+        return redirect(url_for('user.organization', org_slug=org_slug))
+
     return redirect(f"http://localhost:3000/?auth_token={jwt}", code=302)
 
 
