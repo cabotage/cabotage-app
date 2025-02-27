@@ -137,7 +137,7 @@ class Organization(db.Model):
     def remove_user(self, user):
         association = OrganizationMember.query.filter_by(
             user_id=user.id, organization_id=self.id
-        )
+        ).first()
         if association:
             db.session.delete(association)
 
