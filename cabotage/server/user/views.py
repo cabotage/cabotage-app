@@ -13,7 +13,8 @@ from flask import (
     redirect,
     render_template,
     request,
-    url_for, flash,
+    url_for,
+    flash,
 )
 from flask_security import (
     current_user,
@@ -48,7 +49,8 @@ from cabotage.server.acl import (
 )
 
 from cabotage.server.models.auth import (
-    Organization, User,
+    Organization,
+    User,
 )
 from cabotage.server.models.auth_associations import OrganizationMember
 from cabotage.server.models.projects import (
@@ -73,7 +75,8 @@ from cabotage.server.user.forms import (
     DeleteConfigurationForm,
     EditApplicationSettingsForm,
     EditConfigurationForm,
-    ReleaseDeployForm, AddOrganizationUserForm,
+    ReleaseDeployForm,
+    AddOrganizationUserForm,
 )
 
 from cabotage.utils.docker_auth import (
@@ -1575,8 +1578,9 @@ def organization_add_user(org_slug):
         "user/organization_add_user.html",
         organization=organization,
         form=form,
-        all_users=all_users
+        all_users=all_users,
     )
+
 
 @user_blueprint.route("/organizations/<org_slug>/users/remove", methods=["POST"])
 @login_required
@@ -1589,14 +1593,21 @@ def organization_remove_user(org_slug):
     if user := User.query.get(user_id):
         org_user_count = len(organization.members)
         if org_user_count <= 1:
-            flash("Cannot remove the last user from an organization. Add someone else first!", "warning")
+            flash(
+                "Cannot remove the last user from an organization. Add someone else first!",
+                "warning",
+            )
         else:
             organization.remove_user(user)
             db.session.commit()
-            flash(f"User {user.email} removed from organization {organization.name}.", "success")
+            flash(
+                f"User {user.email} removed from organization {organization.name}.",
+                "success",
+            )
     else:
         flash("User not found.", "error")
     return redirect(url_for("user.organization", org_slug=org_slug))
+
 
 @user_blueprint.route("/organizations/<org_slug>/users/promote", methods=["POST"])
 @login_required
@@ -1612,10 +1623,14 @@ def organization_promote_user(org_slug):
         ).first():
             member.admin = True
             db.session.commit()
-            flash(f"User {user.email} promoted to admin in {organization.name}.", "success")
+            flash(
+                f"User {user.email} promoted to admin in {organization.name}.",
+                "success",
+            )
     else:
         flash("User not found.", "error")
     return redirect(url_for("user.organization", org_slug=org_slug))
+
 
 @user_blueprint.route("/organizations/<org_slug>/users/demote", methods=["POST"])
 @login_required
@@ -1632,7 +1647,10 @@ def organization_demote_user(org_slug):
         ).first():
             member.admin = False
             db.session.commit()
-            flash(f"User {user.email} demoted to member in {organization.name}.", "success")
+            flash(
+                f"User {user.email} demoted to member in {organization.name}.",
+                "success",
+            )
     else:
         flash("User not found.", "error")
     return redirect(url_for("user.organization", org_slug=org_slug))

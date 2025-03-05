@@ -431,5 +431,5 @@ class AddOrganizationUserForm(FlaskForm):
             InputRequired(),
             Length(min=3, max=255),
         ],
-        description="Email address of the user to add to this organization"
+        description="Email address of the user to add to this organization",
     )
