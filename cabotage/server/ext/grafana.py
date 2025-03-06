@@ -75,6 +75,8 @@ def create_datasource(org: str, org_id: int) -> None:
                 "tlsCACert": Path("/var/run/secrets/cabotage.io/ca.crt").read_text()
                 }
             }
+            },
+        }
         return datasource_api.create_datasource(datasource)
     except Exception as exc:
         logger.exception("Error creating Grafana datasource")
