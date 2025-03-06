@@ -27,13 +27,25 @@ def generate_grafana_claim_set(
     issuer="cabotage-app",
     audience="grafana",
     access=None,
-    target_org_id=None  # New parameter for specific org
+    target_org_id=None
 ):
     if access is None:
         access = []
 
     if target_org_id is None:
         raise ValueError("target_org_id must be specified")
+
+    user_role = next(
+        (
+            "Admin" if org_member.admin else "Viewer"
+            for org_member in user.organizations
+            if (
+                org_member.organization.grafana_org_id == target_org_id
+                and org_member.organization.grafana_org_id is not None
+            )
+        ),
+        "Viewer",
+    )
 
     jti = str(uuid.uuid4())
     issued_at = int(time.time())
@@ -49,6 +61,7 @@ def generate_grafana_claim_set(
             "nbf": issued_at,
             "iat": issued_at,
             "jti": jti,
+            "role": user_role,
             "access": access,
             "orgId": str(target_org_id)
         },

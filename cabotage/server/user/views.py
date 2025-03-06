@@ -1630,10 +1630,11 @@ def jwt(org_slug):
             return redirect(url_for('user.project', org_slug=org_slug, project_slug=project.slug))
 
     try:
+        user_role = "Admin" if any(org_member.admin for org_member in current_user.organizations if org_member.organization_id == organization.id) else "Viewer"
         assign_user_to_grafana_org(
             current_user.email,
             organization.grafana_org_id,
-            role="Admin" if any(om.admin for om in current_user.organizations if om.organization_id == organization.id) else "Viewer"
+            role=user_role
         )
         
         jwt = generate_grafana_jwt(
