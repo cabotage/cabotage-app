@@ -9,6 +9,7 @@ anonymous_nav = Navbar(
     View("Log In", "security.login"),
 )
 
+
 def get_logged_in_nav():
     items = [
         Subgroup(
@@ -26,13 +27,14 @@ def get_logged_in_nav():
             View("Log Out", "security.logout"),
         ),
     ]
-    
-    if hasattr(current_user, 'admin') and current_user.admin:
+
+    if hasattr(current_user, "admin") and current_user.admin:
         items.append(
             View("Admin", "admin.index"),
         )
-    
+
     return Navbar(View("Cabotage", "main.home"), *items)
+
 
 nav.register_element("anonymous", anonymous_nav)
 nav.register_element("logged_in", get_logged_in_nav)

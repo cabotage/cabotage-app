@@ -1,4 +1,5 @@
 """Extension module for Grafana integration using `grafana-api-sdk`."""
+
 from flask_login import current_user
 from pathlib import Path
 
@@ -15,7 +16,10 @@ from grafana_api.datasource import Datasource
 from grafana_api.team import Team
 from grafana_api.user import CurrentUser, User
 
-from cabotage.server.models import Organization as CabotageOrganization, User as CabotageUser
+from cabotage.server.models import (
+    Organization as CabotageOrganization,
+    User as CabotageUser,
+)
 from cabotage.server import db
 from cabotage.server.models.projects import Project
 from cabotage.utils.grafana_auth import generate_grafana_jwt
@@ -45,6 +49,7 @@ grafana = APIModel(
 Infra
 """
 
+
 def create_datasource(org: str, org_id: int) -> None:
     try:
         logger.info(f"Creating Grafana datasource for the {org} organization.")
@@ -63,10 +68,7 @@ def create_datasource(org: str, org_id: int) -> None:
             "url": "https://loki-read:3100/",
             "access": "proxy",
             "basicAuth": False,
-            "jsonData": {
-                "httpHeaderName1": "X-Scope-OrgID",
-                "tlsAuthWithCACert": True
-            },
+            "jsonData": {"httpHeaderName1": "X-Scope-OrgID", "tlsAuthWithCACert": True},
             "secureJsonData": {
                 "httpHeaderValue1": org,
                 # Note: disable when developing in standalone Docker
@@ -84,13 +86,13 @@ def create_grafana_org(org_name: str) -> int:
     try:
         logger.info(f"Creating Grafana organization: {org_name}")
         org_admin = OrganisationAdmin(grafana)
-        
+
         # First try to find if org already exists
         try:
             existing_org = org_admin.get_organization_by_name(org_name)
-            if existing_org and 'id' in existing_org:
+            if existing_org and "id" in existing_org:
                 logger.info(f"Found existing Grafana org with ID: {existing_org['id']}")
-                return existing_org['id']
+                return existing_org["id"]
         except Exception:
             logger.info(f"No existing organization found with name: {org_name}")
 
@@ -126,46 +128,42 @@ def create_grafana_team(project: Project, team_name: str, org_id: int) -> int:
         logger.exception("Error creating Grafana team")
         raise exc
 
+
 def create_grafana_app_dashboard(app: str, org: str, project: str) -> None:
     """Create a Grafana dashboard for an app with a pre-defined query with Loki logs."""
 
     try:
-        logger.info(f"Creating Grafana dashboard for app: {app} in project: {org}/{project}")
+        logger.info(
+            f"Creating Grafana dashboard for app: {app} in project: {org}/{project}"
+        )
         dashboard_api = Dashboard(grafana)
 
         dashboard = {
             "title": f"{project}-{app} Logs",
             "tags": [org, project, app, "auto-generated"],
-            "panels": [{
-                "title": f"{app} Logs",
-                "type": "logs",
-                "datasource": {
-                    "type": "loki",
-                    "uid": "loki"
-                },
-                "gridPos": {
-                    "h": 24,
-                    "w": 24,
-                    "x": 0,
-                    "y": 0
-                },
-                "targets": [{
-                    "expr": '{namespace="' + org + '", app="' + app + '"}',
-                    "refId": "A"
-                }],
-                "options": {
-                    "showTime": True,
-                    "sortOrder": "Descending",
-                    "wrapLogMessage": True
+            "panels": [
+                {
+                    "title": f"{app} Logs",
+                    "type": "logs",
+                    "datasource": {"type": "loki", "uid": "loki"},
+                    "gridPos": {"h": 24, "w": 24, "x": 0, "y": 0},
+                    "targets": [
+                        {
+                            "expr": '{namespace="' + org + '", app="' + app + '"}',
+                            "refId": "A",
+                        }
+                    ],
+                    "options": {
+                        "showTime": True,
+                        "sortOrder": "Descending",
+                        "wrapLogMessage": True,
+                    },
                 }
-            }],
+            ],
             "refresh": "30s",
             "schemaVersion": 36,
             "version": 0,
-            "time": {
-                "from": "now-6h",
-                "to": "now"
-            }
+            "time": {"from": "now-6h", "to": "now"},
         }
 
         dashboard_api.create_or_update_dashboard(
@@ -182,13 +180,16 @@ def create_grafana_app_dashboard(app: str, org: str, project: str) -> None:
 RBACish
 """
 
-def assign_user_to_team(user_email: str, team_name: str) -> None:
-    ...
 
-def assign_dashboard_to_team(dashboard_name: str, team_name: str) -> None:
-    ...
+def assign_user_to_team(user_email: str, team_name: str) -> None: ...
 
-def assign_user_to_grafana_org(user_email: str, org_id: int, role: str = "Viewer") -> None:
+
+def assign_dashboard_to_team(dashboard_name: str, team_name: str) -> None: ...
+
+
+def assign_user_to_grafana_org(
+    user_email: str, org_id: int, role: str = "Viewer"
+) -> None:
     """Assign a user to a Grafana organization with Viewer role."""
     try:
         logger.info(f"Assigning user {user_email} to Grafana org {org_id}")
@@ -205,13 +206,18 @@ def assign_user_to_grafana_org(user_email: str, org_id: int, role: str = "Viewer
                 )
                 logger.info(f"User {user_email} assigned to Grafana org {org_id}")
             else:
-                logger.error(f"User {user_email} not found in Grafana! Creating user...")
+                logger.error(
+                    f"User {user_email} not found in Grafana! Creating user..."
+                )
                 generate_grafana_jwt(current_user)
         except Exception as exc:
-            logger.exception(f"Error retrieving or creating user {user_email} from Grafana")
+            logger.exception(
+                f"Error retrieving or creating user {user_email} from Grafana"
+            )
     except Exception as exc:
         logger.exception("Error assigning user to Grafana organization")
         raise exc
+
 
 # def ensure_grafana_user_access(user: User, organization: CabotageOrganization, role: str = "Viewer"):
 #     """Ensure user exists in Grafana and has proper org access"""
@@ -230,7 +236,10 @@ def assign_user_to_grafana_org(user_email: str, org_id: int, role: str = "Viewer
 #         db.session.commit()
 #     return organization.grafana_org_id
 
-def setup_grafana_integration(organization: CabotageOrganization, user: CabotageUser) -> None:
+
+def setup_grafana_integration(
+    organization: CabotageOrganization, user: CabotageUser
+) -> None:
     """Helper function to handle Grafana organization integration"""
     try:
         if grafana_org_id := create_grafana_org(organization.name):
@@ -239,7 +248,9 @@ def setup_grafana_integration(organization: CabotageOrganization, user: Cabotage
             db.session.flush()
 
             # Add the user to the Grafana org as an admin
-            logger.info(f"Adding user {user.email} as admin to Grafana org {grafana_org_id}")
+            logger.info(
+                f"Adding user {user.email} as admin to Grafana org {grafana_org_id}"
+            )
             # admin_jwt = generate_grafana_jwt(user)
             assign_user_to_grafana_org(
                 user.email,
@@ -248,7 +259,9 @@ def setup_grafana_integration(organization: CabotageOrganization, user: Cabotage
                 # auth_token=admin_jwt
             )
         else:
-            logger.error(f"Failed to get Grafana org ID for organization: {organization.name}")
+            logger.error(
+                f"Failed to get Grafana org ID for organization: {organization.name}"
+            )
             raise ValueError("Failed to create Grafana organization")
     except Exception as exc:
         logger.exception("Failed to complete Grafana integration")
