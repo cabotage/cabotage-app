@@ -1757,7 +1757,9 @@ def organization_remove_user(org_slug: str) -> Response:
     return redirect(url_for("user.organization", org_slug=org_slug))
 
 
-def _update_grafana_user_role(user: User, organization: Organization, new_role: str) -> None:
+def _update_grafana_user_role(
+    user: User, organization: Organization, new_role: str
+) -> None:
     """Helper function to update a user's role in Grafana organization by removing then re-adding them."""
     try:
         from grafana_api.organisation import OrganisationAdmin
@@ -1775,11 +1777,9 @@ def _update_grafana_user_role(user: User, organization: Organization, new_role: 
                     org_id=organization.grafana_org_id,
                     user_id=grafana_user["id"],
                 )
-        
+
         assign_user_to_grafana_org(
-            user.email,
-            organization.grafana_org_id,
-            role=new_role
+            user.email, organization.grafana_org_id, role=new_role
         )
     except Exception as exc:
         logger.warning(f"Failed to update Grafana role: {exc}")
