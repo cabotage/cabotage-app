@@ -1,4 +1,7 @@
+import os
+
 import collections
+import contextlib
 import datetime
 import time
 import threading
@@ -14,6 +17,7 @@ from flask import (
     render_template,
     request,
     url_for,
+    flash,
 )
 from flask_security import (
     current_user,
@@ -29,6 +33,7 @@ from requests.exceptions import HTTPError
 from sqlalchemy import desc
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy_continuum import version_class
+from werkzeug import Response
 
 from cabotage.server import (
     config_writer,
@@ -47,10 +52,18 @@ from cabotage.server.acl import (
     AdministerProjectPermission,
     AdministerApplicationPermission,
 )
+from cabotage.server.ext.grafana import (
+    create_grafana_app_dashboard,
+    create_grafana_team,
+    assign_user_to_grafana_org,
+    setup_grafana_integration,
+)
 
 from cabotage.server.models.auth import (
     Organization,
+    User,
 )
+from cabotage.server.models.auth_associations import OrganizationMember
 from cabotage.server.models.projects import (
     DEFAULT_POD_CLASS,
     Application,
@@ -74,6 +87,7 @@ from cabotage.server.user.forms import (
     EditApplicationSettingsForm,
     EditConfigurationForm,
     ReleaseDeployForm,
+    AddOrganizationUserForm,
 )
 
 from cabotage.utils.docker_auth import (
@@ -101,6 +115,12 @@ user_blueprint = Blueprint(
     __name__,
 )
 
+import logging
+
+logger = logging.getLogger(__name__)
+logger.setLevel(os.getenv("CABOTAGE_GRAFANA_LOG_LEVEL", 10))
+logger.addHandler(logging.StreamHandler())
+
 
 @user_blueprint.route("/organizations")
 @login_required
@@ -126,21 +146,30 @@ def organization_create():
     form = CreateOrganizationForm()
 
     if form.validate_on_submit():
-        organization = Organization(name=form.name.data, slug=form.slug.data)
-        organization.add_user(user, admin=True)
-        db.session.add(organization)
-        db.session.flush()
-        org_create = Activity(
-            verb="create",
-            object=organization,
-            data={
-                "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
-            },
-        )
-        db.session.add(org_create)
-        db.session.commit()
-        return redirect(url_for("user.organization", org_slug=organization.slug))
+        try:
+            organization = Organization(name=form.name.data, slug=form.slug.data)
+            organization.add_user(user, admin=True)
+            db.session.add(organization)
+            db.session.flush()
+
+            org_create = Activity(
+                verb="create",
+                object=organization,
+                data={
+                    "user_id": str(current_user.id),
+                    "timestamp": datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat(),
+                },
+            )
+            db.session.add(org_create)
+            db.session.commit()
+            setup_grafana_integration(organization, user)
+            return redirect(url_for("user.organization", org_slug=organization.slug))
+        except Exception as exc:
+            db.session.rollback()
+            logger.exception(f"Failed to create organization: {str(exc)}")
+
     return render_template(
         "user/organization_create.html", organization_create_form=form
     )
@@ -183,7 +212,11 @@ def organization_project_create(org_slug):
             },
         )
         db.session.add(activity)
+
+        # Grafanafication
+        create_grafana_team(project, form.name.data, organization.grafana_org_id)
         db.session.commit()
+
         return redirect(
             url_for(
                 "user.project",
@@ -213,6 +246,20 @@ def project(org_slug, project_slug):
     ).first_or_404()
     if not ViewProjectPermission(project.id).can():
         abort(403)
+
+    # Check if org exists in Grafana and create if needed
+    # TODO: We could move some checks in jwt into higher level routes like this one
+    #       ie., /orgs/... could get this, etc.
+    #       we could also just move this into a helper func and call it on each
+    if not organization.grafana_org_id:
+        try:
+            logger.info(f"Setting up Grafana integration for org: {organization.name}")
+            setup_grafana_integration(organization, current_user)
+            db.session.commit()
+        except Exception as exc:
+            logger.exception("Failed to setup Grafana integration")
+            flash("Failed to setup Grafana integration", "error")
+            return redirect(url_for("user.organization", org_slug=org_slug))
 
     return render_template("user/project.html", project=project)
 
@@ -548,6 +595,10 @@ def project_application_create(org_slug, project_slug):
         )
         db.session.add(activity)
         db.session.commit()
+
+        # Grafanafication
+        create_grafana_app_dashboard(organization.name, project.name)
+
         return redirect(
             url_for(
                 "user.project_application",
@@ -1554,10 +1605,72 @@ def jwks():
     return jsonify({"keys": [_jwk]})
 
 
-@user_blueprint.route("/grafana", methods=["GET"])
-def jwt():
-    jwt = generate_grafana_jwt()
-    return redirect(f"http://localhost:3000/?auth_token={jwt}", code=302)
+@user_blueprint.route("/grafana/<org_slug>", methods=["GET"])
+@login_required
+def jwt(org_slug):
+    logger.info(f"JWT endpoint called for org_slug: {org_slug}")
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    if not ViewOrganizationPermission(organization.id).can():
+        abort(403)
+
+    # Check if org exists in Grafana and create if needed
+    if not organization.grafana_org_id:
+        try:
+            logger.info(f"Setting up Grafana integration for org: {organization.name}")
+            setup_grafana_integration(organization, current_user)
+            db.session.commit()
+        except Exception as exc:
+            logger.exception("Failed to setup Grafana integration")
+            flash("Failed to setup Grafana integration", "error")
+            return redirect(url_for("user.organization", org_slug=org_slug))
+
+    # Ensure project's grafana team exists
+    if project_slug := request.args.get("project_slug"):
+        project = Project.query.filter_by(
+            organization_id=organization.id, slug=project_slug
+        ).first_or_404()
+        try:
+            if not project.grafana_team_id:
+                team_id = create_grafana_team(
+                    project, f"{project.name}", organization.grafana_org_id
+                )
+                project.grafana_team_id = team_id
+                db.session.add(project)
+                db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            logger.exception("Failed to create Grafana team")
+            flash("Failed to create Grafana team", "error")
+            return redirect(
+                url_for("user.project", org_slug=org_slug, project_slug=project.slug)
+            )
+
+    try:
+        user_role = (
+            "Admin"
+            if any(
+                org_member.admin
+                for org_member in current_user.organizations
+                if org_member.organization_id == organization.id
+            )
+            else "Viewer"
+        )
+        assign_user_to_grafana_org(
+            current_user.email, organization.grafana_org_id, role=user_role
+        )
+
+        jwt = generate_grafana_jwt(
+            current_user, target_org_id=organization.grafana_org_id
+        )
+    except Exception as exc:
+        logger.exception("Failed to setup Grafana access")
+        flash("Failed to setup Grafana access", "error")
+        return redirect(url_for("user.organization", org_slug=org_slug))
+
+    return redirect(
+        f"http://localhost:3000/?auth_token={jwt}&orgId={organization.grafana_org_id}",
+        code=302,
+    )
 
 
 @user_blueprint.route("/github/hooks", methods=["POST"])
@@ -1569,3 +1682,155 @@ def github_hooks():
         process_github_hook.delay(hook_id=hook.id)
         return jsonify({"hook_id": hook.id})
     abort(403)
+
+
+@user_blueprint.route("/organizations/<org_slug>/users/add", methods=["GET", "POST"])
+@login_required
+def organization_add_user(org_slug: str) -> Response | str:
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    if not AdministerOrganizationPermission(organization.id).can():
+        abort(403)
+
+    form = AddOrganizationUserForm()
+    all_users = User.query.all() if current_user.admin else None
+
+    if form.validate_on_submit():
+        if user := User.query.filter_by(email=form.email.data).first():
+            organization.add_user(user)
+            db.session.commit()
+            flash("User has been added to the organization.", "success")
+            return redirect(url_for("user.organization", org_slug=org_slug))
+        else:
+            flash("User with this email address does not exist.", "error")
+    return render_template(
+        "user/organization_add_user.html",
+        organization=organization,
+        form=form,
+        all_users=all_users,
+    )
+
+
+@user_blueprint.route("/organizations/<org_slug>/users/remove", methods=["POST"])
+@login_required
+def organization_remove_user(org_slug: str) -> Response:
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    if not AdministerOrganizationPermission(organization.id).can():
+        abort(403)
+
+    user_id = request.form.get("user_id")
+    if user := User.query.get(user_id):
+        org_user_count = len(organization.members)
+        if org_user_count <= 1:
+            flash(
+                "Cannot remove the last user from an organization. Add someone else first!",
+                "warning",
+            )
+        else:
+            organization.remove_user(user)
+            db.session.commit()
+
+            try:
+                from grafana_api.organisation import OrganisationAdmin
+                from grafana_api.user import User as GrafanaUser
+                from cabotage.server.ext.grafana import grafana
+
+                org_admin = OrganisationAdmin(grafana)
+                user_api = GrafanaUser(grafana)
+
+                if grafana_user := user_api.get_user_by_username_or_email(
+                    username_or_email=user.email
+                ):
+                    with contextlib.suppress(Exception):
+                        org_admin.delete_organization_user(
+                            org_id=organization.grafana_org_id,
+                            user_id=grafana_user["id"],
+                        )
+            except Exception as exc:
+                logger.warning(f"Failed to remove user from Grafana org: {exc}")
+
+            flash(
+                f"User {user.email} removed from organization {organization.name}.",
+                "success",
+            )
+    else:
+        flash("User not found.", "error")
+    return redirect(url_for("user.organization", org_slug=org_slug))
+
+
+def _update_grafana_user_role(
+    user: User, organization: Organization, new_role: str
+) -> None:
+    """Helper function to update a user's role in Grafana organization by removing then re-adding them."""
+    try:
+        from grafana_api.organisation import OrganisationAdmin
+        from grafana_api.user import User as GrafanaUser
+        from cabotage.server.ext.grafana import grafana
+
+        org_admin = OrganisationAdmin(grafana)
+        user_api = GrafanaUser(grafana)
+
+        if grafana_user := user_api.get_user_by_username_or_email(
+            username_or_email=user.email
+        ):
+            with contextlib.suppress(Exception):
+                org_admin.delete_organization_user(
+                    org_id=organization.grafana_org_id,
+                    user_id=grafana_user["id"],
+                )
+
+        assign_user_to_grafana_org(
+            user.email, organization.grafana_org_id, role=new_role
+        )
+    except Exception as exc:
+        logger.warning(f"Failed to update Grafana role: {exc}")
+
+
+@user_blueprint.route("/organizations/<org_slug>/users/promote", methods=["POST"])
+@login_required
+def organization_promote_user(org_slug: str) -> Response:
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    if not AdministerOrganizationPermission(organization.id).can():
+        abort(403)
+
+    user_id = request.form.get("user_id")
+    if user := User.query.get(user_id):
+        if member := OrganizationMember.query.filter_by(
+            user_id=user.id, organization_id=organization.id
+        ).first():
+            member.admin = True
+            db.session.commit()
+
+            _update_grafana_user_role(user, organization, "Admin")
+            flash(
+                f"User {user.email} promoted to admin in {organization.name}.",
+                "success",
+            )
+    else:
+        flash("User not found.", "error")
+    return redirect(url_for("user.organization", org_slug=org_slug))
+
+
+@user_blueprint.route("/organizations/<org_slug>/users/demote", methods=["POST"])
+@login_required
+def organization_demote_user(org_slug: str) -> Response:
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    if not current_user.admin:
+        # Only global admins (User.admin) can demote, not just organization admins
+        abort(403)
+
+    user_id = request.form.get("user_id")
+    if user := User.query.get(user_id):
+        if member := OrganizationMember.query.filter_by(
+            user_id=user.id, organization_id=organization.id
+        ).first():
+            member.admin = False
+            db.session.commit()
+
+            _update_grafana_user_role(user, organization, "Viewer")
+            flash(
+                f"User {user.email} demoted to member in {organization.name}.",
+                "success",
+            )
+    else:
+        flash("User not found.", "error")
+    return redirect(url_for("user.organization", org_slug=org_slug))

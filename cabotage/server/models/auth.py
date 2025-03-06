@@ -65,6 +65,7 @@ class User(db.Model, FsUserMixin):
     )
     username = db.Column(db.String(255), unique=True, nullable=False)
     password = db.Column(db.String(255), nullable=False)
+    grafana_jwt = db.Column(db.String(255), nullable=True)
 
     admin = db.Column(db.Boolean, nullable=False, default=False)
     registered_at = db.Column(
@@ -120,6 +121,7 @@ class Organization(db.Model):
     )
     name = db.Column(db.Text(), nullable=False)
     slug = db.Column(CIText(), nullable=False, unique=True)
+    grafana_org_id = db.Column(db.Integer, unique=True, nullable=True)
 
     members = db.relationship("OrganizationMember", back_populates="organization")
     teams = db.relationship("OrganizationTeam", back_populates="organization")
@@ -135,7 +137,7 @@ class Organization(db.Model):
     def remove_user(self, user):
         association = OrganizationMember.query.filter_by(
             user_id=user.id, organization_id=self.id
-        )
+        ).first()
         if association:
             db.session.delete(association)
 

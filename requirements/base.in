@@ -37,3 +37,4 @@ sqlalchemy-continuum
 toml
 unidecode
 urllib3
+grafana-api-sdk
