@@ -511,11 +511,11 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
         resources=kubernetes.client.V1ResourceRequirements(
             limits={
                 "memory": "128Mi",
-                "cpu": "20m",
+                "cpu": "100m",
             },
             requests={
                 "memory": "64Mi",
-                "cpu": "10m",
+                "cpu": "20m",
             },
         ),
     )
