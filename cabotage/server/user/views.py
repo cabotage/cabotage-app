@@ -33,6 +33,7 @@ from requests.exceptions import HTTPError
 from sqlalchemy import desc
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy_continuum import version_class
+from werkzeug import Response
 
 from cabotage.server import (
     config_writer,
@@ -1685,7 +1686,7 @@ def github_hooks():
 
 @user_blueprint.route("/organizations/<org_slug>/users/add", methods=["GET", "POST"])
 @login_required
-def organization_add_user(org_slug):
+def organization_add_user(org_slug: str) -> Response | str:
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     if not AdministerOrganizationPermission(organization.id).can():
         abort(403)
@@ -1711,7 +1712,7 @@ def organization_add_user(org_slug):
 
 @user_blueprint.route("/organizations/<org_slug>/users/remove", methods=["POST"])
 @login_required
-def organization_remove_user(org_slug):
+def organization_remove_user(org_slug: str) -> Response:
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     if not AdministerOrganizationPermission(organization.id).can():
         abort(403)
@@ -1756,9 +1757,37 @@ def organization_remove_user(org_slug):
     return redirect(url_for("user.organization", org_slug=org_slug))
 
 
+def _update_grafana_user_role(user: User, organization: Organization, new_role: str) -> None:
+    """Helper function to update a user's role in Grafana organization by removing then re-adding them."""
+    try:
+        from grafana_api.organisation import OrganisationAdmin
+        from grafana_api.user import User as GrafanaUser
+        from cabotage.server.ext.grafana import grafana
+
+        org_admin = OrganisationAdmin(grafana)
+        user_api = GrafanaUser(grafana)
+
+        if grafana_user := user_api.get_user_by_username_or_email(
+            username_or_email=user.email
+        ):
+            with contextlib.suppress(Exception):
+                org_admin.delete_organization_user(
+                    org_id=organization.grafana_org_id,
+                    user_id=grafana_user["id"],
+                )
+        
+        assign_user_to_grafana_org(
+            user.email,
+            organization.grafana_org_id,
+            role=new_role
+        )
+    except Exception as exc:
+        logger.warning(f"Failed to update Grafana role: {exc}")
+
+
 @user_blueprint.route("/organizations/<org_slug>/users/promote", methods=["POST"])
 @login_required
-def organization_promote_user(org_slug):
+def organization_promote_user(org_slug: str) -> Response:
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     if not AdministerOrganizationPermission(organization.id).can():
         abort(403)
@@ -1771,31 +1800,7 @@ def organization_promote_user(org_slug):
             member.admin = True
             db.session.commit()
 
-            try:
-                from grafana_api.organisation import OrganisationAdmin
-                from grafana_api.user import User as GrafanaUser
-                from cabotage.server.ext.grafana import grafana
-
-                org_admin = OrganisationAdmin(grafana)
-                user_api = GrafanaUser(grafana)
-
-                if grafana_user := user_api.get_user_by_username_or_email(
-                    username_or_email=user.email
-                ):
-                    with contextlib.suppress(Exception):
-                        org_admin.delete_organization_user(
-                            org_id=organization.grafana_org_id,
-                            user_id=grafana_user["id"],
-                        )
-                
-                assign_user_to_grafana_org(
-                    user.email,
-                    organization.grafana_org_id,
-                    role="Admin"
-                )
-            except Exception as exc:
-                logger.warning(f"Failed to update Grafana role: {exc}")
-
+            _update_grafana_user_role(user, organization, "Admin")
             flash(
                 f"User {user.email} promoted to admin in {organization.name}.",
                 "success",
@@ -1807,7 +1812,7 @@ def organization_promote_user(org_slug):
 
 @user_blueprint.route("/organizations/<org_slug>/users/demote", methods=["POST"])
 @login_required
-def organization_demote_user(org_slug):
+def organization_demote_user(org_slug: str) -> Response:
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     if not current_user.admin:
         # Only global admins (User.admin) can demote, not just organization admins
@@ -1821,31 +1826,7 @@ def organization_demote_user(org_slug):
             member.admin = False
             db.session.commit()
 
-            try:
-                from grafana_api.organisation import OrganisationAdmin
-                from grafana_api.user import User as GrafanaUser
-                from cabotage.server.ext.grafana import grafana
-
-                org_admin = OrganisationAdmin(grafana)
-                user_api = GrafanaUser(grafana)
-
-                if grafana_user := user_api.get_user_by_username_or_email(
-                    username_or_email=user.email
-                ):
-                    with contextlib.suppress(Exception):
-                        org_admin.delete_organization_user(
-                            org_id=organization.grafana_org_id,
-                            user_id=grafana_user["id"],
-                        )
-                
-                assign_user_to_grafana_org(
-                    user.email,
-                    organization.grafana_org_id,
-                    role="Viewer"
-                )
-            except Exception as exc:
-                logger.warning(f"Failed to update Grafana role: {exc}")
-
+            _update_grafana_user_role(user, organization, "Viewer")
             flash(
                 f"User {user.email} demoted to member in {organization.name}.",
                 "success",
