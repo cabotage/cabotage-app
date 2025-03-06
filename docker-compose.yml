@@ -108,7 +108,8 @@ services:
       GF_AUTH_JWT_JWK_SET_URL: http://cabotage-app:8000/jwks
       GF_AUTH_JWT_CACHE_TTL: 1s
       GF_AUTH_JWT_URL_LOGIN: "true"
-      GF_AUTH_JWT_ROLE_ATTRIBUTE_PATH: roles
+#       GF_AUTH_JWT_ROLE_ATTRIBUTE_PATH: roles
+#       GF_AUTH_JWT_ORG_ATTRIBUTE_PATH: orgs
       GF_AUTH_JWT_SKIP_ORG_ROLE_SYNC: "false"
     ports:
       - "3000:3000"

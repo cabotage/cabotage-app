@@ -1629,22 +1629,23 @@ def jwt(org_slug):
             flash("Failed to create Grafana team", "error")
             return redirect(url_for('user.project', org_slug=org_slug, project_slug=project.slug))
 
-    # Generate JWT for user access
-    jwt = generate_grafana_jwt(current_user)
-    
-    # Ensure user has access to the org
     try:
         assign_user_to_grafana_org(
             current_user.email,
             organization.grafana_org_id,
-            role="Viewer"
+            role="Admin" if any(om.admin for om in current_user.organizations if om.organization_id == organization.id) else "Viewer"
+        )
+        
+        jwt = generate_grafana_jwt(
+            current_user,
+            target_org_id=organization.grafana_org_id
         )
     except Exception as exc:
-        logger.exception("Failed to assign user to Grafana org")
-        flash("Failed to assign user to Grafana organization", "error")
+        logger.exception("Failed to setup Grafana access")
+        flash("Failed to setup Grafana access", "error")
         return redirect(url_for('user.organization', org_slug=org_slug))
 
-    return redirect(f"http://localhost:3000/?auth_token={jwt}", code=302)
+    return redirect(f"http://localhost:3000/?auth_token={jwt}&orgId={organization.grafana_org_id}", code=302)
 
 
 @user_blueprint.route("/github/hooks", methods=["POST"])

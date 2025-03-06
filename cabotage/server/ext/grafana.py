@@ -240,7 +240,7 @@ def setup_grafana_integration(organization: CabotageOrganization, user: Cabotage
 
             # Add the user to the Grafana org as an admin
             logger.info(f"Adding user {user.email} as admin to Grafana org {grafana_org_id}")
-            admin_jwt = generate_grafana_jwt(user, org_role="Admin")
+            # admin_jwt = generate_grafana_jwt(user)
             assign_user_to_grafana_org(
                 user.email,
                 grafana_org_id,
