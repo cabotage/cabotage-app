@@ -19,6 +19,7 @@ from wtforms.validators import (
     Regexp,
     ValidationError,
 )
+from wtforms.widgets import HiddenInput
 
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import (
@@ -409,10 +410,14 @@ class DeleteConfigurationForm(FlaskForm):
 
 
 class ReleaseDeployForm(FlaskForm):
-    release_id = StringField(
-        "Release ID",
-        [InputRequired()],
-        description="Release to deploy.",
+    release_id = HiddenField(
+        "",
+        [DataRequired()],
+    )
+    is_rollback = BooleanField(
+        "",
+        [],
+        widget=HiddenInput(),
     )
 
 
