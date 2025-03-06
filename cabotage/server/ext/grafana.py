@@ -38,8 +38,8 @@ ssl_ctx.verify_mode = ssl.CERT_REQUIRED
 grafana = APIModel(
     # TODO: investigate configmap envvar exposure
     host=os.getenv("CABOTAGE_GRAFANA_URL") or "http://grafana:3000",
-    username=os.getenv("CABOTAGE_GRAFANA_ORG_ADMIN_USER"),
-    password=os.getenv("CABOTAGE_GRAFANA_ORG_ADMIN_PASS"),
+    username=os.getenv("CABOTAGE_GRAFANA_ORG_ADMIN_USER") or "admin",
+    password=os.getenv("CABOTAGE_GRAFANA_ORG_ADMIN_PASS") or "admin",
     # Note: disable when developing in standalone Docker
     ssl_context=ssl_ctx
 )
@@ -72,9 +72,7 @@ def create_datasource(org: str, org_id: int) -> None:
             "secureJsonData": {
                 "httpHeaderValue1": org,
                 # Note: disable when developing in standalone Docker
-                "tlsCACert": Path("/var/run/secrets/cabotage.io/ca.crt").read_text()
-                }
-            }
+                # "tlsCACert": Path("/var/run/secrets/cabotage.io/ca.crt").read_text()
             },
         }
         return datasource_api.create_datasource(datasource)
