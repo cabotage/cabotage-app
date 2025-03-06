@@ -1772,8 +1772,26 @@ def organization_promote_user(org_slug):
             db.session.commit()
 
             try:
+                from grafana_api.organisation import OrganisationAdmin
+                from grafana_api.user import User as GrafanaUser
+                from cabotage.server.ext.grafana import grafana
+
+                org_admin = OrganisationAdmin(grafana)
+                user_api = GrafanaUser(grafana)
+
+                if grafana_user := user_api.get_user_by_username_or_email(
+                    username_or_email=user.email
+                ):
+                    with contextlib.suppress(Exception):
+                        org_admin.delete_organization_user(
+                            org_id=organization.grafana_org_id,
+                            user_id=grafana_user["id"],
+                        )
+                
                 assign_user_to_grafana_org(
-                    user.email, organization.grafana_org_id, role="Admin"
+                    user.email,
+                    organization.grafana_org_id,
+                    role="Admin"
                 )
             except Exception as exc:
                 logger.warning(f"Failed to update Grafana role: {exc}")
@@ -1804,8 +1822,26 @@ def organization_demote_user(org_slug):
             db.session.commit()
 
             try:
+                from grafana_api.organisation import OrganisationAdmin
+                from grafana_api.user import User as GrafanaUser
+                from cabotage.server.ext.grafana import grafana
+
+                org_admin = OrganisationAdmin(grafana)
+                user_api = GrafanaUser(grafana)
+
+                if grafana_user := user_api.get_user_by_username_or_email(
+                    username_or_email=user.email
+                ):
+                    with contextlib.suppress(Exception):
+                        org_admin.delete_organization_user(
+                            org_id=organization.grafana_org_id,
+                            user_id=grafana_user["id"],
+                        )
+                
                 assign_user_to_grafana_org(
-                    user.email, organization.grafana_org_id, role="Viewer"
+                    user.email,
+                    organization.grafana_org_id,
+                    role="Viewer"
                 )
             except Exception as exc:
                 logger.warning(f"Failed to update Grafana role: {exc}")
