@@ -78,6 +78,10 @@ pod_classes = {
         "cpu": {"requests": "750m", "limits": "1500m"},
         "memory": {"requests": "2048Mi", "limits": "3072Mi"},
     },
+    "r1.2xlarge": {
+        "cpu": {"requests": "1500m", "limits": "1500m"},
+        "memory": {"requests": "4096Mi", "limits": "4096Mi"},
+    },
 }
 
 DEFAULT_POD_CLASS = "m1.large"
