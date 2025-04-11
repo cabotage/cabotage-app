@@ -256,13 +256,13 @@ class Application(db.Model, Timestamp):
 
     @property
     def latest_deployment(self):
-        return self.deployments.filter_by().order_by(Deployment.version.desc()).first()
+        return self.deployments.filter_by().order_by(Deployment.created.desc()).first()
 
     @property
     def latest_deployment_completed(self):
         return (
             self.deployments.filter_by(complete=True)
-            .order_by(Deployment.version.desc())
+            .order_by(Deployment.created.desc())
             .first()
         )
 
@@ -270,7 +270,7 @@ class Application(db.Model, Timestamp):
     def latest_deployment_error(self):
         return (
             self.deployments.filter_by(error=True)
-            .order_by(Deployment.version.desc())
+            .order_by(Deployment.created.desc())
             .first()
         )
 
@@ -278,7 +278,7 @@ class Application(db.Model, Timestamp):
     def latest_deployment_running(self):
         return (
             self.deployments.filter_by(complete=False, error=False)
-            .order_by(Deployment.version.desc())
+            .order_by(Deployment.created.desc())
             .first()
         )
 
@@ -381,6 +381,9 @@ class Deployment(db.Model, Timestamp):
         nullable=False,
     )
     release = db.Column(postgresql.JSONB(), nullable=False)
+    is_rollback = db.Column(
+        db.Boolean, nullable=False, default=False, server_default="false"
+    )
     version_id = db.Column(db.Integer, nullable=False)
     complete = db.Column(db.Boolean, nullable=False, default=False)
     error = db.Column(db.Boolean, nullable=False, default=False)
@@ -629,6 +632,19 @@ class Release(db.Model, Timestamp):
         if self.dockerfile:
             dockerfile = self.dockerfile
         return configmap_context_for_release(self, dockerfile)
+
+    def compare_to_release(self, other):
+        configuration_diff = DictDiffer(
+            other.asdict.get("configuration", {}),
+            self.asdict.get("configuration", {}),
+            ignored_keys=["id", "version_id"],
+        )
+        image_diff = DictDiffer(
+            other.asdict.get("image", {}),
+            self.asdict.get("image", {}),
+            ignored_keys=["id", "version_id"],
+        )
+        return image_diff, configuration_diff
 
 
 @listens_for(Release, "before_insert")
