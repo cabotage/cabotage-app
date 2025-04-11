@@ -1,22 +1,89 @@
 {% extends "_base.html" %}
 {% from "bootstrap/utils.html" import form_button %}
+
 {% block content %}
-  <div class="container" id="content">
-    <div class="row">
-      <h1>Organization: {{ organization.name }}</h1>
+    {% include "security/_messages.html" %}
+    <div class="container" id="content">
+        <div class="row">
+            <h1>Organization: {{ organization.name }}</h1>
+        </div>
+        <div class="row">
+            <h2>Projects</h2>
+        </div>
+        <table class="table">
+            {% for project in organization.projects %}
+                <tr>
+                    <td>
+                        <a href="{{ url_for("user.project", org_slug=project.organization.slug, project_slug=project.slug) }}">{{ project.name }}</a>
+                    </td>
+                </tr>
+            {% endfor %}
+            <tr>
+                <td colspan="2" class="text-right">
+                    {{ form_button(url_for('user.organization_project_create', org_slug=organization.slug), "Create a new Project", method="GET", class="btn btn-primary") }}
+                </td>
+            </tr>
+        </table>
+
+        <div class="row">
+            <h2>Users</h2>
+        </div>
+        <table class="table">
+            <thead>
+            <tr>
+                <th>Username</th>
+                <th>Role</th>
+                <th></th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for member in organization.members %}
+                <tr>
+                    <td>{{ member.user.username }}</td>
+                    <td>{{ "Admin" if member.admin else "Member" }}</td>
+                    <td class="text-right">
+                        {% if member.user.id != current_user.id %}  {# Don't show management buttons for current user #}
+                            {% if current_user.admin or (organization.id in current_user.organizations|map(attribute='organization_id')|list) %}
+                                {% if not member.admin %}
+                                    <form action="{{ url_for('user.organization_promote_user', org_slug=organization.slug) }}"
+                                          method="POST" style="display: inline;">
+                                        <input type="hidden" name="user_id" value="{{ member.user.id }}">
+                                        <button type="submit" class="btn btn-sm btn-success"
+                                                onclick="return confirm('Are you sure you want to promote {{ member.user.username }} to admin? \n\nOnly a global administrator will be able to undo this action.');">
+                                            <span class="glyphicon glyphicon-arrow-up"></span> Promote
+                                        </button>
+                                    </form>
+                                {% elif current_user.admin %}
+                                    <form action="{{ url_for('user.organization_demote_user', org_slug=organization.slug) }}"
+                                          method="POST" style="display: inline;">
+                                        <input type="hidden" name="user_id" value="{{ member.user.id }}">
+                                        <button type="submit" class="btn btn-sm btn-warning"
+                                                onclick="return confirm('Are you sure you want to demote {{ member.user.username }} to member?');">
+                                            <span class="glyphicon glyphicon-arrow-down"></span> Demote
+                                        </button>
+                                    </form>
+                                {% endif %}
+                                <form action="{{ url_for('user.organization_remove_user', org_slug=organization.slug) }}"
+                                      method="POST" style="display: inline;">
+                                    <input type="hidden" name="user_id" value="{{ member.user.id }}">
+                                    <button type="submit" class="btn btn-sm btn-danger"
+                                            onclick="return confirm('Are you sure you want to remove {{ member.user.username }} from this organization?');">
+                                        <span class="glyphicon glyphicon-trash"></span> Remove
+                                    </button>
+                                </form>
+                            {% endif %}
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            {% if organization.id in current_user.organizations|map(attribute='organization_id')|list %}
+                <tr>
+                    <td colspan="3">
+                        {{ form_button(url_for('user.organization_add_user', org_slug=organization.slug), "Add User", method="GET", class="btn btn-primary pull-right") }}
+                    </td>
+                </tr>
+            {% endif %}
+            </tbody>
+        </table>
     </div>
-    <div class="row">
-      <h2>Projects</h2>
-    </div>
-    <table class="table">
-    {% for project in organization.projects %}
-      <tr>
-        <td><a href="{{ url_for("user.project", org_slug=project.organization.slug, project_slug=project.slug) }}">{{ project.name }}</a></td>
-      </tr>
-    {% endfor %}
-      <tr>
-        <td>{{ form_button(url_for('user.organization_project_create', org_slug=organization.slug), "Create a new Project", method="GET", class="btn btn-primary pull-right") }}</td>
-      </tr>
-    </table>
-  </div>
 {% endblock %}
