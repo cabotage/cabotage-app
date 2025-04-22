@@ -65,7 +65,7 @@
               console.log(event);
           }, 100);
           window.addEventListener("resize", sendResize);
-          sendResize(null);
+          socket.addEventListener("open", (event) => {sendResize(null)});
       }
     </script>
   </div>
