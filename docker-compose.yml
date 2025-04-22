@@ -15,7 +15,7 @@ networks:
 
 services:
   kubernetes:
-    image: "rancher/k3s:latest"
+    image: "rancher/k3s:v1.31.7-k3s1"
     entrypoint: /entrypoint.sh
     command: server -tls-san=kubernetes -tls-san=172.168.69.69 -bind-address=172.168.69.69 -advertise-address=172.168.69.69
     tmpfs:
