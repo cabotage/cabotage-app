@@ -4,8 +4,44 @@ volumes:
   miniodata:
   postgresdata:
   redisdata:
+  k3s-server:
+  k3s-config:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.168.69.0/24
 
 services:
+  kubernetes:
+    image: "rancher/k3s:v1.31.7-k3s1"
+    entrypoint: /entrypoint.sh
+    command: server -tls-san=kubernetes -tls-san=172.168.69.69 -bind-address=172.168.69.69 -advertise-address=172.168.69.69
+    tmpfs:
+    - /run
+    - /var/run
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 65535
+        hard: 65535
+    privileged: true
+    restart: always
+    environment:
+    - K3S_KUBECONFIG_OUTPUT=/output/kubeconfig.yaml
+    - K3S_KUBECONFIG_MODE=666
+    volumes:
+    - ./docker-compose/kubernetes/entrypoint.sh:/entrypoint.sh
+    - k3s-server:/var/lib/rancher/k3s
+    - k3s-config:/output
+    networks:
+      default:
+        ipv4_address: 172.168.69.69
+    ports:
+    - 6443:6443  # Kubernetes API Server
+    - 80:80      # Ingress controller port 80
+    - 443:443    # Ingress controller port 443
   db:
     image: postgres:16
     restart: always
@@ -110,8 +146,9 @@ services:
       - CABOTAGE_GITHUB_APP_PRIVATE_KEY=
       - CABOTAGE_GITHUB_APP_URL=https://github.com/apps/cabotage-local
       - CABOTAGE_GITHUB_WEBHOOK_SECRET=
-      - CABOTAGE_KUBERNETES_CONTEXT=minikube
-      - CABOTAGE_KUBERNETES_ENABLED=False
+      - CABOTAGE_KUBERNETES_CONFIG=/kubernetes/kubeconfig.yaml
+      - CABOTAGE_KUBERNETES_CONTEXT=default
+      - CABOTAGE_KUBERNETES_ENABLED=True
       - CABOTAGE_SECURITY_CONFIRMABLE=False
       - CABOTAGE_SQLALCHEMY_DATABASE_URI=postgresql://postgres@db/cabotage_dev
       - CABOTAGE_TESTING=True
@@ -130,6 +167,7 @@ services:
     volumes:
       - .:/opt/cabotage-app/src:z
       - $HOME/.kube:/var/run/kube
+      - k3s-config:/kubernetes
     ports:
       - "8000:8000"
     links:
@@ -144,6 +182,7 @@ services:
     volumes:
       - .:/opt/cabotage-app/src:z
       - $HOME/.kube:/var/run/kube
+      - k3s-config:/kubernetes
     links:
       - db
       - redis
