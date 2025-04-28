@@ -422,3 +422,14 @@ class ApplicationScaleForm(FlaskForm):
         [DataRequired()],
         description="Application to scale.",
     )
+
+
+class AddOrganizationUserForm(FlaskForm):
+    email = StringField(
+        "User Email",
+        [
+            InputRequired(),
+            Length(min=3, max=255),
+        ],
+        description="Email address of the user to add to this organization",
+    )
