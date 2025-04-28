@@ -1130,26 +1130,30 @@ def deploy_release(deployment):
                 ],
             ),
         )
-        for release_command in deployment.release_object.release_commands:
-            deploy_log.append(f"Running release command {release_command}")
-            job_object = render_job(
-                namespace.metadata.name,
-                deployment.release_object,
-                service_account.metadata.name,
-                release_command,
-                deployment.job_id,
-            )
-            job_complete, job_logs = run_job(
-                core_api_instance,
-                batch_api_instance,
-                namespace.metadata.name,
-                job_object,
-            )
-            deploy_log.append(job_logs)
-            if not job_complete:
-                raise DeployError(f"Release command {release_command} failed!")
-            else:
-                deploy_log.append(f"Release command {release_command} complete!")
+        if deployment.is_rollback:
+            deploy_log.append("Skipping release commands due to rollback")
+        else:
+            for release_command in deployment.release_object.release_commands:
+                deploy_log.append(f"Running release command {release_command}")
+                job_object = render_job(
+                    namespace.metadata.name,
+                    deployment.release_object,
+                    service_account.metadata.name,
+                    release_command,
+                    deployment.job_id,
+                )
+                job_complete, job_logs = run_job(
+                    core_api_instance,
+                    batch_api_instance,
+                    namespace.metadata.name,
+                    job_object,
+                )
+                deploy_log.append(job_logs)
+                if not job_complete:
+                    raise DeployError(f"Release command {release_command} failed!")
+                else:
+                    deploy_log.append(f"Release command {release_command} complete!")
+
         for process_name in deployment.release_object.processes:
             deploy_log.append(
                 f"Creating deployment for {process_name} "
@@ -1190,28 +1194,31 @@ def deploy_release(deployment):
             deploy_log.append(str(_go))
             raise DeployError("Unable to launch replicas in time")
 
-        for postdeploy_command in deployment.release_object.postdeploy_commands:
-            deploy_log.append(f"Running postdeploy command {postdeploy_command}")
-            job_object = render_job(
-                namespace.metadata.name,
-                deployment.release_object,
-                service_account.metadata.name,
-                postdeploy_command,
-                deployment.job_id,
-            )
-            job_complete, job_logs = run_job(
-                core_api_instance,
-                batch_api_instance,
-                namespace.metadata.name,
-                job_object,
-            )
-            deploy_log.append(job_logs)
-            if not job_complete:
-                raise DeployError(f"Release command {postdeploy_command} failed!")
-            else:
-                deploy_log.append(f"Release command {postdeploy_command} complete!")
-        deployment.complete = True
-        deploy_log.append(f"Deployment {deployment.id} complete")
+        if deployment.is_rollback:
+            deploy_log.append("Skipping postdeploy commands due to rollback")
+        else:
+            for postdeploy_command in deployment.release_object.postdeploy_commands:
+                deploy_log.append(f"Running postdeploy command {postdeploy_command}")
+                job_object = render_job(
+                    namespace.metadata.name,
+                    deployment.release_object,
+                    service_account.metadata.name,
+                    postdeploy_command,
+                    deployment.job_id,
+                )
+                job_complete, job_logs = run_job(
+                    core_api_instance,
+                    batch_api_instance,
+                    namespace.metadata.name,
+                    job_object,
+                )
+                deploy_log.append(job_logs)
+                if not job_complete:
+                    raise DeployError(f"Release command {postdeploy_command} failed!")
+                else:
+                    deploy_log.append(f"Release command {postdeploy_command} complete!")
+            deployment.complete = True
+            deploy_log.append(f"Deployment {deployment.id} complete")
     except DeployError as exc:
         deployment.error = True
         deployment.error_detail = str(exc)
@@ -1322,19 +1329,23 @@ def fake_deploy_release(deployment):
         f"with ImagePullSecrets/{image_pull_secrets.metadata.name} "
         f"in Namespace/{namespace.metadata.name}"
     )
-    for release_command in deployment.release_object.release_commands:
-        job_object = render_job(
-            namespace.metadata.name,
-            deployment.release_object,
-            service_account.metadata.name,
-            release_command,
-            deployment.job_id,
-        )
-        deploy_log.append(
-            f"Running Job/{job_object.metadata.name} "
-            f"in Namespace/{namespace.metadata.name}"
-        )
-        deploy_log.append(yaml.dump(remove_none(job_object.to_dict())))
+    if deployment.is_rollback:
+        deploy_log.append("Skipping release commands due to rollback")
+    else:
+        for release_command in deployment.release_object.release_commands:
+            job_object = render_job(
+                namespace.metadata.name,
+                deployment.release_object,
+                service_account.metadata.name,
+                release_command,
+                deployment.job_id,
+            )
+            deploy_log.append(
+                f"Running Job/{job_object.metadata.name} "
+                f"in Namespace/{namespace.metadata.name}"
+            )
+            deploy_log.append(yaml.dump(remove_none(job_object.to_dict())))
+
     for process in deployment.release_object.processes:
         deployment_object = render_deployment(
             namespace.metadata.name,
@@ -1347,6 +1358,25 @@ def fake_deploy_release(deployment):
             f"in Namespace/{namespace.metadata.name}"
         )
         deploy_log.append(yaml.dump(remove_none(deployment_object.to_dict())))
+
+    if deployment.is_rollback:
+        deploy_log.append("Skipping postdeploy commands due to rollback")
+    else:
+        for postdeploy_command in deployment.release_object.postdeploy_commands:
+            deploy_log.append(f"Running postdeploy command {postdeploy_command}")
+            job_object = render_job(
+                namespace.metadata.name,
+                deployment.release_object,
+                service_account.metadata.name,
+                postdeploy_command,
+                deployment.job_id,
+            )
+            deploy_log.append(
+                f"Running Job/{job_object.metadata.name} "
+                f"in Namespace/{namespace.metadata.name}"
+            )
+            deploy_log.append(yaml.dump(remove_none(job_object.to_dict())))
+
     deployment.deploy_log = "\n".join(deploy_log)
     db.session.commit()
     if (
