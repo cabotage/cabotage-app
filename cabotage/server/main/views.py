@@ -16,6 +16,7 @@ def home():
 def about():
     return render_template("main/about.html")
 
+
 @main_blueprint.route("/user-interest")
 def interest():
     return render_template("main/interest.html")
