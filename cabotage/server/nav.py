@@ -1,5 +1,5 @@
 from flask_nav3 import Nav
-from flask_nav3.elements import Navbar, View, Separator, Subgroup
+from flask_nav3.elements import Navbar, View, Separator, Subgroup, Link
 
 nav = Nav()
 
@@ -7,6 +7,7 @@ anonymous_nav = Navbar(
     "Cabotage",
     View("Log In", "security.login"),
     View("Interest Form", "main.interest"),
+    Link("External Form", "https://forms.gle/Wx4VB7VsZeiBg5Eo9")
 )
 logged_in_nav = Navbar(
     "Cabotage",
