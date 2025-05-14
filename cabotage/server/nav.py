@@ -6,6 +6,7 @@ nav = Nav()
 anonymous_nav = Navbar(
     "Cabotage",
     View("Log In", "security.login"),
+    View("Interest Form", "main.interest"),
 )
 logged_in_nav = Navbar(
     "Cabotage",
