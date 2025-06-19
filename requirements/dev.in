@@ -8,4 +8,4 @@ types-PyYAML
 types-requests
 types-toml
 typing-extensions==4.7.1
-urllib3==2.2.2
+urllib3==2.5.0
