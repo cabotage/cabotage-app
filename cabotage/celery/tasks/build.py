@@ -528,12 +528,23 @@ def build_image_buildkit(image=None):
         else:
             image.image_metadata["sha"] = commit_sha
 
+    def git_ref(repository, sha):
+        ref = f"https://x-access-token@github.com/{image.application.github_repository}.git#{image.commit_sha}"
+        if image.application.subdirectory:
+            return f"{ref}:{image.application.subdirectory}"
+        return ref
+
+    def file_path(filename):
+        if image.application.subdirectory:
+            return os.path.join(image.application.subdirectory, filename)
+        return filename
+
     dockerfile_name = None
     dockerfile_body = _fetch_github_file(
         image.application.github_repository,
         image.commit_sha,
         access_token=access_token,
-        filename="Dockerfile.cabotage",
+        filename=file_path("Dockerfile.cabotage"),
     )
     dockerfile_name = "Dockerfile.cabotage"
     if dockerfile_body is None:
@@ -541,32 +552,32 @@ def build_image_buildkit(image=None):
             image.application.github_repository,
             image.commit_sha,
             access_token=access_token,
-            filename="Dockerfile",
+            filename=file_path("Dockerfile"),
         )
         dockerfile_name = "Dockerfile"
     if dockerfile_body is None:
         raise BuildError(
             "No Dockerfile.cabotage or Dockerfile found in root of "
-            f"{image.application.github_repository}@{image.commit_sha}"
+            f"{git_ref(image.application.github_repository, image.commit_sha)}"
         )
 
     procfile_body = _fetch_github_file(
         image.application.github_repository,
         image.commit_sha,
         access_token=access_token,
-        filename="Procfile.cabotage",
+        filename=file_path("Procfile.cabotage"),
     )
     if procfile_body is None:
         procfile_body = _fetch_github_file(
             image.application.github_repository,
             image.commit_sha,
             access_token=access_token,
-            filename="Procfile",
+            filename=file_path("Procfile"),
         )
     if procfile_body is None:
         raise BuildError(
             "No Procfile.cabotage or Procfile found in root of "
-            "{image.application.github_repository}@{image.commit_sha}"
+            f"{git_ref(image.application.github_repository, image.commit_sha)}"
         )
 
     image.dockerfile = dockerfile_body
@@ -634,10 +645,7 @@ def build_image_buildkit(image=None):
         "--opt",
         f"filename=./{dockerfile_name}",
         "--opt",
-        (
-            "context=https://x-access-token@github.com/"
-            f"{image.application.github_repository}.git#{image.commit_sha}"
-        ),
+        (f"context={git_ref(image.application.github_repository, image.commit_sha)}"),
         "--import-cache",
         (
             f"type=registry,ref={registry}/{image.repository_name}"

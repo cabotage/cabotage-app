@@ -258,6 +258,10 @@ class EditApplicationSettingsForm(FlaskForm):
         "Branch",
         description="GitHub Repository branch to auto-deploy from",
     )
+    subdirectory = StringField(
+        "Subdirectory",
+        description="Subdirectory to build out of",
+    )
     github_app_installation_id = StringField(
         "GitHub Application Installation ID",
         description="Application Installation ID from GitHub",
