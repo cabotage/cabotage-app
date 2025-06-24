@@ -430,12 +430,9 @@ def project_application_shell(org_slug, project_slug, app_slug):
     # =============================================================================== #
     try:
         [
-            p
-            for p in list(
-                application.latest_deployment.release_object.image_object.processes.keys()
-            )
-            if (p.startswith("web") or p.startswith("worker"))
-            and application.process_counts.get(p, 0) > 0
+            k
+            for k, v in application.process_counts.items()
+            if (k.startswith("web") or k.startswith("worker")) and v > 0
         ][0]
     except IndexError:
         abort(404)
@@ -474,12 +471,9 @@ def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
     # =============================================================================== #
     try:
         process_name = [
-            p
-            for p in list(
-                application.latest_deployment.release_object.image_object.processes.keys()
-            )
-            if (p.startswith("web") or p.startswith("worker"))
-            and application.process_counts.get(p, 0) > 0
+            k
+            for k, v in application.process_counts.items()
+            if (k.startswith("web") or k.startswith("worker")) and v > 0
         ][0]
     except IndexError:
         abort(404)
