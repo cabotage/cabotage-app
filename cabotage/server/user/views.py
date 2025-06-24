@@ -425,6 +425,20 @@ def project_application_shell(org_slug, project_slug, app_slug):
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
 
+    # =============================================================================== #
+    #  this should be removed when we start a shell pod instead of attaching          #
+    # =============================================================================== #
+    try:
+        [
+            p
+            for p in list(
+                application.latest_deployment.release_object.image_object.processes.keys()
+            )
+            if p.startswith("web") or p.startswith("worker")
+        ][0]
+    except IndexError:
+        abort(404)
+
     return render_template(
         "user/project_application_shell.html",
         org_slug=org_slug,
@@ -457,15 +471,27 @@ def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
     # =============================================================================== #
     #  everything below should be replaced with the creation/monitoring of a new pod  #
     # =============================================================================== #
+    try:
+        process_name = [
+            p
+            for p in list(
+                application.latest_deployment.release_object.image_object.processes.keys()
+            )
+            if p.startswith("web") or p.startswith("worker")
+        ][0]
+    except IndexError:
+        abort(404)
     labels = {
         "organization": organization.slug,
         "project": project.slug,
         "application": application.slug,
+        "process": process_name,
     }
     label_selector = ",".join([f"{k}={v}" for k, v in labels.items()])
     pod = core_api_instance.list_namespaced_pod(
         namespace=organization.slug, label_selector=label_selector
     ).items[0]
+
     # =============================================================================== #
 
     resp = kubernetes.stream.stream(
@@ -481,7 +507,7 @@ def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
                 "envconsul -config /etc/cabotage/envconsul-shell.hcl /bin/bash"
             ),
         ],
-        container="web",
+        container=process_name,
         stderr=True,
         stdin=True,
         stdout=True,
