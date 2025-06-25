@@ -8,7 +8,7 @@
   var filterKubeProbe = true;
 
   function appendLog(data) {
-    if (/"kube-probe\/\d+.\d+"/.test(data) && filterKubeProbe) {
+    if (/\bkube-probe\/\d+.\d+\b/.test(data) && filterKubeProbe) {
       return
     }
     logsPre.innerHTML += '\n' + renderLogLine(data);
