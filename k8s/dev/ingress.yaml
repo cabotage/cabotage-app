@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cabotage-app
+  namespace: cabotage-dev
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+spec:
+  ingressClassName: nginx
+  rules:
+    # nip.io provides free wildcard DNS - no /etc/hosts needed
+    # Format: <name>.<ip-with-dashes>.nip.io -> resolves to that IP
+    - host: cabotage.192-168-139-2.nip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: cabotage-app
+                port:
+                  number: 8000

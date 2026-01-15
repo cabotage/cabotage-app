@@ -1,0 +1,113 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault
+  namespace: cabotage-dev
+spec:
+  ports:
+    - port: 8200
+      targetPort: 8200
+  selector:
+    app: vault
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vault
+  namespace: cabotage-dev
+spec:
+  serviceName: vault
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vault
+  template:
+    metadata:
+      labels:
+        app: vault
+    spec:
+      containers:
+        - name: vault
+          image: hashicorp/vault:1.18
+          command: ["/bin/sh", "/etc/vault/entry.sh"]
+          ports:
+            - containerPort: 8200
+          env:
+            - name: VAULT_DEV_LISTEN_ADDRESS
+              value: "0.0.0.0:8200"
+            - name: VAULT_DEV_ROOT_TOKEN_ID
+              value: "deadbeef-dead-beef-dead-beefdeadbeef"
+          securityContext:
+            capabilities:
+              add: ["IPC_LOCK"]
+          volumeMounts:
+            - name: vault-data
+              mountPath: /vault/file
+            - name: vault-config
+              mountPath: /etc/vault
+      volumes:
+        - name: vault-config
+          configMap:
+            name: vault-config
+            defaultMode: 0755
+  volumeClaimTemplates:
+    - metadata:
+        name: vault-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-config
+  namespace: cabotage-dev
+data:
+  config.hcl: |
+    storage "file" {
+      path = "/vault/file"
+    }
+  entry.sh: |
+    #!/bin/sh
+    export VAULT_ADDR=http://127.0.0.1:8200
+    if [ -f /vault/file/unseal ]; then
+        echo "starting vault!"
+        vault server -dev -dev-skip-init -dev-listen-address=$VAULT_DEV_LISTEN_ADDRESS -dev-root-token-id=$VAULT_DEV_ROOT_TOKEN_ID -config /etc/vault/config.hcl &
+        echo "unsealing!"
+        while true; do
+            vault status 2>&1 >/dev/null
+            if [ $? == 2 ]; then
+                echo "we good"
+                break
+            fi
+            echo "vault not up yet..."
+            sleep .5
+        done
+        export UNSEAL_TOKEN=$(cat /vault/file/unseal | tr -d '[:space:]')
+        vault operator unseal "$UNSEAL_TOKEN"
+        wait
+    else
+        echo "starting vault!"
+        vault server -dev -dev-listen-address=$VAULT_DEV_LISTEN_ADDRESS -dev-root-token-id=$VAULT_DEV_ROOT_TOKEN_ID -config /etc/vault/config.hcl 2>&1 | tee $HOME/logfile &
+        while true; do
+            vault status 2>&1 >/dev/null
+            if [ $? == 0 ]; then
+                echo "we good"
+                break
+            fi
+            echo "vault not up and initialized yet..."
+            sleep .5
+        done
+        echo "bootstrapping cabotage secret storage"
+        VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID vault secrets enable -path=cabotage-secrets -version=1 kv
+        echo "bootstrapping our transit key"
+        VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID vault secrets enable transit
+        VAULT_TOKEN=$VAULT_DEV_ROOT_TOKEN_ID vault write transit/restore/cabotage-app backup=$(cat /etc/vault/cabotage-vault-key.backup)
+        echo "storing vault unseal token"
+        cat $HOME/logfile | grep 'Unseal Key: ' | awk '{print $NF}' | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]//g" | tr -d '[:space:]' > /vault/file/unseal
+        wait
+    fi
+  cabotage-vault-key.backup: |
+    eyJwb2xpY3kiOnsibmFtZSI6ImNhYm90YWdlLWFwcCIsImtleXMiOnsiMSI6eyJrZXkiOiJPNzVsMjZ5MkZ0eHR4NGpwYjQ0clhLaTVhNmRLVHZ2YnJlZUxMaFZZMTNvPSIsImhtYWNfa2V5IjoibzE2cmszNDRiQldRdTRkUDVwZzhYTHFrVUF5ZUdqQXBzMVE4K1F4MXlBOD0iLCJ0aW1lIjoiMjAxOC0wNi0xM1QxNjo0NToyOC4yOTk0ODU1MjdaIiwiZWNfeCI6bnVsbCwiZWNfeSI6bnVsbCwiZWNfZCI6bnVsbCwicnNhX2tleSI6bnVsbCwicHVibGljX2tleSI6IiIsImNlcnRpZmljYXRlX2NoYWluIjoiIiwiY3JlYXRpb25fdGltZSI6MCwibWFuYWdlZF9rZXlfaWQiOiIiLCJtYW5hZ2VkX2tleV9uYW1lIjoiIn19LCJkZXJpdmVkIjpmYWxzZSwia2RmIjowLCJjb252ZXJnZW50X2VuY3J5cHRpb24iOmZhbHNlLCJleHBvcnRhYmxlIjp0cnVlLCJtaW5fZGVjcnlwdGlvbl92ZXJzaW9uIjoxLCJtaW5fZW5jcnlwdGlvbl92ZXJzaW9uIjowLCJsYXRlc3RfdmVyc2lvbiI6MSwiYXJjaGl2ZV92ZXJzaW9uIjoxLCJhcmNoaXZlX21pbl92ZXJzaW9uIjowLCJtaW5fYXZhaWxhYmxlX3ZlcnNpb24iOjAsImRlbGV0aW9uX2FsbG93ZWQiOmZhbHNlLCJjb252ZXJnZW50X3ZlcnNpb24iOjAsInR5cGUiOjEsImJhY2t1cF9pbmZvIjp7InRpbWUiOiIyMDE4LTA2LTEzVDE2OjQ2OjA3LjgyNjk5OTAzNloiLCJ2ZXJzaW9uIjoxfSwicmVzdG9yZV9pbmZvIjp7InRpbWUiOiIyMDI0LTExLTA1VDIzOjUxOjEyLjc0OTAwNDU1MloiLCJ2ZXJzaW9uIjoxfSwiYWxsb3dfcGxhaW50ZXh0X2JhY2t1cCI6dHJ1ZSwidmVyc2lvbl90ZW1wbGF0ZSI6IiIsInN0b3JhZ2VfcHJlZml4IjoiIiwiYXV0b19yb3RhdGVfcGVyaW9kIjowLCJpbXBvcnRlZCI6ZmFsc2UsImFsbG93X3dyYXBwaW5nIjpmYWxzZSwia2V5X3NpemUiOjAsIm1hbmFnZWRfa2V5X2lkIjoiIiwibWFuYWdlZF9rZXlfbmFtZSI6IiJ9LCJhcmNoaXZlZF9rZXlzIjp7fX0=
