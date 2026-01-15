@@ -102,7 +102,7 @@ spec:
         - name: source-code
           hostPath:
             # OrbStack automatically translates macOS paths
-            path: . 
+            path: __CWD__
             type: Directory
         - name: kubeconfig
           hostPath:
@@ -194,7 +194,7 @@ spec:
       volumes:
         - name: source-code
           hostPath:
-            path: . 
+            path: __CWD__
             type: Directory
         - name: kubeconfig
           hostPath:

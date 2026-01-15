@@ -14,6 +14,7 @@ k8s_context('orbstack')
 
 # Dynamic paths (avoids hardcoding user-specific paths)
 HOME = str(local('echo $HOME', quiet=True)).strip()
+CWD = str(local('pwd', quiet=True)).strip()
 load('ext://namespace', 'namespace_create')
 
 # Create namespace
@@ -125,6 +126,7 @@ k8s_resource(
 # Template app.yaml with dynamic paths
 app_yaml = str(read_file('k8s/dev/app.yaml'))
 app_yaml = app_yaml.replace('__HOME__', HOME)
+app_yaml = app_yaml.replace('__CWD__', CWD)
 k8s_yaml(blob(app_yaml))
 
 k8s_yaml('k8s/dev/ingress.yaml')
