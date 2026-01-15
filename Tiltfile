@@ -9,8 +9,13 @@
 #   - hostPath volume mounts (source code mounted directly into pods)
 #   - Hupper (Python process watcher, auto-reloads on file changes)
 
+import os
+
 # Configuration
 k8s_context('orbstack')
+
+# Dynamic paths (avoids hardcoding user-specific paths)
+HOME = os.environ['HOME']
 load('ext://namespace', 'namespace_create')
 
 # Create namespace
@@ -119,7 +124,11 @@ k8s_resource(
 # Application Resources
 # =============================================================================
 
-k8s_yaml('k8s/dev/app.yaml')
+# Template app.yaml with dynamic paths
+app_yaml = str(read_file('k8s/dev/app.yaml'))
+app_yaml = app_yaml.replace('__HOME__', HOME)
+k8s_yaml(blob(app_yaml))
+
 k8s_yaml('k8s/dev/ingress.yaml')
 
 # Cabotage Web App

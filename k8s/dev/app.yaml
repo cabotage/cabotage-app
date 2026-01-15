@@ -106,7 +106,7 @@ spec:
             type: Directory
         - name: kubeconfig
           hostPath:
-            path: ~/.kube
+            path: __HOME__/.kube
             type: Directory
 ---
 # Cabotage App - Celery Worker
@@ -198,5 +198,5 @@ spec:
             type: Directory
         - name: kubeconfig
           hostPath:
-            path: /Users/coffee/.kube
+            path: __HOME__/.kube
             type: Directory
