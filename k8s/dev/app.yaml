@@ -102,11 +102,11 @@ spec:
         - name: source-code
           hostPath:
             # OrbStack automatically translates macOS paths
-            path: /Users/coffee/git/internal/cabotage-app
+            path: . 
             type: Directory
         - name: kubeconfig
           hostPath:
-            path: /Users/coffee/.kube
+            path: ~/.kube
             type: Directory
 ---
 # Cabotage App - Celery Worker
@@ -194,7 +194,7 @@ spec:
       volumes:
         - name: source-code
           hostPath:
-            path: /Users/coffee/git/internal/cabotage-app
+            path: . 
             type: Directory
         - name: kubeconfig
           hostPath:
