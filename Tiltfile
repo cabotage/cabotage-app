@@ -9,13 +9,11 @@
 #   - hostPath volume mounts (source code mounted directly into pods)
 #   - Hupper (Python process watcher, auto-reloads on file changes)
 
-import os
-
 # Configuration
 k8s_context('orbstack')
 
 # Dynamic paths (avoids hardcoding user-specific paths)
-HOME = os.environ['HOME']
+HOME = str(local('echo $HOME', quiet=True)).strip()
 load('ext://namespace', 'namespace_create')
 
 # Create namespace
