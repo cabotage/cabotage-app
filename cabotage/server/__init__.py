@@ -138,9 +138,11 @@ def create_app():
     mail.init_app(app)
     migrate.init_app(app, db)
     nav.init_app(app)
+
     @app.template_filter("humanize")
     def humanize_filter(value):
         return humanize_lib.naturaltime(value)
+
     consul.init_app(app)
     vault.init_app(app)
     kubernetes.init_app(app)
