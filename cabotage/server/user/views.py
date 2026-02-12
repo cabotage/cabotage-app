@@ -1636,8 +1636,7 @@ def organization_promote_user(org_slug):
 @login_required
 def organization_demote_user(org_slug):
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
-    if not current_user.admin:
-        # Only global admins (User.admin) can demote, not just organization admins
+    if not AdministerOrganizationPermission(organization.id).can():
         abort(403)
 
     user_id = request.form.get("user_id")
