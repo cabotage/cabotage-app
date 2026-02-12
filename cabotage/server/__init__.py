@@ -8,7 +8,7 @@ from flask_babel import Babel
 from flask_bcrypt import Bcrypt
 from flask_bootstrap import Bootstrap
 from flask_debugtoolbar import DebugToolbarExtension
-from flask_humanize import Humanize
+import humanize as humanize_lib
 from flask_login import LoginManager
 from flask_mail import Mail
 from flask_migrate import Migrate
@@ -54,7 +54,6 @@ principal = Principal()
 login_manager = LoginManager()
 mail = Mail()
 migrate = Migrate()
-humanize = Humanize()
 consul = Consul()
 vault = Vault()
 vault_db_creds = VaultDBCreds()
@@ -139,7 +138,11 @@ def create_app():
     mail.init_app(app)
     migrate.init_app(app, db)
     nav.init_app(app)
-    humanize.init_app(app)
+
+    @app.template_filter("humanize")
+    def humanize_filter(value):
+        return humanize_lib.naturaltime(value)
+
     consul.init_app(app)
     vault.init_app(app)
     kubernetes.init_app(app)
