@@ -1,5 +1,6 @@
 {% extends "_base.html" %}
-{% from "bootstrap/wtf.html" import form_field %}
+{% from "security/_macros.html" import render_field_with_errors, render_field %}
+{% from "bootstrap/wtf.html" import form_errors, form_field %}
 {% from "bootstrap/utils.html" import form_button %}
 
 {% block content %}
