@@ -11,7 +11,7 @@ flask-bcrypt
 flask-bootstrap
 flask-debugtoolbar
 flask-env
-flask-humanize
+humanize
 flask-mail
 flask-migrate
 flask-nav3

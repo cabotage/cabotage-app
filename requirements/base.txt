@@ -19,7 +19,7 @@ babel==2.12.1 \
 backoff==2.2.1 \
     --hash=sha256:03f829f5bb1923180821643f8753b0502c3b682293992485b0eef2807afa5cba \
     --hash=sha256:63579f9a0628e06278f7e47b7d7d5b6ce20dc65c5e96a6f3ca99a6adca0396e8
-    # via -r base.in
+    # via -r requirements/base.in
 bcrypt==3.2.0 \
     --hash=sha256:56e5da069a76470679f312a7d3d23deb3ac4519991a0361abc11da837087b61d \
     --hash=sha256:5b93c1726e50a93a033c36e5ca7fdcd29a5c7395af50a6892f5d9e7c6cfbfb29 \
@@ -39,7 +39,7 @@ billiard==4.2.1 \
 bleach==6.0.0 \
     --hash=sha256:1a1a85c1595e07d8db14c5f09f09e6433502c51c595970edc090551f0db99414 \
     --hash=sha256:33c16e3353dbd13028ab4799a0f89a83f113405c766e9c122df8a06f5b85b3f4
-    # via -r base.in
+    # via -r requirements/base.in
 blinker==1.6.2 \
     --hash=sha256:4afd3de66ef3a9f8067559fb7a1cbe555c17dcbe15971b05d1b625c3e7abe213 \
     --hash=sha256:c3d739772abb7bc2860abf5f2ec284223d9ad5c76da018234f6f50d6f31ab1f0
@@ -57,11 +57,11 @@ celery==5.4.0 \
     --hash=sha256:369631eb580cf8c51a82721ec538684994f8277637edde2dfc0dacd73ed97f64 \
     --hash=sha256:504a19140e8d3029d5acad88330c541d4c3f64c789d85f94756762d8bca7e706
     # via
-    #   -r base.in
+    #   -r requirements/base.in
     #   celery-redbeat
 celery-redbeat==2.2.0 \
     --hash=sha256:71104729380d4eaefd91a9b7d270ba7851bfff9ad55a43ac8365acbb0c608b77
-    # via -r base.in
+    # via -r requirements/base.in
 certifi==2024.7.4 \
     --hash=sha256:5a1e7645bc0ec61a09e26c36f6106dd4cf40c6db3a1fb6352b0244e7fb057c7b \
     --hash=sha256:c198e21b1289c2ab85ee4e67bb4b4ef3ead0892059901a8d5b622f24a1101e90
@@ -255,7 +255,7 @@ cryptography==42.0.4 \
     --hash=sha256:fb0cef872d8193e487fc6bdb08559c3aa41b659a7d9be48b2e10747f47863925 \
     --hash=sha256:ffc73996c4fca3d2b6c1c8c12bfd3ad00def8621da24f547626bf06441400449
     # via
-    #   -r base.in
+    #   -r requirements/base.in
     #   jwcrypto
     #   pyjwt
 deprecated==1.2.14 \
@@ -269,7 +269,7 @@ dnspython==2.6.1 \
 dockerfile-parse==2.0.0 \
     --hash=sha256:21fe7d510642f2b61a999d45c3d9745f950e11fe6ba2497555b8f63782b78e45 \
     --hash=sha256:d8d9100f8255914378bc0524ffaad68ef043885b0fb40a6936b1bba458f40c3f
-    # via -r base.in
+    # via -r requirements/base.in
 dominate==2.7.0 \
     --hash=sha256:520101360892ebf9d0553f67d37e359ff92403d8a1e33814030503088a05da49 \
     --hash=sha256:5fe4258614687c6d3de67b0bbd881ed435a93a19742ae187344055db17052402
@@ -284,13 +284,12 @@ flask==2.3.2 \
     --hash=sha256:77fd4e1249d8c9923de34907236b747ced06e5467ecac1a7bb7115ae0e9670b0 \
     --hash=sha256:8c2f9abd47a9e8df7f0c3f091ce9497d011dc3b31effcf4c85a6e2b50f4114ef
     # via
-    #   -r base.in
+    #   -r requirements/base.in
     #   flask-admin
     #   flask-babel
     #   flask-bcrypt
     #   flask-bootstrap
     #   flask-debugtoolbar
-    #   flask-humanize
     #   flask-login
     #   flask-mail
     #   flask-migrate
@@ -304,61 +303,57 @@ flask==2.3.2 \
 flask-admin==1.6.1 \
     --hash=sha256:24cae2af832b6a611a01d7dc35f42d266c1d6c75a426b869d8cb241b78233369 \
     --hash=sha256:fd8190f1ec3355913a22739c46ed3623f1d82b8112cde324c60a6fc9b21c9406
-    # via -r base.in
+    # via -r requirements/base.in
 flask-babel==3.1.0 \
     --hash=sha256:be015772c5d7f046f3b99c508dcf618636eb93d21b713b356db79f3e79f69f39 \
     --hash=sha256:deb3ee272d5adf97f5974ed09ab501243d63e7fb4a047501a00de4bd4aca4830
-    # via -r base.in
+    # via -r requirements/base.in
 flask-bcrypt==1.0.1 \
     --hash=sha256:062fd991dc9118d05ac0583675507b9fe4670e44416c97e0e6819d03d01f808a \
     --hash=sha256:f07b66b811417ea64eb188ae6455b0b708a793d966e1a80ceec4a23bc42a4369
-    # via -r base.in
+    # via -r requirements/base.in
 flask-bootstrap==3.3.7.1 \
     --hash=sha256:cb08ed940183f6343a64e465e83b3a3f13c53e1baabb8d72b5da4545ef123ac8
-    # via -r base.in
+    # via -r requirements/base.in
 flask-debugtoolbar==0.14.1 \
     --hash=sha256:3b938b02c418ac86fc18431f484dcd459f24acf3d0c1e72131c06413863bcf04 \
     --hash=sha256:ccd6a72119ea4f7c486823591b2b2f4a14dc7fb38d6bd495272e0ebdc08724cd
-    # via -r base.in
+    # via -r requirements/base.in
 flask-env==2.0.0 \
     --hash=sha256:6515b2cb2f62dc2743ba2600f4583147128f28a36cb73040a2ab12c54e329f67 \
     --hash=sha256:e10ebc8ac8f5d4696f228be8ad528c697c701b706c754fc54c8a5aa784eb73f1
-    # via -r base.in
-flask-humanize==0.3.0 \
-    --hash=sha256:7beda034d191fd98db3dd1247b4ed94830d6bfbfa48d095732b158208bffa5d0 \
-    --hash=sha256:f65a7b4cfcdeee1b1987f40af0f0e10f99f95423bf04e04720e7c086ea9f3d49
-    # via -r base.in
+    # via -r requirements/base.in
 flask-login==0.6.3 \
     --hash=sha256:5e23d14a607ef12806c699590b89d0f0e0d67baeec599d75947bf9c147330333 \
     --hash=sha256:849b25b82a436bf830a054e74214074af59097171562ab10bfa999e6b78aae5d
     # via flask-security-too
 flask-mail==0.9.1 \
     --hash=sha256:22e5eb9a940bf407bcf30410ecc3708f3c56cc44b29c34e1726fe85006935f41
-    # via -r base.in
+    # via -r requirements/base.in
 flask-migrate==3.0.1 \
     --hash=sha256:4d42e8f861d78cb6e9319afcba5bf76062e5efd7784184dd2a1cccd9de34a702 \
     --hash=sha256:df9043d2050df3c0e0f6313f6b529b62c837b6033c20335e9d0b4acdf2c40e23
-    # via -r base.in
+    # via -r requirements/base.in
 flask-nav3==0.7.0 \
     --hash=sha256:a3b613800822c2e5444bdc5bb90532d3e0ca2da7e125315c1a8efaed86f30159 \
     --hash=sha256:eeec925ce978052c217c5a58c6769a6b8054f1953a5e10091be192e7eec6150a
-    # via -r base.in
+    # via -r requirements/base.in
 flask-principal==0.4.0 \
     --hash=sha256:f5d6134b5caebfdbb86f32d56d18ee44b080876a27269560a96ea35f75c99453
     # via flask-security-too
 flask-security-too==5.3.3 \
     --hash=sha256:8036d8a7b49ab8083b673c2e6ff0cbf3c7c55ec05ffda8f2003e1a074b49c13d \
     --hash=sha256:c1ed93aae536f2a3ff8abe1e13aec9d0d95fb7ff082fcc3b372df2a5213970d9
-    # via -r base.in
+    # via -r requirements/base.in
 flask-sock==0.6.0 \
     --hash=sha256:435cf81bb497ac7622cd1dda554fbfa3e369e629daea0a1d21b73a24f1bd6229 \
     --hash=sha256:593fffb186928080a5b5b03d717efc56dac2d5ed690ce6bfff333b3597a2f518
-    # via -r base.in
+    # via -r requirements/base.in
 flask-sqlalchemy==2.5.1 \
     --hash=sha256:2bda44b43e7cacb15d4e05ff3cc1f8bc97936cc464623424102bfc2c35e95912 \
     --hash=sha256:f12c3d4cc5cc7fdcc148b9527ea05671718c3ea45d50c7e732cceb33f574b390
     # via
-    #   -r base.in
+    #   -r requirements/base.in
     #   flask-migrate
 flask-wtf==1.2.1 \
     --hash=sha256:8bb269eb9bb46b87e7c8233d7e7debdf1f8b74bf90cc1789988c29b37a97b695 \
@@ -431,23 +426,23 @@ greenlet==3.0.3 \
 gunicorn==23.0.0 \
     --hash=sha256:ec400d38950de4dfd418cff8328b2c8faed0edb0d517d3394e457c317908ca4d \
     --hash=sha256:f014447a0101dc57e294f6c18ca6b40227a4c90e9bdb586042628030cba004ec
-    # via -r base.in
+    # via -r requirements/base.in
 h11==0.14.0 \
     --hash=sha256:8f19fbbe99e72420ff35c00b27a34cb9937e902a8b810e2c88300c6f0a3b699d \
     --hash=sha256:e3fe4ac4b851c468cc8363d500db52c2ead036020723024a109d37346efaa761
     # via wsproto
-humanize==3.9.0 \
-    --hash=sha256:2cc4f7d2f5994ea9fcddd4b681ddea9abd23baa8cc64bd0af041a0162636f31c \
-    --hash=sha256:892a5b7b87763c4c6997a58382c2b1f4614048a2e01c23ef1bb0456e6f9d4d5d
-    # via flask-humanize
+humanize==4.15.0 \
+    --hash=sha256:1dd098483eb1c7ee8e32eb2e99ad1910baefa4b75c3aff3a82f4d78688993b10 \
+    --hash=sha256:b1186eb9f5a9749cd9cb8565aee77919dd7c8d076161cf44d70e59e3301e1769
+    # via -r requirements/base.in
 hupper==1.10.3 \
     --hash=sha256:cd6f51b72c7587bc9bce8a65ecd025a1e95f1b03284519bfe91284d010316cd9 \
     --hash=sha256:f683850d62598c02faf3c7cdaaa727d8cbe3c5a2497a5737a8358386903b2601
-    # via -r base.in
+    # via -r requirements/base.in
 hvac==2.3.0 \
     --hash=sha256:1b85e3320e8642dd82f234db63253cda169a817589e823713dc5fca83119b1e2 \
     --hash=sha256:a3afc5710760b6ee9b3571769df87a0333da45da05a5f9f963e1d3925a84be7d
-    # via -r base.in
+    # via -r requirements/base.in
 idna==3.7 \
     --hash=sha256:028ff3aadf0609c1fd278d8ea3089299412a7a8b9bd005dd08b9f8285bcb5cfc \
     --hash=sha256:82fee1fc78add43492d3a1898bfa6d8a904cc97d8427f683ed8e798d07761aa0
@@ -482,7 +477,7 @@ kombu==5.4.2 \
 kubernetes==30.1.0 \
     --hash=sha256:41e4c77af9f28e7a6c314e3bd06a8c6229ddd787cad684e0ab9f69b498e98ebc \
     --hash=sha256:e212e8b7579031dd2e512168b617373bc1e03888d41ac4e04039240a292d478d
-    # via -r base.in
+    # via -r requirements/base.in
 mako==1.2.2 \
     --hash=sha256:3724869b363ba630a272a5f89f68c070352137b8fd1757650017b7e06fda163f \
     --hash=sha256:8efcb8004681b5f71d09c983ad5a9e6f5c40601a6ec469148753292abc0da534
@@ -580,11 +575,11 @@ psycopg2==2.9.6 \
     --hash=sha256:f15158418fd826831b28585e2ab48ed8df2d0d98f502a2b4fe619e7d5ca29011 \
     --hash=sha256:f75001a1cbbe523e00b0ef896a5a1ada2da93ccd752b7636db5a99bc57c44494 \
     --hash=sha256:f7a7a5ee78ba7dc74265ba69e010ae89dae635eea0e97b055fb641a01a31d2b1
-    # via -r base.in
+    # via -r requirements/base.in
 py-consul==1.5.1 \
     --hash=sha256:c48d420957d5b59db12ee9b506a20b01ee76d4ebe9cfb2c6fb8a0081a41c6bcf \
     --hash=sha256:e67b81a84b7d4bae34297ecaf82e064dda3286aea784da43055ad44cef8418af
-    # via -r base.in
+    # via -r requirements/base.in
 pyasn1==0.4.8 \
     --hash=sha256:39c7e2ec30515947ff4e87fb6f456dfc6e84857d34be479c9d4a4ba4bf46aa5d \
     --hash=sha256:aef77c9fb94a3ac588e87841208bdec464471d9871bd5050a287cc9a475cd0ba
@@ -602,12 +597,12 @@ pycparser==2.20 \
 pygithub==1.59.1 \
     --hash=sha256:3d87a822e6c868142f0c2c4bf16cce4696b5a7a4d142a7bd160e1bdf75bc54a9 \
     --hash=sha256:c44e3a121c15bf9d3a5cc98d94c9a047a5132a9b01d22264627f58ade9ddc217
-    # via -r base.in
+    # via -r requirements/base.in
 pyjwt[crypto]==2.4.0 \
     --hash=sha256:72d1d253f32dbd4f5c88eaf1fdc62f3a19f676ccbadb9dbc5d07e951b2b26daf \
     --hash=sha256:d42908208c699b3b973cbeb01a969ba6a96c821eefb1c5bfe4c390c01d67abba
     # via
-    #   -r base.in
+    #   -r requirements/base.in
     #   pygithub
 pynacl==1.5.0 \
     --hash=sha256:06b8f6fa7f5de8d5d2f7573fe8c863c051225a27b61e6860fd047b1775807858 \
@@ -635,7 +630,7 @@ python-dateutil==2.9.0.post0 \
     #   kubernetes
 python-dxf==10.0.0 \
     --hash=sha256:87d5cfeb0a072dba44a7ff8507df3f1add8b478a20155b451a7f404186ceb1df
-    # via -r base.in
+    # via -r requirements/base.in
 python-editor==1.0.4 \
     --hash=sha256:1bf6e860a8ad52a14c3ee1252d5dc25b2030618ed80c022598f00176adc8367d \
     --hash=sha256:51fda6bcc5ddbbb7063b2af7509e43bd84bfc32a4ff71349ec7847713882327b \
@@ -701,12 +696,12 @@ pyyaml==6.0.1 \
 qrcode==7.4.2 \
     --hash=sha256:581dca7a029bcb2deef5d01068e39093e80ef00b4a61098a2182eac59d01643a \
     --hash=sha256:9dd969454827e127dbd93696b20747239e6d540e082937c90f14ac95b30f5845
-    # via -r base.in
+    # via -r requirements/base.in
 redis==3.5.3 \
     --hash=sha256:0e7e0cfca8660dea8b7d5cd8c4f6c5e29e11f31158c0b0ae91a397f00e5a05a2 \
     --hash=sha256:432b788c4530cfe16d8d943a09d40ca6c16149727e4afe8c2c9d5580c59d9f24
     # via
-    #   -r base.in
+    #   -r requirements/base.in
     #   celery-redbeat
 requests==2.32.3 \
     --hash=sha256:55365417734eb18255590a9ff9eb97e9e1da868d4ccd6402399eaf68af20a760 \
@@ -729,7 +724,7 @@ rsa==4.7.2 \
 sentry-sdk[flask]==2.6.0 \
     --hash=sha256:422b91cb49378b97e7e8d0e8d5a1069df23689d45262b86f54988a7db264e874 \
     --hash=sha256:65cc07e9c6995c5e316109f138570b32da3bd7ff8d0d0ee4aaf2628c3dd8127d
-    # via -r base.in
+    # via -r requirements/base.in
 simple-websocket==0.10.1 \
     --hash=sha256:0ab46c8ffa51a46dc95eed94608b3b722841c0bf849def71d465c5c356679c82 \
     --hash=sha256:62c36bacfd75cc867927bb39d91951342a7234bdfe20f41dd969a3b8bb1413b7
@@ -787,7 +782,7 @@ sqlalchemy==1.4.48 \
     --hash=sha256:fbde5642104ac6e95f96e8ad6d18d9382aa20672008cf26068fe36f3004491df \
     --hash=sha256:fe1dd2562313dd9fe1778ed56739ad5d9aae10f9f43d9f4cf81d65b0c85168bb
     # via
-    #   -r base.in
+    #   -r requirements/base.in
     #   alembic
     #   flask-sqlalchemy
     #   sqlalchemy-citext
@@ -795,11 +790,11 @@ sqlalchemy==1.4.48 \
     #   sqlalchemy-utils
 sqlalchemy-citext==1.8.0 \
     --hash=sha256:a1740e693a9a334e7c8f60ae731083fe75ce6c1605bb9ca6644a6f1f63b15b77
-    # via -r base.in
+    # via -r requirements/base.in
 sqlalchemy-continuum==1.3.14 \
     --hash=sha256:ba8748a898e0c9bae0ee6b9dcd2633d89e773f3b5c968bff69737bbb106a6e62 \
     --hash=sha256:d7e93f971e91f2d5bd80cdccda4a9a544c299b1f1c3210d77aa0a3c9df0eda13
-    # via -r base.in
+    # via -r requirements/base.in
 sqlalchemy-utils==0.41.1 \
     --hash=sha256:6c96b0768ea3f15c0dc56b363d386138c562752b84f647fb8d31a2223aaab801 \
     --hash=sha256:a2181bff01eeb84479e38571d2c0718eb52042f9afd8c194d0d02877e84b7d74
@@ -811,7 +806,7 @@ tenacity==8.2.3 \
 toml==0.10.2 \
     --hash=sha256:806143ae5bfb6a3c6e736a764057db0e6a0e05e338b5630894a5f779cabb4f9b \
     --hash=sha256:b3bda1d108d5dd99f4a20d24d9c348e91c4db7ab1b749200bded2f839ccbe68f
-    # via -r base.in
+    # via -r requirements/base.in
 tqdm==4.66.3 \
     --hash=sha256:23097a41eba115ba99ecae40d06444c15d1c0c698d527a01c6c8bd1c5d0647e5 \
     --hash=sha256:4f41d54107ff9a223dca80b53efe4fb654c67efaba7f47bada3ee9d50e05bd53
@@ -831,12 +826,12 @@ tzdata==2024.2 \
 unidecode==1.2.0 \
     --hash=sha256:12435ef2fc4cdfd9cf1035a1db7e98b6b047fe591892e81f34e94959591fad00 \
     --hash=sha256:8d73a97d387a956922344f6b74243c2c6771594659778744b2dbdaad8f6b727d
-    # via -r base.in
+    # via -r requirements/base.in
 urllib3==2.2.2 \
     --hash=sha256:a448b2f64d686155468037e1ace9f2d2199776e17f0a46610480d311f73e3472 \
     --hash=sha256:dd505485549a7a552833da5e6063639d0d177c04f23bc3864e41e5dc5f612168
     # via
-    #   -r base.in
+    #   -r requirements/base.in
     #   kubernetes
     #   requests
     #   sentry-sdk
