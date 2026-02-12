@@ -1,11 +1,64 @@
 {% extends "_base.html" %}
 
 {% block content %}
+  <div class="container" id="content">
+    <div class="row">
+      <h1>Welcome!</h1>
+    </div>
 
-<div class="container" id="content">
-  <div class="row">
-    <h1>Welcome!</h1>
+    {% if current_user.is_authenticated %}
+      <div class="row">
+        <div class="col-md-6">
+          <h2>Your Organizations</h2>
+          <table class="table">
+            {% for organization in current_user.organizations %}
+              <tr>
+                <td>
+                  <a href="{{ url_for('user.organization', org_slug=organization.organization.slug) }}">
+                    {{ organization.organization.name }}
+                  </a>
+                  {% if organization.admin %}
+                    <span class="label label-primary pull-right">Admin</span>
+                  {% else %}
+                    <span class="label label-default pull-right">Member</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td>No organizations yet</td>
+              </tr>
+            {% endfor %}
+          </table>
+        </div>
+
+        <div class="col-md-6">
+          <h2>Your Projects</h2>
+          <table class="table">
+            {% for project in current_user.projects %}
+              <tr>
+                <td>
+                  <a href="{{ url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug) }}">
+                    {{ project.organization.slug }}/{{ project.name }}
+                  </a>
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td>No projects yet</td>
+              </tr>
+            {% endfor %}
+          </table>
+        </div>
+      </div>
+    {% else %}
+      <div class="jumbotron text-center">
+        <h1>Welcome to Cabotage</h1>
+        <p>Please log in to manage your organizations and projects</p>
+        <p>
+          <a href="{{ url_for('security.login') }}" class="btn btn-primary btn-lg">Log In</a>
+        </p>
+      </div>
+    {% endif %}
   </div>
-</div>
-
 {% endblock %}

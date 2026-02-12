@@ -1,0 +1,75 @@
+{% extends "_base.html" %}
+{% from "security/_macros.html" import render_field_with_errors, render_field %}
+{% from "bootstrap/wtf.html" import form_errors, form_field %}
+{% from "bootstrap/utils.html" import form_button %}
+
+{% block content %}
+{% include "security/_messages.html" %}
+<div class="container-fluid clearfix" id="content">
+  <div class="row">
+    <div class="col-md-8 col-md-offset-2">
+      <h1>Add User to {{ organization.name }}</h1>
+      
+      {% if current_user.admin and all_users %}
+        <div class="panel panel-default">
+          <div class="panel-heading">
+            <h3 class="panel-title">All Users</h3>
+          </div>
+          <div class="panel-body">
+            {% set member_ids = organization.members|map(attribute='user_id')|list %}
+            {% set available_users = [] %}
+            {% for user in all_users %}
+              {% if user.id not in member_ids %}
+                {% do available_users.append(user) %}
+              {% endif %}
+            {% endfor %}
+            
+            {% if available_users %}
+              <div class="table-responsive">
+                <table class="table table-striped">
+                  <thead>
+                    <tr>
+                      <th>Username</th>
+                      <th>Email</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for user in available_users %}
+                      <tr>
+                        <td>{{ user.username }}</td>
+                        <td>{{ user.email }}</td>
+                        <td class="text-right">
+                          <form action="{{ url_for('user.organization_add_user', org_slug=organization.slug) }}" method="POST" style="display: inline;">
+                            {{ form.hidden_tag() }}
+                            <input type="hidden" name="email" value="{{ user.email }}">
+                            <button type="submit" class="btn btn-sm btn-success">
+                              <span class="glyphicon glyphicon-plus"></span> Add
+                            </button>
+                          </form>
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <div class="alert alert-info">
+                All users are already members of this organization.
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% else %}
+        <div class="col-md-4 col-md-offset-4 col-sm-8 col-xs-8 col-xs-offset-2 col-sm-offset-2">
+          <form action="{{ url_for('user.organization_add_user', org_slug=organization.slug) }}" method="POST" name="organization_add_user_form">
+            {{ form.hidden_tag() }}
+            {{ form_field(form.email) }}
+            {{ form_button(form.submit, "Add User", method="POST", class="btn btn-primary") }}
+          </form>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
