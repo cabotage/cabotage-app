@@ -540,26 +540,40 @@ def build_image_buildkit(image=None):
         return filename
 
     dockerfile_name = None
-    dockerfile_body = _fetch_github_file(
-        image.application.github_repository,
-        image.commit_sha,
-        access_token=access_token,
-        filename=file_path("Dockerfile.cabotage"),
-    )
-    dockerfile_name = "Dockerfile.cabotage"
-    if dockerfile_body is None:
+    if image.application.dockerfile_path:
         dockerfile_body = _fetch_github_file(
             image.application.github_repository,
             image.commit_sha,
             access_token=access_token,
-            filename=file_path("Dockerfile"),
+            filename=file_path(image.application.dockerfile_path),
         )
-        dockerfile_name = "Dockerfile"
-    if dockerfile_body is None:
-        raise BuildError(
-            "No Dockerfile.cabotage or Dockerfile found in root of "
-            f"{git_ref(image.application.github_repository, image.commit_sha)}"
+        dockerfile_name = image.application.dockerfile_path
+        if dockerfile_body is None:
+            raise BuildError(
+                f"Configured Dockerfile '{image.application.dockerfile_path}' not found in "
+                f"{git_ref(image.application.github_repository, image.commit_sha)}"
+            )
+    else:
+        dockerfile_body = _fetch_github_file(
+            image.application.github_repository,
+            image.commit_sha,
+            access_token=access_token,
+            filename=file_path("Dockerfile.cabotage"),
         )
+        dockerfile_name = "Dockerfile.cabotage"
+        if dockerfile_body is None:
+            dockerfile_body = _fetch_github_file(
+                image.application.github_repository,
+                image.commit_sha,
+                access_token=access_token,
+                filename=file_path("Dockerfile"),
+            )
+            dockerfile_name = "Dockerfile"
+        if dockerfile_body is None:
+            raise BuildError(
+                "No Dockerfile.cabotage or Dockerfile found in root of "
+                f"{git_ref(image.application.github_repository, image.commit_sha)}"
+            )
 
     procfile_body = _fetch_github_file(
         image.application.github_repository,
