@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cabotage-dev
+  labels:
+    app.kubernetes.io/name: cabotage
+    app.kubernetes.io/env: dev

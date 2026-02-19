@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: cabotage-dev
+spec:
+  ports:
+    - port: 5432
+      targetPort: 5432
+  selector:
+    app: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: cabotage-dev
+spec:
+  serviceName: db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: cabotage_dev
+            - name: POSTGRES_HOST_AUTH_METHOD
+              value: trust
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+            - name: initdb
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: initdb
+          configMap:
+            name: postgres-initdb
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-initdb
+  namespace: cabotage-dev
+data:
+  01-create-role.sql: |
+    CREATE EXTENSION citext;
+    CREATE EXTENSION pgcrypto;
+    DO
+    $do$
+    BEGIN
+      IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'cabotage') THEN
+        CREATE ROLE cabotage WITH LOGIN;
+      END IF;
+    END
+    $do$;
+    GRANT ALL PRIVILEGES ON DATABASE cabotage_dev TO cabotage;

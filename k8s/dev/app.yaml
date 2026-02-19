@@ -1,0 +1,202 @@
+# Cabotage App - Web Server
+apiVersion: v1
+kind: Service
+metadata:
+  name: cabotage-app
+  namespace: cabotage-dev
+spec:
+  ports:
+    - port: 8000
+      targetPort: 8000
+  selector:
+    app: cabotage-app
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cabotage-app
+  namespace: cabotage-dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cabotage-app
+  template:
+    metadata:
+      labels:
+        app: cabotage-app
+    spec:
+      containers:
+        - name: cabotage-app
+          image: cabotage-app:dev
+          command:
+            - hupper
+            - -m
+            - gunicorn.app.wsgiapp
+            - -c
+            - gunicorn.conf
+            - -w
+            - "2"
+            - --threads
+            - "50"
+            - -b
+            - 0.0.0.0:8000
+            - cabotage.server.wsgi:app
+          ports:
+            - containerPort: 8000
+          env:
+            # Cache directories
+            - name: PIP_CACHE_DIR
+              value: /opt/cabotage-app/src/dev/.pip-cache
+            - name: PIP_TOOLS_CACHE_DIR
+              value: /opt/cabotage-app/src/dev/.pip-tools-cache
+            # Application configuration
+            - name: CABOTAGE_BCRYPT_LOG_ROUNDS
+              value: "4"
+            - name: CABOTAGE_DEBUG
+              value: "True"
+            - name: CABOTAGE_DEBUG_TB_ENABLED
+              value: "True"
+            - name: CABOTAGE_GITHUB_APP_ID
+              value: ""
+            - name: CABOTAGE_GITHUB_APP_PRIVATE_KEY
+              value: ""
+            - name: CABOTAGE_GITHUB_APP_URL
+              value: https://github.com/apps/cabotage-local
+            - name: CABOTAGE_GITHUB_WEBHOOK_SECRET
+              value: ""
+            - name: CABOTAGE_KUBERNETES_CONTEXT
+              value: orbstack
+            - name: CABOTAGE_KUBERNETES_ENABLED
+              value: "True"
+            - name: CABOTAGE_SECURITY_CONFIRMABLE
+              value: "False"
+            - name: CABOTAGE_SQLALCHEMY_DATABASE_URI
+              value: postgresql://postgres@db/cabotage_dev
+            - name: CABOTAGE_TESTING
+              value: "True"
+            - name: CABOTAGE_VAULT_TOKEN
+              value: deadbeef-dead-beef-dead-beefdeadbeef
+            - name: CABOTAGE_WTF_CSRF_ENABLED
+              value: "False"
+            - name: C_FORCE_ROOT
+              value: "1"
+            - name: FLASK_APP
+              value: cabotage.server.wsgi
+            - name: KUBECONFIG
+              value: /var/run/kube/config
+          volumeMounts:
+            - name: source-code
+              mountPath: /opt/cabotage-app/src
+            - name: kubeconfig
+              mountPath: /var/run/kube
+              readOnly: true
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: source-code
+          hostPath:
+            # OrbStack automatically translates macOS paths
+            path: __CWD__
+            type: Directory
+        - name: kubeconfig
+          hostPath:
+            path: __HOME__/.kube
+            type: Directory
+---
+# Cabotage App - Celery Worker
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cabotage-app-worker
+  namespace: cabotage-dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cabotage-app-worker
+  template:
+    metadata:
+      labels:
+        app: cabotage-app-worker
+    spec:
+      containers:
+        - name: cabotage-app-worker
+          image: cabotage-app:dev
+          command:
+            - hupper
+            - -m
+            - celery
+            - -A
+            - cabotage.celery.worker.celery_app
+            - worker
+            - -E
+            - --loglevel=INFO
+          env:
+            # Cache directories
+            - name: PIP_CACHE_DIR
+              value: /opt/cabotage-app/src/dev/.pip-cache
+            - name: PIP_TOOLS_CACHE_DIR
+              value: /opt/cabotage-app/src/dev/.pip-tools-cache
+            # Application configuration
+            - name: CABOTAGE_BCRYPT_LOG_ROUNDS
+              value: "4"
+            - name: CABOTAGE_DEBUG
+              value: "True"
+            - name: CABOTAGE_DEBUG_TB_ENABLED
+              value: "True"
+            - name: CABOTAGE_GITHUB_APP_ID
+              value: ""
+            - name: CABOTAGE_GITHUB_APP_PRIVATE_KEY
+              value: ""
+            - name: CABOTAGE_GITHUB_APP_URL
+              value: https://github.com/apps/cabotage-local
+            - name: CABOTAGE_GITHUB_WEBHOOK_SECRET
+              value: ""
+            - name: CABOTAGE_KUBERNETES_CONTEXT
+              value: orbstack
+            - name: CABOTAGE_KUBERNETES_ENABLED
+              value: "True"
+            - name: CABOTAGE_SECURITY_CONFIRMABLE
+              value: "False"
+            - name: CABOTAGE_SQLALCHEMY_DATABASE_URI
+              value: postgresql://postgres@db/cabotage_dev
+            - name: CABOTAGE_TESTING
+              value: "True"
+            - name: CABOTAGE_VAULT_TOKEN
+              value: deadbeef-dead-beef-dead-beefdeadbeef
+            - name: CABOTAGE_WTF_CSRF_ENABLED
+              value: "False"
+            - name: C_FORCE_ROOT
+              value: "1"
+            - name: FLASK_APP
+              value: cabotage.server.wsgi
+            - name: KUBECONFIG
+              value: /var/run/kube/config
+          volumeMounts:
+            - name: source-code
+              mountPath: /opt/cabotage-app/src
+            - name: kubeconfig
+              mountPath: /var/run/kube
+              readOnly: true
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: source-code
+          hostPath:
+            path: __CWD__
+            type: Directory
+        - name: kubeconfig
+          hostPath:
+            path: __HOME__/.kube
+            type: Directory

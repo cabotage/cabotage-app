@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cabotage-buildkitd
+  namespace: cabotage-dev
+spec:
+  ports:
+    - port: 1234
+      targetPort: 1234
+  selector:
+    app: buildkit
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: buildkit
+  namespace: cabotage-dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: buildkit
+  template:
+    metadata:
+      labels:
+        app: buildkit
+    spec:
+      containers:
+        - name: buildkit
+          image: moby/buildkit:v0.18.2-rootless
+          args: ["--addr", "tcp://0.0.0.0:1234"]
+          ports:
+            - containerPort: 1234
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: buildkit-config
+              mountPath: /home/user/.config/buildkit
+      volumes:
+        - name: buildkit-config
+          configMap:
+            name: buildkit-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: buildkit-config
+  namespace: cabotage-dev
+data:
+  buildkitd.toml: |
+    [registry."registry:5001"]
+      http = true
