@@ -22,6 +22,7 @@ from flask_security import (
 )
 
 import backoff
+import jwcrypto
 import kubernetes
 
 from dxf import DXF
@@ -84,6 +85,9 @@ from cabotage.utils.docker_auth import (
     generate_docker_registry_jwt,
     parse_docker_scope,
     docker_access_intersection,
+)
+from cabotage.utils.grafana_auth import (
+    generate_grafana_jwt,
 )
 
 from cabotage.celery.tasks import (
@@ -1601,6 +1605,21 @@ def signing_cert():
         response.mimetype = "text/plain"
         return response
     return render_template("user/signing_cert.html", signing_certificate=cert)
+
+
+@user_blueprint.route("/jwks", methods=["GET"])
+def jwks():
+    public_key = vault.signing_public_key
+    jwk = jwcrypto.jwk.JWK.from_pem(public_key)
+    jwk.use = "sig"
+    _jwk = jwk.export_public(as_dict=True)
+    return jsonify({"keys": [_jwk]})
+
+
+@user_blueprint.route("/grafana", methods=["GET"])
+def jwt():
+    jwt = generate_grafana_jwt()
+    return redirect(f"http://localhost:3000/?auth_token={jwt}", code=302)
 
 
 @user_blueprint.route("/github/hooks", methods=["POST"])
