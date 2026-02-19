@@ -1130,6 +1130,12 @@ def deploy_release(deployment):
                 ],
             ),
         )
+        # Commit the session before running release commands (e.g., migrations)
+        # to release any row/table locks. Without this, migrations that ALTER
+        # tables read by this task will deadlock — the migration waits for our
+        # lock, and we wait for the migration to finish.
+        db.session.commit()
+        db.session.refresh(deployment)
         for release_command in deployment.release_object.release_commands:
             deploy_log.append(f"Running release command {release_command}")
             job_object = render_job(
