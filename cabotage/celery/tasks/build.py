@@ -539,25 +539,25 @@ def build_image_buildkit(image=None):
             return os.path.join(image.application.subdirectory, filename)
         return filename
 
+    dockerfile_candidates = ["Dockerfile.cabotage", "Dockerfile"]
+    if image.application.dockerfile_path:
+        dockerfile_candidates = [image.application.dockerfile_path]
+
     dockerfile_name = None
-    dockerfile_body = _fetch_github_file(
-        image.application.github_repository,
-        image.commit_sha,
-        access_token=access_token,
-        filename=file_path("Dockerfile.cabotage"),
-    )
-    dockerfile_name = "Dockerfile.cabotage"
-    if dockerfile_body is None:
+    dockerfile_body = None
+    for candidate in dockerfile_candidates:
         dockerfile_body = _fetch_github_file(
             image.application.github_repository,
             image.commit_sha,
             access_token=access_token,
-            filename=file_path("Dockerfile"),
+            filename=file_path(candidate),
         )
-        dockerfile_name = "Dockerfile"
+        if dockerfile_body is not None:
+            dockerfile_name = candidate
+            break
     if dockerfile_body is None:
         raise BuildError(
-            "No Dockerfile.cabotage or Dockerfile found in root of "
+            f"No Dockerfile found in "
             f"{git_ref(image.application.github_repository, image.commit_sha)}"
         )
 
