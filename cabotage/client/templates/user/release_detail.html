@@ -54,7 +54,7 @@
               Package <span class="font-mono text-accent">v{{ release.version }}</span>
             </h1>
             {% if release.release_metadata and release.release_metadata.get('auto_deploy') %}
-              <span class="badge badge-sm badge-warning gap-1">{{ icon('zap', 'w-3 h-3') }} auto</span>
+              <span class="badge badge-sm badge-ghost text-accent/70 border-accent/20 gap-1">{{ icon('zap', 'w-3 h-3') }} auto</span>
             {% endif %}
           </div>
           <p class="text-sm text-base-content/40 font-mono mt-0.5">{{ release.repository_name }}</p>
@@ -124,24 +124,48 @@
   {# ===== BUILDING BANNER ===== #}
   {% if not release.built and not release.error %}
     <div class="build-progress-banner mb-6">
-      <div class="flex items-center gap-3">
-        <div class="build-progress-spinner"></div>
-        <div>
-          <p class="text-sm font-medium text-base-content">Package build in progress</p>
-          <p class="text-xs text-base-content/40">Streaming logs below. Page will refresh on completion.</p>
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="build-progress-spinner"></div>
+          <div>
+            <p class="text-sm font-medium text-base-content" id="buildPhase">Waiting for logs…</p>
+            <p class="text-xs text-base-content/40">Streaming logs below. Updates live on completion.</p>
+          </div>
         </div>
+        <span class="progress-elapsed" id="buildElapsed">00:00</span>
       </div>
       <div class="build-progress-bar mt-3">
-        <div class="build-progress-bar-fill"></div>
+        <div class="build-progress-bar-fill" id="buildProgressFill"></div>
       </div>
+      <div class="progress-steps" id="buildSteps"></div>
     </div>
   {% endif %}
+
+  {# ===== NEXT STEP BANNER (auto-deploy chain) ===== #}
+  <div id="nextStepBanner" hidden class="mb-6">
+    <a href="#" class="action-banner action-banner-info">
+      <div class="flex items-center gap-3">
+        <div class="action-banner-spinner"></div>
+        <div>
+          <p class="text-sm font-medium text-base-content">Release complete — deployment is starting</p>
+          <p class="text-xs text-base-content/40">Click to follow the auto-deploy pipeline</p>
+        </div>
+      </div>
+      <svg class="w-4 h-4 text-base-content/20 flex-shrink-0"
+           viewBox="0 0 24 24"
+           fill="none"
+           stroke="currentColor"
+           stroke-width="2">
+        <polyline points="9 18 15 12 9 6" />
+      </svg>
+    </a>
+  </div>
 
   {# ===== PACKAGE DETAILS GRID ===== #}
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
 
-    {# Left column: metadata #}
-    <div class="lg:col-span-1 flex flex-col gap-4">
+    {# Left column: metadata, environment, processes #}
+    <div data-log-left class="lg:col-span-1 flex flex-col gap-4">
 
       {# Package Info #}
       <div class="card bg-base-200 border border-base-300">
@@ -230,6 +254,39 @@
         </div>
       </div>
 
+      {# Dockerfile #}
+      {% if release.dockerfile %}
+        <details class="card bg-base-200 border border-base-300 group"
+                 data-collapsible-card>
+          <summary class="!p-4 cursor-pointer">
+            <div class="flex items-center justify-between w-full">
+              <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Dockerfile</h2>
+              <div class="flex items-center gap-2">
+                <button class="expand-btn"
+                        data-expand="dockerfile-content"
+                        data-expand-title="Dockerfile"
+                        title="Expand"
+                        onclick="event.stopPropagation()">
+                  <svg class="w-3.5 h-3.5"
+                       viewBox="0 0 24 24"
+                       fill="none"
+                       stroke="currentColor"
+                       stroke-width="2">
+                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                  </svg>
+                </button>
+                <span class="collapse-icon text-base-content/30">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</span>
+              </div>
+            </div>
+          </summary>
+          <div class="!px-4 !pb-4">
+            <div id="dockerfile-content">
+              <div class="code-block !text-xs !leading-relaxed">{{ release.dockerfile }}</div>
+            </div>
+          </div>
+        </details>
+      {% endif %}
+
       {# Image Reference #}
       <div class="card bg-base-200 border border-base-300">
         <div class="card-body !p-4">
@@ -247,6 +304,62 @@
         </div>
       </div>
 
+      {# Environment Variables #}
+      {% if release.configuration_objects %}
+        <details class="card bg-base-200 border border-base-300 group"
+                 data-collapsible-card>
+          <summary class="!p-4 cursor-pointer">
+            <div class="flex items-center justify-between w-full">
+              <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">
+                Environment
+                <span class="text-base-content/20 normal-case">({{ release.configuration_objects|length }})</span>
+              </h2>
+              <div class="flex items-center gap-2">
+                <button class="expand-btn"
+                        data-expand="env-content"
+                        data-expand-title="Environment"
+                        title="Expand"
+                        onclick="event.stopPropagation()">
+                  <svg class="w-3.5 h-3.5"
+                       viewBox="0 0 24 24"
+                       fill="none"
+                       stroke="currentColor"
+                       stroke-width="2">
+                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                  </svg>
+                </button>
+                <span class="collapse-icon text-base-content/30">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</span>
+              </div>
+            </div>
+          </summary>
+          <div class="!px-4 !pb-4">
+            <div id="env-content">
+              <div class="env-list">
+                {% for name, env_var in release.configuration_objects.items() %}
+                  <div class="env-item">
+                    <div class="env-item-key">
+                      {% if env_var and env_var.secret %}{{ icon('lock', 'w-2.5 h-2.5 text-base-content/25 flex-shrink-0') }}{% endif %}
+                      <span>{{ name }}</span>
+                    </div>
+                    <div class="env-item-value">
+                      {% if env_var %}
+                        {% if env_var.secret %}
+                          <span class="text-base-content/25 italic text-xs">secret</span>
+                        {% else %}
+                          {{ env_var.value }}
+                        {% endif %}
+                      {% else %}
+                        <span class="text-error text-xs">Deleted</span>
+                      {% endif %}
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </details>
+      {% endif %}
+
       {# Build trigger info #}
       {% if release.release_metadata and release.release_metadata.get('description') %}
         <div class="card bg-base-200 border border-base-300">
@@ -258,65 +371,53 @@
       {% endif %}
     </div>
 
-    {# Right column: environment, processes, build log #}
-    <div class="lg:col-span-2 flex flex-col gap-4">
-
-      {# Environment Variables #}
-      {% if release.configuration_objects %}
-        <div class="card bg-base-200 border border-base-300">
-          <div class="card-body !p-4">
-            <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Environment</h2>
-            <div class="env-grid">
-              {% for name, env_var in release.configuration_objects.items() %}
-                <div class="env-row">
-                  <span class="env-key">{{ name }}</span>
-                  <span class="env-value">
-                    {% if env_var %}
-                      {% if env_var.secret %}
-                        <span class="env-secret">{{ icon('lock', 'w-3 h-3') }} Secret</span>
-                      {% else %}
-                        {{ env_var.value }}
-                      {% endif %}
-                    {% else %}
-                      <span class="text-error text-xs">Deleted</span>
-                    {% endif %}
-                  </span>
-                </div>
-              {% endfor %}
-            </div>
-          </div>
-        </div>
-      {% endif %}
+    {# Right column: processes + build log #}
+    <div class="lg:col-span-2 flex flex-col gap-4" id="log-column">
 
       {# Processes #}
       {% if release.image_object and release.image_object.processes %}
         <div class="card bg-base-200 border border-base-300">
           <div class="card-body !p-4">
-            <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Processes</h2>
-            <div class="flex flex-col gap-0">
-              {% for process, info in release.image_object.processes.items() %}
-                <div class="flex items-start gap-3 py-2.5 {{ 'border-t border-base-content/5' if not loop.first }}">
-                  <code class="text-sm text-accent font-medium min-w-[5rem] pt-0.5">{{ process }}</code>
-                  <div class="flex-1 min-w-0">
-                    <code class="text-sm text-base-content/70 break-all">{{ info['cmd'] }}</code>
-                    {% if info.get('env') %}
-                      <div class="flex flex-wrap gap-1.5 mt-1.5">
-                        {% for item in info['env'] %}
-                          <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-base-300/60 text-xs font-mono text-base-content/50">{{ item[0] }}</span>
-                        {% endfor %}
-                      </div>
-                    {% endif %}
+            <div class="flex items-center justify-between mb-3">
+              <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Processes</h2>
+              <button class="expand-btn"
+                      data-expand="processes-content"
+                      data-expand-title="Processes"
+                      title="Expand">
+                <svg class="w-3.5 h-3.5"
+                     viewBox="0 0 24 24"
+                     fill="none"
+                     stroke="currentColor"
+                     stroke-width="2">
+                  <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                </svg>
+              </button>
+            </div>
+            <div id="processes-content">
+              <div class="flex flex-col gap-0">
+                {% for process, info in release.image_object.processes.items() %}
+                  <div class="flex items-start gap-3 py-2.5 {{ 'border-t border-base-content/5' if not loop.first }}">
+                    <code class="text-sm text-accent font-medium min-w-[5rem] pt-0.5">{{ process }}</code>
+                    <div class="flex-1 min-w-0">
+                      <code class="text-sm text-base-content/70 break-all">{{ info['cmd'] }}</code>
+                      {% if info.get('env') %}
+                        <div class="flex flex-wrap gap-1.5 mt-1.5">
+                          {% for item in info['env'] %}
+                            <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-base-300/60 text-xs font-mono text-base-content/50">{{ item[0] }}</span>
+                          {% endfor %}
+                        </div>
+                      {% endif %}
+                    </div>
                   </div>
-                </div>
-              {% endfor %}
+                {% endfor %}
+              </div>
             </div>
           </div>
         </div>
       {% endif %}
 
-      {# Build Log #}
-      <div class="card bg-base-200 border border-base-300">
-        <div class="card-body !p-4">
+      <div class="card bg-base-200 border border-base-300 flex-1 flex flex-col">
+        <div class="card-body !p-4 flex-1 flex flex-col">
           <div class="flex items-center justify-between mb-3">
             <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Build Log</h2>
             {% if release.release_build_log %}
@@ -328,7 +429,9 @@
               </button>
             {% endif %}
           </div>
-          <div class="build-log-viewer" id="buildLog">
+          <div class="build-log-viewer build-log-viewer-primary flex-1"
+               id="buildLog"
+               data-log-viewer>
             {%- if release.release_build_log and release.release_build_log != 'None' -%}
               {{ release.release_build_log }}
             {%- else -%}
@@ -346,16 +449,6 @@
           </div>
         </div>
       </div>
-
-      {# Dockerfile #}
-      {% if release.dockerfile %}
-        <div class="card bg-base-200 border border-base-300">
-          <div class="card-body !p-4">
-            <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Dockerfile</h2>
-            <div class="code-block !text-xs !leading-relaxed">{{ release.dockerfile }}</div>
-          </div>
-        </div>
-      {% endif %}
     </div>
   </div>
 
@@ -400,23 +493,95 @@
 
 {% block js %}
   <script>
+  /* Auto-deploy: show next-step banner instead of hard redirect */
+  var nextStepUrl = {{ next_step_url | tojson }};
+  var nextStepBanner = document.getElementById('nextStepBanner');
+  if (nextStepUrl && nextStepBanner) {
+    nextStepBanner.querySelector('a').href = nextStepUrl;
+    nextStepBanner.hidden = false;
+  }
+  var autoDeployAppId = '{{ app.id }}';
+
   /* Live log streaming for in-progress package builds */
   var logsPre = document.getElementById('buildLog');
   var placeholder = document.getElementById('logPlaceholder');
   if (placeholder) {
     logsPre.innerHTML = '';
+    var barFill = document.getElementById('buildProgressFill');
+    var phaseLabel = document.getElementById('buildPhase');
+    var stepsEl = document.getElementById('buildSteps');
+    var elapsedEl = document.getElementById('buildElapsed');
+    var tracker = (barFill) ? new BuildProgressTracker(barFill, phaseLabel, 'build', stepsEl, elapsedEl) : null;
+    var logsFinished = false;
+    var isAutoDeploy = {{ (release.release_metadata or {}).get('auto_deploy', false) | tojson }};
     var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
     var socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/livelogs');
+    var progressBanner = document.querySelector('.build-progress-banner');
     socket.addEventListener('message', function(ev) {
       if (ev.data === '=================END OF LOGS=================') {
+        logsFinished = true;
+        if (tracker) {
+          tracker.complete();
+          if (tracker.errored && progressBanner) {
+            progressBanner.classList.add('deploy-progress-banner-error');
+          }
+        }
         socket.close();
         return;
       }
       logsPre.textContent += ev.data + '\n';
       logsPre.scrollTop = logsPre.scrollHeight;
+      if (tracker) tracker.processLine(ev.data);
     });
+    var statusPollAttempts = 0;
+    var maxStatusPolls = 30;
+    function fetchBuildStatus() {
+      statusPollAttempts++;
+      var cacheBust = '?_t=' + Date.now();
+      fetch(window.location.pathname + cacheBust, {
+        credentials: 'same-origin',
+        headers: { 'Accept': 'text/html', 'Cache-Control': 'no-cache' }
+      })
+        .then(function(r) { return r.text(); })
+        .then(function(html) {
+          var doc = new DOMParser().parseFromString(html, 'text/html');
+          var newOrb = doc.querySelector('.build-status-orb');
+          /* If server still shows "building", retry */
+          if (newOrb && newOrb.classList.contains('build-status-building') && statusPollAttempts < maxStatusPolls) {
+            setTimeout(fetchBuildStatus, 2000);
+            return;
+          }
+          /* Update entire header row (orb + title + actions) */
+          var newHeader = newOrb ? newOrb.closest('.mb-6') : null;
+          var curHeader = document.querySelector('.build-status-orb');
+          curHeader = curHeader ? curHeader.closest('.mb-6') : null;
+          if (newHeader && curHeader) curHeader.innerHTML = newHeader.innerHTML;
+          /* Update info cards */
+          var newInfo = doc.querySelector('[data-log-left]');
+          var curInfo = document.querySelector('[data-log-left]');
+          if (newInfo && curInfo) curInfo.innerHTML = newInfo.innerHTML;
+          /* Show error banner if present */
+          var newError = doc.querySelector('.build-error-banner');
+          if (newError && !document.querySelector('.build-error-banner')) {
+            if (curHeader) curHeader.insertAdjacentElement('afterend', newError);
+          }
+          /* Hide the progress banner */
+          if (progressBanner) progressBanner.style.display = 'none';
+          /* Auto-deploy: poll pipeline_status for the deployment, then redirect */
+          if (isAutoDeploy) pollForNextStep(autoDeployAppId, 'release');
+        })
+        .catch(function() {
+          if (statusPollAttempts < maxStatusPolls) setTimeout(fetchBuildStatus, 2000);
+        });
+    }
+
     socket.addEventListener('close', function() {
-      setTimeout(function() { window.location.reload(); }, 5000);
+      if (logsFinished) {
+        fetchBuildStatus();
+      } else {
+        if (tracker) tracker.setPhase('Waiting for build logs\u2026');
+        setTimeout(function() { window.location.reload(); }, 10000);
+      }
     });
   }
 
