@@ -492,108 +492,24 @@
 {% endblock content %}
 
 {% block js %}
+  <div id="buildPageConfig"
+       data-next-step-url="{{ next_step_url | tojson }}"
+       data-app-id="{{ app.id }}"
+       data-auto-deploy="{{ (release.release_metadata or {}).get('auto_deploy', false) | tojson }}"
+       data-ws-url=""
+       data-stage="release"
+       style="display:none"></div>
   <script>
-  /* Auto-deploy: show next-step banner instead of hard redirect */
-  var nextStepUrl = {{ next_step_url | tojson }};
-  var nextStepBanner = document.getElementById('nextStepBanner');
-  if (nextStepUrl && nextStepBanner) {
-    nextStepBanner.querySelector('a').href = nextStepUrl;
-    nextStepBanner.hidden = false;
-  }
-  var autoDeployAppId = '{{ app.id }}';
-
-  /* Live log streaming for in-progress package builds */
-  var logsPre = document.getElementById('buildLog');
-  var placeholder = document.getElementById('logPlaceholder');
-  if (placeholder) {
-    logsPre.innerHTML = '';
-    var barFill = document.getElementById('buildProgressFill');
-    var phaseLabel = document.getElementById('buildPhase');
-    var stepsEl = document.getElementById('buildSteps');
-    var elapsedEl = document.getElementById('buildElapsed');
-    var tracker = (barFill) ? new BuildProgressTracker(barFill, phaseLabel, 'build', stepsEl, elapsedEl) : null;
-    var logsFinished = false;
-    var isAutoDeploy = {{ (release.release_metadata or {}).get('auto_deploy', false) | tojson }};
-    var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
-    var socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/livelogs');
-    var progressBanner = document.querySelector('.build-progress-banner');
-    socket.addEventListener('message', function(ev) {
-      if (ev.data === '=================END OF LOGS=================') {
-        logsFinished = true;
-        if (tracker) {
-          tracker.complete();
-          if (tracker.errored && progressBanner) {
-            progressBanner.classList.add('deploy-progress-banner-error');
-          }
-        }
-        socket.close();
-        return;
-      }
-      logsPre.textContent += ev.data + '\n';
-      logsPre.scrollTop = logsPre.scrollHeight;
-      if (tracker) tracker.processLine(ev.data);
+  (function() {
+    var cfg = document.getElementById('buildPageConfig').dataset;
+    initBuildDetailPage({
+      logElementId: 'buildLog',
+      nextStepUrl: JSON.parse(cfg.nextStepUrl),
+      appId: cfg.appId,
+      isAutoDeploy: JSON.parse(cfg.autoDeploy),
+      wsUrl: cfg.wsUrl || (window.location.pathname + '/livelogs'),
+      stage: cfg.stage
     });
-    var statusPollAttempts = 0;
-    var maxStatusPolls = 30;
-    function fetchBuildStatus() {
-      statusPollAttempts++;
-      var cacheBust = '?_t=' + Date.now();
-      fetch(window.location.pathname + cacheBust, {
-        credentials: 'same-origin',
-        headers: { 'Accept': 'text/html', 'Cache-Control': 'no-cache' }
-      })
-        .then(function(r) { return r.text(); })
-        .then(function(html) {
-          var doc = new DOMParser().parseFromString(html, 'text/html');
-          var newOrb = doc.querySelector('.build-status-orb');
-          /* If server still shows "building", retry */
-          if (newOrb && newOrb.classList.contains('build-status-building') && statusPollAttempts < maxStatusPolls) {
-            setTimeout(fetchBuildStatus, 2000);
-            return;
-          }
-          /* Update entire header row (orb + title + actions) */
-          var newHeader = newOrb ? newOrb.closest('.mb-6') : null;
-          var curHeader = document.querySelector('.build-status-orb');
-          curHeader = curHeader ? curHeader.closest('.mb-6') : null;
-          if (newHeader && curHeader) curHeader.innerHTML = newHeader.innerHTML;
-          /* Update info cards */
-          var newInfo = doc.querySelector('[data-log-left]');
-          var curInfo = document.querySelector('[data-log-left]');
-          if (newInfo && curInfo) curInfo.innerHTML = newInfo.innerHTML;
-          /* Show error banner if present */
-          var newError = doc.querySelector('.build-error-banner');
-          if (newError && !document.querySelector('.build-error-banner')) {
-            if (curHeader) curHeader.insertAdjacentElement('afterend', newError);
-          }
-          /* Hide the progress banner */
-          if (progressBanner) progressBanner.style.display = 'none';
-          /* Auto-deploy: poll pipeline_status for the deployment, then redirect */
-          if (isAutoDeploy) pollForNextStep(autoDeployAppId, 'release');
-        })
-        .catch(function() {
-          if (statusPollAttempts < maxStatusPolls) setTimeout(fetchBuildStatus, 2000);
-        });
-    }
-
-    socket.addEventListener('close', function() {
-      if (logsFinished) {
-        fetchBuildStatus();
-      } else {
-        if (tracker) tracker.setPhase('Waiting for build logs\u2026');
-        setTimeout(function() { window.location.reload(); }, 10000);
-      }
-    });
-  }
-
-  /* Copy build log */
-  function copyBuildLog() {
-    var text = document.getElementById('buildLog').textContent;
-    navigator.clipboard.writeText(text).then(function() {
-      var btn = event.currentTarget;
-      var origHTML = btn.innerHTML;
-      btn.innerHTML = '<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12" /></svg> Copied';
-      setTimeout(function() { btn.innerHTML = origHTML; }, 2000);
-    });
-  }
+  })();
   </script>
 {% endblock js %}

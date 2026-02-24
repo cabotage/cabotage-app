@@ -408,130 +408,16 @@
 {% endblock content %}
 
 {% block js %}
+  <div id="deployPageConfig"
+       data-start-time="{{ deployment.created.isoformat() }}Z"
+       style="display:none"></div>
   <script>
-  /* Live log streaming for in-progress deployments */
-  var logsPre = document.getElementById('deployLog');
-  var placeholder = document.getElementById('logPlaceholder');
-  if (placeholder) {
-    logsPre.innerHTML = '';
-    var barFill = document.getElementById('deployProgressFill');
-    var phaseLabel = document.getElementById('deployPhase');
-    var stepsEl = document.getElementById('deploySteps');
-    var elapsedEl = document.getElementById('deployElapsed');
-    var tracker = (barFill) ? new BuildProgressTracker(barFill, phaseLabel, 'deploy', stepsEl, elapsedEl, '{{ deployment.created.isoformat() }}Z') : null;
-    var progressBanner = document.querySelector('.deploy-progress-banner');
-    var logsFinished = false;
-    var linesReceived = 0;
-    var reconnectAttempts = 0;
-    var maxReconnectAttempts = 30;
-    var emptyEndAttempts = 0;
-    var maxEmptyEndAttempts = 20; /* 20 × 3s = 60s max wait for pod to start */
-    var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
-    var wsUrl = protocol + window.location.host + window.location.pathname + '/livelogs';
-
-    function connectWebSocket() {
-      var socket = new WebSocket(wsUrl);
-      socket.addEventListener('message', function(ev) {
-        if (ev.data === '=================END OF LOGS=================') {
-          socket.close();
-          /* If no real log content arrived, the pod may not be running yet.
-             Retry the WebSocket after a delay instead of showing false success. */
-          if (linesReceived === 0 && emptyEndAttempts < maxEmptyEndAttempts) {
-            emptyEndAttempts++;
-            if (tracker) tracker.setPhase('Waiting for pod to start\u2026');
-            setTimeout(connectWebSocket, 3000);
-            return;
-          }
-          logsFinished = true;
-          reconnectAttempts = 0;
-          if (tracker) {
-            tracker.complete();
-            if (tracker.errored && progressBanner) {
-              progressBanner.classList.add('deploy-progress-banner-error');
-            }
-          }
-          /* Fetch final state and update DOM in-place */
-          fetchDeploymentStatus();
-          return;
-        }
-        reconnectAttempts = 0;
-        linesReceived++;
-        logsPre.textContent += ev.data + '\n';
-        logsPre.scrollTop = logsPre.scrollHeight;
-        if (tracker) tracker.processLine(ev.data);
-      });
-      socket.addEventListener('close', function() {
-        if (logsFinished) return;
-        reconnectAttempts++;
-        if (reconnectAttempts >= maxReconnectAttempts) {
-          /* Connection lost — try fetching final status instead of giving up */
-          if (tracker) tracker.setPhase('Checking status\u2026');
-          fetchDeploymentStatus();
-          return;
-        }
-        if (tracker) tracker.setPhase('Reconnecting\u2026');
-        var delay = Math.min(2000, 500 * reconnectAttempts);
-        setTimeout(connectWebSocket, delay);
-      });
-    }
-
-    var statusPollAttempts = 0;
-    var maxStatusPolls = 30; /* 30 × 2s = 60s max wait */
-
-    function fetchDeploymentStatus() {
-      statusPollAttempts++;
-      var cacheBust = '?_t=' + Date.now();
-      fetch(window.location.pathname + cacheBust, {
-        credentials: 'same-origin',
-        headers: { 'Accept': 'text/html', 'Cache-Control': 'no-cache' }
-      })
-        .then(function(r) { return r.text(); })
-        .then(function(html) {
-          var doc = new DOMParser().parseFromString(html, 'text/html');
-          var newOrb = doc.querySelector('.deploy-status-orb');
-
-          /* If server still shows "deploying", retry after a delay */
-          if (newOrb && newOrb.classList.contains('deploy-status-deploying') && statusPollAttempts < maxStatusPolls) {
-            setTimeout(fetchDeploymentStatus, 2000);
-            return;
-          }
-
-          /* Server has final state — update entire header row */
-          var newHeader = newOrb ? newOrb.closest('.mb-6') : null;
-          var curHeader = document.querySelector('.deploy-status-orb');
-          curHeader = curHeader ? curHeader.closest('.mb-6') : null;
-          if (newHeader && curHeader) curHeader.innerHTML = newHeader.innerHTML;
-          /* Replace deployment info card */
-          var newInfo = doc.querySelector('[data-log-left]');
-          var curInfo = document.querySelector('[data-log-left]');
-          if (newInfo && curInfo) curInfo.innerHTML = newInfo.innerHTML;
-          /* Show error banner if present */
-          var newError = doc.querySelector('.deploy-error-banner');
-          if (newError && !document.querySelector('.deploy-error-banner')) {
-            if (curHeader) curHeader.insertAdjacentElement('afterend', newError);
-          }
-          /* Hide the progress banner */
-          if (progressBanner) progressBanner.style.display = 'none';
-        })
-        .catch(function() {
-          if (statusPollAttempts < maxStatusPolls) {
-            setTimeout(fetchDeploymentStatus, 2000);
-          }
-        });
-    }
-
-    connectWebSocket();
-  }
-
-  /* Copy deploy log */
-  function copyDeployLog() {
-    var text = document.getElementById('deployLog').textContent;
-    navigator.clipboard.writeText(text).then(function() {
-      var btn = event.currentTarget;
-      var origHTML = btn.innerHTML;
-      btn.innerHTML = '<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12" /></svg> Copied';
-      setTimeout(function() { btn.innerHTML = origHTML; }, 2000);
+  (function() {
+    var cfg = document.getElementById('deployPageConfig').dataset;
+    initDeployDetailPage({
+      logElementId: 'deployLog',
+      startTime: cfg.startTime
     });
-  }
+  })();
   </script>
 {% endblock js %}

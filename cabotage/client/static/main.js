@@ -2520,6 +2520,306 @@ function initLiveStatus() {
   }
 }
 
+/* ---------- Build/Release Detail Page ---------- */
+function initBuildDetailPage(opts) {
+  var nextStepUrl = opts.nextStepUrl;
+  var nextStepBanner = document.getElementById('nextStepBanner');
+  if (nextStepUrl && nextStepBanner) {
+    nextStepBanner.querySelector('a').href = nextStepUrl;
+    nextStepBanner.hidden = false;
+  }
+  var logsPre = document.getElementById(opts.logElementId);
+  var placeholder = document.getElementById('logPlaceholder');
+  if (!logsPre || !placeholder) return;
+  logsPre.innerHTML = '';
+  var barFill = document.getElementById('buildProgressFill');
+  var phaseLabel = document.getElementById('buildPhase');
+  var stepsEl = document.getElementById('buildSteps');
+  var elapsedEl = document.getElementById('buildElapsed');
+  var tracker = barFill ? new BuildProgressTracker(barFill, phaseLabel, 'build', stepsEl, elapsedEl) : null;
+  var logsFinished = false;
+  var progressBanner = document.querySelector('.build-progress-banner');
+  var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
+  var wsUrl = opts.wsUrl || (window.location.pathname + '/livelogs');
+  var socket = new WebSocket(protocol + window.location.host + wsUrl);
+  socket.addEventListener('message', function(ev) {
+    if (ev.data === '=================END OF LOGS=================') {
+      logsFinished = true;
+      if (tracker) {
+        tracker.complete();
+        if (tracker.errored && progressBanner) progressBanner.classList.add('deploy-progress-banner-error');
+      }
+      socket.close();
+      return;
+    }
+    logsPre.textContent += ev.data + '\n';
+    logsPre.scrollTop = logsPre.scrollHeight;
+    if (tracker) tracker.processLine(ev.data);
+  });
+  var statusPollAttempts = 0;
+  var maxStatusPolls = 30;
+  function fetchBuildStatus() {
+    statusPollAttempts++;
+    fetch(window.location.pathname + '?_t=' + Date.now(), {
+      credentials: 'same-origin',
+      headers: { 'Accept': 'text/html', 'Cache-Control': 'no-cache' }
+    })
+      .then(function(r) { return r.text(); })
+      .then(function(html) {
+        var doc = new DOMParser().parseFromString(html, 'text/html');
+        var newOrb = doc.querySelector('.build-status-orb');
+        if (newOrb && newOrb.classList.contains('build-status-building') && statusPollAttempts < maxStatusPolls) {
+          setTimeout(fetchBuildStatus, 2000);
+          return;
+        }
+        var newHeader = newOrb ? newOrb.closest('.mb-6') : null;
+        var curHeader = document.querySelector('.build-status-orb');
+        curHeader = curHeader ? curHeader.closest('.mb-6') : null;
+        if (newHeader && curHeader) curHeader.innerHTML = newHeader.innerHTML;
+        var newInfo = doc.querySelector('[data-log-left]');
+        var curInfo = document.querySelector('[data-log-left]');
+        if (newInfo && curInfo) curInfo.innerHTML = newInfo.innerHTML;
+        var newError = doc.querySelector('.build-error-banner');
+        if (newError && !document.querySelector('.build-error-banner')) {
+          if (curHeader) curHeader.insertAdjacentElement('afterend', newError);
+        }
+        if (progressBanner) progressBanner.style.display = 'none';
+        if (opts.isAutoDeploy) pollForNextStep(opts.appId, opts.stage);
+      })
+      .catch(function() {
+        if (statusPollAttempts < maxStatusPolls) setTimeout(fetchBuildStatus, 2000);
+      });
+  }
+  socket.addEventListener('close', function() {
+    if (logsFinished) {
+      fetchBuildStatus();
+    } else {
+      if (tracker) tracker.setPhase('Waiting for build logs\u2026');
+      setTimeout(function() { window.location.reload(); }, 10000);
+    }
+  });
+}
+function copyBuildLog() {
+  var text = document.getElementById('buildLog').textContent;
+  navigator.clipboard.writeText(text).then(function() {
+    var btn = event.currentTarget;
+    var orig = btn.innerHTML;
+    btn.innerHTML = '<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12" /></svg> Copied';
+    setTimeout(function() { btn.innerHTML = orig; }, 2000);
+  });
+}
+
+/* ---------- Deploy Detail Page ---------- */
+function initDeployDetailPage(opts) {
+  var logsPre = document.getElementById(opts.logElementId);
+  var placeholder = document.getElementById('logPlaceholder');
+  if (!logsPre || !placeholder) return;
+  logsPre.innerHTML = '';
+  var barFill = document.getElementById('deployProgressFill');
+  var phaseLabel = document.getElementById('deployPhase');
+  var stepsEl = document.getElementById('deploySteps');
+  var elapsedEl = document.getElementById('deployElapsed');
+  var tracker = barFill ? new BuildProgressTracker(barFill, phaseLabel, 'deploy', stepsEl, elapsedEl, opts.startTime) : null;
+  var progressBanner = document.querySelector('.deploy-progress-banner');
+  var logsFinished = false;
+  var linesReceived = 0;
+  var reconnectAttempts = 0;
+  var maxReconnectAttempts = 30;
+  var emptyEndAttempts = 0;
+  var maxEmptyEndAttempts = 20;
+  var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
+  var wsUrl = protocol + window.location.host + window.location.pathname + '/livelogs';
+  function connectWebSocket() {
+    var socket = new WebSocket(wsUrl);
+    socket.addEventListener('message', function(ev) {
+      if (ev.data === '=================END OF LOGS=================') {
+        socket.close();
+        if (linesReceived === 0 && emptyEndAttempts < maxEmptyEndAttempts) {
+          emptyEndAttempts++;
+          if (tracker) tracker.setPhase('Waiting for pod to start\u2026');
+          setTimeout(connectWebSocket, 3000);
+          return;
+        }
+        logsFinished = true;
+        reconnectAttempts = 0;
+        if (tracker) {
+          tracker.complete();
+          if (tracker.errored && progressBanner) progressBanner.classList.add('deploy-progress-banner-error');
+        }
+        fetchDeploymentStatus();
+        return;
+      }
+      reconnectAttempts = 0;
+      linesReceived++;
+      logsPre.textContent += ev.data + '\n';
+      logsPre.scrollTop = logsPre.scrollHeight;
+      if (tracker) tracker.processLine(ev.data);
+    });
+    socket.addEventListener('close', function() {
+      if (logsFinished) return;
+      reconnectAttempts++;
+      if (reconnectAttempts >= maxReconnectAttempts) {
+        if (tracker) tracker.setPhase('Checking status\u2026');
+        fetchDeploymentStatus();
+        return;
+      }
+      if (tracker) tracker.setPhase('Reconnecting\u2026');
+      setTimeout(connectWebSocket, Math.min(2000, 500 * reconnectAttempts));
+    });
+  }
+  var statusPollAttempts = 0;
+  var maxStatusPolls = 30;
+  function fetchDeploymentStatus() {
+    statusPollAttempts++;
+    fetch(window.location.pathname + '?_t=' + Date.now(), {
+      credentials: 'same-origin',
+      headers: { 'Accept': 'text/html', 'Cache-Control': 'no-cache' }
+    })
+      .then(function(r) { return r.text(); })
+      .then(function(html) {
+        var doc = new DOMParser().parseFromString(html, 'text/html');
+        var newOrb = doc.querySelector('.deploy-status-orb');
+        if (newOrb && newOrb.classList.contains('deploy-status-deploying') && statusPollAttempts < maxStatusPolls) {
+          setTimeout(fetchDeploymentStatus, 2000);
+          return;
+        }
+        var newHeader = newOrb ? newOrb.closest('.mb-6') : null;
+        var curHeader = document.querySelector('.deploy-status-orb');
+        curHeader = curHeader ? curHeader.closest('.mb-6') : null;
+        if (newHeader && curHeader) curHeader.innerHTML = newHeader.innerHTML;
+        var newInfo = doc.querySelector('[data-log-left]');
+        var curInfo = document.querySelector('[data-log-left]');
+        if (newInfo && curInfo) curInfo.innerHTML = newInfo.innerHTML;
+        var newError = doc.querySelector('.deploy-error-banner');
+        if (newError && !document.querySelector('.deploy-error-banner')) {
+          if (curHeader) curHeader.insertAdjacentElement('afterend', newError);
+        }
+        if (progressBanner) progressBanner.style.display = 'none';
+      })
+      .catch(function() {
+        if (statusPollAttempts < maxStatusPolls) setTimeout(fetchDeploymentStatus, 2000);
+      });
+  }
+  connectWebSocket();
+}
+function copyDeployLog() {
+  var text = document.getElementById('deployLog').textContent;
+  navigator.clipboard.writeText(text).then(function() {
+    var btn = event.currentTarget;
+    var orig = btn.innerHTML;
+    btn.innerHTML = '<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12" /></svg> Copied';
+    setTimeout(function() { btn.innerHTML = orig; }, 2000);
+  });
+}
+
+/* ---------- App Logs Page ---------- */
+function initAppLogs() {
+  var logsPre = document.getElementById('appLogs');
+  if (!logsPre) return;
+  var autoScroll = true;
+  var paused = false;
+  var filterKubeProbe = true;
+  var backLog = [];
+  function appendLog(data) {
+    if (/\bkube-probe\/\d+.\d+\b/.test(data) && filterKubeProbe) return;
+    var span = document.createElement('div');
+    span.className = 'log-line';
+    span.innerHTML = renderLogLine(data);
+    logsPre.appendChild(span);
+    while (logsPre.childElementCount > 1000) logsPre.removeChild(logsPre.firstChild);
+    if (autoScroll) scrollToBottom();
+  }
+  function stringToColor(str) {
+    var hash = 0;
+    for (var i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    var colour = '#';
+    for (var i = 0; i < 3; i++) colour += ('00' + ((hash >> (i * 8)) & 0xFF).toString(16)).substr(-2);
+    return colour;
+  }
+  function renderLogLine(logLine) {
+    var logArray = logLine.split(' ');
+    return '<span style="color:' + stringToColor(logArray[0]) + '">' + logLine + '</span>';
+  }
+  function scrollToBottom() {
+    var anchor = document.getElementById('scroll-anchor');
+    if (anchor) anchor.scrollIntoView({ block: 'end' });
+  }
+  window.toggleKubeProbe = function() {
+    filterKubeProbe = !filterKubeProbe;
+    document.getElementById('toggleKubeProbeButton').textContent = filterKubeProbe ? 'Show kube-probe' : 'Hide kube-probe';
+  };
+  window.toggleAutoScroll = function() {
+    autoScroll = !autoScroll;
+    document.getElementById('toggleAutoScrollButton').textContent = autoScroll ? 'Disable auto-scroll' : 'Enable auto-scroll';
+    document.getElementById('scrollToBottomButton').classList.toggle('hidden', autoScroll);
+  };
+  window.togglePaused = function() {
+    paused = !paused;
+    var btn = document.getElementById('togglePausedButton');
+    if (paused) {
+      btn.textContent = 'Resume';
+      appendLog('**** paused ****');
+    } else {
+      appendLog('**** resumed ****');
+      while (backLog.length > 0) appendLog(backLog.shift());
+      btn.textContent = 'Pause';
+    }
+  };
+  window.scrollToBottom = scrollToBottom;
+  var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
+  var socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/live');
+  socket.addEventListener('message', function(ev) {
+    if (ev.data === '=================END OF LOGS=================') { socket.close(); return; }
+    if (paused) {
+      backLog.push(ev.data);
+      while (backLog.length > 1000) backLog.shift();
+    } else {
+      appendLog(ev.data);
+    }
+  });
+  socket.addEventListener('close', function() { setTimeout(function() { window.location.reload(); }, 3000); });
+}
+
+/* ---------- App Shell Page ---------- */
+function initAppShell() {
+  function wrap(object, method, wrapper) {
+    var fn = object[method];
+    return object[method] = function() {
+      return wrapper.apply(this, [fn.bind(this)].concat(Array.prototype.slice.call(arguments)));
+    };
+  }
+  var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
+  var socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/socket');
+  var term = new Terminal({
+    fontFamily: '"JetBrains Mono", "Cascadia Code", Menlo, monospace',
+    fontSize: 13,
+    cursorBlink: true,
+    allowProposedApi: true,
+    theme: { background: '#000000', foreground: '#e2e2e9', cursor: '#7c3aed', selectionBackground: 'rgba(124, 58, 237, 0.3)' }
+  });
+  var attachAddon = new AttachAddon.AttachAddon(socket, true);
+  wrap(attachAddon, '_sendData', function(original, data) { original('\x00' + data); });
+  var fitAddon = new FitAddon.FitAddon(socket, true);
+  term.loadAddon(attachAddon);
+  term.loadAddon(fitAddon);
+  term.open(document.getElementById('terminal'));
+  fitAddon.fit();
+  var debounce = function(callback, wait) {
+    var timeoutId = null;
+    return function() {
+      var args = arguments;
+      window.clearTimeout(timeoutId);
+      timeoutId = window.setTimeout(function() { callback.apply(null, args); }, wait);
+    };
+  };
+  var sendResize = debounce(function() {
+    fitAddon.fit();
+    socket.send('\x01' + JSON.stringify({ Width: term.cols, Height: term.rows }));
+  }, 100);
+  window.addEventListener('resize', sendResize);
+  socket.addEventListener('open', function() { sendResize(); });
+}
+
 /* ---------- Init All ---------- */
 /* ---------- Compact Topbar (scroll collapse) ---------- */
 function initCompactTopbar() {
