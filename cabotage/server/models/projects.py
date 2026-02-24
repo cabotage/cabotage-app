@@ -192,11 +192,6 @@ class Application(db.Model, Timestamp):
         nullable=True,
     )
 
-    dockerfile_path = db.Column(
-        db.Text(),
-        nullable=True,
-    )
-
     auto_deploy_branch = db.Column(
         db.Text(),
         nullable=True,
