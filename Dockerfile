@@ -38,3 +38,14 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 COPY . /opt/cabotage-app/src/
 WORKDIR /opt/cabotage-app/src/
 
+# Minify static assets for production
+RUN if [ "$DEVEL" != "yes" ]; then \
+    pip install --no-cache-dir rcssmin rjsmin && \
+    python3 -c "\
+import rcssmin, rjsmin, pathlib; \
+css = pathlib.Path('cabotage/client/static/main.css'); \
+js = pathlib.Path('cabotage/client/static/main.js'); \
+css.with_suffix('.min.css').write_text(rcssmin.cssmin(css.read_text())); \
+js.with_suffix('.min.js').write_text(rjsmin.jsmin(js.read_text()))"; \
+    fi
+
