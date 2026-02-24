@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path %}
+{% from "_macros.html" import icon, resource_path, tab_nav, empty_state, status_badge %}
 
 {% block title %}
   Logs - Cabotage
@@ -22,7 +22,38 @@
       <h1 class="text-lg font-semibold text-base-content">Logs</h1>
       <span class="text-sm text-base-content/40 font-mono">{{ application.slug }}</span>
     </div>
-    <div class="flex items-center gap-2">
+  </div>
+
+  {{ tab_nav([
+    {
+      "id": "runtime",
+      "label": "Runtime",
+      "icon": "terminal"
+    },
+    {
+      "id": "build",
+      "label": "Build",
+      "icon": "image"
+    },
+    {
+      "id": "deploy",
+      "label": "Deploy",
+      "icon": "deploy"
+    },
+    {
+      "id": "http",
+      "label": "HTTP",
+      "icon": "globe"
+    }
+  ]) }}
+
+  {# ===== Toolbar ===== #}
+  <div class="flex items-center gap-2 mt-3 mb-3 flex-wrap">
+    <input type="text"
+           id="log-search"
+           placeholder="Filter logs..."
+           class="input input-bordered input-sm flex-1 min-w-[12rem]" />
+    <div id="runtime-controls" class="flex items-center gap-2">
       <button onclick="toggleAutoScroll()"
               id="toggleAutoScrollButton"
               class="btn btn-ghost btn-xs">Disable auto-scroll</button>
@@ -38,55 +69,140 @@
     </div>
   </div>
 
-  <div class="log-viewer" style="height: 80vh;">
-    <div id="appLogs"></div>
-    <div id="scroll-anchor"></div>
+  {# ===== Runtime Tab ===== #}
+  <div class="tab-panel tab-panel-active" data-tab-panel="runtime">
+    <div class="log-viewer" style="height: 75vh;">
+      <div id="appLogs"></div>
+      <div id="scroll-anchor"></div>
+    </div>
   </div>
+
+  {# ===== Build Tab ===== #}
+  <div class="tab-panel" data-tab-panel="build">
+    <div class="mb-3">
+      <select id="build-selector"
+              class="select select-bordered select-sm w-full max-w-md">
+        {% if images %}
+          <optgroup label="Images">
+            {% for img in images %}
+              <option value="image:{{ img.id }}"
+                      data-built="{{ img.built|lower }}"
+                      data-error="{{ img.error|lower }}"
+                      data-type="image">
+                Image #{{ img.version }} — {{ 'error' if img.error else ('built' if img.built else 'building') }}
+              </option>
+            {% endfor %}
+          </optgroup>
+        {% endif %}
+        {% if releases %}
+          <optgroup label="Packages">
+            {% for rel in releases %}
+              <option value="release:{{ rel.id }}"
+                      data-built="{{ rel.built|lower }}"
+                      data-error="{{ rel.error|lower }}"
+                      data-type="release">
+                Package v{{ rel.version }} — {{ 'error' if rel.error else ('built' if rel.built else 'building') }}
+              </option>
+            {% endfor %}
+          </optgroup>
+        {% endif %}
+      </select>
+    </div>
+    <div id="build-error-banner"
+         class="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-error/10 border border-error/20 text-error text-sm mb-3 hidden">
+      {{ icon('alert-triangle', 'w-4 h-4 flex-shrink-0') }}
+      <span id="build-error-text"></span>
+    </div>
+    <div class="flex items-center justify-end mb-2">
+      <button onclick="copyLogText('build-log-content')"
+              class="btn btn-ghost btn-xs gap-1">{{ icon('copy', 'w-3 h-3') }} Copy</button>
+    </div>
+    <div class="build-log-viewer build-log-viewer-primary"
+         style="height: 65vh">
+      <pre id="build-log-content">{% if images %}{{ images[0].image_build_log or '' }}{% elif releases %}{{ releases[0].release_build_log or '' }}{% endif %}</pre>
+    </div>
+  </div>
+
+  {# ===== Deploy Tab ===== #}
+  <div class="tab-panel" data-tab-panel="deploy">
+    <div class="mb-3">
+      <select id="deploy-selector"
+              class="select select-bordered select-sm w-full max-w-md">
+        {% for dep in deployments %}
+          {% set rel_obj = dep.release_object %}
+          <option value="{{ dep.id }}"
+                  data-complete="{{ dep.complete|lower }}"
+                  data-error="{{ dep.error|lower }}">
+            Deploy
+            {% if rel_obj %}v{{ rel_obj.version }}{% endif %}
+            — {{ 'error' if dep.error else ('complete' if dep.complete else 'deploying') }} — {{ dep.created.strftime("%Y-%m-%d %H:%M") if dep.created else '' }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div id="deploy-error-banner"
+         class="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-error/10 border border-error/20 text-error text-sm mb-3 hidden">
+      {{ icon('alert-triangle', 'w-4 h-4 flex-shrink-0') }}
+      <span id="deploy-error-text"></span>
+    </div>
+    <div class="flex items-center justify-end mb-2">
+      <button onclick="copyLogText('deploy-log-content')"
+              class="btn btn-ghost btn-xs gap-1">{{ icon('copy', 'w-3 h-3') }} Copy</button>
+    </div>
+    <div class="deploy-log-viewer build-log-viewer-primary"
+         style="height: 65vh">
+      <pre id="deploy-log-content">{% if deployments %}{{ deployments[0].deploy_log or '' }}{% endif %}</pre>
+    </div>
+  </div>
+
+  {# ===== HTTP Tab ===== #}
+  <div class="tab-panel" data-tab-panel="http">
+    <div class="log-viewer" style="height: 75vh;">
+      <div id="httpLogs"></div>
+      <div id="http-scroll-anchor"></div>
+    </div>
+  </div>
+
 {% endblock content %}
 
 {% block js %}
   <script>
+  /* ===== State ===== */
   var autoScroll = true;
-  var logsPre = document.getElementById('appLogs');
   var paused = false;
   var filterKubeProbe = true;
+  var runtimeSocket = null;
+  var buildSocket = null;
+  var deploySocket = null;
+  var httpSocket = null;
+  var activeTab = 'runtime';
 
-  function appendLog(data) {
-    if (/\bkube-probe\/\d+.\d+\b/.test(data) && filterKubeProbe) {
-      return;
-    }
-    var span = document.createElement('div');
-    span.className = 'log-line';
-    span.innerHTML = renderLogLine(data);
-    logsPre.appendChild(span);
-    while (logsPre.childElementCount > 1000) {
-      logsPre.removeChild(logsPre.firstChild);
-    }
-    if (autoScroll) {
-      scrollToBottom();
-    }
+  var logsPre = document.getElementById('appLogs');
+  var buildLogPre = document.getElementById('build-log-content');
+  var deployLogPre = document.getElementById('deploy-log-content');
+  var httpLogsPre = document.getElementById('httpLogs');
+
+  /* ===== Utility ===== */
+  function getProtocol() {
+    return (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
   }
 
-  var backLog = [];
-  var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
-  var socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/live');
-  socket.addEventListener('message', function(ev) {
-    if (ev.data === '=================END OF LOGS=================') {
-      socket.close();
-      return;
-    }
-    if (paused) {
-      backLog.push(ev.data);
-      while (backLog.length > 1000) {
-        backLog.shift();
+  function copyLogText(elementId) {
+    var el = document.getElementById(elementId);
+    if (!el) return;
+    navigator.clipboard.writeText(el.textContent).then(function() {
+      // brief feedback - find the nearest copy button
+      var btn = el.closest('.tab-panel').querySelector('[onclick*="copyLogText"]');
+      if (btn) {
+        var orig = btn.innerHTML;
+        btn.textContent = 'Copied!';
+        setTimeout(function() { btn.innerHTML = orig; }, 1500);
       }
-    } else {
-      appendLog(ev.data);
-    }
-  });
-  socket.addEventListener('close', function() {
-    setTimeout(function() { window.location.reload(); }, 3000);
-  });
+    });
+  }
+
+  /* ===== Runtime Tab ===== */
+  var backLog = [];
 
   function stringToColor(str) {
     var hash = 0;
@@ -103,12 +219,74 @@
 
   function renderLogLine(logLine) {
     var logArray = logLine.split(' ');
-    return '<span style="color:' + stringToColor(logArray[0]) + '">' + logLine + '</span>';
+    return '<span style="color:' + stringToColor(logArray[0]) + '">' + escapeHtml(logLine) + '</span>';
+  }
+
+  function escapeHtml(text) {
+    var div = document.createElement('div');
+    div.appendChild(document.createTextNode(text));
+    return div.innerHTML;
+  }
+
+  function appendLog(data) {
+    if (/\bkube-probe\/\d+.\d+\b/.test(data) && filterKubeProbe) {
+      return;
+    }
+    var span = document.createElement('div');
+    span.className = 'log-line';
+    span.innerHTML = renderLogLine(data);
+    // Apply current search filter
+    var searchVal = document.getElementById('log-search').value.toLowerCase();
+    if (searchVal && data.toLowerCase().indexOf(searchVal) === -1) {
+      span.style.display = 'none';
+    }
+    logsPre.appendChild(span);
+    while (logsPre.childElementCount > 1000) {
+      logsPre.removeChild(logsPre.firstChild);
+    }
+    if (autoScroll) {
+      scrollToBottom();
+    }
+  }
+
+  function connectRuntimeWs() {
+    if (runtimeSocket) return;
+    var protocol = getProtocol();
+    runtimeSocket = new WebSocket(protocol + window.location.host + window.location.pathname + '/live');
+    runtimeSocket.addEventListener('message', function(ev) {
+      if (ev.data === '=================END OF LOGS=================') {
+        runtimeSocket.close();
+        runtimeSocket = null;
+        return;
+      }
+      if (paused) {
+        backLog.push(ev.data);
+        while (backLog.length > 1000) {
+          backLog.shift();
+        }
+      } else {
+        appendLog(ev.data);
+      }
+    });
+    runtimeSocket.addEventListener('close', function() {
+      runtimeSocket = null;
+      if (activeTab === 'runtime') {
+        setTimeout(function() { connectRuntimeWs(); }, 3000);
+      }
+    });
+  }
+
+  function disconnectRuntimeWs() {
+    if (runtimeSocket) {
+      runtimeSocket.close();
+      runtimeSocket = null;
+    }
   }
 
   function scrollToBottom() {
-    var anchor = document.getElementById('scroll-anchor');
-    anchor.scrollIntoView({ block: 'end' });
+    var anchorId = activeTab === 'http' ? 'http-scroll-anchor' : 'scroll-anchor';
+    var anchor = document.getElementById(anchorId);
+    if (anchor) anchor.scrollIntoView({ block: 'end' });
   }
 
   function toggleKubeProbe() {
@@ -130,14 +308,282 @@
     var btn = document.getElementById('togglePausedButton');
     if (paused) {
       btn.textContent = 'Resume';
-      appendLog('**** paused ****');
+      if (activeTab === 'runtime') appendLog('**** paused ****');
+      if (activeTab === 'http') appendHttpLog('**** paused ****');
     } else {
-      appendLog('**** resumed ****');
-      while (backLog.length > 0) {
-        appendLog(backLog.shift());
+      if (activeTab === 'runtime') {
+        appendLog('**** resumed ****');
+        while (backLog.length > 0) {
+          appendLog(backLog.shift());
+        }
+      }
+      if (activeTab === 'http') {
+        appendHttpLog('**** resumed ****');
+        while (httpBackLog.length > 0) {
+          appendHttpLog(httpBackLog.shift());
+        }
       }
       btn.textContent = 'Pause';
     }
   }
+
+  /* ===== Build Tab ===== */
+  function connectBuildWs(type, id) {
+    disconnectBuildWs();
+    var protocol = getProtocol();
+    var path = '/' + type + '/' + id + '/livelogs';
+    buildSocket = new WebSocket(protocol + window.location.host + path);
+    buildLogPre.textContent = '';
+    buildSocket.addEventListener('message', function(ev) {
+      if (ev.data === '=================END OF LOGS=================') {
+        buildSocket.close();
+        buildSocket = null;
+        return;
+      }
+      buildLogPre.textContent += ev.data + '\n';
+      buildLogPre.parentElement.scrollTop = buildLogPre.parentElement.scrollHeight;
+    });
+    buildSocket.addEventListener('close', function() {
+      buildSocket = null;
+    });
+  }
+
+  function disconnectBuildWs() {
+    if (buildSocket) {
+      buildSocket.close();
+      buildSocket = null;
+    }
+  }
+
+  function loadBuildLog(type, id) {
+    var url = '/api/' + type + '/' + id + '/log';
+    fetch(url).then(function(r) { return r.json(); }).then(function(data) {
+      buildLogPre.textContent = data.log_text || '';
+      var banner = document.getElementById('build-error-banner');
+      var bannerText = document.getElementById('build-error-text');
+      if (data.error && data.error_detail) {
+        bannerText.textContent = data.error_detail;
+        banner.classList.remove('hidden');
+      } else {
+        banner.classList.add('hidden');
+      }
+    });
+  }
+
+  function onBuildSelectorChange() {
+    var sel = document.getElementById('build-selector');
+    if (!sel || !sel.value) return;
+    var parts = sel.value.split(':');
+    var type = parts[0];
+    var id = parts[1];
+    var opt = sel.options[sel.selectedIndex];
+    var isBuilt = opt.getAttribute('data-built') === 'true';
+    var isError = opt.getAttribute('data-error') === 'true';
+
+    disconnectBuildWs();
+    document.getElementById('build-error-banner').classList.add('hidden');
+
+    if (!isBuilt && !isError) {
+      // In-progress: stream via websocket
+      connectBuildWs(type, id);
+    } else {
+      // Complete or error: fetch via AJAX
+      loadBuildLog(type, id);
+    }
+  }
+
+  /* ===== Deploy Tab ===== */
+  function connectDeployWs(id) {
+    disconnectDeployWs();
+    var protocol = getProtocol();
+    var path = '/deployment/' + id + '/livelogs';
+    deploySocket = new WebSocket(protocol + window.location.host + path);
+    deployLogPre.textContent = '';
+    deploySocket.addEventListener('message', function(ev) {
+      if (ev.data === '=================END OF LOGS=================') {
+        deploySocket.close();
+        deploySocket = null;
+        return;
+      }
+      deployLogPre.textContent += ev.data + '\n';
+      deployLogPre.parentElement.scrollTop = deployLogPre.parentElement.scrollHeight;
+    });
+    deploySocket.addEventListener('close', function() {
+      deploySocket = null;
+    });
+  }
+
+  function disconnectDeployWs() {
+    if (deploySocket) {
+      deploySocket.close();
+      deploySocket = null;
+    }
+  }
+
+  function loadDeployLog(id) {
+    fetch('/api/deployment/' + id + '/log').then(function(r) { return r.json(); }).then(function(data) {
+      deployLogPre.textContent = data.log_text || '';
+      var banner = document.getElementById('deploy-error-banner');
+      var bannerText = document.getElementById('deploy-error-text');
+      if (data.error && data.error_detail) {
+        bannerText.textContent = data.error_detail;
+        banner.classList.remove('hidden');
+      } else {
+        banner.classList.add('hidden');
+      }
+    });
+  }
+
+  function onDeploySelectorChange() {
+    var sel = document.getElementById('deploy-selector');
+    if (!sel || !sel.value) return;
+    var id = sel.value;
+    var opt = sel.options[sel.selectedIndex];
+    var isComplete = opt.getAttribute('data-complete') === 'true';
+    var isError = opt.getAttribute('data-error') === 'true';
+
+    disconnectDeployWs();
+    document.getElementById('deploy-error-banner').classList.add('hidden');
+
+    if (!isComplete && !isError) {
+      connectDeployWs(id);
+    } else {
+      loadDeployLog(id);
+    }
+  }
+
+  /* ===== HTTP Tab ===== */
+  var httpBackLog = [];
+
+  function appendHttpLog(data) {
+    var span = document.createElement('div');
+    span.className = 'log-line';
+    span.innerHTML = renderLogLine(data);
+    var searchVal = document.getElementById('log-search').value.toLowerCase();
+    if (searchVal && data.toLowerCase().indexOf(searchVal) === -1) {
+      span.style.display = 'none';
+    }
+    httpLogsPre.appendChild(span);
+    while (httpLogsPre.childElementCount > 1000) {
+      httpLogsPre.removeChild(httpLogsPre.firstChild);
+    }
+    if (autoScroll) {
+      scrollToBottom();
+    }
+  }
+
+  function connectHttpWs() {
+    if (httpSocket) return;
+    var protocol = getProtocol();
+    httpSocket = new WebSocket(protocol + window.location.host + window.location.pathname + '/http');
+    httpSocket.addEventListener('message', function(ev) {
+      if (ev.data === '=================END OF LOGS=================') {
+        httpSocket.close();
+        httpSocket = null;
+        return;
+      }
+      if (paused) {
+        httpBackLog.push(ev.data);
+        while (httpBackLog.length > 1000) {
+          httpBackLog.shift();
+        }
+      } else {
+        appendHttpLog(ev.data);
+      }
+    });
+    httpSocket.addEventListener('close', function() {
+      httpSocket = null;
+      if (activeTab === 'http') {
+        setTimeout(function() { connectHttpWs(); }, 3000);
+      }
+    });
+  }
+
+  function disconnectHttpWs() {
+    if (httpSocket) {
+      httpSocket.close();
+      httpSocket = null;
+    }
+  }
+
+  /* ===== Search Filter ===== */
+  function applySearchFilter() {
+    var searchVal = document.getElementById('log-search').value.toLowerCase();
+    // Runtime tab lines
+    var lines = logsPre.querySelectorAll('.log-line');
+    lines.forEach(function(line) {
+      if (!searchVal || line.textContent.toLowerCase().indexOf(searchVal) !== -1) {
+        line.style.display = '';
+      } else {
+        line.style.display = 'none';
+      }
+    });
+    // HTTP tab lines
+    var httpLines = httpLogsPre.querySelectorAll('.log-line');
+    httpLines.forEach(function(line) {
+      if (!searchVal || line.textContent.toLowerCase().indexOf(searchVal) !== -1) {
+        line.style.display = '';
+      } else {
+        line.style.display = 'none';
+      }
+    });
+  }
+
+  document.getElementById('log-search').addEventListener('input', function() {
+    applySearchFilter();
+  });
+
+  /* ===== Tab Lifecycle ===== */
+  function onTabSwitch(tabId) {
+    var prevTab = activeTab;
+    activeTab = tabId;
+
+    // Show/hide runtime controls (visible for runtime and http tabs)
+    var controls = document.getElementById('runtime-controls');
+    if (controls) {
+      controls.style.display = (tabId === 'runtime' || tabId === 'http') ? '' : 'none';
+    }
+
+    // Reset search on tab switch
+    document.getElementById('log-search').value = '';
+    applySearchFilter();
+
+    // Disconnect previous tab websocket
+    if (prevTab === 'runtime') disconnectRuntimeWs();
+    if (prevTab === 'build') disconnectBuildWs();
+    if (prevTab === 'deploy') disconnectDeployWs();
+    if (prevTab === 'http') disconnectHttpWs();
+
+    // Connect new tab
+    if (tabId === 'runtime') {
+      connectRuntimeWs();
+    } else if (tabId === 'build') {
+      onBuildSelectorChange();
+    } else if (tabId === 'deploy') {
+      onDeploySelectorChange();
+    } else if (tabId === 'http') {
+      connectHttpWs();
+    }
+  }
+
+  /* Listen for tab-activated events dispatched by initTabs */
+  document.querySelectorAll('[data-tab-panel]').forEach(function(panel) {
+    panel.addEventListener('tab-activated', function() {
+      onTabSwitch(panel.getAttribute('data-tab-panel'));
+    });
+  });
+
+  /* ===== Selector change handlers ===== */
+  var buildSel = document.getElementById('build-selector');
+  if (buildSel) buildSel.addEventListener('change', onBuildSelectorChange);
+
+  var deploySel = document.getElementById('deploy-selector');
+  if (deploySel) deploySel.addEventListener('change', onDeploySelectorChange);
+
+  /* ===== Initial connection ===== */
+  /* Driven by tab-activated events from initTabs().
+     initTabs fires on DOMContentLoaded (after this script registers listeners).
+     For the default (runtime) tab, connectRuntimeWs is called via onTabSwitch.
+     For deep links like #build/#deploy, the appropriate tab handler runs. */
   </script>
 {% endblock js %}

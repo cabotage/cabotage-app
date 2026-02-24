@@ -129,7 +129,7 @@
           <div class="build-progress-spinner"></div>
           <div>
             <p class="text-sm font-medium text-base-content" id="buildPhase">Waiting for logs…</p>
-            <p class="text-xs text-base-content/40">Streaming logs below. Updates live on completion.</p>
+            <p class="text-xs text-base-content/40">Streaming logs below. Page will refresh on completion.</p>
           </div>
         </div>
         <span class="progress-elapsed" id="buildElapsed">00:00</span>
@@ -500,7 +500,6 @@
     nextStepBanner.querySelector('a').href = nextStepUrl;
     nextStepBanner.hidden = false;
   }
-  var autoDeployAppId = '{{ app.id }}';
 
   /* Live log streaming for in-progress package builds */
   var logsPre = document.getElementById('buildLog');
@@ -511,102 +510,40 @@
     var phaseLabel = document.getElementById('buildPhase');
     var stepsEl = document.getElementById('buildSteps');
     var elapsedEl = document.getElementById('buildElapsed');
-    var tracker = (barFill) ? new BuildProgressTracker(barFill, phaseLabel, 'build', stepsEl, elapsedEl, '{{ release.created.isoformat() }}Z') : null;
+    var tracker = (barFill) ? new BuildProgressTracker(barFill, phaseLabel, 'build', stepsEl, elapsedEl) : null;
     var logsFinished = false;
-    var linesReceived = 0;
-    var emptyEndAttempts = 0;
-    var maxEmptyEndAttempts = 20;
-    var reconnectAttempts = 0;
-    var maxReconnectAttempts = 30;
     var isAutoDeploy = {{ (release.release_metadata or {}).get('auto_deploy', false) | tojson }};
     var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
-    var wsUrl = protocol + window.location.host + window.location.pathname + '/livelogs';
+    var socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/livelogs');
     var progressBanner = document.querySelector('.build-progress-banner');
-
-    function connectWebSocket() {
-      var socket = new WebSocket(wsUrl);
-      socket.addEventListener('message', function(ev) {
-        if (ev.data === '=================END OF LOGS=================') {
-          socket.close();
-          if (linesReceived === 0 && emptyEndAttempts < maxEmptyEndAttempts) {
-            emptyEndAttempts++;
-            if (tracker) tracker.setPhase('Waiting for pod to start\u2026');
-            setTimeout(connectWebSocket, 3000);
-            return;
+    socket.addEventListener('message', function(ev) {
+      if (ev.data === '=================END OF LOGS=================') {
+        logsFinished = true;
+        if (tracker) {
+          tracker.complete();
+          if (tracker.errored && progressBanner) {
+            progressBanner.classList.add('deploy-progress-banner-error');
           }
-          logsFinished = true;
-          if (tracker) {
-            tracker.complete();
-            if (tracker.errored && progressBanner) {
-              progressBanner.classList.add('deploy-progress-banner-error');
-            }
-          }
-          fetchBuildStatus();
-          return;
         }
-        reconnectAttempts = 0;
-        linesReceived++;
-        logsPre.textContent += ev.data + '\n';
-        logsPre.scrollTop = logsPre.scrollHeight;
-        if (tracker) tracker.processLine(ev.data);
-      });
-      socket.addEventListener('close', function() {
-        if (logsFinished) return;
-        reconnectAttempts++;
-        if (reconnectAttempts >= maxReconnectAttempts) {
-          if (tracker) tracker.setPhase('Checking status\u2026');
-          fetchBuildStatus();
-          return;
+        socket.close();
+        return;
+      }
+      logsPre.textContent += ev.data + '\n';
+      logsPre.scrollTop = logsPre.scrollHeight;
+      if (tracker) tracker.processLine(ev.data);
+    });
+    socket.addEventListener('close', function() {
+      if (logsFinished) {
+        if (isAutoDeploy) {
+          pollForNextStep(window.location.href);
+        } else {
+          setTimeout(function() { window.location.reload(); }, 5000);
         }
-        if (tracker) tracker.setPhase('Reconnecting\u2026');
-        var delay = Math.min(2000, 500 * reconnectAttempts);
-        setTimeout(connectWebSocket, delay);
-      });
-    }
-
-    var statusPollAttempts = 0;
-    var maxStatusPolls = 30;
-    function fetchBuildStatus() {
-      statusPollAttempts++;
-      var cacheBust = '?_t=' + Date.now();
-      fetch(window.location.pathname + cacheBust, {
-        credentials: 'same-origin',
-        headers: { 'Accept': 'text/html', 'Cache-Control': 'no-cache' }
-      })
-        .then(function(r) { return r.text(); })
-        .then(function(html) {
-          var doc = new DOMParser().parseFromString(html, 'text/html');
-          var newOrb = doc.querySelector('.build-status-orb');
-          /* If server still shows "building", retry */
-          if (newOrb && newOrb.classList.contains('build-status-building') && statusPollAttempts < maxStatusPolls) {
-            setTimeout(fetchBuildStatus, 2000);
-            return;
-          }
-          /* Update entire header row (orb + title + actions) */
-          var newHeader = newOrb ? newOrb.closest('.mb-6') : null;
-          var curHeader = document.querySelector('.build-status-orb');
-          curHeader = curHeader ? curHeader.closest('.mb-6') : null;
-          if (newHeader && curHeader) curHeader.innerHTML = newHeader.innerHTML;
-          /* Update info cards */
-          var newInfo = doc.querySelector('[data-log-left]');
-          var curInfo = document.querySelector('[data-log-left]');
-          if (newInfo && curInfo) curInfo.innerHTML = newInfo.innerHTML;
-          /* Show error banner if present */
-          var newError = doc.querySelector('.build-error-banner');
-          if (newError && !document.querySelector('.build-error-banner')) {
-            if (curHeader) curHeader.insertAdjacentElement('afterend', newError);
-          }
-          /* Hide the progress banner */
-          if (progressBanner) progressBanner.style.display = 'none';
-          /* Auto-deploy: poll pipeline_status for the deployment, then redirect */
-          if (isAutoDeploy) pollForNextStep(autoDeployAppId, 'release');
-        })
-        .catch(function() {
-          if (statusPollAttempts < maxStatusPolls) setTimeout(fetchBuildStatus, 2000);
-        });
-    }
-
-    connectWebSocket();
+      } else {
+        if (tracker) tracker.setPhase('Waiting for build logs\u2026');
+        setTimeout(function() { window.location.reload(); }, 10000);
+      }
+    });
   }
 
   /* Copy build log */

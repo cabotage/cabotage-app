@@ -2,9 +2,7 @@
 
 /* ---------- Slugify ---------- */
 function slugify(text) {
-  return text
-    .toString()
-    .toLowerCase()
+  return text.toString().toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^\w\-]+/g, '')
     .replace(/\-\-+/g, '-')
@@ -38,12 +36,12 @@ function initTabs(containerSelector) {
   var panels = document.querySelectorAll('[data-tab-panel]');
 
   function activateTab(tabId) {
-    tabs.forEach(function (t) {
+    tabs.forEach(function(t) {
       t.classList.toggle('tab-active', t.getAttribute('data-tab') === tabId);
     });
 
     // Emit lifecycle events before toggling visibility
-    panels.forEach(function (p) {
+    panels.forEach(function(p) {
       var panelId = p.getAttribute('data-tab-panel');
       if (panelId === tabId) {
         p.classList.add('tab-panel-active');
@@ -60,8 +58,8 @@ function initTabs(containerSelector) {
     }
   }
 
-  tabs.forEach(function (tab) {
-    tab.addEventListener('click', function (e) {
+  tabs.forEach(function(tab) {
+    tab.addEventListener('click', function(e) {
       e.preventDefault();
       activateTab(tab.getAttribute('data-tab'));
     });
@@ -70,7 +68,7 @@ function initTabs(containerSelector) {
   // Activate from URL hash or default to first tab
   var hash = window.location.hash.replace('#', '');
   var validTab = false;
-  tabs.forEach(function (t) {
+  tabs.forEach(function(t) {
     if (t.getAttribute('data-tab') === hash) validTab = true;
   });
 
@@ -83,8 +81,8 @@ function initTabs(containerSelector) {
 
 /* ---------- Increment/Decrement (Process Scaling) ---------- */
 function initCountInputs() {
-  document.querySelectorAll('.incr-btn').forEach(function (button) {
-    button.addEventListener('click', function (e) {
+  document.querySelectorAll('.incr-btn').forEach(function(button) {
+    button.addEventListener('click', function(e) {
       e.preventDefault();
       var parent = button.closest('.count-input');
       if (!parent) return;
@@ -103,16 +101,16 @@ function initCountInputs() {
       }
 
       // Show the update button
-      document.querySelectorAll('.update_process_settings').forEach(function (el) {
+      document.querySelectorAll('.update_process_settings').forEach(function(el) {
         el.classList.remove('hidden');
       });
     });
   });
 
   // Pod size change handler
-  document.querySelectorAll('.pod-size').forEach(function (select) {
-    select.addEventListener('change', function () {
-      document.querySelectorAll('.update_process_settings').forEach(function (el) {
+  document.querySelectorAll('.pod-size').forEach(function(select) {
+    select.addEventListener('change', function() {
+      document.querySelectorAll('.update_process_settings').forEach(function(el) {
         el.classList.remove('hidden');
       });
     });
@@ -121,8 +119,8 @@ function initCountInputs() {
 
 /* ---------- Env Var Reveal ---------- */
 function initEnvReveal() {
-  document.querySelectorAll('[data-reveal]').forEach(function (btn) {
-    btn.addEventListener('click', function () {
+  document.querySelectorAll('[data-reveal]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
       var target = document.getElementById(btn.getAttribute('data-reveal'));
       if (!target) return;
       var hidden = target.querySelector('.env-hidden');
@@ -138,9 +136,9 @@ function initEnvReveal() {
 
 /* ---------- Dropdown Close ---------- */
 function initDropdowns() {
-  document.addEventListener('click', function (e) {
+  document.addEventListener('click', function(e) {
     if (!e.target.closest('.dropdown')) {
-      document.querySelectorAll('.dropdown [tabindex]').forEach(function (el) {
+      document.querySelectorAll('.dropdown [tabindex]').forEach(function(el) {
         el.blur();
       });
     }
@@ -152,33 +150,9 @@ function initMobileNav() {
   var toggle = document.getElementById('mobile-nav-toggle');
   var menu = document.getElementById('mobile-nav-menu');
   if (toggle && menu) {
-    toggle.addEventListener('click', function () {
+    toggle.addEventListener('click', function() {
       menu.classList.toggle('hidden');
     });
-  }
-
-  /* Clone tab-bar links into mobile menu */
-  var tabBar = document.querySelector('[data-tabs]');
-  var mobileTabsContainer = document.getElementById('mobile-nav-tabs');
-  var mobileDivider = document.getElementById('mobile-nav-divider');
-  if (tabBar && mobileTabsContainer) {
-    var tabs = tabBar.querySelectorAll('.tab-item');
-    if (tabs.length) {
-      tabs.forEach(function (tab) {
-        var a = document.createElement('a');
-        a.href = tab.getAttribute('href') || '#';
-        a.className = 'btn btn-ghost btn-sm justify-start text-sm';
-        a.textContent = tab.textContent.trim().replace(/\s*\d+$/, '');
-        a.setAttribute('data-mobile-tab', tab.getAttribute('data-tab') || '');
-        a.addEventListener('click', function (e) {
-          e.preventDefault();
-          tab.click();
-          if (menu) menu.classList.add('hidden');
-        });
-        mobileTabsContainer.appendChild(a);
-      });
-      if (mobileDivider) mobileDivider.classList.remove('hidden');
-    }
   }
 }
 
@@ -195,11 +169,7 @@ function initThemeToggle() {
     localStorage.setItem('theme-pref', pref);
     var meta = document.querySelector('meta[name="theme-color"]');
     if (meta) {
-      var metaColors = {
-        light: '#fafafe', terminal: '#0a0a0a',
-        'contrast-dark': '#010409', 'contrast-light': '#ffffff'
-      };
-      meta.content = metaColors[resolved] || '#0f0f17';
+      meta.content = resolved === 'light' ? '#fafafe' : resolved === 'terminal' ? '#0a0a0a' : '#0f0f17';
     }
     // When entering terminal, auto-switch accent to white
     var accent = localStorage.getItem('accent-color') || 'purple';
@@ -207,7 +177,8 @@ function initThemeToggle() {
       accent = 'white';
       localStorage.setItem('accent-color', accent);
       document.documentElement.setAttribute('data-accent', accent);
-      document.querySelectorAll('.accent-opt').forEach(function (b) {
+      // Update swatch highlight if accent picker is initialized
+      document.querySelectorAll('.accent-opt').forEach(function(b) {
         b.style.borderColor = b.getAttribute('data-accent') === accent ? 'var(--color-base-content)' : 'transparent';
       });
     }
@@ -217,7 +188,7 @@ function initThemeToggle() {
   // Click cycles light→dark→system; hover reveals dropdown
   var cycleThemes = ['light', 'dark', 'system'];
 
-  document.querySelectorAll('.theme-toggle-wrap').forEach(function (wrap) {
+  document.querySelectorAll('.theme-toggle-wrap').forEach(function(wrap) {
     var btn = wrap.querySelector('button');
     var dropdown = wrap.querySelector('.theme-dropdown');
     var hideTimer = null;
@@ -226,9 +197,7 @@ function initThemeToggle() {
       clearTimeout(hideTimer);
       dropdown.classList.remove('hidden');
     }
-    function hide() {
-      dropdown.classList.add('hidden');
-    }
+    function hide() { dropdown.classList.add('hidden'); }
     function hideDelayed() {
       hideTimer = setTimeout(hide, 200);
     }
@@ -241,7 +210,7 @@ function initThemeToggle() {
     }
 
     // Click cycles theme
-    btn.addEventListener('click', function (e) {
+    btn.addEventListener('click', function(e) {
       e.stopPropagation();
       hide();
       cycleTheme();
@@ -252,15 +221,15 @@ function initThemeToggle() {
     wrap.addEventListener('mouseleave', hideDelayed);
 
     // Close on click outside
-    document.addEventListener('click', function (e) {
+    document.addEventListener('click', function(e) {
       if (!wrap.contains(e.target)) {
         hide();
       }
     });
 
     // Theme option clicks
-    dropdown.querySelectorAll('.theme-opt').forEach(function (opt) {
-      opt.addEventListener('click', function (e) {
+    dropdown.querySelectorAll('.theme-opt').forEach(function(opt) {
+      opt.addEventListener('click', function(e) {
         e.stopPropagation();
         applyPref(opt.getAttribute('data-theme-val'));
         hide();
@@ -269,7 +238,7 @@ function initThemeToggle() {
   });
 
   // Listen for system theme changes (update resolved theme when in system mode)
-  window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', function () {
+  window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', function() {
     var pref = localStorage.getItem('theme-pref') || 'system';
     if (pref === 'system') {
       applyPref('system');
@@ -292,7 +261,7 @@ function initAccentPicker() {
   }
 
   function markActive(accent) {
-    document.querySelectorAll('.accent-opt').forEach(function (btn) {
+    document.querySelectorAll('.accent-opt').forEach(function(btn) {
       if (btn.getAttribute('data-accent') === accent) {
         btn.style.borderColor = 'var(--color-base-content)';
       } else {
@@ -305,8 +274,8 @@ function initAccentPicker() {
   markActive(current);
 
   // Bind all accent swatch buttons (inside theme dropdowns)
-  document.querySelectorAll('.accent-opt').forEach(function (opt) {
-    opt.addEventListener('click', function (e) {
+  document.querySelectorAll('.accent-opt').forEach(function(opt) {
+    opt.addEventListener('click', function(e) {
       e.stopPropagation();
       var name = opt.getAttribute('data-accent');
       localStorage.setItem('accent-color', name);
@@ -347,20 +316,20 @@ function initRawEditor() {
   if (backdrop) backdrop.addEventListener('click', closeModal);
 
   // Escape key
-  document.addEventListener('keydown', function (e) {
+  document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape' && modal.style.display !== 'none') {
       closeModal();
     }
   });
 
   // Tab switching
-  tabs.forEach(function (tab) {
-    tab.addEventListener('click', function () {
+  tabs.forEach(function(tab) {
+    tab.addEventListener('click', function() {
       var tabId = tab.getAttribute('data-editor-tab');
-      tabs.forEach(function (t) {
+      tabs.forEach(function(t) {
         t.classList.toggle('raw-editor-tab-active', t.getAttribute('data-editor-tab') === tabId);
       });
-      panels.forEach(function (p) {
+      panels.forEach(function(p) {
         p.style.display = p.getAttribute('data-editor-panel') === tabId ? '' : 'none';
       });
       if (formatInput) formatInput.value = tabId;
@@ -370,8 +339,7 @@ function initRawEditor() {
         if (tabId === 'json') {
           textarea.placeholder = '{\n  "DATABASE_URL": "postgres://...",\n  "REDIS_URL": "redis://..."\n}';
         } else {
-          textarea.placeholder =
-            '# Paste your environment variables here\nDATABASE_URL=postgres://...\nREDIS_URL=redis://...';
+          textarea.placeholder = '# Paste your environment variables here\nDATABASE_URL=postgres://...\nREDIS_URL=redis://...';
         }
       }
     });
@@ -379,22 +347,20 @@ function initRawEditor() {
 
   // Copy ENV button
   if (copyBtn) {
-    copyBtn.addEventListener('click', function () {
+    copyBtn.addEventListener('click', function() {
       var dataEl = document.getElementById('env-export-data');
       if (!dataEl) return;
       try {
         var configs = JSON.parse(dataEl.textContent);
-        var lines = configs.map(function (c) {
+        var lines = configs.map(function(c) {
           if (c.secret) return c.name + '=**secure**';
           return c.name + '=' + c.value;
         });
         var text = lines.join('\n');
-        navigator.clipboard.writeText(text).then(function () {
+        navigator.clipboard.writeText(text).then(function() {
           var orig = copyBtn.innerHTML;
           copyBtn.textContent = 'Copied!';
-          setTimeout(function () {
-            copyBtn.innerHTML = orig;
-          }, 1500);
+          setTimeout(function() { copyBtn.innerHTML = orig; }, 1500);
         });
       } catch (e) {
         // ignore
@@ -411,10 +377,7 @@ function initAddVarModal() {
   function openModal() {
     modal.style.display = 'flex';
     var nameInput = modal.querySelector('input[name="name"]');
-    if (nameInput) {
-      nameInput.value = '';
-      nameInput.focus();
-    }
+    if (nameInput) { nameInput.value = ''; nameInput.focus(); }
     var valueInput = modal.querySelector('input[name="value"]');
     if (valueInput) valueInput.value = '';
   }
@@ -423,17 +386,17 @@ function initAddVarModal() {
   }
 
   // Open buttons
-  document.querySelectorAll('#add-var-open, [data-add-var-open]').forEach(function (btn) {
+  document.querySelectorAll('#add-var-open, [data-add-var-open]').forEach(function(btn) {
     btn.addEventListener('click', openModal);
   });
 
   // Close buttons/backdrop
-  modal.querySelectorAll('[data-add-var-close]').forEach(function (el) {
+  modal.querySelectorAll('[data-add-var-close]').forEach(function(el) {
     el.addEventListener('click', closeModal);
   });
 
   // Escape key
-  document.addEventListener('keydown', function (e) {
+  document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape' && modal.style.display !== 'none') {
       closeModal();
     }
@@ -442,7 +405,7 @@ function initAddVarModal() {
   // Auto-uppercase name field
   var nameField = modal.querySelector('input[name="name"]');
   if (nameField) {
-    nameField.addEventListener('input', function () {
+    nameField.addEventListener('input', function() {
       var pos = this.selectionStart;
       this.value = this.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
       this.selectionStart = this.selectionEnd = pos;
@@ -476,28 +439,26 @@ function initExpandModal() {
   if (closeBtn) closeBtn.addEventListener('click', closeModal);
   if (backdrop) backdrop.addEventListener('click', closeModal);
 
-  document.addEventListener('keydown', function (e) {
+  document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
       closeModal();
     }
   });
 
   if (copyBtn) {
-    copyBtn.addEventListener('click', function () {
+    copyBtn.addEventListener('click', function() {
       var text = bodyEl.textContent;
-      navigator.clipboard.writeText(text).then(function () {
+      navigator.clipboard.writeText(text).then(function() {
         var orig = copyBtn.innerHTML;
         copyBtn.textContent = 'Copied!';
-        setTimeout(function () {
-          copyBtn.innerHTML = orig;
-        }, 1500);
+        setTimeout(function() { copyBtn.innerHTML = orig; }, 1500);
       });
     });
   }
 
   // Bind all expand buttons
-  document.querySelectorAll('[data-expand]').forEach(function (btn) {
-    btn.addEventListener('click', function () {
+  document.querySelectorAll('[data-expand]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
       var targetId = btn.getAttribute('data-expand');
       var target = document.getElementById(targetId);
       if (!target) return;
@@ -555,7 +516,7 @@ function syncDetailLogHeight() {
 }
 
 /* ---------- Build Progress Tracker ---------- */
-function BuildProgressTracker(barFill, phaseLabel, type, stepsContainer, elapsedEl, serverStartTime) {
+function BuildProgressTracker(barFill, phaseLabel, type, stepsContainer, elapsedEl) {
   this.barFill = barFill;
   this.phaseLabel = phaseLabel;
   this.stepsContainer = stepsContainer;
@@ -566,25 +527,17 @@ function BuildProgressTracker(barFill, phaseLabel, type, stepsContainer, elapsed
   this.totalSteps = 0;
   this.activated = false;
   this.currentStepIdx = -1;
-  this.startTime = serverStartTime ? new Date(serverStartTime).getTime() : Date.now();
+  this.startTime = Date.now();
   this.timerInterval = null;
   this.errored = false;
   this.errorStepIdx = -1;
-  this.linesReceived = 0;
-  this.phaseStartTimes = {};
-  this.phaseDurations = {};
 
   // Define step pipelines
   if (this.type === 'deploy') {
     this.steps = [
       { id: 'setup', label: 'Setup', patterns: [/Constructing API Clients/i], progress: 5 },
       { id: 'namespace', label: 'Namespace', patterns: [/Fetching Namespace/i], progress: 10 },
-      {
-        id: 'account',
-        label: 'Account',
-        patterns: [/Fetching ServiceAccount/i, /Patching ServiceAccount/i],
-        progress: 20,
-      },
+      { id: 'account', label: 'Account', patterns: [/Fetching ServiceAccount/i, /Patching ServiceAccount/i], progress: 20 },
       { id: 'enrollment', label: 'Enrollment', patterns: [/Fetching CabotageEnrollment/i], progress: 25 },
       { id: 'secrets', label: 'Secrets', patterns: [/Fetching ImagePullSecrets/i], progress: 32 },
       { id: 'release', label: 'Release', patterns: [/Running release command/i], progress: 45 },
@@ -607,34 +560,28 @@ function BuildProgressTracker(barFill, phaseLabel, type, stepsContainer, elapsed
   this.startTimer();
 }
 
-BuildProgressTracker.prototype.renderSteps = function () {
+BuildProgressTracker.prototype.renderSteps = function() {
   if (!this.stepsContainer) return;
   this.stepsContainer.innerHTML = '';
-  var checkSvg =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+  var checkSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
   for (var i = 0; i < this.steps.length; i++) {
     var step = this.steps[i];
     var el = document.createElement('div');
     el.className = 'progress-step';
     el.setAttribute('data-step', step.id);
     el.innerHTML =
-      '<div class="step-dot">' +
-      checkSvg +
-      '<div class="step-dot-spinner"></div></div>' +
-      '<span class="step-label">' +
-      step.label +
-      '</span>' +
-      '<span class="step-duration" data-step-duration></span>' +
+      '<div class="step-dot">' + checkSvg + '<div class="step-dot-spinner"></div></div>' +
+      '<span class="step-label">' + step.label + '</span>' +
       (step.substep ? '<span class="step-substep" data-substep></span>' : '');
     this.stepsContainer.appendChild(el);
   }
   this.stepEls = this.stepsContainer.querySelectorAll('.progress-step');
 };
 
-BuildProgressTracker.prototype.startTimer = function () {
+BuildProgressTracker.prototype.startTimer = function() {
   if (!this.elapsedEl) return;
   var self = this;
-  this.timerInterval = setInterval(function () {
+  this.timerInterval = setInterval(function() {
     var elapsed = Math.floor((Date.now() - self.startTime) / 1000);
     var min = Math.floor(elapsed / 60);
     var sec = elapsed % 60;
@@ -642,24 +589,16 @@ BuildProgressTracker.prototype.startTimer = function () {
   }, 1000);
 };
 
-BuildProgressTracker.prototype.stopTimer = function () {
+BuildProgressTracker.prototype.stopTimer = function() {
   if (this.timerInterval) {
     clearInterval(this.timerInterval);
     this.timerInterval = null;
   }
 };
 
-BuildProgressTracker.prototype.setStep = function (idx) {
+BuildProgressTracker.prototype.setStep = function(idx) {
   if (idx <= this.currentStepIdx) return;
-  var prevIdx = this.currentStepIdx;
   this.currentStepIdx = idx;
-  // Finalize duration for the previous step
-  if (prevIdx >= 0 && this.phaseStartTimes[prevIdx] && !this.phaseDurations[prevIdx]) {
-    this.phaseDurations[prevIdx] = (Date.now() - this.phaseStartTimes[prevIdx]) / 1000;
-    this.showStepDuration(prevIdx);
-  }
-  // Start timing the new step
-  this.phaseStartTimes[idx] = Date.now();
   if (!this.stepEls) return;
   for (var i = 0; i < this.stepEls.length; i++) {
     this.stepEls[i].classList.remove('step-done', 'step-active');
@@ -671,40 +610,26 @@ BuildProgressTracker.prototype.setStep = function (idx) {
   }
 };
 
-BuildProgressTracker.prototype.formatStepDuration = function (seconds) {
-  var s = Math.round(seconds);
-  var m = Math.floor(s / 60);
-  s = s % 60;
-  return '(' + (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s + ')';
-};
-
-BuildProgressTracker.prototype.showStepDuration = function (idx) {
-  if (!this.stepEls || !this.phaseDurations[idx]) return;
-  var durEl = this.stepEls[idx].querySelector('[data-step-duration]');
-  if (durEl) durEl.textContent = this.formatStepDuration(this.phaseDurations[idx]);
-};
-
-BuildProgressTracker.prototype.activate = function () {
+BuildProgressTracker.prototype.activate = function() {
   if (this.activated) return;
   this.activated = true;
   this.barFill.classList.add('build-progress-bar-determinate');
   this.barFill.style.width = '0%';
 };
 
-BuildProgressTracker.prototype.setProgress = function (pct) {
+BuildProgressTracker.prototype.setProgress = function(pct) {
   if (pct <= this.progress) return;
   this.progress = pct;
   this.barFill.style.width = Math.min(pct, 100) + '%';
 };
 
-BuildProgressTracker.prototype.setPhase = function (text) {
+BuildProgressTracker.prototype.setPhase = function(text) {
   if (this.phaseLabel) {
     this.phaseLabel.textContent = text;
   }
 };
 
-BuildProgressTracker.prototype.processLine = function (line) {
-  this.linesReceived++;
+BuildProgressTracker.prototype.processLine = function(line) {
   if (this.type === 'deploy') {
     this.processDeployLine(line);
   } else {
@@ -712,9 +637,10 @@ BuildProgressTracker.prototype.processLine = function (line) {
   }
 };
 
-BuildProgressTracker.prototype.processBuildLine = function (line) {
+BuildProgressTracker.prototype.processBuildLine = function(line) {
   // Detect error/failure patterns in build logs
-  if (/error|failed|failure|exception|traceback/i.test(line) && !/no error/i.test(line) && !/warning/i.test(line)) {
+  if (/error|failed|failure|exception|traceback/i.test(line) &&
+      !/no error/i.test(line) && !/warning/i.test(line)) {
     this.errored = true;
     if (this.errorStepIdx < 0) this.errorStepIdx = Math.max(this.currentStepIdx, 0);
   }
@@ -760,9 +686,10 @@ BuildProgressTracker.prototype.processBuildLine = function (line) {
   }
 };
 
-BuildProgressTracker.prototype.processDeployLine = function (line) {
+BuildProgressTracker.prototype.processDeployLine = function(line) {
   // Detect error/failure patterns in deploy logs
-  if (/error|failed|failure|exception|traceback|timed?\s*out/i.test(line) && !/no error/i.test(line)) {
+  if (/error|failed|failure|exception|traceback|timed?\s*out/i.test(line) &&
+      !/no error/i.test(line)) {
     this.errored = true;
     if (this.errorStepIdx < 0) this.errorStepIdx = Math.max(this.currentStepIdx, 0);
   }
@@ -787,26 +714,9 @@ BuildProgressTracker.prototype.processDeployLine = function (line) {
   }
 };
 
-BuildProgressTracker.prototype.complete = function () {
-  this.stopTimer();
-
-  // No log content was received — don't show false success
-  if (this.linesReceived === 0) {
-    this.setPhase('No logs available');
-    return;
-  }
-
+BuildProgressTracker.prototype.complete = function() {
   this.activate();
-
-  // Finalize duration for the last active step
-  if (
-    this.currentStepIdx >= 0 &&
-    this.phaseStartTimes[this.currentStepIdx] &&
-    !this.phaseDurations[this.currentStepIdx]
-  ) {
-    this.phaseDurations[this.currentStepIdx] = (Date.now() - this.phaseStartTimes[this.currentStepIdx]) / 1000;
-    this.showStepDuration(this.currentStepIdx);
-  }
+  this.stopTimer();
 
   if (this.errored) {
     // Show error state — don't advance progress to 100%
@@ -821,6 +731,7 @@ BuildProgressTracker.prototype.complete = function () {
         } else if (i === failedAt) {
           this.stepEls[i].classList.add('step-error');
         }
+        // Steps after failedAt remain in default (pending) state
       }
     }
     return;
@@ -834,57 +745,31 @@ BuildProgressTracker.prototype.complete = function () {
     for (var i = 0; i < this.stepEls.length; i++) {
       this.stepEls[i].classList.remove('step-active');
       this.stepEls[i].classList.add('step-done');
-      this.showStepDuration(i);
     }
   }
 };
 
-/* ---------- Auto-deploy next-step redirect ---------- */
-/* After an auto-deploy build/package finishes, poll the current page
-   until the server populates next_step_url, then redirect there
-   so the user follows the pipeline: image → release → deployment. */
-/* Poll pipeline_status until the next stage appears, then redirect.
-   stage = 'build' → wait for release, 'release' → wait for deploy. */
-function pollForNextStep(appId, stage) {
-  var url = '/applications/' + appId + '/pipeline_status';
+/* ---------- Auto-deploy next-step polling ---------- */
+/* Reload the current page after a short delay; the server will render
+   with next_step_url populated once Celery creates the next object.
+   On reload, the banner JS picks up next_step_url and shows the link. */
+function pollForNextStep(currentUrl) {
   var attempts = 0;
-  var maxAttempts = 40; // 40 × 3s = 2 min max wait
-  var banner = document.getElementById('nextStepBanner');
-
-  // Show the "building next" banner immediately
-  if (banner) banner.hidden = false;
-
+  var maxAttempts = 12; // ~30s total
   (function poll() {
     attempts++;
-    setTimeout(function () {
-      fetch(url, { credentials: 'same-origin' })
-        .then(function (r) {
-          if (!r.ok) throw new Error('pipeline_status ' + r.status);
-          return r.json();
+    setTimeout(function() {
+      /* Reload the page; if next_step_url is set, the banner will appear.
+         We use a fetch to check without navigating, then redirect. */
+      fetch(currentUrl, { headers: { 'Accept': 'text/html' } })
+        .then(function() {
+          window.location.reload();
         })
-        .then(function (data) {
-          var target = null;
-          if (stage === 'build' && data.release && data.release.id) {
-            target = '/release/' + data.release.id;
-          } else if (stage === 'release' && data.deploy && data.deploy.id) {
-            target = '/deployment/' + data.deploy.id;
-          }
-          if (target) {
-            // Update banner link so user can click it even before auto-redirect
-            if (banner) {
-              var link = banner.querySelector('a');
-              if (link) link.href = target;
-            }
-            window.location.href = target;
-          } else if (attempts < maxAttempts) {
-            poll();
-          }
-          // After max attempts, just stay on the page (already shows complete state)
-        })
-        .catch(function () {
+        .catch(function() {
           if (attempts < maxAttempts) poll();
+          else window.location.reload();
         });
-    }, 3000);
+    }, 2500);
   })();
 }
 
@@ -894,7 +779,6 @@ function PipelineTracker(container) {
   this.appId = container.getAttribute('data-application-id');
   this.statusUrl = '/applications/' + this.appId + '/pipeline_status';
   this.pollInterval = null;
-  this.pollRate = 0; // 0 = not polling yet
   this.bannersEl = container.querySelector('[data-pipeline-banners]');
   this.progressEl = container.querySelector('[data-pipeline-progress]');
   this.segments = {
@@ -903,8 +787,6 @@ function PipelineTracker(container) {
     deploy: container.querySelector('[data-segment="deploy"]'),
   };
   this.settled = false;
-  this._lastFingerprint = ''; // track state changes for live section refresh
-  this._refreshing = false;
 
   // Live commit indicator state
   this.commitEl = document.getElementById('liveCommitStatus');
@@ -912,54 +794,40 @@ function PipelineTracker(container) {
   this.githubRepo = this.commitEl ? this.commitEl.getAttribute('data-github-repo') : null;
   this.commitLastChanged = Date.now();
 
-  // Check initial state and start polling (idle rate until pipeline detected)
+  // Check initial state and start polling if active
   this.poll();
-  this.startPolling(10000); // idle: check every 10s for new pipelines
 }
 
-PipelineTracker.prototype.poll = function () {
+PipelineTracker.prototype.poll = function() {
   var self = this;
   fetch(this.statusUrl, { credentials: 'same-origin' })
-    .then(function (r) {
+    .then(function(r) {
       if (!r.ok) throw new Error('pipeline_status ' + r.status);
       return r.json();
     })
-    .then(function (data) {
-      self.update(data);
-    })
-    .catch(function (err) {
-      console.warn('[PipelineTracker]', err);
-    });
+    .then(function(data) { self.update(data); })
+    .catch(function(err) { console.warn('[PipelineTracker]', err); });
 };
 
-PipelineTracker.prototype.startPolling = function (rate) {
-  rate = rate || 3000;
-  // Already polling at this rate — no-op
-  if (this.pollInterval && this.pollRate === rate) return;
-  // Switch rate: clear old interval, set new one
-  if (this.pollInterval) clearInterval(this.pollInterval);
+PipelineTracker.prototype.startPolling = function() {
+  if (this.pollInterval) return;
   var self = this;
-  this.pollRate = rate;
-  this.pollInterval = setInterval(function () {
-    self.poll();
-  }, rate);
+  this.pollInterval = setInterval(function() { self.poll(); }, 3000);
 };
 
-PipelineTracker.prototype.stopPolling = function () {
+PipelineTracker.prototype.stopPolling = function() {
   if (this.pollInterval) {
     clearInterval(this.pollInterval);
     this.pollInterval = null;
-    this.pollRate = 0;
   }
 };
 
-PipelineTracker.prototype.update = function (data) {
+PipelineTracker.prototype.update = function(data) {
   if (!data) return;
 
   if (data.pipeline_active) {
     this.showProgress();
-    this.startPolling(3000); // fast polling while pipeline is running
-    this.settled = false;
+    this.startPolling();
   }
 
   this.updateSegment('build', data.build);
@@ -969,93 +837,46 @@ PipelineTracker.prototype.update = function (data) {
   // Update live commit indicator
   this.updateCommitIndicator(data);
 
-  // Build a fingerprint of the current state to detect changes
-  var fp = [
-    data.build ? data.build.status + ':' + data.build.id + ':' + data.build.version : '-',
-    data.release ? data.release.status + ':' + data.release.id + ':' + data.release.version : '-',
-    data.deploy ? data.deploy.status + ':' + data.deploy.id + ':' + data.deploy.version : '-',
-  ].join('|');
-
-  if (this._lastFingerprint && fp !== this._lastFingerprint) {
-    this.refreshLiveSections();
-    this.flashPipelineCards();
-  }
-  this._lastFingerprint = fp;
-
-  // Pipeline just finished — hide progress bar, refresh page sections, drop to idle
-  if (!data.pipeline_active && !this.settled && this.pollRate === 3000) {
+  // Pipeline just finished — redirect to the relevant stage
+  if (!data.pipeline_active && !this.settled && this.pollInterval) {
     this.settled = true;
-    this.startPolling(10000); // back to idle polling
-    this.hideProgress();
-    this.refreshLiveSections();
+    this.stopPolling();
+    var target = null;
+    // If any stage errored, redirect to the earliest errored stage
+    // (later stages may be stale data from a previous successful run)
+    if (data.build && data.build.status === 'error' && data.build.id) {
+      target = '/image/' + data.build.id;
+    } else if (data.release && data.release.status === 'error' && data.release.id) {
+      target = '/release/' + data.release.id;
+    } else if (data.deploy && data.deploy.status === 'error' && data.deploy.id) {
+      target = '/deployment/' + data.deploy.id;
+    }
+    // No errors — redirect to the furthest completed stage
+    if (!target) {
+      if (data.deploy && data.deploy.status === 'complete' && data.deploy.id) {
+        target = '/deployment/' + data.deploy.id;
+      } else if (data.release && data.release.status === 'complete' && data.release.id) {
+        target = '/release/' + data.release.id;
+      } else if (data.build && data.build.status === 'complete' && data.build.id) {
+        target = '/image/' + data.build.id;
+      }
+    }
+    setTimeout(function() {
+      if (target) {
+        window.location.href = target;
+      } else {
+        window.location.reload();
+      }
+    }, 2000);
   }
 };
 
-PipelineTracker.prototype.showProgress = function () {
+PipelineTracker.prototype.showProgress = function() {
   if (this.bannersEl) this.bannersEl.style.display = 'none';
   if (this.progressEl) this.progressEl.style.display = '';
 };
 
-PipelineTracker.prototype.hideProgress = function () {
-  if (this.progressEl) this.progressEl.style.display = 'none';
-  if (this.bannersEl) this.bannersEl.style.display = '';
-};
-
-/* Flash pipeline card borders to alert on state changes. */
-PipelineTracker.prototype.flashPipelineCards = function () {
-  var cards = document.querySelectorAll('.pipeline-stage');
-  var segments = document.querySelectorAll('.pipe-segment');
-  function flash(el, cls) {
-    el.classList.remove(cls);
-    // Force reflow so removing+adding the class restarts the animation
-    void el.offsetWidth;
-    el.classList.add(cls);
-    el.addEventListener(
-      'animationend',
-      function () {
-        el.classList.remove(cls);
-      },
-      { once: true },
-    );
-  }
-  for (var i = 0; i < cards.length; i++) flash(cards[i], 'pipeline-stage-flash');
-  for (var j = 0; j < segments.length; j++) flash(segments[j], 'pipe-segment-flash');
-};
-
-/* Fetch the full page HTML and swap in server-rendered sections so
-   pipeline cards, recent activity, processes, and banners stay current. */
-PipelineTracker.prototype.refreshLiveSections = function () {
-  if (this._refreshing) return;
-  this._refreshing = true;
-  var self = this;
-  fetch(window.location.pathname, { credentials: 'same-origin', headers: { Accept: 'text/html' } })
-    .then(function (r) {
-      return r.text();
-    })
-    .then(function (html) {
-      var doc = new DOMParser().parseFromString(html, 'text/html');
-      var pairs = [
-        ['[data-pipeline-banners]', '[data-pipeline-banners]'],
-        ['[data-live-processes]', '[data-live-processes]'],
-        ['[data-live-activity]', '[data-live-activity]'],
-        ['[data-live-pipeline]', '[data-live-pipeline]'],
-      ];
-      for (var i = 0; i < pairs.length; i++) {
-        var fresh = doc.querySelector(pairs[i][0]);
-        var stale = document.querySelector(pairs[i][1]);
-        if (fresh && stale) stale.innerHTML = fresh.innerHTML;
-      }
-      self.bannersEl = self.container.querySelector('[data-pipeline-banners]');
-    })
-    .catch(function (err) {
-      console.warn('[PipelineTracker] refreshLiveSections', err);
-    })
-    .then(function () {
-      self._refreshing = false;
-    });
-};
-
-PipelineTracker.prototype.updateSegment = function (name, info) {
+PipelineTracker.prototype.updateSegment = function(name, info) {
   var seg = this.segments[name];
   if (!seg) return;
 
@@ -1086,25 +907,17 @@ PipelineTracker.prototype.updateSegment = function (name, info) {
     seg.className = 'pipe-segment pipe-seg-complete';
     if (dot) dot.className = 'pipe-seg-dot pipe-seg-dot-success';
     if (label) label.textContent = 'Complete';
-    if (fill) {
-      fill.style.width = '100%';
-      fill.className = 'pipe-seg-fill pipe-seg-fill-success';
-    }
+    if (fill) { fill.style.width = '100%'; fill.className = 'pipe-seg-fill pipe-seg-fill-success'; }
   } else if (info.status === 'error') {
     seg.className = 'pipe-segment pipe-seg-error';
     if (dot) dot.className = 'pipe-seg-dot pipe-seg-dot-error';
     if (label) label.textContent = info.error_detail ? 'Failed' : 'Error';
-    if (fill) {
-      fill.style.width = '100%';
-      fill.className = 'pipe-seg-fill pipe-seg-fill-error';
-    }
+    if (fill) { fill.style.width = '100%'; fill.className = 'pipe-seg-fill pipe-seg-fill-error'; }
   } else if (info.status === 'in_progress') {
     seg.className = 'pipe-segment pipe-seg-active';
     if (dot) dot.className = 'pipe-seg-dot pipe-seg-dot-active';
     if (label) label.textContent = name === 'build' ? 'Building' : name === 'release' ? 'Packaging' : 'Deploying';
-    if (fill) {
-      fill.className = 'pipe-seg-fill pipe-seg-fill-active';
-    }
+    if (fill) { fill.className = 'pipe-seg-fill pipe-seg-fill-active'; }
   }
 
   // Update detail link
@@ -1114,7 +927,7 @@ PipelineTracker.prototype.updateSegment = function (name, info) {
   }
 };
 
-PipelineTracker.prototype.updateCommitIndicator = function (data) {
+PipelineTracker.prototype.updateCommitIndicator = function(data) {
   if (!this.commitEl) return;
 
   var sha = data.commit_sha;
@@ -1130,16 +943,6 @@ PipelineTracker.prototype.updateCommitIndicator = function (data) {
   if (repo) {
     this.githubRepo = repo;
     this.commitEl.setAttribute('data-github-repo', repo);
-  }
-
-  // Sync commit_info data attrs for the popup
-  var ci = data.commit_info;
-  if (ci) {
-    if (ci.deploy_time) this.commitEl.setAttribute('data-deploy-time', ci.deploy_time);
-    if (ci.release_version) this.commitEl.setAttribute('data-release-version', ci.release_version);
-    if (ci.image_version) this.commitEl.setAttribute('data-image-version', ci.image_version);
-    if (ci.ref) this.commitEl.setAttribute('data-commit-ref', ci.ref);
-    if (ci.author) this.commitEl.setAttribute('data-commit-author', ci.author);
   }
 
   // Build the indicator content
@@ -1164,18 +967,11 @@ PipelineTracker.prototype.updateCommitIndicator = function (data) {
   if (sha) {
     var shortSha = sha.substring(0, 8);
     if (repo) {
-      shaHtml =
-        '<a href="https://github.com/' +
-        repo +
-        '/commit/' +
-        sha +
-        '"' +
-        ' target="_blank" rel="noopener"' +
-        ' class="live-commit-sha">' +
-        shortSha +
-        '</a>';
+      shaHtml = '<a href="https://github.com/' + repo + '/commit/' + sha + '"'
+        + ' target="_blank" rel="noopener"'
+        + ' class="live-commit-sha" title="' + sha + '">' + shortSha + '</a>';
     } else {
-      shaHtml = '<code class="live-commit-sha">' + shortSha + '</code>';
+      shaHtml = '<code class="live-commit-sha" title="' + sha + '">' + shortSha + '</code>';
     }
   } else {
     shaHtml = '<span class="text-[0.625rem] text-success/40">Up to date</span>';
@@ -1189,348 +985,51 @@ PipelineTracker.prototype.updateCommitIndicator = function (data) {
   }
   this._lastRenderedCommit = sha || this._lastRenderedCommit;
 
-  this.commitEl.className = 'live-commit commit-popup-anchor' + freshClass;
+  this.commitEl.className = 'live-commit' + freshClass;
   this.commitEl.innerHTML = '<span class="' + dotClass + '"></span>' + shaHtml;
 
   // Remove flash class after animation
   if (freshClass) {
     var el = this.commitEl;
-    setTimeout(function () {
-      el.classList.remove('live-commit-fresh');
-    }, 1500);
+    setTimeout(function() { el.classList.remove('live-commit-fresh'); }, 1500);
   }
 };
-
-/* ---------- Commit Popup ---------- */
-var _commitPopup = null;
-var _commitCache = {};
-
-function initCommitPopup() {
-  var commitEl = document.getElementById('liveCommitStatus');
-  if (!commitEl) return;
-
-  commitEl.classList.add('commit-popup-anchor');
-
-  var hoverTimeout = null;
-  var leaveTimeout = null;
-
-  function showPopup() {
-    clearTimeout(leaveTimeout);
-    if (_commitPopup) return;
-    hoverTimeout = setTimeout(function () {
-      toggleCommitPopup(commitEl);
-    }, 200);
-  }
-
-  function hidePopup() {
-    clearTimeout(hoverTimeout);
-    leaveTimeout = setTimeout(function () {
-      closeCommitPopup();
-    }, 300);
-  }
-
-  // Hover on the commit area opens popup
-  commitEl.addEventListener('mouseenter', showPopup);
-  commitEl.addEventListener('mouseleave', hidePopup);
-
-  // Keep popup open while hovering over it
-  commitEl.addEventListener('mouseover', function (e) {
-    if (e.target.closest && e.target.closest('.commit-popup')) {
-      clearTimeout(leaveTimeout);
-    }
-  });
-
-  // Delegated click: intercept any .live-commit-sha link (survives innerHTML rebuilds)
-  commitEl.addEventListener('click', function (e) {
-    if (e.ctrlKey || e.metaKey) return;
-    var link = e.target.closest('a.live-commit-sha');
-    if (link) {
-      e.preventDefault();
-      e.stopPropagation();
-      clearTimeout(hoverTimeout);
-      if (!_commitPopup) toggleCommitPopup(commitEl);
-    }
-  });
-
-  // Close on click outside or Escape
-  document.addEventListener('click', function (e) {
-    if (_commitPopup && !commitEl.contains(e.target)) {
-      closeCommitPopup();
-    }
-  });
-
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && _commitPopup) closeCommitPopup();
-  });
-}
-
-function toggleCommitPopup(el) {
-  if (_commitPopup) {
-    closeCommitPopup();
-    return;
-  }
-
-  var sha = el.getAttribute('data-commit-sha');
-  var repo = el.getAttribute('data-github-repo');
-  if (!sha) return;
-
-  var deployTime = el.getAttribute('data-deploy-time') || '';
-  var releaseVer = el.getAttribute('data-release-version') || '';
-  var imageVer = el.getAttribute('data-image-version') || '';
-  var ref = el.getAttribute('data-commit-ref') || '';
-  var author = el.getAttribute('data-commit-author') || '';
-
-  // Build popup HTML
-  // Header — "Deployed via GitHub" like Railway
-  var html = '<div class="commit-popup-header">';
-  html +=
-    '<svg class="commit-popup-github-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>';
-  html += '<span class="commit-popup-header-text">Deployed via GitHub</span>';
-  html += '</div>';
-
-  // Commit message area (filled by API fetch)
-  html += '<div class="commit-popup-message commit-popup-loading">';
-  html += '<span class="commit-popup-author-area" data-commit-author-area></span>';
-  html += '<span data-commit-msg-text>Loading...</span>';
-  html += '</div>';
-
-  // Meta rows
-  html += '<div class="commit-popup-meta">';
-  if (repo) {
-    var repoShort = repo.split('/').pop() || repo;
-    html += '<div class="commit-popup-row"><span class="commit-popup-label">' + escapeHtml(repo) + '</span>';
-    if (ref) {
-      html +=
-        '<span class="commit-popup-value commit-popup-ref"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 01-9 9"/></svg> ' +
-        escapeHtml(ref) +
-        '</span>';
-    }
-    html += '</div>';
-  }
-  if (imageVer || releaseVer) {
-    html += '<div class="commit-popup-row">';
-    if (imageVer) {
-      html += '<span class="commit-popup-label">Image <code>#' + escapeHtml(imageVer) + '</code></span>';
-    }
-    if (releaseVer) {
-      html += '<span class="commit-popup-value">Package <code>v' + escapeHtml(releaseVer) + '</code></span>';
-    }
-    html += '</div>';
-  }
-  if (deployTime) {
-    html +=
-      '<div class="commit-popup-row"><span class="commit-popup-label">Deployed</span><span class="commit-popup-value">' +
-      escapeHtml(deployTime) +
-      '</span></div>';
-  }
-  html += '</div>';
-
-  // Full SHA + copy
-  html += '<div class="commit-popup-sha">';
-  html += '<code title="' + sha + '">' + sha + '</code>';
-  html += '<button class="commit-popup-copy" title="Copy SHA" data-copy-sha="' + sha + '">';
-  html +=
-    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
-  html += '</button>';
-  html += '</div>';
-
-  // Links
-  if (repo) {
-    html += '<div class="commit-popup-links">';
-    html +=
-      '<a href="https://github.com/' +
-      repo +
-      '/commit/' +
-      sha +
-      '" target="_blank" rel="noopener">View on GitHub &rarr;</a>';
-    html += '</div>';
-  }
-
-  var popup = document.createElement('div');
-  popup.className = 'commit-popup';
-  popup.innerHTML = html;
-  el.appendChild(popup);
-  _commitPopup = popup;
-
-  // Copy button handler
-  var copyBtn = popup.querySelector('[data-copy-sha]');
-  if (copyBtn) {
-    copyBtn.addEventListener('click', function (e) {
-      e.stopPropagation();
-      navigator.clipboard.writeText(sha).then(function () {
-        copyBtn.innerHTML =
-          '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>';
-        setTimeout(function () {
-          copyBtn.innerHTML =
-            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
-        }, 2000);
-      });
-    });
-  }
-
-  // Animate in
-  requestAnimationFrame(function () {
-    popup.classList.add('commit-popup-open');
-  });
-
-  // Fetch commit message from GitHub API
-  if (repo && sha) {
-    fetchCommitMessage(repo, sha, popup.querySelector('.commit-popup-message'));
-  }
-}
-
-function closeCommitPopup() {
-  if (_commitPopup) {
-    _commitPopup.classList.remove('commit-popup-open');
-    var el = _commitPopup;
-    setTimeout(function () {
-      if (el.parentNode) el.parentNode.removeChild(el);
-    }, 150);
-    _commitPopup = null;
-  }
-}
-
-function fetchCommitMessage(repo, sha, msgEl) {
-  var cacheKey = repo + '/' + sha;
-  if (_commitCache[cacheKey]) {
-    renderCommitMessage(msgEl, _commitCache[cacheKey]);
-    return;
-  }
-
-  fetch('https://api.github.com/repos/' + repo + '/commits/' + sha, {
-    headers: { Accept: 'application/vnd.github.v3+json' },
-  })
-    .then(function (r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
-    .then(function (data) {
-      var info = {
-        message: data.commit.message || '',
-        author: data.commit.author.name || '',
-        login: data.author ? data.author.login : '',
-        avatar: data.author ? data.author.avatar_url : '',
-        date: data.commit.author.date || '',
-      };
-      _commitCache[cacheKey] = info;
-      renderCommitMessage(msgEl, info);
-    })
-    .catch(function () {
-      if (msgEl) {
-        var msgText = msgEl.querySelector('[data-commit-msg-text]');
-        if (msgText) {
-          msgText.textContent = 'Could not load commit message';
-        } else {
-          msgEl.textContent = 'Could not load commit message';
-        }
-      }
-    });
-}
-
-function renderCommitMessage(el, info) {
-  if (!el) return;
-  el.classList.remove('commit-popup-loading');
-
-  // Author avatar + name in the author area
-  var authorArea = el.querySelector('[data-commit-author-area]');
-  if (authorArea && (info.avatar || info.author)) {
-    var avatarHtml = '';
-    if (info.avatar) {
-      avatarHtml += '<img src="' + info.avatar + '&s=32" class="commit-popup-avatar" alt="" />';
-    }
-    avatarHtml += '<span class="commit-popup-author-name">' + escapeHtml(info.login || info.author) + '</span>';
-    if (info.date) {
-      var d = new Date(info.date);
-      var dateStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-      avatarHtml += '<span class="commit-popup-author-date">' + dateStr + '</span>';
-    }
-    authorArea.innerHTML = avatarHtml;
-  }
-
-  // Commit message text
-  var msgText = el.querySelector('[data-commit-msg-text]');
-  var target = msgText || el;
-  var lines = info.message.split('\n');
-  var firstLine = lines[0] || '';
-  var rest = lines.slice(1).join('\n').trim();
-  var html = '<div class="commit-popup-first-line">' + escapeHtml(firstLine) + '</div>';
-  if (rest) {
-    html += '<div class="commit-popup-body">' + escapeHtml(rest) + '</div>';
-  }
-  target.innerHTML = html;
-}
-
-function escapeHtml(str) {
-  var div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
-
-/* ---------- Live Timestamp Ticker ---------- */
-/* Keeps all <time data-timestamp="..."> elements up-to-date every second */
-
-function timeago(date) {
-  var now = Date.now();
-  var diff = Math.max(0, Math.floor((now - date.getTime()) / 1000));
-  if (diff < 2) return 'just now';
-  if (diff < 60) return diff + ' seconds ago';
-  var m = Math.floor(diff / 60);
-  if (m === 1) return 'a minute ago';
-  if (m < 60) return m + ' minutes ago';
-  var h = Math.floor(m / 60);
-  if (h === 1) return 'an hour ago';
-  if (h < 24) return h + ' hours ago';
-  var d = Math.floor(h / 24);
-  if (d === 1) return 'a day ago';
-  return d + ' days ago';
-}
-
-var _timestampTickerInterval = null;
-
-function tickTimestamps() {
-  var els = document.querySelectorAll('time[data-timestamp]');
-  for (var i = 0; i < els.length; i++) {
-    var iso = els[i].getAttribute('data-timestamp');
-    if (!iso) continue;
-    var d = new Date(iso);
-    if (isNaN(d.getTime())) continue;
-    els[i].textContent = timeago(d);
-  }
-}
-
-function startTimestampTicker() {
-  if (_timestampTickerInterval) return;
-  tickTimestamps(); // immediate tick
-  _timestampTickerInterval = setInterval(tickTimestamps, 1000);
-}
-
-function stopTimestampTicker() {
-  if (_timestampTickerInterval) {
-    clearInterval(_timestampTickerInterval);
-    _timestampTickerInterval = null;
-  }
-}
 
 function initPipelineTracker() {
   var container = document.querySelector('[data-pipeline-tracker]');
   if (container) {
     window.pipelineTracker = new PipelineTracker(container);
   }
-  // Always start the timestamp ticker on pages with timestamps
-  if (document.querySelector('time[data-timestamp]')) {
-    startTimestampTicker();
-  }
 
-  // Auto-deploy form: show spinner, let browser submit normally so
-  // it follows the server redirect to the image build page.
+  // Intercept the Deploy button — submit via fetch, stay on page, start tracking
   var deployForm = document.querySelector('[data-full-deploy-form]');
-  if (deployForm) {
-    deployForm.addEventListener('submit', function () {
+  if (deployForm && container) {
+    deployForm.addEventListener('submit', function(e) {
+      e.preventDefault();
       var btn = deployForm.querySelector('button[type="submit"]');
       if (btn) {
         btn.disabled = true;
         btn.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Deploying\u2026';
       }
+      // Fire the POST in the background
+      fetch(deployForm.action, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(new FormData(deployForm)),
+        redirect: 'follow',
+      })
+        .then(function() {
+          // POST succeeded (server redirected, we don't follow) — start polling
+          if (window.pipelineTracker) {
+            window.pipelineTracker.showProgress();
+            window.pipelineTracker.startPolling();
+          }
+        })
+        .catch(function() {
+          // On error, fall back to normal form submission
+          deployForm.submit();
+        });
     });
   }
 }
@@ -1547,26 +1046,22 @@ function showPipelineToast(pipeline) {
   else if (pipeline.stages.build) stageLabel = 'Building';
   else stageLabel = 'Pipeline running';
 
-  var href = '/projects/' + pipeline.org_slug + '/' + pipeline.project_slug + '/applications/' + pipeline.app_slug;
+  var href = '/projects/' + pipeline.org_slug + '/' + pipeline.project_slug
+    + '/applications/' + pipeline.app_slug;
 
   var toast = document.createElement('a');
   toast.href = href;
   toast.className = 'pipeline-toast';
   toast.setAttribute('data-toast-app', pipeline.app_id);
-  toast.innerHTML =
-    '<span class="pipeline-toast-dot"></span>' +
-    '<span><strong>' +
-    pipeline.app_name +
-    '</strong> ' +
-    '<span class="text-base-content/50">' +
-    stageLabel +
-    '</span></span>' +
-    '<span class="pipeline-toast-dismiss" title="Dismiss">' +
-    '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
-    '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>';
+  toast.innerHTML = '<span class="pipeline-toast-dot"></span>'
+    + '<span><strong>' + pipeline.app_name + '</strong> '
+    + '<span class="text-base-content/50">' + stageLabel + '</span></span>'
+    + '<span class="pipeline-toast-dismiss" title="Dismiss">'
+    + '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+    + '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>';
 
   // Dismiss on X click (don't navigate)
-  toast.querySelector('.pipeline-toast-dismiss').addEventListener('click', function (e) {
+  toast.querySelector('.pipeline-toast-dismiss').addEventListener('click', function(e) {
     e.preventDefault();
     e.stopPropagation();
     dismissToast(toast);
@@ -1575,56 +1070,43 @@ function showPipelineToast(pipeline) {
   container.appendChild(toast);
 
   // Auto-dismiss after 15 seconds
-  setTimeout(function () {
-    dismissToast(toast);
-  }, 15000);
+  setTimeout(function() { dismissToast(toast); }, 15000);
 }
 
 function dismissToast(toast) {
   if (!toast || !toast.parentNode) return;
   toast.classList.add('toast-out');
-  toast.addEventListener('animationend', function () {
-    toast.remove();
-  });
+  toast.addEventListener('animationend', function() { toast.remove(); });
 }
 
-function DashboardPipelinePoller(excludeAppId) {
+function DashboardPipelinePoller() {
   this.knownActive = {};
-  this.excludeAppId = excludeAppId || null;
   this.pollInterval = null;
   this.poll();
   this.startPolling();
 }
 
-DashboardPipelinePoller.prototype.startPolling = function () {
+DashboardPipelinePoller.prototype.startPolling = function() {
   var self = this;
-  this.pollInterval = setInterval(function () {
-    self.poll();
-  }, 5000);
+  this.pollInterval = setInterval(function() { self.poll(); }, 5000);
 };
 
-DashboardPipelinePoller.prototype.poll = function () {
+DashboardPipelinePoller.prototype.poll = function() {
   var self = this;
   fetch('/active_pipelines', { credentials: 'same-origin' })
-    .then(function (r) {
+    .then(function(r) {
       if (!r.ok) throw new Error('active_pipelines ' + r.status);
       return r.json();
     })
-    .then(function (data) {
-      self.update(data.pipelines);
-    })
-    .catch(function (err) {
-      console.warn('[DashboardPoller]', err);
-    });
+    .then(function(data) { self.update(data.pipelines); })
+    .catch(function(err) { console.warn('[DashboardPoller]', err); });
 };
 
-DashboardPipelinePoller.prototype.update = function (pipelines) {
+DashboardPipelinePoller.prototype.update = function(pipelines) {
   var nowActive = {};
   for (var i = 0; i < pipelines.length; i++) {
     var p = pipelines[i];
     nowActive[p.app_id] = p;
-    // Skip toast for the app already tracked inline on this page
-    if (p.app_id === this.excludeAppId) continue;
     if (!this.knownActive[p.app_id]) {
       showPipelineToast(p);
     }
@@ -1633,752 +1115,11 @@ DashboardPipelinePoller.prototype.update = function (pipelines) {
 };
 
 function initDashboardPoller() {
-  // Run on any authenticated page that has the toast container
+  // Only run on the dashboard (home) page when authenticated
   var toastContainer = document.getElementById('pipeline-toasts');
-  if (!toastContainer) return;
-  // Skip pages that already have a PipelineTracker (app overview) —
-  // those apps are already tracked inline, avoid duplicate toasts
-  var trackedAppId = null;
-  var trackerEl = document.querySelector('[data-pipeline-tracker]');
-  if (trackerEl) trackedAppId = trackerEl.getAttribute('data-application-id');
-  window.dashboardPoller = new DashboardPipelinePoller(trackedAppId);
-}
-
-/* ---------- Observability Panel ---------- */
-function ObservabilityPanel(container) {
-  this.container = container;
-  this.appId = container.getAttribute('data-application-id');
-  this.active = false;
-  this.timer = null;
-  this.range = '1h';
-
-  // DOM refs
-  this.cpuValue = container.querySelector('[data-obs-cpu-value]');
-  this.cpuLimit = container.querySelector('[data-obs-cpu-limit]');
-  this.cpuGauge = container.querySelector('[data-obs-cpu-gauge]');
-  this.memValue = container.querySelector('[data-obs-mem-value]');
-  this.memLimit = container.querySelector('[data-obs-mem-limit]');
-  this.memGauge = container.querySelector('[data-obs-mem-gauge]');
-  this.podValue = container.querySelector('[data-obs-pod-count]');
-  this.podLabel = container.querySelector('[data-obs-pod-status]');
-  this.restartValue = container.querySelector('[data-obs-restart-count]');
-  this.cpuChart = container.querySelector('[data-obs-cpu-chart] svg');
-  this.memChart = container.querySelector('[data-obs-mem-chart] svg');
-  this.podsGrid = container.querySelector('[data-obs-pods-grid]');
-  this.eventsEl = container.querySelector('[data-obs-events]');
-
-  // Range buttons
-  var self = this;
-  var rangeButtons = container.querySelectorAll('[data-obs-range]');
-  rangeButtons.forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      rangeButtons.forEach(function (b) {
-        b.classList.remove('obs-range-active');
-      });
-      btn.classList.add('obs-range-active');
-      self.range = btn.getAttribute('data-obs-range');
-      self.fetch();
-    });
-  });
-
-  // Listen for tab lifecycle
-  var panel = container.closest('[data-tab-panel]');
-  if (panel) {
-    panel.addEventListener('tab-activated', function () {
-      self.activate();
-    });
-    panel.addEventListener('tab-deactivated', function () {
-      self.deactivate();
-    });
-    // If tab is already active (e.g. loaded via URL hash), activate now
-    if (panel.classList.contains('tab-panel-active')) {
-      self.activate();
-    }
-  }
-}
-
-ObservabilityPanel.prototype.activate = function () {
-  if (this.active) return;
-  this.active = true;
-  this.fetch();
-  var self = this;
-  this.timer = setInterval(function () {
-    self.fetch();
-  }, 15000);
-};
-
-ObservabilityPanel.prototype.deactivate = function () {
-  this.active = false;
-  if (this.timer) {
-    clearInterval(this.timer);
-    this.timer = null;
-  }
-};
-
-ObservabilityPanel.prototype.setLoading = function (loading) {
-  if (!this.container) return;
-  var cards = this.container.querySelectorAll('.obs-metric-card, .obs-chart-card, .obs-section-card');
-  cards.forEach(function (card) {
-    if (loading) card.classList.add('obs-loading');
-    else card.classList.remove('obs-loading');
-  });
-};
-
-ObservabilityPanel.prototype.fetch = function () {
-  var self = this;
-  if (!this._loaded) this.setLoading(true);
-  var url = '/applications/' + this.appId + '/observability?range=' + this.range;
-  fetch(url, { credentials: 'same-origin' })
-    .then(function (r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
-    .then(function (data) {
-      self._loaded = true;
-      self.setLoading(false);
-      self.render(data);
-    })
-    .catch(function (err) {
-      self.setLoading(false);
-      console.warn('Observability fetch error:', err);
-    });
-};
-
-ObservabilityPanel.prototype.render = function (data) {
-  this.updateGauges(data.current, data.limits);
-  this.renderChart(
-    this.cpuChart,
-    data.history,
-    'cpu_usage_m',
-    data.limits ? data.limits.total_cpu_limit_m : null,
-    '#22d3ee',
-  );
-  this.renderChart(
-    this.memChart,
-    data.history,
-    'memory_usage_bytes',
-    data.limits ? data.limits.total_memory_limit_bytes : null,
-    '#a78bfa',
-  );
-  this.updatePodsGrid(data.pods);
-  this.updateEvents(data.events);
-};
-
-ObservabilityPanel.prototype.updateGauges = function (current, limits) {
-  if (!current) return;
-
-  // CPU
-  var cpuVal = current.cpu_usage_m;
-  if (cpuVal != null && this.cpuValue) {
-    this.cpuValue.textContent = Math.round(cpuVal) + 'm';
-    if (limits && limits.total_cpu_limit_m && this.cpuLimit) {
-      this.cpuLimit.textContent = '/ ' + limits.total_cpu_limit_m + 'm';
-      var cpuPct = Math.min((cpuVal / limits.total_cpu_limit_m) * 100, 100);
-      if (this.cpuGauge) {
-        this.cpuGauge.style.width = cpuPct + '%';
-        this.cpuGauge.className =
-          'obs-gauge-fill' + (cpuPct > 90 ? ' obs-gauge-fill-danger' : cpuPct > 70 ? ' obs-gauge-fill-warning' : '');
-      }
-    }
-  } else if (this.cpuValue) {
-    this.cpuValue.textContent = '—';
-  }
-
-  // Memory
-  var memVal = current.memory_usage_bytes;
-  if (memVal != null && this.memValue) {
-    this.memValue.textContent = this.formatBytes(memVal);
-    if (limits && limits.total_memory_limit_bytes && this.memLimit) {
-      this.memLimit.textContent = '/ ' + this.formatBytes(limits.total_memory_limit_bytes);
-      var memPct = Math.min((memVal / limits.total_memory_limit_bytes) * 100, 100);
-      if (this.memGauge) {
-        this.memGauge.style.width = memPct + '%';
-        this.memGauge.className =
-          'obs-gauge-fill' + (memPct > 90 ? ' obs-gauge-fill-danger' : memPct > 70 ? ' obs-gauge-fill-warning' : '');
-      }
-    }
-  } else if (this.memValue) {
-    this.memValue.textContent = '—';
-  }
-
-  // Pods & Restarts
-  if (this.podValue) this.podValue.textContent = current.pod_count || 0;
-  if (this.podLabel) {
-    var running = current.pod_count || 0;
-    this.podLabel.textContent = running === 1 ? 'running' : running + ' running';
-  }
-  if (this.restartValue) this.restartValue.textContent = current.restart_count || 0;
-};
-
-ObservabilityPanel.prototype.formatBytes = function (bytes) {
-  if (bytes == null) return '—';
-  if (bytes < 1024) return bytes + 'B';
-  if (bytes < 1048576) return (bytes / 1024).toFixed(0) + 'Ki';
-  if (bytes < 1073741824) return (bytes / 1048576).toFixed(0) + 'Mi';
-  return (bytes / 1073741824).toFixed(1) + 'Gi';
-};
-
-ObservabilityPanel.prototype.renderChart = function (svgEl, history, key, limit, color) {
-  if (!svgEl || !history || !history.length) {
-    if (svgEl)
-      svgEl.innerHTML =
-        '<text x="300" y="100" text-anchor="middle" fill="var(--text-muted)" font-size="13">No data yet</text>';
-    return;
-  }
-
-  var isMemory = key === 'memory_usage_bytes';
-  var self = this;
-  var w = 600,
-    h = 200,
-    padL = 52,
-    padR = 10,
-    padT = 30,
-    padB = 30;
-  var values = history.map(function (p) {
-    return p[key] || 0;
-  });
-  var dataMax = Math.max.apply(null, values);
-  var dataMin = Math.min.apply(null, values);
-
-  // Auto-scale to data range with 20% headroom; show limit line as reference
-  var maxVal = dataMax * 1.2 || 1;
-  // If limit is close to the data (within 2x), include it in the range
-  if (limit && limit <= dataMax * 2) maxVal = Math.max(maxVal, limit * 1.05);
-  if (maxVal === 0) maxVal = 1;
-
-  // Scale values
-  var chartW = w - padL - padR;
-  var chartH = h - padT - padB;
-  var xStep = chartW / Math.max(values.length - 1, 1);
-  var points = values.map(function (v, i) {
-    return { x: padL + i * xStep, y: padT + chartH - (v / maxVal) * chartH };
-  });
-
-  var svg = '';
-
-  // Grid lines + Y-axis labels
-  for (var g = 0; g < 4; g++) {
-    var gy = padT + (chartH / 3) * g;
-    var gridVal = maxVal * (1 - g / 3);
-    var label = isMemory ? self.formatBytes(gridVal) : Math.round(gridVal) + 'm';
-    svg += '<line x1="' + padL + '" y1="' + gy + '" x2="' + (w - padR) + '" y2="' + gy + '" class="obs-grid-line" />';
-    svg +=
-      '<text x="' +
-      (padL - 4) +
-      '" y="' +
-      (gy + 4) +
-      '" text-anchor="end" class="obs-chart-label">' +
-      label +
-      '</text>';
-  }
-
-  // Limit line (only draw if it falls within the visible range)
-  if (limit && limit <= maxVal) {
-    var ly = padT + chartH - (limit / maxVal) * chartH;
-    svg += '<line x1="' + padL + '" y1="' + ly + '" x2="' + (w - padR) + '" y2="' + ly + '" class="obs-limit-line" />';
-    var limitLabel = isMemory ? self.formatBytes(limit) : Math.round(limit) + 'm';
-    svg +=
-      '<text x="' +
-      (w - padR) +
-      '" y="' +
-      (ly - 4) +
-      '" text-anchor="end" class="obs-chart-label obs-chart-limit-label">' +
-      limitLabel +
-      ' limit</text>';
-  }
-
-  // Area fill
-  var pathD = 'M' + points[0].x + ',' + points[0].y;
-  for (var i = 1; i < points.length; i++) {
-    pathD += ' L' + points[i].x + ',' + points[i].y;
-  }
-  var areaD =
-    pathD + ' L' + points[points.length - 1].x + ',' + (h - padB) + ' L' + points[0].x + ',' + (h - padB) + ' Z';
-  svg += '<path d="' + areaD + '" class="obs-area-fill" fill="' + color + '" />';
-  svg += '<path d="' + pathD + '" class="obs-line" stroke="' + color + '" />';
-
-  // Current value label at the last data point
-  var lastPt = points[points.length - 1];
-  var lastVal = values[values.length - 1];
-  var currentLabel = isMemory ? self.formatBytes(lastVal) : Math.round(lastVal) + 'm';
-  svg +=
-    '<text x="' +
-    lastPt.x +
-    '" y="' +
-    (lastPt.y - 8) +
-    '" text-anchor="end" class="obs-chart-current-label" fill="' +
-    color +
-    '">' +
-    currentLabel +
-    '</text>';
-
-  svgEl.innerHTML = svg;
-};
-
-ObservabilityPanel.prototype.updatePodsGrid = function (pods) {
-  if (!this.podsGrid) return;
-  if (!pods || !pods.length) {
-    this.podsGrid.innerHTML = '<div class="obs-empty-state">No pods running</div>';
-    return;
-  }
-  var html = '';
-  pods.forEach(function (pod) {
-    var phase = (pod.phase || 'Unknown').toLowerCase();
-    var dotClass =
-      phase === 'running' ? 'obs-pod-dot-ok' : phase === 'pending' ? 'obs-pod-dot-warn' : 'obs-pod-dot-err';
-    var name = (pod.name || '').replace(/[<>&"]/g, '');
-    html +=
-      '<div class="obs-pod-card">' +
-      '<div class="obs-pod-header"><span class="obs-pod-dot ' +
-      dotClass +
-      '"></span>' +
-      '<span class="obs-pod-name">' +
-      name +
-      '</span></div>' +
-      '<div class="obs-pod-metrics">' +
-      '<span class="obs-pod-metric">' +
-      (pod.cpu_display || '—') +
-      '</span>' +
-      '<span class="obs-pod-metric">' +
-      (pod.mem_display || '—') +
-      '</span>' +
-      (pod.restart_count > 0
-        ? '<span class="obs-pod-metric obs-pod-restarts">' +
-          pod.restart_count +
-          ' restart' +
-          (pod.restart_count > 1 ? 's' : '') +
-          '</span>'
-        : '') +
-      '</div></div>';
-  });
-  this.podsGrid.innerHTML = html;
-};
-
-ObservabilityPanel.prototype.updateEvents = function (events) {
-  if (!this.eventsEl) return;
-  if (!events || !events.length) {
-    this.eventsEl.innerHTML = '<div class="obs-empty-state">No recent events</div>';
-    return;
-  }
-  var html = '';
-  events.forEach(function (ev) {
-    var dotClass = ev.type === 'Warning' ? 'obs-event-dot-warn' : 'obs-event-dot-ok';
-    var reason = (ev.reason || '').replace(/[<>&"]/g, '');
-    var msg = (ev.message || '').replace(/[<>&"]/g, '');
-    var time = (ev.time_ago || '').replace(/[<>&"]/g, '');
-    html +=
-      '<div class="obs-event-item">' +
-      '<span class="obs-event-dot ' +
-      dotClass +
-      '"></span>' +
-      '<div class="obs-event-content">' +
-      '<span class="obs-event-reason">' +
-      reason +
-      '</span>' +
-      '<span class="obs-event-msg">' +
-      msg +
-      '</span>' +
-      '</div>' +
-      '<span class="obs-event-time">' +
-      time +
-      '</span>' +
-      '</div>';
-  });
-  this.eventsEl.innerHTML = html;
-};
-
-function initObservabilityPanel() {
-  var container = document.querySelector('[data-observability-panel]');
-  if (!container) return;
-  window.observabilityPanel = new ObservabilityPanel(container);
-}
-
-/* ---------- Pipeline Metrics Panel ---------- */
-function PipelineMetricsPanel(container) {
-  this.container = container;
-  this.appId = container.getAttribute('data-application-id');
-  this.active = false;
-  this.range = 50;
-
-  // DOM refs — summary cards
-  this.buildRate = container.querySelector('[data-pm-build-rate]');
-  this.buildCounts = container.querySelector('[data-pm-build-counts]');
-  this.buildAvg = container.querySelector('[data-pm-build-avg]');
-  this.deployAvg = container.querySelector('[data-pm-deploy-avg]');
-
-  // DOM refs — stat chips
-  this.buildChips = container.querySelector('[data-pm-build-chips]');
-  this.releaseChips = container.querySelector('[data-pm-release-chips]');
-  this.deployChips = container.querySelector('[data-pm-deploy-chips]');
-
-  // DOM refs — charts
-  this.buildChart = container.querySelector('[data-pm-build-chart]');
-  this.releaseChart = container.querySelector('[data-pm-release-chart]');
-  this.deployChart = container.querySelector('[data-pm-deploy-chart]');
-
-  // Range buttons
-  var self = this;
-  var rangeButtons = container.querySelectorAll('[data-pm-range]');
-  rangeButtons.forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      rangeButtons.forEach(function (b) {
-        b.classList.remove('obs-range-active');
-      });
-      btn.classList.add('obs-range-active');
-      self.range = parseInt(btn.getAttribute('data-pm-range'), 10);
-      self.fetch();
-    });
-  });
-
-  // Tab lifecycle
-  var panel = container.closest('[data-tab-panel]');
-  if (panel) {
-    panel.addEventListener('tab-activated', function () {
-      self.activate();
-    });
-    panel.addEventListener('tab-deactivated', function () {
-      self.deactivate();
-    });
-    if (panel.classList.contains('tab-panel-active')) {
-      self.activate();
-    }
-  }
-}
-
-PipelineMetricsPanel.prototype.activate = function () {
-  if (this.active) return;
-  this.active = true;
-  this.fetch();
-};
-
-PipelineMetricsPanel.prototype.deactivate = function () {
-  this.active = false;
-};
-
-PipelineMetricsPanel.prototype.fetch = function () {
-  var self = this;
-  var url = '/applications/' + this.appId + '/pipeline-metrics?range=' + this.range;
-  fetch(url, { credentials: 'same-origin' })
-    .then(function (r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
-    .then(function (data) {
-      self.render(data);
-    })
-    .catch(function (err) {
-      console.warn('Pipeline metrics fetch error:', err);
-    });
-};
-
-PipelineMetricsPanel.prototype.formatDuration = function (secs) {
-  if (secs == null) return '—';
-  if (secs < 60) return secs + 's';
-  var m = Math.floor(secs / 60);
-  var s = secs % 60;
-  return m + 'm ' + s + 's';
-};
-
-PipelineMetricsPanel.prototype.render = function (data) {
-  // Summary cards
-  if (this.buildRate) {
-    this.buildRate.textContent =
-      data.images.success_rate != null ? data.images.success_rate + '%' : '—';
-  }
-  if (this.buildCounts) {
-    this.buildCounts.textContent =
-      data.images.total > 0
-        ? data.images.success + ' ok / ' + data.images.error + ' err of ' + data.images.total
-        : '';
-  }
-  if (this.buildAvg) {
-    this.buildAvg.textContent = this.formatDuration(data.images.avg_secs);
-  }
-  if (this.deployAvg) {
-    this.deployAvg.textContent = this.formatDuration(data.deployments.avg_secs);
-  }
-
-  // Stage sections
-  this.renderStage(this.buildChips, this.buildChart, data.images, '/image/');
-  this.renderStage(this.releaseChips, this.releaseChart, data.releases, '/release/');
-  this.renderStage(this.deployChips, this.deployChart, data.deployments, '/deployment/');
-};
-
-PipelineMetricsPanel.prototype.renderStage = function (chipsEl, svgEl, stage, urlPrefix) {
-  // Stat chips
-  if (chipsEl) {
-    var chips = '';
-    chips += '<span class="pm-stat-chip">' + stage.total + ' total</span>';
-    chips += '<span class="pm-stat-chip pm-stat-chip-ok">' + stage.success + ' ok</span>';
-    if (stage.error > 0) {
-      chips += '<span class="pm-stat-chip pm-stat-chip-err">' + stage.error + ' err</span>';
-    }
-    if (stage.p50_secs != null) {
-      chips += '<span class="pm-stat-chip">p50 ' + this.formatDuration(stage.p50_secs) + '</span>';
-    }
-    if (stage.p95_secs != null) {
-      chips += '<span class="pm-stat-chip">p95 ' + this.formatDuration(stage.p95_secs) + '</span>';
-    }
-    chipsEl.innerHTML = chips;
-  }
-
-  // Bar chart
-  this.renderBarChart(svgEl, stage.history, stage.avg_secs, urlPrefix);
-};
-
-PipelineMetricsPanel.prototype.renderBarChart = function (svgEl, history, avgSecs, urlPrefix) {
-  if (!svgEl) return;
-  if (!history || !history.length) {
-    svgEl.innerHTML =
-      '<text x="300" y="60" text-anchor="middle" fill="var(--text-muted)" font-size="13">No data yet</text>';
-    return;
-  }
-
-  var w = 600,
-    h = 120,
-    padL = 4,
-    padR = 30, // room for avg label
-    padTB = 4;
-  var n = history.length;
-  var gap = 2;
-  var barW = Math.max(1, (w - padL - padR - (n - 1) * gap) / n);
-
-  // Compute ceiling from durations
-  var maxSecs = 1;
-  history.forEach(function (item) {
-    if (item.secs != null && item.secs > maxSecs) maxSecs = item.secs;
-  });
-  var ceiling = maxSecs * 1.15;
-
-  var svg = '';
-
-  // Avg line
-  if (avgSecs != null && avgSecs > 0) {
-    var avgY = h - padTB - (avgSecs / ceiling) * (h - 2 * padTB);
-    svg +=
-      '<line x1="' + padL + '" y1="' + avgY + '" x2="' + (w - 4) + '" y2="' + avgY + '" ' +
-      'stroke="var(--text-faintest)" stroke-width="1" stroke-dasharray="4 3" />';
-    svg +=
-      '<text x="' + (w - 2) + '" y="' + (avgY - 4) + '" text-anchor="end" ' +
-      'fill="var(--text-faintest)" font-size="10">avg</text>';
-  }
-
-  // Bars
-  var self = this;
-  history.forEach(function (item, i) {
-    var x = padL + i * (barW + gap);
-    var secs = item.secs;
-    var href = item.id && urlPrefix ? urlPrefix + item.id : null;
-    if (secs == null || secs <= 0) {
-      // In-progress or no duration — show minimal gray bar
-      var stub =
-        '<rect x="' + x + '" y="' + (h - padTB - 3) + '" width="' + barW + '" height="3" ' +
-        'rx="1" fill="var(--text-faintest)" opacity="0.3" class="pm-bar">' +
-        '<title>#' + (item.version || '?') + ' — in progress</title></rect>';
-      svg += href ? '<a href="' + href + '">' + stub + '</a>' : stub;
-      return;
-    }
-    var barH = Math.max(2, (secs / ceiling) * (h - 2 * padTB));
-    var barY = h - padTB - barH;
-    var color = item.error ? '#ef4444' : item.ok ? '#22c55e' : 'var(--text-faintest)';
-    var tooltip =
-      '#' + (item.version || '?') + ' — ' + self.formatDuration(secs) + (item.error ? ' (error)' : '');
-    var bar =
-      '<rect x="' + x + '" y="' + barY + '" width="' + barW + '" height="' + barH + '" ' +
-      'rx="1" fill="' + color + '" opacity="0.85" class="pm-bar">' +
-      '<title>' + tooltip + '</title></rect>';
-    svg += href ? '<a href="' + href + '">' + bar + '</a>' : bar;
-  });
-
-  svgEl.innerHTML = svg;
-};
-
-function initPipelineMetricsPanel() {
-  var container = document.querySelector('[data-pipeline-metrics-panel]');
-  if (!container) return;
-  window.pipelineMetricsPanel = new PipelineMetricsPanel(container);
-}
-
-/* ---------- Live Status Mini (Overview tab) ---------- */
-function ObservabilityMini(container) {
-  this.container = container;
-  this.appId = container.getAttribute('data-application-id');
-  this.timer = null;
-  this._loaded = false;
-
-  // DOM refs
-  this.cpuValue = container.querySelector('[data-ls-cpu-value]');
-  this.cpuSpark = container.querySelector('[data-ls-cpu-spark]');
-  this.memValue = container.querySelector('[data-ls-mem-value]');
-  this.memSpark = container.querySelector('[data-ls-mem-spark]');
-  this.podCount = container.querySelector('[data-ls-pod-count]');
-  this.podDots = container.querySelector('[data-ls-pod-dots]');
-}
-
-ObservabilityMini.prototype.activate = function () {
-  if (this.timer) return;
-  this.container.classList.add('ls-loading');
-  this.fetch();
-  var self = this;
-  this.timer = setInterval(function () {
-    self.fetch();
-  }, 30000);
-};
-
-ObservabilityMini.prototype.deactivate = function () {
-  if (this.timer) {
-    clearInterval(this.timer);
-    this.timer = null;
-  }
-};
-
-ObservabilityMini.prototype.fetch = function () {
-  var self = this;
-  var url = '/applications/' + this.appId + '/observability?range=1h';
-  fetch(url, { credentials: 'same-origin' })
-    .then(function (r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
-    .then(function (data) {
-      self.container.classList.remove('ls-loading');
-      self._loaded = true;
-      self.render(data);
-    })
-    .catch(function () {
-      self.container.classList.remove('ls-loading');
-    });
-};
-
-ObservabilityMini.prototype.formatBytes = function (bytes) {
-  if (bytes == null) return '—';
-  if (bytes < 1024) return bytes + 'B';
-  if (bytes < 1048576) return (bytes / 1024).toFixed(0) + 'Ki';
-  if (bytes < 1073741824) return (bytes / 1048576).toFixed(0) + 'Mi';
-  return (bytes / 1073741824).toFixed(1) + 'Gi';
-};
-
-ObservabilityMini.prototype.render = function (data) {
-  var current = data.current;
-  var limits = data.limits;
-  if (!current) return;
-
-  // CPU
-  var cpuVal = current.cpu_usage_m;
-  var cpuLim = limits ? limits.total_cpu_limit_m : 0;
-  var cpuPct = cpuLim ? (cpuVal / cpuLim) * 100 : 0;
-  if (this.cpuValue) {
-    this.cpuValue.textContent = cpuVal != null ? Math.round(cpuVal) + 'm' : '—';
-    this.cpuValue.className = 'ls-val' +
-      (cpuPct > 90 ? ' ls-val-danger' : cpuPct > 70 ? ' ls-val-warn' : '');
-  }
-
-  // Memory
-  var memVal = current.memory_usage_bytes;
-  var memLim = limits ? limits.total_memory_limit_bytes : 0;
-  var memPct = memLim ? (memVal / memLim) * 100 : 0;
-  if (this.memValue) {
-    this.memValue.textContent = memVal != null ? this.formatBytes(memVal) : '—';
-    this.memValue.className = 'ls-val' +
-      (memPct > 90 ? ' ls-val-danger' : memPct > 70 ? ' ls-val-warn' : '');
-  }
-
-  // Pods
-  var podN = current.pod_count || 0;
-  if (this.podCount) {
-    this.podCount.textContent = podN;
-  }
-  if (this.podDots) {
-    var dotsHtml = '';
-    var pods = data.pods || [];
-    if (pods.length > 0) {
-      pods.forEach(function (pod) {
-        var phase = (pod.phase || '').toLowerCase();
-        var cls = 'ls-pod-dot';
-        if (phase === 'pending') cls += ' ls-pod-dot-warn';
-        else if (phase !== 'running') cls += ' ls-pod-dot-err';
-        dotsHtml += '<span class="' + cls + '" title="' + (pod.name || '').replace(/"/g, '') + '"></span>';
-      });
-    } else if (podN > 0) {
-      for (var i = 0; i < podN; i++) {
-        dotsHtml += '<span class="ls-pod-dot"></span>';
-      }
-    }
-    this.podDots.innerHTML = dotsHtml;
-  }
-
-  // Sparklines
-  this.renderSparkline(this.cpuSpark, data.history, 'cpu_usage_m', cpuLim, 'oklch(0.7 0.15 230)');
-  this.renderSparkline(this.memSpark, data.history, 'memory_usage_bytes', memLim, 'oklch(0.7 0.15 290)');
-};
-
-ObservabilityMini.prototype.renderSparkline = function (container, history, key, limit, color) {
-  if (!container) return;
-  var svg = container.querySelector('svg');
-  if (!svg) return;
-  if (!history || !history.length) {
-    // Show flat baseline when no data
-    svg.innerHTML = '<line x1="0" y1="27" x2="120" y2="27" stroke="' + color + '" stroke-opacity="0.15" stroke-width="1"/>';
-    container.classList.add('ls-loaded');
-    return;
-  }
-
-  var values = history.map(function (h) { return h[key] || 0; });
-  var max = limit || Math.max.apply(null, values) || 1;
-  var w = 120;
-  var h = 28;
-  var pad = 2;
-
-  var points = [];
-  for (var i = 0; i < values.length; i++) {
-    var x = (i / Math.max(values.length - 1, 1)) * w;
-    var y = pad + (h - pad * 2) - ((values[i] / max) * (h - pad * 2));
-    points.push(x.toFixed(1) + ',' + y.toFixed(1));
-  }
-  var pathD = 'M' + points.join('L');
-
-  // Gradient fill under the line
-  var areaPath = pathD + 'L' + w + ',' + h + 'L0,' + h + 'Z';
-
-  var gradId = 'ls-grad-' + key;
-  // Baseline at bottom + limit dashed line if applicable
-  var baseline = '<line x1="0" y1="' + (h - 1) + '" x2="' + w + '" y2="' + (h - 1) + '" stroke="' + color + '" stroke-opacity="0.15" stroke-width="1"/>';
-  svg.innerHTML =
-    '<defs><linearGradient id="' + gradId + '" x1="0" y1="0" x2="0" y2="1">' +
-    '<stop offset="0%" stop-color="' + color + '" stop-opacity="0.15"/>' +
-    '<stop offset="100%" stop-color="' + color + '" stop-opacity="0"/>' +
-    '</linearGradient></defs>' +
-    baseline +
-    '<path d="' + areaPath + '" fill="url(#' + gradId + ')"/>' +
-    '<path d="' + pathD + '" fill="none" stroke="' + color + '" stroke-width="1.5" ' +
-    'stroke-linecap="round" stroke-linejoin="round" class="ls-spark-path"/>';
-
-  // Animate the line drawing in
-  var linePath = svg.querySelector('.ls-spark-path');
-  if (linePath) {
-    var len = linePath.getTotalLength();
-    linePath.style.strokeDasharray = len;
-    linePath.style.strokeDashoffset = len;
-    linePath.style.setProperty('--ls-path-len', len);
-    linePath.style.animation = 'ls-spark-draw 0.8s ease-out forwards';
-  }
-
-  container.classList.add('ls-loaded');
-};
-
-function initLiveStatus() {
-  var container = document.querySelector('[data-live-status]');
-  if (!container) return;
-  var mini = new ObservabilityMini(container);
-
-  // Activate when overview tab is visible
-  var panel = container.closest('[data-tab-panel]');
-  if (panel) {
-    panel.addEventListener('tab-activated', function () { mini.activate(); });
-    panel.addEventListener('tab-deactivated', function () { mini.deactivate(); });
-    if (panel.classList.contains('tab-panel-active')) {
-      mini.activate();
-    }
+  var isDashboard = document.querySelector('[data-page="dashboard"]');
+  if (toastContainer && isDashboard) {
+    window.dashboardPoller = new DashboardPipelinePoller();
   }
 }
 
@@ -2394,7 +1135,7 @@ function initCompactTopbar() {
 
   // Clone tab items into the inline container
   var sourceTabs = tabBar.querySelectorAll('[data-tab]');
-  sourceTabs.forEach(function (tab) {
+  sourceTabs.forEach(function(tab) {
     var clone = document.createElement('button');
     clone.className = 'topbar-inline-tab';
     clone.setAttribute('data-inline-tab', tab.getAttribute('data-tab'));
@@ -2419,7 +1160,7 @@ function initCompactTopbar() {
   });
 
   // Click handler: sync with real tabs
-  inlineTabs.addEventListener('click', function (e) {
+  inlineTabs.addEventListener('click', function(e) {
     var btn = e.target.closest('[data-inline-tab]');
     if (!btn) return;
     var tabId = btn.getAttribute('data-inline-tab');
@@ -2428,8 +1169,8 @@ function initCompactTopbar() {
   });
 
   // Keep inline tabs in sync when real tabs change
-  var observer = new MutationObserver(function () {
-    sourceTabs.forEach(function (tab) {
+  var observer = new MutationObserver(function() {
+    sourceTabs.forEach(function(tab) {
       var id = tab.getAttribute('data-tab');
       var inline = inlineTabs.querySelector('[data-inline-tab="' + id + '"]');
       if (inline) {
@@ -2437,7 +1178,7 @@ function initCompactTopbar() {
       }
     });
   });
-  sourceTabs.forEach(function (tab) {
+  sourceTabs.forEach(function(tab) {
     observer.observe(tab, { attributes: true, attributeFilter: ['class'] });
   });
 
@@ -2445,11 +1186,6 @@ function initCompactTopbar() {
   var THRESHOLD = 20;
   var isCompact = false;
   var compactPref = localStorage.getItem('compact-mode') === 'true';
-
-  // Remove pre-paint class so transitions work after hydration
-  requestAnimationFrame(function () {
-    document.documentElement.classList.remove('compact-mode-pref');
-  });
 
   function applyCompact(compact) {
     if (compact !== isCompact) {
@@ -2471,31 +1207,19 @@ function initCompactTopbar() {
 
   // Toggle handlers
   var toggles = document.querySelectorAll('.compact-mode-toggle');
-  toggles.forEach(function (toggle) {
+  toggles.forEach(function(toggle) {
     toggle.checked = compactPref;
-    toggle.addEventListener('change', function () {
+    toggle.addEventListener('change', function() {
       compactPref = toggle.checked;
       localStorage.setItem('compact-mode', compactPref);
       // Sync all toggles
-      toggles.forEach(function (t) {
-        t.checked = compactPref;
-      });
+      toggles.forEach(function(t) { t.checked = compactPref; });
       checkScroll();
     });
   });
 }
 
-/* Delegated handler: [data-href] spans open links in new tabs (avoids nested <a>) */
-document.addEventListener('click', function (e) {
-  var el = e.target.closest('[data-href]');
-  if (el) {
-    e.preventDefault();
-    e.stopPropagation();
-    window.open(el.getAttribute('data-href'), '_blank', 'noopener');
-  }
-});
-
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener('DOMContentLoaded', function() {
   initTabs();
   initCompactTopbar();
   initCountInputs();
@@ -2507,15 +1231,11 @@ document.addEventListener('DOMContentLoaded', function () {
   initAddVarModal();
   initExpandModal();
   initAccentPicker();
-  initCommitPopup();
   initPipelineTracker();
   initDashboardPoller();
-  initObservabilityPanel();
-  initPipelineMetricsPanel();
-  initLiveStatus();
   autoExpandCollapsibleCards();
   syncDetailLogHeight();
-  window.addEventListener('resize', function () {
+  window.addEventListener('resize', function() {
     autoExpandCollapsibleCards();
     syncDetailLogHeight();
   });
