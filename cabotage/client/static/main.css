@@ -356,6 +356,11 @@ html:not([data-theme-pref]) .theme-icon-system {
   color: var(--text-bright);
   border-bottom-color: var(--color-primary);
 }
+.tab-item.tab-disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
 
 /* Responsive tab hiding — middle tabs collapse first */
 @media (max-width: 639px) {

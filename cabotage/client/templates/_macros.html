@@ -48,16 +48,23 @@
 {% macro tab_nav(tabs, tab_bar_class='') %}
   <div class="tab-bar {{ tab_bar_class }}" data-tabs>
     {% for tab in tabs %}
-      <a href="#{{ tab.id }}"
-         class="tab-item
-                {% if loop.first %}tab-active{% endif %}"
-         data-tab="{{ tab.id }}">
-        {% if tab.icon %}{{ icon(tab.icon, 'w-4 h-4') }}{% endif %}
-        {{ tab.label }}
-        {% if tab.badge is defined and tab.badge is not none %}
-          <span class="badge badge-sm badge-neutral ml-1">{{ tab.badge }}</span>
-        {% endif %}
-      </a>
+      {% if tab.disabled is defined and tab.disabled %}
+        <span class="tab-item tab-disabled">
+          {% if tab.icon %}{{ icon(tab.icon, 'w-4 h-4') }}{% endif %}
+          {{ tab.label }}
+        </span>
+      {% else %}
+        <a href="#{{ tab.id }}"
+           class="tab-item
+                  {% if loop.first %}tab-active{% endif %}"
+           data-tab="{{ tab.id }}">
+          {% if tab.icon %}{{ icon(tab.icon, 'w-4 h-4') }}{% endif %}
+          {{ tab.label }}
+          {% if tab.badge is defined and tab.badge is not none %}
+            <span class="badge badge-sm badge-neutral ml-1">{{ tab.badge }}</span>
+          {% endif %}
+        </a>
+      {% endif %}
     {% endfor %}
   </div>
 {% endmacro %}
@@ -75,9 +82,7 @@
       <a href="{{ overview_url }}"
          class="tab-item
                 {% if active == 'overview' %}tab-active{% endif %}">{{ icon('activity', 'w-4 h-4') }} Overview</a>
-      <a href="{{ overview_url }}#observe"
-         class="tab-item
-                {% if active == 'observe' %}tab-active{% endif %}">{{ icon('bar-chart', 'w-4 h-4') }} Observe</a>
+      <span class="tab-item tab-disabled">{{ icon('bar-chart', 'w-4 h-4') }} Observe <span class="text-[0.6rem] opacity-50">(Soon)</span></span>
       <a href="{{ overview_url }}#config"
          class="tab-item
                 {% if active == 'config' %}tab-active{% endif %}">
@@ -91,9 +96,7 @@
       <a href="{{ url_for('user.application_releases', application_id=application.id) }}"
          class="tab-item
                 {% if active == 'releases' %}tab-active{% endif %}">{{ icon('layers', 'w-4 h-4') }} Packages</a>
-      <a href="{{ overview_url }}#pipeline"
-         class="tab-item
-                {% if active == 'pipeline' %}tab-active{% endif %}">{{ icon('bar-chart-2', 'w-4 h-4') }} Pipeline</a>
+      <span class="tab-item tab-disabled">{{ icon('bar-chart-2', 'w-4 h-4') }} Pipeline <span class="text-[0.6rem] opacity-50">(Soon)</span></span>
       <a href="{{ url_for('user.project_application_settings', application_id=application.id) }}"
          class="tab-item
                 {% if active == 'settings' %}tab-active{% endif %}">{{ icon('settings', 'w-4 h-4') }} Settings</a>

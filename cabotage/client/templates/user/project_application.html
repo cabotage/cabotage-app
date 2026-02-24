@@ -21,12 +21,12 @@
   <div class="app-content-padded !py-0">
     {{ tab_nav([
         {'id': 'overview', 'label': 'Overview', 'icon': 'activity'},
-        {'id': 'observe', 'label': 'Observe', 'icon': 'bar-chart'},
+        {'id': 'observe', 'label': 'Observe (Soon)', 'icon': 'bar-chart', 'disabled': true},
         {'id': 'config', 'label': 'Config', 'icon': 'key', 'badge': application.configurations|rejectattr('name', 'equalto', 'CABOTAGE_SENTINEL') |list|length},
     {'id': 'images', 'label': 'Images', 'icon': 'image'},
     {'id': 'releases', 'label': 'Packages', 'icon': 'layers'},
     {'id': 'deployments', 'label': 'Deploys', 'icon': 'deploy'},
-    {'id': 'pipeline', 'label': 'Pipeline', 'icon': 'bar-chart-2'}
+    {'id': 'pipeline', 'label': 'Pipeline (Soon)', 'icon': 'bar-chart-2', 'disabled': true}
     ]) }}
   </div>
 {% endblock tab_bar %}
@@ -764,14 +764,14 @@
             <div class="ls-header">
               <span class="ls-title">Live</span>
               <span class="ls-range">1h</span>
-              <a href="#observe" data-switch-tab="observe" class="ls-nav-arrow">
+              <span class="ls-nav-arrow" style="opacity:0.3;pointer-events:none">
                 <svg viewBox="0 0 24 24"
                      fill="none"
                      stroke="currentColor"
                      stroke-width="2.5">
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
-              </a>
+              </span>
             </div>
             <div class="ls-row">
               <div class="ls-left">
