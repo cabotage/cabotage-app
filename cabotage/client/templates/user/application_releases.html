@@ -62,7 +62,6 @@
         <a href="{{ url_for('user.release_detail', release_id=release.id) }}"
            class="dpl-row {{ 'dpl-row-error' if release.error }}">
 
-          {# Status icon #}
           {% if release.built %}
             <span class="dpl-row-icon dpl-row-icon-ok">{{ icon('check', 'w-3.5 h-3.5') }}</span>
           {% elif release.error %}
@@ -79,7 +78,6 @@
             </span>
           {% endif %}
 
-          {# Body #}
           <div class="dpl-row-body">
             <div class="dpl-row-primary">
               <code class="dpl-row-version">v{{ release.version }}</code>
@@ -145,13 +143,11 @@
             {% endif %}
           </div>
 
-          {# Timestamp #}
           <span class="dpl-row-time"><time data-timestamp="{{ release.updated|isoformat_utc }}">{{ release.updated|humanize }}</time></span>
         </a>
       {% endfor %}
     </div>
 
-    {# Pagination #}
     <div class="flex items-center justify-between mt-4">
       {% if page > 1 %}
         <a href="?page={{ page - 1 }}" class="btn btn-ghost btn-sm gap-1">{{ icon('arrow-left', 'w-3.5 h-3.5') }} Previous</a>

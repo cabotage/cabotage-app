@@ -9,7 +9,6 @@
   {% if current_user.is_authenticated %}
 
     <div class="app-content-padded" data-page="dashboard">
-      {# ===== Dashboard Header ===== #}
       <div class="flex items-center justify-between mb-8">
         <div>
           <h1 class="text-xl font-semibold text-base-content">Dashboard</h1>
@@ -22,7 +21,6 @@
         </a>
       </div>
 
-      {# ===== Quick Stats ===== #}
       {% set org_count = current_user.organizations|length if current_user.organizations else 0 %}
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
         {{ stat_card(org_count, 'Organizations', 'building', 'primary') }}
@@ -31,7 +29,6 @@
         {{ stat_card(deploy_count, 'Deployments', 'deploy', 'success') }}
       </div>
 
-      {# ===== Quick Actions ===== #}
       <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Quick Actions</h2>
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <a href="{{ url_for('user.organizations') }}"
@@ -92,7 +89,6 @@
 
   {% else %}
 
-    {# ===== Anonymous Landing ===== #}
     <div class="hero-gradient">
       <div class="flex flex-col items-center text-center py-12 lg:py-20">
         <div class="p-3 rounded-xl bg-primary/10 text-primary mb-6">

@@ -1,5 +1,3 @@
-{# ===== RESOURCE PATH (Breadcrumb in top bar) ===== #}
-
 {% macro resource_path(items) %}
   <div class="resource-path flex">
     {% for item in items %}
@@ -16,9 +14,6 @@
   </div>
 {% endmacro %}
 
-
-{# ===== PAGE HEADER ===== #}
-
 {% macro page_header(title, subtitle='') %}
   <div class="page-header">
     <div>
@@ -29,9 +24,6 @@
   </div>
 {% endmacro %}
 
-
-{# ===== STAT CARD ===== #}
-
 {% macro stat_card(value, label, icon_name='', color='primary') %}
   <div class="stat-card">
     <div class="flex items-center gap-2">
@@ -41,9 +33,6 @@
     <span class="stat-card-label">{{ label }}</span>
   </div>
 {% endmacro %}
-
-
-{# ===== TAB NAV ===== #}
 
 {% macro tab_nav(tabs, tab_bar_class='') %}
   <div class="tab-bar {{ tab_bar_class }}" data-tabs>
@@ -68,9 +57,6 @@
     {% endfor %}
   </div>
 {% endmacro %}
-
-
-{# ===== APP TAB NAV (URL-based, for sub-pages) ===== #}
 
 {% macro app_tab_nav(application, active='') %}
   {% set org_slug = application.project.organization.slug %}
@@ -103,9 +89,6 @@
     </div>
   </div>
 {% endmacro %}
-
-
-{# ===== SERVICE CARD ===== #}
 
 {% macro service_card(name, slug, url, status='', meta_items=[], color='accent', icon_name='box', github_repo='') %}
   <a href="{{ url }}"
@@ -142,9 +125,6 @@
     {% endif %}
   </a>
 {% endmacro %}
-
-
-{# ===== ORG CARD ===== #}
 
 {% macro org_card(name, slug, url, project_count=0, app_count=0, member_count=0, last_deploy=none, color_index=0) %}
   {% set colors = ["#8b5cf6", "#3b82f6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444"] %}
@@ -187,9 +167,6 @@
   </a>
 {% endmacro %}
 
-
-{# ===== EMPTY STATE ===== #}
-
 {% macro empty_state(title, description='', action_url='', action_text='', icon_name='box') %}
   <div class="empty-state">
     <div class="text-base-content/15 mb-4">{{ icon(icon_name, 'w-12 h-12') }}</div>
@@ -203,9 +180,6 @@
     {% endif %}
   </div>
 {% endmacro %}
-
-
-{# ===== FORM FIELD RENDERING ===== #}
 
 {% macro render_field_compact(field, placeholder='', extra_class='', label='') %}
   <fieldset class="fieldset w-full">
@@ -278,9 +252,6 @@
   </fieldset>
 {% endmacro %}
 
-
-{# ===== FORM WRAPPER ===== #}
-
 {% macro render_form(form, action='', method='post', enctype=None, btn_text='Submit', btn_class='btn-primary') %}
   <form method="{{ method }}"
         action="{{ action }}"
@@ -297,9 +268,6 @@
     </div>
   </form>
 {% endmacro %}
-
-
-{# ===== STATUS BADGE ===== #}
 
 {% macro status_badge(status, size='sm') %}
   {% set s = status|lower if status else 'unknown' %}
@@ -327,9 +295,6 @@
     <span class="badge badge-ghost badge-{{ size }}">{{ status or 'Unknown' }}</span>
   {% endif %}
 {% endmacro %}
-
-
-{# ===== CREATE MODAL ===== #}
 
 {% macro create_modal(modal_id, title, form, action_url, submit_text, name_field, slug_field, extra_fields=[], subtitle='') %}
   <div id="{{ modal_id }}" class="raw-editor-modal hidden">
@@ -382,9 +347,6 @@
 })();
   </script>
 {% endmacro %}
-
-
-{# ===== ICONS (inline SVGs) ===== #}
 
 {% macro icon(name, size='w-4 h-4') %}
   {% if name == 'plus' %}

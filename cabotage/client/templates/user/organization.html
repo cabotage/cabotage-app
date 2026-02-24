@@ -27,7 +27,6 @@
   {% set proj_count = organization.projects|length %}
   {% set member_count = organization.members|length %}
 
-  {# Compute last deploy across all apps #}
   {% set latest_deploy = namespace(ts=none) %}
   {% for p in organization.projects %}
     {% for app in p.project_applications %}
@@ -39,7 +38,6 @@
     {% endfor %}
   {% endfor %}
 
-  {# ===== PAGE HEADER ===== #}
   {% call page_header(organization.name, 'Organization') %}
     <button type="button"
             onclick="document.getElementById('create-project-modal').classList.remove('hidden')"
@@ -49,7 +47,6 @@
     </button>
   {% endcall %}
 
-  {# ===== PROJECTS TAB ===== #}
   <div data-tab-panel="projects" class="tab-panel">
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
       {{ stat_card(proj_count, 'Projects', 'folder', 'secondary') }}
@@ -125,7 +122,6 @@
     {% endif %}
   </div>
 
-  {# ===== MEMBERS TAB ===== #}
   <div data-tab-panel="members" class="tab-panel">
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
       {{ stat_card(member_count, 'Members', 'users', 'secondary') }}
@@ -217,7 +213,6 @@
     {% endif %}
   </div>
 
-  {# ===== CREATE PROJECT MODAL ===== #}
   {% from "_macros.html" import create_modal %}
   {% if project_create_form is defined %}
     {{ create_modal(modal_id='create-project-modal',
@@ -231,7 +226,6 @@
     ) }}
   {% endif %}
 
-  {# ===== ADD MEMBER MODAL ===== #}
   {% if is_admin and add_member_form is defined %}
     <div id="add-member-modal" class="raw-editor-modal hidden">
       <div class="raw-editor-backdrop" data-modal-close="add-member-modal"></div>

@@ -22,7 +22,6 @@
     </button>
   {% endcall %}
 
-  {# Compute stats #}
   {% set app_count = project.project_applications|length %}
   {% set total_instances = namespace(n=0) %}
   {% set running_count = namespace(n=0) %}
@@ -41,7 +40,6 @@
     {% endif %}
   {% endfor %}
 
-  {# Stats row #}
   <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
     {{ stat_card(app_count, 'Applications', 'box', 'accent') }}
     {{ stat_card(total_instances.n, 'Instances', 'layers', 'secondary') }}
@@ -49,11 +47,9 @@
     {% if errored_count.n > 0 %}{{ stat_card(errored_count.n, 'Errors', 'alert-triangle', 'error') }}{% endif %}
   </div>
 
-  {# Applications Grid / Service Cards #}
   {% if project.project_applications %}
     <div class="flex items-center gap-3 mb-3">
       <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider">Services</h2>
-      {# Health bar #}
       {% if app_count > 0 %}
         <div class="health-bar">
           {% if running_count.n > 0 %}

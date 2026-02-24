@@ -69,7 +69,6 @@
         <a href="{{ url_for('user.deployment_detail', deployment_id=deployment.id) }}"
            class="dpl-row {{ 'dpl-row-active' if is_active }} {{ 'dpl-row-error' if deployment.error }} {{ 'dpl-row-deploying' if not deployment.complete and not deployment.error }}">
 
-          {# Status icon #}
           {% if deployment.complete %}
             <span class="dpl-row-icon dpl-row-icon-ok">{{ icon('check', 'w-3.5 h-3.5') }}</span>
           {% elif deployment.error %}
@@ -86,7 +85,6 @@
             </span>
           {% endif %}
 
-          {# Body #}
           <div class="dpl-row-body">
             <div class="dpl-row-primary">
               {% if dep_rel %}
@@ -144,13 +142,11 @@
             {% endif %}
           </div>
 
-          {# Timestamp #}
           <span class="dpl-row-time"><time data-timestamp="{{ deployment.updated|isoformat_utc }}">{{ deployment.updated|humanize }}</time></span>
         </a>
       {% endfor %}
     </div>
 
-    {# Pagination #}
     <div class="flex items-center justify-between mt-4">
       {% if page > 1 %}
         <a href="?page={{ page - 1 }}" class="btn btn-ghost btn-sm gap-1">{{ icon('arrow-left', 'w-3.5 h-3.5') }} Previous</a>

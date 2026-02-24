@@ -1,6 +1,4 @@
-/* ===== Cabotage PaaS - Vanilla JS ===== */
-
-/* ---------- Slugify ---------- */
+/* Slugify */
 function slugify(text) {
   return text
     .toString()
@@ -29,7 +27,7 @@ function applySlugify(sourceSelector, destinationSelector) {
   });
 }
 
-/* ---------- Tab Navigation ---------- */
+/* Tab Navigation */
 function initTabs(containerSelector) {
   var container = document.querySelector(containerSelector || '[data-tabs]');
   if (!container) return;
@@ -42,7 +40,6 @@ function initTabs(containerSelector) {
       t.classList.toggle('tab-active', t.getAttribute('data-tab') === tabId);
     });
 
-    // Emit lifecycle events before toggling visibility
     panels.forEach(function (p) {
       var panelId = p.getAttribute('data-tab-panel');
       if (panelId === tabId) {
@@ -54,7 +51,6 @@ function initTabs(containerSelector) {
       }
     });
 
-    // Update URL hash without scrolling
     if (history.replaceState) {
       history.replaceState(null, null, '#' + tabId);
     }
@@ -67,7 +63,6 @@ function initTabs(containerSelector) {
     });
   });
 
-  // Activate from URL hash or default to first tab
   var hash = window.location.hash.replace('#', '');
   var validTab = false;
   tabs.forEach(function (t) {
@@ -81,7 +76,7 @@ function initTabs(containerSelector) {
   }
 }
 
-/* ---------- Increment/Decrement (Process Scaling) ---------- */
+/* Increment/Decrement (Process Scaling) */
 function initCountInputs() {
   document.querySelectorAll('.incr-btn').forEach(function (button) {
     button.addEventListener('click', function (e) {
@@ -102,14 +97,12 @@ function initCountInputs() {
         if (input.value == 0 && decrBtn) decrBtn.classList.add('inactive');
       }
 
-      // Show the update button
       document.querySelectorAll('.update_process_settings').forEach(function (el) {
         el.classList.remove('hidden');
       });
     });
   });
 
-  // Pod size change handler
   document.querySelectorAll('.pod-size').forEach(function (select) {
     select.addEventListener('change', function () {
       document.querySelectorAll('.update_process_settings').forEach(function (el) {
@@ -119,7 +112,7 @@ function initCountInputs() {
   });
 }
 
-/* ---------- Env Var Reveal ---------- */
+/* Env Var Reveal */
 function initEnvReveal() {
   document.querySelectorAll('[data-reveal]').forEach(function (btn) {
     btn.addEventListener('click', function () {
@@ -136,7 +129,7 @@ function initEnvReveal() {
   });
 }
 
-/* ---------- Dropdown Close ---------- */
+/* Dropdown Close */
 function initDropdowns() {
   document.addEventListener('click', function (e) {
     if (!e.target.closest('.dropdown')) {
@@ -147,7 +140,7 @@ function initDropdowns() {
   });
 }
 
-/* ---------- Mobile Nav Toggle ---------- */
+/* Mobile Nav Toggle */
 function initMobileNav() {
   var toggle = document.getElementById('mobile-nav-toggle');
   var menu = document.getElementById('mobile-nav-menu');
@@ -157,7 +150,6 @@ function initMobileNav() {
     });
   }
 
-  /* Clone tab-bar links into mobile menu */
   var tabBar = document.querySelector('[data-tabs]');
   var mobileTabsContainer = document.getElementById('mobile-nav-tabs');
   var mobileDivider = document.getElementById('mobile-nav-divider');
@@ -182,7 +174,7 @@ function initMobileNav() {
   }
 }
 
-/* ---------- Theme Toggle (click cycles, long-hover reveals dropdown) ---------- */
+/* Theme Toggle (click cycles, long-hover reveals dropdown) */
 function initThemeToggle() {
   function resolveSystem() {
     return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
@@ -202,7 +194,6 @@ function initThemeToggle() {
       };
       meta.content = metaColors[resolved] || '#0f0f17';
     }
-    // When entering terminal, auto-switch accent to white
     var accent = localStorage.getItem('accent-color') || 'purple';
     if (resolved === 'terminal' && accent !== 'white' && accent !== 'dark') {
       accent = 'white';
@@ -215,7 +206,6 @@ function initThemeToggle() {
     if (window.__applyAccent) window.__applyAccent(accent, resolved);
   }
 
-  // Click cycles light→dark→system; hover reveals dropdown
   var cycleThemes = ['light', 'dark', 'system'];
 
   document.querySelectorAll('.theme-toggle-wrap').forEach(function (wrap) {
@@ -241,25 +231,21 @@ function initThemeToggle() {
       applyPref(next);
     }
 
-    // Click cycles theme
     btn.addEventListener('click', function (e) {
       e.stopPropagation();
       hide();
       cycleTheme();
     });
 
-    // Hover opens dropdown (with small delay on leave to allow moving to it)
     wrap.addEventListener('mouseenter', show);
     wrap.addEventListener('mouseleave', hideDelayed);
 
-    // Close on click outside
     document.addEventListener('click', function (e) {
       if (!wrap.contains(e.target)) {
         hide();
       }
     });
 
-    // Theme option clicks
     dropdown.querySelectorAll('.theme-opt').forEach(function (opt) {
       opt.addEventListener('click', function (e) {
         e.stopPropagation();
@@ -269,7 +255,6 @@ function initThemeToggle() {
     });
   });
 
-  // Listen for system theme changes (update resolved theme when in system mode)
   window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', function () {
     var pref = localStorage.getItem('theme-pref') || 'system';
     if (pref === 'system') {
@@ -277,12 +262,11 @@ function initThemeToggle() {
     }
   });
 
-  // Ensure data-theme-pref attribute is set on load
   var pref = localStorage.getItem('theme-pref') || 'system';
   document.documentElement.setAttribute('data-theme-pref', pref);
 }
 
-/* ---------- Accent Color Picker (lives inside theme dropdown) ---------- */
+/* Accent Color Picker (lives inside theme dropdown) */
 function initAccentPicker() {
   function getResolvedTheme() {
     var pref = localStorage.getItem('theme-pref') || 'system';
@@ -305,7 +289,6 @@ function initAccentPicker() {
   var current = localStorage.getItem('accent-color') || 'purple';
   markActive(current);
 
-  // Bind all accent swatch buttons (inside theme dropdowns)
   document.querySelectorAll('.accent-opt').forEach(function (opt) {
     opt.addEventListener('click', function (e) {
       e.stopPropagation();
@@ -319,7 +302,7 @@ function initAccentPicker() {
   });
 }
 
-/* ---------- Raw Editor Modal ---------- */
+/* Raw Editor Modal */
 function initRawEditor() {
   var modal = document.getElementById('raw-editor-modal');
   if (!modal) return;
@@ -347,14 +330,12 @@ function initRawEditor() {
   if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
   if (backdrop) backdrop.addEventListener('click', closeModal);
 
-  // Escape key
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && modal.style.display !== 'none') {
       closeModal();
     }
   });
 
-  // Tab switching
   tabs.forEach(function (tab) {
     tab.addEventListener('click', function () {
       var tabId = tab.getAttribute('data-editor-tab');
@@ -366,7 +347,6 @@ function initRawEditor() {
       });
       if (formatInput) formatInput.value = tabId;
 
-      // Update placeholder
       if (textarea) {
         if (tabId === 'json') {
           textarea.placeholder = '{\n  "DATABASE_URL": "postgres://...",\n  "REDIS_URL": "redis://..."\n}';
@@ -378,7 +358,6 @@ function initRawEditor() {
     });
   });
 
-  // Copy ENV button
   if (copyBtn) {
     copyBtn.addEventListener('click', function () {
       var dataEl = document.getElementById('env-export-data');
@@ -398,13 +377,12 @@ function initRawEditor() {
           }, 1500);
         });
       } catch (e) {
-        // ignore
       }
     });
   }
 }
 
-/* ---------- Add Variable Modal ---------- */
+/* Add Variable Modal */
 function initAddVarModal() {
   var modal = document.getElementById('add-var-modal');
   if (!modal) return;
@@ -423,24 +401,20 @@ function initAddVarModal() {
     modal.style.display = 'none';
   }
 
-  // Open buttons
   document.querySelectorAll('#add-var-open, [data-add-var-open]').forEach(function (btn) {
     btn.addEventListener('click', openModal);
   });
 
-  // Close buttons/backdrop
   modal.querySelectorAll('[data-add-var-close]').forEach(function (el) {
     el.addEventListener('click', closeModal);
   });
 
-  // Escape key
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && modal.style.display !== 'none') {
       closeModal();
     }
   });
 
-  // Auto-uppercase name field
   var nameField = modal.querySelector('input[name="name"]');
   if (nameField) {
     nameField.addEventListener('input', function () {
@@ -451,7 +425,7 @@ function initAddVarModal() {
   }
 }
 
-/* ---------- Expand Modal ---------- */
+/* Expand Modal */
 function initExpandModal() {
   var modal = document.getElementById('expand-modal');
   if (!modal) return;
@@ -496,7 +470,6 @@ function initExpandModal() {
     });
   }
 
-  // Bind all expand buttons
   document.querySelectorAll('[data-expand]').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var targetId = btn.getAttribute('data-expand');
@@ -508,7 +481,7 @@ function initExpandModal() {
   });
 }
 
-/* ---------- Detail Log Height Sync ---------- */
+/* Detail Log Height Sync */
 function getColumnNaturalHeight(col) {
   var children = col.children;
   var gap = parseFloat(getComputedStyle(col).rowGap) || 16;
@@ -529,10 +502,8 @@ function autoExpandCollapsibleCards() {
   var cards = left.querySelectorAll('details[data-collapsible-card]');
   if (!cards.length) return;
 
-  /* Measure right column natural height (sum of children) */
   var logHeight = getColumnNaturalHeight(logCol);
 
-  /* Open left-column cards one by one while left is shorter than right */
   for (var i = 0; i < cards.length; i++) {
     if (getColumnNaturalHeight(left) >= logHeight) break;
     cards[i].open = true;
@@ -555,7 +526,7 @@ function syncDetailLogHeight() {
   logViewer.style.maxHeight = Math.max(h, 200) + 'px';
 }
 
-/* ---------- Build Progress Tracker ---------- */
+/* Build Progress Tracker */
 function BuildProgressTracker(barFill, phaseLabel, type, stepsContainer, elapsedEl, serverStartTime) {
   this.barFill = barFill;
   this.phaseLabel = phaseLabel;
@@ -575,7 +546,6 @@ function BuildProgressTracker(barFill, phaseLabel, type, stepsContainer, elapsed
   this.phaseStartTimes = {};
   this.phaseDurations = {};
 
-  // Define step pipelines
   if (this.type === 'deploy') {
     this.steps = [
       { id: 'setup', label: 'Setup', patterns: [/Constructing API Clients/i], progress: 5 },
@@ -654,12 +624,10 @@ BuildProgressTracker.prototype.setStep = function (idx) {
   if (idx <= this.currentStepIdx) return;
   var prevIdx = this.currentStepIdx;
   this.currentStepIdx = idx;
-  // Finalize duration for the previous step
   if (prevIdx >= 0 && this.phaseStartTimes[prevIdx] && !this.phaseDurations[prevIdx]) {
     this.phaseDurations[prevIdx] = (Date.now() - this.phaseStartTimes[prevIdx]) / 1000;
     this.showStepDuration(prevIdx);
   }
-  // Start timing the new step
   this.phaseStartTimes[idx] = Date.now();
   if (!this.stepEls) return;
   for (var i = 0; i < this.stepEls.length; i++) {
@@ -714,7 +682,6 @@ BuildProgressTracker.prototype.processLine = function (line) {
 };
 
 BuildProgressTracker.prototype.processBuildLine = function (line) {
-  // Detect error/failure patterns in build logs
   if (/error|failed|failure|exception|traceback/i.test(line) && !/no error/i.test(line) && !/warning/i.test(line)) {
     this.errored = true;
     if (this.errorStepIdx < 0) this.errorStepIdx = Math.max(this.currentStepIdx, 0);
@@ -762,7 +729,6 @@ BuildProgressTracker.prototype.processBuildLine = function (line) {
 };
 
 BuildProgressTracker.prototype.processDeployLine = function (line) {
-  // Detect error/failure patterns in deploy logs
   if (/error|failed|failure|exception|traceback|timed?\s*out/i.test(line) && !/no error/i.test(line)) {
     this.errored = true;
     if (this.errorStepIdx < 0) this.errorStepIdx = Math.max(this.currentStepIdx, 0);
@@ -791,7 +757,6 @@ BuildProgressTracker.prototype.processDeployLine = function (line) {
 BuildProgressTracker.prototype.complete = function () {
   this.stopTimer();
 
-  // No log content was received — don't show false success
   if (this.linesReceived === 0) {
     this.setPhase('No logs available');
     return;
@@ -799,7 +764,6 @@ BuildProgressTracker.prototype.complete = function () {
 
   this.activate();
 
-  // Finalize duration for the last active step
   if (
     this.currentStepIdx >= 0 &&
     this.phaseStartTimes[this.currentStepIdx] &&
@@ -810,7 +774,6 @@ BuildProgressTracker.prototype.complete = function () {
   }
 
   if (this.errored) {
-    // Show error state — don't advance progress to 100%
     var failedAt = this.errorStepIdx >= 0 ? this.errorStepIdx : this.currentStepIdx;
     this.setPhase('Failed');
     if (this.barFill) this.barFill.classList.add('deploy-progress-bar-error');
@@ -827,7 +790,6 @@ BuildProgressTracker.prototype.complete = function () {
     return;
   }
 
-  // Success path
   this.setProgress(100);
   this.setPhase('Complete');
   this.setStep(this.steps.length - 1);
@@ -840,7 +802,7 @@ BuildProgressTracker.prototype.complete = function () {
   }
 };
 
-/* ---------- Auto-deploy next-step redirect ---------- */
+/* Auto-deploy next-step redirect */
 /* After an auto-deploy build/package finishes, poll the current page
    until the server populates next_step_url, then redirect there
    so the user follows the pipeline: image → release → deployment. */
@@ -852,7 +814,6 @@ function pollForNextStep(appId, stage) {
   var maxAttempts = 40; // 40 × 3s = 2 min max wait
   var banner = document.getElementById('nextStepBanner');
 
-  // Show the "building next" banner immediately
   if (banner) banner.hidden = false;
 
   (function poll() {
@@ -871,18 +832,14 @@ function pollForNextStep(appId, stage) {
             target = '/deployment/' + data.deploy.id;
           }
           if (target) {
-            // Update banner link so user can click it even before auto-redirect
             if (banner) {
               var link = banner.querySelector('a');
               if (link) link.href = target;
             }
-            // Replace (not push) so back button skips this page
-            // instead of bouncing back into the auto-redirect
             window.location.replace(target);
           } else if (attempts < maxAttempts) {
             poll();
           }
-          // After max attempts, just stay on the page (already shows complete state)
         })
         .catch(function () {
           if (attempts < maxAttempts) poll();
@@ -891,7 +848,7 @@ function pollForNextStep(appId, stage) {
   })();
 }
 
-/* ---------- Pipeline Tracker (Overview Page) ---------- */
+/* Pipeline Tracker (Overview Page) */
 function PipelineTracker(container) {
   this.container = container;
   this.appId = container.getAttribute('data-application-id');
@@ -909,13 +866,11 @@ function PipelineTracker(container) {
   this._lastFingerprint = ''; // track state changes for live section refresh
   this._refreshing = false;
 
-  // Live commit indicator state
   this.commitEl = document.getElementById('liveCommitStatus');
   this.currentCommit = this.commitEl ? this.commitEl.getAttribute('data-commit-sha') : null;
   this.githubRepo = this.commitEl ? this.commitEl.getAttribute('data-github-repo') : null;
   this.commitLastChanged = Date.now();
 
-  // Check initial state and start polling (idle rate until pipeline detected)
   this.poll();
   this.startPolling(10000); // idle: check every 10s for new pipelines
 }
@@ -937,9 +892,7 @@ PipelineTracker.prototype.poll = function () {
 
 PipelineTracker.prototype.startPolling = function (rate) {
   rate = rate || 3000;
-  // Already polling at this rate — no-op
   if (this.pollInterval && this.pollRate === rate) return;
-  // Switch rate: clear old interval, set new one
   if (this.pollInterval) clearInterval(this.pollInterval);
   var self = this;
   this.pollRate = rate;
@@ -969,10 +922,8 @@ PipelineTracker.prototype.update = function (data) {
   this.updateSegment('release', data.release);
   this.updateSegment('deploy', data.deploy);
 
-  // Update live commit indicator
   this.updateCommitIndicator(data);
 
-  // Build a fingerprint of the current state to detect changes
   var fp = [
     data.build ? data.build.status + ':' + data.build.id + ':' + data.build.version : '-',
     data.release ? data.release.status + ':' + data.release.id + ':' + data.release.version : '-',
@@ -985,7 +936,6 @@ PipelineTracker.prototype.update = function (data) {
   }
   this._lastFingerprint = fp;
 
-  // Pipeline just finished — hide progress bar, refresh page sections, drop to idle
   if (!data.pipeline_active && !this.settled && this.pollRate === 3000) {
     this.settled = true;
     this.startPolling(10000); // back to idle polling
@@ -1004,13 +954,11 @@ PipelineTracker.prototype.hideProgress = function () {
   if (this.bannersEl) this.bannersEl.style.display = '';
 };
 
-/* Flash pipeline card borders to alert on state changes. */
 PipelineTracker.prototype.flashPipelineCards = function () {
   var cards = document.querySelectorAll('.pipeline-stage');
   var segments = document.querySelectorAll('.pipe-segment');
   function flash(el, cls) {
     el.classList.remove(cls);
-    // Force reflow so removing+adding the class restarts the animation
     void el.offsetWidth;
     el.classList.add(cls);
     el.addEventListener(
@@ -1110,14 +1058,12 @@ PipelineTracker.prototype.updateSegment = function (name, info) {
     }
   }
 
-  // Render sub-step indicators when progress data is available
   var stepsEl = seg.querySelector('.pipe-seg-steps');
   if (info.progress && info.progress.steps && info.progress.current >= 0) {
     var p = info.progress;
     if (!stepsEl) {
       stepsEl = document.createElement('div');
       stepsEl.className = 'pipe-seg-steps';
-      // Insert after the track bar
       var track = seg.querySelector('.pipe-seg-track');
       if (track) track.parentNode.insertBefore(stepsEl, track.nextSibling);
     }
@@ -1139,7 +1085,6 @@ PipelineTracker.prototype.updateSegment = function (name, info) {
     }
     stepsEl.innerHTML = html;
 
-    // Update fill bar to reflect step progress (only for in-progress)
     if (fill && p.steps.length > 1 && !isComplete) {
       var pct = Math.round((p.current / (p.steps.length - 1)) * 100);
       fill.style.width = Math.max(pct, 5) + '%';
@@ -1148,7 +1093,6 @@ PipelineTracker.prototype.updateSegment = function (name, info) {
     stepsEl.innerHTML = '';
   }
 
-  // Update detail link
   if (link && info.id) {
     var base = name === 'build' ? '/image/' : name === 'release' ? '/release/' : '/deployment/';
     link.href = base + info.id;
@@ -1162,7 +1106,6 @@ PipelineTracker.prototype.updateCommitIndicator = function (data) {
   var repo = data.github_repository || this.githubRepo;
   var pipelineActive = data.pipeline_active;
 
-  // Detect commit change
   if (sha && sha !== this.currentCommit) {
     this.currentCommit = sha;
     this.commitLastChanged = Date.now();
@@ -1173,7 +1116,6 @@ PipelineTracker.prototype.updateCommitIndicator = function (data) {
     this.commitEl.setAttribute('data-github-repo', repo);
   }
 
-  // Sync commit_info data attrs for the popup
   var ci = data.commit_info;
   if (ci) {
     if (ci.deploy_time) this.commitEl.setAttribute('data-deploy-time', ci.deploy_time);
@@ -1185,7 +1127,6 @@ PipelineTracker.prototype.updateCommitIndicator = function (data) {
     if (ci.image_id) this.commitEl.setAttribute('data-image-id', ci.image_id);
   }
 
-  // Build the indicator content
   var dotClass = 'live-commit-dot';
   var shaHtml = '';
   var staleSeconds = (Date.now() - this.commitLastChanged) / 1000;
@@ -1198,7 +1139,6 @@ PipelineTracker.prototype.updateCommitIndicator = function (data) {
     dotClass += ' live-commit-dot-ok';
   }
 
-  // Track whether pipeline was recently active (for stale detection)
   if (pipelineActive) this._pipelineWasActive = true;
   if (!pipelineActive && sha && sha !== this._lastRenderedCommit) {
     this._pipelineWasActive = false;
@@ -1225,7 +1165,6 @@ PipelineTracker.prototype.updateCommitIndicator = function (data) {
     dotClass += ' live-commit-dot-ok';
   }
 
-  // Flash animation on commit change
   var freshClass = '';
   if (sha && sha !== this._lastRenderedCommit && this._lastRenderedCommit) {
     freshClass = ' live-commit-fresh';
@@ -1235,7 +1174,6 @@ PipelineTracker.prototype.updateCommitIndicator = function (data) {
   this.commitEl.className = 'live-commit commit-popup-anchor' + freshClass;
   this.commitEl.innerHTML = '<span class="' + dotClass + '"></span>' + shaHtml;
 
-  // Remove flash class after animation
   if (freshClass) {
     var el = this.commitEl;
     setTimeout(function () {
@@ -1244,7 +1182,7 @@ PipelineTracker.prototype.updateCommitIndicator = function (data) {
   }
 };
 
-/* ---------- Commit Popup ---------- */
+/* Commit Popup */
 var _commitPopup = null;
 var _commitCache = {};
 
@@ -1272,18 +1210,15 @@ function initCommitPopup() {
     }, 300);
   }
 
-  // Hover on the commit area opens popup
   commitEl.addEventListener('mouseenter', showPopup);
   commitEl.addEventListener('mouseleave', hidePopup);
 
-  // Keep popup open while hovering over it
   commitEl.addEventListener('mouseover', function (e) {
     if (e.target.closest && e.target.closest('.commit-popup')) {
       clearTimeout(leaveTimeout);
     }
   });
 
-  // Delegated click: intercept any .live-commit-sha link (survives innerHTML rebuilds)
   commitEl.addEventListener('click', function (e) {
     if (e.ctrlKey || e.metaKey) return;
     var link = e.target.closest('a.live-commit-sha');
@@ -1295,7 +1230,6 @@ function initCommitPopup() {
     }
   });
 
-  // Close on click outside or Escape
   document.addEventListener('click', function (e) {
     if (_commitPopup && !commitEl.contains(e.target)) {
       closeCommitPopup();
@@ -1326,21 +1260,17 @@ function toggleCommitPopup(el) {
   var imageId = el.getAttribute('data-image-id') || '';
   var deploysUrl = el.getAttribute('data-deploys-url') || '';
 
-  // Build popup HTML
-  // Header — "Deployed via GitHub" like Railway
   var html = '<div class="commit-popup-header">';
   html +=
     '<svg class="commit-popup-github-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>';
   html += '<span class="commit-popup-header-text">Deployed via GitHub</span>';
   html += '</div>';
 
-  // Commit message area (filled by API fetch)
   html += '<div class="commit-popup-message commit-popup-loading">';
   html += '<span class="commit-popup-author-area" data-commit-author-area></span>';
   html += '<span data-commit-msg-text>Loading...</span>';
   html += '</div>';
 
-  // Meta rows
   html += '<div class="commit-popup-meta">';
   if (repo) {
     var repoShort = repo.split('/').pop() || repo;
@@ -1379,7 +1309,6 @@ function toggleCommitPopup(el) {
   }
   html += '</div>';
 
-  // Full SHA + copy
   html += '<div class="commit-popup-sha">';
   html += '<code title="' + sha + '">' + sha + '</code>';
   html += '<button class="commit-popup-copy" title="Copy SHA" data-copy-sha="' + sha + '">';
@@ -1388,7 +1317,6 @@ function toggleCommitPopup(el) {
   html += '</button>';
   html += '</div>';
 
-  // Links
   html += '<div class="commit-popup-links">';
   if (repo) {
     html +=
@@ -1409,7 +1337,6 @@ function toggleCommitPopup(el) {
   el.appendChild(popup);
   _commitPopup = popup;
 
-  // Copy button handler
   var copyBtn = popup.querySelector('[data-copy-sha]');
   if (copyBtn) {
     copyBtn.addEventListener('click', function (e) {
@@ -1425,12 +1352,10 @@ function toggleCommitPopup(el) {
     });
   }
 
-  // Animate in
   requestAnimationFrame(function () {
     popup.classList.add('commit-popup-open');
   });
 
-  // Fetch commit message from GitHub API
   if (repo && sha) {
     fetchCommitMessage(repo, sha, popup.querySelector('.commit-popup-message'));
   }
@@ -1488,7 +1413,6 @@ function renderCommitMessage(el, info) {
   if (!el) return;
   el.classList.remove('commit-popup-loading');
 
-  // Author avatar + name in the author area
   var authorArea = el.querySelector('[data-commit-author-area]');
   if (authorArea && (info.avatar || info.author)) {
     var avatarHtml = '';
@@ -1504,7 +1428,6 @@ function renderCommitMessage(el, info) {
     authorArea.innerHTML = avatarHtml;
   }
 
-  // Commit message text
   var msgText = el.querySelector('[data-commit-msg-text]');
   var target = msgText || el;
   var lines = info.message.split('\n');
@@ -1523,8 +1446,7 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-/* ---------- Live Timestamp Ticker ---------- */
-/* Keeps all <time data-timestamp="..."> elements up-to-date every second */
+/* Live Timestamp Ticker */
 
 function timeago(date) {
   var now = Date.now();
@@ -1592,13 +1514,10 @@ function initPipelineTracker() {
   if (container && !isLowDataMode()) {
     window.pipelineTracker = new PipelineTracker(container);
   }
-  // Always start the timestamp ticker on pages with timestamps
   if (document.querySelector('time[data-timestamp]')) {
     startTimestampTicker();
   }
 
-  // Auto-deploy form: show spinner, let browser submit normally so
-  // it follows the server redirect to the image build page.
   var deployForm = document.querySelector('[data-full-deploy-form]');
   if (deployForm) {
     deployForm.addEventListener('submit', function () {
@@ -1611,7 +1530,7 @@ function initPipelineTracker() {
   }
 }
 
-/* ---------- Pipeline Toast Notifications ---------- */
+/* Pipeline Toast Notifications */
 
 function showPipelineToast(pipeline) {
   if (localStorage.getItem('pipeline-toasts') === 'false') return;
@@ -1642,7 +1561,6 @@ function showPipelineToast(pipeline) {
     '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
     '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>';
 
-  // Dismiss on X click (don't navigate)
   toast.querySelector('.pipeline-toast-dismiss').addEventListener('click', function (e) {
     e.preventDefault();
     e.stopPropagation();
@@ -1651,7 +1569,6 @@ function showPipelineToast(pipeline) {
 
   container.appendChild(toast);
 
-  // Auto-dismiss after 15 seconds
   setTimeout(function () {
     dismissToast(toast);
   }, 15000);
@@ -1700,7 +1617,6 @@ DashboardPipelinePoller.prototype.update = function (pipelines) {
   for (var i = 0; i < pipelines.length; i++) {
     var p = pipelines[i];
     nowActive[p.app_id] = p;
-    // Skip toast for the app already tracked inline on this page
     if (p.app_id === this.excludeAppId) continue;
     if (!this.knownActive[p.app_id]) {
       showPipelineToast(p);
@@ -1711,18 +1627,15 @@ DashboardPipelinePoller.prototype.update = function (pipelines) {
 
 function initDashboardPoller() {
   if (isLowDataMode()) return;
-  // Run on any authenticated page that has the toast container
   var toastContainer = document.getElementById('pipeline-toasts');
   if (!toastContainer) return;
-  // Skip pages that already have a PipelineTracker (app overview) —
-  // those apps are already tracked inline, avoid duplicate toasts
   var trackedAppId = null;
   var trackerEl = document.querySelector('[data-pipeline-tracker]');
   if (trackerEl) trackedAppId = trackerEl.getAttribute('data-application-id');
   window.dashboardPoller = new DashboardPipelinePoller(trackedAppId);
 }
 
-/* ---------- Observability Panel ---------- */
+/* Observability Panel */
 function ObservabilityPanel(container) {
   this.container = container;
   this.appId = container.getAttribute('data-application-id');
@@ -1731,7 +1644,6 @@ function ObservabilityPanel(container) {
   this.timer = null;
   this.range = '1h';
 
-  // DOM refs
   this.cpuValue = container.querySelector('[data-obs-cpu-value]');
   this.cpuLimit = container.querySelector('[data-obs-cpu-limit]');
   this.cpuGauge = container.querySelector('[data-obs-cpu-gauge]');
@@ -1746,7 +1658,6 @@ function ObservabilityPanel(container) {
   this.podsGrid = container.querySelector('[data-obs-pods-grid]');
   this.eventsEl = container.querySelector('[data-obs-events]');
 
-  // Range buttons
   var self = this;
   var rangeButtons = container.querySelectorAll('[data-obs-range]');
   rangeButtons.forEach(function (btn) {
@@ -1760,7 +1671,6 @@ function ObservabilityPanel(container) {
     });
   });
 
-  // Listen for tab lifecycle
   var panel = container.closest('[data-tab-panel]');
   if (panel) {
     panel.addEventListener('tab-activated', function () {
@@ -1769,7 +1679,6 @@ function ObservabilityPanel(container) {
     panel.addEventListener('tab-deactivated', function () {
       self.deactivate();
     });
-    // If tab is already active (e.g. loaded via URL hash), activate now
     if (panel.classList.contains('tab-panel-active')) {
       self.activate();
     }
@@ -1846,7 +1755,6 @@ ObservabilityPanel.prototype.render = function (data) {
 ObservabilityPanel.prototype.updateGauges = function (current, limits) {
   if (!current) return;
 
-  // CPU
   var cpuVal = current.cpu_usage_m;
   if (cpuVal != null && this.cpuValue) {
     this.cpuValue.textContent = Math.round(cpuVal) + 'm';
@@ -1863,7 +1771,6 @@ ObservabilityPanel.prototype.updateGauges = function (current, limits) {
     this.cpuValue.textContent = '—';
   }
 
-  // Memory
   var memVal = current.memory_usage_bytes;
   if (memVal != null && this.memValue) {
     this.memValue.textContent = this.formatBytes(memVal);
@@ -1880,7 +1787,6 @@ ObservabilityPanel.prototype.updateGauges = function (current, limits) {
     this.memValue.textContent = '—';
   }
 
-  // Pods & Restarts
   if (this.podValue) this.podValue.textContent = current.pod_count || 0;
   if (this.podLabel) {
     var running = current.pod_count || 0;
@@ -1919,13 +1825,10 @@ ObservabilityPanel.prototype.renderChart = function (svgEl, history, key, limit,
   var dataMax = Math.max.apply(null, values);
   var dataMin = Math.min.apply(null, values);
 
-  // Auto-scale to data range with 20% headroom; show limit line as reference
   var maxVal = dataMax * 1.2 || 1;
-  // If limit is close to the data (within 2x), include it in the range
   if (limit && limit <= dataMax * 2) maxVal = Math.max(maxVal, limit * 1.05);
   if (maxVal === 0) maxVal = 1;
 
-  // Scale values
   var chartW = w - padL - padR;
   var chartH = h - padT - padB;
   var xStep = chartW / Math.max(values.length - 1, 1);
@@ -1935,7 +1838,6 @@ ObservabilityPanel.prototype.renderChart = function (svgEl, history, key, limit,
 
   var svg = '';
 
-  // Grid lines + Y-axis labels
   for (var g = 0; g < 4; g++) {
     var gy = padT + (chartH / 3) * g;
     var gridVal = maxVal * (1 - g / 3);
@@ -1951,7 +1853,6 @@ ObservabilityPanel.prototype.renderChart = function (svgEl, history, key, limit,
       '</text>';
   }
 
-  // Limit line (only draw if it falls within the visible range)
   if (limit && limit <= maxVal) {
     var ly = padT + chartH - (limit / maxVal) * chartH;
     svg += '<line x1="' + padL + '" y1="' + ly + '" x2="' + (w - padR) + '" y2="' + ly + '" class="obs-limit-line" />';
@@ -1966,7 +1867,6 @@ ObservabilityPanel.prototype.renderChart = function (svgEl, history, key, limit,
       ' limit</text>';
   }
 
-  // Area fill
   var pathD = 'M' + points[0].x + ',' + points[0].y;
   for (var i = 1; i < points.length; i++) {
     pathD += ' L' + points[i].x + ',' + points[i].y;
@@ -1976,7 +1876,6 @@ ObservabilityPanel.prototype.renderChart = function (svgEl, history, key, limit,
   svg += '<path d="' + areaD + '" class="obs-area-fill" fill="' + color + '" />';
   svg += '<path d="' + pathD + '" class="obs-line" stroke="' + color + '" />';
 
-  // Current value label at the last data point
   var lastPt = points[points.length - 1];
   var lastVal = values[values.length - 1];
   var currentLabel = isMemory ? self.formatBytes(lastVal) : Math.round(lastVal) + 'm';
@@ -2040,7 +1939,6 @@ ObservabilityPanel.prototype.updatePodsGrid = function (pods) {
   });
   this.podsGrid.innerHTML = html;
 
-  // Set up multi-select listener once (delegated, so safe across re-renders)
   if (self.logsUrl && !this._podClickBound) {
     this._podClickBound = true;
     this.podsGrid.addEventListener('click', function (e) {
@@ -2052,7 +1950,6 @@ ObservabilityPanel.prototype.updatePodsGrid = function (pods) {
         card.classList.toggle('obs-pod-selected');
         self.updateMultiPodLink();
       }
-      // Normal click: default <a> navigation (single pod)
     });
   }
 };
@@ -2062,13 +1959,11 @@ ObservabilityPanel.prototype.updateMultiPodLink = function () {
   var allCards = this.podsGrid.querySelectorAll('.obs-pod-card');
 
   if (selected.length > 1) {
-    // Build multi-pod URL and update all selected links
     var params = new URLSearchParams();
     selected.forEach(function (card) {
       params.append('pod', card.getAttribute('data-pod-name'));
     });
     var multiUrl = this.logsUrl + '?' + params.toString();
-    // Show a "View logs for N pods" action
     var existing = this.podsGrid.querySelector('.obs-pod-multi-action');
     if (!existing) {
       existing = document.createElement('a');
@@ -2079,10 +1974,8 @@ ObservabilityPanel.prototype.updateMultiPodLink = function () {
     existing.textContent = 'View logs for ' + selected.length + ' pods →';
     existing.style.display = '';
   } else {
-    // Remove multi-action if only 0-1 selected
     var existing = this.podsGrid.querySelector('.obs-pod-multi-action');
     if (existing) existing.style.display = 'none';
-    // Clear selection if 0
     if (selected.length === 0) {
       allCards.forEach(function (c) { c.classList.remove('obs-pod-selected'); });
     }
@@ -2129,30 +2022,26 @@ function initObservabilityPanel() {
   window.observabilityPanel = new ObservabilityPanel(container);
 }
 
-/* ---------- Pipeline Metrics Panel ---------- */
+/* Pipeline Metrics Panel */
 function PipelineMetricsPanel(container) {
   this.container = container;
   this.appId = container.getAttribute('data-application-id');
   this.active = false;
   this.range = 50;
 
-  // DOM refs — summary cards
   this.buildRate = container.querySelector('[data-pm-build-rate]');
   this.buildCounts = container.querySelector('[data-pm-build-counts]');
   this.buildAvg = container.querySelector('[data-pm-build-avg]');
   this.deployAvg = container.querySelector('[data-pm-deploy-avg]');
 
-  // DOM refs — stat chips
   this.buildChips = container.querySelector('[data-pm-build-chips]');
   this.releaseChips = container.querySelector('[data-pm-release-chips]');
   this.deployChips = container.querySelector('[data-pm-deploy-chips]');
 
-  // DOM refs — charts
   this.buildChart = container.querySelector('[data-pm-build-chart]');
   this.releaseChart = container.querySelector('[data-pm-release-chart]');
   this.deployChart = container.querySelector('[data-pm-deploy-chart]');
 
-  // Range buttons
   var self = this;
   var rangeButtons = container.querySelectorAll('[data-pm-range]');
   rangeButtons.forEach(function (btn) {
@@ -2166,7 +2055,6 @@ function PipelineMetricsPanel(container) {
     });
   });
 
-  // Tab lifecycle
   var panel = container.closest('[data-tab-panel]');
   if (panel) {
     panel.addEventListener('tab-activated', function () {
@@ -2216,7 +2104,6 @@ PipelineMetricsPanel.prototype.formatDuration = function (secs) {
 };
 
 PipelineMetricsPanel.prototype.render = function (data) {
-  // Summary cards
   if (this.buildRate) {
     this.buildRate.textContent =
       data.images.success_rate != null ? data.images.success_rate + '%' : '—';
@@ -2234,14 +2121,12 @@ PipelineMetricsPanel.prototype.render = function (data) {
     this.deployAvg.textContent = this.formatDuration(data.deployments.avg_secs);
   }
 
-  // Stage sections
   this.renderStage(this.buildChips, this.buildChart, data.images, '/image/');
   this.renderStage(this.releaseChips, this.releaseChart, data.releases, '/release/');
   this.renderStage(this.deployChips, this.deployChart, data.deployments, '/deployment/');
 };
 
 PipelineMetricsPanel.prototype.renderStage = function (chipsEl, svgEl, stage, urlPrefix) {
-  // Stat chips
   if (chipsEl) {
     var chips = '';
     chips += '<span class="pm-stat-chip">' + stage.total + ' total</span>';
@@ -2258,7 +2143,6 @@ PipelineMetricsPanel.prototype.renderStage = function (chipsEl, svgEl, stage, ur
     chipsEl.innerHTML = chips;
   }
 
-  // Bar chart
   this.renderBarChart(svgEl, stage.history, stage.avg_secs, urlPrefix);
 };
 
@@ -2279,7 +2163,6 @@ PipelineMetricsPanel.prototype.renderBarChart = function (svgEl, history, avgSec
   var gap = 2;
   var barW = Math.max(1, (w - padL - padR - (n - 1) * gap) / n);
 
-  // Compute ceiling from durations
   var maxSecs = 1;
   history.forEach(function (item) {
     if (item.secs != null && item.secs > maxSecs) maxSecs = item.secs;
@@ -2288,7 +2171,6 @@ PipelineMetricsPanel.prototype.renderBarChart = function (svgEl, history, avgSec
 
   var svg = '';
 
-  // Avg line
   if (avgSecs != null && avgSecs > 0) {
     var avgY = h - padTB - (avgSecs / ceiling) * (h - 2 * padTB);
     svg +=
@@ -2299,14 +2181,12 @@ PipelineMetricsPanel.prototype.renderBarChart = function (svgEl, history, avgSec
       'fill="var(--text-faintest)" font-size="10">avg</text>';
   }
 
-  // Bars
   var self = this;
   history.forEach(function (item, i) {
     var x = padL + i * (barW + gap);
     var secs = item.secs;
     var href = item.id && urlPrefix ? urlPrefix + item.id : null;
     if (secs == null || secs <= 0) {
-      // In-progress or no duration — show minimal gray bar
       var stub =
         '<rect x="' + x + '" y="' + (h - padTB - 3) + '" width="' + barW + '" height="3" ' +
         'rx="1" fill="var(--text-faintest)" opacity="0.3" class="pm-bar">' +
@@ -2336,14 +2216,13 @@ function initPipelineMetricsPanel() {
   window.pipelineMetricsPanel = new PipelineMetricsPanel(container);
 }
 
-/* ---------- Live Status Mini (Overview tab) ---------- */
+/* Live Status Mini (Overview tab) */
 function ObservabilityMini(container) {
   this.container = container;
   this.appId = container.getAttribute('data-application-id');
   this.timer = null;
   this._loaded = false;
 
-  // DOM refs
   this.cpuValue = container.querySelector('[data-ls-cpu-value]');
   this.cpuSpark = container.querySelector('[data-ls-cpu-spark]');
   this.memValue = container.querySelector('[data-ls-mem-value]');
@@ -2400,7 +2279,6 @@ ObservabilityMini.prototype.render = function (data) {
   var limits = data.limits;
   if (!current) return;
 
-  // CPU
   var cpuVal = current.cpu_usage_m;
   var cpuLim = limits ? limits.total_cpu_limit_m : 0;
   var cpuPct = cpuLim ? (cpuVal / cpuLim) * 100 : 0;
@@ -2410,7 +2288,6 @@ ObservabilityMini.prototype.render = function (data) {
       (cpuPct > 90 ? ' ls-val-danger' : cpuPct > 70 ? ' ls-val-warn' : '');
   }
 
-  // Memory
   var memVal = current.memory_usage_bytes;
   var memLim = limits ? limits.total_memory_limit_bytes : 0;
   var memPct = memLim ? (memVal / memLim) * 100 : 0;
@@ -2420,7 +2297,6 @@ ObservabilityMini.prototype.render = function (data) {
       (memPct > 90 ? ' ls-val-danger' : memPct > 70 ? ' ls-val-warn' : '');
   }
 
-  // Pods
   var podN = current.pod_count || 0;
   if (this.podCount) {
     this.podCount.textContent = podN;
@@ -2444,7 +2320,6 @@ ObservabilityMini.prototype.render = function (data) {
     this.podDots.innerHTML = dotsHtml;
   }
 
-  // Sparklines
   this.renderSparkline(this.cpuSpark, data.history, 'cpu_usage_m', cpuLim, 'oklch(0.7 0.15 230)');
   this.renderSparkline(this.memSpark, data.history, 'memory_usage_bytes', memLim, 'oklch(0.7 0.15 290)');
 };
@@ -2454,7 +2329,6 @@ ObservabilityMini.prototype.renderSparkline = function (container, history, key,
   var svg = container.querySelector('svg');
   if (!svg) return;
   if (!history || !history.length) {
-    // Show flat baseline when no data
     svg.innerHTML = '<line x1="0" y1="27" x2="120" y2="27" stroke="' + color + '" stroke-opacity="0.15" stroke-width="1"/>';
     container.classList.add('ls-loaded');
     return;
@@ -2474,11 +2348,9 @@ ObservabilityMini.prototype.renderSparkline = function (container, history, key,
   }
   var pathD = 'M' + points.join('L');
 
-  // Gradient fill under the line
   var areaPath = pathD + 'L' + w + ',' + h + 'L0,' + h + 'Z';
 
   var gradId = 'ls-grad-' + key;
-  // Baseline at bottom + limit dashed line if applicable
   var baseline = '<line x1="0" y1="' + (h - 1) + '" x2="' + w + '" y2="' + (h - 1) + '" stroke="' + color + '" stroke-opacity="0.15" stroke-width="1"/>';
   svg.innerHTML =
     '<defs><linearGradient id="' + gradId + '" x1="0" y1="0" x2="0" y2="1">' +
@@ -2490,7 +2362,6 @@ ObservabilityMini.prototype.renderSparkline = function (container, history, key,
     '<path d="' + pathD + '" fill="none" stroke="' + color + '" stroke-width="1.5" ' +
     'stroke-linecap="round" stroke-linejoin="round" class="ls-spark-path"/>';
 
-  // Animate the line drawing in
   var linePath = svg.querySelector('.ls-spark-path');
   if (linePath) {
     var len = linePath.getTotalLength();
@@ -2509,7 +2380,6 @@ function initLiveStatus() {
   if (!container) return;
   var mini = new ObservabilityMini(container);
 
-  // Activate when overview tab is visible
   var panel = container.closest('[data-tab-panel]');
   if (panel) {
     panel.addEventListener('tab-activated', function () { mini.activate(); });
@@ -2520,7 +2390,7 @@ function initLiveStatus() {
   }
 }
 
-/* ---------- Build/Release Detail Page ---------- */
+/* Build/Release Detail Page */
 function initBuildDetailPage(opts) {
   var nextStepUrl = opts.nextStepUrl;
   var nextStepBanner = document.getElementById('nextStepBanner');
@@ -2609,7 +2479,7 @@ function copyBuildLog() {
   });
 }
 
-/* ---------- Deploy Detail Page ---------- */
+/* Deploy Detail Page */
 function initDeployDetailPage(opts) {
   var logsPre = document.getElementById(opts.logElementId);
   var placeholder = document.getElementById('logPlaceholder');
@@ -2712,7 +2582,7 @@ function copyDeployLog() {
   });
 }
 
-/* ---------- App Logs Page ---------- */
+/* App Logs Page */
 function initAppLogs() {
   var logsPre = document.getElementById('appLogs');
   if (!logsPre) return;
@@ -2780,7 +2650,7 @@ function initAppLogs() {
   socket.addEventListener('close', function() { setTimeout(function() { window.location.reload(); }, 3000); });
 }
 
-/* ---------- App Shell Page ---------- */
+/* App Shell Page */
 function initAppShell() {
   function wrap(object, method, wrapper) {
     var fn = object[method];
@@ -2820,8 +2690,8 @@ function initAppShell() {
   socket.addEventListener('open', function() { sendResize(); });
 }
 
-/* ---------- Init All ---------- */
-/* ---------- Compact Topbar (scroll collapse) ---------- */
+/* Init All */
+/* Compact Topbar (scroll collapse) */
 function initCompactTopbar() {
   var topbar = document.querySelector('[data-topbar]');
   var tabBarWrapper = document.querySelector('[data-tab-bar-wrapper]');
@@ -2830,7 +2700,6 @@ function initCompactTopbar() {
 
   if (!topbar || !tabBarWrapper || !inlineTabs || !tabBar) return;
 
-  // Clone tab items into the inline container
   var sourceTabs = tabBar.querySelectorAll('[data-tab]');
   sourceTabs.forEach(function (tab) {
     var clone = document.createElement('button');
@@ -2839,10 +2708,8 @@ function initCompactTopbar() {
     if (tab.classList.contains('tab-active')) {
       clone.classList.add('tab-active');
     }
-    // Copy icon SVG + text
     var svg = tab.querySelector('svg');
     if (svg) clone.appendChild(svg.cloneNode(true));
-    // Get text content (label only, not badge)
     var label = tab.childNodes;
     for (var i = 0; i < label.length; i++) {
       if (label[i].nodeType === 3 && label[i].textContent.trim()) {
@@ -2850,13 +2717,11 @@ function initCompactTopbar() {
         break;
       }
     }
-    // Copy badge if present
     var badge = tab.querySelector('.badge');
     if (badge) clone.appendChild(badge.cloneNode(true));
     inlineTabs.appendChild(clone);
   });
 
-  // Click handler: sync with real tabs
   inlineTabs.addEventListener('click', function (e) {
     var btn = e.target.closest('[data-inline-tab]');
     if (!btn) return;
@@ -2865,7 +2730,6 @@ function initCompactTopbar() {
     if (realTab) realTab.click();
   });
 
-  // Keep inline tabs in sync when real tabs change
   var observer = new MutationObserver(function () {
     sourceTabs.forEach(function (tab) {
       var id = tab.getAttribute('data-tab');
@@ -2879,12 +2743,10 @@ function initCompactTopbar() {
     observer.observe(tab, { attributes: true, attributeFilter: ['class'] });
   });
 
-  // Compact mode: "always" (user pref) or scroll-based
   var THRESHOLD = 20;
   var isCompact = false;
   var compactPref = localStorage.getItem('compact-mode') === 'true';
 
-  // Remove pre-paint class so transitions work after hydration
   requestAnimationFrame(function () {
     document.documentElement.classList.remove('compact-mode-pref');
   });
@@ -2907,14 +2769,12 @@ function initCompactTopbar() {
   window.addEventListener('scroll', checkScroll, { passive: true });
   checkScroll();
 
-  // Toggle handlers
   var toggles = document.querySelectorAll('.compact-mode-toggle');
   toggles.forEach(function (toggle) {
     toggle.checked = compactPref;
     toggle.addEventListener('change', function () {
       compactPref = toggle.checked;
       localStorage.setItem('compact-mode', compactPref);
-      // Sync all toggles
       toggles.forEach(function (t) {
         t.checked = compactPref;
       });
@@ -2923,9 +2783,8 @@ function initCompactTopbar() {
   });
 }
 
-/* ---------- Preference Toggles (reduce motion, pipeline toasts, low data) ---------- */
+/* Preference Toggles (reduce motion, pipeline toasts, low data) */
 function initPreferenceToggles() {
-  // Reduce motion
   var motionToggles = document.querySelectorAll('.reduce-motion-toggle');
   var motionPref = localStorage.getItem('reduce-motion') === 'true';
   motionToggles.forEach(function (toggle) {
@@ -2938,7 +2797,6 @@ function initPreferenceToggles() {
     });
   });
 
-  // Pipeline toasts (default on)
   var toastToggles = document.querySelectorAll('.pipeline-toasts-toggle');
   var toastPref = localStorage.getItem('pipeline-toasts') !== 'false';
   toastToggles.forEach(function (toggle) {
@@ -2950,7 +2808,6 @@ function initPreferenceToggles() {
     });
   });
 
-  // Low data mode (disables WebSocket polling)
   var dataToggles = document.querySelectorAll('.low-data-toggle');
   var dataPref = localStorage.getItem('low-data-mode') === 'true';
   dataToggles.forEach(function (toggle) {
@@ -2959,7 +2816,6 @@ function initPreferenceToggles() {
       dataPref = toggle.checked;
       localStorage.setItem('low-data-mode', dataPref);
       dataToggles.forEach(function (t) { t.checked = dataPref; });
-      // Stop or restart pollers on toggle
       if (dataPref) {
         stopAllPollers();
       } else {
@@ -2969,7 +2825,6 @@ function initPreferenceToggles() {
   });
 }
 
-/* Delegated handler: [data-href] spans open links in new tabs (avoids nested <a>) */
 document.addEventListener('click', function (e) {
   var el = e.target.closest('[data-href]');
   if (el) {

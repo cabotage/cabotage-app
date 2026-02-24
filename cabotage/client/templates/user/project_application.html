@@ -33,12 +33,10 @@
 
 {% block content %}
 
-  {# ===== CONFIG CLASSIFICATION ===== #}
   {% set system_var_names = ["CABOTAGE_SENTINEL"] %}
   {% set user_configs = application.configurations|rejectattr('name', 'in', system_var_names)|list %}
   {% set system_configs = application.configurations|selectattr('name', 'in', system_var_names)|list %}
 
-  {# ===== APPLICATION HEADER ===== #}
   {% set image_diff, config_diff = application.ready_for_deployment %}
   {% set has_image_changes = image_diff.has_changes() %}
   {% set has_config_changes = config_diff.has_changes() %}
@@ -56,7 +54,6 @@
       {% if application.github_app_installation_id %}
         <span class="badge badge-sm badge-neutral gap-1">{{ icon('zap', 'w-3 h-3') }} GitHub</span>
       {% endif %}
-      {# Live commit status indicator — JS takes over via PipelineTracker #}
       {% set _deployed = application.latest_deployment_completed %}
       {% set _rel = _deployed.release_object if _deployed else none %}
       {% set _sha = _rel.commit_sha if _rel and _rel.commit_sha and _rel.commit_sha != 'null' else none %}
@@ -90,14 +87,12 @@
       </span>
     </div>
     <div class="app-header-actions">
-      {# Deploy button - full_deploy route requires backend support #}
       <div class="tooltip"
            data-tip="Configure a deploy branch in Settings to enable">
         <button class="btn btn-ghost btn-sm gap-1.5 btn-disabled text-base-content/20"
                 disabled>{{ icon('deploy', 'w-3.5 h-3.5') }} Deploy</button>
       </div>
 
-      {# Utility actions #}
       <form action="{{ url_for('user.application_clear_cache', application_id=application.id) }}"
             method="post"
             class="inline">
@@ -121,16 +116,10 @@
     </div>
   </div>
 
-  {# ========================================================================== #}
-  {# ===== TAB: OVERVIEW                                                 ===== #}
-  {# ========================================================================== #}
   <div data-tab-panel="overview" class="tab-panel">
 
-    {# ── SECTION 1: ACTION BANNERS + PIPELINE PROGRESS ── #}
-    {# These are the things that need your attention RIGHT NOW #}
     <div data-pipeline-tracker data-application-id="{{ application.id }}">
 
-      {# ── Pipeline progress bar (hidden until JS activates it) ── #}
       <div data-pipeline-progress
            class="pipeline-progress mb-4"
            style="display:none">
@@ -193,17 +182,14 @@
         </div>
       </div>
 
-      {# ── Static banners (shown by default, hidden when pipeline is active) ── #}
       <div data-pipeline-banners>
 
-        {# has_pending, has_deployable, image_diff, config_diff set in header above #}
         {% set is_building_image = application.latest_image_building and (application.latest_image_building.version|default(0) > (application.latest_image.version|default(0) if application.latest_image else 0)) %}
         {% set has_build_error = application.latest_image_error and (application.latest_image_error.version|default(0) > (application.latest_image.version|default(0) if application.latest_image else 0)) %}
         {% set is_building_release = application.latest_release_building %}
         {% set has_no_image = not application.latest_image %}
         {% set has_no_release = application.releases.count() == 0 %}
 
-        {# ── GETTING STARTED GUIDE (shown when app is brand new) ── #}
         {% if has_no_image and has_no_release %}
           <div class="getting-started mb-4">
             <div class="flex items-center gap-2 mb-3">
@@ -241,10 +227,8 @@
           </div>
         {% else %}
 
-          {# ── ACTION BANNERS (contextual, shown when there's something to do) ── #}
           <div class="flex flex-col gap-3 mb-4">
 
-            {# Build in progress #}
             {% if is_building_image %}
               <a href="{{ url_for('user.image_detail', image_id=application.latest_image_building.id) }}"
                  class="action-banner action-banner-info">
@@ -267,7 +251,6 @@
               </a>
             {% endif %}
 
-            {# Build error #}
             {% if has_build_error %}
               <a href="{{ url_for('user.image_detail', image_id=application.latest_image_error.id) }}"
                  class="action-banner action-banner-error">
@@ -290,7 +273,6 @@
               </a>
             {% endif %}
 
-            {# Package building #}
             {% if is_building_release %}
               <div class="action-banner action-banner-info">
                 <div class="flex items-center gap-3">
@@ -305,7 +287,6 @@
               </div>
             {% endif %}
 
-            {# Pending changes → show what kind and next step #}
             {% if has_pending %}
               <div class="action-banner action-banner-changes">
                 <div class="flex-1 min-w-0">
@@ -322,7 +303,6 @@
                     </span>
                   </div>
 
-                  {# Change details — git-diff style summary #}
                   {% set img_added = image_diff.added()|list if has_image_changes else [] %}
                   {% set img_changed = image_diff.changed()|list if has_image_changes else [] %}
                   {% set img_removed = image_diff.removed()|list if has_image_changes else [] %}
@@ -333,7 +313,6 @@
                   {% set cfg_total = cfg_added|length + cfg_changed|length + cfg_removed|length %}
                   {% set diff_id = application.id|string %}
 
-                  {# Change summary — human-readable pills + expandable detail #}
                   <div class="changes-summary text-xs mb-2">
                     <div class="flex items-center gap-2 flex-wrap">
                       {% if has_image_changes %}
@@ -357,7 +336,6 @@
                       {% endif %}
                     </div>
 
-                    {# Expandable detail list #}
                     <div class="change-details">
                       <div class="change-details-inner">
                         {% if has_image_changes %}
@@ -390,15 +368,12 @@
                     </div>
                   </div>
 
-                  {# Next steps hint #}
                   <div class="deploy-steps-inline">
                     {% if has_config_changes and not has_image_changes %}
-                      {# Config-only: Create Package → Deploy #}
                       <span class="deploy-step-inline deploy-step-inline-next">Create Package</span>
                       <span class="deploy-step-inline-arrow">→</span>
                       <span class="deploy-step-inline deploy-step-inline-pending">Deploy</span>
                     {% else %}
-                      {# Has image changes (maybe config too): already have new image, just need package + deploy #}
                       <span class="deploy-step-inline deploy-step-inline-done">{{ icon('check', 'w-3 h-3') }} Build</span>
                       <span class="deploy-step-inline-arrow">→</span>
                       <span class="deploy-step-inline deploy-step-inline-next">Create Package</span>
@@ -415,7 +390,6 @@
               </div>
             {% endif %}
 
-            {# Deploy in progress #}
             {% if is_deploying %}
               <a href="{{ url_for('user.deployment_detail', deployment_id=application.latest_deployment.id) }}"
                  class="action-banner action-banner-info">
@@ -441,7 +415,6 @@
               </a>
             {% endif %}
 
-            {# Ready to deploy #}
             {% if show_ready_to_deploy %}
               <div class="action-banner action-banner-deploy">
                 <div class="flex-1">
@@ -483,16 +456,12 @@
               </div>
             {% endif %}
 
-            {# "Up to date" is now shown inline in the header row #}
           </div>
         {% endif %}
 
       </div>
-      {# /data-pipeline-banners #}
     </div>
-    {# /data-pipeline-tracker #}
 
-    {# ── ACTIVE DEPLOY: what's running right now ── #}
     {% set _completed_deploys = deployments|selectattr('complete')|list %}
     {% set _active = _completed_deploys[0] if _completed_deploys else none %}
     {% if _active %}
@@ -564,8 +533,6 @@
         </div>
       </div>
     {% endif %}
-
-    {# ── SECTION 2: PROCESSES ── #}
 
     {% if application.releases.count() > 0 and application.latest_release.built %}
       <div class="mb-4" data-live-processes>
@@ -734,8 +701,6 @@
       </div>
     {% endif %}
 
-    {# ── SECTION 3: RECENT ACTIVITY + LIVE STATUS ── #}
-
     {% set has_any_activity = images[:3]|length > 0 or releases[:3]|length > 0 or deployments[:3]|length > 0 %}
     {% set has_live_status = application.releases.count() > 0 and application.latest_release.built %}
 
@@ -756,7 +721,6 @@
       </div>
       <div class="ls-bento{% if not has_live_status %} ls-bento-solo{% endif %}">
 
-        {# Live Status tile #}
         {% if has_live_status %}
           <div class="ls-card"
                data-live-status
@@ -803,12 +767,10 @@
           </div>
         {% endif %}
 
-        {# Activity card #}
         <div class="ls-bento-activity" data-live-activity>
           {% if has_any_activity %}
             <div class="card bg-base-200 border border-base-300">
               <div class="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-base-content/5">
-                {# Builds #}
                 <div class="p-4">
                   <div class="flex items-center gap-1.5 mb-2">
                     {{ icon('image', 'w-3 h-3 text-base-content/30') }}
@@ -839,7 +801,6 @@
                 <p class="text-xs text-base-content/20 py-1">No builds yet</p>
               {% endfor %}
             </div>
-            {# Packages #}
             <div class="p-4">
               <div class="flex items-center gap-1.5 mb-2">
                 {{ icon('layers', 'w-3 h-3 text-base-content/30') }}
@@ -870,7 +831,6 @@
             <p class="text-xs text-base-content/20 py-1">No packages yet</p>
           {% endfor %}
         </div>
-        {# Deploys #}
         <div class="p-4">
           <div class="flex items-center gap-1.5 mb-2">
             {{ icon('deploy', 'w-3 h-3 text-base-content/30') }}
@@ -907,19 +867,14 @@
 <div class="text-xs text-base-content/20 py-2">No activity yet</div>
 {% endif %}
 </div>
-{# /ls-bento-activity #}
 
 </div>
-{# /ls-bento #}
 </div>
-
-{# ── SECTION 4: PIPELINE STATUS (image → package → deploy) ── #}
 
 <div class="mb-4" data-live-pipeline>
   <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Pipeline</h2>
   <div class="pipeline-row">
 
-    {# Build stage #}
     <div class="pipeline-stage
                 {% if application.latest_image and application.latest_image.error %}pipeline-stage-error{% endif %}">
       <div class="pipeline-stage-header">
@@ -974,7 +929,6 @@
       </svg>
     </div>
 
-    {# Package stage #}
     <div class="pipeline-stage
                 {% if application.latest_release and application.latest_release.error %}pipeline-stage-error{% endif %}">
       <div class="pipeline-stage-header">
@@ -1026,7 +980,6 @@
       </svg>
     </div>
 
-    {# Deploy stage #}
     <div class="pipeline-stage
                 {% if application.latest_deployment and application.latest_deployment.error %}pipeline-stage-error{% endif %}">
       <div class="pipeline-stage-header">
@@ -1087,8 +1040,6 @@
   </div>
 </div>
 
-{# ── CONFIGURATION AT A GLANCE ── #}
-
 <details class="mb-4">
   <summary class="cursor-pointer select-none inline-flex items-center gap-1.5 text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3 hover:text-base-content/60 transition-colors">
     <span class="collapse-icon">{{ icon('chevron-right', 'w-3 h-3') }}</span>
@@ -1147,7 +1098,6 @@
   </div>
 </details>
 
-{# ── GUIDE LINK ── #}
 <div class="py-2">
   <a href="{{ url_for('user.guide') }}"
      class="text-xs text-base-content/30 hover:text-accent transition-colors inline-flex items-center gap-1.5">
@@ -1159,15 +1109,11 @@
 
 </div>
 
-{# ========================================================================== #}
-{# ===== TAB: OBSERVE                                                  ===== #}
-{# ========================================================================== #}
 <div data-tab-panel="observe" class="tab-panel">
   <div data-observability-panel
        data-application-id="{{ application.id }}"
        data-logs-url="{{ url_for('user.project_application_logs', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}">
 
-    {# Time range selector #}
     <div class="flex items-center justify-between mb-4">
       <h2 class="text-base font-medium text-base-content">Observability</h2>
       <div class="obs-range-selector">
@@ -1179,7 +1125,6 @@
       </div>
     </div>
 
-    {# Metric cards #}
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
       <div class="obs-metric-card">
         <div class="obs-metric-label">CPU</div>
@@ -1208,7 +1153,6 @@
       </div>
     </div>
 
-    {# Charts #}
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
       <div class="obs-chart-card">
         <div class="obs-chart-title">CPU Usage</div>
@@ -1226,7 +1170,6 @@
       </div>
     </div>
 
-    {# Pods + Events #}
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
       <div class="obs-section-card">
         <div class="obs-section-title">Pods</div>
@@ -1245,9 +1188,6 @@
   </div>
 </div>
 
-{# ========================================================================== #}
-{# ===== TAB: CONFIGURATION                                            ===== #}
-{# ========================================================================== #}
 <div data-tab-panel="config" class="tab-panel">
   <div class="flex items-center justify-between mb-4">
     <div>
@@ -1341,7 +1281,6 @@
       </div>
     </div>
 
-    {# System Variables - collapsed by default, no delete #}
     {% if system_configs|length > 0 %}
       <details class="mt-3">
         <summary class="text-xs text-base-content/30 cursor-pointer hover:text-base-content/50 transition-colors select-none inline-flex items-center gap-1.5 py-1">
@@ -1384,7 +1323,6 @@
     </div>
   {% endif %}
 
-  {# ── RAW EDITOR MODAL ── #}
   <div id="raw-editor-modal" class="raw-editor-modal" style="display:none;">
     <div class="raw-editor-backdrop"></div>
     <div class="raw-editor-dialog">
@@ -1410,7 +1348,6 @@
         <button type="button" class="raw-editor-tab" data-editor-tab="json">JSON</button>
       </div>
 
-      {# Bulk config editor — requires configuration_bulk backend route #}
       <form action="#" method="post" data-requires-backend="configuration_bulk">
         <input type="hidden" name="format" id="raw-editor-format" value="env" />
 
@@ -1453,7 +1390,6 @@
     </div>
   </div>
 
-  {# ── ADD VARIABLE MODAL ── #}
   <div id="add-var-modal" class="raw-editor-modal" style="display:none;">
     <div class="raw-editor-backdrop" data-add-var-close></div>
     <div class="raw-editor-dialog" style="max-width: 28rem;">
@@ -1519,15 +1455,11 @@
     </div>
   </div>
 
-  {# Hidden data for Copy ENV #}
   <script id="env-export-data" type="application/json">
     [{% for c in application.configurations %}{"name": {{ c.name|tojson }}, "value": {{ c.value|tojson }}, "secret": {{ c.secret|tojson }}}{% if not loop.last %}, {% endif %}{% endfor %}]
   </script>
 </div>
 
-{# ========================================================================== #}
-{# ===== TAB: IMAGES                                                   ===== #}
-{# ========================================================================== #}
 <div data-tab-panel="images" class="tab-panel">
   <div class="flex items-center justify-between mb-4">
     <h2 class="text-base font-medium text-base-content">Images</h2>
@@ -1561,7 +1493,6 @@
         <a href="{{ url_for('user.image_detail', image_id=image.id) }}"
            class="dpl-row {{ 'dpl-row-error' if image.error }}">
 
-          {# Status icon #}
           {% if image.built %}
             <span class="dpl-row-icon dpl-row-icon-ok">{{ icon('check', 'w-3.5 h-3.5') }}</span>
           {% elif image.error %}
@@ -1578,7 +1509,6 @@
             </span>
           {% endif %}
 
-          {# Body #}
           <div class="dpl-row-body">
             <div class="dpl-row-primary">
               <code class="dpl-row-version">#{{ image.version }}</code>
@@ -1631,7 +1561,6 @@
             {% endif %}
           </div>
 
-          {# Timestamp #}
           <span class="dpl-row-time"><time data-timestamp="{{ image.updated|isoformat_utc }}">{{ image.updated|humanize }}</time></span>
         </a>
       {% endfor %}
@@ -1659,9 +1588,6 @@
   {% endif %}
 </div>
 
-{# ========================================================================== #}
-{# ===== TAB: PACKAGES                                                 ===== #}
-{# ========================================================================== #}
 <div data-tab-panel="releases" class="tab-panel">
   <div class="flex items-center justify-between mb-4">
     <h2 class="text-base font-medium text-base-content">Packages</h2>
@@ -1700,7 +1626,6 @@
         <a href="{{ url_for('user.release_detail', release_id=release.id) }}"
            class="dpl-row {{ 'dpl-row-error' if release.error }}">
 
-          {# Status icon #}
           {% if release.built %}
             <span class="dpl-row-icon dpl-row-icon-ok">{{ icon('check', 'w-3.5 h-3.5') }}</span>
           {% elif release.error %}
@@ -1717,7 +1642,6 @@
             </span>
           {% endif %}
 
-          {# Body #}
           <div class="dpl-row-body">
             <div class="dpl-row-primary">
               <code class="dpl-row-version">v{{ release.version }}</code>
@@ -1783,7 +1707,6 @@
             {% endif %}
           </div>
 
-          {# Timestamp #}
           <span class="dpl-row-time"><time data-timestamp="{{ release.updated|isoformat_utc }}">{{ release.updated|humanize }}</time></span>
         </a>
       {% endfor %}
@@ -1808,9 +1731,6 @@
   {% endif %}
 </div>
 
-{# ========================================================================== #}
-{# ===== TAB: DEPLOYS                                                  ===== #}
-{# ========================================================================== #}
 <div data-tab-panel="deployments" class="tab-panel">
   <div class="flex items-center justify-between mb-4">
     <h2 class="text-base font-medium text-base-content">Deployments</h2>
@@ -1825,7 +1745,6 @@
     {% endif %}
   </div>
 
-  {# ── Active deployment hero (latest completed) ── #}
   {% set _dep_completed = deployments|selectattr('complete')|list %}
   {% set active_deploy = _dep_completed[0] if _dep_completed else none %}
   {% if active_deploy %}
@@ -1903,7 +1822,6 @@
     </div>
   {% endif %}
 
-  {# ── History header ── #}
   <div class="dpl-history-header">
     <h2 class="dpl-history-title">
       {{ icon('clock', 'w-3.5 h-3.5') }}
@@ -1916,7 +1834,6 @@
     </span>
   </div>
 
-  {# ── Deploy history list ── #}
   {% if deployments|default([])|length > 0 %}
     <div class="dpl-list">
       {% for deployment in deployments %}
@@ -1936,7 +1853,6 @@
         <a href="{{ url_for('user.deployment_detail', deployment_id=deployment.id) }}"
            class="dpl-row {{ 'dpl-row-active' if is_active }} {{ 'dpl-row-error' if deployment.error }} {{ 'dpl-row-deploying' if not deployment.complete and not deployment.error }}">
 
-          {# Status icon #}
           {% if deployment.complete %}
             <span class="dpl-row-icon dpl-row-icon-ok">{{ icon('check', 'w-3.5 h-3.5') }}</span>
           {% elif deployment.error %}
@@ -1953,7 +1869,6 @@
             </span>
           {% endif %}
 
-          {# Body: version line + git chips #}
           <div class="dpl-row-body">
             <div class="dpl-row-primary">
               {% if dep_rel %}
@@ -2011,7 +1926,6 @@
             {% endif %}
           </div>
 
-          {# Timestamp #}
           <span class="dpl-row-time"><time data-timestamp="{{ deployment.updated|isoformat_utc }}">{{ deployment.updated|humanize }}</time></span>
         </a>
       {% endfor %}
@@ -2033,14 +1947,10 @@
   {% endif %}
 </div>
 
-{# ========================================================================== #}
-{# ===== TAB: PIPELINE METRICS                                        ===== #}
-{# ========================================================================== #}
 <div data-tab-panel="pipeline" class="tab-panel">
   <div data-pipeline-metrics-panel
        data-application-id="{{ application.id }}">
 
-    {# Header + range selector #}
     <div class="flex items-center justify-between mb-4">
       <h2 class="text-base font-medium text-base-content">Pipeline Metrics</h2>
       <div class="obs-range-selector">
@@ -2050,7 +1960,6 @@
       </div>
     </div>
 
-    {# Summary cards #}
     <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
       <div class="obs-metric-card">
         <div class="obs-metric-label">Build Success</div>
@@ -2069,7 +1978,6 @@
       </div>
     </div>
 
-    {# Build stage #}
     <div class="pm-stage-section">
       <div class="pm-stage-header">
         <span class="pm-stage-label">Build</span>
@@ -2081,7 +1989,6 @@
       </div>
     </div>
 
-    {# Package stage #}
     <div class="pm-stage-section">
       <div class="pm-stage-header">
         <span class="pm-stage-label">Package</span>
@@ -2095,7 +2002,6 @@
       </div>
     </div>
 
-    {# Deploy stage #}
     <div class="pm-stage-section">
       <div class="pm-stage-header">
         <span class="pm-stage-label">Deploy</span>

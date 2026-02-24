@@ -24,7 +24,6 @@
   {% endcall %}
 
   {% if projects %}
-    {# Stat cards #}
     {% set total_apps = namespace(n=0) %}
     {% for project in projects %}
       {% set total_apps.n = total_apps.n + project.project_applications|length %}
@@ -34,7 +33,6 @@
       {{ stat_card(total_apps.n, 'Applications', 'box', 'accent') }}
     </div>
 
-    {# Group projects by organization #}
     {% set org_groups = {} %}
     {% for project in projects %}
       {% set org_slug = project.organization.slug %}
@@ -108,7 +106,6 @@
   {% endif %}
 
   {% if project_create_form is defined and project_create_form.organization_id.choices %}
-    {# Project create modal with org selector #}
     <div id="create-project-modal" class="raw-editor-modal hidden">
       <div class="raw-editor-backdrop" data-modal-close="create-project-modal"></div>
       <div class="raw-editor-dialog max-w-md">

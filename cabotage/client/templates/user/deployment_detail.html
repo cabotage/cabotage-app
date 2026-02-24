@@ -21,11 +21,9 @@
 
 {% block content %}
 
-  {# ===== DEPLOYMENT HEADER ===== #}
   <div class="mb-6">
     <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
       <div class="flex items-center gap-4">
-        {# Status Indicator #}
         <div class="deploy-status-orb
                     {% if deployment.complete %}
                       deploy-status-success
@@ -62,7 +60,6 @@
         </div>
       </div>
 
-      {# Actions #}
       <div class="flex items-center gap-2">
         {% if deployment.error and deployment.release_object %}
           <form action="{{ url_for('user.release_deploy', release_id=deployment.release_object.id) }}"
@@ -83,7 +80,6 @@
     </div>
   </div>
 
-  {# ===== ERROR BANNER ===== #}
   {% if deployment.error %}
     <div class="deploy-error-banner mb-6">
       <div class="flex items-start gap-3">
@@ -98,7 +94,6 @@
     </div>
   {% endif %}
 
-  {# ===== IN-PROGRESS BANNER ===== #}
   {% if not deployment.complete and not deployment.error %}
     <div class="deploy-progress-banner mb-6">
       <div class="flex items-center justify-between">
@@ -118,13 +113,10 @@
     </div>
   {% endif %}
 
-  {# ===== DEPLOYMENT DETAILS GRID ===== #}
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
 
-    {# Left column: metadata #}
     <div data-log-left class="lg:col-span-1 flex flex-col gap-4">
 
-      {# Deployment Info #}
       <div class="card bg-base-200 border border-base-300">
         <div class="card-body !p-4">
           <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Deployment Info</h2>
@@ -183,7 +175,6 @@
         </div>
       </div>
 
-      {# Dockerfile #}
       {% if deployment.release_object and deployment.release_object.dockerfile %}
         <details class="card bg-base-200 border border-base-300 group"
                  data-collapsible-card>
@@ -216,7 +207,6 @@
         </details>
       {% endif %}
 
-      {# Image Reference #}
       {% if deployment.release_object and deployment.release_object.image_object %}
         {% set image = deployment.release_object.image_object %}
         <div class="card bg-base-200 border border-base-300">
@@ -232,7 +222,6 @@
         </div>
       {% endif %}
 
-      {# Package Reference #}
       {% if deployment.release_object %}
         <div class="card bg-base-200 border border-base-300">
           <div class="card-body !p-4">
@@ -247,7 +236,6 @@
         </div>
       {% endif %}
 
-      {# Environment #}
       {% if deployment.release_object and deployment.release_object.configuration_objects %}
         <details class="card bg-base-200 border border-base-300 group"
                  data-collapsible-card>
@@ -304,10 +292,8 @@
       {% endif %}
     </div>
 
-    {# Right column: processes + deploy log #}
     <div class="lg:col-span-2 flex flex-col gap-4" id="log-column">
 
-      {# Processes #}
       {% if deployment.release_object and deployment.release_object.image_object and deployment.release_object.image_object.processes %}
         <div class="card bg-base-200 border border-base-300">
           <div class="card-body !p-4">
@@ -378,7 +364,6 @@
     </div>
   </div>
 
-  {# ===== COLLAPSIBLE DEBUG SECTIONS ===== #}
   <div class="flex flex-col gap-2 mb-6">
     <details class="card bg-base-200 border border-base-300 group">
       <summary class="!py-2.5 !px-4 cursor-pointer flex items-center gap-2 text-left">

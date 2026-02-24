@@ -1,6 +1,4 @@
-/* ===== Cabotage PaaS - Layout & Component System ===== */
-
-/* ---------- Reset & Scrollbar ---------- */
+/* Reset & Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -16,7 +14,7 @@
   background: var(--scrollbar-thumb-hover);
 }
 
-/* ---------- Transitions ---------- */
+/* Transitions */
 a,
 button,
 .btn,
@@ -26,7 +24,7 @@ textarea {
   transition: all 0.15s ease;
 }
 
-/* ---------- Reduce Motion ---------- */
+/* Reduce Motion */
 .reduce-motion,
 .reduce-motion *,
 .reduce-motion *::before,
@@ -37,7 +35,7 @@ textarea {
   scroll-behavior: auto !important;
 }
 
-/* ---------- Theme Toggle Icons ---------- */
+/* Theme Toggle Icons */
 [data-theme-pref='light'] .theme-icon-light {
   display: block !important;
 }
@@ -56,7 +54,7 @@ html:not([data-theme-pref]) .theme-icon-system {
   display: block !important;
 }
 
-/* ---------- Terminal Theme Extras ---------- */
+/* Terminal Theme Extras */
 [data-theme='terminal'] {
   font-family: 'JetBrains Mono', 'Courier New', monospace !important;
 }
@@ -93,7 +91,6 @@ html:not([data-theme-pref]) .theme-icon-system {
 [data-theme='terminal'] a:hover {
   text-shadow: none;
 }
-/* Terminal: boost ultra-low-opacity text for readability */
 [data-theme='terminal'] .text-base-content\/15 {
   color: rgba(51, 255, 51, 0.35) !important;
 }
@@ -107,7 +104,7 @@ html:not([data-theme-pref]) .theme-icon-system {
   color: rgba(51, 255, 51, 0.65) !important;
 }
 
-/* ---------- High Contrast Theme Extras ---------- */
+/* High Contrast Theme Extras */
 [data-theme='contrast-dark'],
 [data-theme='contrast-light'] {
   --radius-field: 0;
@@ -127,7 +124,7 @@ html:not([data-theme-pref]) .theme-icon-system {
   border-style: solid;
 }
 
-/* ---------- Shell Layout ---------- */
+/* Shell Layout */
 .app-shell {
   display: flex;
   flex-direction: column;
@@ -146,7 +143,6 @@ html:not([data-theme-pref]) .theme-icon-system {
   max-width: 100vw;
 }
 
-/* Topbar row: prevent horizontal overflow */
 .topbar-row {
   max-width: 100%;
 }
@@ -155,9 +151,8 @@ html:not([data-theme-pref]) .theme-icon-system {
   overflow: hidden;
 }
 
-/* ---------- Topbar Compact (scroll collapse) ---------- */
+/* Topbar Compact (scroll collapse) */
 
-/* Tab bar row: slides up and fades when compact */
 [data-tab-bar-wrapper] {
   display: grid;
   grid-template-rows: 1fr;
@@ -178,7 +173,6 @@ html:not([data-theme-pref]) .theme-icon-system {
   pointer-events: none;
 }
 
-/* Pre-paint compact: hide tab bar instantly (no transition) before JS hydrates */
 .compact-mode-pref [data-tab-bar-wrapper] {
   grid-template-rows: 0fr;
   opacity: 0;
@@ -192,7 +186,6 @@ html:not([data-theme-pref]) .theme-icon-system {
   transition: none;
 }
 
-/* Inline tabs: hidden by default, appear in compact mode */
 .topbar-inline-tabs {
   display: flex;
   align-items: center;
@@ -211,7 +204,6 @@ html:not([data-theme-pref]) .theme-icon-system {
   pointer-events: auto;
 }
 
-/* Separator slash before inline tabs */
 .topbar-inline-tabs::before {
   content: '/';
   color: var(--text-ghost);
@@ -224,7 +216,6 @@ html:not([data-theme-pref]) .theme-icon-system {
   display: none;
 }
 
-/* Inline tab items */
 .topbar-inline-tab {
   display: inline-flex;
   align-items: center;
@@ -258,7 +249,6 @@ html:not([data-theme-pref]) .theme-icon-system {
   min-width: 1rem;
 }
 
-/* Staggered entrance for each tab */
 .topbar-compact .topbar-inline-tab {
   animation: tab-slide-in 0.35s cubic-bezier(0.4, 0, 0.2, 1) both;
 }
@@ -289,7 +279,6 @@ html:not([data-theme-pref]) .theme-icon-system {
   }
 }
 
-/* Reverse: slide out when expanding back */
 .app-topbar:not(.topbar-compact) .topbar-inline-tab {
   animation: none;
 }
@@ -311,7 +300,7 @@ html:not([data-theme-pref]) .theme-icon-system {
   }
 }
 
-/* ---------- Tab Navigation ---------- */
+/* Tab Navigation */
 .tab-bar {
   display: flex;
   gap: 0;
@@ -353,16 +342,13 @@ html:not([data-theme-pref]) .theme-icon-system {
   pointer-events: none;
 }
 
-/* Responsive tab hiding — middle tabs collapse first */
 @media (max-width: 639px) {
-  /* Hide Images and Packages (middle tabs) on small screens */
   .tab-item:nth-child(4),
   .tab-item:nth-child(5) {
     display: none;
   }
 }
 @media (max-width: 479px) {
-  /* On very small screens, also hide Observe and Config */
   .tab-item:nth-child(2),
   .tab-item:nth-child(3) {
     display: none;
@@ -373,12 +359,10 @@ html:not([data-theme-pref]) .theme-icon-system {
   }
 }
 
-/* Active tab always visible regardless of breakpoint */
 .tab-item.tab-active {
   display: inline-flex !important;
 }
 
-/* Tab panels */
 .tab-panel {
   display: none;
 }
@@ -386,7 +370,7 @@ html:not([data-theme-pref]) .theme-icon-system {
   display: block;
 }
 
-/* ---------- Card Variants ---------- */
+/* Card Variants */
 .card-interactive {
   cursor: pointer;
   transition: all 0.2s ease;
@@ -397,7 +381,7 @@ html:not([data-theme-pref]) .theme-icon-system {
   border-color: rgba(124, 58, 237, 0.3);
 }
 
-/* ---------- Service Card ---------- */
+/* Service Card */
 .service-card {
   display: flex;
   flex-direction: column;
@@ -435,7 +419,7 @@ html:not([data-theme-pref]) .theme-icon-system {
   color: var(--text-faint);
 }
 
-/* ---------- Org Card ---------- */
+/* Org Card */
 .org-card {
   display: flex;
   flex-direction: column;
@@ -496,7 +480,7 @@ html:not([data-theme-pref]) .theme-icon-system {
   border-top: 1px solid var(--border-color);
 }
 
-/* ---------- Health Bar ---------- */
+/* Health Bar */
 .health-bar {
   display: inline-flex;
   align-items: center;
@@ -510,7 +494,7 @@ html:not([data-theme-pref]) .theme-icon-system {
   gap: 0.25rem;
 }
 
-/* ---------- Status Dots ---------- */
+/* Status Dots */
 .status-dot {
   width: 0.5rem;
   height: 0.5rem;
@@ -543,7 +527,6 @@ html:not([data-theme-pref]) .theme-icon-system {
   height: 0.625rem;
 }
 
-/* Pulsing dot for active states */
 @keyframes pulse-dot {
   0%,
   100% {
@@ -557,7 +540,7 @@ html:not([data-theme-pref]) .theme-icon-system {
   animation: pulse-dot 2s ease-in-out infinite;
 }
 
-/* ---------- Live Commit Indicator ---------- */
+/* Live Commit Indicator */
 .live-commit {
   display: inline-flex;
   align-items: center;
@@ -615,7 +598,7 @@ a.live-commit-sha:hover {
   border-radius: 0.25rem;
 }
 
-/* ---------- Commit Popup ---------- */
+/* Commit Popup */
 .commit-popup-anchor {
   position: relative;
   cursor: pointer;
@@ -662,7 +645,6 @@ a.live-commit-sha:hover {
   border-top: 1px solid var(--color-base-300, oklch(0.3 0 0));
 }
 
-/* Header bar */
 .commit-popup-header {
   display: flex;
   align-items: center;
@@ -687,7 +669,6 @@ a.live-commit-sha:hover {
   letter-spacing: 0.05em;
 }
 
-/* Commit message section */
 .commit-popup-message {
   padding: 0.625rem 0.75rem;
   border-bottom: 1px solid color-mix(in oklch, var(--color-base-content) 8%, transparent);
@@ -744,7 +725,6 @@ a.live-commit-sha:hover {
   line-height: 1.5;
 }
 
-/* Meta rows */
 .commit-popup-meta {
   display: flex;
   flex-direction: column;
@@ -803,7 +783,6 @@ a.live-commit-sha:hover {
   opacity: 0.5;
 }
 
-/* SHA footer */
 .commit-popup-sha {
   display: flex;
   align-items: center;
@@ -840,7 +819,6 @@ a.live-commit-sha:hover {
   opacity: 0.75;
 }
 
-/* Links footer */
 .commit-popup-links {
   display: flex;
   gap: 0.5rem;
@@ -859,8 +837,8 @@ a.live-commit-sha:hover {
   text-decoration: underline;
 }
 
-/* ---------- Deployment Timeline ---------- */
-/* ---------- Stat Cards ---------- */
+/* Deployment Timeline */
+/* Stat Cards */
 .stat-card {
   display: flex;
   flex-direction: column;
@@ -883,7 +861,7 @@ a.live-commit-sha:hover {
   letter-spacing: 0.05em;
 }
 
-/* ---------- Process Card (legacy, see Process Grid below) ---------- */
+/* Process Card (legacy, see Process Grid below) */
 .pod-dot {
   width: 0.5rem;
   height: 0.5rem;
@@ -891,7 +869,7 @@ a.live-commit-sha:hover {
   background: #22c55e;
   box-shadow: 0 0 4px rgba(34, 197, 94, 0.3);
 }
-/* ---------- Count Input (Process Scaling) ---------- */
+/* Count Input (Process Scaling) */
 .count-input {
   display: inline-flex;
   align-items: center;
@@ -939,8 +917,7 @@ a.live-commit-sha:hover {
   background: var(--hover-overlay);
 }
 
-/* ---------- Log Viewer ---------- */
-/* Always dark terminal style regardless of theme */
+/* Log Viewer */
 .log-viewer {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 0.8125rem;
@@ -962,8 +939,7 @@ a.live-commit-sha:hover {
   background: rgba(124, 58, 237, 0.06);
 }
 
-/* Full-height log viewer (for logs page) */
-/* ---------- Code Block ---------- */
+/* Code Block */
 .code-block {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 0.8125rem;
@@ -978,8 +954,8 @@ a.live-commit-sha:hover {
   border: 1px solid var(--border-color-subtle);
 }
 
-/* ---------- Metadata Grid ---------- */
-/* ---------- Env Var Grid ---------- */
+/* Metadata Grid */
+/* Env Var Grid */
 .env-grid {
   display: flex;
   flex-direction: column;
@@ -1024,7 +1000,6 @@ a.live-commit-sha:hover {
   cursor: help;
 }
 
-/* Env var type badges */
 .env-badge {
   display: inline-flex;
   align-items: center;
@@ -1057,7 +1032,7 @@ a.live-commit-sha:hover {
   user-select: none;
 }
 
-/* ---------- Env List (stacked key/value — no truncation) ---------- */
+/* Env List (stacked key/value — no truncation) */
 .env-list {
   display: flex;
   flex-direction: column;
@@ -1089,7 +1064,7 @@ a.live-commit-sha:hover {
   margin-top: 0.125rem;
 }
 
-/* ---------- Collapsible Sections ---------- */
+/* Collapsible Sections */
 details summary {
   cursor: pointer;
   list-style: none;
@@ -1107,16 +1082,15 @@ details[open] summary .collapse-icon {
   flex-shrink: 0;
 }
 
-/* ---------- Button Glow ---------- */
+/* Button Glow */
 .btn-primary:hover {
   box-shadow: 0 0 20px var(--shadow-primary-glow);
 }
 
-/* ---------- Deploy / History List (Vercel-style rows) ---------- */
+/* Deploy / History List (Vercel-style rows) */
 .deploy-meta-item .font-mono {
   font-size: 0.6875rem;
 }
-/* Deploy badges */
 @keyframes badge-pulse {
   0%,
   100% {
@@ -1127,12 +1101,10 @@ details[open] summary .collapse-icon {
   }
 }
 
-/* Auto-deploy inline badge */
-/* Responsive: stack on small screens */
 @media (max-width: 640px) {
 }
 
-/* ---------- Empty State ---------- */
+/* Empty State */
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -1141,7 +1113,7 @@ details[open] summary .collapse-icon {
   padding: 4rem 2rem;
 }
 
-/* ---------- Breadcrumb Path ---------- */
+/* Breadcrumb Path */
 .resource-path {
   display: flex;
   align-items: center;
@@ -1176,7 +1148,6 @@ details[open] summary .collapse-icon {
   font-weight: 500;
 }
 
-/* Progressive breadcrumb truncation */
 @media (max-width: 639px) {
   .resource-path {
     font-size: 0.75rem;
@@ -1200,7 +1171,7 @@ details[open] summary .collapse-icon {
   }
 }
 
-/* ---------- App Header Actions (horizontal scroll on overflow) ---------- */
+/* App Header Actions (horizontal scroll on overflow) */
 .app-header-actions {
   display: flex;
   align-items: center;
@@ -1222,7 +1193,6 @@ details[open] summary .collapse-icon {
   flex-shrink: 0;
 }
 
-/* On small screens, hide button labels and show icons only */
 @media (max-width: 768px) {
   .app-header-actions .btn {
     font-size: 0;
@@ -1236,7 +1206,7 @@ details[open] summary .collapse-icon {
   }
 }
 
-/* ---------- Page Header ---------- */
+/* Page Header */
 .page-header {
   display: flex;
   flex-direction: column;
@@ -1261,29 +1231,29 @@ details[open] summary .collapse-icon {
   margin-top: 0.25rem;
 }
 
-/* ---------- Form Card ---------- */
+/* Form Card */
 .form-card {
   max-width: 32rem;
   margin: 0 auto;
 }
 
-/* ---------- Auth Card ---------- */
-/* ---------- Hero Section (Landing) ---------- */
+/* Auth Card */
+/* Hero Section (Landing) */
 .hero-gradient {
   background: radial-gradient(ellipse at 50% 0%, rgba(124, 58, 237, 0.12) 0%, transparent 60%);
 }
 
-/* ---------- Table Styles ---------- */
+/* Table Styles */
 .table tr:hover td {
   background: var(--hover-overlay);
 }
 
-/* ---------- xterm overrides ---------- */
+/* xterm overrides */
 .xterm {
   padding: 0.5rem;
 }
 
-/* ---------- Action Banners ---------- */
+/* Action Banners */
 .action-banner {
   display: flex;
   align-items: center;
@@ -1334,7 +1304,7 @@ details[open] summary .collapse-icon {
   }
 }
 
-/* ---------- Process Grid ---------- */
+/* Process Grid */
 .process-grid {
   display: flex;
   flex-wrap: wrap;
@@ -1391,8 +1361,8 @@ details[open] summary .collapse-icon {
   opacity: 1 !important;
 }
 
-/* ---------- Process Filter Chips ---------- */
-/* ---------- Process Footer (commands + meta) ---------- */
+/* Process Filter Chips */
+/* Process Footer (commands + meta) */
 .proc-footer {
   display: flex;
   flex-wrap: wrap;
@@ -1454,7 +1424,7 @@ details[open] summary .collapse-icon {
   white-space: nowrap;
   transition: color 0.15s ease;
 }
-/* ---------- Info Popup (card-style tooltip) ---------- */
+/* Info Popup (card-style tooltip) */
 .info-popup-anchor {
   position: relative;
   cursor: help;
@@ -1575,7 +1545,7 @@ details[open] summary .collapse-icon {
   text-decoration: underline;
 }
 
-/* ---------- Release Command Popup ---------- */
+/* Release Command Popup */
 .proc-cmd-chip-anchor {
   position: relative;
   display: inline-flex;
@@ -1660,7 +1630,7 @@ details[open] summary .collapse-icon {
   line-height: 1.5;
 }
 
-/* ---------- Pipeline Row ---------- */
+/* Pipeline Row */
 .pipeline-row {
   display: flex;
   align-items: stretch;
@@ -1701,7 +1671,6 @@ details[open] summary .collapse-icon {
   }
 }
 
-/* Flash animation for pipeline event alerts */
 @keyframes pipeline-card-flash {
   0% {
     border-color: var(--border-color);
@@ -1764,7 +1733,7 @@ a.pipeline-stage-body:hover {
   }
 }
 
-/* ---------- Deploy Steps (vertical) ---------- */
+/* Deploy Steps (vertical) */
 .getting-started {
   background: var(--hover-overlay);
   border: 1px solid rgba(124, 58, 237, 0.1);
@@ -1826,7 +1795,6 @@ a.pipeline-stage-body:hover {
   min-width: 0;
 }
 
-/* Compact variant for the reference guide */
 .deploy-steps-compact .deploy-step {
   padding: 0.375rem 0;
 }
@@ -1840,7 +1808,7 @@ a.pipeline-stage-body:hover {
   top: 1.75rem;
 }
 
-/* ---------- Deploy Steps Inline (horizontal) ---------- */
+/* Deploy Steps Inline (horizontal) */
 .deploy-steps-inline {
   display: flex;
   align-items: center;
@@ -1874,12 +1842,11 @@ a.pipeline-stage-body:hover {
   font-size: 0.75rem;
 }
 
-/* ---------- Deploy Reference (how deployments work) ---------- */
+/* Deploy Reference (how deployments work) */
 .deploy-reference[open] summary .collapse-icon {
   transform: rotate(90deg);
 }
 
-/* Larger inline steps for the reference guide */
 .deploy-steps-inline-lg .deploy-step-inline {
   padding: 0.25rem 0.625rem;
   font-size: 0.75rem;
@@ -1887,7 +1854,7 @@ a.pipeline-stage-body:hover {
   align-items: flex-start;
   gap: 0.125rem;
 }
-/* ---------- Change Summary (pending changes) ---------- */
+/* Change Summary (pending changes) */
 .change-pill {
   display: inline-flex;
   align-items: center;
@@ -1983,7 +1950,7 @@ a.pipeline-stage-body:hover {
   text-decoration-color: rgba(239, 68, 68, 0.25);
 }
 
-/* ---------- Expand Button ---------- */
+/* Expand Button */
 .expand-btn {
   display: inline-flex;
   align-items: center;
@@ -2005,7 +1972,7 @@ a.pipeline-stage-body:hover {
   background: var(--hover-overlay);
 }
 
-/* ---------- Raw Editor Modal ---------- */
+/* Raw Editor Modal */
 .raw-editor-modal {
   position: fixed;
   inset: 0;
@@ -2087,9 +2054,8 @@ a.pipeline-stage-body:hover {
   opacity: 0.7;
 }
 
-/* ---------- Guide Page ---------- */
+/* Guide Page */
 
-/* Numbered step pipeline */
 .guide-pipeline {
   display: flex;
   flex-direction: column;
@@ -2134,7 +2100,6 @@ a.pipeline-stage-body:hover {
   margin-bottom: 0.75rem;
 }
 
-/* Config shortcut visualization */
 .guide-shortcut {
   display: flex;
   align-items: center;
@@ -2164,7 +2129,6 @@ a.pipeline-stage-body:hover {
   font-size: 1rem;
 }
 
-/* Settings field rows */
 .guide-field-row {
   display: flex;
   align-items: baseline;
@@ -2182,7 +2146,6 @@ a.pipeline-stage-body:hover {
   flex-shrink: 0;
 }
 
-/* Info cards grid */
 .guide-info-card {
   padding: 0.875rem;
   background: var(--surface-card);
@@ -2190,7 +2153,6 @@ a.pipeline-stage-body:hover {
   border-radius: 0.625rem;
 }
 
-/* Inline code in guide */
 .guide-step-card code,
 .guide-info-card code {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
@@ -2201,7 +2163,7 @@ a.pipeline-stage-body:hover {
   border-radius: 0.25rem;
 }
 
-/* ---------- Detail Page Meta Rows ---------- */
+/* Detail Page Meta Rows */
 .build-meta-row,
 .deploy-meta-row {
   display: flex;
@@ -2228,8 +2190,7 @@ a.pipeline-stage-body:hover {
   white-space: nowrap;
 }
 
-/* ---------- Build/Deploy Log Viewer ---------- */
-/* Always dark terminal style regardless of theme */
+/* Build/Deploy Log Viewer */
 .build-log-viewer,
 .deploy-log-viewer {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
@@ -2263,7 +2224,6 @@ a.pipeline-stage-body:hover {
   border-radius: 2px;
 }
 
-/* Primary log viewer: fills available card height, scrolls internally */
 .build-log-viewer-primary,
 .deploy-log-viewer-primary {
   flex: 1;
@@ -2272,9 +2232,6 @@ a.pipeline-stage-body:hover {
   overflow-y: auto;
 }
 
-/* Right column in detail grids: JS sets max-height to match left column */
-
-/* Log waiting placeholder */
 .log-placeholder {
   display: flex;
   flex-direction: column;
@@ -2368,7 +2325,6 @@ a.pipeline-stage-body:hover {
 .dockerfile-highlight .w {
 } /* whitespace */
 
-/* Procfile syntax emphasis (service: command) */
 .procfile-viewer {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 0.75rem;
@@ -2406,7 +2362,7 @@ a.pipeline-stage-body:hover {
   color: var(--text-faint);
 }
 
-/* ---------- Status Orbs (Build/Deploy) ---------- */
+/* Status Orbs (Build/Deploy) */
 .build-status-orb,
 .deploy-status-orb {
   width: 2.75rem;
@@ -2446,7 +2402,7 @@ a.pipeline-stage-body:hover {
   }
 }
 
-/* ---------- Error/Progress Banners (Detail Pages) ---------- */
+/* Error/Progress Banners (Detail Pages) */
 .build-error-banner,
 .deploy-error-banner {
   background: rgba(239, 68, 68, 0.04);
@@ -2484,7 +2440,7 @@ a.pipeline-stage-body:hover {
   }
 }
 
-/* --- Main progress bar (wider, 4px) --- */
+/* Main progress bar (wider, 4px) */
 .build-progress-bar,
 .deploy-progress-bar {
   height: 4px;
@@ -2519,8 +2475,8 @@ a.pipeline-stage-body:hover {
   transition: width 0.5s ease;
 }
 
-/* --- Current phase label --- */
-/* --- Elapsed timer --- */
+/* Current phase label */
+/* Elapsed timer */
 .progress-elapsed {
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
@@ -2528,7 +2484,7 @@ a.pipeline-stage-body:hover {
   letter-spacing: 0.025em;
 }
 
-/* --- Stepped pipeline --- */
+/* Stepped pipeline */
 .progress-steps {
   display: flex;
   align-items: flex-start;
@@ -2551,7 +2507,6 @@ a.pipeline-stage-body:hover {
   position: relative;
 }
 
-/* Connector line between steps */
 .progress-step::before {
   content: '';
   position: absolute;
@@ -2570,7 +2525,6 @@ a.pipeline-stage-body:hover {
   background: var(--color-primary);
 }
 
-/* Step dot */
 .step-dot {
   width: 1.25rem;
   height: 1.25rem;
@@ -2610,7 +2564,6 @@ a.pipeline-stage-body:hover {
   }
 }
 
-/* Step label */
 .step-label {
   font-size: 0.6875rem;
   line-height: 1.2;
@@ -2636,7 +2589,6 @@ a.pipeline-stage-body:hover {
   font-weight: 600;
 }
 
-/* Checkmark inside done dots */
 .step-dot svg {
   display: none;
   width: 0.625rem;
@@ -2644,7 +2596,6 @@ a.pipeline-stage-body:hover {
   color: white;
 }
 
-/* Active dot inner spinner */
 .step-dot-spinner {
   width: 0.5rem;
   height: 0.5rem;
@@ -2658,7 +2609,6 @@ a.pipeline-stage-body:hover {
   display: block;
 }
 
-/* Step duration (shown after completion) */
 .step-duration {
   font-size: 0.5625rem;
   color: var(--text-faintest);
@@ -2671,7 +2621,6 @@ a.pipeline-stage-body:hover {
   display: block;
 }
 
-/* Build sub-step counter (e.g. "Step 3/10") */
 .step-substep {
   font-size: 0.625rem;
   color: var(--color-primary);
@@ -2684,7 +2633,6 @@ a.pipeline-stage-body:hover {
   opacity: 1;
 }
 
-/* Error states for progress pipeline */
 .step-error .step-dot {
   background: oklch(var(--er));
   border-color: oklch(var(--er));
@@ -2723,7 +2671,7 @@ a.pipeline-stage-body:hover {
   animation: none;
 }
 
-/* ---------- Pipeline Progress (Overview Page) ---------- */
+/* Pipeline Progress (Overview Page) */
 .pipeline-progress {
   border-radius: 0.75rem;
   background: color-mix(in srgb, var(--color-primary) 4%, transparent);
@@ -2867,7 +2815,7 @@ a.pipeline-stage-body:hover {
   }
 }
 
-/* --- Pipe segment sub-steps (overview pipeline) --- */
+/* Pipe segment sub-steps (overview pipeline) */
 .pipe-seg-steps {
   display: flex;
   align-items: flex-start;
@@ -2957,7 +2905,6 @@ a.pipeline-stage-body:hover {
   font-variant-numeric: tabular-nums;
 }
 
-/* When inside a complete (green) segment, use success color */
 .pipe-seg-complete .pipe-step-done .pipe-step-dot {
   background: #22c55e;
   border-color: #22c55e;
@@ -2976,7 +2923,7 @@ a.pipeline-stage-body:hover {
   }
 }
 
-/* ---------- Pipeline Toast Notifications ---------- */
+/* Pipeline Toast Notifications */
 .pipeline-toast {
   pointer-events: auto;
   display: flex;
@@ -3043,7 +2990,7 @@ a.pipeline-stage-body:hover {
   }
 }
 
-/* ---------- Settings Page (wide two-column layout) ---------- */
+/* Settings Page (wide two-column layout) */
 .settings-page {
   max-width: 64rem;
   margin: 0 auto;
@@ -3123,7 +3070,7 @@ a.pipeline-stage-body:hover {
   padding: 1.25rem 0 0.5rem;
 }
 
-/* ---------- Observability Panel ---------- */
+/* Observability Panel */
 .obs-range-selector {
   display: flex;
   gap: 0;
@@ -3449,7 +3396,7 @@ a.obs-pod-link:hover {
   border-radius: inherit;
 }
 
-/* ---------- Live Status Bento Grid ---------- */
+/* Live Status Bento Grid */
 .ls-bento {
   display: grid;
   grid-template-columns: 200px 1fr;
@@ -3478,7 +3425,7 @@ a.obs-pod-link:hover {
   }
 }
 
-/* ---------- Live Status Card (compact bento tile) ---------- */
+/* Live Status Card (compact bento tile) */
 .ls-card {
   background: var(--surface-card);
   border: 1px solid var(--border-color);
@@ -3524,7 +3471,6 @@ a.obs-pod-link:hover {
   height: 0.625rem;
 }
 
-/* Metric rows */
 .ls-row {
   display: flex;
   align-items: center;
@@ -3561,7 +3507,6 @@ a.obs-pod-link:hover {
 .ls-val-warn { color: #f59e0b; }
 .ls-val-danger { color: #ef4444; }
 
-/* Sparklines */
 .ls-spark {
   flex: 1;
   height: 20px;
@@ -3580,7 +3525,6 @@ a.obs-pod-link:hover {
   to { stroke-dashoffset: 0; }
 }
 
-/* Pod dots */
 .ls-pods {
   flex: 1;
   display: flex;
@@ -3613,7 +3557,6 @@ a.obs-pod-link:hover {
   50% { opacity: 0.6; }
 }
 
-/* Shimmer loading */
 .ls-card.ls-loading .ls-row {
   position: relative;
   overflow: hidden;
@@ -3628,15 +3571,11 @@ a.obs-pod-link:hover {
   pointer-events: none;
 }
 
-/* ---------- Responsive Utils ---------- */
+/* Responsive Utils */
 @media (min-width: 1024px) {
 }
 
-/* ========================================================================== */
-/* Artifact List — Vercel-inspired deploy rows                               */
-/* ========================================================================== */
-
-/* --- Hero card for active deployment --- */
+/* Hero card for active deployment */
 .dpl-hero {
   background: oklch(var(--b1));
   border: 1px solid var(--border-color);
@@ -3711,7 +3650,7 @@ a.obs-pod-link:hover {
   flex-shrink: 0;
 }
 
-/* --- Shared meta chips --- */
+/* Shared meta chips */
 .dpl-meta-chip {
   display: inline-flex;
   align-items: center;
@@ -3746,7 +3685,7 @@ a.obs-pod-link:hover {
   text-decoration: underline;
 }
 
-/* --- Badges --- */
+/* Badges */
 .dpl-badge {
   display: inline-flex;
   align-items: center;
@@ -3776,7 +3715,6 @@ a.obs-pod-link:hover {
   border: 1px solid color-mix(in srgb, oklch(var(--bc)) 8%, transparent);
 }
 
-/* Tooltip z-index fix for badges inside dpl-list rows */
 .dpl-list .tooltip {
   z-index: 50;
 }
@@ -3794,7 +3732,7 @@ a.obs-pod-link:hover {
   border-top-color: var(--color-base-300);
 }
 
-/* --- Section header --- */
+/* Section header */
 .dpl-history-header {
   display: flex;
   align-items: center;
@@ -3820,7 +3758,7 @@ a.obs-pod-link:hover {
   color: var(--text-faintest);
 }
 
-/* --- List container --- */
+/* List container */
 .dpl-list {
   display: flex;
   flex-direction: column;
@@ -3835,14 +3773,12 @@ a.obs-pod-link:hover {
   border-radius: 0 0 0.5rem 0.5rem;
 }
 
-/* Force row layout on all direct children of .dpl-list */
 .dpl-list > * {
   display: flex !important;
   flex-direction: row !important;
   flex-wrap: nowrap !important;
   align-items: flex-start !important;
 }
-/* Force flex-item sizing on row children */
 .dpl-list > * > .dpl-row-icon {
   flex: 0 0 1.375rem !important;
 }
@@ -3854,7 +3790,7 @@ a.obs-pod-link:hover {
   flex: 0 0 auto !important;
 }
 
-/* --- Row: icon + info body + timestamp --- */
+/* Row: icon + info body + timestamp */
 .dpl-row {
   display: flex !important;
   flex-direction: row !important;
@@ -3880,7 +3816,6 @@ a.obs-pod-link:hover {
   background: color-mix(in srgb, #22c55e 4%, transparent);
 }
 
-/* Status icon circle */
 .dpl-row-icon {
   width: 1.375rem;
   height: 1.375rem;
@@ -3904,14 +3839,12 @@ a.obs-pod-link:hover {
   color: var(--color-primary);
 }
 
-/* Body: version line + git chips line */
 .dpl-row-body {
   flex: 1 1 0% !important;
   min-width: 0 !important;
   display: block !important;
 }
 
-/* Primary line: version + status text + badges */
 .dpl-row-primary {
   display: flex !important;
   flex-direction: row !important;
@@ -3948,7 +3881,6 @@ a.obs-pod-link:hover {
   font-variant-numeric: tabular-nums;
 }
 
-/* Secondary line: git chips */
 .dpl-row-meta {
   display: flex !important;
   flex-direction: row !important;
@@ -3958,7 +3890,6 @@ a.obs-pod-link:hover {
   flex-wrap: wrap;
 }
 
-/* Commit SHA link styling (uses <span data-href> to avoid nested <a>) */
 .dpl-row-sha-link {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 0.75rem;
@@ -3971,7 +3902,6 @@ a.obs-pod-link:hover {
   text-decoration: underline;
 }
 
-/* Clickable chip links inside row <a> tags — stop propagation via JS */
 .dpl-meta-chip-link {
   color: oklch(var(--bc));
   text-decoration: none;
@@ -3982,7 +3912,6 @@ a.obs-pod-link:hover {
   text-decoration: underline;
 }
 
-/* Error preview */
 .dpl-row-error-detail {
   font-size: 0.6875rem;
   color: rgba(239, 68, 68, 0.55);
@@ -3994,7 +3923,6 @@ a.obs-pod-link:hover {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
 }
 
-/* Timestamp column */
 .dpl-row-time {
   flex: 0 0 auto !important;
   font-size: 0.75rem;
@@ -4004,7 +3932,6 @@ a.obs-pod-link:hover {
   font-variant-numeric: tabular-nums;
 }
 
-/* Row accents */
 .dpl-row-error {
   border-left: 2px solid rgba(239, 68, 68, 0.25);
 }
@@ -4012,7 +3939,7 @@ a.obs-pod-link:hover {
   border-left: 2px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
 }
 
-/* --- Responsive --- */
+/* Responsive */
 @media (max-width: 639px) {
   .dpl-row {
     flex-wrap: wrap !important;
@@ -4032,7 +3959,7 @@ a.obs-pod-link:hover {
   }
 }
 
-/* ---------- Pipeline Metrics Panel ---------- */
+/* Pipeline Metrics Panel */
 .pm-stage-section {
   margin-bottom: 1.25rem;
 }

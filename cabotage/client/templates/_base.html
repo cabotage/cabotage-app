@@ -256,11 +256,9 @@
   <body class="bg-base-100 text-base-content font-sans antialiased">
 
     <div class="app-shell">
-      {# ===== TOP BAR ===== #}
       <header class="app-topbar" data-topbar>
         <div class="topbar-row flex items-center justify-between px-4 lg:px-6 h-14"
              data-topbar-row>
-          {# Left: Logo + resource path #}
           <div class="flex items-center gap-4" data-topbar-left>
             <a href="{{ url_for('main.home') }}"
                class="flex items-center gap-2 text-base-content hover:text-accent transition-colors flex-shrink-0"
@@ -279,15 +277,12 @@
               <span class="font-semibold text-sm tracking-tight hidden sm:inline">Cabotage</span>
             </a>
 
-            {# Resource path breadcrumb #}
             {% block resource_path %}
             {% endblock resource_path %}
 
-            {# Inline tabs (appear when scrolled, populated by JS) #}
             <div class="topbar-inline-tabs" data-inline-tabs></div>
           </div>
 
-          {# Right: Nav + user #}
           <div class="flex items-center gap-1 flex-shrink-0">
             {% if current_user.is_authenticated %}
               <nav class="hidden md:flex items-center gap-1">
@@ -469,7 +464,6 @@
                 </ul>
               </div>
 
-              {# Mobile hamburger #}
               <button id="mobile-nav-toggle"
                       class="btn btn-ghost btn-sm btn-circle md:hidden"
                       aria-label="Menu">
@@ -635,7 +629,6 @@
           </div>
         </div>
 
-        {# Mobile nav drawer #}
         {% if current_user.is_authenticated %}
           <nav id="mobile-nav-menu"
                class="hidden md:hidden border-t border-base-content/5 px-4 py-3 flex flex-col gap-1">
@@ -648,14 +641,12 @@
           </nav>
         {% endif %}
 
-        {# Tab bar (used by application detail and similar pages) #}
         <div data-tab-bar-wrapper>
           {% block tab_bar %}
           {% endblock tab_bar %}
         </div>
       </header>
 
-      {# ===== FLASH MESSAGES ===== #}
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
           <div class="app-content-padded !py-3">
@@ -678,7 +669,6 @@
         {% endif %}
       {% endwith %}
 
-      {# ===== MAIN CONTENT ===== #}
       <main class="app-content">
         {% block content_full %}
           <div class="app-content-padded">
@@ -688,7 +678,6 @@
         {% endblock content_full %}
       </main>
 
-      {# ===== FOOTER ===== #}
       <footer class="border-t border-base-content/5 py-4">
         <div class="app-content-padded !py-0 flex items-center justify-between text-xs text-base-content/30">
           <span>Cabotage PaaS</span>
@@ -705,7 +694,6 @@
     {% endif %}
     {% block js %}
     {% endblock js %}
-    {# ===== Global Expand Modal ===== #}
     <div id="expand-modal" class="raw-editor-modal hidden">
       <div class="raw-editor-backdrop"></div>
       <div class="raw-editor-dialog"
@@ -742,7 +730,6 @@
       </div>
     </div>
 
-    {# ===== Pipeline Toast Notifications ===== #}
     <div id="pipeline-toasts"
          class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
 

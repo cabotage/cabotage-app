@@ -21,11 +21,9 @@
 
 {% block content %}
 
-  {# ===== PACKAGE HEADER ===== #}
   <div class="mb-6">
     <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
       <div class="flex items-center gap-4">
-        {# Status Indicator #}
         <div class="build-status-orb
                     {% if release.built and not release.deposed %}
                       build-status-success
@@ -61,7 +59,6 @@
         </div>
       </div>
 
-      {# Actions #}
       <div class="flex items-center gap-2">
         {% if release.built and not release.deposed %}
           <form action="{{ url_for('user.release_deploy', release_id=release.id) }}"
@@ -91,7 +88,6 @@
     </div>
   </div>
 
-  {# ===== ERROR BANNER ===== #}
   {% if release.error %}
     <div class="build-error-banner mb-6">
       <div class="flex items-start gap-3">
@@ -106,7 +102,6 @@
     </div>
   {% endif %}
 
-  {# ===== DEPOSED / INVALID BANNER ===== #}
   {% if release.deposed %}
     <div class="build-error-banner mb-6">
       <div class="flex items-start gap-3">
@@ -121,7 +116,6 @@
     </div>
   {% endif %}
 
-  {# ===== BUILDING BANNER ===== #}
   {% if not release.built and not release.error %}
     <div class="build-progress-banner mb-6">
       <div class="flex items-center justify-between">
@@ -141,7 +135,6 @@
     </div>
   {% endif %}
 
-  {# ===== NEXT STEP BANNER (auto-deploy chain) ===== #}
   <div id="nextStepBanner" hidden class="mb-6">
     <a href="#" class="action-banner action-banner-info">
       <div class="flex items-center gap-3">
@@ -161,13 +154,10 @@
     </a>
   </div>
 
-  {# ===== PACKAGE DETAILS GRID ===== #}
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
 
-    {# Left column: metadata, environment, processes #}
     <div data-log-left class="lg:col-span-1 flex flex-col gap-4">
 
-      {# Package Info #}
       <div class="card bg-base-200 border border-base-300">
         <div class="card-body !p-4">
           <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Package Info</h2>
@@ -237,7 +227,6 @@
         </div>
       </div>
 
-      {# Timing #}
       <div class="card bg-base-200 border border-base-300">
         <div class="card-body !p-4">
           <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Timing</h2>
@@ -254,7 +243,6 @@
         </div>
       </div>
 
-      {# Dockerfile #}
       {% if release.dockerfile %}
         <details class="card bg-base-200 border border-base-300 group"
                  data-collapsible-card>
@@ -287,7 +275,6 @@
         </details>
       {% endif %}
 
-      {# Image Reference #}
       <div class="card bg-base-200 border border-base-300">
         <div class="card-body !p-4">
           <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Image</h2>
@@ -304,7 +291,6 @@
         </div>
       </div>
 
-      {# Environment Variables #}
       {% if release.configuration_objects %}
         <details class="card bg-base-200 border border-base-300 group"
                  data-collapsible-card>
@@ -360,7 +346,6 @@
         </details>
       {% endif %}
 
-      {# Build trigger info #}
       {% if release.release_metadata and release.release_metadata.get('description') %}
         <div class="card bg-base-200 border border-base-300">
           <div class="card-body !p-4">
@@ -371,10 +356,8 @@
       {% endif %}
     </div>
 
-    {# Right column: processes + build log #}
     <div class="lg:col-span-2 flex flex-col gap-4" id="log-column">
 
-      {# Processes #}
       {% if release.image_object and release.image_object.processes %}
         <div class="card bg-base-200 border border-base-300">
           <div class="card-body !p-4">
@@ -452,7 +435,6 @@
     </div>
   </div>
 
-  {# ===== COLLAPSIBLE DEBUG SECTIONS ===== #}
   <div class="flex flex-col gap-2 mb-6">
     <details class="card bg-base-200 border border-base-300 group">
       <summary class="!py-2.5 !px-4 cursor-pointer flex items-center gap-2 text-left">
