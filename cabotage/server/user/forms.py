@@ -262,6 +262,14 @@ class EditApplicationSettingsForm(FlaskForm):
         "Subdirectory",
         description="Subdirectory to build out of",
     )
+    dockerfile_path = StringField(
+        "Dockerfile Path",
+        description="Custom path to Dockerfile (e.g. docker/Dockerfile), falls back to Dockerfile.cabotage then Dockerfile",
+        filters=[
+            (lambda x: x.strip() if (x and isinstance(x, str)) else x),
+            (lambda x: x if x else None),
+        ],
+    )
     github_app_installation_id = StringField(
         "GitHub Application Installation ID",
         description="Application Installation ID from GitHub",
