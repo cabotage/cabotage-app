@@ -1,74 +1,100 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon %}
+{% from "_macros.html" import icon, stat_card, service_card, empty_state %}
 
 {% block title %}Cabotage - Platform as a Service{% endblock %}
 
 {% block content %}
 {% if current_user.is_authenticated %}
-  {# Logged-in dashboard #}
-  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+
+  {# ===== Dashboard Header ===== #}
+  <div class="flex items-center justify-between mb-8">
     <div>
-      <h1 class="text-2xl font-semibold text-white">Dashboard</h1>
-      <p class="text-sm text-base-content/50 mt-1">Welcome back, {{ current_user.username or current_user.email }}</p>
+      <h1 class="text-xl font-semibold text-white">Dashboard</h1>
+      <p class="text-sm text-base-content/40 mt-0.5">Welcome back, {{ current_user.username or current_user.email }}</p>
     </div>
+    <a href="{{ url_for('user.organization_create') }}" class="btn btn-primary btn-sm gap-2">
+      {{ icon('plus', 'w-4 h-4') }}
+      New Org
+    </a>
   </div>
 
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-    <a href="{{ url_for('user.organizations') }}" class="card bg-base-200 border border-base-300 card-hover transition-all">
-      <div class="card-body">
-        <div class="flex items-center gap-3">
-          <div class="p-2 rounded-lg bg-primary/10 text-primary">
-            {{ icon('building', 'w-5 h-5') }}
-          </div>
-          <div>
-            <h3 class="font-medium text-white">Organizations</h3>
-            <p class="text-sm text-base-content/50">Manage your organizations</p>
-          </div>
+  {# ===== Quick Stats ===== #}
+  {% set org_count = current_user.organizations|length if current_user.organizations else 0 %}
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
+    {{ stat_card(org_count, 'Organizations', 'building', 'primary') }}
+    {{ stat_card('-', 'Projects', 'folder', 'secondary') }}
+    {{ stat_card('-', 'Applications', 'box', 'accent') }}
+    {{ stat_card('-', 'Deployments', 'deploy', 'success') }}
+  </div>
+
+  {# ===== Quick Actions ===== #}
+  <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Quick Actions</h2>
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+    <a href="{{ url_for('user.organizations') }}" class="service-card card-interactive block no-underline">
+      <div class="service-card-header">
+        <div class="service-card-icon bg-primary/10 text-primary">{{ icon('building', 'w-5 h-5') }}</div>
+        <div class="flex-1">
+          <span class="text-sm font-medium text-white">Organizations</span>
+          <p class="text-xs text-base-content/40">Manage teams and access</p>
         </div>
+        <svg class="w-4 h-4 text-base-content/20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
       </div>
     </a>
 
-    <a href="{{ url_for('user.projects') }}" class="card bg-base-200 border border-base-300 card-hover transition-all">
-      <div class="card-body">
-        <div class="flex items-center gap-3">
-          <div class="p-2 rounded-lg bg-secondary/10 text-secondary">
-            {{ icon('folder', 'w-5 h-5') }}
-          </div>
-          <div>
-            <h3 class="font-medium text-white">Projects</h3>
-            <p class="text-sm text-base-content/50">View all your projects</p>
-          </div>
+    <a href="{{ url_for('user.projects') }}" class="service-card card-interactive block no-underline">
+      <div class="service-card-header">
+        <div class="service-card-icon bg-secondary/10 text-secondary">{{ icon('folder', 'w-5 h-5') }}</div>
+        <div class="flex-1">
+          <span class="text-sm font-medium text-white">Projects</span>
+          <p class="text-xs text-base-content/40">View all projects</p>
         </div>
+        <svg class="w-4 h-4 text-base-content/20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
       </div>
     </a>
 
-    <a href="{{ url_for('user.organization_create') }}" class="card bg-base-200 border border-base-300 border-dashed card-hover transition-all">
-      <div class="card-body">
-        <div class="flex items-center gap-3">
-          <div class="p-2 rounded-lg bg-accent/10 text-accent">
-            {{ icon('plus', 'w-5 h-5') }}
-          </div>
-          <div>
-            <h3 class="font-medium text-white">New Organization</h3>
-            <p class="text-sm text-base-content/50">Create a new org to get started</p>
-          </div>
+    <a href="{{ url_for('user.organization_create') }}" class="service-card card-interactive block no-underline border-dashed">
+      <div class="service-card-header">
+        <div class="service-card-icon bg-accent/10 text-accent">{{ icon('plus', 'w-5 h-5') }}</div>
+        <div class="flex-1">
+          <span class="text-sm font-medium text-white">New Organization</span>
+          <p class="text-xs text-base-content/40">Get started deploying</p>
         </div>
+        <svg class="w-4 h-4 text-base-content/20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
       </div>
     </a>
   </div>
 
 {% else %}
-  {# Anonymous landing page #}
-  <div class="flex flex-col items-center text-center py-16 lg:py-24">
-    <div class="p-3 rounded-xl bg-primary/10 text-primary mb-6">
-      <svg class="w-10 h-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-    </div>
-    <h1 class="text-4xl lg:text-5xl font-bold text-white mb-4 text-balance">Deploy with confidence</h1>
-    <p class="text-lg text-base-content/60 max-w-2xl mb-8 text-pretty">Cabotage is a self-hosted Platform as a Service. Build, deploy, and scale your applications on your own infrastructure.</p>
-    <div class="flex items-center gap-3">
-      <a href="{{ url_for('security.register') }}" class="btn btn-primary">Get Started</a>
-      <a href="{{ url_for('security.login') }}" class="btn btn-ghost">Sign In</a>
+
+  {# ===== Anonymous Landing ===== #}
+  <div class="hero-gradient">
+    <div class="flex flex-col items-center text-center py-20 lg:py-32">
+      <div class="p-3 rounded-xl bg-primary/10 text-primary mb-6">
+        <svg class="w-10 h-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      </div>
+      <h1 class="text-4xl lg:text-5xl font-bold text-white mb-4 text-balance">Deploy with confidence</h1>
+      <p class="text-lg text-base-content/50 max-w-xl mb-8 text-pretty leading-relaxed">Self-hosted Platform as a Service. Build, deploy, and scale your applications on your own infrastructure.</p>
+      <div class="flex items-center gap-3">
+        <a href="{{ url_for('security.register') }}" class="btn btn-primary">Get Started</a>
+        <a href="{{ url_for('security.login') }}" class="btn btn-ghost">Sign In</a>
+      </div>
+
+      <div class="grid grid-cols-3 gap-8 mt-16 text-center">
+        <div>
+          <div class="text-2xl font-bold text-white font-mono">0</div>
+          <div class="text-xs text-base-content/40 mt-1">Vendor Lock-in</div>
+        </div>
+        <div>
+          <div class="text-2xl font-bold text-white font-mono">K8s</div>
+          <div class="text-xs text-base-content/40 mt-1">Native</div>
+        </div>
+        <div>
+          <div class="text-2xl font-bold text-white font-mono">OSS</div>
+          <div class="text-xs text-base-content/40 mt-1">Open Source</div>
+        </div>
+      </div>
     </div>
   </div>
+
 {% endif %}
 {% endblock %}

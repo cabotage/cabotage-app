@@ -1,195 +1,458 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, breadcrumbs, status_badge %}
+{% from "_macros.html" import icon, resource_path, status_badge, tab_nav %}
 
 {% block title %}{{ application.slug }} - Cabotage{% endblock %}
 
-{% block breadcrumbs %}
-{{ breadcrumbs([
+{% block resource_path %}
+{{ resource_path([
   {'label': application.project.organization.slug, 'url': url_for('user.organization', org_slug=application.project.organization.slug)},
   {'label': application.project.slug, 'url': url_for('user.project', org_slug=application.project.organization.slug, project_slug=application.project.slug)},
   {'label': application.slug}
 ]) }}
 {% endblock %}
 
+{% block tab_bar %}
+<div class="app-content-padded !py-0">
+  {{ tab_nav([
+    {'id': 'overview', 'label': 'Overview', 'icon': 'activity'},
+    {'id': 'config', 'label': 'Configuration', 'icon': 'key', 'badge': application.configurations|length},
+    {'id': 'releases', 'label': 'Releases', 'icon': 'layers'},
+    {'id': 'images', 'label': 'Images', 'icon': 'image'}
+  ]) }}
+</div>
+{% endblock %}
+
 {% block content %}
-{# ===== HEADER ===== #}
+
+{# ===== APPLICATION HEADER ===== #}
 <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
   <div>
-    <h1 class="text-2xl font-semibold text-white">{{ application.slug }}</h1>
-    <p class="text-sm text-base-content/50 font-mono mt-1">{{ application.project.organization.slug }}/{{ application.project.slug }}/{{ application.slug }}</p>
-  </div>
-  <div class="flex flex-wrap items-center gap-2">
-    <a href="{{ url_for('user.project_application_settings', application_id=application.id) }}" class="btn btn-ghost btn-sm gap-1.5">
-      {{ icon('settings') }}
-      Settings
+    <div class="flex items-center gap-3">
+      <h1 class="text-xl font-semibold text-white">{{ application.slug }}</h1>
       {% if application.github_app_installation_id %}
         <span class="status-dot status-dot-success" title="GitHub connected"></span>
       {% endif %}
+    </div>
+    <p class="text-sm text-base-content/40 font-mono mt-0.5">{{ application.project.organization.slug }}/{{ application.project.slug }}/{{ application.slug }}</p>
+  </div>
+  <div class="flex flex-wrap items-center gap-2">
+    <a href="{{ url_for('user.project_application_settings', application_id=application.id) }}" class="btn btn-ghost btn-sm gap-1.5">
+      {{ icon('settings', 'w-3.5 h-3.5') }}
+      Settings
     </a>
     <a href="{{ url_for('user.project_application_logs', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}" class="btn btn-ghost btn-sm gap-1.5">
-      {{ icon('file-text') }}
+      {{ icon('file-text', 'w-3.5 h-3.5') }}
       Logs
     </a>
     {% if config.SHELLZ_ENABLED %}
     <a href="{{ url_for('user.project_application_shell', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}" class="btn btn-ghost btn-sm gap-1.5">
-      {{ icon('terminal') }}
+      {{ icon('terminal', 'w-3.5 h-3.5') }}
       Shell
     </a>
     {% endif %}
     <form action="{{ url_for('user.application_clear_cache', application_id=application.id) }}" method="POST" class="inline">
-      <button class="btn btn-ghost btn-sm gap-1.5" type="submit">
-        {{ icon('trash') }}
+      <button class="btn btn-ghost btn-sm gap-1.5 text-base-content/50 hover:text-error" type="submit">
+        {{ icon('trash', 'w-3.5 h-3.5') }}
         Clear Cache
       </button>
     </form>
   </div>
 </div>
 
-{# ===== DEPLOY BUTTON ===== #}
-{% if application.latest_release and application.latest_release.built %}
-<div class="card bg-base-200 border border-base-300 mb-6">
-  <div class="card-body py-4 flex flex-row items-center justify-between">
-    <div>
-      <p class="text-sm text-base-content/70">Latest release <span class="font-mono text-accent">v{{ application.latest_release.version }}</span> is ready to deploy.</p>
+{# ========================================== #}
+{# ===== TAB: OVERVIEW ===== #}
+{# ========================================== #}
+<div data-tab-panel="overview" class="tab-panel">
+
+  {# Deploy banner #}
+  {% if application.latest_release and application.latest_release.built %}
+  <div class="changes-banner mb-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <span class="status-dot status-dot-success status-dot-lg"></span>
+        <div>
+          <p class="text-sm font-medium text-white">Release <span class="font-mono text-accent">v{{ application.latest_release.version }}</span> ready to deploy</p>
+          <p class="text-xs text-base-content/40">{{ application.latest_release.updated|humanize }}</p>
+        </div>
+      </div>
+      <form action="{{ url_for('user.release_deploy', release_id=application.latest_release.id) }}" method="POST" name="deploy_release_form" enctype="multipart/form-data">
+        {{ deploy_form.hidden_tag() }}
+        <button type="submit" class="btn btn-primary btn-sm gap-1.5">
+          {{ icon('deploy', 'w-4 h-4') }}
+          Deploy Now
+        </button>
+      </form>
     </div>
-    <form action="{{ url_for('user.release_deploy', release_id=application.latest_release.id) }}" method="POST" name="deploy_release_form" enctype="multipart/form-data">
-      {{ deploy_form.hidden_tag() }}
-      <button type="submit" class="btn btn-primary btn-sm gap-1.5">
-        {{ icon('deploy') }}
-        Deploy
-      </button>
-    </form>
+  </div>
+  {% endif %}
+
+  {# Pending Changes #}
+  {% set image_diff, config_diff = application.ready_for_deployment %}
+  {% if image_diff.has_changes() or config_diff.has_changes() %}
+  <div class="changes-banner mb-6">
+    <div class="flex items-center justify-between mb-3">
+      <div class="flex items-center gap-2">
+        {{ icon('zap', 'w-4 h-4 text-primary') }}
+        <span class="text-sm font-medium text-white">Pending Changes</span>
+      </div>
+      <a class="btn btn-primary btn-sm gap-1.5" href="{{ url_for('user.application_release_create', application_id=application.id) }}">
+        {{ icon('scissors', 'w-3.5 h-3.5') }}
+        Cut Release
+      </a>
+    </div>
+
+    {% if image_diff.has_changes() %}
+    <div class="mb-3">
+      <p class="text-xs font-medium text-base-content/50 uppercase tracking-wider mb-2">Image Changes</p>
+      <div class="flex flex-col gap-1">
+        {% for item in image_diff.added() %}
+        <div class="diff-line"><span class="diff-add">+</span> <code class="text-base-content/80 text-sm">{{ item }}</code></div>
+        {% endfor %}
+        {% for item in image_diff.changed() %}
+        <div class="diff-line"><span class="diff-change">~</span> <code class="text-base-content/80 text-sm">{{ item }}</code></div>
+        {% endfor %}
+        {% for item in image_diff.removed() %}
+        <div class="diff-line"><span class="diff-remove">-</span> <code class="text-base-content/80 text-sm">{{ item }}</code></div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if config_diff.has_changes() %}
+    <div>
+      <p class="text-xs font-medium text-base-content/50 uppercase tracking-wider mb-2">Configuration Changes</p>
+      <div class="flex flex-col gap-1">
+        {% for item in config_diff.added() %}
+        <div class="diff-line"><span class="diff-add">+</span> <code class="text-base-content/80 text-sm">{{ item }}</code></div>
+        {% endfor %}
+        {% for item in config_diff.changed() %}
+        <div class="diff-line"><span class="diff-change">~</span> <code class="text-base-content/80 text-sm">{{ item }}</code></div>
+        {% endfor %}
+        {% for item in config_diff.removed() %}
+        <div class="diff-line"><span class="diff-remove">-</span> <code class="text-base-content/80 text-sm">{{ item }}</code></div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# Build status alerts #}
+  {% if application.latest_image_building and application.latest_image_building.version|default(0) > application.latest_image.version|default(0) %}
+  <div role="alert" class="alert alert-info text-sm mb-4">
+    <a href="{{ url_for('user.image_detail', image_id=application.latest_image_building.id) }}" class="flex items-center gap-2">
+      {{ icon('refresh', 'w-4 h-4') }}
+      Image Build #{{ application.latest_image_building.version }} in progress
+    </a>
+  </div>
+  {% endif %}
+  {% if application.latest_image_error and application.latest_image_error.version|default(0) > application.latest_image.version|default(0) %}
+  <div role="alert" class="alert alert-error text-sm mb-4">
+    <a href="{{ url_for('user.image_detail', image_id=application.latest_image_error.id) }}" class="flex items-center gap-2">
+      {{ icon('search', 'w-4 h-4') }}
+      Image Build #{{ application.latest_image_error.version }} failed
+    </a>
+  </div>
+  {% endif %}
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    {# Recent Deployments #}
+    {% if application.deployments.count() > 0 %}
+    <div class="card bg-base-200 border border-base-300 lg:col-span-2">
+      <div class="card-body">
+        <h2 class="text-base font-medium text-white mb-4">Recent Deployments</h2>
+        <div class="overflow-x-auto">
+          <table class="table table-sm">
+            <thead>
+              <tr class="text-base-content/50 text-xs uppercase tracking-wider">
+                <th>Status</th>
+                <th>Started</th>
+                <th>Updated</th>
+                <th class="w-1"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for deployment in application.recent_deployments %}
+              <tr>
+                <td>
+                  {% if deployment.complete %}
+                    <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-success"></span> Complete</span>
+                  {% elif deployment.error %}
+                    <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-error"></span> Error</span>
+                  {% else %}
+                    <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-info status-dot-pulse"></span> Deploying</span>
+                  {% endif %}
+                </td>
+                <td class="text-sm text-base-content/60">{{ deployment.created|humanize }}</td>
+                <td class="text-sm text-base-content/60">{{ deployment.updated|humanize }}</td>
+                <td>
+                  <a href="{{ url_for('user.deployment_detail', deployment_id=deployment.id) }}" class="btn btn-ghost btn-xs gap-1">
+                    {{ icon('search', 'w-3 h-3') }}
+                    Details
+                  </a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {# Processes #}
+    {% if application.releases.count() > 0 and application.latest_release.built %}
+    <div class="card bg-base-200 border border-base-300">
+      <div class="card-body">
+        <h2 class="text-base font-medium text-white mb-4">Processes</h2>
+        <form action="{{ url_for('user.application_scale', application_id=application.id) }}" method="POST" name="process_count_form">
+          {{ scale_form.hidden_tag() }}
+          <div class="flex flex-col gap-3">
+            {% for process_name in application.latest_release.processes %}
+            <div class="process-card">
+              <code class="text-sm text-accent flex-1">{{ process_name }}</code>
+              <div class="count-input">
+                <a class="incr-btn" data-action="decrease" href="#">-</a>
+                <input class="quantity" type="text" name="process-count-{{ process_name }}" value="{{ application.process_counts.get(process_name, 0) }}">
+                <a class="incr-btn" data-action="increase" href="#">+</a>
+              </div>
+              <select class="select select-bordered select-sm bg-base-300 text-base-content border-base-content/10 pod-size" name="process-pod-class-{{ process_name }}">
+                <option value="{{ application.process_pod_classes.get(process_name, DEFAULT_POD_CLASS) }}" selected hidden>
+                  {{ application.process_pod_classes.get(process_name, DEFAULT_POD_CLASS) }}
+                </option>
+                {% for class in pod_classes.keys() %}
+                <option value="{{ class }}">{{ class }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            {% endfor %}
+          </div>
+          <div class="mt-4">
+            <button type="submit" class="btn btn-primary btn-sm update_process_settings hidden">Update Process Settings</button>
+          </div>
+        </form>
+
+        {% if application.latest_release.release_commands %}
+        <div class="mt-6 pt-4 border-t border-base-content/5">
+          <h3 class="text-xs font-medium text-base-content/50 uppercase tracking-wider mb-3">Release Commands</h3>
+          <div class="flex flex-col gap-2">
+            {% for process_name, proc in application.latest_release.release_commands.items() %}
+            <div class="flex items-center gap-3 text-sm">
+              <code class="text-accent">{{ process_name }}</code>
+              <code class="text-base-content/60">{{ proc['cmd'] }}</code>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# Latest Release Card #}
+    <div class="card bg-base-200 border border-base-300">
+      <div class="card-body">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base font-medium text-white">Latest Release</h2>
+          {% if application.releases.count() > 0 %}
+          <a href="#releases" class="btn btn-ghost btn-xs" data-switch-tab="releases">View All</a>
+          {% endif %}
+        </div>
+
+        {% if application.latest_release %}
+        <div class="flex items-center gap-3 p-3 rounded-lg bg-base-300/50">
+          <div class="flex-1">
+            <div class="flex items-center gap-2">
+              <code class="text-sm text-accent">v{{ application.latest_release.version }}</code>
+              {% if application.latest_release.release_metadata and application.latest_release.release_metadata.get('auto_deploy') %}
+                {{ icon('zap', 'w-3 h-3 text-warning') }}
+              {% endif %}
+            </div>
+            <p class="text-xs text-base-content/40 mt-1">{{ application.latest_release.updated|humanize }}</p>
+          </div>
+          <div class="flex items-center gap-2">
+            {% if application.latest_release.built %}
+              <span class="status-dot status-dot-success"></span>
+            {% elif application.latest_release.error %}
+              <span class="status-dot status-dot-error"></span>
+            {% else %}
+              <span class="status-dot status-dot-info status-dot-pulse"></span>
+            {% endif %}
+            <a href="{{ url_for('user.release_detail', release_id=application.latest_release.id) }}" class="btn btn-ghost btn-xs gap-1">
+              {{ icon('search', 'w-3 h-3') }}
+            </a>
+          </div>
+        </div>
+        {% else %}
+        <p class="text-sm text-base-content/50">No releases yet.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    {# Latest Image Card #}
+    <div class="card bg-base-200 border border-base-300 lg:col-span-2">
+      <div class="card-body">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base font-medium text-white">Latest Image</h2>
+          {% if application.images.count() > 0 %}
+          <a href="#images" class="btn btn-ghost btn-xs" data-switch-tab="images">View All</a>
+          {% endif %}
+        </div>
+
+        {% if application.latest_image %}
+        <div class="flex items-center gap-3 p-3 rounded-lg bg-base-300/50 mb-4">
+          <div class="flex-1">
+            <div class="flex items-center gap-2">
+              <code class="text-sm text-accent">v{{ application.latest_image.version }}</code>
+              {% if application.latest_image.image_metadata and application.latest_image.image_metadata.get('auto_deploy') %}
+                {{ icon('zap', 'w-3 h-3 text-warning') }}
+              {% endif %}
+            </div>
+            <p class="text-xs text-base-content/40 mt-1">{{ application.latest_image.updated|humanize }}</p>
+          </div>
+          <div class="flex items-center gap-2">
+            {% if application.latest_image.built %}
+              <span class="status-dot status-dot-success"></span>
+            {% elif application.latest_image.error %}
+              <span class="status-dot status-dot-error"></span>
+            {% else %}
+              <span class="status-dot status-dot-info status-dot-pulse"></span>
+            {% endif %}
+            <a href="{{ url_for('user.image_detail', image_id=application.latest_image.id) }}" class="btn btn-ghost btn-xs gap-1">
+              {{ icon('search', 'w-3 h-3') }}
+            </a>
+          </div>
+        </div>
+        {% endif %}
+
+        <form action="{{ url_for('user.application_images_build_fromsource', application_id=application.id) }}" method="POST" class="inline">
+          <button class="btn btn-sm btn-outline gap-1.5" type="submit">
+            {{ icon('play', 'w-3.5 h-3.5') }}
+            Build from Source
+          </button>
+        </form>
+      </div>
+    </div>
   </div>
 </div>
-{% endif %}
 
-{# ===== PENDING CHANGES ===== #}
-{% set image_diff, config_diff = application.ready_for_deployment %}
-{% if image_diff.has_changes() or config_diff.has_changes() %}
-<div class="changes-alert mb-6">
-  <div class="flex items-center justify-between mb-3">
-    <div class="flex items-center gap-2">
-      {{ icon('zap', 'w-4 h-4 text-primary') }}
-      <span class="text-sm font-medium text-white">Pending Changes</span>
+{# ========================================== #}
+{# ===== TAB: CONFIGURATION ===== #}
+{# ========================================== #}
+<div data-tab-panel="config" class="tab-panel">
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h2 class="text-base font-medium text-white">Environment Variables</h2>
+      <p class="text-xs text-base-content/40 mt-0.5">{{ application.configurations|length }} variable{{ 's' if application.configurations|length != 1 }}</p>
     </div>
-    <a class="btn btn-primary btn-sm gap-1.5" href="{{ url_for('user.application_release_create', application_id=application.id) }}">
-      {{ icon('scissors') }}
-      Cut Release
+    <a href="{{ url_for('user.project_application_configuration_create', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}" class="btn btn-primary btn-sm gap-1.5">
+      {{ icon('plus', 'w-4 h-4') }}
+      Add Variable
     </a>
   </div>
 
-  {% if image_diff.has_changes() %}
-  <div class="mb-3">
-    <p class="text-xs font-medium text-base-content/50 uppercase tracking-wider mb-2">Image Changes</p>
-    <div class="flex flex-col gap-1">
-      {% for item in image_diff.added() %}
-      <div class="flex items-center gap-2 text-sm">
-        <span class="text-success">+</span>
-        <code class="text-base-content/80">{{ item }}</code>
-        <span class="text-xs text-base-content/40">Added</span>
-      </div>
-      {% endfor %}
-      {% for item in image_diff.changed() %}
-      <div class="flex items-center gap-2 text-sm">
-        <span class="text-info">~</span>
-        <code class="text-base-content/80">{{ item }}</code>
-        <span class="text-xs text-base-content/40">Edited</span>
-      </div>
-      {% endfor %}
-      {% for item in image_diff.removed() %}
-      <div class="flex items-center gap-2 text-sm">
-        <span class="text-error">-</span>
-        <code class="text-base-content/80">{{ item }}</code>
-        <span class="text-xs text-base-content/40">Removed</span>
+  {% if application.configurations|length > 0 %}
+  <div class="card bg-base-200 border border-base-300">
+    <div class="env-grid">
+      {% for configuration in application.configurations %}
+      <div class="env-row">
+        <div class="flex items-center gap-2 min-w-0 flex-1">
+          <code class="env-key truncate">{{ configuration.name }}</code>
+          {% if configuration.buildtime %}
+            <span class="tooltip" data-tip="Build-time variable">{{ icon('settings', 'w-3 h-3 text-base-content/30') }}</span>
+          {% endif %}
+        </div>
+        <div class="flex-1 min-w-0">
+          {% if configuration.secret %}
+            <span class="env-secret">
+              {{ icon('lock', 'w-3 h-3') }}
+              <span>Secret</span>
+            </span>
+          {% else %}
+            <code class="env-value">{{ configuration.value }}</code>
+          {% endif %}
+        </div>
+        <div class="flex items-center gap-1 flex-shrink-0">
+          <a href="{{ url_for('user.project_application_configuration_edit', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}" class="btn btn-ghost btn-xs" title="Edit">
+            {{ icon('edit', 'w-3.5 h-3.5') }}
+          </a>
+          <a href="{{ url_for('user.project_application_configuration', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}" class="btn btn-ghost btn-xs" title="History">
+            {{ icon('clock', 'w-3.5 h-3.5') }}
+          </a>
+          {% if application.configurations|length > 1 %}
+          <a href="{{ url_for('user.project_application_configuration_delete', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}" class="btn btn-ghost btn-xs text-error" title="Delete">
+            {{ icon('trash', 'w-3.5 h-3.5') }}
+          </a>
+          {% endif %}
+        </div>
       </div>
       {% endfor %}
     </div>
   </div>
-  {% endif %}
-
-  {% if config_diff.has_changes() %}
-  <div>
-    <p class="text-xs font-medium text-base-content/50 uppercase tracking-wider mb-2">Configuration Changes</p>
-    <div class="flex flex-col gap-1">
-      {% for item in config_diff.added() %}
-      <div class="flex items-center gap-2 text-sm">
-        <span class="text-success">+</span>
-        <code class="text-base-content/80">{{ item }}</code>
-        <span class="text-xs text-base-content/40">Added</span>
+  {% else %}
+  <div class="card bg-base-200 border border-base-300">
+    <div class="card-body">
+      <div class="empty-state !py-12">
+        <div class="text-base-content/15 mb-4">{{ icon('key', 'w-12 h-12') }}</div>
+        <h3 class="text-base font-medium text-base-content/60 mb-1">No environment variables</h3>
+        <p class="text-sm text-base-content/40 max-w-sm">Add environment variables to configure your application.</p>
+        <a href="{{ url_for('user.project_application_configuration_create', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}" class="btn btn-primary btn-sm gap-2 mt-4">
+          {{ icon('plus', 'w-4 h-4') }}
+          Add Variable
+        </a>
       </div>
-      {% endfor %}
-      {% for item in config_diff.removed() %}
-      <div class="flex items-center gap-2 text-sm">
-        <span class="text-error">-</span>
-        <code class="text-base-content/80">{{ item }}</code>
-        <span class="text-xs text-base-content/40">Removed</span>
-      </div>
-      {% endfor %}
-      {% for item in config_diff.changed() %}
-      <div class="flex items-center gap-2 text-sm">
-        <span class="text-info">~</span>
-        <code class="text-base-content/80">{{ item }}</code>
-        <span class="text-xs text-base-content/40">Edited</span>
-      </div>
-      {% endfor %}
     </div>
   </div>
   {% endif %}
 </div>
-{% endif %}
 
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+{# ========================================== #}
+{# ===== TAB: RELEASES ===== #}
+{# ========================================== #}
+<div data-tab-panel="releases" class="tab-panel">
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h2 class="text-base font-medium text-white">Releases</h2>
+      <p class="text-xs text-base-content/40 mt-0.5">Build history for this application</p>
+    </div>
+  </div>
 
-  {# ===== DEPLOYMENTS ===== #}
-  {% if application.deployments.count() > 0 %}
-  <div class="card bg-base-200 border border-base-300 lg:col-span-2">
-    <div class="card-body">
-      <h2 class="text-lg font-medium text-white mb-4">Recent Deployments</h2>
-
-      {# Build status alerts #}
-      {% if application.latest_deployment_running and application.latest_deployment_running.version|default(0) > application.latest_deployment.version|default(0) %}
-      <div role="alert" class="alert alert-info text-sm mb-3">
-        <a href="{{ url_for('user.image_detail', image_id=application.latest_image_building.id) }}" class="flex items-center gap-2">
-          {{ icon('search') }}
-          Image Build #{{ application.latest_image_building.version }} in progress
-        </a>
-      </div>
-      {% endif %}
-      {% if application.latest_image_error and application.latest_image_error.version|default(0) > application.latest_image.version|default(0) %}
-      <div role="alert" class="alert alert-error text-sm mb-3">
-        <a href="{{ url_for('user.image_detail', image_id=application.latest_image_error.id) }}" class="flex items-center gap-2">
-          {{ icon('search') }}
-          Image Build #{{ application.latest_image_error.version }} failed
-        </a>
-      </div>
-      {% endif %}
-
+  {% if releases|default([])|length > 0 %}
+  <div class="card bg-base-200 border border-base-300">
+    <div class="card-body !p-0">
       <div class="overflow-x-auto">
         <table class="table table-sm">
           <thead>
             <tr class="text-base-content/50 text-xs uppercase tracking-wider">
+              <th>Version</th>
               <th>Status</th>
-              <th>Started</th>
               <th>Updated</th>
               <th class="w-1"></th>
             </tr>
           </thead>
           <tbody>
-            {% for deployment in application.recent_deployments %}
+            {% for release in releases %}
             <tr>
               <td>
-                {% if deployment.complete %}
-                  <span class="status-dot status-dot-success"></span>
-                {% elif deployment.error %}
-                  <span class="status-dot status-dot-error"></span>
+                <div class="flex items-center gap-2">
+                  <code class="text-sm text-accent">v{{ release.version }}</code>
+                  {% if release.release_metadata and release.release_metadata.get('auto_deploy') %}
+                    {{ icon('zap', 'w-3 h-3 text-warning') }}
+                  {% endif %}
+                </div>
+              </td>
+              <td>
+                {% if release.built %}
+                  <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-success"></span> Built</span>
+                {% elif release.error %}
+                  <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-error"></span> Error</span>
                 {% else %}
-                  <span class="status-dot status-dot-info"></span>
+                  <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-info status-dot-pulse"></span> Building</span>
                 {% endif %}
               </td>
-              <td class="text-sm text-base-content/70">{{ deployment.created|humanize }}</td>
-              <td class="text-sm text-base-content/70">{{ deployment.updated|humanize }}</td>
+              <td class="text-sm text-base-content/60">{{ release.updated|humanize }}</td>
               <td>
-                <a href="{{ url_for('user.deployment_detail', deployment_id=deployment.id) }}" class="btn btn-ghost btn-xs gap-1">
+                <a href="{{ url_for('user.release_detail', release_id=release.id) }}" class="btn btn-ghost btn-xs gap-1">
                   {{ icon('search', 'w-3 h-3') }}
                   Details
                 </a>
@@ -201,213 +464,75 @@
       </div>
     </div>
   </div>
-  {% endif %}
-
-  {# ===== PROCESSES ===== #}
-  {% if application.releases.count() > 0 and application.latest_release.built %}
+  {% else %}
   <div class="card bg-base-200 border border-base-300">
     <div class="card-body">
-      <h2 class="text-lg font-medium text-white mb-4">Processes</h2>
-      <form action="{{ url_for('user.application_scale', application_id=application.id) }}" method="POST" name="process_count_form">
-        {{ scale_form.hidden_tag() }}
-        <div class="flex flex-col gap-4">
-          {% for process_name in application.latest_release.processes %}
-          <div class="flex items-center gap-4 p-3 rounded-lg bg-base-300/50">
-            <code class="text-sm text-accent flex-1">{{ process_name }}</code>
-            <div class="count-input">
-              <a class="incr-btn" data-action="decrease" href="#">-</a>
-              <input class="quantity" type="text" name="process-count-{{ process_name }}" value="{{ application.process_counts.get(process_name, 0) }}">
-              <a class="incr-btn" data-action="increase" href="#">+</a>
-            </div>
-            <select class="select select-bordered select-sm bg-base-300 text-base-content border-base-content/10 pod-size" name="process-pod-class-{{ process_name }}">
-              <option value="{{ application.process_pod_classes.get(process_name, DEFAULT_POD_CLASS) }}" selected hidden>
-                {{ application.process_pod_classes.get(process_name, DEFAULT_POD_CLASS) }}
-              </option>
-              {% for class in pod_classes.keys() %}
-              <option value="{{ class }}">{{ class }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          {% endfor %}
-        </div>
-        <div class="mt-4">
-          <button type="submit" class="btn btn-primary btn-sm update_process_settings hidden">Update Process Settings</button>
-        </div>
-      </form>
-
-      {% if application.latest_release.release_commands %}
-      <div class="mt-6 pt-4 border-t border-base-300">
-        <h3 class="text-sm font-medium text-base-content/50 uppercase tracking-wider mb-3">Release Commands</h3>
-        {% for process_name, proc in application.latest_release.release_commands.items() %}
-        <div class="flex items-center gap-3 text-sm">
-          <code class="text-accent">{{ process_name }}</code>
-          <code class="text-base-content/60">{{ proc['cmd'] }}</code>
-        </div>
-        {% endfor %}
+      <div class="empty-state !py-12">
+        <div class="text-base-content/15 mb-4">{{ icon('layers', 'w-12 h-12') }}</div>
+        <h3 class="text-base font-medium text-base-content/60 mb-1">No releases yet</h3>
+        <p class="text-sm text-base-content/40 max-w-sm">Releases are created when you cut a release from pending changes.</p>
       </div>
-      {% endif %}
     </div>
   </div>
   {% endif %}
+</div>
 
-  {# ===== LATEST RELEASE ===== #}
+{# ========================================== #}
+{# ===== TAB: IMAGES ===== #}
+{# ========================================== #}
+<div data-tab-panel="images" class="tab-panel">
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h2 class="text-base font-medium text-white">Images</h2>
+      <p class="text-xs text-base-content/40 mt-0.5">Container image build history</p>
+    </div>
+    <form action="{{ url_for('user.application_images_build_fromsource', application_id=application.id) }}" method="POST" class="inline">
+      <button class="btn btn-primary btn-sm gap-1.5" type="submit">
+        {{ icon('play', 'w-3.5 h-3.5') }}
+        Build from Source
+      </button>
+    </form>
+  </div>
+
+  {% if images|default([])|length > 0 %}
   <div class="card bg-base-200 border border-base-300">
-    <div class="card-body">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-medium text-white">Latest Release</h2>
-        {% if application.releases.count() > 0 %}
-        <a href="{{ url_for('user.application_releases', application_id=application.id) }}" class="btn btn-ghost btn-xs">View All</a>
-        {% endif %}
-      </div>
-
-      {% if application.latest_release %}
-      <div class="flex items-center gap-3 p-3 rounded-lg bg-base-300/50">
-        <div class="flex-1">
-          <div class="flex items-center gap-2">
-            <code class="text-sm text-accent">v{{ application.latest_release.version }}</code>
-            {% if application.latest_release.release_metadata and application.latest_release.release_metadata.get('auto_deploy') %}
-              {{ icon('zap', 'w-3 h-3 text-warning') }}
-            {% endif %}
-          </div>
-          <p class="text-xs text-base-content/40 mt-1">{{ application.latest_release.updated|humanize }}</p>
-        </div>
-        <div class="flex items-center gap-2">
-          {% if application.latest_release.built %}
-            <span class="status-dot status-dot-success"></span>
-          {% elif application.latest_release.error %}
-            <span class="status-dot status-dot-error"></span>
-          {% else %}
-            <span class="status-dot status-dot-info"></span>
-          {% endif %}
-          <a href="{{ url_for('user.release_detail', release_id=application.latest_release.id) }}" class="btn btn-ghost btn-xs gap-1">
-            {{ icon('search', 'w-3 h-3') }}
-          </a>
-        </div>
-      </div>
-      {% else %}
-      <p class="text-sm text-base-content/50">No releases yet.</p>
-      {% endif %}
-    </div>
-  </div>
-
-  {# ===== LATEST IMAGE ===== #}
-  <div class="card bg-base-200 border border-base-300 lg:col-span-2">
-    <div class="card-body">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-medium text-white">Latest Image</h2>
-        {% if application.images.count() > 0 %}
-        <a href="{{ url_for('user.application_images', application_id=application.id) }}" class="btn btn-ghost btn-xs">View All</a>
-        {% endif %}
-      </div>
-
-      {# Build status alerts #}
-      {% if application.latest_image_building and application.latest_image_building.version|default(0) > application.latest_image.version|default(0) %}
-      <div role="alert" class="alert alert-info text-sm mb-3">
-        <a href="{{ url_for('user.image_detail', image_id=application.latest_image_building.id) }}" class="flex items-center gap-2">
-          {{ icon('search') }}
-          Image Build #{{ application.latest_image_building.version }} in progress
-        </a>
-      </div>
-      {% endif %}
-      {% if application.latest_image_error and application.latest_image_error.version|default(0) > application.latest_image.version|default(0) %}
-      <div role="alert" class="alert alert-error text-sm mb-3">
-        <a href="{{ url_for('user.image_detail', image_id=application.latest_image_error.id) }}" class="flex items-center gap-2">
-          {{ icon('search') }}
-          Image Build #{{ application.latest_image_error.version }} failed
-        </a>
-      </div>
-      {% endif %}
-
-      {% if application.latest_image %}
-      <div class="flex items-center gap-3 p-3 rounded-lg bg-base-300/50 mb-4">
-        <div class="flex-1">
-          <div class="flex items-center gap-2">
-            <code class="text-sm text-accent">v{{ application.latest_image.version }}</code>
-            {% if application.latest_image.image_metadata and application.latest_image.image_metadata.get('auto_deploy') %}
-              {{ icon('zap', 'w-3 h-3 text-warning') }}
-            {% endif %}
-          </div>
-          <p class="text-xs text-base-content/40 mt-1">{{ application.latest_image.updated|humanize }}</p>
-        </div>
-        <div class="flex items-center gap-2">
-          {% if application.latest_image.built %}
-            <span class="status-dot status-dot-success"></span>
-          {% elif application.latest_image.error %}
-            <span class="status-dot status-dot-error"></span>
-          {% else %}
-            <span class="status-dot status-dot-info"></span>
-          {% endif %}
-          <a href="{{ url_for('user.image_detail', image_id=application.latest_image.id) }}" class="btn btn-ghost btn-xs gap-1">
-            {{ icon('search', 'w-3 h-3') }}
-          </a>
-        </div>
-      </div>
-      {% endif %}
-
-      <form action="{{ url_for('user.application_images_build_fromsource', application_id=application.id) }}" method="POST" class="inline">
-        <button class="btn btn-sm btn-outline gap-1.5" type="submit">
-          {{ icon('play') }}
-          Build from Source
-        </button>
-      </form>
-    </div>
-  </div>
-
-  {# ===== ENVIRONMENT VARIABLES ===== #}
-  <div class="card bg-base-200 border border-base-300 lg:col-span-2">
-    <div class="card-body">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-medium text-white">Environment Variables</h2>
-        <a href="{{ url_for('user.project_application_configuration_create', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}" class="btn btn-primary btn-sm gap-1.5">
-          {{ icon('plus') }}
-          Add Variable
-        </a>
-      </div>
-
+    <div class="card-body !p-0">
       <div class="overflow-x-auto">
         <table class="table table-sm">
           <thead>
             <tr class="text-base-content/50 text-xs uppercase tracking-wider">
-              <th>Name</th>
-              <th>Value</th>
+              <th>Version</th>
+              <th>Status</th>
+              <th>Updated</th>
               <th class="w-1"></th>
             </tr>
           </thead>
           <tbody>
-            {% for configuration in application.configurations %}
+            {% for image in images %}
             <tr>
               <td>
                 <div class="flex items-center gap-2">
-                  <code class="text-sm text-accent">{{ configuration.name }}</code>
-                  {% if configuration.buildtime %}
-                    <span class="tooltip" data-tip="Build-time variable">{{ icon('settings', 'w-3 h-3 text-base-content/30') }}</span>
+                  <code class="text-sm text-accent">v{{ image.version }}</code>
+                  {% if image.image_metadata and image.image_metadata.get('auto_deploy') %}
+                    {{ icon('zap', 'w-3 h-3 text-warning') }}
                   {% endif %}
                 </div>
-              </td>
-              <td class="max-w-xs">
-                {% if configuration.secret %}
-                  <span class="flex items-center gap-1 text-base-content/40 text-sm">
-                    {{ icon('lock', 'w-3 h-3') }}
-                    <span>Secret</span>
-                  </span>
-                {% else %}
-                  <code class="text-sm text-base-content/70 truncate block max-w-xs">{{ configuration.value }}</code>
-                {% endif %}
               </td>
               <td>
-                <div class="flex items-center gap-1">
-                  <a href="{{ url_for('user.project_application_configuration_edit', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}" class="btn btn-ghost btn-xs" title="Edit">
-                    {{ icon('edit', 'w-3.5 h-3.5') }}
-                  </a>
-                  <a href="{{ url_for('user.project_application_configuration', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}" class="btn btn-ghost btn-xs" title="History">
-                    {{ icon('refresh', 'w-3.5 h-3.5') }}
-                  </a>
-                  {% if application.configurations|length > 1 %}
-                  <a href="{{ url_for('user.project_application_configuration_delete', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}" class="btn btn-ghost btn-xs text-error" title="Delete">
-                    {{ icon('trash', 'w-3.5 h-3.5') }}
-                  </a>
-                  {% endif %}
-                </div>
+                {% if image.built %}
+                  <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-success"></span> Built</span>
+                {% elif image.error %}
+                  <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-error"></span> Error</span>
+                {% else %}
+                  <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-info status-dot-pulse"></span> Building</span>
+                {% endif %}
+              </td>
+              <td class="text-sm text-base-content/60">{{ image.updated|humanize }}</td>
+              <td>
+                <a href="{{ url_for('user.image_detail', image_id=image.id) }}" class="btn btn-ghost btn-xs gap-1">
+                  {{ icon('search', 'w-3 h-3') }}
+                  Details
+                </a>
               </td>
             </tr>
             {% endfor %}
@@ -416,6 +541,37 @@
       </div>
     </div>
   </div>
-
+  {% else %}
+  <div class="card bg-base-200 border border-base-300">
+    <div class="card-body">
+      <div class="empty-state !py-12">
+        <div class="text-base-content/15 mb-4">{{ icon('image', 'w-12 h-12') }}</div>
+        <h3 class="text-base font-medium text-base-content/60 mb-1">No images yet</h3>
+        <p class="text-sm text-base-content/40 max-w-sm">Build your first image from source.</p>
+        <form action="{{ url_for('user.application_images_build_fromsource', application_id=application.id) }}" method="POST" class="inline mt-4">
+          <button class="btn btn-primary btn-sm gap-2" type="submit">
+            {{ icon('play', 'w-4 h-4') }}
+            Build from Source
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 </div>
+
+{% endblock %}
+
+{% block js %}
+<script>
+  // Tab switching links from within the page
+  document.querySelectorAll('[data-switch-tab]').forEach(function(el) {
+    el.addEventListener('click', function(e) {
+      e.preventDefault();
+      var tabId = el.getAttribute('data-switch-tab');
+      var tabBtn = document.querySelector('[data-tab="' + tabId + '"]');
+      if (tabBtn) tabBtn.click();
+    });
+  });
+</script>
 {% endblock %}

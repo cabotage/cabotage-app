@@ -1,39 +1,42 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, breadcrumbs, page_header, empty_state %}
+{% from "_macros.html" import icon, resource_path, page_header, empty_state, service_card, stat_card %}
 
 {% block title %}{{ organization.name }} - Cabotage{% endblock %}
 
-{% block breadcrumbs %}
-{{ breadcrumbs([
+{% block resource_path %}
+{{ resource_path([
   {'label': 'Organizations', 'url': url_for('user.organizations')},
   {'label': organization.slug}
 ]) }}
 {% endblock %}
 
 {% block content %}
-{% call(actions) page_header(organization.name, 'Organization') %}
+{% call() page_header(organization.name, 'Organization') %}
   <a href="{{ url_for('user.organization_project_create', org_slug=organization.slug) }}" class="btn btn-primary btn-sm gap-2">
-    {{ icon('plus') }}
+    {{ icon('plus', 'w-4 h-4') }}
     New Project
   </a>
 {% endcall %}
 
+{# Stats #}
+{% set proj_count = organization.projects|length %}
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+  {{ stat_card(proj_count, 'Projects', 'folder', 'secondary') }}
+</div>
+
+{# Projects Grid #}
 {% if organization.projects %}
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+<h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Projects</h2>
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
   {% for project in organization.projects %}
-  <a href="{{ url_for('user.project', org_slug=organization.slug, project_slug=project.slug) }}" class="card bg-base-200 border border-base-300 card-hover transition-all">
-    <div class="card-body">
-      <div class="flex items-center gap-3">
-        <div class="p-2 rounded-lg bg-secondary/10 text-secondary">
-          {{ icon('folder', 'w-5 h-5') }}
-        </div>
-        <div>
-          <h3 class="font-medium text-white">{{ project.name }}</h3>
-          <p class="text-xs text-base-content/40 font-mono">{{ organization.slug }}/{{ project.slug }}</p>
-        </div>
-      </div>
-    </div>
-  </a>
+    {% set app_count = project.project_applications|length %}
+    {{ service_card(
+      name=project.name,
+      slug=organization.slug ~ '/' ~ project.slug,
+      url=url_for('user.project', org_slug=organization.slug, project_slug=project.slug),
+      meta_items=[app_count ~ ' app' ~ ('s' if app_count != 1 else '')],
+      color='secondary'
+    ) }}
   {% endfor %}
 </div>
 {% else %}
