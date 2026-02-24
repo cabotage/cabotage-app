@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path %}
+{% from "_macros.html" import icon, resource_path, status_badge %}
 
 {% set app = application %}
 {% set org_slug = app.project.organization.slug %}
@@ -21,64 +21,108 @@
 
 {% block content %}
 
-  <div class="flex items-center justify-between mb-4">
-    <h1 class="text-xl font-semibold text-base-content">Deployments</h1>
+  <div class="flex items-center justify-between mb-5">
+    <div>
+      <h1 class="text-xl font-semibold text-base-content">Deployments</h1>
+      <p class="text-sm text-base-content/40 mt-0.5">Deployment history for {{ app_slug }}</p>
+    </div>
+    {% if app.latest_release and app.latest_release.built %}
+      <form action="{{ url_for('user.release_deploy', release_id=app.latest_release.id) }}"
+            method="post"
+            enctype="multipart/form-data"
+            class="inline">
+        {{ deploy_form.hidden_tag() }}
+        <button class="btn btn-primary btn-sm gap-1.5" type="submit">{{ icon('upload', 'w-3.5 h-3.5') }} Push Live</button>
+      </form>
+    {% endif %}
   </div>
 
   {% if deployments|length > 0 %}
-    <div class="card bg-base-200 border border-base-300">
-      <div class="card-body !p-0">
-        <div class="overflow-x-auto">
-          <table class="table table-sm">
-            <thead>
-              <tr class="text-base-content/50 text-xs uppercase tracking-wider">
-                <th>Status</th>
-                <th>Package</th>
-                <th>Updated</th>
-                <th class="w-1"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for deployment in deployments %}
-                <tr>
-                  <td>
-                    {% if deployment.complete %}
-                      <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-success"></span> Complete</span>
-                    {% elif deployment.error %}
-                      <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-error"></span> Failed</span>
-                    {% else %}
-                      <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-info status-dot-pulse"></span> Deploying</span>
-                    {% endif %}
-                  </td>
-                  <td>
-                    {% if deployment.release_id %}
-                      <code class="text-sm text-accent">v{{ deployment.release_object.version if deployment.release_object else '-' }}</code>
-                    {% else %}
-                      <span class="text-sm text-base-content/40">-</span>
-                    {% endif %}
-                  </td>
-                  <td class="text-sm text-base-content/60">{{ deployment.updated|humanize }}</td>
-                  <td>
-                    <a href="{{ url_for('user.deployment_detail', deployment_id=deployment.id) }}"
-                       class="btn btn-ghost btn-xs gap-1">Details</a>
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
+    {# Find the active deployment (first complete one) #}
+    {% set ns = namespace(found_active=false) %}
+
+    <div class="deploy-list">
+      {% for deployment in deployments %}
+        {% set is_active = deployment.complete and not ns.found_active and not deployment.error %}
+        {% if is_active %}
+          {% set ns.found_active = true %}
+        {% endif %}
+
+        <a href="{{ url_for('user.deployment_detail', deployment_id=deployment.id) }}"
+           class="deploy-row
+                  {% if is_active %}deploy-row-active{% endif %}">
+          <div class="deploy-row-left">
+            {# Status badge #}
+            {% if is_active %}
+              <span class="deploy-badge deploy-badge-active">ACTIVE</span>
+            {% elif deployment.complete %}
+              <span class="deploy-badge deploy-badge-superseded">SUPERSEDED</span>
+            {% elif deployment.error %}
+              <span class="deploy-badge deploy-badge-error">ERROR</span>
+            {% else %}
+              <span class="deploy-badge deploy-badge-building">DEPLOYING</span>
+            {% endif %}
+
+            <div class="deploy-row-info">
+              {# Primary line: package version + commit info #}
+              <div class="deploy-row-primary">
+                {% if deployment.release_object %}
+                  <code class="deploy-row-id">v{{ deployment.release_object.version }}</code>
+                {% else %}
+                  <code class="deploy-row-id text-base-content/40">-</code>
+                {% endif %}
+                {% if deployment.error_detail %}
+                  <span class="text-xs text-error/70 truncate max-w-[300px]">{{ deployment.error_detail[:80] }}
+                    {% if deployment.error_detail|length > 80 %}...{% endif %}
+                  </span>
+                {% endif %}
+              </div>
+
+              {# Secondary line: commit SHA, platform info #}
+              <div class="deploy-row-meta">
+                {% if deployment.release_object %}
+                  {% set rel = deployment.release_object %}
+                  {% if rel.commit_sha and rel.commit_sha != 'null' %}
+                    <span class="deploy-meta-item" title="Commit SHA">
+                      {{ icon('git-commit', 'w-3 h-3') }}
+                      <span class="font-mono">{{ rel.commit_sha[:7] }}</span>
+                    </span>
+                  {% endif %}
+                  {% if rel.image_object and rel.image_object.build_ref %}
+                    <span class="deploy-meta-item" title="Branch">
+                      {{ icon('git-branch', 'w-3 h-3') }}
+                      <span class="font-mono">{{ rel.image_object.build_ref[:30] }}
+                        {% if rel.image_object.build_ref|length > 30 %}...{% endif %}
+                      </span>
+                    </span>
+                  {% endif %}
+                  <span class="deploy-meta-item" title="Package">
+                    {{ icon('layers', 'w-3 h-3') }}
+                    pkg v{{ rel.version }}
+                  </span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+
+          <div class="deploy-row-right">
+            <span class="deploy-row-time">{{ deployment.created|humanize }}</span>
+            {{ icon('chevron-right', 'w-4 h-4 text-base-content/20') }}
+          </div>
+        </a>
+      {% endfor %}
     </div>
 
+    {# Pagination #}
     <div class="flex items-center justify-between mt-4">
       {% if page > 1 %}
-        <a href="?page={{ page - 1 }}" class="btn btn-ghost btn-sm">Previous</a>
+        <a href="?page={{ page - 1 }}" class="btn btn-ghost btn-sm gap-1">{{ icon('arrow-left', 'w-3.5 h-3.5') }} Previous</a>
       {% else %}
         <span></span>
       {% endif %}
       <span class="text-xs text-base-content/40">Page {{ page }}</span>
       {% if deployments|length == 20 %}
-        <a href="?page={{ page + 1 }}" class="btn btn-ghost btn-sm">Next</a>
+        <a href="?page={{ page + 1 }}" class="btn btn-ghost btn-sm gap-1">Next {{ icon('chevron-right', 'w-3.5 h-3.5') }}</a>
       {% else %}
         <span></span>
       {% endif %}
@@ -91,6 +135,15 @@
           <div class="text-base-content/15 mb-4">{{ icon('deploy', 'w-12 h-12') }}</div>
           <h3 class="text-base font-medium text-base-content/60 mb-1">No deployments yet</h3>
           <p class="text-sm text-base-content/40 max-w-sm">Deployments are created when you deploy a package.</p>
+          {% if app.latest_release and app.latest_release.built %}
+            <form action="{{ url_for('user.release_deploy', release_id=app.latest_release.id) }}"
+                  method="post"
+                  enctype="multipart/form-data"
+                  class="inline mt-4">
+              {{ deploy_form.hidden_tag() }}
+              <button class="btn btn-primary btn-sm gap-2" type="submit">{{ icon('upload', 'w-4 h-4') }} Push Live</button>
+            </form>
+          {% endif %}
         </div>
       </div>
     </div>

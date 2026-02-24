@@ -290,7 +290,7 @@
           {# Right: Nav + user #}
           <div class="flex items-center gap-1 flex-shrink-0">
             {% if current_user.is_authenticated %}
-              <nav class="hidden lg:flex items-center gap-1">
+              <nav class="hidden md:flex items-center gap-1">
                 <a href="{{ url_for('user.organizations') }}"
                    class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Orgs</a>
                 <a href="{{ url_for('user.projects') }}"
@@ -471,7 +471,7 @@
 
               {# Mobile hamburger #}
               <button id="mobile-nav-toggle"
-                      class="btn btn-ghost btn-sm btn-circle lg:hidden"
+                      class="btn btn-ghost btn-sm btn-circle md:hidden"
                       aria-label="Menu">
                 <svg class="w-4 h-4"
                      viewBox="0 0 24 24"
@@ -638,11 +638,7 @@
         {# Mobile nav drawer #}
         {% if current_user.is_authenticated %}
           <nav id="mobile-nav-menu"
-               class="hidden lg:hidden border-t border-base-content/5 px-4 py-3 flex flex-col gap-1">
-            {# Page tabs (cloned from tab bar by JS) #}
-            <div id="mobile-nav-tabs" class="flex flex-col gap-1"></div>
-            <div id="mobile-nav-divider"
-                 class="hidden border-t border-base-content/5 my-1"></div>
+               class="hidden md:hidden border-t border-base-content/5 px-4 py-3 flex flex-col gap-1">
             <a href="{{ url_for('user.organizations') }}"
                class="btn btn-ghost btn-sm justify-start text-sm">Organizations</a>
             <a href="{{ url_for('user.projects') }}"

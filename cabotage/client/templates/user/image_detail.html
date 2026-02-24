@@ -54,7 +54,7 @@
               Build <span class="font-mono text-accent">#{{ image.version }}</span>
             </h1>
             {% if image.image_metadata and image.image_metadata.get('auto_deploy') %}
-              <span class="badge badge-sm badge-warning gap-1">{{ icon('zap', 'w-3 h-3') }} auto</span>
+              <span class="badge badge-sm badge-ghost text-accent/70 border-accent/20 gap-1">{{ icon('zap', 'w-3 h-3') }} auto</span>
             {% endif %}
           </div>
           <p class="text-sm text-base-content/40 font-mono mt-0.5">{{ image.repository_name }}</p>
@@ -63,10 +63,18 @@
 
       {# Actions #}
       <div class="flex items-center gap-2">
+        {% if image.built %}
+          <a href="{{ url_for('user.application_release_create', application_id=app.id) }}"
+             class="btn btn-primary btn-sm gap-1.5">
+            {{ icon('scissors', 'w-3.5 h-3.5') }}
+            Create Package
+          </a>
+        {% endif %}
         {% if image.error %}
           <form action="{{ url_for('user.application_images_build_fromsource', application_id=app.id) }}"
                 method="post">
-            <button type="submit" class="btn btn-error btn-sm gap-1.5">
+            <button type="submit"
+                    class="btn btn-ghost btn-sm gap-1.5 text-error hover:bg-error/10">
               {{ icon('refresh-cw', 'w-3.5 h-3.5') }}
               Try Again
             </button>
@@ -99,24 +107,48 @@
   {# ===== BUILDING BANNER ===== #}
   {% if not image.built and not image.error %}
     <div class="build-progress-banner mb-6">
-      <div class="flex items-center gap-3">
-        <div class="build-progress-spinner"></div>
-        <div>
-          <p class="text-sm font-medium text-base-content">Build in progress</p>
-          <p class="text-xs text-base-content/40">Streaming logs below. Page will refresh on completion.</p>
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="build-progress-spinner"></div>
+          <div>
+            <p class="text-sm font-medium text-base-content" id="buildPhase">Waiting for logs…</p>
+            <p class="text-xs text-base-content/40">Streaming logs below. Updates live on completion.</p>
+          </div>
         </div>
+        <span class="progress-elapsed" id="buildElapsed">00:00</span>
       </div>
       <div class="build-progress-bar mt-3">
-        <div class="build-progress-bar-fill"></div>
+        <div class="build-progress-bar-fill" id="buildProgressFill"></div>
       </div>
+      <div class="progress-steps" id="buildSteps"></div>
     </div>
   {% endif %}
 
+  {# ===== NEXT STEP BANNER (auto-deploy chain) ===== #}
+  <div id="nextStepBanner" hidden class="mb-6">
+    <a href="#" class="action-banner action-banner-info">
+      <div class="flex items-center gap-3">
+        <div class="action-banner-spinner"></div>
+        <div>
+          <p class="text-sm font-medium text-base-content">Build complete — release is building next</p>
+          <p class="text-xs text-base-content/40">Click to follow the auto-deploy pipeline</p>
+        </div>
+      </div>
+      <svg class="w-4 h-4 text-base-content/20 flex-shrink-0"
+           viewBox="0 0 24 24"
+           fill="none"
+           stroke="currentColor"
+           stroke-width="2">
+        <polyline points="9 18 15 12 9 6" />
+      </svg>
+    </a>
+  </div>
+
   {# ===== BUILD DETAILS GRID ===== #}
-  <div class="grid grid-cols-1 lg:grid-cols-3 {{ '' if image.procfile else 'lg:items-start' }} gap-4 mb-6">
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
 
     {# Left column: metadata #}
-    <div id="build-left-column" class="lg:col-span-1 flex flex-col gap-4">
+    <div data-log-left class="lg:col-span-1 flex flex-col gap-4">
 
       {# Build Info #}
       <div class="card bg-base-200 border border-base-300">
@@ -141,14 +173,38 @@
             </div>
             {% if image.build_ref %}
               <div class="build-meta-row">
-                <span class="build-meta-label">Ref</span>
-                <code class="build-meta-value">{{ image.build_ref }}</code>
+                <span class="build-meta-label">Branch</span>
+                <span class="build-meta-value">
+                  {% if app.github_repository %}
+                    <a href="https://github.com/{{ app.github_repository }}/tree/{{ image.build_ref }}"
+                       class="inline-flex items-center gap-1.5 text-accent hover:text-accent/80 transition-colors"
+                       target="_blank"
+                       rel="noopener">
+                      <code class="text-xs">{{ image.build_ref }}</code>
+                      {{ icon('external-link', 'w-3 h-3 text-base-content/30') }}
+                    </a>
+                  {% else %}
+                    <code class="text-xs">{{ image.build_ref }}</code>
+                  {% endif %}
+                </span>
               </div>
             {% endif %}
             {% if image.commit_sha != 'null' %}
               <div class="build-meta-row">
                 <span class="build-meta-label">Commit</span>
-                <code class="build-meta-value">{{ image.commit_sha[:12] }}</code>
+                <span class="build-meta-value">
+                  {% if app.github_repository %}
+                    <a href="https://github.com/{{ app.github_repository }}/commit/{{ image.commit_sha }}"
+                       class="inline-flex items-center gap-1.5 text-accent hover:text-accent/80 transition-colors"
+                       target="_blank"
+                       rel="noopener">
+                      <code class="text-xs">{{ image.commit_sha[:12] }}</code>
+                      {{ icon('external-link', 'w-3 h-3 text-base-content/30') }}
+                    </a>
+                  {% else %}
+                    <code class="text-xs">{{ image.commit_sha[:12] }}</code>
+                  {% endif %}
+                </span>
               </div>
             {% endif %}
             {% if image.build_slug %}
@@ -184,6 +240,88 @@
         </div>
       </div>
 
+      {# Dockerfile + Procfile #}
+      {% if image.dockerfile %}
+        <details class="card bg-base-200 border border-base-300 group"
+                 data-collapsible-card>
+          <summary class="!p-4 cursor-pointer">
+            <div class="flex items-center justify-between w-full">
+              <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Dockerfile</h2>
+              <div class="flex items-center gap-2">
+                <button class="expand-btn"
+                        data-expand="dockerfile-content"
+                        data-expand-title="Dockerfile"
+                        title="Expand"
+                        onclick="event.stopPropagation()">
+                  <svg class="w-3.5 h-3.5"
+                       viewBox="0 0 24 24"
+                       fill="none"
+                       stroke="currentColor"
+                       stroke-width="2">
+                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                  </svg>
+                </button>
+                <span class="collapse-icon text-base-content/30">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</span>
+              </div>
+            </div>
+          </summary>
+          <div class="!px-4 !pb-4">
+            <div id="dockerfile-content">
+              <div class="code-block dockerfile-highlight !text-xs !leading-relaxed">
+                {{- image.dockerfile|trim|highlight_code("dockerfile") |safe -}}
+              </div>
+            </div>
+          </div>
+        </details>
+      {% endif %}
+      {% if image.procfile %}
+        <details id="procfile-card"
+                 class="card bg-base-200 border border-base-300 group"
+                 data-collapsible-card>
+          <summary class="!p-4 cursor-pointer">
+            <div class="flex items-center justify-between w-full">
+              <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Procfile</h2>
+              <div class="flex items-center gap-2">
+                <button class="expand-btn"
+                        data-expand="procfile-content"
+                        data-expand-title="Procfile"
+                        title="Expand"
+                        onclick="event.stopPropagation()">
+                  <svg class="w-3.5 h-3.5"
+                       viewBox="0 0 24 24"
+                       fill="none"
+                       stroke="currentColor"
+                       stroke-width="2">
+                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                  </svg>
+                </button>
+                <span class="collapse-icon text-base-content/30">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</span>
+              </div>
+            </div>
+          </summary>
+          <div class="!px-4 !pb-4">
+            <div id="procfile-content">
+              <div class="procfile-viewer">
+                {% for line in image.procfile.split('\n') %}
+                  {% if line and ':' in line %}
+                    {% set parts = line.split(':', 1) %}
+                    <div class="procfile-line">
+                      <span class="procfile-service">{{ parts[0].strip() }}</span>
+                      <span class="procfile-sep">:</span>
+                      <span class="procfile-command">{{ parts[1].strip() }}</span>
+                    </div>
+                  {% elif line %}
+                    <div class="procfile-line procfile-line-raw">{{ line }}</div>
+                  {% else %}
+                    <div class="procfile-line">&nbsp;</div>
+                  {% endif %}
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </details>
+      {% endif %}
+
       {# Image ID (if built) #}
       {% if image.image_id %}
         <div class="card bg-base-200 border border-base-300">
@@ -208,83 +346,61 @@
           </div>
         </div>
       {% endif %}
-
-      {# Dockerfile + Procfile moved left so logs stay primary on the right #}
-      {% if image.dockerfile or image.procfile %}
-        <div class="flex flex-col gap-4">
-          {% if image.dockerfile %}
-            <div class="card bg-base-200 border border-base-300">
-              <div class="card-body !p-4">
-                <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Dockerfile</h2>
-                <div class="code-block dockerfile-highlight !text-xs !leading-relaxed">
-                  {{- image.dockerfile|trim|highlight_code("dockerfile") |safe -}}
-                </div>
-              </div>
-            </div>
-          {% endif %}
-          {% if image.procfile %}
-            <div id="procfile-card" class="card bg-base-200 border border-base-300">
-              <div class="card-body !p-4">
-                <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Procfile</h2>
-                <div class="procfile-viewer">
-                  {% for line in image.procfile.split('\n') %}
-                    {% if line and ':' in line %}
-                      {% set parts = line.split(':', 1) %}
-                      <div class="procfile-line">
-                        <span class="procfile-service">{{ parts[0].strip() }}</span>
-                        <span class="procfile-sep">:</span>
-                        <span class="procfile-command">{{ parts[1].strip() }}</span>
-                      </div>
-                    {% elif line %}
-                      <div class="procfile-line procfile-line-raw">{{ line }}</div>
-                    {% else %}
-                      <div class="procfile-line">&nbsp;</div>
-                    {% endif %}
-                  {% endfor %}
-                </div>
-              </div>
-            </div>
-          {% endif %}
-        </div>
-      {% endif %}
     </div>
 
-    {# Right column: processes + log #}
-    <div class="lg:col-span-2 flex flex-col gap-4 {{ 'lg:min-h-full' if image.procfile else '' }}">
-      {# Processes (shown prominently when built) #}
+    {# Right column: processes + build log #}
+    <div class="lg:col-span-2 flex flex-col gap-4" id="log-column">
+
+      {# Processes #}
       {% if image.processes %}
         <div class="card bg-base-200 border border-base-300">
           <div class="card-body !p-4">
-            <div class="flex items-center gap-1.5 mb-3">
-              <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Processes</h2>
-              <div class="tooltip tooltip-right"
-                   data-tip="Defined in your Procfile. 'web' receives HTTP traffic. 'worker' runs background jobs. 'release' runs once per package build. 'postdeploy' runs once after each deploy.">
-                {{ icon('info', 'w-3 h-3 text-base-content/25 cursor-help') }}
-              </div>
-            </div>
-            <div class="flex flex-col gap-0">
-              {% for process, info in image.processes.items() %}
-                <div class="flex items-start gap-3 py-2.5 {{ 'border-t border-base-content/5' if not loop.first }}">
-                  <code class="text-sm text-accent font-medium min-w-[5rem] pt-0.5">{{ process }}</code>
-                  <div class="flex-1 min-w-0">
-                    <code class="text-sm text-base-content/70 break-all">{{ info['cmd'] }}</code>
-                    {% if info.get('env') %}
-                      <div class="flex flex-wrap gap-1.5 mt-1.5">
-                        {% for item in info['env'] %}
-                          <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-base-300/60 text-xs font-mono text-base-content/50">{{ item[0] }}</span>
-                        {% endfor %}
-                      </div>
-                    {% endif %}
-                  </div>
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-1.5">
+                <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Processes</h2>
+                <div class="tooltip tooltip-right"
+                     data-tip="Defined in your Procfile. 'web' receives HTTP traffic. 'worker' runs background jobs. 'release' runs once per package build. 'postdeploy' runs once after each deploy.">
+                  {{ icon('info', 'w-3 h-3 text-base-content/25 cursor-help') }}
                 </div>
-              {% endfor %}
+              </div>
+              <button class="expand-btn"
+                      data-expand="processes-content"
+                      data-expand-title="Processes"
+                      title="Expand">
+                <svg class="w-3.5 h-3.5"
+                     viewBox="0 0 24 24"
+                     fill="none"
+                     stroke="currentColor"
+                     stroke-width="2">
+                  <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                </svg>
+              </button>
+            </div>
+            <div id="processes-content">
+              <div class="flex flex-col gap-0">
+                {% for process, info in image.processes.items() %}
+                  <div class="flex items-start gap-3 py-2.5 {{ 'border-t border-base-content/5' if not loop.first }}">
+                    <code class="text-sm text-accent font-medium min-w-[5rem] pt-0.5">{{ process }}</code>
+                    <div class="flex-1 min-w-0">
+                      <code class="text-sm text-base-content/70 break-all">{{ info['cmd'] }}</code>
+                      {% if info.get('env') %}
+                        <div class="flex flex-wrap gap-1.5 mt-1.5">
+                          {% for item in info['env'] %}
+                            <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-base-300/60 text-xs font-mono text-base-content/50">{{ item[0] }}</span>
+                          {% endfor %}
+                        </div>
+                      {% endif %}
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
             </div>
           </div>
         </div>
       {% endif %}
 
-      <div class="card bg-base-200 border border-base-300">
-        <div class="card-body !p-4">
+      <div class="card bg-base-200 border border-base-300 flex-1 flex flex-col">
+        <div class="card-body !p-4 flex-1 flex flex-col">
           <div class="flex items-center justify-between mb-3">
             <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Build Log</h2>
             {% if image.image_build_log %}
@@ -296,7 +412,24 @@
               </button>
             {% endif %}
           </div>
-          <div class="build-log-viewer build-log-viewer-primary" id="buildLog">{{ image.image_build_log }}</div>
+          <div class="build-log-viewer build-log-viewer-primary flex-1"
+               id="buildLog"
+               data-log-viewer>
+            {%- if image.image_build_log and image.image_build_log != 'None' -%}
+              {{ image.image_build_log }}
+            {%- else -%}
+              <div class="log-placeholder" id="logPlaceholder">
+                <div class="log-placeholder-icon">{{ icon('terminal', 'w-6 h-6') }}</div>
+                <div class="log-placeholder-lines">
+                  <div class="log-placeholder-line" style="width: 100%"></div>
+                  <div class="log-placeholder-line"></div>
+                  <div class="log-placeholder-line"></div>
+                  <div class="log-placeholder-line"></div>
+                </div>
+                <span class="log-placeholder-text">Waiting for build output…</span>
+              </div>
+            {%- endif -%}
+          </div>
         </div>
       </div>
     </div>
@@ -331,50 +464,96 @@
 
 {% block js %}
   <script>
-  function syncBuildLogHeight() {
-    var anchorEl = document.getElementById('procfile-card');
-    var logEl = document.getElementById('buildLog');
-    if (!logEl) return;
-    if (!anchorEl) {
-      logEl.style.height = '';
-      logEl.style.maxHeight = '';
-      return;
-    }
-
-    if (window.innerWidth < 1024) {
-      logEl.style.height = '';
-      logEl.style.maxHeight = '';
-      return;
-    }
-
-    var leftRect = anchorEl.getBoundingClientRect();
-    var logRect = logEl.getBoundingClientRect();
-    var available = Math.floor(leftRect.bottom - logRect.top + 1);
-    if (available > 120) {
-      logEl.style.height = available + 'px';
-      logEl.style.maxHeight = available + 'px';
-    }
+  /* Auto-deploy: if already built and next step exists, show banner immediately */
+  var nextStepUrl = {{ next_step_url | tojson }};
+  var nextStepBanner = document.getElementById('nextStepBanner');
+  if (nextStepUrl && nextStepBanner) {
+    nextStepBanner.querySelector('a').href = nextStepUrl;
+    nextStepBanner.hidden = false;
   }
+  var autoDeployAppId = '{{ app.id }}';
 
   /* Live log streaming for in-progress builds */
   var logsPre = document.getElementById('buildLog');
-  syncBuildLogHeight();
-  window.addEventListener('resize', syncBuildLogHeight);
 
-  if (logsPre && (logsPre.textContent.trim() === 'None' || logsPre.textContent.trim() === '')) {
-    logsPre.textContent = '';
+  var placeholder = document.getElementById('logPlaceholder');
+  if (logsPre && placeholder) {
+    logsPre.innerHTML = '';
+    var barFill = document.getElementById('buildProgressFill');
+    var phaseLabel = document.getElementById('buildPhase');
+    var stepsEl = document.getElementById('buildSteps');
+    var elapsedEl = document.getElementById('buildElapsed');
+    var tracker = (barFill) ? new BuildProgressTracker(barFill, phaseLabel, 'build', stepsEl, elapsedEl) : null;
+    var logsFinished = false;
+    var isAutoDeploy = {{ (image.image_metadata or {}).get('auto_deploy', false) | tojson }};
     var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
     var socket = new WebSocket(protocol + window.location.host + '/image/' + '{{ image.id }}' + '/livelogs');
+    var progressBanner = document.querySelector('.build-progress-banner');
     socket.addEventListener('message', function(ev) {
       if (ev.data === '=================END OF LOGS=================') {
+        logsFinished = true;
+        if (tracker) {
+          tracker.complete();
+          if (tracker.errored && progressBanner) {
+            progressBanner.classList.add('deploy-progress-banner-error');
+          }
+        }
         socket.close();
         return;
       }
       logsPre.textContent += ev.data + '\n';
       logsPre.scrollTop = logsPre.scrollHeight;
+      if (tracker) tracker.processLine(ev.data);
     });
+    var statusPollAttempts = 0;
+    var maxStatusPolls = 30;
+    function fetchBuildStatus() {
+      statusPollAttempts++;
+      var cacheBust = '?_t=' + Date.now();
+      fetch(window.location.pathname + cacheBust, {
+        credentials: 'same-origin',
+        headers: { 'Accept': 'text/html', 'Cache-Control': 'no-cache' }
+      })
+        .then(function(r) { return r.text(); })
+        .then(function(html) {
+          var doc = new DOMParser().parseFromString(html, 'text/html');
+          var newOrb = doc.querySelector('.build-status-orb');
+          /* If server still shows "building", retry */
+          if (newOrb && newOrb.classList.contains('build-status-building') && statusPollAttempts < maxStatusPolls) {
+            setTimeout(fetchBuildStatus, 2000);
+            return;
+          }
+          /* Update entire header row (orb + title + actions) */
+          var newHeader = newOrb ? newOrb.closest('.mb-6') : null;
+          var curHeader = document.querySelector('.build-status-orb');
+          curHeader = curHeader ? curHeader.closest('.mb-6') : null;
+          if (newHeader && curHeader) curHeader.innerHTML = newHeader.innerHTML;
+          /* Update info cards */
+          var newInfo = doc.querySelector('[data-log-left]');
+          var curInfo = document.querySelector('[data-log-left]');
+          if (newInfo && curInfo) curInfo.innerHTML = newInfo.innerHTML;
+          /* Show error banner if present */
+          var newError = doc.querySelector('.build-error-banner');
+          if (newError && !document.querySelector('.build-error-banner')) {
+            if (curHeader) curHeader.insertAdjacentElement('afterend', newError);
+          }
+          /* Hide the progress banner */
+          if (progressBanner) progressBanner.style.display = 'none';
+          /* Auto-deploy: poll pipeline_status for the release, then redirect */
+          if (isAutoDeploy) pollForNextStep(autoDeployAppId, 'build');
+        })
+        .catch(function() {
+          if (statusPollAttempts < maxStatusPolls) setTimeout(fetchBuildStatus, 2000);
+        });
+    }
+
     socket.addEventListener('close', function() {
-      setTimeout(function() { window.location.reload(); }, 5000);
+      if (logsFinished) {
+        fetchBuildStatus();
+      } else {
+        if (tracker) tracker.setPhase('Waiting for build logs\u2026');
+        setTimeout(function() { window.location.reload(); }, 10000);
+      }
     });
   }
 

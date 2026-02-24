@@ -156,30 +156,6 @@ function initMobileNav() {
       menu.classList.toggle('hidden');
     });
   }
-
-  /* Clone tab-bar links into mobile menu */
-  var tabBar = document.querySelector('[data-tabs]');
-  var mobileTabsContainer = document.getElementById('mobile-nav-tabs');
-  var mobileDivider = document.getElementById('mobile-nav-divider');
-  if (tabBar && mobileTabsContainer) {
-    var tabs = tabBar.querySelectorAll('.tab-item');
-    if (tabs.length) {
-      tabs.forEach(function (tab) {
-        var a = document.createElement('a');
-        a.href = tab.getAttribute('href') || '#';
-        a.className = 'btn btn-ghost btn-sm justify-start text-sm';
-        a.textContent = tab.textContent.trim().replace(/\s*\d+$/, '');
-        a.setAttribute('data-mobile-tab', tab.getAttribute('data-tab') || '');
-        a.addEventListener('click', function (e) {
-          e.preventDefault();
-          tab.click();
-          if (menu) menu.classList.add('hidden');
-        });
-        mobileTabsContainer.appendChild(a);
-      });
-      if (mobileDivider) mobileDivider.classList.remove('hidden');
-    }
-  }
 }
 
 /* ---------- Theme Toggle (click cycles, long-hover reveals dropdown) ---------- */
@@ -787,11 +763,7 @@ BuildProgressTracker.prototype.complete = function () {
   this.stopTimer();
 
   // Finalize duration for the last active step
-  if (
-    this.currentStepIdx >= 0 &&
-    this.phaseStartTimes[this.currentStepIdx] &&
-    !this.phaseDurations[this.currentStepIdx]
-  ) {
+  if (this.currentStepIdx >= 0 && this.phaseStartTimes[this.currentStepIdx] && !this.phaseDurations[this.currentStepIdx]) {
     this.phaseDurations[this.currentStepIdx] = (Date.now() - this.phaseStartTimes[this.currentStepIdx]) / 1000;
     this.showStepDuration(this.currentStepIdx);
   }
@@ -1611,9 +1583,7 @@ function ObservabilityPanel(container) {
   var rangeButtons = container.querySelectorAll('[data-obs-range]');
   rangeButtons.forEach(function (btn) {
     btn.addEventListener('click', function () {
-      rangeButtons.forEach(function (b) {
-        b.classList.remove('obs-range-active');
-      });
+      rangeButtons.forEach(function (b) { b.classList.remove('obs-range-active'); });
       btn.classList.add('obs-range-active');
       self.range = btn.getAttribute('data-obs-range');
       self.fetch();
@@ -1623,16 +1593,8 @@ function ObservabilityPanel(container) {
   // Listen for tab lifecycle
   var panel = container.closest('[data-tab-panel]');
   if (panel) {
-    panel.addEventListener('tab-activated', function () {
-      self.activate();
-    });
-    panel.addEventListener('tab-deactivated', function () {
-      self.deactivate();
-    });
-    // If tab is already active (e.g. loaded via URL hash), activate now
-    if (panel.classList.contains('tab-panel-active')) {
-      self.activate();
-    }
+    panel.addEventListener('tab-activated', function () { self.activate(); });
+    panel.addEventListener('tab-deactivated', function () { self.deactivate(); });
   }
 }
 
@@ -1641,51 +1603,27 @@ ObservabilityPanel.prototype.activate = function () {
   this.active = true;
   this.fetch();
   var self = this;
-  this.timer = setInterval(function () {
-    self.fetch();
-  }, 15000);
+  this.timer = setInterval(function () { self.fetch(); }, 15000);
 };
 
 ObservabilityPanel.prototype.deactivate = function () {
   this.active = false;
-  if (this.timer) {
-    clearInterval(this.timer);
-    this.timer = null;
-  }
+  if (this.timer) { clearInterval(this.timer); this.timer = null; }
 };
 
 ObservabilityPanel.prototype.fetch = function () {
   var self = this;
-  var url = '/applications/' + this.appId + '/observability?range=' + this.range;
+  var url = '/user/applications/' + this.appId + '/observability?range=' + this.range;
   fetch(url, { credentials: 'same-origin' })
-    .then(function (r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
-    .then(function (data) {
-      self.render(data);
-    })
-    .catch(function (err) {
-      console.warn('Observability fetch error:', err);
-    });
+    .then(function (r) { return r.json(); })
+    .then(function (data) { self.render(data); })
+    .catch(function (err) { console.warn('Observability fetch error:', err); });
 };
 
 ObservabilityPanel.prototype.render = function (data) {
   this.updateGauges(data.current, data.limits);
-  this.renderChart(
-    this.cpuChart,
-    data.history,
-    'cpu_usage_m',
-    data.limits ? data.limits.total_cpu_limit_m : null,
-    '#22d3ee',
-  );
-  this.renderChart(
-    this.memChart,
-    data.history,
-    'memory_usage_bytes',
-    data.limits ? data.limits.total_memory_limit_bytes : null,
-    '#a78bfa',
-  );
+  this.renderChart(this.cpuChart, data.history, 'cpu_usage_m', data.limits ? data.limits.total_cpu_limit_m : null, '#22d3ee');
+  this.renderChart(this.memChart, data.history, 'memory_usage_bytes', data.limits ? data.limits.total_memory_limit_bytes : null, '#a78bfa');
   this.updatePodsGrid(data.pods);
   this.updateEvents(data.events);
 };
@@ -1702,8 +1640,7 @@ ObservabilityPanel.prototype.updateGauges = function (current, limits) {
       var cpuPct = Math.min((cpuVal / limits.total_cpu_limit_m) * 100, 100);
       if (this.cpuGauge) {
         this.cpuGauge.style.width = cpuPct + '%';
-        this.cpuGauge.className =
-          'obs-gauge-fill' + (cpuPct > 90 ? ' obs-gauge-fill-danger' : cpuPct > 70 ? ' obs-gauge-fill-warning' : '');
+        this.cpuGauge.className = 'obs-gauge-fill' + (cpuPct > 90 ? ' obs-gauge-fill-danger' : cpuPct > 70 ? ' obs-gauge-fill-warning' : '');
       }
     }
   } else if (this.cpuValue) {
@@ -1719,8 +1656,7 @@ ObservabilityPanel.prototype.updateGauges = function (current, limits) {
       var memPct = Math.min((memVal / limits.total_memory_limit_bytes) * 100, 100);
       if (this.memGauge) {
         this.memGauge.style.width = memPct + '%';
-        this.memGauge.className =
-          'obs-gauge-fill' + (memPct > 90 ? ' obs-gauge-fill-danger' : memPct > 70 ? ' obs-gauge-fill-warning' : '');
+        this.memGauge.className = 'obs-gauge-fill' + (memPct > 90 ? ' obs-gauge-fill-danger' : memPct > 70 ? ' obs-gauge-fill-warning' : '');
       }
     }
   } else if (this.memValue) {
@@ -1730,7 +1666,7 @@ ObservabilityPanel.prototype.updateGauges = function (current, limits) {
   // Pods & Restarts
   if (this.podValue) this.podValue.textContent = current.pod_count || 0;
   if (this.podLabel) {
-    var running = current.pod_count || 0;
+    var running = (current.pod_count || 0);
     this.podLabel.textContent = running === 1 ? 'running' : running + ' running';
   }
   if (this.restartValue) this.restartValue.textContent = current.restart_count || 0;
@@ -1746,18 +1682,12 @@ ObservabilityPanel.prototype.formatBytes = function (bytes) {
 
 ObservabilityPanel.prototype.renderChart = function (svgEl, history, key, limit, color) {
   if (!svgEl || !history || !history.length) {
-    if (svgEl)
-      svgEl.innerHTML =
-        '<text x="300" y="100" text-anchor="middle" fill="var(--text-muted)" font-size="13">No data yet</text>';
+    if (svgEl) svgEl.innerHTML = '<text x="300" y="100" text-anchor="middle" fill="var(--text-muted)" font-size="13">No data yet</text>';
     return;
   }
 
-  var w = 600,
-    h = 200,
-    pad = 30;
-  var values = history.map(function (p) {
-    return p[key] || 0;
-  });
+  var w = 600, h = 200, pad = 30;
+  var values = history.map(function (p) { return p[key] || 0; });
   var maxVal = Math.max.apply(null, values);
   if (limit && limit > maxVal) maxVal = limit;
   if (maxVal === 0) maxVal = 1;
@@ -1765,7 +1695,7 @@ ObservabilityPanel.prototype.renderChart = function (svgEl, history, key, limit,
   // Scale values
   var xStep = (w - pad) / Math.max(values.length - 1, 1);
   var points = values.map(function (v, i) {
-    return { x: pad + i * xStep, y: h - pad - (v / maxVal) * (h - 2 * pad) };
+    return { x: pad + i * xStep, y: h - pad - ((v / maxVal) * (h - 2 * pad)) };
   });
 
   var svg = '';
@@ -1778,7 +1708,7 @@ ObservabilityPanel.prototype.renderChart = function (svgEl, history, key, limit,
 
   // Limit line
   if (limit) {
-    var ly = h - pad - (limit / maxVal) * (h - 2 * pad);
+    var ly = h - pad - ((limit / maxVal) * (h - 2 * pad));
     svg += '<line x1="' + pad + '" y1="' + ly + '" x2="' + w + '" y2="' + ly + '" class="obs-limit-line" />';
   }
 
@@ -1787,8 +1717,7 @@ ObservabilityPanel.prototype.renderChart = function (svgEl, history, key, limit,
   for (var i = 1; i < points.length; i++) {
     pathD += ' L' + points[i].x + ',' + points[i].y;
   }
-  var areaD =
-    pathD + ' L' + points[points.length - 1].x + ',' + (h - pad) + ' L' + points[0].x + ',' + (h - pad) + ' Z';
+  var areaD = pathD + ' L' + points[points.length - 1].x + ',' + (h - pad) + ' L' + points[0].x + ',' + (h - pad) + ' Z';
   svg += '<path d="' + areaD + '" class="obs-area-fill" fill="' + color + '" />';
   svg += '<path d="' + pathD + '" class="obs-line" stroke="' + color + '" />';
 
@@ -1804,31 +1733,15 @@ ObservabilityPanel.prototype.updatePodsGrid = function (pods) {
   var html = '';
   pods.forEach(function (pod) {
     var phase = (pod.phase || 'Unknown').toLowerCase();
-    var dotClass =
-      phase === 'running' ? 'obs-pod-dot-ok' : phase === 'pending' ? 'obs-pod-dot-warn' : 'obs-pod-dot-err';
+    var dotClass = phase === 'running' ? 'obs-pod-dot-ok' : phase === 'pending' ? 'obs-pod-dot-warn' : 'obs-pod-dot-err';
     var name = (pod.name || '').replace(/[<>&"]/g, '');
-    html +=
-      '<div class="obs-pod-card">' +
-      '<div class="obs-pod-header"><span class="obs-pod-dot ' +
-      dotClass +
-      '"></span>' +
-      '<span class="obs-pod-name">' +
-      name +
-      '</span></div>' +
+    html += '<div class="obs-pod-card">' +
+      '<div class="obs-pod-header"><span class="obs-pod-dot ' + dotClass + '"></span>' +
+      '<span class="obs-pod-name">' + name + '</span></div>' +
       '<div class="obs-pod-metrics">' +
-      '<span class="obs-pod-metric">' +
-      (pod.cpu_display || '—') +
-      '</span>' +
-      '<span class="obs-pod-metric">' +
-      (pod.mem_display || '—') +
-      '</span>' +
-      (pod.restart_count > 0
-        ? '<span class="obs-pod-metric obs-pod-restarts">' +
-          pod.restart_count +
-          ' restart' +
-          (pod.restart_count > 1 ? 's' : '') +
-          '</span>'
-        : '') +
+      '<span class="obs-pod-metric">' + (pod.cpu_display || '—') + '</span>' +
+      '<span class="obs-pod-metric">' + (pod.mem_display || '—') + '</span>' +
+      (pod.restart_count > 0 ? '<span class="obs-pod-metric obs-pod-restarts">' + pod.restart_count + ' restart' + (pod.restart_count > 1 ? 's' : '') + '</span>' : '') +
       '</div></div>';
   });
   this.podsGrid.innerHTML = html;
@@ -1846,22 +1759,13 @@ ObservabilityPanel.prototype.updateEvents = function (events) {
     var reason = (ev.reason || '').replace(/[<>&"]/g, '');
     var msg = (ev.message || '').replace(/[<>&"]/g, '');
     var time = (ev.time_ago || '').replace(/[<>&"]/g, '');
-    html +=
-      '<div class="obs-event-item">' +
-      '<span class="obs-event-dot ' +
-      dotClass +
-      '"></span>' +
+    html += '<div class="obs-event-item">' +
+      '<span class="obs-event-dot ' + dotClass + '"></span>' +
       '<div class="obs-event-content">' +
-      '<span class="obs-event-reason">' +
-      reason +
-      '</span>' +
-      '<span class="obs-event-msg">' +
-      msg +
-      '</span>' +
+      '<span class="obs-event-reason">' + reason + '</span>' +
+      '<span class="obs-event-msg">' + msg + '</span>' +
       '</div>' +
-      '<span class="obs-event-time">' +
-      time +
-      '</span>' +
+      '<span class="obs-event-time">' + time + '</span>' +
       '</div>';
   });
   this.eventsEl.innerHTML = html;

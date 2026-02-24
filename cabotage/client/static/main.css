@@ -302,31 +302,6 @@ html:not([data-theme-pref]) .theme-icon-system {
   border-bottom-color: var(--color-primary);
 }
 
-/* Responsive tab hiding — middle tabs collapse first */
-@media (max-width: 639px) {
-  /* Hide Images and Packages (middle tabs) on small screens */
-  .tab-item:nth-child(4),
-  .tab-item:nth-child(5) {
-    display: none;
-  }
-}
-@media (max-width: 479px) {
-  /* On very small screens, also hide Observe and Config */
-  .tab-item:nth-child(2),
-  .tab-item:nth-child(3) {
-    display: none;
-  }
-  .tab-item {
-    padding: 0.5rem 0.625rem;
-    font-size: 0.75rem;
-  }
-}
-
-/* Active tab always visible regardless of breakpoint */
-.tab-item.tab-active {
-  display: inline-flex !important;
-}
-
 /* Tab panels */
 .tab-panel {
   display: none;
@@ -1155,13 +1130,8 @@ details[open] summary .collapse-icon {
   border: 1px solid oklch(var(--bc) / 0.1);
 }
 @keyframes badge-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.6;
-  }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }
 
 /* Auto-deploy inline badge */
@@ -1226,42 +1196,12 @@ details[open] summary .collapse-icon {
 }
 .resource-path-sep {
   color: var(--text-ghost);
-  flex-shrink: 0;
-}
-.resource-path-item {
-  display: inline-block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 10rem;
-  transition: max-width 0.2s ease;
 }
 .resource-path-current {
   color: var(--text-bright);
   font-weight: 500;
-}
-
-/* Progressive breadcrumb truncation */
-@media (max-width: 639px) {
-  .resource-path {
-    font-size: 0.75rem;
-    gap: 0.25rem;
-  }
-  .resource-path-item {
-    max-width: 5rem;
-  }
-}
-@media (max-width: 479px) {
-  .resource-path {
-    font-size: 0.6875rem;
-    gap: 0.125rem;
-  }
-  .resource-path-item {
-    max-width: 1.2ch;
-    text-overflow: clip;
-  }
-  .resource-path-sep {
-    font-size: 0.625rem;
-  }
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---------- App Header Actions (horizontal scroll on overflow) ---------- */
@@ -1273,14 +1213,14 @@ details[open] summary .collapse-icon {
   overflow-y: hidden;
   white-space: nowrap;
   -webkit-overflow-scrolling: touch;
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE/Edge */
+  scrollbar-width: none;          /* Firefox */
+  -ms-overflow-style: none;       /* IE/Edge */
   flex-shrink: 1;
   min-width: 0;
-  padding-bottom: 2px; /* prevent clipping of focus rings */
+  padding-bottom: 2px;            /* prevent clipping of focus rings */
 }
 .app-header-actions::-webkit-scrollbar {
-  display: none; /* Chrome/Safari */
+  display: none;                  /* Chrome/Safari */
 }
 .app-header-actions .btn {
   flex-shrink: 0;
@@ -1447,100 +1387,6 @@ details[open] summary .collapse-icon {
   opacity: 0.75;
 }
 
-/* ---------- Process Footer (commands + meta) ---------- */
-.proc-footer {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.625rem;
-  padding-top: 0.5rem;
-  border-top: 1px solid var(--border-color-subtle, rgba(255, 255, 255, 0.04));
-}
-.proc-footer-cmds {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.375rem;
-}
-.proc-cmd-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.1875rem 0.5rem 0.1875rem 0.375rem;
-  border-radius: 0.3125rem;
-  background: var(--surface-inset, rgba(0, 0, 0, 0.15));
-  border: 1px solid var(--border-color-subtle, rgba(255, 255, 255, 0.04));
-  max-width: 20rem;
-  transition:
-    border-color 0.15s ease,
-    background 0.15s ease;
-  cursor: default;
-}
-.proc-cmd-chip:hover {
-  border-color: color-mix(in srgb, var(--color-primary) 25%, transparent);
-  background: color-mix(in srgb, var(--color-primary) 4%, transparent);
-}
-.proc-cmd-chip:hover .proc-cmd-text {
-  color: var(--text-muted);
-}
-.proc-cmd-icon {
-  color: var(--text-faintest);
-  flex-shrink: 0;
-}
-.proc-cmd-name {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  color: var(--accent-text);
-  flex-shrink: 0;
-  letter-spacing: 0.01em;
-}
-.proc-cmd-name::after {
-  content: ':';
-  color: var(--text-faintest);
-  margin-left: 0.0625rem;
-}
-.proc-cmd-text {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 0.625rem;
-  color: var(--text-faintest);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  transition: color 0.15s ease;
-}
-.proc-footer-meta {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-left: auto;
-}
-.proc-footer-vars {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: 0.6875rem;
-  color: var(--text-faintest);
-}
-.proc-footer-edit {
-  all: unset;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  font-size: 0.625rem;
-  color: var(--text-faintest);
-  padding: 0.125rem 0.375rem;
-  border-radius: 0.25rem;
-  cursor: pointer;
-  transition:
-    color 0.15s ease,
-    background 0.15s ease;
-}
-.proc-footer-edit:hover {
-  color: var(--text-muted);
-  background: var(--hover-overlay);
-}
-
 /* ---------- Pipeline Row ---------- */
 .pipeline-row {
   display: flex;
@@ -1555,9 +1401,7 @@ details[open] summary .collapse-icon {
   background: var(--surface-card);
   border: 1px solid var(--border-color);
   overflow: hidden;
-  transition:
-    border-color 0.3s ease,
-    box-shadow 0.3s ease;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 /* Flash animation for pipeline event alerts */
@@ -2961,9 +2805,7 @@ a.pipeline-stage-body:hover {
   width: 0%;
   border-radius: 2px;
   background: #22c55e;
-  transition:
-    width 0.6s ease,
-    background 0.3s ease;
+  transition: width 0.6s ease, background 0.3s ease;
 }
 .obs-gauge-fill-warning {
   background: #f59e0b;
@@ -3165,7 +3007,7 @@ a.pipeline-stage-body:hover {
 }
 
 /* ========================================================================== */
-/* Artifact List — Vercel-style deploy rows                                  */
+/* Deploy List (Vercel/Railway-style)                                         */
 /* ========================================================================== */
 
 /* --- Hero card for active deployment --- */
@@ -3189,8 +3031,8 @@ a.pipeline-stage-body:hover {
   min-width: 0;
 }
 .dpl-hero-orb {
-  width: 2.25rem;
-  height: 2.25rem;
+  width: 2rem;
+  height: 2rem;
   border-radius: 0.5rem;
   display: flex;
   align-items: center;
@@ -3210,12 +3052,12 @@ a.pipeline-stage-body:hover {
 }
 .dpl-hero-version {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
   font-weight: 600;
   color: var(--color-accent, oklch(var(--a)));
 }
 .dpl-hero-status {
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
 }
 .dpl-hero-status-ok {
   color: #22c55e;
@@ -3223,8 +3065,8 @@ a.pipeline-stage-body:hover {
 .dpl-hero-meta {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  margin-top: 0.5rem;
+  gap: 0.625rem;
+  margin-top: 0.375rem;
   flex-wrap: wrap;
 }
 .dpl-hero-action {
@@ -3235,13 +3077,13 @@ a.pipeline-stage-body:hover {
 .dpl-meta-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  font-size: 0.8125rem;
+  gap: 0.25rem;
+  font-size: 0.6875rem;
   color: var(--text-muted);
 }
 .dpl-meta-chip code {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 0.8125rem;
+  font-size: 0.6875rem;
 }
 .dpl-meta-chip svg {
   opacity: 0.5;
@@ -3269,11 +3111,11 @@ a.pipeline-stage-body:hover {
   display: inline-flex;
   align-items: center;
   gap: 0.2rem;
-  font-size: 0.6875rem;
+  font-size: 0.625rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  padding: 0.15rem 0.45rem;
+  padding: 0.125rem 0.4rem;
   border-radius: 0.25rem;
   line-height: 1.4;
 }
@@ -3287,13 +3129,8 @@ a.pipeline-stage-body:hover {
   color: var(--color-accent, oklch(var(--a)));
   border: 1px solid color-mix(in srgb, var(--color-accent, oklch(var(--a))) 18%, transparent);
 }
-.dpl-badge-latest {
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-  color: var(--color-primary);
-  border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
-}
 
-/* --- Section header --- */
+/* --- History header --- */
 .dpl-history-header {
   display: flex;
   align-items: center;
@@ -3304,7 +3141,7 @@ a.pipeline-stage-body:hover {
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -3314,11 +3151,11 @@ a.pipeline-stage-body:hover {
   opacity: 0.5;
 }
 .dpl-history-count {
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   color: var(--text-faintest);
 }
 
-/* --- List container --- */
+/* --- Deploy list container --- */
 .dpl-list {
   display: flex;
   flex-direction: column;
@@ -3328,12 +3165,12 @@ a.pipeline-stage-body:hover {
   background: oklch(var(--b2));
 }
 
-/* --- Row: icon + info body + timestamp --- */
+/* --- Individual deploy row --- */
 .dpl-row {
-  display: flex !important;
+  display: flex;
   align-items: flex-start;
-  gap: 0.625rem;
-  padding: 0.75rem 1.25rem;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
   text-decoration: none;
   color: inherit;
   border-bottom: 1px solid color-mix(in srgb, oklch(var(--bc)) 5%, transparent);
@@ -3352,7 +3189,7 @@ a.pipeline-stage-body:hover {
   background: color-mix(in srgb, var(--color-success, #22c55e) 5%, transparent);
 }
 
-/* Status icon circle */
+/* --- Row status icon --- */
 .dpl-row-icon {
   width: 1.5rem;
   height: 1.5rem;
@@ -3364,26 +3201,30 @@ a.pipeline-stage-body:hover {
   margin-top: 0.125rem;
 }
 .dpl-row-icon-ok {
-  background: rgba(34, 197, 94, 0.12);
+  background: rgba(34, 197, 94, 0.1);
   color: #22c55e;
 }
 .dpl-row-icon-err {
-  background: rgba(239, 68, 68, 0.12);
+  background: rgba(239, 68, 68, 0.1);
   color: #ef4444;
 }
 .dpl-row-icon-run {
-  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
   color: var(--color-primary);
 }
 
-/* Body: version line + git chips line */
+/* --- Row body --- */
 .dpl-row-body {
   flex: 1;
   min-width: 0;
 }
-
-/* Primary line: version + status text + badges */
 .dpl-row-primary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.dpl-row-primary-left {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -3391,72 +3232,68 @@ a.pipeline-stage-body:hover {
 }
 .dpl-row-version {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: oklch(var(--bc));
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-accent, oklch(var(--a)));
 }
 .dpl-row-version-none {
   color: var(--text-faintest);
 }
-.dpl-row-status-text {
-  font-size: 0.8125rem;
+.dpl-row-label {
+  font-size: 0.6875rem;
   font-weight: 500;
 }
-.dpl-row-status-ok {
+.dpl-row-label-ok {
   color: #22c55e;
 }
-.dpl-row-status-err {
+.dpl-row-label-err {
   color: #ef4444;
 }
-.dpl-row-status-run {
+.dpl-row-label-run {
   color: var(--color-primary);
 }
-.dpl-row-dur {
-  font-size: 0.75rem;
-  color: var(--text-faintest);
-}
 
-/* Secondary line: git chips */
-.dpl-row-meta {
+/* --- Row secondary info (git, image) --- */
+.dpl-row-secondary {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.625rem;
   margin-top: 0.25rem;
   flex-wrap: wrap;
 }
 
-/* Commit SHA link styling */
-.dpl-row-sha-link {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 0.8125rem;
-  color: var(--color-accent, oklch(var(--a)));
-  text-decoration: none;
-}
-.dpl-row-sha-link:hover {
-  text-decoration: underline;
-}
-
-/* Error preview */
+/* --- Error detail preview --- */
 .dpl-row-error-detail {
-  font-size: 0.75rem;
-  color: rgba(239, 68, 68, 0.6);
+  font-size: 0.6875rem;
+  color: rgba(239, 68, 68, 0.5);
   margin-top: 0.25rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 40rem;
+  max-width: 28rem;
 }
 
-/* Timestamp column */
+/* --- Row timing (right side) --- */
+.dpl-row-timing {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+  gap: 0.125rem;
+  padding-top: 0.125rem;
+}
 .dpl-row-time {
-  font-size: 0.8125rem;
+  font-size: 0.6875rem;
   color: var(--text-faint);
   white-space: nowrap;
-  flex-shrink: 0;
-  margin-top: 0.125rem;
+}
+.dpl-row-duration {
+  font-size: 0.625rem;
+  color: var(--text-faintest);
+  white-space: nowrap;
 }
 
-/* Row accents */
+/* --- Error row accent --- */
 .dpl-row-error {
   border-left: 2px solid rgba(239, 68, 68, 0.3);
 }
@@ -3464,15 +3301,17 @@ a.pipeline-stage-body:hover {
   border-left: 2px solid color-mix(in srgb, var(--color-primary) 35%, transparent);
 }
 
-/* --- Responsive --- */
+/* --- Responsive: stack timing below on small screens --- */
 @media (max-width: 639px) {
   .dpl-row {
     flex-wrap: wrap;
-    gap: 0.375rem;
   }
-  .dpl-row-time {
+  .dpl-row-timing {
+    flex-direction: row;
+    gap: 0.5rem;
     width: 100%;
-    padding-left: 2.125rem;
+    padding-left: 2.25rem;
+    align-items: center;
   }
   .dpl-hero-inner {
     flex-direction: column;
@@ -3480,6 +3319,6 @@ a.pipeline-stage-body:hover {
   }
   .dpl-hero-action {
     align-self: flex-start;
-    margin-left: 3rem;
+    margin-left: 2.75rem;
   }
 }

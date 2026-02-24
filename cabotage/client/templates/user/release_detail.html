@@ -129,7 +129,7 @@
           <div class="build-progress-spinner"></div>
           <div>
             <p class="text-sm font-medium text-base-content" id="buildPhase">Waiting for logs…</p>
-            <p class="text-xs text-base-content/40">Streaming logs below. Page will refresh on completion.</p>
+            <p class="text-xs text-base-content/40">Streaming logs below. Updates live on completion.</p>
           </div>
         </div>
         <span class="progress-elapsed" id="buildElapsed">00:00</span>
@@ -500,6 +500,7 @@
     nextStepBanner.querySelector('a').href = nextStepUrl;
     nextStepBanner.hidden = false;
   }
+  var autoDeployAppId = '{{ app.id }}';
 
   /* Live log streaming for in-progress package builds */
   var logsPre = document.getElementById('buildLog');
@@ -532,13 +533,51 @@
       logsPre.scrollTop = logsPre.scrollHeight;
       if (tracker) tracker.processLine(ev.data);
     });
+    var statusPollAttempts = 0;
+    var maxStatusPolls = 30;
+    function fetchBuildStatus() {
+      statusPollAttempts++;
+      var cacheBust = '?_t=' + Date.now();
+      fetch(window.location.pathname + cacheBust, {
+        credentials: 'same-origin',
+        headers: { 'Accept': 'text/html', 'Cache-Control': 'no-cache' }
+      })
+        .then(function(r) { return r.text(); })
+        .then(function(html) {
+          var doc = new DOMParser().parseFromString(html, 'text/html');
+          var newOrb = doc.querySelector('.build-status-orb');
+          /* If server still shows "building", retry */
+          if (newOrb && newOrb.classList.contains('build-status-building') && statusPollAttempts < maxStatusPolls) {
+            setTimeout(fetchBuildStatus, 2000);
+            return;
+          }
+          /* Update entire header row (orb + title + actions) */
+          var newHeader = newOrb ? newOrb.closest('.mb-6') : null;
+          var curHeader = document.querySelector('.build-status-orb');
+          curHeader = curHeader ? curHeader.closest('.mb-6') : null;
+          if (newHeader && curHeader) curHeader.innerHTML = newHeader.innerHTML;
+          /* Update info cards */
+          var newInfo = doc.querySelector('[data-log-left]');
+          var curInfo = document.querySelector('[data-log-left]');
+          if (newInfo && curInfo) curInfo.innerHTML = newInfo.innerHTML;
+          /* Show error banner if present */
+          var newError = doc.querySelector('.build-error-banner');
+          if (newError && !document.querySelector('.build-error-banner')) {
+            if (curHeader) curHeader.insertAdjacentElement('afterend', newError);
+          }
+          /* Hide the progress banner */
+          if (progressBanner) progressBanner.style.display = 'none';
+          /* Auto-deploy: poll pipeline_status for the deployment, then redirect */
+          if (isAutoDeploy) pollForNextStep(autoDeployAppId, 'release');
+        })
+        .catch(function() {
+          if (statusPollAttempts < maxStatusPolls) setTimeout(fetchBuildStatus, 2000);
+        });
+    }
+
     socket.addEventListener('close', function() {
       if (logsFinished) {
-        if (isAutoDeploy) {
-          pollForNextStep(window.location.href);
-        } else {
-          setTimeout(function() { window.location.reload(); }, 5000);
-        }
+        fetchBuildStatus();
       } else {
         if (tracker) tracker.setPhase('Waiting for build logs\u2026');
         setTimeout(function() { window.location.reload(); }, 10000);
