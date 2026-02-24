@@ -91,9 +91,6 @@
       <a href="{{ url_for('user.application_releases', application_id=application.id) }}"
          class="tab-item
                 {% if active == 'releases' %}tab-active{% endif %}">{{ icon('layers', 'w-4 h-4') }} Packages</a>
-      <a href="{{ url_for('user.application_deployments', application_id=application.id) }}"
-         class="tab-item
-                {% if active == 'deployments' %}tab-active{% endif %}">{{ icon('deploy', 'w-4 h-4') }} Deploys</a>
       <a href="{{ overview_url }}#pipeline"
          class="tab-item
                 {% if active == 'pipeline' %}tab-active{% endif %}">{{ icon('bar-chart-2', 'w-4 h-4') }} Pipeline</a>

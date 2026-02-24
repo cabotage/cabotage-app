@@ -284,6 +284,16 @@ def project_application(org_slug, project_slug, app_slug):
 
     scale_form = ApplicationScaleForm()
     scale_form.application_id.data = str(application.id)
+
+    config_create_form = CreateConfigurationForm()
+    config_create_form.application_id.data = str(application.id)
+
+    releases = application.releases.order_by(Release.version.desc()).limit(10).all()
+    images = application.images.order_by(Image.version.desc()).limit(10).all()
+    deployments = (
+        application.deployments.order_by(Deployment.created.desc()).limit(10).all()
+    )
+
     return render_template(
         "user/project_application.html",
         application=application,
@@ -293,6 +303,10 @@ def project_application(org_slug, project_slug, app_slug):
         .query.filter_by(application_id=application.id)
         .order_by(desc(version_class(Release).version_id))
         .limit(5),
+        config_create_form=config_create_form,
+        releases=releases,
+        images=images,
+        deployments=deployments,
         DEFAULT_POD_CLASS=DEFAULT_POD_CLASS,
         pod_classes=pod_classes,
         pod_class_info=pod_class_info,
@@ -316,6 +330,7 @@ def project_application_logs(org_slug, project_slug, app_slug):
 
     return render_template(
         "user/project_application_logs.html",
+        application=application,
         org_slug=org_slug,
         project_slug=project_slug,
         app_slug=app_slug,
@@ -836,6 +851,7 @@ def project_application_settings(application_id):
 
     return render_template(
         "user/project_application_settings.html",
+        application=application,
         form=form,
         app_url=current_app.config.get("GITHUB_APP_URL", "https://github.com"),
     )
@@ -1258,6 +1274,17 @@ def application_release_create(application_id):
     db.session.commit()
     run_release_build.delay(release_id=release.id)
     return redirect(url_for("user.release_detail", release_id=release.id))
+
+
+@user_blueprint.route("/guide")
+@login_required
+def guide():
+    return render_template(
+        "user/guide.html",
+        github_app_url=current_app.config.get(
+            "GITHUB_APP_URL", "https://github.com"
+        ),
+    )
 
 
 @user_blueprint.route("/docker/auth")

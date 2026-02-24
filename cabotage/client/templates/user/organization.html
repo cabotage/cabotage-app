@@ -133,7 +133,7 @@
 
     <div class="flex items-center justify-between mb-3">
       <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider">Members</h2>
-      {% if is_admin %}
+      {% if is_admin is defined and is_admin %}
         <button type="button"
                 onclick="document.getElementById('add-member-modal').classList.remove('hidden')"
                 class="btn btn-primary btn-sm gap-2">
@@ -167,9 +167,9 @@
                 {% if membership.user.id == current_user.id %}<span class="text-xs text-base-content/30 ml-1">(you)</span>{% endif %}
               </div>
             </div>
-            {% if is_admin and membership.user.id != current_user.id %}
+            {% if is_admin and membership.user.id != current_user.id and remove_member_form is defined %}
               <div class="flex items-center gap-1.5 flex-shrink-0">
-                <form action="{{ url_for('user.organization_member_toggle_admin', org_slug=organization.slug) }}"
+                <form action="{{ url_for('user.organization_promote_user', org_slug=organization.slug) }}"
                       method="post"
                       class="inline">
                   {{ remove_member_form.hidden_tag() }}
@@ -190,7 +190,7 @@
                     </button>
                   {% endif %}
                 </form>
-                <form action="{{ url_for('user.organization_member_remove', org_slug=organization.slug) }}"
+                <form action="{{ url_for('user.organization_remove_user', org_slug=organization.slug) }}"
                       method="post"
                       class="inline">
                   {{ remove_member_form.hidden_tag() }}
@@ -219,18 +219,20 @@
 
   {# ===== CREATE PROJECT MODAL ===== #}
   {% from "_macros.html" import create_modal %}
-  {{ create_modal(modal_id='create-project-modal',
-    title='Create Project',
-    subtitle='In organization ' ~ organization.slug,
-    form=project_create_form,
-    action_url=url_for('user.organization_project_create', org_slug=organization.slug) ,
-  submit_text='Create Project',
-  name_field=project_create_form.name,
-  slug_field=project_create_form.slug
-  ) }}
+  {% if project_create_form is defined %}
+    {{ create_modal(modal_id='create-project-modal',
+      title='Create Project',
+      subtitle='In organization ' ~ organization.slug,
+      form=project_create_form,
+      action_url=url_for('user.organization_project_create', org_slug=organization.slug) ,
+    submit_text='Create Project',
+    name_field=project_create_form.name,
+    slug_field=project_create_form.slug
+    ) }}
+  {% endif %}
 
   {# ===== ADD MEMBER MODAL ===== #}
-  {% if is_admin %}
+  {% if is_admin and add_member_form is defined %}
     <div id="add-member-modal" class="raw-editor-modal hidden">
       <div class="raw-editor-backdrop" data-modal-close="add-member-modal"></div>
       <div class="raw-editor-dialog max-w-md">
@@ -243,7 +245,7 @@
                   data-modal-close="add-member-modal"
                   class="btn btn-ghost btn-sm btn-circle">{{ icon('x', 'w-4 h-4') }}</button>
         </div>
-        <form action="{{ url_for('user.organization_member_add', org_slug=organization.slug) }}"
+        <form action="{{ url_for('user.organization_add_user', org_slug=organization.slug) }}"
               method="post"
               class="flex flex-col gap-4">
           {{ add_member_form.hidden_tag() }}

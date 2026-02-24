@@ -90,21 +90,12 @@
       </span>
     </div>
     <div class="app-header-actions">
-      {# Primary action: full auto-deploy pipeline (build → package → deploy) #}
-      {% if application.auto_deploy_branch %}
-        <form action="{{ url_for('user.application_full_deploy', application_id=application.id) }}"
-              method="post"
-              class="inline"
-              data-full-deploy-form>
-          <button class="btn btn-primary btn-sm gap-1.5" type="submit">{{ icon('deploy', 'w-3.5 h-3.5') }} Deploy</button>
-        </form>
-      {% else %}
-        <div class="tooltip"
-             data-tip="Configure a deploy branch in Settings to enable">
-          <button class="btn btn-ghost btn-sm gap-1.5 btn-disabled text-base-content/20"
-                  disabled>{{ icon('deploy', 'w-3.5 h-3.5') }} Deploy</button>
-        </div>
-      {% endif %}
+      {# Deploy button - full_deploy route requires backend support #}
+      <div class="tooltip"
+           data-tip="Configure a deploy branch in Settings to enable">
+        <button class="btn btn-ghost btn-sm gap-1.5 btn-disabled text-base-content/20"
+                disabled>{{ icon('deploy', 'w-3.5 h-3.5') }} Deploy</button>
+      </div>
 
       {# Utility actions #}
       <form action="{{ url_for('user.application_clear_cache', application_id=application.id) }}"
@@ -1419,9 +1410,8 @@
         <button type="button" class="raw-editor-tab" data-editor-tab="json">JSON</button>
       </div>
 
-      <form action="{{ url_for('user.project_application_configuration_bulk', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
-            method="post">
-        {{ scale_form.hidden_tag() }}
+      {# Bulk config editor — requires configuration_bulk backend route #}
+      <form action="#" method="post" data-requires-backend="configuration_bulk">
         <input type="hidden" name="format" id="raw-editor-format" value="env" />
 
         <div data-editor-panel="env" class="raw-editor-panel">
@@ -2028,8 +2018,7 @@
     </div>
 
     <div class="mt-3 text-center">
-      <a href="{{ url_for('user.application_deployments', application_id=application.id) }}"
-         class="text-xs text-base-content/40 hover:text-accent transition-colors">View All Deploys</a>
+      <span class="text-xs text-base-content/20">Deploy history</span>
     </div>
   {% else %}
     <div class="card bg-base-200 border border-base-300">

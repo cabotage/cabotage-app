@@ -49,7 +49,7 @@
           id="settings-form"
           name="project_application_settings_form">
       {{ form.hidden_tag() }}
-      {{ form.application_id() }}
+      <div style="display:none">{{ form.application_id() }}</div>
 
       {# ================================================================ #}
       {# SECTION 1: SOURCE & AUTOMATION                                   #}

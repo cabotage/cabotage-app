@@ -121,13 +121,15 @@
     </div>
   {% endif %}
 
-  {{ create_modal(modal_id='create-app-modal',
-    title='Create Application',
-    subtitle='In ' ~ project.organization.slug ~ '/' ~ project.slug,
-    form=app_create_form,
-    action_url=url_for('user.project_application_create', org_slug=project.organization.slug, project_slug=project.slug) ,
-  submit_text='Create Application',
-  name_field=app_create_form.name,
-  slug_field=app_create_form.slug
-  ) }}
+  {% if app_create_form is defined %}
+    {{ create_modal(modal_id='create-app-modal',
+      title='Create Application',
+      subtitle='In ' ~ project.organization.slug ~ '/' ~ project.slug,
+      form=app_create_form,
+      action_url=url_for('user.project_application_create', org_slug=project.organization.slug, project_slug=project.slug) ,
+    submit_text='Create Application',
+    name_field=app_create_form.name,
+    slug_field=app_create_form.slug
+    ) }}
+  {% endif %}
 {% endblock content %}

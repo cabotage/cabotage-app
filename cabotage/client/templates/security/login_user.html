@@ -28,11 +28,6 @@
           <button type="submit" class="btn btn-primary w-full mt-2">Sign In</button>
         </form>
 
-        {% if config.DEBUG or config.TESTING %}
-          <a href="{{ url_for('main.dev_quick_login', next=request.args.get('next') ) }}"
-             class="btn btn-outline btn-sm w-full mt-3">Dev Quick Login</a>
-        {% endif %}
-
         {% include "security/_menu.html" %}
       </div>
     </div>
