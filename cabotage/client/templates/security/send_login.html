@@ -1,31 +1,37 @@
 {% extends "_base.html" %}
 {% from "_macros.html" import render_field %}
 
-{% block title %}Sign In - Cabotage{% endblock %}
+{% block title %}
+  Sign In - Cabotage
+{% endblock title %}
 
 {% block content %}
-<div class="form-card">
-  <div class="card bg-base-200 border border-base-300 shadow-xl">
-    <div class="card-body">
-      <div class="text-center mb-6">
-        <h1 class="text-2xl font-semibold text-white">Sign In</h1>
-        <p class="text-sm text-base-content/50 mt-1">Enter your email to receive a login link</p>
+  <div class="form-card">
+    <div class="card bg-base-200 border border-base-300 shadow-xl">
+      <div class="card-body">
+        <div class="text-center mb-6">
+          <h1 class="text-2xl font-semibold text-base-content">Sign In</h1>
+          <p class="text-sm text-base-content/50 mt-1">Enter your email to receive a login link</p>
+        </div>
+
+        {% include "security/_messages.html" %}
+
+        <form action="{{ url_for_security('login') }}"
+              method="post"
+              name="send_login_form"
+              class="flex flex-col gap-4">
+          {{ send_login_form.hidden_tag() }}
+          {{ render_field(send_login_form.email, placeholder='you@example.com') }}
+          <button type="submit" class="btn btn-primary w-full mt-2">Send Login Link</button>
+        </form>
+
+        <div class="text-center mt-4">
+          <a href="{{ url_for_security('register') }}"
+             class="btn btn-ghost btn-sm text-accent">Create an account</a>
+        </div>
+
+        {% include "security/_menu.html" %}
       </div>
-
-      {% include "security/_messages.html" %}
-
-      <form action="{{ url_for_security('login') }}" method="POST" name="send_login_form" class="flex flex-col gap-4">
-        {{ send_login_form.hidden_tag() }}
-        {{ render_field(send_login_form.email, placeholder='you@example.com') }}
-        <button type="submit" class="btn btn-primary w-full mt-2">Send Login Link</button>
-      </form>
-
-      <div class="text-center mt-4">
-        <a href="{{ url_for_security('register') }}" class="btn btn-ghost btn-sm text-accent">Create an account</a>
-      </div>
-
-      {% include "security/_menu.html" %}
     </div>
   </div>
-</div>
-{% endblock %}
+{% endblock content %}

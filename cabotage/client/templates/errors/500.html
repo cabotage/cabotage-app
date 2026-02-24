@@ -1,12 +1,14 @@
 {% extends "_base.html" %}
 
-{% block title %}500 Server Error - Cabotage{% endblock %}
+{% block title %}
+  500 Server Error - Cabotage
+{% endblock title %}
 
 {% block content %}
-<div class="flex flex-col items-center justify-center py-24 text-center">
-  <p class="text-8xl font-bold text-error/20 mb-4">500</p>
-  <h1 class="text-2xl font-semibold text-white mb-2">Server Error</h1>
-  <p class="text-base-content/60 max-w-md mb-6">Something went wrong on our end. Please try again later.</p>
-  <a href="{{ url_for('main.home') }}" class="btn btn-primary btn-sm">Go Home</a>
-</div>
-{% endblock %}
+  <div class="flex flex-col items-center justify-center py-24 text-center">
+    <p class="text-8xl font-bold text-error/20 mb-4">500</p>
+    <h1 class="text-2xl font-semibold text-base-content mb-2">Server Error</h1>
+    <p class="text-base-content/60 max-w-md mb-6">Something went wrong on our end. Please try again later.</p>
+    <a href="{{ url_for('main.home') }}" class="btn btn-primary btn-sm">Go Home</a>
+  </div>
+{% endblock content %}

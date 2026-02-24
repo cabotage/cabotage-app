@@ -1,45 +1,203 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, empty_state, service_card, stat_card %}
+{% from "_macros.html" import icon, resource_path, page_header, empty_state, service_card, stat_card, tab_nav, render_field %}
 
-{% block title %}{{ organization.name }} - Cabotage{% endblock %}
+{% block title %}
+  {{ organization.name }} - Cabotage
+{% endblock title %}
 
 {% block resource_path %}
-{{ resource_path([
-  {'label': 'Organizations', 'url': url_for('user.organizations')},
+  {{ resource_path([
+    {'label': 'Organizations', 'url': url_for('user.organizations') },
   {'label': organization.slug}
-]) }}
-{% endblock %}
+  ]) }}
+{% endblock resource_path %}
+
+{% block tab_bar %}
+  <div class="app-content-padded !py-0">
+    {% set proj_count = organization.projects|length %}
+    {% set member_count = organization.members|length %}
+    {{ tab_nav([
+        {'id': 'projects', 'label': 'Projects', 'icon': 'folder', 'badge': proj_count},
+        {'id': 'members', 'label': 'Members', 'icon': 'users', 'badge': member_count}
+        ]) }}
+  </div>
+{% endblock tab_bar %}
 
 {% block content %}
-{% call() page_header(organization.name, 'Organization') %}
-  <a href="{{ url_for('user.organization_project_create', org_slug=organization.slug) }}" class="btn btn-primary btn-sm gap-2">
-    {{ icon('plus', 'w-4 h-4') }}
-    New Project
-  </a>
-{% endcall %}
+  {% set proj_count = organization.projects|length %}
+  {% set member_count = organization.members|length %}
 
-{# Stats #}
-{% set proj_count = organization.projects|length %}
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-  {{ stat_card(proj_count, 'Projects', 'folder', 'secondary') }}
-</div>
+  {# ===== PAGE HEADER ===== #}
+  {% call page_header(organization.name, 'Organization') %}
+    <button type="button"
+            onclick="document.getElementById('create-project-modal').classList.remove('hidden')"
+            class="btn btn-primary btn-sm gap-2">
+      {{ icon('plus', 'w-4 h-4') }}
+      New Project
+    </button>
+  {% endcall %}
 
-{# Projects Grid #}
-{% if organization.projects %}
-<h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Projects</h2>
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-  {% for project in organization.projects %}
-    {% set app_count = project.project_applications|length %}
-    {{ service_card(
-      name=project.name,
-      slug=organization.slug ~ '/' ~ project.slug,
-      url=url_for('user.project', org_slug=organization.slug, project_slug=project.slug),
-      meta_items=[app_count ~ ' app' ~ ('s' if app_count != 1 else '')],
-      color='secondary'
-    ) }}
-  {% endfor %}
-</div>
-{% else %}
-  {{ empty_state('No projects yet', 'Create your first project in this organization.', url_for('user.organization_project_create', org_slug=organization.slug), 'Create Project', 'folder') }}
-{% endif %}
-{% endblock %}
+  {# ===== PROJECTS TAB ===== #}
+  <div data-tab-panel="projects" class="tab-panel">
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      {{ stat_card(proj_count, 'Projects', 'folder', 'secondary') }}
+    </div>
+
+    {% if organization.projects %}
+      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Projects</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {% for project in organization.projects %}
+          {% set app_count = project.project_applications|length %}
+          {{ service_card(name=project.name,
+                    slug=organization.slug ~ '/' ~ project.slug,
+                    url=url_for('user.project', org_slug=organization.slug, project_slug=project.slug) ,
+          meta_items=[app_count ~ ' app' ~ ('s' if app_count != 1 else '')],
+          color='secondary'
+          ) }}
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <div class="text-base-content/15 mb-4">{{ icon('folder', 'w-12 h-12') }}</div>
+        <h3 class="text-base font-medium text-base-content/60 mb-1">No projects yet</h3>
+        <p class="text-sm text-base-content/40 max-w-sm">Create your first project in this organization.</p>
+        <button type="button"
+                onclick="document.getElementById('create-project-modal').classList.remove('hidden')"
+                class="btn btn-primary btn-sm gap-2 mt-4">
+          {{ icon('plus', 'w-4 h-4') }}
+          Create Project
+        </button>
+      </div>
+    {% endif %}
+  </div>
+
+  {# ===== MEMBERS TAB ===== #}
+  <div data-tab-panel="members" class="tab-panel">
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      {{ stat_card(member_count, 'Members', 'users', 'secondary') }}
+    </div>
+
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider">Members</h2>
+      {% if is_admin %}
+        <button type="button"
+                onclick="document.getElementById('add-member-modal').classList.remove('hidden')"
+                class="btn btn-primary btn-sm gap-2">
+          {{ icon('plus', 'w-4 h-4') }}
+          Add Member
+        </button>
+      {% endif %}
+    </div>
+
+    {% if organization.members %}
+      <div class="flex flex-col gap-2">
+        {% for membership in organization.members %}
+          <div class="flex items-center justify-between p-3 rounded-lg bg-base-200/50 border border-base-content/5">
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="w-8 h-8 rounded-full bg-secondary/10 text-secondary flex items-center justify-center flex-shrink-0">
+                {{ icon('user', 'w-4 h-4') }}
+              </div>
+              <div class="min-w-0">
+                <span class="text-sm font-medium text-base-content truncate">{{ membership.user.username }}</span>
+                {% if membership.admin %}<span class="badge badge-xs badge-primary ml-2">Admin</span>{% endif %}
+                {% if membership.user.id == current_user.id %}<span class="text-xs text-base-content/30 ml-1">(you)</span>{% endif %}
+              </div>
+            </div>
+            {% if is_admin and membership.user.id != current_user.id %}
+              <div class="flex items-center gap-1.5 flex-shrink-0">
+                <form action="{{ url_for('user.organization_member_toggle_admin', org_slug=organization.slug) }}"
+                      method="post"
+                      class="inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                  <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
+                  {% if membership.admin %}
+                    <button type="submit"
+                            class="btn btn-ghost btn-xs gap-1 text-warning"
+                            title="Demote from admin">
+                      {{ icon('shield', 'w-3.5 h-3.5') }}
+                      Demote
+                    </button>
+                  {% else %}
+                    <button type="submit"
+                            class="btn btn-ghost btn-xs gap-1"
+                            title="Promote to admin">
+                      {{ icon('shield', 'w-3.5 h-3.5') }}
+                      Promote
+                    </button>
+                  {% endif %}
+                </form>
+                <form action="{{ url_for('user.organization_member_remove', org_slug=organization.slug) }}"
+                      method="post"
+                      class="inline">
+                  {{ remove_member_form.hidden_tag() }}
+                  <input type="hidden" name="organization_id" value="{{ organization.id }}" />
+                  <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
+                  <button type="submit"
+                          class="btn btn-ghost btn-xs text-error"
+                          title="Remove member"
+                          onclick="return confirm('Remove {{ membership.user.username }} from this organization?')">
+                    {{ icon('x', 'w-3.5 h-3.5') }}
+                  </button>
+                </form>
+              </div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <div class="text-base-content/15 mb-4">{{ icon('users', 'w-12 h-12') }}</div>
+        <h3 class="text-base font-medium text-base-content/60 mb-1">No members</h3>
+        <p class="text-sm text-base-content/40 max-w-sm">This organization has no members.</p>
+      </div>
+    {% endif %}
+  </div>
+
+  {# ===== CREATE PROJECT MODAL ===== #}
+  {% from "_macros.html" import create_modal %}
+  {{ create_modal(modal_id='create-project-modal',
+    title='Create Project',
+    subtitle='In organization ' ~ organization.slug,
+    form=project_create_form,
+    action_url=url_for('user.organization_project_create', org_slug=organization.slug) ,
+  submit_text='Create Project',
+  name_field=project_create_form.name,
+  slug_field=project_create_form.slug
+  ) }}
+
+  {# ===== ADD MEMBER MODAL ===== #}
+  {% if is_admin %}
+    <div id="add-member-modal" class="raw-editor-modal hidden">
+      <div class="raw-editor-backdrop" data-modal-close="add-member-modal"></div>
+      <div class="raw-editor-dialog max-w-md">
+        <div class="flex items-center justify-between mb-5">
+          <div>
+            <h3 class="text-base font-semibold text-base-content">Add Member</h3>
+            <p class="text-sm text-base-content/50 mt-0.5">Add a user to {{ organization.name }}</p>
+          </div>
+          <button type="button"
+                  data-modal-close="add-member-modal"
+                  class="btn btn-ghost btn-sm btn-circle">{{ icon('x', 'w-4 h-4') }}</button>
+        </div>
+        <form action="{{ url_for('user.organization_member_add', org_slug=organization.slug) }}"
+              method="post"
+              class="flex flex-col gap-4">
+          {{ add_member_form.hidden_tag() }}
+          {{ render_field(add_member_form.username, placeholder='Enter username') }}
+          {{ render_field(add_member_form.admin) }}
+          <div class="pt-2">
+            <button type="submit" class="btn btn-primary w-full">Add Member</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <script>
+(function() {
+  var modal = document.getElementById('add-member-modal');
+  modal.querySelectorAll('[data-modal-close="add-member-modal"]').forEach(function(el) {
+    el.addEventListener('click', function() { modal.classList.add('hidden'); });
+  });
+})();
+    </script>
+  {% endif %}
+{% endblock content %}

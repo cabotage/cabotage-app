@@ -1,42 +1,51 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, breadcrumbs %}
+{% from "_macros.html" import icon, resource_path %}
 
-{% block title %}Logs - Cabotage{% endblock %}
+{% block title %}
+  Logs - Cabotage
+{% endblock title %}
 
-{% block breadcrumbs %}
-{{ breadcrumbs([
-  {'label': application.project.organization.slug, 'url': url_for('user.organization', org_slug=application.project.organization.slug)},
+{% block resource_path %}
+  {{ resource_path([
+    {'label': application.project.organization.slug, 'url': url_for('user.organization', org_slug=application.project.organization.slug) },
   {'label': application.project.slug, 'url': url_for('user.project', org_slug=application.project.organization.slug, project_slug=application.project.slug)},
   {'label': application.slug, 'url': url_for('user.project_application', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug)},
   {'label': 'Logs'}
-]) }}
-{% endblock %}
+  ]) }}
+{% endblock resource_path %}
 
 {% block content %}
-<div class="flex items-center justify-between mb-4">
-  <div class="flex items-center gap-3">
-    <a href="{{ url_for('user.project_application', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}" class="btn btn-ghost btn-sm">
-      {{ icon('arrow-left') }}
-    </a>
-    <h1 class="text-lg font-semibold text-white">Logs</h1>
-    <span class="text-sm text-base-content/40 font-mono">{{ application.slug }}</span>
+  <div class="flex items-center justify-between mb-4">
+    <div class="flex items-center gap-3">
+      <a href="{{ url_for('user.project_application', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}"
+         class="btn btn-ghost btn-sm">{{ icon("arrow-left") }}</a>
+      <h1 class="text-lg font-semibold text-base-content">Logs</h1>
+      <span class="text-sm text-base-content/40 font-mono">{{ application.slug }}</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <button onclick="toggleAutoScroll()"
+              id="toggleAutoScrollButton"
+              class="btn btn-ghost btn-xs">Disable auto-scroll</button>
+      <button onclick="togglePaused()"
+              id="togglePausedButton"
+              class="btn btn-ghost btn-xs">Pause</button>
+      <button onclick="toggleKubeProbe()"
+              id="toggleKubeProbeButton"
+              class="btn btn-ghost btn-xs">Show kube-probe</button>
+      <button onclick="scrollToBottom()"
+              id="scrollToBottomButton"
+              class="btn btn-ghost btn-xs hidden">Scroll to bottom</button>
+    </div>
   </div>
-  <div class="flex items-center gap-2">
-    <button onclick="toggleAutoScroll()" id="toggleAutoScrollButton" class="btn btn-ghost btn-xs">Disable auto-scroll</button>
-    <button onclick="togglePaused()" id="togglePausedButton" class="btn btn-ghost btn-xs">Pause</button>
-    <button onclick="toggleKubeProbe()" id="toggleKubeProbeButton" class="btn btn-ghost btn-xs">Show kube-probe</button>
-    <button onclick="scrollToBottom()" id="scrollToBottomButton" class="btn btn-ghost btn-xs hidden">Scroll to bottom</button>
-  </div>
-</div>
 
-<div class="log-viewer" style="height: 80vh;">
-  <div id="appLogs"></div>
-  <div id="scroll-anchor"></div>
-</div>
-{% endblock %}
+  <div class="log-viewer" style="height: 80vh;">
+    <div id="appLogs"></div>
+    <div id="scroll-anchor"></div>
+  </div>
+{% endblock content %}
 
 {% block js %}
-<script>
+  <script>
   var autoScroll = true;
   var logsPre = document.getElementById('appLogs');
   var paused = false;
@@ -130,5 +139,5 @@
       btn.textContent = 'Pause';
     }
   }
-</script>
-{% endblock %}
+  </script>
+{% endblock js %}

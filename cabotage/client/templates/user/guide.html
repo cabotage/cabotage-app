@@ -1,0 +1,223 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon %}
+
+{% block title %}
+  Guide - Cabotage
+{% endblock title %}
+
+{% block content %}
+
+  {# ===== HEADER ===== #}
+  <div class="mb-8">
+    <h1 class="text-xl font-semibold text-base-content">Guide</h1>
+    <p class="text-sm text-base-content/50 mt-1">How to deploy and manage your applications on Cabotage.</p>
+  </div>
+
+  {# ===== SECTION 1: THE DEPLOY PIPELINE ===== #}
+  <div class="mb-10">
+    <div class="flex items-center gap-2 mb-4">
+      {{ icon('zap', 'w-4 h-4 text-primary') }}
+      <h2 class="text-base font-semibold text-base-content">Deploying your code</h2>
+    </div>
+    <p class="text-sm text-base-content/50 mb-5">
+      Every deploy follows a three-step pipeline. You trigger each step from the application's Overview tab.
+    </p>
+
+    <div class="guide-pipeline">
+      <div class="guide-step">
+        <div class="guide-step-number">1</div>
+        <div class="guide-step-connector"></div>
+        <div class="guide-step-card">
+          <div class="flex items-center gap-2 mb-1.5">
+            {{ icon('play', 'w-4 h-4 text-primary') }}
+            <h3 class="text-sm font-semibold text-base-content">Build Image</h3>
+          </div>
+          <p class="text-sm text-base-content/50 leading-relaxed">
+            Compiles your source code into a container image. This runs in a sandboxed build environment and produces a versioned, immutable image.
+          </p>
+        </div>
+      </div>
+
+      <div class="guide-step">
+        <div class="guide-step-number">2</div>
+        <div class="guide-step-connector"></div>
+        <div class="guide-step-card">
+          <div class="flex items-center gap-2 mb-1.5">
+            {{ icon('scissors', 'w-4 h-4 text-primary') }}
+            <h3 class="text-sm font-semibold text-base-content">Create Package</h3>
+          </div>
+          <p class="text-sm text-base-content/50 leading-relaxed">
+            Snapshots the latest image together with your current environment variables into a single deployable unit. Nothing goes live yet — this just locks in what will be deployed.
+          </p>
+        </div>
+      </div>
+
+      <div class="guide-step">
+        <div class="guide-step-number">3</div>
+        <div class="guide-step-card">
+          <div class="flex items-center gap-2 mb-1.5">
+            {{ icon('deploy', 'w-4 h-4 text-primary') }}
+            <h3 class="text-sm font-semibold text-base-content">Deploy</h3>
+          </div>
+          <p class="text-sm text-base-content/50 leading-relaxed">
+            Pushes the package to your pods. Traffic switches over once the new pods pass health checks.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ===== SECTION 2: CONFIG-ONLY CHANGES ===== #}
+  <div class="mb-10">
+    <div class="flex items-center gap-2 mb-4">
+      {{ icon('key', 'w-4 h-4 text-primary') }}
+      <h2 class="text-base font-semibold text-base-content">Config-only changes</h2>
+    </div>
+
+    <div class="card bg-base-200 border border-base-300">
+      <div class="card-body !p-5">
+        <p class="text-sm text-base-content/50 leading-relaxed mb-4">
+          If you only changed environment variables and your code hasn't changed, you can skip the build entirely:
+        </p>
+        <div class="guide-shortcut">
+          <span class="guide-shortcut-step guide-shortcut-skip">Build</span>
+          <span class="guide-shortcut-arrow text-base-content/15">→</span>
+          <span class="guide-shortcut-step guide-shortcut-active">Create Package</span>
+          <span class="guide-shortcut-arrow text-base-content/15">→</span>
+          <span class="guide-shortcut-step guide-shortcut-active">Deploy</span>
+        </div>
+        <p class="text-xs text-base-content/40 mt-4">
+          The package automatically picks up the most recent built image. This is the fastest way to roll out a config change — no rebuild required.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  {# ===== SECTION 3: GITHUB AUTO-DEPLOY ===== #}
+  <div class="mb-10">
+    <div class="flex items-center gap-2 mb-4">
+      {{ icon('zap', 'w-4 h-4 text-primary') }}
+      <h2 class="text-base font-semibold text-base-content">Setting up auto-deploy from GitHub</h2>
+    </div>
+    <p class="text-sm text-base-content/50 mb-5">
+      Connect a GitHub repository so pushes to a branch automatically trigger image builds.
+    </p>
+
+    <div class="guide-pipeline">
+      <div class="guide-step">
+        <div class="guide-step-number">1</div>
+        <div class="guide-step-connector"></div>
+        <div class="guide-step-card">
+          <h3 class="text-sm font-semibold text-base-content mb-1.5">Install the GitHub App</h3>
+          <p class="text-sm text-base-content/50 leading-relaxed">
+            Install the <a href="{{ github_app_url }}" class="text-accent hover:underline">Cabotage GitHub App</a> on your repository or organization.
+          </p>
+        </div>
+      </div>
+
+      <div class="guide-step">
+        <div class="guide-step-number">2</div>
+        <div class="guide-step-connector"></div>
+        <div class="guide-step-card">
+          <h3 class="text-sm font-semibold text-base-content mb-1.5">Configure your application</h3>
+          <p class="text-sm text-base-content/50 leading-relaxed mb-3">
+            Go to your application's <strong class="text-base-content/70">Settings</strong> page and fill in:
+          </p>
+          <div class="flex flex-col gap-2">
+            <div class="guide-field-row">
+              <code class="guide-field-name">GitHub Repository</code>
+              <span class="text-xs text-base-content/40">e.g. <code class="text-accent/60 bg-transparent p-0">myorg/myapp</code></span>
+            </div>
+            <div class="guide-field-row">
+              <code class="guide-field-name">GitHub App Installation ID</code>
+              <span class="text-xs text-base-content/40">from your org's GitHub App settings</span>
+            </div>
+            <div class="guide-field-row">
+              <code class="guide-field-name">Auto-deploy Branch</code>
+              <span class="text-xs text-base-content/40">e.g. <code class="text-accent/60 bg-transparent p-0">main</code></span>
+            </div>
+            <div class="guide-field-row">
+              <code class="guide-field-name">Subdirectory</code>
+              <span class="text-xs text-base-content/30">optional — if your app isn't at the repo root</span>
+            </div>
+            <div class="guide-field-row">
+              <code class="guide-field-name">GitHub Environment Name</code>
+              <span class="text-xs text-base-content/30">optional — for custom environment naming</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="guide-step">
+        <div class="guide-step-number">3</div>
+        <div class="guide-step-connector"></div>
+        <div class="guide-step-card">
+          <h3 class="text-sm font-semibold text-base-content mb-1.5">Push your code</h3>
+          <p class="text-sm text-base-content/50 leading-relaxed">
+            Push to your configured branch. Once CI passes, Cabotage automatically builds a new image.
+          </p>
+        </div>
+      </div>
+
+      <div class="guide-step">
+        <div class="guide-step-number">4</div>
+        <div class="guide-step-card">
+          <h3 class="text-sm font-semibold text-base-content mb-1.5">Package and deploy</h3>
+          <p class="text-sm text-base-content/50 leading-relaxed">
+            You still create packages and deploy manually from the Overview tab. Fully automated deploy can be configured later.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ===== SECTION 4: ENVIRONMENT VARIABLES ===== #}
+  <div class="mb-6">
+    <div class="flex items-center gap-2 mb-4">
+      {{ icon('settings', 'w-4 h-4 text-primary') }}
+      <h2 class="text-base font-semibold text-base-content">Environment variables</h2>
+    </div>
+
+    <div class="card bg-base-200 border border-base-300">
+      <div class="card-body !p-5">
+        <p class="text-sm text-base-content/50 leading-relaxed mb-4">
+          Add variables on the <strong class="text-base-content/70">Config</strong> tab — one at a time, or use the <strong class="text-base-content/70">Raw Editor</strong> to paste many at once in <code>KEY=VALUE</code> or JSON format.
+        </p>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+          <div class="guide-info-card">
+            <div class="flex items-center gap-2 mb-1.5">
+              {{ icon('lock', 'w-3.5 h-3.5 text-warning/60') }}
+              <span class="text-xs font-semibold text-base-content/70">Secret</span>
+            </div>
+            <p class="text-xs text-base-content/40 leading-relaxed">Stored in Vault. Never displayed in the UI after creation.</p>
+          </div>
+          <div class="guide-info-card">
+            <div class="flex items-center gap-2 mb-1.5">
+              {{ icon('eye', 'w-3.5 h-3.5 text-info/60') }}
+              <span class="text-xs font-semibold text-base-content/70">Non-secret</span>
+            </div>
+            <p class="text-xs text-base-content/40 leading-relaxed">Stored in Consul. Visible and editable on the Config tab.</p>
+          </div>
+          <div class="guide-info-card">
+            <div class="flex items-center gap-2 mb-1.5">
+              {{ icon('settings', 'w-3.5 h-3.5 text-success/60') }}
+              <span class="text-xs font-semibold text-base-content/70">Build-time</span>
+            </div>
+            <p class="text-xs text-base-content/40 leading-relaxed">
+              Available during image build. Useful for private registry tokens.
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-2 p-3 rounded-lg bg-base-300/50 border border-base-content/5">
+          {{ icon('alert-triangle', 'w-3.5 h-3.5 text-warning/50 mt-0.5 flex-shrink-0') }}
+          <p class="text-xs text-base-content/40 leading-relaxed">
+            Changes don't take effect until you create a new package. The package snapshots whatever config exists at that moment.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+{% endblock content %}

@@ -7,7 +7,7 @@
 {% set app_slug = app.slug %}
 
 {% block title %}
-  Packages - {{ app_slug }} - Cabotage
+  Deployments - {{ app_slug }} - Cabotage
 {% endblock title %}
 
 {% block resource_path %}
@@ -15,54 +15,51 @@
     {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug) },
   {'label': project_slug, 'url': url_for('user.project', org_slug=org_slug, project_slug=project_slug)},
   {'label': app_slug, 'url': url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug)},
-  {'label': 'Packages'}
+  {'label': 'Deployments'}
   ]) }}
 {% endblock resource_path %}
 
 {% block content %}
 
   <div class="flex items-center justify-between mb-4">
-    <h1 class="text-xl font-semibold text-base-content">Packages</h1>
-    <a href="{{ url_for('user.application_release_create', application_id=app.id) }}"
-       class="btn btn-primary btn-sm gap-1.5">{{ icon('scissors', 'w-3.5 h-3.5') }} Create Package</a>
+    <h1 class="text-xl font-semibold text-base-content">Deployments</h1>
   </div>
 
-  {% if releases|length > 0 %}
+  {% if deployments|length > 0 %}
     <div class="card bg-base-200 border border-base-300">
       <div class="card-body !p-0">
         <div class="overflow-x-auto">
           <table class="table table-sm">
             <thead>
               <tr class="text-base-content/50 text-xs uppercase tracking-wider">
-                <th>Version</th>
                 <th>Status</th>
+                <th>Package</th>
                 <th>Updated</th>
                 <th class="w-1"></th>
               </tr>
             </thead>
             <tbody>
-              {% for release in releases %}
+              {% for deployment in deployments %}
                 <tr>
                   <td>
-                    <div class="flex items-center gap-2">
-                      <code class="text-sm text-accent">v{{ release.version }}</code>
-                      {% if release.release_metadata and release.release_metadata.get('auto_deploy') %}
-                        {{ icon('zap', 'w-3 h-3 text-warning') }}
-                      {% endif %}
-                    </div>
-                  </td>
-                  <td>
-                    {% if release.built %}
-                      <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-success"></span> Built</span>
-                    {% elif release.error %}
-                      <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-error"></span> Error</span>
+                    {% if deployment.complete %}
+                      <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-success"></span> Complete</span>
+                    {% elif deployment.error %}
+                      <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-error"></span> Failed</span>
                     {% else %}
-                      <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-info status-dot-pulse"></span> Building</span>
+                      <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-info status-dot-pulse"></span> Deploying</span>
                     {% endif %}
                   </td>
-                  <td class="text-sm text-base-content/60">{{ release.updated|humanize }}</td>
                   <td>
-                    <a href="{{ url_for('user.release_detail', release_id=release.id) }}"
+                    {% if deployment.release_id %}
+                      <code class="text-sm text-accent">v{{ deployment.release_object.version if deployment.release_object else '-' }}</code>
+                    {% else %}
+                      <span class="text-sm text-base-content/40">-</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-sm text-base-content/60">{{ deployment.updated|humanize }}</td>
+                  <td>
+                    <a href="{{ url_for('user.deployment_detail', deployment_id=deployment.id) }}"
                        class="btn btn-ghost btn-xs gap-1">Details</a>
                   </td>
                 </tr>
@@ -80,7 +77,7 @@
         <span></span>
       {% endif %}
       <span class="text-xs text-base-content/40">Page {{ page }}</span>
-      {% if releases|length == 20 %}
+      {% if deployments|length == 20 %}
         <a href="?page={{ page + 1 }}" class="btn btn-ghost btn-sm">Next</a>
       {% else %}
         <span></span>
@@ -91,9 +88,9 @@
     <div class="card bg-base-200 border border-base-300">
       <div class="card-body">
         <div class="empty-state !py-12">
-          <div class="text-base-content/15 mb-4">{{ icon('layers', 'w-12 h-12') }}</div>
-          <h3 class="text-base font-medium text-base-content/60 mb-1">No packages yet</h3>
-          <p class="text-sm text-base-content/40 max-w-sm">Packages are created when you cut a package from pending changes.</p>
+          <div class="text-base-content/15 mb-4">{{ icon('deploy', 'w-12 h-12') }}</div>
+          <h3 class="text-base font-medium text-base-content/60 mb-1">No deployments yet</h3>
+          <p class="text-sm text-base-content/40 max-w-sm">Deployments are created when you deploy a package.</p>
         </div>
       </div>
     </div>

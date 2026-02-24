@@ -2,10 +2,14 @@
   {% if messages %}
     <div class="flex flex-col gap-2 mb-4">
       {% for category, message in messages %}
-        {% set alert_class = 'alert-info' %}
-        {% if category == 'error' or category == 'danger' %}{% set alert_class = 'alert-error' %}
-        {% elif category == 'success' %}{% set alert_class = 'alert-success' %}
-        {% elif category == 'warning' %}{% set alert_class = 'alert-warning' %}{% endif %}
+        {% set alert_class = "alert-info" %}
+        {% if category == 'error' or category == 'danger' %}
+          {% set alert_class = "alert-error" %}
+        {% elif category == 'success' %}
+          {% set alert_class = "alert-success" %}
+        {% elif category == 'warning' %}
+          {% set alert_class = "alert-warning" %}
+        {% endif %}
         <div role="alert" class="alert {{ alert_class }} text-sm py-2">
           <span>{{ message }}</span>
         </div>

@@ -1,40 +1,52 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, breadcrumbs %}
+{% from "_macros.html" import icon, resource_path %}
 
-{% block title %}Shell - Cabotage{% endblock %}
+{% block title %}
+  Shell - Cabotage
+{% endblock title %}
 
 {% block css %}
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css" integrity="sha256-uo5phWaUiJgcz0DAzv46uoByLLbJLeetYosL1xf68rY=" crossorigin="anonymous">
-{% endblock %}
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css"
+        integrity="sha256-uo5phWaUiJgcz0DAzv46uoByLLbJLeetYosL1xf68rY="
+        crossorigin="anonymous" />
+{% endblock css %}
 
-{% block breadcrumbs %}
-{{ breadcrumbs([
-  {'label': application.project.organization.slug, 'url': url_for('user.organization', org_slug=application.project.organization.slug)},
+{% block resource_path %}
+  {{ resource_path([
+    {'label': application.project.organization.slug, 'url': url_for('user.organization', org_slug=application.project.organization.slug) },
   {'label': application.project.slug, 'url': url_for('user.project', org_slug=application.project.organization.slug, project_slug=application.project.slug)},
   {'label': application.slug, 'url': url_for('user.project_application', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug)},
   {'label': 'Shell'}
-]) }}
-{% endblock %}
+  ]) }}
+{% endblock resource_path %}
 
 {% block content %}
-<div class="flex items-center gap-3 mb-4">
-  <a href="{{ url_for('user.project_application', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}" class="btn btn-ghost btn-sm">
-    {{ icon('arrow-left') }}
-  </a>
-  <h1 class="text-lg font-semibold text-white">Shell</h1>
-  <span class="text-sm text-base-content/40 font-mono">{{ application.slug }}</span>
-</div>
+  <div class="flex items-center gap-3 mb-4">
+    <a href="{{ url_for('user.project_application', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}"
+       class="btn btn-ghost btn-sm">{{ icon("arrow-left") }}</a>
+    <h1 class="text-lg font-semibold text-base-content">Shell</h1>
+    <span class="text-sm text-base-content/40 font-mono">{{ application.slug }}</span>
+  </div>
 
-<div class="rounded-lg border border-base-300 overflow-hidden" style="background: #000; padding: 0.25rem;">
-  <div id="terminal" style="height: 65vh; min-height: 400px;"></div>
-</div>
-{% endblock %}
+  <div class="rounded-lg border border-base-300 overflow-hidden"
+       style="background: #000;
+              padding: 0.25rem">
+    <div id="terminal" style="height: 65vh; min-height: 400px;"></div>
+  </div>
+{% endblock content %}
 
 {% block js %}
-<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js" integrity="sha256-H5kaw7Syg+v5bmCuI6AKUnZd06Lkb6b92p8aqwMvdJU=" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js" integrity="sha256-va76Nwsb/ELuiNRv5gckAJAqTUstRc2TQ43amyPJcIk=" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-attach@0.11.0/lib/addon-attach.js" integrity="sha256-r4EPozChUDzzwwWgporcO0NhZx+ljsRysPro5Zp8O2Y=" crossorigin="anonymous"></script>
-<script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"
+          integrity="sha256-H5kaw7Syg+v5bmCuI6AKUnZd06Lkb6b92p8aqwMvdJU="
+          crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"
+          integrity="sha256-va76Nwsb/ELuiNRv5gckAJAqTUstRc2TQ43amyPJcIk="
+          crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-attach@0.11.0/lib/addon-attach.js"
+          integrity="sha256-r4EPozChUDzzwwWgporcO0NhZx+ljsRysPro5Zp8O2Y="
+          crossorigin="anonymous"></script>
+  <script>
   function wrap(object, method, wrapper) {
     var fn = object[method];
     return object[method] = function() {
@@ -93,5 +105,5 @@
     window.addEventListener('resize', sendResize);
     socket.addEventListener('open', function() { sendResize(); });
   });
-</script>
-{% endblock %}
+  </script>
+{% endblock js %}

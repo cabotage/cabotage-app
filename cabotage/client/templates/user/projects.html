@@ -1,35 +1,107 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, page_header, empty_state %}
+{% from "_macros.html" import icon, page_header, empty_state, render_field %}
 
-{% block title %}Projects - Cabotage{% endblock %}
+{% block title %}
+  Projects - Cabotage
+{% endblock title %}
 
 {% block content %}
-{% call(actions) page_header('Projects', 'All projects across your organizations') %}
-  <a href="{{ url_for('user.project_create') }}" class="btn btn-primary btn-sm gap-2">
-    {{ icon('plus') }}
-    New Project
-  </a>
-{% endcall %}
+  {% call page_header('Projects', 'All projects across your organizations') %}
+    {% if project_create_form.organization_id.choices %}
+      <button type="button"
+              onclick="document.getElementById('create-project-modal').classList.remove('hidden')"
+              class="btn btn-primary btn-sm gap-2">
+        {{ icon("plus") }}
+        New Project
+      </button>
+    {% endif %}
+  {% endcall %}
 
-{% if projects %}
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-  {% for project in projects %}
-  <a href="{{ url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug) }}" class="card bg-base-200 border border-base-300 card-hover transition-all">
-    <div class="card-body">
-      <div class="flex items-center gap-3">
-        <div class="p-2 rounded-lg bg-secondary/10 text-secondary">
-          {{ icon('folder', 'w-5 h-5') }}
+  {% if projects %}
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {% for project in projects %}
+        <a href="{{ url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug) }}"
+           class="card bg-base-200 border border-base-300 card-hover transition-all">
+          <div class="card-body">
+            <div class="flex items-center gap-3">
+              <div class="p-2 rounded-lg bg-secondary/10 text-secondary">{{ icon('folder', 'w-5 h-5') }}</div>
+              <div>
+                <h3 class="font-medium text-base-content">{{ project.slug }}</h3>
+                <p class="text-xs text-base-content/40 font-mono">{{ project.organization.slug }}/{{ project.slug }}</p>
+              </div>
+            </div>
+          </div>
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <div class="text-base-content/15 mb-4">{{ icon('folder', 'w-12 h-12') }}</div>
+      <h3 class="text-base font-medium text-base-content/60 mb-1">No projects yet</h3>
+      <p class="text-sm text-base-content/40 max-w-sm">Create your first project to start deploying applications.</p>
+      {% if project_create_form.organization_id.choices %}
+        <button type="button"
+                onclick="document.getElementById('create-project-modal').classList.remove('hidden')"
+                class="btn btn-primary btn-sm gap-2 mt-4">
+          {{ icon('plus', 'w-4 h-4') }}
+          Create Project
+        </button>
+      {% else %}
+        <a href="{{ url_for('user.organization_create') }}"
+           class="btn btn-primary btn-sm gap-2 mt-4">
+          {{ icon('plus', 'w-4 h-4') }}
+          Create an Organization First
+        </a>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if project_create_form.organization_id.choices %}
+    {# Project create modal with org selector #}
+    <div id="create-project-modal" class="raw-editor-modal hidden">
+      <div class="raw-editor-backdrop" data-modal-close="create-project-modal"></div>
+      <div class="raw-editor-dialog max-w-md">
+        <div class="flex items-center justify-between mb-5">
+          <h3 class="text-base font-semibold text-base-content">Create Project</h3>
+          <button type="button"
+                  data-modal-close="create-project-modal"
+                  class="btn btn-ghost btn-sm btn-circle">{{ icon('x', 'w-4 h-4') }}</button>
         </div>
-        <div>
-          <h3 class="font-medium text-white">{{ project.slug }}</h3>
-          <p class="text-xs text-base-content/40 font-mono">{{ project.organization.slug }}/{{ project.slug }}</p>
-        </div>
+        <form action="{{ url_for('user.project_create') }}"
+              method="post"
+              class="flex flex-col gap-4">
+          {{ project_create_form.hidden_tag() }}
+          {{ render_field(project_create_form.organization_id) }}
+          {{ render_field(project_create_form.name) }}
+          <details class="group">
+            <summary class="text-xs text-base-content/40 font-medium uppercase tracking-wider cursor-pointer select-none hover:text-base-content/60 transition-colors">
+              Advanced Settings
+            </summary>
+            <div class="mt-3">{{ render_field(project_create_form.slug) }}</div>
+          </details>
+          <div class="pt-2">
+            <button type="submit" class="btn btn-primary w-full">Create Project</button>
+          </div>
+        </form>
       </div>
     </div>
-  </a>
-  {% endfor %}
-</div>
-{% else %}
-  {{ empty_state('No projects yet', 'Create your first project to start deploying applications.', url_for('user.project_create'), 'Create Project', 'folder') }}
-{% endif %}
-{% endblock %}
+    <script>
+(function() {
+  var modal = document.getElementById('create-project-modal');
+  var nameInput = modal.querySelector('[name="name"]');
+  var slugInput = modal.querySelector('[name="slug"]');
+  if (nameInput && slugInput) {
+    slugInput.addEventListener('keyup', function() {
+      if (!slugInput.classList.contains('user-has-edited')) slugInput.classList.add('user-has-edited');
+    });
+    nameInput.addEventListener('keyup', function() {
+      if (!slugInput.classList.contains('user-has-edited')) slugInput.value = slugify(nameInput.value);
+    });
+  }
+  modal.querySelectorAll('[data-modal-close="create-project-modal"]').forEach(function(el) {
+    el.addEventListener('click', function() { modal.classList.add('hidden'); });
+  });
+})();
+    </script>
+  {% endif %}
+{% endblock content %}

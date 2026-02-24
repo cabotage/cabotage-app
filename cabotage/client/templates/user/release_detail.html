@@ -1,210 +1,365 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon %}
+{% from "_macros.html" import icon, resource_path %}
 
-{% block title %}Release v{{ release.version }} - Cabotage{% endblock %}
+{% set app = release.application %}
+{% set org_slug = app.project.organization.slug %}
+{% set project_slug = app.project.slug %}
+{% set app_slug = app.slug %}
+
+{% block title %}
+  Package v{{ release.version }} - {{ app_slug }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug) },
+  {'label': project_slug, 'url': url_for('user.project', org_slug=org_slug, project_slug=project_slug)},
+  {'label': app_slug, 'url': url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug)},
+  {'label': 'Package v' ~ release.version}
+  ]) }}
+{% endblock resource_path %}
 
 {% block content %}
-<div class="max-w-4xl">
-  <div class="flex items-center gap-3 mb-6">
-    <a href="javascript:history.back()" class="btn btn-ghost btn-sm">
-      {{ icon('arrow-left') }}
-    </a>
-    <div>
-      <h1 class="text-xl font-semibold text-white">Release v{{ release.version }}</h1>
-    </div>
-  </div>
 
-  {# Info Card #}
-  <div class="card bg-base-200 border border-base-300 mb-6">
-    <div class="card-body">
-      <h2 class="text-base font-medium text-white mb-4">Information</h2>
-      <dl class="meta-grid">
-        <dt>Repository</dt>
-        <dd>{{ release.repository_name }}</dd>
-        <dt>Version</dt>
-        <dd>
-          {{ release.version }}
-          {% if release.release_metadata and release.release_metadata.get('auto_deploy') %}
-            {{ icon('zap', 'w-3 h-3 text-warning inline') }}
-          {% endif %}
-        </dd>
-        <dt>Identifier</dt>
-        <dd>{{ release.release_id }}</dd>
-        <dt>Status</dt>
-        <dd>
-          {% if release.valid %}
-            {% if release.built %}
-              <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-success"></span> Built</span>
-            {% elif release.error %}
-              <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-error"></span> Error</span>
-            {% else %}
-              <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-info"></span> Building...</span>
-            {% endif %}
+  {# ===== PACKAGE HEADER ===== #}
+  <div class="mb-6">
+    <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+      <div class="flex items-center gap-4">
+        {# Status Indicator #}
+        <div class="build-status-orb
+                    {% if release.built and not release.deposed %}
+                      build-status-success
+                    {% elif release.error or release.deposed %}
+                      build-status-error
+                    {% else %}
+                      build-status-building
+                    {% endif %}">
+          {% if release.built and not release.deposed %}
+            {{ icon('check', 'w-5 h-5') }}
+          {% elif release.error or release.deposed %}
+            {{ icon('x', 'w-5 h-5') }}
           {% else %}
-            <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-error"></span> Invalid</span>
+            <svg class="w-5 h-5 animate-spin"
+                 viewBox="0 0 24 24"
+                 fill="none"
+                 stroke="currentColor"
+                 stroke-width="2">
+              <path d="M21 12a9 9 0 11-6.219-8.56" />
+            </svg>
           {% endif %}
-        </dd>
-        <dt>Submitted</dt>
-        <dd>{{ release.created|humanize }}</dd>
-        <dt>Updated</dt>
-        <dd>{{ release.updated|humanize }}</dd>
-        {% if release.release_metadata and release.release_metadata.get('description') %}
-        <dt>Build Trigger</dt>
-        <dd class="font-sans">{{ release.release_metadata.get('description') }}</dd>
+        </div>
+        <div>
+          <div class="flex items-center gap-2.5">
+            <h1 class="text-xl font-semibold text-base-content">
+              Package <span class="font-mono text-accent">v{{ release.version }}</span>
+            </h1>
+            {% if release.release_metadata and release.release_metadata.get('auto_deploy') %}
+              <span class="badge badge-sm badge-warning gap-1">{{ icon('zap', 'w-3 h-3') }} auto</span>
+            {% endif %}
+          </div>
+          <p class="text-sm text-base-content/40 font-mono mt-0.5">{{ release.repository_name }}</p>
+        </div>
+      </div>
+
+      {# Actions #}
+      <div class="flex items-center gap-2">
+        {% if release.built and not release.deposed %}
+          <form action="{{ url_for('user.release_deploy', release_id=release.id) }}"
+                method="post"
+                name="deploy_release_form"
+                enctype="multipart/form-data">
+            {{ deploy_form.hidden_tag() }}
+            <button type="submit" class="btn btn-primary btn-sm gap-1.5">{{ icon('deploy', 'w-4 h-4') }} Deploy</button>
+          </form>
         {% endif %}
-      </dl>
+        <a href="{{ url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+           class="btn btn-ghost btn-sm gap-1.5">
+          {{ icon('arrow-left', 'w-3.5 h-3.5') }}
+          Back
+        </a>
+      </div>
     </div>
   </div>
 
-  {% if release.deposed %}
-  <div role="alert" class="alert alert-error mb-6">
-    <div>
-      <p class="font-medium">Release Invalid</p>
-      <pre class="text-xs mt-2 whitespace-pre-wrap">{{ release.deposed_reason|join("\n") }}</pre>
-    </div>
-  </div>
-  {% endif %}
-
+  {# ===== ERROR BANNER ===== #}
   {% if release.error %}
-  <div role="alert" class="alert alert-error mb-6">
-    <div>
-      <p class="font-medium">Error Building Image</p>
-      <pre class="text-xs mt-2 whitespace-pre-wrap">{{ release.error_detail }}</pre>
+    <div class="build-error-banner mb-6">
+      <div class="flex items-start gap-3">
+        <div class="flex-shrink-0 mt-0.5">{{ icon('alert-triangle', 'w-4 h-4 text-error') }}</div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-error">Package Build Failed</p>
+          {% if release.error_detail %}
+            <pre class="text-xs text-base-content/60 mt-1.5 whitespace-pre-wrap break-words leading-relaxed">{{ release.error_detail }}</pre>
+          {% endif %}
+        </div>
+      </div>
     </div>
-  </div>
   {% endif %}
 
-  {# Image #}
-  <div class="card bg-base-200 border border-base-300 mb-6">
-    <div class="card-body">
-      <h2 class="text-base font-medium text-white mb-3">Image</h2>
-      {% if release.image_object %}
-      <a href="{{ url_for('user.image_detail', image_id=release.image_object.id) }}" class="text-accent hover:underline font-mono text-sm">
-        {{ release.image_object.repository_name }}:{{ release.image_object.version }}
-      </a>
-      {% else %}
-      <p class="text-sm text-base-content/50">Image {{ release.image.repository }}/{{ release.image.tag }} no longer exists.</p>
-      {% endif %}
+  {# ===== DEPOSED / INVALID BANNER ===== #}
+  {% if release.deposed %}
+    <div class="build-error-banner mb-6">
+      <div class="flex items-start gap-3">
+        <div class="flex-shrink-0 mt-0.5">{{ icon('alert-triangle', 'w-4 h-4 text-error') }}</div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-error">Package Deposed</p>
+          {% if release.deposed_reason %}
+            <pre class="text-xs text-base-content/60 mt-1.5 whitespace-pre-wrap break-words leading-relaxed">{{ release.deposed_reason|join("\n") }}</pre>
+          {% endif %}
+        </div>
+      </div>
     </div>
-  </div>
+  {% endif %}
 
-  {# Environment #}
-  {% if release.configuration_objects %}
-  <div class="card bg-base-200 border border-base-300 mb-6">
-    <div class="card-body">
-      <h2 class="text-base font-medium text-white mb-4">Environment</h2>
-      <div class="overflow-x-auto">
-        <table class="table table-sm">
-          <thead>
-            <tr class="text-base-content/50 text-xs uppercase tracking-wider">
-              <th>Key</th>
-              <th>Value</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for name, env_var in release.configuration_objects.items() %}
-            <tr>
-              <td><code class="text-sm text-accent">{{ name }}</code></td>
-              <td>
-                {% if env_var %}
-                  {% if env_var.secret %}
-                    <span class="inline-flex items-center gap-1 text-base-content/40 text-sm">{{ icon('lock', 'w-3 h-3') }} Secret</span>
-                  {% else %}
-                    <code class="text-sm text-base-content/70">{{ env_var.value }}</code>
-                  {% endif %}
+  {# ===== BUILDING BANNER ===== #}
+  {% if not release.built and not release.error %}
+    <div class="build-progress-banner mb-6">
+      <div class="flex items-center gap-3">
+        <div class="build-progress-spinner"></div>
+        <div>
+          <p class="text-sm font-medium text-base-content">Package build in progress</p>
+          <p class="text-xs text-base-content/40">Streaming logs below. Page will refresh on completion.</p>
+        </div>
+      </div>
+      <div class="build-progress-bar mt-3">
+        <div class="build-progress-bar-fill"></div>
+      </div>
+    </div>
+  {% endif %}
+
+  {# ===== PACKAGE DETAILS GRID ===== #}
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+
+    {# Left column: metadata #}
+    <div class="lg:col-span-1 flex flex-col gap-4">
+
+      {# Package Info #}
+      <div class="card bg-base-200 border border-base-300">
+        <div class="card-body !p-4">
+          <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Package Info</h2>
+          <div class="flex flex-col gap-2.5">
+            <div class="build-meta-row">
+              <span class="build-meta-label">Status</span>
+              <span class="build-meta-value">
+                {% if release.deposed %}
+                  <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-error"></span> Deposed</span>
+                {% elif not release.valid %}
+                  <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-error"></span> Invalid</span>
+                {% elif release.built %}
+                  <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-success"></span> Built</span>
+                {% elif release.error %}
+                  <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-error"></span> Error</span>
                 {% else %}
-                  <span class="text-error text-sm">Deleted</span>
+                  <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-info status-dot-pulse"></span> Building</span>
                 {% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+              </span>
+            </div>
+            <div class="build-meta-row">
+              <span class="build-meta-label">Version</span>
+              <code class="build-meta-value text-accent">{{ release.version }}</code>
+            </div>
+            {% if release.platform %}
+              <div class="build-meta-row">
+                <span class="build-meta-label">Platform</span>
+                <code class="build-meta-value">{{ release.platform }}</code>
+              </div>
+            {% endif %}
+            {% if release.health_check_path %}
+              <div class="build-meta-row">
+                <span class="build-meta-label">Health Check</span>
+                <code class="build-meta-value">{{ release.health_check_path }}</code>
+              </div>
+            {% endif %}
+            {% if release.build_job_id %}
+              <div class="build-meta-row">
+                <span class="build-meta-label">Job ID</span>
+                <code class="build-meta-value text-base-content/50 text-xs">{{ release.build_job_id }}</code>
+              </div>
+            {% endif %}
+            <div class="build-meta-row">
+              <span class="build-meta-label">ID</span>
+              <code class="build-meta-value text-base-content/50 text-xs truncate"
+                    title="{{ release.release_id }}">{{ release.release_id[:16] if release.release_id else 'N/A' }}</code>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
-  </div>
-  {% endif %}
 
-  {# Processes #}
-  {% if release.image_object and release.image_object.processes %}
-  <div class="card bg-base-200 border border-base-300 mb-6">
-    <div class="card-body">
-      <h2 class="text-base font-medium text-white mb-4">Processes</h2>
-      <div class="overflow-x-auto">
-        <table class="table table-sm">
-          <thead>
-            <tr class="text-base-content/50 text-xs uppercase tracking-wider">
-              <th>Name</th>
-              <th>Command</th>
-              <th>Environment</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for process, info in release.image_object.processes.items() %}
-            <tr>
-              <td><code class="text-sm text-accent">{{ process }}</code></td>
-              <td><code class="text-sm text-base-content/70">{{ info['cmd'] }}</code></td>
-              <td>
-                {% for item in info['env'] %}
-                <div><code class="text-xs text-base-content/50">{{ item[0] }}={{ item[1] }}</code></div>
-                {% endfor %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+      {# Timing #}
+      <div class="card bg-base-200 border border-base-300">
+        <div class="card-body !p-4">
+          <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Timing</h2>
+          <div class="flex flex-col gap-2.5">
+            <div class="build-meta-row">
+              <span class="build-meta-label">Submitted</span>
+              <span class="build-meta-value text-base-content/70">{{ release.created|humanize }}</span>
+            </div>
+            <div class="build-meta-row">
+              <span class="build-meta-label">Updated</span>
+              <span class="build-meta-value text-base-content/70">{{ release.updated|humanize }}</span>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
-  </div>
-  {% endif %}
 
-  {# Build Log #}
-  <div class="card bg-base-200 border border-base-300 mb-6">
-    <div class="card-body">
-      <h2 class="text-base font-medium text-white mb-3">Build Log</h2>
-      <div class="code-block" id="buildLog">{{ release.release_build_log }}</div>
-    </div>
-  </div>
+      {# Image Reference #}
+      <div class="card bg-base-200 border border-base-300">
+        <div class="card-body !p-4">
+          <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Image</h2>
+          {% if release.image_object %}
+            <a href="{{ url_for('user.image_detail', image_id=release.image_object.id) }}"
+               class="inline-flex items-center gap-2 text-accent hover:text-accent/80 transition-colors">
+              {{ icon('layers', 'w-3.5 h-3.5') }}
+              <code class="text-sm">{{ release.image_object.repository_name }}:{{ release.image_object.version }}</code>
+              {{ icon('chevron-right', 'w-3 h-3 text-base-content/30') }}
+            </a>
+          {% else %}
+            <p class="text-sm text-base-content/50">Image no longer exists.</p>
+          {% endif %}
+        </div>
+      </div>
 
-  {# Collapsible metadata sections #}
-  <details class="card bg-base-200 border border-base-300 mb-4">
-    <summary class="card-body cursor-pointer flex items-center gap-2">
-      <span class="collapse-icon">{{ icon('chevron-right', 'w-4 h-4') }}</span>
-      <h2 class="text-base font-medium text-white">Metadata</h2>
-    </summary>
-    <div class="card-body pt-0">
-      <div class="code-block">{{ release.release_metadata|pprint }}</div>
-    </div>
-  </details>
-
-  <details class="card bg-base-200 border border-base-300 mb-4">
-    <summary class="card-body cursor-pointer flex items-center gap-2">
-      <span class="collapse-icon">{{ icon('chevron-right', 'w-4 h-4') }}</span>
-      <h2 class="text-base font-medium text-white font-mono">Internal Data</h2>
-    </summary>
-    <div class="card-body pt-0">
-      <h3 class="text-sm text-base-content/50 mb-2 font-mono">asdict</h3>
-      <div class="code-block mb-4">{{ release.asdict|pprint }}</div>
-      <h3 class="text-sm text-base-content/50 mb-2 font-mono">__dict__</h3>
-      <div class="code-block mb-4">{{ release.__dict__|pprint }}</div>
-      <div class="code-block mb-4">{{ release.image_object|pprint }}</div>
-      {% for process_name, envconsul_configuration in release.envconsul_configurations.items() %}
-      <h3 class="text-sm text-base-content/50 mb-2">{{ process_name }}</h3>
-      <div class="code-block mb-4">{{ envconsul_configuration }}</div>
-      {% endfor %}
-      {% if release.dockerfile %}
-      <h3 class="text-sm text-base-content/50 mb-2">Dockerfile</h3>
-      <div class="code-block">{{ release.dockerfile }}</div>
+      {# Build trigger info #}
+      {% if release.release_metadata and release.release_metadata.get('description') %}
+        <div class="card bg-base-200 border border-base-300">
+          <div class="card-body !p-4">
+            <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Trigger</h2>
+            <p class="text-sm text-base-content/70">{{ release.release_metadata.get("description") }}</p>
+          </div>
+        </div>
       {% endif %}
     </div>
-  </details>
-</div>
-{% endblock %}
+
+    {# Right column: environment, processes, build log #}
+    <div class="lg:col-span-2 flex flex-col gap-4">
+
+      {# Environment Variables #}
+      {% if release.configuration_objects %}
+        <div class="card bg-base-200 border border-base-300">
+          <div class="card-body !p-4">
+            <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Environment</h2>
+            <div class="env-grid">
+              {% for name, env_var in release.configuration_objects.items() %}
+                <div class="env-row">
+                  <span class="env-key">{{ name }}</span>
+                  <span class="env-value">
+                    {% if env_var %}
+                      {% if env_var.secret %}
+                        <span class="env-secret">{{ icon('lock', 'w-3 h-3') }} Secret</span>
+                      {% else %}
+                        {{ env_var.value }}
+                      {% endif %}
+                    {% else %}
+                      <span class="text-error text-xs">Deleted</span>
+                    {% endif %}
+                  </span>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      {% endif %}
+
+      {# Processes #}
+      {% if release.image_object and release.image_object.processes %}
+        <div class="card bg-base-200 border border-base-300">
+          <div class="card-body !p-4">
+            <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Processes</h2>
+            <div class="flex flex-col gap-0">
+              {% for process, info in release.image_object.processes.items() %}
+                <div class="flex items-start gap-3 py-2.5 {{ 'border-t border-base-content/5' if not loop.first }}">
+                  <code class="text-sm text-accent font-medium min-w-[5rem] pt-0.5">{{ process }}</code>
+                  <div class="flex-1 min-w-0">
+                    <code class="text-sm text-base-content/70 break-all">{{ info['cmd'] }}</code>
+                    {% if info.get('env') %}
+                      <div class="flex flex-wrap gap-1.5 mt-1.5">
+                        {% for item in info['env'] %}
+                          <span class="inline-flex items-center px-1.5 py-0.5 rounded bg-base-300/60 text-xs font-mono text-base-content/50">{{ item[0] }}</span>
+                        {% endfor %}
+                      </div>
+                    {% endif %}
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      {% endif %}
+
+      {# Build Log #}
+      <div class="card bg-base-200 border border-base-300">
+        <div class="card-body !p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Build Log</h2>
+            {% if release.release_build_log %}
+              <button onclick="copyBuildLog()"
+                      class="btn btn-ghost btn-xs gap-1 text-base-content/40 hover:text-base-content"
+                      title="Copy log">
+                {{ icon('copy', 'w-3 h-3') }}
+                Copy
+              </button>
+            {% endif %}
+          </div>
+          <div class="build-log-viewer" id="buildLog">{{ release.release_build_log }}</div>
+        </div>
+      </div>
+
+      {# Dockerfile #}
+      {% if release.dockerfile %}
+        <div class="card bg-base-200 border border-base-300">
+          <div class="card-body !p-4">
+            <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Dockerfile</h2>
+            <div class="code-block !text-xs !leading-relaxed">{{ release.dockerfile }}</div>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ===== COLLAPSIBLE DEBUG SECTIONS ===== #}
+  <div class="flex flex-col gap-2 mb-6">
+    <details class="card bg-base-200 border border-base-300 group">
+      <summary class="!py-2.5 !px-4 cursor-pointer flex items-center gap-2 text-left">
+        <span class="collapse-icon text-base-content/30">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</span>
+        <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Metadata</span>
+      </summary>
+      <div class="!py-2 !px-4">
+        <div class="code-block !text-xs text-left whitespace-pre-wrap">
+          {{ release.release_metadata|tojson(indent=2) if release.release_metadata else '{}' }}
+        </div>
+      </div>
+    </details>
+
+    <details class="card bg-base-200 border border-base-300 group">
+      <summary class="!py-2.5 !px-4 cursor-pointer flex items-center gap-2 text-left">
+        <span class="collapse-icon text-base-content/30">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</span>
+        <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Docker Pull Info</span>
+      </summary>
+      <div class="!py-2 !px-4">
+        <div class="code-block !text-xs text-left whitespace-pre-wrap">
+          {{ docker_pull_credentials|tojson(indent=2) if docker_pull_credentials else '{}' }}
+        </div>
+      </div>
+    </details>
+
+    <details class="card bg-base-200 border border-base-300 group">
+      <summary class="!py-2.5 !px-4 cursor-pointer flex items-center gap-2 text-left">
+        <span class="collapse-icon text-base-content/30">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</span>
+        <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Internal Data</span>
+      </summary>
+      <div class="!py-2 !px-4">
+        <div class="code-block !text-xs text-left whitespace-pre-wrap">{{ release.asdict|tojson(indent=2) }}</div>
+      </div>
+    </details>
+  </div>
+
+{% endblock content %}
 
 {% block js %}
-<script>
+  <script>
+  /* Live log streaming for in-progress package builds */
   var logsPre = document.getElementById('buildLog');
-  if (logsPre.textContent.trim() === 'None') {
+  if (logsPre.textContent.trim() === 'None' || logsPre.textContent.trim() === '') {
     logsPre.textContent = '';
     var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
     var socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/livelogs');
@@ -213,11 +368,23 @@
         socket.close();
         return;
       }
-      logsPre.textContent += '\n' + ev.data;
+      logsPre.textContent += ev.data + '\n';
+      logsPre.scrollTop = logsPre.scrollHeight;
     });
     socket.addEventListener('close', function() {
       setTimeout(function() { window.location.reload(); }, 5000);
     });
   }
-</script>
-{% endblock %}
+
+  /* Copy build log */
+  function copyBuildLog() {
+    var text = document.getElementById('buildLog').textContent;
+    navigator.clipboard.writeText(text).then(function() {
+      var btn = event.currentTarget;
+      var origHTML = btn.innerHTML;
+      btn.innerHTML = '<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12" /></svg> Copied';
+      setTimeout(function() { btn.innerHTML = origHTML; }, 2000);
+    });
+  }
+  </script>
+{% endblock js %}

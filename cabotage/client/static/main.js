@@ -146,6 +146,173 @@ function initMobileNav() {
   }
 }
 
+/* ---------- Theme Toggle (3-state: light → dark → system) ---------- */
+function initThemeToggle() {
+  function resolveSystem() {
+    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  }
+
+  function applyPref(pref) {
+    var resolved = pref === 'system' ? resolveSystem() : pref;
+    document.documentElement.setAttribute('data-theme', resolved);
+    document.documentElement.setAttribute('data-theme-pref', pref);
+    localStorage.setItem('theme-pref', pref);
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) {
+      meta.content = resolved === 'light' ? '#fafafe' : '#0f0f17';
+    }
+  }
+
+  function cyclePref() {
+    var current = localStorage.getItem('theme-pref') || 'system';
+    var next = current === 'light' ? 'dark' : current === 'dark' ? 'system' : 'light';
+    applyPref(next);
+  }
+
+  // Bind all toggle buttons
+  document.querySelectorAll('#theme-toggle, #theme-toggle-unauth').forEach(function(btn) {
+    btn.addEventListener('click', cyclePref);
+  });
+
+  // Listen for system theme changes (update resolved theme when in system mode)
+  window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', function() {
+    var pref = localStorage.getItem('theme-pref') || 'system';
+    if (pref === 'system') {
+      applyPref('system');
+    }
+  });
+
+  // Ensure data-theme-pref attribute is set on load
+  var pref = localStorage.getItem('theme-pref') || 'system';
+  document.documentElement.setAttribute('data-theme-pref', pref);
+}
+
+/* ---------- Raw Editor Modal ---------- */
+function initRawEditor() {
+  var modal = document.getElementById('raw-editor-modal');
+  if (!modal) return;
+
+  var openBtn = document.getElementById('raw-editor-open');
+  var closeBtn = document.getElementById('raw-editor-close');
+  var cancelBtn = document.getElementById('raw-editor-cancel');
+  var backdrop = modal.querySelector('.raw-editor-backdrop');
+  var textarea = document.getElementById('raw-editor-textarea');
+  var formatInput = document.getElementById('raw-editor-format');
+  var copyBtn = document.getElementById('raw-editor-copy');
+  var tabs = modal.querySelectorAll('[data-editor-tab]');
+  var panels = modal.querySelectorAll('[data-editor-panel]');
+
+  function openModal() {
+    modal.style.display = 'flex';
+    if (textarea) textarea.focus();
+  }
+  function closeModal() {
+    modal.style.display = 'none';
+  }
+
+  if (openBtn) openBtn.addEventListener('click', openModal);
+  if (closeBtn) closeBtn.addEventListener('click', closeModal);
+  if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+  if (backdrop) backdrop.addEventListener('click', closeModal);
+
+  // Escape key
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && modal.style.display !== 'none') {
+      closeModal();
+    }
+  });
+
+  // Tab switching
+  tabs.forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      var tabId = tab.getAttribute('data-editor-tab');
+      tabs.forEach(function(t) {
+        t.classList.toggle('raw-editor-tab-active', t.getAttribute('data-editor-tab') === tabId);
+      });
+      panels.forEach(function(p) {
+        p.style.display = p.getAttribute('data-editor-panel') === tabId ? '' : 'none';
+      });
+      if (formatInput) formatInput.value = tabId;
+
+      // Update placeholder
+      if (textarea) {
+        if (tabId === 'json') {
+          textarea.placeholder = '{\n  "DATABASE_URL": "postgres://...",\n  "REDIS_URL": "redis://..."\n}';
+        } else {
+          textarea.placeholder = '# Paste your environment variables here\nDATABASE_URL=postgres://...\nREDIS_URL=redis://...';
+        }
+      }
+    });
+  });
+
+  // Copy ENV button
+  if (copyBtn) {
+    copyBtn.addEventListener('click', function() {
+      var dataEl = document.getElementById('env-export-data');
+      if (!dataEl) return;
+      try {
+        var configs = JSON.parse(dataEl.textContent);
+        var lines = configs.map(function(c) {
+          if (c.secret) return c.name + '=**secure**';
+          return c.name + '=' + c.value;
+        });
+        var text = lines.join('\n');
+        navigator.clipboard.writeText(text).then(function() {
+          var orig = copyBtn.innerHTML;
+          copyBtn.textContent = 'Copied!';
+          setTimeout(function() { copyBtn.innerHTML = orig; }, 1500);
+        });
+      } catch (e) {
+        // ignore
+      }
+    });
+  }
+}
+
+/* ---------- Add Variable Modal ---------- */
+function initAddVarModal() {
+  var modal = document.getElementById('add-var-modal');
+  if (!modal) return;
+
+  function openModal() {
+    modal.style.display = 'flex';
+    var nameInput = modal.querySelector('input[name="name"]');
+    if (nameInput) { nameInput.value = ''; nameInput.focus(); }
+    var valueInput = modal.querySelector('input[name="value"]');
+    if (valueInput) valueInput.value = '';
+  }
+  function closeModal() {
+    modal.style.display = 'none';
+  }
+
+  // Open buttons
+  document.querySelectorAll('#add-var-open, [data-add-var-open]').forEach(function(btn) {
+    btn.addEventListener('click', openModal);
+  });
+
+  // Close buttons/backdrop
+  modal.querySelectorAll('[data-add-var-close]').forEach(function(el) {
+    el.addEventListener('click', closeModal);
+  });
+
+  // Escape key
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && modal.style.display !== 'none') {
+      closeModal();
+    }
+  });
+
+  // Auto-uppercase name field
+  var nameField = modal.querySelector('input[name="name"]');
+  if (nameField) {
+    nameField.addEventListener('input', function() {
+      var pos = this.selectionStart;
+      this.value = this.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+      this.selectionStart = this.selectionEnd = pos;
+    });
+  }
+}
+
 /* ---------- Init All ---------- */
 document.addEventListener('DOMContentLoaded', function() {
   initTabs();
@@ -153,4 +320,7 @@ document.addEventListener('DOMContentLoaded', function() {
   initEnvReveal();
   initDropdowns();
   initMobileNav();
+  initThemeToggle();
+  initRawEditor();
+  initAddVarModal();
 });

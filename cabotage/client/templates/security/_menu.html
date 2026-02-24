@@ -1,10 +1,12 @@
 {% if security.registerable or security.recoverable or security.confirmable %}
-<div class="flex flex-col items-center gap-1 mt-4 pt-4 border-t border-base-300">
-  {% if security.recoverable %}
-  <a href="{{ url_for_security('forgot_password') }}" class="text-sm text-base-content/50 hover:text-accent transition-colors">Forgot password?</a>
-  {% endif %}
-  {% if security.confirmable %}
-  <a href="{{ url_for_security('send_confirmation') }}" class="text-sm text-base-content/50 hover:text-accent transition-colors">Confirm account</a>
-  {% endif %}
-</div>
+  <div class="flex flex-col items-center gap-1 mt-4 pt-4 border-t border-base-300">
+    {% if security.recoverable %}
+      <a href="{{ url_for_security('forgot_password') }}"
+         class="text-sm text-base-content/50 hover:text-accent transition-colors">Forgot password?</a>
+    {% endif %}
+    {% if security.confirmable %}
+      <a href="{{ url_for_security('send_confirmation') }}"
+         class="text-sm text-base-content/50 hover:text-accent transition-colors">Confirm account</a>
+    {% endif %}
+  </div>
 {% endif %}
