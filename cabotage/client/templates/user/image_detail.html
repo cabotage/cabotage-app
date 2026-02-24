@@ -63,6 +63,16 @@
 
       {# Actions #}
       <div class="flex items-center gap-2">
+        {% if image.error %}
+          <form action="{{ url_for('user.application_images_build_fromsource', application_id=app.id) }}"
+                method="post">
+            <button type="submit"
+                    class="btn btn-ghost btn-sm gap-1.5 text-error hover:bg-error/10">
+              {{ icon('refresh-cw', 'w-3.5 h-3.5') }}
+              Try Again
+            </button>
+          </form>
+        {% endif %}
         <a href="{{ url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
            class="btn btn-ghost btn-sm gap-1.5">
           {{ icon('arrow-left', 'w-3.5 h-3.5') }}
@@ -104,10 +114,10 @@
   {% endif %}
 
   {# ===== BUILD DETAILS GRID ===== #}
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+  <div class="grid grid-cols-1 lg:grid-cols-3 {{ '' if image.procfile else 'lg:items-start' }} gap-4 mb-6">
 
     {# Left column: metadata #}
-    <div class="lg:col-span-1 flex flex-col gap-4">
+    <div id="build-left-column" class="lg:col-span-1 flex flex-col gap-4">
 
       {# Build Info #}
       <div class="card bg-base-200 border border-base-300">
@@ -139,7 +149,19 @@
             {% if image.commit_sha != 'null' %}
               <div class="build-meta-row">
                 <span class="build-meta-label">Commit</span>
-                <code class="build-meta-value">{{ image.commit_sha[:12] }}</code>
+                <span class="build-meta-value">
+                  {% if app.github_repository %}
+                    <a href="https://github.com/{{ app.github_repository }}/commit/{{ image.commit_sha }}"
+                       class="inline-flex items-center gap-1.5 text-accent hover:text-accent/80 transition-colors"
+                       target="_blank"
+                       rel="noopener">
+                      <code class="text-xs">{{ image.commit_sha[:12] }}</code>
+                      {{ icon('external-link', 'w-3 h-3 text-base-content/30') }}
+                    </a>
+                  {% else %}
+                    <code class="text-xs">{{ image.commit_sha[:12] }}</code>
+                  {% endif %}
+                </span>
               </div>
             {% endif %}
             {% if image.build_slug %}
@@ -199,16 +221,60 @@
           </div>
         </div>
       {% endif %}
+
+      {# Dockerfile + Procfile moved left so logs stay primary on the right #}
+      {% if image.dockerfile or image.procfile %}
+        <div class="flex flex-col gap-4">
+          {% if image.dockerfile %}
+            <div class="card bg-base-200 border border-base-300">
+              <div class="card-body !p-4">
+                <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Dockerfile</h2>
+                <div class="code-block dockerfile-highlight !text-xs !leading-relaxed">
+                  {{- image.dockerfile|trim|highlight_code("dockerfile") |safe -}}
+                </div>
+              </div>
+            </div>
+          {% endif %}
+          {% if image.procfile %}
+            <div id="procfile-card" class="card bg-base-200 border border-base-300">
+              <div class="card-body !p-4">
+                <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Procfile</h2>
+                <div class="procfile-viewer">
+                  {% for line in image.procfile.split('\n') %}
+                    {% if line and ':' in line %}
+                      {% set parts = line.split(':', 1) %}
+                      <div class="procfile-line">
+                        <span class="procfile-service">{{ parts[0].strip() }}</span>
+                        <span class="procfile-sep">:</span>
+                        <span class="procfile-command">{{ parts[1].strip() }}</span>
+                      </div>
+                    {% elif line %}
+                      <div class="procfile-line procfile-line-raw">{{ line }}</div>
+                    {% else %}
+                      <div class="procfile-line">&nbsp;</div>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+          {% endif %}
+        </div>
+      {% endif %}
     </div>
 
-    {# Right column: logs + processes #}
-    <div class="lg:col-span-2 flex flex-col gap-4">
-
+    {# Right column: processes + log #}
+    <div class="lg:col-span-2 flex flex-col gap-4 {{ 'lg:min-h-full' if image.procfile else '' }}">
       {# Processes (shown prominently when built) #}
       {% if image.processes %}
         <div class="card bg-base-200 border border-base-300">
           <div class="card-body !p-4">
-            <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Processes</h2>
+            <div class="flex items-center gap-1.5 mb-3">
+              <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Processes</h2>
+              <div class="tooltip tooltip-right"
+                   data-tip="Defined in your Procfile. 'web' receives HTTP traffic. 'worker' runs background jobs. 'release' runs once per package build. 'postdeploy' runs once after each deploy.">
+                {{ icon('info', 'w-3 h-3 text-base-content/25 cursor-help') }}
+              </div>
+            </div>
             <div class="flex flex-col gap-0">
               {% for process, info in image.processes.items() %}
                 <div class="flex items-start gap-3 py-2.5 {{ 'border-t border-base-content/5' if not loop.first }}">
@@ -230,7 +296,6 @@
         </div>
       {% endif %}
 
-      {# Build Log #}
       <div class="card bg-base-200 border border-base-300">
         <div class="card-body !p-4">
           <div class="flex items-center justify-between mb-3">
@@ -244,31 +309,24 @@
               </button>
             {% endif %}
           </div>
-          <div class="build-log-viewer" id="buildLog">{{ image.image_build_log }}</div>
+          <div class="build-log-viewer build-log-viewer-primary" id="buildLog">
+            {%- if image.image_build_log and image.image_build_log != 'None' -%}
+              {{ image.image_build_log }}
+            {%- else -%}
+              <div class="log-placeholder" id="logPlaceholder">
+                <div class="log-placeholder-icon">{{ icon('terminal', 'w-6 h-6') }}</div>
+                <div class="log-placeholder-lines">
+                  <div class="log-placeholder-line" style="width: 100%"></div>
+                  <div class="log-placeholder-line"></div>
+                  <div class="log-placeholder-line"></div>
+                  <div class="log-placeholder-line"></div>
+                </div>
+                <span class="log-placeholder-text">Waiting for build output…</span>
+              </div>
+            {%- endif -%}
+          </div>
         </div>
       </div>
-
-      {# Dockerfile + Procfile side by side #}
-      {% if image.dockerfile or image.procfile %}
-        <div class="grid grid-cols-1 {{ 'md:grid-cols-2' if image.dockerfile and image.procfile }} gap-4">
-          {% if image.dockerfile %}
-            <div class="card bg-base-200 border border-base-300">
-              <div class="card-body !p-4">
-                <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Dockerfile</h2>
-                <div class="code-block !text-xs !leading-relaxed">{{ image.dockerfile }}</div>
-              </div>
-            </div>
-          {% endif %}
-          {% if image.procfile %}
-            <div class="card bg-base-200 border border-base-300">
-              <div class="card-body !p-4">
-                <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Procfile</h2>
-                <div class="code-block !text-xs !leading-relaxed">{{ image.procfile }}</div>
-              </div>
-            </div>
-          {% endif %}
-        </div>
-      {% endif %}
     </div>
   </div>
 
@@ -301,10 +359,43 @@
 
 {% block js %}
   <script>
+  function syncBuildLogHeight() {
+    var anchorEl = document.getElementById('procfile-card');
+    var logEl = document.getElementById('buildLog');
+    if (!logEl) return;
+    if (!anchorEl) {
+      logEl.style.height = '';
+      logEl.style.maxHeight = '';
+      return;
+    }
+
+    if (window.innerWidth < 1024) {
+      logEl.style.height = '';
+      logEl.style.maxHeight = '';
+      return;
+    }
+
+    var leftCol = document.getElementById('build-left-column');
+    var logCard = logEl.closest('.card');
+    var leftBottom = leftCol.getBoundingClientRect().bottom;
+    var logRect = logEl.getBoundingClientRect();
+    var cardBottom = logCard.getBoundingClientRect().bottom;
+    var paddingBelow = cardBottom - logRect.bottom;
+    var available = Math.floor(leftBottom - logRect.top - paddingBelow);
+    if (available > 120) {
+      logEl.style.height = available + 'px';
+      logEl.style.maxHeight = available + 'px';
+    }
+  }
+
   /* Live log streaming for in-progress builds */
   var logsPre = document.getElementById('buildLog');
-  if (logsPre.textContent.trim() === 'None' || logsPre.textContent.trim() === '') {
-    logsPre.textContent = '';
+  syncBuildLogHeight();
+  window.addEventListener('resize', syncBuildLogHeight);
+
+  var placeholder = document.getElementById('logPlaceholder');
+  if (logsPre && placeholder) {
+    logsPre.innerHTML = '';
     var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
     var socket = new WebSocket(protocol + window.location.host + '/image/' + '{{ image.id }}' + '/livelogs');
     socket.addEventListener('message', function(ev) {

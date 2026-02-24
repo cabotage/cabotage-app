@@ -64,6 +64,16 @@
 
       {# Actions #}
       <div class="flex items-center gap-2">
+        {% if deployment.error and deployment.release_object %}
+          <form action="{{ url_for('user.release_deploy', release_id=deployment.release_object.id) }}"
+                method="post">
+            <button type="submit"
+                    class="btn btn-ghost btn-sm gap-1.5 text-error hover:bg-error/10">
+              {{ icon('refresh-cw', 'w-3.5 h-3.5') }}
+              Try Again
+            </button>
+          </form>
+        {% endif %}
         <a href="{{ url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
            class="btn btn-ghost btn-sm gap-1.5">
           {{ icon('arrow-left', 'w-3.5 h-3.5') }}
@@ -133,6 +143,24 @@
                 <code class="deploy-meta-value text-base-content/50 text-xs">{{ deployment.job_id }}</code>
               </div>
             {% endif %}
+            {% if deployment.release_object and deployment.release_object.commit_sha and deployment.release_object.commit_sha != 'null' %}
+              <div class="deploy-meta-row">
+                <span class="deploy-meta-label">Commit</span>
+                <span class="deploy-meta-value">
+                  {% if app.github_repository %}
+                    <a href="https://github.com/{{ app.github_repository }}/commit/{{ deployment.release_object.commit_sha }}"
+                       class="inline-flex items-center gap-1.5 text-accent hover:text-accent/80 transition-colors"
+                       target="_blank"
+                       rel="noopener">
+                      <code class="text-xs">{{ deployment.release_object.commit_sha[:12] }}</code>
+                      {{ icon('external-link', 'w-3 h-3 text-base-content/30') }}
+                    </a>
+                  {% else %}
+                    <code class="text-xs text-base-content/50">{{ deployment.release_object.commit_sha[:12] }}</code>
+                  {% endif %}
+                </span>
+              </div>
+            {% endif %}
             <div class="deploy-meta-row">
               <span class="deploy-meta-label">Submitted</span>
               <span class="deploy-meta-value text-base-content/70">{{ deployment.created|humanize }}</span>
@@ -144,6 +172,22 @@
           </div>
         </div>
       </div>
+
+      {# Image Reference #}
+      {% if deployment.release_object and deployment.release_object.image_object %}
+        {% set image = deployment.release_object.image_object %}
+        <div class="card bg-base-200 border border-base-300">
+          <div class="card-body !p-4">
+            <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Image</h2>
+            <a href="{{ url_for('user.image_detail', image_id=image.id) }}"
+               class="inline-flex items-center gap-2 text-accent hover:text-accent/80 transition-colors">
+              {{ icon('box', 'w-3.5 h-3.5') }}
+              <code class="text-sm">v{{ image.version }}</code>
+              {{ icon('chevron-right', 'w-3 h-3 text-base-content/30') }}
+            </a>
+          </div>
+        </div>
+      {% endif %}
 
       {# Package Reference #}
       {% if deployment.release_object %}
@@ -178,7 +222,22 @@
               </button>
             {% endif %}
           </div>
-          <div class="deploy-log-viewer" id="deployLog">{{ deployment.deploy_log }}</div>
+          <div class="deploy-log-viewer" id="deployLog">
+            {%- if deployment.deploy_log and deployment.deploy_log != 'None' -%}
+              {{ deployment.deploy_log }}
+            {%- else -%}
+              <div class="log-placeholder" id="logPlaceholder">
+                <div class="log-placeholder-icon">{{ icon('terminal', 'w-6 h-6') }}</div>
+                <div class="log-placeholder-lines">
+                  <div class="log-placeholder-line" style="width: 100%"></div>
+                  <div class="log-placeholder-line"></div>
+                  <div class="log-placeholder-line"></div>
+                  <div class="log-placeholder-line"></div>
+                </div>
+                <span class="log-placeholder-text">Waiting for deploy output…</span>
+              </div>
+            {%- endif -%}
+          </div>
         </div>
       </div>
     </div>
@@ -217,8 +276,9 @@
   <script>
   /* Live log streaming for in-progress deployments */
   var logsPre = document.getElementById('deployLog');
-  if (logsPre.textContent.trim() === 'None' || logsPre.textContent.trim() === '') {
-    logsPre.textContent = '';
+  var placeholder = document.getElementById('logPlaceholder');
+  if (placeholder) {
+    logsPre.innerHTML = '';
     var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
     var socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/livelogs');
     socket.addEventListener('message', function(ev) {

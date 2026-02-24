@@ -198,7 +198,9 @@
 
 {% macro create_modal(modal_id, title, form, action_url, submit_text, name_field, slug_field, extra_fields=[], subtitle='') %}
   <div id="{{ modal_id }}" class="raw-editor-modal hidden">
-    <div class="raw-editor-backdrop" data-modal-close="{{ modal_id }}"></div>
+    <div class="raw-editor-backdrop"
+         data-modal-close="{{ modal_id }}"
+         onclick="document.getElementById('{{ modal_id }}').classList.add('hidden')"></div>
     <div class="raw-editor-dialog max-w-md">
       <div class="flex items-center justify-between mb-5">
         <div>
@@ -207,6 +209,7 @@
         </div>
         <button type="button"
                 data-modal-close="{{ modal_id }}"
+                onclick="document.getElementById('{{ modal_id }}').classList.add('hidden')"
                 class="btn btn-ghost btn-sm btn-circle">{{ icon('x', 'w-4 h-4') }}</button>
       </div>
       <form action="{{ action_url }}" method="post" class="flex flex-col gap-4">
@@ -606,6 +609,38 @@
          stroke-linejoin="round">
       <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
       <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  {% elif name == 'info' %}
+    <svg class="{{ size }}"
+         viewBox="0 0 24 24"
+         fill="none"
+         stroke="currentColor"
+         stroke-width="2"
+         stroke-linecap="round"
+         stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+    </svg>
+  {% elif name == 'refresh-cw' %}
+    <svg class="{{ size }}"
+         viewBox="0 0 24 24"
+         fill="none"
+         stroke="currentColor"
+         stroke-width="2"
+         stroke-linecap="round"
+         stroke-linejoin="round">
+      <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
+      <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+    </svg>
+  {% elif name == 'eye' %}
+    <svg class="{{ size }}"
+         viewBox="0 0 24 24"
+         fill="none"
+         stroke="currentColor"
+         stroke-width="2"
+         stroke-linecap="round"
+         stroke-linejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
     </svg>
   {% endif %}
 {% endmacro %}

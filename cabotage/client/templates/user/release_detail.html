@@ -72,6 +72,16 @@
             <button type="submit" class="btn btn-primary btn-sm gap-1.5">{{ icon('deploy', 'w-4 h-4') }} Deploy</button>
           </form>
         {% endif %}
+        {% if release.error %}
+          <form action="{{ url_for('user.application_release_create', application_id=app.id) }}"
+                method="post">
+            <button type="submit"
+                    class="btn btn-ghost btn-sm gap-1.5 text-error hover:bg-error/10">
+              {{ icon('refresh-cw', 'w-3.5 h-3.5') }}
+              Try Again
+            </button>
+          </form>
+        {% endif %}
         <a href="{{ url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
            class="btn btn-ghost btn-sm gap-1.5">
           {{ icon('arrow-left', 'w-3.5 h-3.5') }}
@@ -168,6 +178,24 @@
               <div class="build-meta-row">
                 <span class="build-meta-label">Health Check</span>
                 <code class="build-meta-value">{{ release.health_check_path }}</code>
+              </div>
+            {% endif %}
+            {% if release.commit_sha and release.commit_sha != 'null' %}
+              <div class="build-meta-row">
+                <span class="build-meta-label">Commit</span>
+                <span class="build-meta-value">
+                  {% if app.github_repository %}
+                    <a href="https://github.com/{{ app.github_repository }}/commit/{{ release.commit_sha }}"
+                       class="inline-flex items-center gap-1.5 text-accent hover:text-accent/80 transition-colors"
+                       target="_blank"
+                       rel="noopener">
+                      <code class="text-xs">{{ release.commit_sha[:12] }}</code>
+                      {{ icon('external-link', 'w-3 h-3 text-base-content/30') }}
+                    </a>
+                  {% else %}
+                    <code class="text-xs">{{ release.commit_sha[:12] }}</code>
+                  {% endif %}
+                </span>
               </div>
             {% endif %}
             {% if release.build_job_id %}
@@ -300,7 +328,22 @@
               </button>
             {% endif %}
           </div>
-          <div class="build-log-viewer" id="buildLog">{{ release.release_build_log }}</div>
+          <div class="build-log-viewer" id="buildLog">
+            {%- if release.release_build_log and release.release_build_log != 'None' -%}
+              {{ release.release_build_log }}
+            {%- else -%}
+              <div class="log-placeholder" id="logPlaceholder">
+                <div class="log-placeholder-icon">{{ icon('terminal', 'w-6 h-6') }}</div>
+                <div class="log-placeholder-lines">
+                  <div class="log-placeholder-line" style="width: 100%"></div>
+                  <div class="log-placeholder-line"></div>
+                  <div class="log-placeholder-line"></div>
+                  <div class="log-placeholder-line"></div>
+                </div>
+                <span class="log-placeholder-text">Waiting for build output…</span>
+              </div>
+            {%- endif -%}
+          </div>
         </div>
       </div>
 
@@ -359,8 +402,9 @@
   <script>
   /* Live log streaming for in-progress package builds */
   var logsPre = document.getElementById('buildLog');
-  if (logsPre.textContent.trim() === 'None' || logsPre.textContent.trim() === '') {
-    logsPre.textContent = '';
+  var placeholder = document.getElementById('logPlaceholder');
+  if (placeholder) {
+    logsPre.innerHTML = '';
     var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
     var socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/livelogs');
     socket.addEventListener('message', function(ev) {

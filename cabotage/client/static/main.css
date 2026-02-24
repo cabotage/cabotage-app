@@ -717,6 +717,68 @@ a.pipeline-stage-body:hover {
   gap: 0.25rem;
 }
 
+/* ---------- Diff Summary (pending changes) ---------- */
+.diff-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  font-size: 0.6875rem;
+  letter-spacing: 0.01em;
+}
+.diff-added { color: rgba(34, 197, 94, 0.8); font-weight: 600; }
+.diff-modified { color: rgba(59, 130, 246, 0.8); font-weight: 600; }
+.diff-removed { color: rgba(239, 68, 68, 0.8); font-weight: 600; }
+.diff-toggle {
+  all: unset;
+  cursor: pointer;
+  font-size: 0.625rem;
+  color: var(--text-faintest);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+  transition: color 0.15s ease;
+}
+.diff-toggle:hover { color: var(--accent-text); }
+.diff-detail {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s ease;
+}
+.diff-detail > * { overflow: hidden; }
+.diff-detail-open { grid-template-rows: 1fr; }
+.diff-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 0.5rem;
+  border-radius: 0.375rem;
+  overflow: hidden;
+}
+.diff-line {
+  display: block;
+  padding: 0.1875rem 0.5rem;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  font-size: 0.625rem;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.diff-line-added {
+  background: rgba(34, 197, 94, 0.06);
+  color: rgba(34, 197, 94, 0.7);
+}
+.diff-line-modified {
+  background: rgba(59, 130, 246, 0.06);
+  color: rgba(59, 130, 246, 0.7);
+}
+.diff-line-removed {
+  background: rgba(239, 68, 68, 0.06);
+  color: rgba(239, 68, 68, 0.7);
+}
+
 /* ---------- Raw Editor Modal ---------- */
 .raw-editor-modal {
   position: fixed;
@@ -726,6 +788,9 @@ a.pipeline-stage-body:hover {
   align-items: center;
   justify-content: center;
   padding: 1rem;
+}
+.raw-editor-modal.hidden {
+  display: none;
 }
 .raw-editor-backdrop {
   position: absolute;
@@ -960,6 +1025,103 @@ a.pipeline-stage-body:hover {
 .deploy-log-viewer::-webkit-scrollbar-track { background: transparent; }
 .build-log-viewer::-webkit-scrollbar-thumb,
 .deploy-log-viewer::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
+
+/* Primary image log sizing is set by page script on desktop. */
+
+/* Log waiting placeholder */
+.log-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 2rem 1rem;
+  min-height: 8rem;
+}
+.log-placeholder-icon {
+  color: var(--color-base-content);
+  opacity: 0.2;
+}
+.log-placeholder-text {
+  font-size: 0.75rem;
+  color: var(--color-base-content);
+  opacity: 0.35;
+  text-align: center;
+}
+.log-placeholder-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  width: 100%;
+  max-width: 20rem;
+}
+.log-placeholder-line {
+  height: 0.5rem;
+  border-radius: 0.25rem;
+  background: var(--color-base-content);
+  opacity: 0.06;
+  animation: log-pulse 2s ease-in-out infinite;
+}
+.log-placeholder-line:nth-child(2) { width: 85%; animation-delay: 0.15s; }
+.log-placeholder-line:nth-child(3) { width: 70%; animation-delay: 0.3s; }
+.log-placeholder-line:nth-child(4) { width: 90%; animation-delay: 0.45s; }
+@keyframes log-pulse {
+  0%, 100% { opacity: 0.06; }
+  50% { opacity: 0.12; }
+}
+
+.dockerfile-highlight pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.dockerfile-highlight .highlight {
+  background: transparent;
+}
+.dockerfile-highlight .k  { color: var(--accent-text); font-weight: 600; }  /* keywords: FROM, RUN, CMD */
+.dockerfile-highlight .s,
+.dockerfile-highlight .s2 { color: var(--text-muted); }                     /* strings */
+.dockerfile-highlight .nv { color: var(--accent-text); opacity: 0.7; }      /* variables */
+.dockerfile-highlight .o  { color: var(--text-faint); }                     /* operators */
+.dockerfile-highlight .m  { color: var(--text-muted); }                     /* numbers */
+.dockerfile-highlight .p  { color: var(--text-faint); }                     /* punctuation */
+.dockerfile-highlight .c,
+.dockerfile-highlight .c1,
+.dockerfile-highlight .cm { color: var(--text-faint); font-style: italic; } /* comments */
+.dockerfile-highlight .w  { }                                               /* whitespace */
+
+/* Procfile syntax emphasis (service: command) */
+.procfile-viewer {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.75rem;
+  line-height: 1.7;
+  background: var(--surface-inset);
+  border: 1px solid var(--border-color-subtle);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+}
+.procfile-line {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1fr);
+  align-items: start;
+  column-gap: 0.25rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.procfile-service {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.procfile-sep {
+  color: var(--text-faint);
+}
+.procfile-command {
+  color: var(--text-muted);
+}
+.procfile-line-raw {
+  display: block;
+  color: var(--text-faint);
+}
 
 /* ---------- Status Orbs (Build/Deploy) ---------- */
 .build-status-orb,
