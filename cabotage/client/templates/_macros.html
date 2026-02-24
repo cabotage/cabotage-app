@@ -63,6 +63,48 @@
 {% endmacro %}
 
 
+{# ===== APP TAB NAV (URL-based, for sub-pages) ===== #}
+
+{% macro app_tab_nav(application, active='') %}
+  {% set org_slug = application.project.organization.slug %}
+  {% set project_slug = application.project.slug %}
+  {% set app_slug = application.slug %}
+  {% set overview_url = url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) %}
+  <div class="app-content-padded !py-0">
+    <div class="tab-bar">
+      <a href="{{ overview_url }}"
+         class="tab-item
+                {% if active == 'overview' %}tab-active{% endif %}">{{ icon('activity', 'w-4 h-4') }} Overview</a>
+      <a href="{{ overview_url }}#observe"
+         class="tab-item
+                {% if active == 'observe' %}tab-active{% endif %}">{{ icon('bar-chart', 'w-4 h-4') }} Observe</a>
+      <a href="{{ overview_url }}#config"
+         class="tab-item
+                {% if active == 'config' %}tab-active{% endif %}">
+        {{ icon('key', 'w-4 h-4') }} Config
+        {% set config_count = application.configurations|rejectattr('name', 'equalto', 'CABOTAGE_SENTINEL')|list|length %}
+        {% if config_count %}<span class="badge badge-sm badge-neutral ml-1">{{ config_count }}</span>{% endif %}
+      </a>
+      <a href="{{ url_for('user.application_images', application_id=application.id) }}"
+         class="tab-item
+                {% if active == 'images' %}tab-active{% endif %}">{{ icon('image', 'w-4 h-4') }} Images</a>
+      <a href="{{ url_for('user.application_releases', application_id=application.id) }}"
+         class="tab-item
+                {% if active == 'releases' %}tab-active{% endif %}">{{ icon('layers', 'w-4 h-4') }} Packages</a>
+      <a href="{{ url_for('user.application_deployments', application_id=application.id) }}"
+         class="tab-item
+                {% if active == 'deployments' %}tab-active{% endif %}">{{ icon('deploy', 'w-4 h-4') }} Deploys</a>
+      <a href="{{ overview_url }}#pipeline"
+         class="tab-item
+                {% if active == 'pipeline' %}tab-active{% endif %}">{{ icon('bar-chart-2', 'w-4 h-4') }} Pipeline</a>
+      <a href="{{ url_for('user.project_application_settings', application_id=application.id) }}"
+         class="tab-item
+                {% if active == 'settings' %}tab-active{% endif %}">{{ icon('settings', 'w-4 h-4') }} Settings</a>
+    </div>
+  </div>
+{% endmacro %}
+
+
 {# ===== SERVICE CARD ===== #}
 
 {% macro service_card(name, slug, url, status='', meta_items=[], color='accent', icon_name='box', github_repo='') %}
@@ -164,6 +206,47 @@
 
 
 {# ===== FORM FIELD RENDERING ===== #}
+
+{% macro render_field_compact(field, placeholder='', extra_class='', label='') %}
+  <fieldset class="fieldset w-full">
+    <legend class="fieldset-legend text-xs text-base-content/50 font-medium uppercase tracking-wider"
+            style="display:flex;
+                   align-items:center;
+                   gap:0.375rem">
+      {{ label or field.label.text }}
+      {% if field.description %}
+        <div class="info-popup-anchor" style="display:inline-flex">
+          {{ icon('info', 'w-3 h-3 text-base-content/25 cursor-help') }}
+          <div class="info-popup"
+               style="min-width:14rem;
+                      white-space:normal;
+                      text-transform:none;
+                      letter-spacing:0;
+                      font-weight:400">
+            <div class="info-popup-header">
+              {{ icon('info', 'w-3 h-3 info-popup-header-icon') }}
+              <span class="info-popup-header-text">{{ label or field.label.text }}</span>
+            </div>
+            <div class="info-popup-body">
+              <div class="text-xs" style="line-height:1.5;padding:0.5rem 0.75rem">{{ field.description }}</div>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+    </legend>
+    {% if field.type == 'BooleanField' %}
+      <label class="label cursor-pointer justify-start gap-3">
+        {{ field(class="checkbox checkbox-primary checkbox-sm") }}
+        <span class="text-sm">{{ label or field.label.text }}</span>
+      </label>
+    {% elif field.type == 'HiddenField' %}
+      {{ field() }}
+    {% else %}
+      {{ field(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary " + extra_class, placeholder=placeholder) }}
+    {% endif %}
+    {% for error in field.errors %}<p class="text-xs text-error mt-0.5">{{ error }}</p>{% endfor %}
+  </fieldset>
+{% endmacro %}
 
 {% macro render_field(field, placeholder='', extra_class='') %}
   <fieldset class="fieldset w-full">

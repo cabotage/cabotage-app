@@ -227,7 +227,7 @@
     <div class="card bg-base-200 border border-base-300">
       <div class="card-body !p-5">
         <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Example Procfile</h3>
-        <div class="code-block !text-xs !leading-relaxed">
+        <div class="code-block !text-xs !leading-snug !py-2.5 !px-3">
           <div class="procfile-line">
             <span class="procfile-service">web</span><span class="procfile-sep">:</span> <span class="procfile-command">gunicorn app:app --bind unix:/tmp/nginx.socket</span>
           </div>
@@ -299,30 +299,21 @@
 
     <div class="card bg-base-200 border border-base-300">
       <div class="card-body !p-5">
-        <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Common patterns</h3>
-        <div class="flex flex-col gap-3">
-          <div class="flex items-start gap-3">
-            <div class="code-block !text-xs !py-1 !px-2.5 flex-shrink-0 !bg-transparent !border-0">
-              <span class="procfile-service">release</span><span class="procfile-sep">:</span> <span class="procfile-command">flask db upgrade head</span>
-            </div>
-            <p class="text-sm text-base-content/50 leading-relaxed pt-0.5">
-              Run Alembic/Flask-Migrate DB migrations before deploy
-            </p>
+        <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-2">Common patterns</h3>
+        <div class="code-block !text-xs !leading-snug !py-2.5 !px-3 mb-0">
+          <div class="procfile-line">
+            <span class="procfile-service">release</span><span class="procfile-sep">:</span> <span class="procfile-command">flask db upgrade head</span>
           </div>
-          <div class="border-t border-base-content/5"></div>
-          <div class="flex items-start gap-3">
-            <div class="code-block !text-xs !py-1 !px-2.5 flex-shrink-0 !bg-transparent !border-0">
-              <span class="procfile-service">release</span><span class="procfile-sep">:</span> <span class="procfile-command">python manage.py migrate</span>
-            </div>
-            <p class="text-sm text-base-content/50 leading-relaxed pt-0.5">Django database migrations</p>
+          <div class="procfile-line">
+            <span class="procfile-service">release</span><span class="procfile-sep">:</span> <span class="procfile-command">python manage.py migrate</span>
           </div>
-          <div class="border-t border-base-content/5"></div>
-          <div class="flex items-start gap-3">
-            <div class="code-block !text-xs !py-1 !px-2.5 flex-shrink-0 !bg-transparent !border-0">
-              <span class="procfile-service">postdeploy</span><span class="procfile-sep">:</span> <span class="procfile-command">python warm_cache.py</span>
-            </div>
-            <p class="text-sm text-base-content/50 leading-relaxed pt-0.5">Warm caches after new code is live</p>
+          <div class="procfile-line">
+            <span class="procfile-service">postdeploy</span><span class="procfile-sep">:</span> <span class="procfile-command">python warm_cache.py</span>
           </div>
+        </div>
+        <div class="text-xs text-base-content/40 mt-2 flex flex-col gap-0.5">
+          <span><code class="text-accent/60 bg-transparent p-0">release</code> commands run during package build (DB migrations, etc.)</span>
+          <span><code class="text-accent/60 bg-transparent p-0">postdeploy</code> commands run after a successful deploy (cache warming, etc.)</span>
         </div>
         <div class="flex items-start gap-2 p-3 mt-3 rounded-lg bg-base-300/50 border border-base-content/5">
           {{ icon('info', 'w-3.5 h-3.5 text-info/50 mt-0.5 flex-shrink-0') }}

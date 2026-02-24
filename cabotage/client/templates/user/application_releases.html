@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, status_badge %}
+{% from "_macros.html" import icon, resource_path, status_badge, app_tab_nav %}
 
 {% set app = application %}
 {% set org_slug = app.project.organization.slug %}
@@ -19,86 +19,134 @@
   ]) }}
 {% endblock resource_path %}
 
+{% block tab_bar %}
+  {{ app_tab_nav(application, 'releases') }}
+{% endblock tab_bar %}
+
 {% block content %}
 
-  <div class="flex items-center justify-between mb-5">
-    <div>
-      <h1 class="text-xl font-semibold text-base-content">Packages</h1>
-      <p class="text-sm text-base-content/40 mt-0.5">Release packages bundled for deployment</p>
-    </div>
-    <a href="{{ url_for('user.application_release_create', application_id=app.id) }}"
-       class="btn btn-primary btn-sm gap-1.5">{{ icon('scissors', 'w-3.5 h-3.5') }} Create Package</a>
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-base font-medium text-base-content">Packages</h2>
+    <form action="{{ url_for('user.application_release_create', application_id=app.id) }}"
+          method="post"
+          class="inline">
+      <button class="btn btn-primary btn-sm gap-1.5" type="submit">
+        {{ icon('scissors', 'w-3.5 h-3.5') }} Create Package
+      </button>
+    </form>
   </div>
 
   {% if releases|length > 0 %}
-    <div class="deploy-list">
+    {% set latest_built_release = releases|selectattr('built')|first if page == 1 else none %}
+    <div class="dpl-history-header">
+      <h2 class="dpl-history-title">
+        {{ icon('layers', 'w-3.5 h-3.5') }}
+        Package History
+      </h2>
+      <span class="dpl-history-count">Page {{ page }}</span>
+    </div>
+
+    <div class="dpl-list">
       {% for release in releases %}
-        {% set is_latest = loop.first and page == 1 %}
+        {% set rel_img = release.image_object %}
+        {% set rel_sha = release.commit_sha if release.commit_sha and release.commit_sha != 'null' else none %}
+        {% set rel_ref = (release.release_metadata or {}).get('ref', '') %}
+        {% if not rel_ref and rel_img %}
+          {% set rel_ref = (rel_img.image_metadata or {}).get('ref', '') %}
+        {% endif %}
+        {% set rel_auto = release.release_metadata and release.release_metadata.get('auto_deploy') %}
+        {% set is_latest = latest_built_release and release.id == latest_built_release.id %}
+        {% set cfg_count = release.configuration|length if release.configuration else 0 %}
+        {% set proc_count = release.processes|length if release.built and release.image_object else 0 %}
+
         <a href="{{ url_for('user.release_detail', release_id=release.id) }}"
-           class="deploy-row
-                  {% if is_latest and release.built %}deploy-row-active{% endif %}">
-          <div class="deploy-row-left">
-            {# Status badge #}
-            {% if is_latest and release.built and not release.deposed %}
-              <span class="deploy-badge deploy-badge-active">LATEST</span>
-            {% elif release.deposed %}
-              <span class="deploy-badge deploy-badge-superseded">DEPOSED</span>
-            {% elif release.built %}
-              <span class="deploy-badge deploy-badge-ready">BUILT</span>
-            {% elif release.error %}
-              <span class="deploy-badge deploy-badge-error">ERROR</span>
-            {% else %}
-              <span class="deploy-badge deploy-badge-building">BUILDING</span>
-            {% endif %}
+           class="dpl-row {{ 'dpl-row-error' if release.error }}">
 
-            <div class="deploy-row-info">
-              {# Primary line: version + image ref #}
-              <div class="deploy-row-primary">
-                <code class="deploy-row-id">v{{ release.version }}</code>
-                {% if release.release_metadata and release.release_metadata.get('auto_deploy') %}
-                  <span class="deploy-auto-badge" title="Auto-deploy enabled">{{ icon('zap', 'w-3 h-3') }} auto</span>
-                {% endif %}
-                {% if release.image_object %}
-                  <span class="deploy-meta-inline" title="From image">
-                    {{ icon('image', 'w-3 h-3 opacity-50') }}
-                    <span class="font-mono text-base-content/50">#{{ release.image_object.version }}</span>
-                  </span>
-                {% endif %}
-              </div>
+          {# Status icon #}
+          {% if release.built %}
+            <span class="dpl-row-icon dpl-row-icon-ok">{{ icon('check', 'w-3.5 h-3.5') }}</span>
+          {% elif release.error %}
+            <span class="dpl-row-icon dpl-row-icon-err">{{ icon('x', 'w-3.5 h-3.5') }}</span>
+          {% else %}
+            <span class="dpl-row-icon dpl-row-icon-run">
+              <svg class="w-3.5 h-3.5 animate-spin"
+                   viewBox="0 0 24 24"
+                   fill="none"
+                   stroke="currentColor"
+                   stroke-width="2.5">
+                <path d="M21 12a9 9 0 11-6.219-8.56" />
+              </svg>
+            </span>
+          {% endif %}
 
-              {# Secondary line: commit, platform, processes #}
-              <div class="deploy-row-meta">
-                {% if release.commit_sha and release.commit_sha != 'null' %}
-                  <span class="deploy-meta-item" title="Commit SHA">
-                    {{ icon('git-commit', 'w-3 h-3') }}
-                    <span class="font-mono">{{ release.commit_sha[:7] }}</span>
-                  </span>
-                {% endif %}
-                <span class="deploy-meta-item" title="Platform">
-                  {{ icon('box', 'w-3 h-3') }}
-                  {{ release.platform }}
-                </span>
-                {% if release.processes %}
-                  <span class="deploy-meta-item" title="Process types">
-                    {{ icon('terminal', 'w-3 h-3') }}
-                    {{ release.processes|list|length }} process{{ 'es' if release.processes|list|length != 1 }}
-                  </span>
-                {% endif %}
-                {% if release.deposed %}
-                  <span class="deploy-meta-item text-warning"
-                        title="Deposed: underlying resources changed">
-                    {{ icon('alert-triangle', 'w-3 h-3') }}
-                    deposed
-                  </span>
-                {% endif %}
-              </div>
+          {# Body #}
+          <div class="dpl-row-body">
+            <div class="dpl-row-primary">
+              <code class="dpl-row-version">v{{ release.version }}</code>
+              {% if release.built %}
+                <span class="dpl-row-status-text dpl-row-status-ok">Built</span>
+              {% elif release.error %}
+                <span class="dpl-row-status-text dpl-row-status-err">Error</span>
+              {% else %}
+                <span class="dpl-row-status-text dpl-row-status-run">Building</span>
+              {% endif %}
+              {% if release.built %}<span class="dpl-row-dur">{{ release|duration }}</span>{% endif %}
+              {% if is_latest %}<span class="dpl-badge dpl-badge-latest">Latest</span>{% endif %}
+              {% if rel_auto %}
+                <span class="dpl-badge dpl-badge-auto tooltip tooltip-top"
+                      data-tip="Triggered by CI or a deploy-all action">{{ icon('zap', 'w-2.5 h-2.5') }} Auto</span>
+              {% endif %}
             </div>
+            <div class="dpl-row-meta">
+              {% if rel_ref %}
+                <span class="dpl-meta-chip">
+                  {{ icon('git-branch', 'w-3 h-3') }}
+                  {% if app.github_repository %}
+                    <span class="dpl-meta-chip-link"
+                          data-href="https://github.com/{{ app.github_repository }}/tree/{{ rel_ref }}">{{ rel_ref }}</span>
+                  {% else %}
+                    <span>{{ rel_ref }}</span>
+                  {% endif %}
+                </span>
+              {% endif %}
+              {% if rel_sha %}
+                <span class="dpl-meta-chip">
+                  {{ icon('git-commit', 'w-3 h-3') }}
+                  {% if app.github_repository %}
+                    <span class="dpl-row-sha-link"
+                          data-href="https://github.com/{{ app.github_repository }}/commit/{{ rel_sha }}">{{ rel_sha[:7] }}</span>
+                  {% else %}
+                    <code>{{ rel_sha[:7] }}</code>
+                  {% endif %}
+                </span>
+              {% endif %}
+              {% if rel_img %}
+                <span class="dpl-meta-chip">
+                  {{ icon('image', 'w-3 h-3') }}
+                  <span class="dpl-meta-chip-link"
+                        data-href="{{ url_for('user.image_detail', image_id=rel_img.id) }}">#{{ rel_img.version }}</span>
+                </span>
+              {% endif %}
+              {% if cfg_count > 0 %}
+                <span class="dpl-meta-chip">
+                  {{ icon('key', 'w-3 h-3') }}
+                  <span>{{ cfg_count }} var{{ 's' if cfg_count != 1 }}</span>
+                </span>
+              {% endif %}
+              {% if proc_count > 0 %}
+                <span class="dpl-meta-chip">
+                  {{ icon('terminal', 'w-3 h-3') }}
+                  <span>{{ proc_count }} proc{{ 's' if proc_count != 1 }}</span>
+                </span>
+              {% endif %}
+            </div>
+            {% if release.error and release.error_detail %}
+              <div class="dpl-row-error-detail">{{ release.error_detail[:140] }}</div>
+            {% endif %}
           </div>
 
-          <div class="deploy-row-right">
-            <span class="deploy-row-time">{{ release.created|humanize }}</span>
-            {{ icon('chevron-right', 'w-4 h-4 text-base-content/20') }}
-          </div>
+          {# Timestamp #}
+          <span class="dpl-row-time"><time data-timestamp="{{ release.updated|isoformat_utc }}">{{ release.updated|humanize }}</time></span>
         </a>
       {% endfor %}
     </div>
@@ -125,8 +173,11 @@
           <div class="text-base-content/15 mb-4">{{ icon('layers', 'w-12 h-12') }}</div>
           <h3 class="text-base font-medium text-base-content/60 mb-1">No packages yet</h3>
           <p class="text-sm text-base-content/40 max-w-sm">Packages are created when you cut a package from pending changes.</p>
-          <a href="{{ url_for('user.application_release_create', application_id=app.id) }}"
-             class="btn btn-primary btn-sm gap-2 mt-4">{{ icon('scissors', 'w-4 h-4') }} Create Package</a>
+          <form action="{{ url_for('user.application_release_create', application_id=app.id) }}"
+                method="post"
+                class="inline mt-4">
+            <button class="btn btn-primary btn-sm gap-2" type="submit">{{ icon('scissors', 'w-4 h-4') }} Create Package</button>
+          </form>
         </div>
       </div>
     </div>
