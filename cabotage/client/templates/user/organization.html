@@ -27,6 +27,18 @@
   {% set proj_count = organization.projects|length %}
   {% set member_count = organization.members|length %}
 
+  {# Compute last deploy across all apps #}
+  {% set latest_deploy = namespace(ts=none) %}
+  {% for p in organization.projects %}
+    {% for app in p.project_applications %}
+      {% if app.latest_deployment_completed %}
+        {% if not latest_deploy.ts or app.latest_deployment_completed.completed > latest_deploy.ts %}
+          {% set latest_deploy.ts = app.latest_deployment_completed.completed %}
+        {% endif %}
+      {% endif %}
+    {% endfor %}
+  {% endfor %}
+
   {# ===== PAGE HEADER ===== #}
   {% call page_header(organization.name, 'Organization') %}
     <button type="button"
@@ -43,6 +55,15 @@
       {{ stat_card(proj_count, 'Projects', 'folder', 'secondary') }}
       {{ stat_card(org_app_count, 'Applications', 'box', 'accent') }}
       {{ stat_card(org_deploy_count, 'Deployments', 'deploy', 'success') }}
+      {% if latest_deploy.ts %}
+        <div class="stat-card">
+          <div class="flex items-center gap-2">
+            <span class="text-info/60">{{ icon('clock', 'w-4 h-4') }}</span>
+            <span class="stat-card-value text-sm">{{ latest_deploy.ts|humanize }}</span>
+          </div>
+          <span class="stat-card-label">Last Deploy</span>
+        </div>
+      {% endif %}
     </div>
 
     {% if organization.projects %}
@@ -50,11 +71,42 @@
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {% for project in organization.projects %}
           {% set app_count = project.project_applications|length %}
+          {% set running = namespace(n=0) %}
+          {% set errored = namespace(n=0) %}
+          {% set building = namespace(n=0) %}
+          {% for app in project.project_applications %}
+            {% if app.latest_deployment_running or app.latest_deployment_completed %}
+              {% set running.n = running.n + 1 %}
+            {% endif %}
+            {% if app.latest_image_error and (not app.latest_image_built or app.latest_image_error.version > app.latest_image_built.version) %}
+              {% set errored.n = errored.n + 1 %}
+            {% endif %}
+            {% if app.latest_image_building %}
+              {% set building.n = building.n + 1 %}
+            {% endif %}
+          {% endfor %}
+          {% set status = "" %}
+          {% if errored.n > 0 %}
+            {% set status = "error" %}
+          {% elif building.n > 0 %}
+            {% set status = "building" %}
+          {% elif running.n > 0 %}
+            {% set status = "running" %}
+          {% endif %}
+          {% set meta = [app_count ~ ' app' ~ ('s' if app_count != 1 else '')] %}
+          {% if running.n > 0 %}
+            {% set _ = meta.append(running.n ~ ' running') %}
+          {% endif %}
+          {% if errored.n > 0 %}
+            {% set _ = meta.append(errored.n ~ ' errored') %}
+          {% endif %}
           {{ service_card(name=project.name,
                     slug=organization.slug ~ '/' ~ project.slug,
                     url=url_for('user.project', org_slug=organization.slug, project_slug=project.slug) ,
-          meta_items=[app_count ~ ' app' ~ ('s' if app_count != 1 else '')],
-          color='secondary'
+          status=status,
+          meta_items=meta,
+          color='secondary',
+          icon_name='folder'
           ) }}
         {% endfor %}
       </div>
@@ -96,12 +148,22 @@
         {% for membership in organization.members %}
           <div class="flex items-center justify-between p-3 rounded-lg bg-base-200/50 border border-base-content/5">
             <div class="flex items-center gap-3 min-w-0">
-              <div class="w-8 h-8 rounded-full bg-secondary/10 text-secondary flex items-center justify-center flex-shrink-0">
-                {{ icon('user', 'w-4 h-4') }}
-              </div>
+              {% if membership.admin %}
+                <div class="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
+                  {{ icon('shield', 'w-4 h-4') }}
+                </div>
+              {% else %}
+                <div class="w-8 h-8 rounded-full bg-secondary/10 text-secondary flex items-center justify-center flex-shrink-0">
+                  {{ icon('user', 'w-4 h-4') }}
+                </div>
+              {% endif %}
               <div class="min-w-0">
                 <span class="text-sm font-medium text-base-content truncate">{{ membership.user.username }}</span>
-                {% if membership.admin %}<span class="badge badge-xs badge-primary ml-2">Admin</span>{% endif %}
+                {% if membership.admin %}
+                  <span class="badge badge-xs badge-primary ml-2">Admin</span>
+                {% else %}
+                  <span class="badge badge-xs badge-ghost ml-2">Member</span>
+                {% endif %}
                 {% if membership.user.id == current_user.id %}<span class="text-xs text-base-content/30 ml-1">(you)</span>{% endif %}
               </div>
             </div>
@@ -110,7 +172,7 @@
                 <form action="{{ url_for('user.organization_member_toggle_admin', org_slug=organization.slug) }}"
                       method="post"
                       class="inline">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                  {{ remove_member_form.hidden_tag() }}
                   <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
                   {% if membership.admin %}
                     <button type="submit"

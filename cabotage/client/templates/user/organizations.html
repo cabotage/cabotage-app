@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, page_header, empty_state, service_card, create_modal, render_field %}
+{% from "_macros.html" import icon, page_header, empty_state, org_card, create_modal, render_field %}
 
 {% block title %}
   Organizations - Cabotage
@@ -21,14 +21,25 @@
         {% set org = membership.organization %}
         {% set proj_count = org.projects|length %}
         {% set app_count = namespace(n=0) %}
+        {% set latest_deploy = namespace(ts=none) %}
         {% for p in org.projects %}
           {% set app_count.n = app_count.n + p.project_applications|length %}
+          {% for app in p.project_applications %}
+            {% if app.latest_deployment_completed %}
+              {% if not latest_deploy.ts or app.latest_deployment_completed.completed > latest_deploy.ts %}
+                {% set latest_deploy.ts = app.latest_deployment_completed.completed %}
+              {% endif %}
+            {% endif %}
+          {% endfor %}
         {% endfor %}
-        {{ service_card(name=org.slug,
-                slug=proj_count ~ ' project' ~ ('s' if proj_count != 1 else '') ,
-        url=url_for('user.organization', org_slug=org.slug),
-        meta_items=[app_count.n ~ ' app' ~ ('s' if app_count.n != 1 else '')],
-        color='primary'
+        {{ org_card(name=org.name or org.slug,
+                slug=org.slug,
+                url=url_for('user.organization', org_slug=org.slug) ,
+        project_count=proj_count,
+        app_count=app_count.n,
+        member_count=org.members|length,
+        last_deploy=latest_deploy.ts,
+        color_index=loop.index0
         ) }}
       {% endfor %}
     </div>

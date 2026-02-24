@@ -172,7 +172,7 @@
   </div>
 
   {# ===== SECTION 4: PROCESSES & PROCFILE ===== #}
-  <div class="mb-10">
+  <div class="mb-10" id="processes">
     <div class="flex items-center gap-2 mb-4">
       {{ icon('terminal', 'w-4 h-4 text-primary') }}
       <h2 class="text-base font-semibold text-base-content">Processes &amp; Procfile</h2>
@@ -242,6 +242,92 @@
           {{ icon('info', 'w-3.5 h-3.5 text-info/50 mt-0.5 flex-shrink-0') }}
           <p class="text-xs text-base-content/40 leading-relaxed">
             Only <code class="text-accent/60 bg-transparent p-0">web</code> and <code class="text-accent/60 bg-transparent p-0">worker</code> processes are scalable. <code class="text-accent/60 bg-transparent p-0">release</code> and <code class="text-accent/60 bg-transparent p-0">postdeploy</code> always run exactly once.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ===== SECTION 4b: PACKAGE BUILD COMMANDS ===== #}
+  <div class="mb-10" id="package-build-commands">
+    <div class="flex items-center gap-2 mb-4">
+      {{ icon('zap', 'w-4 h-4 text-primary') }}
+      <h2 class="text-base font-semibold text-base-content">Package build commands</h2>
+    </div>
+    <p class="text-sm text-base-content/50 mb-5">
+      When you create a package, Cabotage runs any one-off commands defined in your Procfile before the package is finalized. These are shown as chips in the Processes section on the Overview tab.
+    </p>
+
+    <div class="card bg-base-200 border border-base-300 mb-4">
+      <div class="card-body !p-5">
+        <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">How it works</h3>
+        <div class="guide-pipeline">
+          <div class="guide-step">
+            <div class="guide-step-number">1</div>
+            <div class="guide-step-connector"></div>
+            <div class="guide-step-card">
+              <h3 class="text-sm font-semibold text-base-content mb-1">You click "Create Package"</h3>
+              <p class="text-sm text-base-content/50 leading-relaxed">
+                Cabotage snapshots your latest image and current config into a new package.
+              </p>
+            </div>
+          </div>
+          <div class="guide-step">
+            <div class="guide-step-number">2</div>
+            <div class="guide-step-connector"></div>
+            <div class="guide-step-card">
+              <h3 class="text-sm font-semibold text-base-content mb-1">
+                <code class="text-accent/60 bg-transparent p-0">release</code> commands run
+              </h3>
+              <p class="text-sm text-base-content/50 leading-relaxed">
+                Each <code class="text-accent/60 bg-transparent p-0">release</code> process from your Procfile runs inside the new image. If any command exits non-zero, the package build fails and nothing is deployed.
+              </p>
+            </div>
+          </div>
+          <div class="guide-step">
+            <div class="guide-step-number">3</div>
+            <div class="guide-step-card">
+              <h3 class="text-sm font-semibold text-base-content mb-1">Package is ready to deploy</h3>
+              <p class="text-sm text-base-content/50 leading-relaxed">
+                Once all release commands succeed, the package is sealed and ready. After deploy, any <code class="text-accent/60 bg-transparent p-0">postdeploy</code> commands run automatically.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card bg-base-200 border border-base-300">
+      <div class="card-body !p-5">
+        <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Common patterns</h3>
+        <div class="flex flex-col gap-3">
+          <div class="flex items-start gap-3">
+            <div class="code-block !text-xs !py-1 !px-2.5 flex-shrink-0 !bg-transparent !border-0">
+              <span class="procfile-service">release</span><span class="procfile-sep">:</span> <span class="procfile-command">flask db upgrade head</span>
+            </div>
+            <p class="text-sm text-base-content/50 leading-relaxed pt-0.5">
+              Run Alembic/Flask-Migrate DB migrations before deploy
+            </p>
+          </div>
+          <div class="border-t border-base-content/5"></div>
+          <div class="flex items-start gap-3">
+            <div class="code-block !text-xs !py-1 !px-2.5 flex-shrink-0 !bg-transparent !border-0">
+              <span class="procfile-service">release</span><span class="procfile-sep">:</span> <span class="procfile-command">python manage.py migrate</span>
+            </div>
+            <p class="text-sm text-base-content/50 leading-relaxed pt-0.5">Django database migrations</p>
+          </div>
+          <div class="border-t border-base-content/5"></div>
+          <div class="flex items-start gap-3">
+            <div class="code-block !text-xs !py-1 !px-2.5 flex-shrink-0 !bg-transparent !border-0">
+              <span class="procfile-service">postdeploy</span><span class="procfile-sep">:</span> <span class="procfile-command">python warm_cache.py</span>
+            </div>
+            <p class="text-sm text-base-content/50 leading-relaxed pt-0.5">Warm caches after new code is live</p>
+          </div>
+        </div>
+        <div class="flex items-start gap-2 p-3 mt-3 rounded-lg bg-base-300/50 border border-base-content/5">
+          {{ icon('info', 'w-3.5 h-3.5 text-info/50 mt-0.5 flex-shrink-0') }}
+          <p class="text-xs text-base-content/40 leading-relaxed">
+            These commands appear as chips below the process cards on the Overview tab. Hover over them to see the full command and what it does.
           </p>
         </div>
       </div>
