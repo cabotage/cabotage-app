@@ -101,16 +101,20 @@
   {# ===== IN-PROGRESS BANNER ===== #}
   {% if not deployment.complete and not deployment.error %}
     <div class="deploy-progress-banner mb-6">
-      <div class="flex items-center gap-3">
-        <div class="deploy-progress-spinner"></div>
-        <div>
-          <p class="text-sm font-medium text-base-content">Deployment in progress</p>
-          <p class="text-xs text-base-content/40">Streaming logs below. Page will refresh on completion.</p>
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="deploy-progress-spinner"></div>
+          <div>
+            <p class="text-sm font-medium text-base-content" id="deployPhase">Waiting for logs…</p>
+            <p class="text-xs text-base-content/40">Streaming logs below. Updates live on completion.</p>
+          </div>
         </div>
+        <span class="progress-elapsed" id="deployElapsed">00:00</span>
       </div>
       <div class="deploy-progress-bar mt-3">
-        <div class="deploy-progress-bar-fill"></div>
+        <div class="deploy-progress-bar-fill" id="deployProgressFill"></div>
       </div>
+      <div class="progress-steps" id="deploySteps"></div>
     </div>
   {% endif %}
 
@@ -118,7 +122,7 @@
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
 
     {# Left column: metadata #}
-    <div class="lg:col-span-1 flex flex-col gap-4">
+    <div data-log-left class="lg:col-span-1 flex flex-col gap-4">
 
       {# Deployment Info #}
       <div class="card bg-base-200 border border-base-300">
@@ -169,9 +173,48 @@
               <span class="deploy-meta-label">Updated</span>
               <span class="deploy-meta-value text-base-content/70">{{ deployment.updated|humanize }}</span>
             </div>
+            {% if deployment.complete or deployment.error %}
+              <div class="deploy-meta-row">
+                <span class="deploy-meta-label">Duration</span>
+                <span class="deploy-meta-value text-base-content/70">{{ deployment|duration }}</span>
+              </div>
+            {% endif %}
           </div>
         </div>
       </div>
+
+      {# Dockerfile #}
+      {% if deployment.release_object and deployment.release_object.dockerfile %}
+        <details class="card bg-base-200 border border-base-300 group"
+                 data-collapsible-card>
+          <summary class="!p-4 cursor-pointer">
+            <div class="flex items-center justify-between w-full">
+              <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Dockerfile</h2>
+              <div class="flex items-center gap-2">
+                <button class="expand-btn"
+                        data-expand="dockerfile-content"
+                        data-expand-title="Dockerfile"
+                        title="Expand"
+                        onclick="event.stopPropagation()">
+                  <svg class="w-3.5 h-3.5"
+                       viewBox="0 0 24 24"
+                       fill="none"
+                       stroke="currentColor"
+                       stroke-width="2">
+                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                  </svg>
+                </button>
+                <span class="collapse-icon text-base-content/30">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</span>
+              </div>
+            </div>
+          </summary>
+          <div class="!px-4 !pb-4">
+            <div id="dockerfile-content">
+              <div class="code-block !text-xs !leading-relaxed">{{ deployment.release_object.dockerfile }}</div>
+            </div>
+          </div>
+        </details>
+      {% endif %}
 
       {# Image Reference #}
       {% if deployment.release_object and deployment.release_object.image_object %}
@@ -203,14 +246,104 @@
           </div>
         </div>
       {% endif %}
+
+      {# Environment #}
+      {% if deployment.release_object and deployment.release_object.configuration_objects %}
+        <details class="card bg-base-200 border border-base-300 group"
+                 data-collapsible-card>
+          <summary class="!p-4 cursor-pointer">
+            <div class="flex items-center justify-between w-full">
+              <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">
+                Environment
+                <span class="text-base-content/20 normal-case">({{ deployment.release_object.configuration_objects|length }})</span>
+              </h2>
+              <div class="flex items-center gap-2">
+                <button class="expand-btn"
+                        data-expand="env-content"
+                        data-expand-title="Environment"
+                        title="Expand"
+                        onclick="event.stopPropagation()">
+                  <svg class="w-3.5 h-3.5"
+                       viewBox="0 0 24 24"
+                       fill="none"
+                       stroke="currentColor"
+                       stroke-width="2">
+                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                  </svg>
+                </button>
+                <span class="collapse-icon text-base-content/30">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</span>
+              </div>
+            </div>
+          </summary>
+          <div class="!px-4 !pb-4">
+            <div id="env-content">
+              <div class="env-list">
+                {% for name, env_var in deployment.release_object.configuration_objects.items() %}
+                  <div class="env-item">
+                    <div class="env-item-key">
+                      {% if env_var and env_var.secret %}{{ icon('lock', 'w-2.5 h-2.5 text-base-content/25 flex-shrink-0') }}{% endif %}
+                      <span>{{ name }}</span>
+                    </div>
+                    <div class="env-item-value">
+                      {% if env_var %}
+                        {% if env_var.secret %}
+                          <span class="text-base-content/25 italic text-xs">secret</span>
+                        {% else %}
+                          {{ env_var.value }}
+                        {% endif %}
+                      {% else %}
+                        <span class="text-error text-xs">Deleted</span>
+                      {% endif %}
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </details>
+      {% endif %}
     </div>
 
-    {# Right column: deploy log #}
-    <div class="lg:col-span-2 flex flex-col gap-4">
+    {# Right column: processes + deploy log #}
+    <div class="lg:col-span-2 flex flex-col gap-4" id="log-column">
 
-      {# Deploy Log #}
-      <div class="card bg-base-200 border border-base-300">
-        <div class="card-body !p-4">
+      {# Processes #}
+      {% if deployment.release_object and deployment.release_object.image_object and deployment.release_object.image_object.processes %}
+        <div class="card bg-base-200 border border-base-300">
+          <div class="card-body !p-4">
+            <div class="flex items-center justify-between mb-3">
+              <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Processes</h2>
+              <button class="expand-btn"
+                      data-expand="processes-content"
+                      data-expand-title="Processes"
+                      title="Expand">
+                <svg class="w-3.5 h-3.5"
+                     viewBox="0 0 24 24"
+                     fill="none"
+                     stroke="currentColor"
+                     stroke-width="2">
+                  <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                </svg>
+              </button>
+            </div>
+            <div id="processes-content">
+              <div class="flex flex-col gap-0">
+                {% for process, info in deployment.release_object.image_object.processes.items() %}
+                  <div class="flex items-start gap-3 py-2.5 {{ 'border-t border-base-content/5' if not loop.first }}">
+                    <code class="text-sm text-accent font-medium min-w-[5rem] pt-0.5">{{ process }}</code>
+                    <div class="flex-1 min-w-0">
+                      <code class="text-sm text-base-content/70 break-all">{{ info['cmd'] }}</code>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+
+      <div class="card bg-base-200 border border-base-300 flex-1 flex flex-col">
+        <div class="card-body !p-4 flex-1 flex flex-col">
           <div class="flex items-center justify-between mb-3">
             <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Deploy Log</h2>
             {% if deployment.deploy_log %}
@@ -222,7 +355,9 @@
               </button>
             {% endif %}
           </div>
-          <div class="deploy-log-viewer" id="deployLog">
+          <div class="deploy-log-viewer deploy-log-viewer-primary flex-1"
+               id="deployLog"
+               data-log-viewer>
             {%- if deployment.deploy_log and deployment.deploy_log != 'None' -%}
               {{ deployment.deploy_log }}
             {%- else -%}
@@ -279,19 +414,113 @@
   var placeholder = document.getElementById('logPlaceholder');
   if (placeholder) {
     logsPre.innerHTML = '';
+    var barFill = document.getElementById('deployProgressFill');
+    var phaseLabel = document.getElementById('deployPhase');
+    var stepsEl = document.getElementById('deploySteps');
+    var elapsedEl = document.getElementById('deployElapsed');
+    var tracker = (barFill) ? new BuildProgressTracker(barFill, phaseLabel, 'deploy', stepsEl, elapsedEl, '{{ deployment.created.isoformat() }}Z') : null;
+    var progressBanner = document.querySelector('.deploy-progress-banner');
+    var logsFinished = false;
+    var linesReceived = 0;
+    var reconnectAttempts = 0;
+    var maxReconnectAttempts = 30;
+    var emptyEndAttempts = 0;
+    var maxEmptyEndAttempts = 20; /* 20 × 3s = 60s max wait for pod to start */
     var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
-    var socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/livelogs');
-    socket.addEventListener('message', function(ev) {
-      if (ev.data === '=================END OF LOGS=================') {
-        socket.close();
-        return;
-      }
-      logsPre.textContent += ev.data + '\n';
-      logsPre.scrollTop = logsPre.scrollHeight;
-    });
-    socket.addEventListener('close', function() {
-      setTimeout(function() { window.location.reload(); }, 5000);
-    });
+    var wsUrl = protocol + window.location.host + window.location.pathname + '/livelogs';
+
+    function connectWebSocket() {
+      var socket = new WebSocket(wsUrl);
+      socket.addEventListener('message', function(ev) {
+        if (ev.data === '=================END OF LOGS=================') {
+          socket.close();
+          /* If no real log content arrived, the pod may not be running yet.
+             Retry the WebSocket after a delay instead of showing false success. */
+          if (linesReceived === 0 && emptyEndAttempts < maxEmptyEndAttempts) {
+            emptyEndAttempts++;
+            if (tracker) tracker.setPhase('Waiting for pod to start\u2026');
+            setTimeout(connectWebSocket, 3000);
+            return;
+          }
+          logsFinished = true;
+          reconnectAttempts = 0;
+          if (tracker) {
+            tracker.complete();
+            if (tracker.errored && progressBanner) {
+              progressBanner.classList.add('deploy-progress-banner-error');
+            }
+          }
+          /* Fetch final state and update DOM in-place */
+          fetchDeploymentStatus();
+          return;
+        }
+        reconnectAttempts = 0;
+        linesReceived++;
+        logsPre.textContent += ev.data + '\n';
+        logsPre.scrollTop = logsPre.scrollHeight;
+        if (tracker) tracker.processLine(ev.data);
+      });
+      socket.addEventListener('close', function() {
+        if (logsFinished) return;
+        reconnectAttempts++;
+        if (reconnectAttempts >= maxReconnectAttempts) {
+          /* Connection lost — try fetching final status instead of giving up */
+          if (tracker) tracker.setPhase('Checking status\u2026');
+          fetchDeploymentStatus();
+          return;
+        }
+        if (tracker) tracker.setPhase('Reconnecting\u2026');
+        var delay = Math.min(2000, 500 * reconnectAttempts);
+        setTimeout(connectWebSocket, delay);
+      });
+    }
+
+    var statusPollAttempts = 0;
+    var maxStatusPolls = 30; /* 30 × 2s = 60s max wait */
+
+    function fetchDeploymentStatus() {
+      statusPollAttempts++;
+      var cacheBust = '?_t=' + Date.now();
+      fetch(window.location.pathname + cacheBust, {
+        credentials: 'same-origin',
+        headers: { 'Accept': 'text/html', 'Cache-Control': 'no-cache' }
+      })
+        .then(function(r) { return r.text(); })
+        .then(function(html) {
+          var doc = new DOMParser().parseFromString(html, 'text/html');
+          var newOrb = doc.querySelector('.deploy-status-orb');
+
+          /* If server still shows "deploying", retry after a delay */
+          if (newOrb && newOrb.classList.contains('deploy-status-deploying') && statusPollAttempts < maxStatusPolls) {
+            setTimeout(fetchDeploymentStatus, 2000);
+            return;
+          }
+
+          /* Server has final state — update entire header row */
+          var newHeader = newOrb ? newOrb.closest('.mb-6') : null;
+          var curHeader = document.querySelector('.deploy-status-orb');
+          curHeader = curHeader ? curHeader.closest('.mb-6') : null;
+          if (newHeader && curHeader) curHeader.innerHTML = newHeader.innerHTML;
+          /* Replace deployment info card */
+          var newInfo = doc.querySelector('[data-log-left]');
+          var curInfo = document.querySelector('[data-log-left]');
+          if (newInfo && curInfo) curInfo.innerHTML = newInfo.innerHTML;
+          /* Show error banner if present */
+          var newError = doc.querySelector('.deploy-error-banner');
+          if (newError && !document.querySelector('.deploy-error-banner')) {
+            if (curHeader) curHeader.insertAdjacentElement('afterend', newError);
+          }
+          /* Hide the progress banner */
+          if (progressBanner) progressBanner.style.display = 'none';
+        })
+        .catch(function() {
+          if (statusPollAttempts < maxStatusPolls) {
+            setTimeout(fetchDeploymentStatus, 2000);
+          }
+        });
+    }
+
+    connectWebSocket();
   }
 
   /* Copy deploy log */
