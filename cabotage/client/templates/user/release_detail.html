@@ -1,187 +1,223 @@
 {% extends "_base.html" %}
+{% from "_macros.html" import icon %}
 
-{% block js %}
-<script>
-  var logsPre = document.getElementById('buildLog');
-  if (logsPre.innerHTML == 'None') {
-    logsPre.innerHTML = "";
-    var protocol = (window.location.protocol == 'https:') ? 'wss://' : 'ws://';
-    const socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/livelogs');
-    socket.addEventListener('message', ev => {
-      if (ev.data == '=================END OF LOGS=================') {
-          socket.close();
-      }
-      logsPre.innerHTML += '\n' + ev.data;
-    });
-    socket.addEventListener('close', ev => {
-      console.log('<<< closed');
-      setTimeout(() => {window.location.reload()}, 5000);
-    });
-  }
-</script>
-{% endblock %}
+{% block title %}Release v{{ release.version }} - Cabotage{% endblock %}
 
 {% block content %}
-  <div class="container" id="content">
-    <div class="row">
-      <div class="col-md-9">
-        <h2>Information</h2>
-        <table class="table">
-          <tr>
-            <th>Repository</th>
-            <td><code>{{ release.repository_name }}</code></td>
-          </tr>
-          <tr>
-            <th>Tag</th>
-            <td>
-              <code>{{ release.version }}</code>
-              {% if release.release_metadata and release.release_metadata.get('auto_deploy') %}<span class="glyphicon glyphicon-flash"></span>{% endif %}
-            </td>
-          </tr>
-          <tr>
-            <th>Identifier</th>
-            <td><code>{{ release.release_id }}</code></td>
-          </tr>
-          <tr>
-            <th>Status</th>
-            {% if release.valid %}
-              {% if release.built %}
-              <td><span class="glyphicon glyphicon glyphicon-ok-sign text-success"></span> Built</td>
-              {% elif release.error %}
-              <td><span class="glyphicon glyphicon-exclamation-sign text-danger"></span> Error</td>
-              {% else %}
-              <td><span class="glyphicon glyphicon-question-sign text-info"></span> Building...</td>
-              {% endif %}
-            {% else %}
-              <td><span class="glyphicon glyphicon-exclamation-sign text-danger"></span> Release Invalid!</td>
-            {% endif %}
-          </tr>
-          <tr>
-            <th>Submitted</th>
-            <td>{{ release.created|humanize }}</td>
-          </tr>
-          <tr>
-            <th>Updated </th>
-            <td>{{ release.updated|humanize }}</td>
-          </tr>
-          {% if release.release_metadata and release.release_metadata.get('description') %}
-          <tr>
-            <th>Build Trigger</th>
-            <td>{{ release.release_metadata.get('description') }}</td>
-          </tr>
+<div class="max-w-4xl">
+  <div class="flex items-center gap-3 mb-6">
+    <a href="javascript:history.back()" class="btn btn-ghost btn-sm">
+      {{ icon('arrow-left') }}
+    </a>
+    <div>
+      <h1 class="text-xl font-semibold text-white">Release v{{ release.version }}</h1>
+    </div>
+  </div>
+
+  {# Info Card #}
+  <div class="card bg-base-200 border border-base-300 mb-6">
+    <div class="card-body">
+      <h2 class="text-base font-medium text-white mb-4">Information</h2>
+      <dl class="meta-grid">
+        <dt>Repository</dt>
+        <dd>{{ release.repository_name }}</dd>
+        <dt>Version</dt>
+        <dd>
+          {{ release.version }}
+          {% if release.release_metadata and release.release_metadata.get('auto_deploy') %}
+            {{ icon('zap', 'w-3 h-3 text-warning inline') }}
           {% endif %}
-        </table>
-      </div>
+        </dd>
+        <dt>Identifier</dt>
+        <dd>{{ release.release_id }}</dd>
+        <dt>Status</dt>
+        <dd>
+          {% if release.valid %}
+            {% if release.built %}
+              <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-success"></span> Built</span>
+            {% elif release.error %}
+              <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-error"></span> Error</span>
+            {% else %}
+              <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-info"></span> Building...</span>
+            {% endif %}
+          {% else %}
+            <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-error"></span> Invalid</span>
+          {% endif %}
+        </dd>
+        <dt>Submitted</dt>
+        <dd>{{ release.created|humanize }}</dd>
+        <dt>Updated</dt>
+        <dd>{{ release.updated|humanize }}</dd>
+        {% if release.release_metadata and release.release_metadata.get('description') %}
+        <dt>Build Trigger</dt>
+        <dd class="font-sans">{{ release.release_metadata.get('description') }}</dd>
+        {% endif %}
+      </dl>
     </div>
-    {% if release.deposed %}
-    <div class="row">
-      <div class="alert alert-danger col-md-9">
-        <p>Release Invalid</p>
-        <pre>{{ release.deposed_reason|join("<br>")|safe }}</pre>
-      </div>
+  </div>
+
+  {% if release.deposed %}
+  <div role="alert" class="alert alert-error mb-6">
+    <div>
+      <p class="font-medium">Release Invalid</p>
+      <pre class="text-xs mt-2 whitespace-pre-wrap">{{ release.deposed_reason|join("\n") }}</pre>
     </div>
-    {% endif %}
-    {% if release.error %}
-    <div class="row">
-      <div class="alert alert-danger col-md-9">
-        <p>Error Building Image</p>
-        <pre>{{ release.error_detail }}</pre>
-      </div>
+  </div>
+  {% endif %}
+
+  {% if release.error %}
+  <div role="alert" class="alert alert-error mb-6">
+    <div>
+      <p class="font-medium">Error Building Image</p>
+      <pre class="text-xs mt-2 whitespace-pre-wrap">{{ release.error_detail }}</pre>
     </div>
-    {% endif %}
-    <div class="row">
-      <div class="col-md-9">
-      <h3>Image</h3>
+  </div>
+  {% endif %}
+
+  {# Image #}
+  <div class="card bg-base-200 border border-base-300 mb-6">
+    <div class="card-body">
+      <h2 class="text-base font-medium text-white mb-3">Image</h2>
       {% if release.image_object %}
-      <a href="{{ url_for('user.image_detail', image_id=release.image_object.id) }}"><h4>{{ release.image_object.repository_name }}:{{ release.image_object.version }}</h4></a>
+      <a href="{{ url_for('user.image_detail', image_id=release.image_object.id) }}" class="text-accent hover:underline font-mono text-sm">
+        {{ release.image_object.repository_name }}:{{ release.image_object.version }}
+      </a>
       {% else %}
-      <code>Image {{ release.image.repository }}/{{ release.image.tag }} no longer exists!</code>
+      <p class="text-sm text-base-content/50">Image {{ release.image.repository }}/{{ release.image.tag }} no longer exists.</p>
       {% endif %}
-      </div>
     </div>
-    {% if release.configuration_objects %}
-    <div class="row">
-      <div class="col-md-9">
-        <h3>Environment</h3>
-        <table class="table">
-            <tr>
+  </div>
+
+  {# Environment #}
+  {% if release.configuration_objects %}
+  <div class="card bg-base-200 border border-base-300 mb-6">
+    <div class="card-body">
+      <h2 class="text-base font-medium text-white mb-4">Environment</h2>
+      <div class="overflow-x-auto">
+        <table class="table table-sm">
+          <thead>
+            <tr class="text-base-content/50 text-xs uppercase tracking-wider">
               <th>Key</th>
               <th>Value</th>
             </tr>
-            {% for name, environment_variable in release.configuration_objects.items() %}
+          </thead>
+          <tbody>
+            {% for name, env_var in release.configuration_objects.items() %}
             <tr>
-              <td><code>{{ name }}</code></td>
-              {% if environment_variable %}
-                {% if environment_variable.secret %}
-                <td><span class="glyphicon glyphicon-lock"></span></td>
+              <td><code class="text-sm text-accent">{{ name }}</code></td>
+              <td>
+                {% if env_var %}
+                  {% if env_var.secret %}
+                    <span class="inline-flex items-center gap-1 text-base-content/40 text-sm">{{ icon('lock', 'w-3 h-3') }} Secret</span>
+                  {% else %}
+                    <code class="text-sm text-base-content/70">{{ env_var.value }}</code>
+                  {% endif %}
                 {% else %}
-                <td><code>{{ environment_variable.value }}</code></td>
+                  <span class="text-error text-sm">Deleted</span>
                 {% endif %}
-              {% else %}
-                <td><span class="glyphicon glyphicon-trash text-danger"></span> Deleted</td>
-              {% endif %}
+              </td>
             </tr>
             {% endfor %}
+          </tbody>
         </table>
       </div>
     </div>
-    {% endif %}
-    {% if release.image_object.processes %}
-    <div class="row">
-      <div class="col-md-9">
-        <h3>Processes</h3>
-        <table class="table">
-            <tr>
+  </div>
+  {% endif %}
+
+  {# Processes #}
+  {% if release.image_object and release.image_object.processes %}
+  <div class="card bg-base-200 border border-base-300 mb-6">
+    <div class="card-body">
+      <h2 class="text-base font-medium text-white mb-4">Processes</h2>
+      <div class="overflow-x-auto">
+        <table class="table table-sm">
+          <thead>
+            <tr class="text-base-content/50 text-xs uppercase tracking-wider">
               <th>Name</th>
               <th>Command</th>
               <th>Environment</th>
             </tr>
+          </thead>
+          <tbody>
             {% for process, info in release.image_object.processes.items() %}
             <tr>
-              <td><code>{{ process }}</code></td>
-              <td><code>{{ info['cmd'] }}</code></td>
+              <td><code class="text-sm text-accent">{{ process }}</code></td>
+              <td><code class="text-sm text-base-content/70">{{ info['cmd'] }}</code></td>
               <td>
-                <div>
-                  {% for item in info['env'] %}
-                  <span style="display: block;"><code>{{ item[0] }}={{ item[1] }}</code></span>
-                  {% endfor %}
-                </div>
+                {% for item in info['env'] %}
+                <div><code class="text-xs text-base-content/50">{{ item[0] }}={{ item[1] }}</code></div>
+                {% endfor %}
               </td>
             </tr>
             {% endfor %}
+          </tbody>
         </table>
       </div>
     </div>
-    {% endif %}
-    <div class="row">
-      <div class="col-md-9">
-        <h3>Build Log</h3>
-        <pre id="buildLog">{{ release.release_build_log }}</pre>
-      </div>
-    </div>
-    <div class="row">
-      <div class="col-md-9">
-        <h3>Metadata</h3>
-        <pre>{{ release.release_metadata|pprint }}</pre>
-      </div>
-    </div>
-    <div class="row">
-      <div class="col-md-9">
-        <h3><code>asdict</code></h3>
-        <pre>{{ release.asdict|pprint }}</pre>
-      </div>
-    </div>
-    <div class="row">
-      <div class="col-md-9">
-        <h3><code>__dict__</code></h3>
-        <pre>{{ release.__dict__|pprint }}</pre>
-        <pre>{{ release.image_object|pprint }}</pre>
-        {% for process_name, envconsul_configuration in  release.envconsul_configurations.items() %}
-        <h3>{{ process_name }}</h3>
-        <pre>{{ envconsul_configuration }}</pre>
-        {% endfor %}
-        <pre>{{ release.dockerfile }}</pre>
-      </div>
+  </div>
+  {% endif %}
+
+  {# Build Log #}
+  <div class="card bg-base-200 border border-base-300 mb-6">
+    <div class="card-body">
+      <h2 class="text-base font-medium text-white mb-3">Build Log</h2>
+      <div class="code-block" id="buildLog">{{ release.release_build_log }}</div>
     </div>
   </div>
+
+  {# Collapsible metadata sections #}
+  <details class="card bg-base-200 border border-base-300 mb-4">
+    <summary class="card-body cursor-pointer flex items-center gap-2">
+      <span class="collapse-icon">{{ icon('chevron-right', 'w-4 h-4') }}</span>
+      <h2 class="text-base font-medium text-white">Metadata</h2>
+    </summary>
+    <div class="card-body pt-0">
+      <div class="code-block">{{ release.release_metadata|pprint }}</div>
+    </div>
+  </details>
+
+  <details class="card bg-base-200 border border-base-300 mb-4">
+    <summary class="card-body cursor-pointer flex items-center gap-2">
+      <span class="collapse-icon">{{ icon('chevron-right', 'w-4 h-4') }}</span>
+      <h2 class="text-base font-medium text-white font-mono">Internal Data</h2>
+    </summary>
+    <div class="card-body pt-0">
+      <h3 class="text-sm text-base-content/50 mb-2 font-mono">asdict</h3>
+      <div class="code-block mb-4">{{ release.asdict|pprint }}</div>
+      <h3 class="text-sm text-base-content/50 mb-2 font-mono">__dict__</h3>
+      <div class="code-block mb-4">{{ release.__dict__|pprint }}</div>
+      <div class="code-block mb-4">{{ release.image_object|pprint }}</div>
+      {% for process_name, envconsul_configuration in release.envconsul_configurations.items() %}
+      <h3 class="text-sm text-base-content/50 mb-2">{{ process_name }}</h3>
+      <div class="code-block mb-4">{{ envconsul_configuration }}</div>
+      {% endfor %}
+      {% if release.dockerfile %}
+      <h3 class="text-sm text-base-content/50 mb-2">Dockerfile</h3>
+      <div class="code-block">{{ release.dockerfile }}</div>
+      {% endif %}
+    </div>
+  </details>
+</div>
+{% endblock %}
+
+{% block js %}
+<script>
+  var logsPre = document.getElementById('buildLog');
+  if (logsPre.textContent.trim() === 'None') {
+    logsPre.textContent = '';
+    var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
+    var socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/livelogs');
+    socket.addEventListener('message', function(ev) {
+      if (ev.data === '=================END OF LOGS=================') {
+        socket.close();
+        return;
+      }
+      logsPre.textContent += '\n' + ev.data;
+    });
+    socket.addEventListener('close', function() {
+      setTimeout(function() { window.location.reload(); }, 5000);
+    });
+  }
+</script>
 {% endblock %}

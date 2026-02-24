@@ -1,77 +1,93 @@
 {% extends "_base.html" %}
+{% from "_macros.html" import icon, breadcrumbs %}
+
+{% block title %}{{ configuration.name }} - Cabotage{% endblock %}
+
+{% block breadcrumbs %}
+{{ breadcrumbs([
+  {'label': configuration.application.project.organization.slug, 'url': url_for('user.organization', org_slug=configuration.application.project.organization.slug)},
+  {'label': configuration.application.project.slug, 'url': url_for('user.project', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug)},
+  {'label': configuration.application.slug, 'url': url_for('user.project_application', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug)},
+  {'label': configuration.name}
+]) }}
+{% endblock %}
 
 {% block content %}
-  <div class="container" id="content">
-    <div class="row">
-      <h1>{{ configuration.application.project.organization.slug|lower }}/{{ configuration.application.project.slug|lower }}/{{ configuration.application.slug|lower }}: {{ configuration.name }}</h1>
+<div class="max-w-3xl">
+  <div class="flex items-center gap-3 mb-6">
+    <a href="{{ url_for('user.project_application', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug) }}" class="btn btn-ghost btn-sm">
+      {{ icon('arrow-left') }}
+    </a>
+    <div>
+      <h1 class="text-xl font-semibold text-white">{{ configuration.name }}</h1>
+      <p class="text-sm text-base-content/50">Environment variable history</p>
     </div>
-    <div class="row">
-      <div class="col-md-6">
-        <h3>Current Value</h3>
-        <table class="table table-striped">
-          <tr>
-            <th>Name</th>
-            <th>Value</th>
-            <th style="white-space: nowrap; width: 1%;"></th>
-            <th style="white-space: nowrap; width: 1%;"></th>
-          </tr>
-          <tr>
-            <td>
-              <pre style="margin: 0px;">{{ configuration.name }}</pre>
-            </td>
-            <td>
-              <pre style="margin: 0px;">{% if configuration.secret %}<span class="glyphicon glyphicon-lock"></span>{% else %}{{ configuration.value }}{% endif %}</pre>
-            </td>
-            <td style="white-space: nowrap; width: 1%;">
-              <a class="btn btn-sm btn-link" href="{{ url_for('user.project_application_configuration_edit', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}">
-                <span class="glyphicon glyphicon-pencil"></span>
-              </a>
-            </td>
-            <td style="white-space: nowrap; width: 1%;">
-              <a class="btn btn-sm btn-danger" href="{{ url_for('user.project_application_configuration_delete', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}">
-                <span class="glyphicon glyphicon-trash"></span>
-              </a>
-            </td>
-          </tr>
-        </table>
+  </div>
+
+  {# Current Value #}
+  <div class="card bg-base-200 border border-base-300 mb-6">
+    <div class="card-body">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-base font-medium text-white">Current Value</h2>
+        <div class="flex items-center gap-1">
+          <a href="{{ url_for('user.project_application_configuration_edit', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}" class="btn btn-ghost btn-xs gap-1" title="Edit">
+            {{ icon('edit', 'w-3.5 h-3.5') }}
+            Edit
+          </a>
+          <a href="{{ url_for('user.project_application_configuration_delete', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}" class="btn btn-ghost btn-xs text-error gap-1" title="Delete">
+            {{ icon('trash', 'w-3.5 h-3.5') }}
+            Delete
+          </a>
+        </div>
+      </div>
+      <div class="p-3 rounded-lg bg-base-300/50">
+        <code class="text-sm text-accent">{{ configuration.name }}</code>
+        <span class="text-base-content/30 mx-2">=</span>
+        {% if configuration.secret %}
+          <span class="inline-flex items-center gap-1 text-base-content/40 text-sm">
+            {{ icon('lock', 'w-3 h-3') }}
+            Secret
+          </span>
+        {% else %}
+          <code class="text-sm text-base-content/70">{{ configuration.value }}</code>
+        {% endif %}
       </div>
     </div>
-    <div class="row">
-      <div class="col-md-6">
-        <h3>History</h3>
-        <table class="table table-striped">
-          <tr>
-            <th>Name</th>
-            <th>Value</th>
-            <th>Last Touch</th>
-            <th style="white-space: nowrap; width: 1%;"></th>
-            <th style="white-space: nowrap; width: 1%;"></th>
-          </tr>
-          {% for version in (configuration.versions|reverse)[1:] %}
-          <tr>
-            <td>
-              <pre style="margin: 0px;">{{ version.name }}</pre>
-            </td>
-            <td>
-              <pre style="margin: 0px;">{% if version.secret %}<span class="glyphicon glyphicon-lock"></span>{% else %}{{ version.value }}{% endif %}</pre>
-            </td>
-            <td>
-              <p>{{ version.updated|humanize }}</p>
-            </td>
-            <td style="white-space: nowrap; width: 1%;">
-              <a class="btn btn-sm btn-link icon-flipped" href="#">
-                <span class="glyphicon glyphicon-refresh"></span>
-              </a>
-            </td>
-            <td style="white-space: nowrap; width: 1%;">
-              <a class="btn btn-sm btn-danger" href="#">
-                <span class="glyphicon glyphicon-trash"></span>
-              </a>
-            </td>
-          </tr>
-          {% endfor %}
+  </div>
+
+  {# History #}
+  {% if (configuration.versions|list)|length > 1 %}
+  <div class="card bg-base-200 border border-base-300">
+    <div class="card-body">
+      <h2 class="text-base font-medium text-white mb-4">History</h2>
+      <div class="overflow-x-auto">
+        <table class="table table-sm">
+          <thead>
+            <tr class="text-base-content/50 text-xs uppercase tracking-wider">
+              <th>Name</th>
+              <th>Value</th>
+              <th>Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for version in (configuration.versions|reverse)[1:] %}
+            <tr>
+              <td><code class="text-sm text-accent">{{ version.name }}</code></td>
+              <td>
+                {% if version.secret %}
+                  <span class="inline-flex items-center gap-1 text-base-content/40 text-sm">{{ icon('lock', 'w-3 h-3') }} Secret</span>
+                {% else %}
+                  <code class="text-sm text-base-content/70">{{ version.value }}</code>
+                {% endif %}
+              </td>
+              <td class="text-sm text-base-content/50">{{ version.updated|humanize }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
         </table>
       </div>
     </div>
   </div>
+  {% endif %}
+</div>
 {% endblock %}

@@ -1,12 +1,17 @@
 {% extends "_base.html" %}
 
-{% block page_title %}- Unauthorized{% endblock %}
+{% block title %}401 Unauthorized - Cabotage{% endblock %}
 
 {% block content %}
-<div class="jumbotron">
-  <div class="text-center">
-    <h1>401</h1>
-    <p>You are not authorized to view this page.{% if not current_user.is_authenticated %} Please <a href="{{ url_for('security.login')}}">log in</a>.{% endif %}</p>
+<div class="flex flex-col items-center justify-center py-24 text-center">
+  <p class="text-8xl font-bold text-primary/20 mb-4">401</p>
+  <h1 class="text-2xl font-semibold text-white mb-2">Unauthorized</h1>
+  <p class="text-base-content/60 max-w-md mb-6">You are not authorized to view this page.{% if not current_user.is_authenticated %} Please sign in to continue.{% endif %}</p>
+  <div class="flex items-center gap-3">
+    {% if not current_user.is_authenticated %}
+    <a href="{{ url_for('security.login') }}" class="btn btn-primary btn-sm">Sign In</a>
+    {% endif %}
+    <a href="{{ url_for('main.home') }}" class="btn btn-ghost btn-sm">Go Home</a>
   </div>
 </div>
 {% endblock %}

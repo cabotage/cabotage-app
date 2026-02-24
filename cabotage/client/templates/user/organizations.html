@@ -1,20 +1,35 @@
 {% extends "_base.html" %}
-{% from "bootstrap/utils.html" import form_button %}
-{% block content %}
-  <div class="container" id="content">
-    <div class="row">
-      <h1>Your Organizations</h1>
-    </div>
-    <table class="table">
-      {% for organization in organizations %}
-      <tr>
-        <td><a href="{{ url_for("user.organization", org_slug=organization.organization.slug) }}">{{ organization.organization.slug }}</a></td>
-      </tr>
-      {% endfor %}
-      <tr>
-        <td>{{ form_button(url_for('user.organization_create'), "Create a new Organization", method="GET", class="btn btn-primary pull-right") }}</td>
-      </tr>
-    </table>
-  </div>
-{% endblock %}
+{% from "_macros.html" import icon, page_header, empty_state %}
 
+{% block title %}Organizations - Cabotage{% endblock %}
+
+{% block content %}
+{% call(actions) page_header('Organizations', 'Manage your organizations') %}
+  <a href="{{ url_for('user.organization_create') }}" class="btn btn-primary btn-sm gap-2">
+    {{ icon('plus') }}
+    New Organization
+  </a>
+{% endcall %}
+
+{% if organizations %}
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+  {% for membership in organizations %}
+  <a href="{{ url_for('user.organization', org_slug=membership.organization.slug) }}" class="card bg-base-200 border border-base-300 card-hover transition-all">
+    <div class="card-body">
+      <div class="flex items-center gap-3">
+        <div class="p-2 rounded-lg bg-primary/10 text-primary">
+          {{ icon('building', 'w-5 h-5') }}
+        </div>
+        <div>
+          <h3 class="font-medium text-white">{{ membership.organization.slug }}</h3>
+          <p class="text-xs text-base-content/40 font-mono">{{ membership.organization.projects|length }} project{{ 's' if membership.organization.projects|length != 1 }}</p>
+        </div>
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+  {{ empty_state('No organizations yet', 'Create your first organization to start deploying.', url_for('user.organization_create'), 'Create Organization', 'building') }}
+{% endif %}
+{% endblock %}

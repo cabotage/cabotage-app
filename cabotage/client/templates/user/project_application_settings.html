@@ -1,43 +1,65 @@
 {% extends "_base.html" %}
-{% from "security/_macros.html" import render_field_with_errors, render_field %}
-{% from "bootstrap/wtf.html" import form_errors, form_field %}
-{% from "bootstrap/utils.html" import form_button %}
+{% from "_macros.html" import render_field, icon %}
+
+{% block title %}Application Settings - Cabotage{% endblock %}
 
 {% block content %}
-{% include "security/_messages.html" %}
-<div class="container-fluid clearfix" id="content">
-  <div class="row">
-    <div class="col-md-6 col-md-offset-6 col-sm-8 col-xs-8 col-xs-offset-2 col-sm-offset-2 col-md-offset-3">
-      <h1>Update Application Settings</h1>
-      <hr>
-      <form action="{{ url_for('user.project_application_settings', application_id=form.application_id.data) }}" method="POST" name="project_application_settings_form">
-        {{ form.hidden_tag() }}
-        {{ form_field(form.application_id, disabled="disabled") }}
-        <h2>Health checks</h2>
-        {{ form_field(form.health_check_path) }}
-        {{ form_field(form.health_check_host) }}
-        <hr>
-        <h2>Deployment Settings</h2>
-        {{ form_field(form.deployment_timeout) }}
-        <hr>
-        <h2>Deployment Automation</h2>
-        <p><b>Before you begin, you need to install <a href="{{ app_url }}">This Application</a> and grant it access to your desired repo</b></p>
-        {{ form_field(form.github_repository) }}
-        {{ form_field(form.auto_deploy_branch) }}
-        {{ form_field(form.subdirectory) }}
-        {{ form_field(form.github_repository_is_private) }}
-        {{ form_field(form.github_app_installation_id) }}
-        {{ form_field(form.github_environment_name ) }}
-        <div class="row">
-          <div class="col-md-6">
-            {{ form_button(form.submit, "Update Application Settings", method="POST", class="btn btn-primary") }}
-          </div>
-          <div class="col-md-6">
-            <a class="btn btn-info pull-right" onclick="window.history.back()">Cancel</a>
-          </div>
-        </div>
-      </form>
+<div class="max-w-2xl mx-auto">
+  <div class="flex items-center gap-3 mb-6">
+    <a href="javascript:history.back()" class="btn btn-ghost btn-sm">
+      {{ icon('arrow-left') }}
+    </a>
+    <div>
+      <h1 class="text-xl font-semibold text-white">Application Settings</h1>
+      <p class="text-sm text-base-content/50">Configure deployment behavior and integrations</p>
     </div>
   </div>
+
+  <form action="{{ url_for('user.project_application_settings', application_id=form.application_id.data) }}" method="POST" name="project_application_settings_form" class="flex flex-col gap-6">
+    {{ form.hidden_tag() }}
+    {{ form.application_id(type='hidden') }}
+
+    {# Health Checks #}
+    <div class="card bg-base-200 border border-base-300">
+      <div class="card-body">
+        <h2 class="text-base font-medium text-white mb-4">Health Checks</h2>
+        <div class="flex flex-col gap-4">
+          {{ render_field(form.health_check_path, placeholder='/healthz') }}
+          {{ render_field(form.health_check_host) }}
+        </div>
+      </div>
+    </div>
+
+    {# Deployment Settings #}
+    <div class="card bg-base-200 border border-base-300">
+      <div class="card-body">
+        <h2 class="text-base font-medium text-white mb-4">Deployment Settings</h2>
+        {{ render_field(form.deployment_timeout) }}
+      </div>
+    </div>
+
+    {# GitHub Automation #}
+    <div class="card bg-base-200 border border-base-300">
+      <div class="card-body">
+        <h2 class="text-base font-medium text-white mb-2">Deployment Automation</h2>
+        <p class="text-sm text-base-content/50 mb-4">
+          Install <a href="{{ app_url }}" class="text-accent hover:underline" target="_blank">the GitHub App</a> and grant it access to your repository.
+        </p>
+        <div class="flex flex-col gap-4">
+          {{ render_field(form.github_repository, placeholder='owner/repo') }}
+          {{ render_field(form.auto_deploy_branch, placeholder='main') }}
+          {{ render_field(form.subdirectory) }}
+          {{ render_field(form.github_repository_is_private) }}
+          {{ render_field(form.github_app_installation_id) }}
+          {{ render_field(form.github_environment_name) }}
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <button type="submit" class="btn btn-primary">Save Settings</button>
+      <a href="javascript:history.back()" class="btn btn-ghost">Cancel</a>
+    </div>
+  </form>
 </div>
 {% endblock %}

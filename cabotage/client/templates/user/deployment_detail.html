@@ -1,84 +1,109 @@
 {% extends "_base.html" %}
+{% from "_macros.html" import icon %}
+
+{% block title %}Deployment - Cabotage{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl">
+  <div class="flex items-center gap-3 mb-6">
+    <a href="javascript:history.back()" class="btn btn-ghost btn-sm">
+      {{ icon('arrow-left') }}
+    </a>
+    <div>
+      <h1 class="text-xl font-semibold text-white">Deployment Detail</h1>
+    </div>
+  </div>
+
+  {# Info Card #}
+  <div class="card bg-base-200 border border-base-300 mb-6">
+    <div class="card-body">
+      <h2 class="text-base font-medium text-white mb-4">Information</h2>
+      <dl class="meta-grid">
+        <dt>Status</dt>
+        <dd>
+          {% if deployment.complete %}
+            <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-success"></span> Complete</span>
+          {% elif deployment.error %}
+            <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-error"></span> Error</span>
+          {% else %}
+            <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-info"></span> Building...</span>
+          {% endif %}
+        </dd>
+        <dt>Created</dt>
+        <dd>{{ deployment.created|humanize }}</dd>
+        <dt>Updated</dt>
+        <dd>{{ deployment.updated|humanize }}</dd>
+      </dl>
+    </div>
+  </div>
+
+  {% if deployment.error %}
+  <div role="alert" class="alert alert-error mb-6">
+    <div>
+      <p class="font-medium">Error Running Deploy</p>
+      <pre class="text-xs mt-2 whitespace-pre-wrap">{{ deployment.error_detail }}</pre>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Build Log #}
+  <div class="card bg-base-200 border border-base-300 mb-6">
+    <div class="card-body">
+      <h2 class="text-base font-medium text-white mb-3">Deployment Log</h2>
+      <div class="code-block" id="buildLog">{{ deployment.deploy_log }}</div>
+    </div>
+  </div>
+
+  {# Metadata (collapsible) #}
+  <details class="card bg-base-200 border border-base-300 mb-4">
+    <summary class="card-body cursor-pointer flex items-center gap-2">
+      <span class="collapse-icon">{{ icon('chevron-right', 'w-4 h-4') }}</span>
+      <h2 class="text-base font-medium text-white">Metadata</h2>
+    </summary>
+    <div class="card-body pt-0">
+      <div class="code-block">{{ deployment.deploy_metadata|pprint }}</div>
+    </div>
+  </details>
+
+  <details class="card bg-base-200 border border-base-300 mb-4">
+    <summary class="card-body cursor-pointer flex items-center gap-2">
+      <span class="collapse-icon">{{ icon('chevron-right', 'w-4 h-4') }}</span>
+      <h2 class="text-base font-medium text-white font-mono">asdict</h2>
+    </summary>
+    <div class="card-body pt-0">
+      <div class="code-block">{{ deployment.asdict|pprint }}</div>
+    </div>
+  </details>
+
+  <details class="card bg-base-200 border border-base-300 mb-4">
+    <summary class="card-body cursor-pointer flex items-center gap-2">
+      <span class="collapse-icon">{{ icon('chevron-right', 'w-4 h-4') }}</span>
+      <h2 class="text-base font-medium text-white font-mono">__dict__</h2>
+    </summary>
+    <div class="card-body pt-0">
+      <div class="code-block">{{ deployment.__dict__|pprint }}</div>
+    </div>
+  </details>
+</div>
+{% endblock %}
 
 {% block js %}
 <script>
   var logsPre = document.getElementById('buildLog');
-  if (logsPre.innerHTML == 'None') {
-    logsPre.innerHTML = "";
-    var protocol = (window.location.protocol == 'https:') ? 'wss://' : 'ws://';
-    const socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/livelogs');
-    socket.addEventListener('message', ev => {
-      if (ev.data == '=================END OF LOGS=================') {
-          socket.close();
+  if (logsPre.textContent.trim() === 'None') {
+    logsPre.textContent = '';
+    var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
+    var socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/livelogs');
+    socket.addEventListener('message', function(ev) {
+      if (ev.data === '=================END OF LOGS=================') {
+        socket.close();
+        return;
       }
-      logsPre.innerHTML += '\n' + ev.data;
+      logsPre.textContent += '\n' + ev.data;
     });
-    socket.addEventListener('close', ev => {
-      console.log('<<< closed');
-      setTimeout(() => {window.location.reload()}, 5000);
+    socket.addEventListener('close', function() {
+      setTimeout(function() { window.location.reload(); }, 5000);
     });
   }
 </script>
-{% endblock %}
-
-{% block content %}
-  <div class="container" id="content">
-    <div class="row">
-      <div class="col-md-9">
-        <h2>Information</h2>
-        <table class="table">
-          <tr>
-            <th>Status</th>
-            {% if deployment.complete %}
-            <td><span class="glyphicon glyphicon glyphicon-ok-sign text-success"></span> Complete</td>
-            {% elif deployment.error %}
-            <td><span class="glyphicon glyphicon-exclamation-sign text-danger"></span> Error</td>
-            {% else %}
-            <td><span class="glyphicon glyphicon-question-sign text-info"></span> Building...</td>
-            {% endif %}
-          </tr>
-          <tr>
-            <th>Created</th>
-            <td>{{ deployment.created|humanize }}</td>
-          </tr>
-          <tr>
-            <th>Updated </th>
-            <td>{{ deployment.updated|humanize }}</td>
-          </tr>
-        </table>
-      </div>
-    </div>
-    {% if deployment.error %}
-    <div class="row">
-      <div class="alert alert-danger col-md-9">
-        <p>Error Running Deploy</p>
-        <pre>{{ deployment.error_detail }}</pre>
-      </div>
-    </div>
-    {% endif %}
-    <div class="row">
-      <div class="col-md-9">
-        <h3>Deployment Log</h3>
-        <pre id="buildLog">{{ deployment.deploy_log }}</pre>
-      </div>
-    </div>
-    <div class="row">
-      <div class="col-md-9">
-        <h3>Metadata</h3>
-        <pre>{{ deployment.deploy_metadata|pprint }}</pre>
-      </div>
-    </div>
-    <div class="row">
-      <div class="col-md-9">
-        <h3><code>asdict</code></h3>
-        <pre>{{ deployment.asdict|pprint }}</pre>
-      </div>
-    </div>
-    <div class="row">
-      <div class="col-md-9">
-        <h3><code>__dict__</code></h3>
-        <pre>{{ deployment.__dict__|pprint }}</pre>
-      </div>
-    </div>
-  </div>
 {% endblock %}

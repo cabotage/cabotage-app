@@ -1,25 +1,42 @@
 {% extends "_base.html" %}
-{% from "bootstrap/utils.html" import form_button %}
+{% from "_macros.html" import icon, breadcrumbs, page_header, empty_state %}
+
+{% block title %}{{ project.name }} - Cabotage{% endblock %}
+
+{% block breadcrumbs %}
+{{ breadcrumbs([
+  {'label': project.organization.slug, 'url': url_for('user.organization', org_slug=project.organization.slug)},
+  {'label': project.slug}
+]) }}
+{% endblock %}
+
 {% block content %}
-  <div class="container" id="content">
-    <div class="row pull-right">
-      <p>Organization: {{ project.organization.name }}</p>
+{% call(actions) page_header(project.name, project.organization.slug + '/' + project.slug) %}
+  <a href="{{ url_for('user.project_application_create', org_slug=project.organization.slug, project_slug=project.slug) }}" class="btn btn-primary btn-sm gap-2">
+    {{ icon('plus') }}
+    New Application
+  </a>
+{% endcall %}
+
+{% if project.project_applications %}
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+  {% for application in project.project_applications %}
+  <a href="{{ url_for('user.project_application', org_slug=project.organization.slug, project_slug=project.slug, app_slug=application.slug) }}" class="card bg-base-200 border border-base-300 card-hover transition-all">
+    <div class="card-body">
+      <div class="flex items-center gap-3">
+        <div class="p-2 rounded-lg bg-accent/10 text-accent">
+          {{ icon('box', 'w-5 h-5') }}
+        </div>
+        <div>
+          <h3 class="font-medium text-white">{{ application.name }}</h3>
+          <p class="text-xs text-base-content/40 font-mono">{{ application.slug }}</p>
+        </div>
+      </div>
     </div>
-    <div class="row">
-      <h1>Project: {{ project.name }}</h1>
-    </div>
-    <div class="row">
-      <h2>Applications</h2>
-    </div>
-    <table class="table">
-    {% for application in project.project_applications %}
-      <tr>
-        <td><a href="{{ url_for('user.project_application', org_slug=project.organization.slug, project_slug=project.slug, app_slug=application.slug) }}">{{ application.name }}</a></td>
-      </tr>
-    {% endfor %}
-      <tr>
-        <td>{{ form_button(url_for('user.project_application_create', org_slug=project.organization.slug, project_slug=project.slug), "Create a new Application", method="GET", class="btn btn-primary pull-right") }}</td>
-      </tr>
-    </table>
-  </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+  {{ empty_state('No applications yet', 'Create your first application in this project.', url_for('user.project_application_create', org_slug=project.organization.slug, project_slug=project.slug), 'Create Application', 'box') }}
+{% endif %}
 {% endblock %}

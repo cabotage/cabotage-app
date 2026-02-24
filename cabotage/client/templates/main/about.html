@@ -1,11 +1,19 @@
 {% extends "_base.html" %}
 
-{% block content %}
+{% block title %}About - Cabotage{% endblock %}
 
-<div class="container" id="content">
-  <div class="row">
-    <h1>About</h1>
+{% block content %}
+<div class="max-w-2xl mx-auto">
+  <h1 class="text-2xl font-semibold text-white mb-6">About Cabotage</h1>
+  <div class="card bg-base-200 border border-base-300">
+    <div class="card-body prose prose-invert max-w-none">
+      <p class="text-base-content/70 leading-relaxed">
+        Cabotage is a self-hosted Platform as a Service (PaaS) that lets you deploy and manage applications on your own infrastructure with the ease of a managed platform.
+      </p>
+      <p class="text-base-content/70 leading-relaxed">
+        Built on top of Kubernetes, Cabotage handles container builds, deployments, scaling, environment configuration, and more -- giving you full control without the complexity.
+      </p>
+    </div>
   </div>
 </div>
-
 {% endblock %}

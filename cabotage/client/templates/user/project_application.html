@@ -1,402 +1,421 @@
 {% extends "_base.html" %}
+{% from "_macros.html" import icon, breadcrumbs, status_badge %}
 
-{% from "security/_macros.html" import render_field_with_errors, render_field %}
-{% from "bootstrap/wtf.html" import form_errors, form_field %}
-{% from "bootstrap/utils.html" import form_button %}
+{% block title %}{{ application.slug }} - Cabotage{% endblock %}
+
+{% block breadcrumbs %}
+{{ breadcrumbs([
+  {'label': application.project.organization.slug, 'url': url_for('user.organization', org_slug=application.project.organization.slug)},
+  {'label': application.project.slug, 'url': url_for('user.project', org_slug=application.project.organization.slug, project_slug=application.project.slug)},
+  {'label': application.slug}
+]) }}
+{% endblock %}
 
 {% block content %}
-  <div class="container" id="content">
-    <div class="row">
-      <h1>{{ application.project.organization.slug|lower }}/{{ application.project.slug|lower }}: {{ application.slug }}</h1>
+{# ===== HEADER ===== #}
+<div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+  <div>
+    <h1 class="text-2xl font-semibold text-white">{{ application.slug }}</h1>
+    <p class="text-sm text-base-content/50 font-mono mt-1">{{ application.project.organization.slug }}/{{ application.project.slug }}/{{ application.slug }}</p>
+  </div>
+  <div class="flex flex-wrap items-center gap-2">
+    <a href="{{ url_for('user.project_application_settings', application_id=application.id) }}" class="btn btn-ghost btn-sm gap-1.5">
+      {{ icon('settings') }}
+      Settings
+      {% if application.github_app_installation_id %}
+        <span class="status-dot status-dot-success" title="GitHub connected"></span>
+      {% endif %}
+    </a>
+    <a href="{{ url_for('user.project_application_logs', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}" class="btn btn-ghost btn-sm gap-1.5">
+      {{ icon('file-text') }}
+      Logs
+    </a>
+    {% if config.SHELLZ_ENABLED %}
+    <a href="{{ url_for('user.project_application_shell', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}" class="btn btn-ghost btn-sm gap-1.5">
+      {{ icon('terminal') }}
+      Shell
+    </a>
+    {% endif %}
+    <form action="{{ url_for('user.application_clear_cache', application_id=application.id) }}" method="POST" class="inline">
+      <button class="btn btn-ghost btn-sm gap-1.5" type="submit">
+        {{ icon('trash') }}
+        Clear Cache
+      </button>
+    </form>
+  </div>
+</div>
+
+{# ===== DEPLOY BUTTON ===== #}
+{% if application.latest_release and application.latest_release.built %}
+<div class="card bg-base-200 border border-base-300 mb-6">
+  <div class="card-body py-4 flex flex-row items-center justify-between">
+    <div>
+      <p class="text-sm text-base-content/70">Latest release <span class="font-mono text-accent">v{{ application.latest_release.version }}</span> is ready to deploy.</p>
     </div>
-    <div class="row">
-      <div class="col-md-8">
-        <h3>Deployments</h3>
-        {% if application.latest_release.built %}
-        <form action="{{ url_for('user.release_deploy', release_id=application.latest_release.id) }}" method="POST" name="deploy_release_form" enctype="multipart/form-data">
-          {{ deploy_form.hidden_tag() }}
-          <div class="row">
-            <div class="col-md-6">
-              {{ form_button(deploy_form.submit, "Do It!", method="POST", class="btn btn-primary") }}
-            </div>
-          </div>
-        </form>
-        <br>
-        {% endif %}
-        <div>
-          <a href="{{ url_for('user.project_application_settings', application_id=application.id) }}" class="btn btn-primary pull-right">{% if application.github_app_installation_id %}<span style="padding-right: 5px;" class="glyphicon glyphicon glyphicon-ok-sign"></span>{% endif %}Configure Settings</a>
-          <a href="{{ url_for('user.project_application_logs', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}" class="btn btn-primary">Logs</a>
-          {% if config.SHELLZ_ENABLED %}<a href="{{ url_for('user.project_application_shell', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}" class="btn btn-primary">Shell</a>{% endif %}
-          <form style="padding-top: 0.5em;" action="{{ url_for('user.application_clear_cache', application_id=application.id) }}" method="POST">
-            <button class="btn btn-primary" type="submit">
-              Clear build cache
-            </button>
-          </form>
-        </div>
+    <form action="{{ url_for('user.release_deploy', release_id=application.latest_release.id) }}" method="POST" name="deploy_release_form" enctype="multipart/form-data">
+      {{ deploy_form.hidden_tag() }}
+      <button type="submit" class="btn btn-primary btn-sm gap-1.5">
+        {{ icon('deploy') }}
+        Deploy
+      </button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{# ===== PENDING CHANGES ===== #}
+{% set image_diff, config_diff = application.ready_for_deployment %}
+{% if image_diff.has_changes() or config_diff.has_changes() %}
+<div class="changes-alert mb-6">
+  <div class="flex items-center justify-between mb-3">
+    <div class="flex items-center gap-2">
+      {{ icon('zap', 'w-4 h-4 text-primary') }}
+      <span class="text-sm font-medium text-white">Pending Changes</span>
+    </div>
+    <a class="btn btn-primary btn-sm gap-1.5" href="{{ url_for('user.application_release_create', application_id=application.id) }}">
+      {{ icon('scissors') }}
+      Cut Release
+    </a>
+  </div>
+
+  {% if image_diff.has_changes() %}
+  <div class="mb-3">
+    <p class="text-xs font-medium text-base-content/50 uppercase tracking-wider mb-2">Image Changes</p>
+    <div class="flex flex-col gap-1">
+      {% for item in image_diff.added() %}
+      <div class="flex items-center gap-2 text-sm">
+        <span class="text-success">+</span>
+        <code class="text-base-content/80">{{ item }}</code>
+        <span class="text-xs text-base-content/40">Added</span>
       </div>
+      {% endfor %}
+      {% for item in image_diff.changed() %}
+      <div class="flex items-center gap-2 text-sm">
+        <span class="text-info">~</span>
+        <code class="text-base-content/80">{{ item }}</code>
+        <span class="text-xs text-base-content/40">Edited</span>
+      </div>
+      {% endfor %}
+      {% for item in image_diff.removed() %}
+      <div class="flex items-center gap-2 text-sm">
+        <span class="text-error">-</span>
+        <code class="text-base-content/80">{{ item }}</code>
+        <span class="text-xs text-base-content/40">Removed</span>
+      </div>
+      {% endfor %}
     </div>
-    {% if application.deployments.count() > 0 %}
-    <div class="row">
-      <div class="col-md-8">
-        <h3>Recent Deployments</h3>
+  </div>
+  {% endif %}
 
-        {% if application.latest_deployment_running and application.latest_deployment_running.version|default(0) > application.latest_deployment.version|default(0) %}
-        <div class="col-md-12">
-          <div class="row alert alert-info">
-            <a class="text-info" href="{{ url_for('user.image_detail', image_id=application.latest_image_building.id) }}">Image Build #{{ application.latest_image_building.version }} In Progress! Watch it Go! <span class="glyphicon glyphicon-search"></span></a>
-          </div>
-        </div>
-        {% endif %}
-        {% if application.latest_image_error and application.latest_image_error.version|default(0) > application.latest_image.version|default(0) %}
-        <div class="col-md-12">
-          <div class="row alert alert-danger">
-            <a class="text-danger" href="{{ url_for('user.image_detail', image_id=application.latest_image_error.id) }}">Latest Image Build #{{ application.latest_image_error.version }} Failed! Take a closer look! <span class="glyphicon glyphicon-search"></span></a>
-          </div>
-        </div>
-        {% endif %}
+  {% if config_diff.has_changes() %}
+  <div>
+    <p class="text-xs font-medium text-base-content/50 uppercase tracking-wider mb-2">Configuration Changes</p>
+    <div class="flex flex-col gap-1">
+      {% for item in config_diff.added() %}
+      <div class="flex items-center gap-2 text-sm">
+        <span class="text-success">+</span>
+        <code class="text-base-content/80">{{ item }}</code>
+        <span class="text-xs text-base-content/40">Added</span>
+      </div>
+      {% endfor %}
+      {% for item in config_diff.removed() %}
+      <div class="flex items-center gap-2 text-sm">
+        <span class="text-error">-</span>
+        <code class="text-base-content/80">{{ item }}</code>
+        <span class="text-xs text-base-content/40">Removed</span>
+      </div>
+      {% endfor %}
+      {% for item in config_diff.changed() %}
+      <div class="flex items-center gap-2 text-sm">
+        <span class="text-info">~</span>
+        <code class="text-base-content/80">{{ item }}</code>
+        <span class="text-xs text-base-content/40">Edited</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
 
-        <table class="table table-striped">
-          <tr>
-            <th>Status</th>
-            <th>Started</th>
-            <th>Updated</th>
-            <th style="white-space: nowrap; width: 1%;">Details</th>
-          </tr>
-          {% for deployment in application.recent_deployments %}
-          <tr>
-            {% if deployment.complete %}
-            <td><span class="glyphicon glyphicon glyphicon-ok-sign text-success"></span></td>
-            {% elif deployment.error %}
-            <td><span class="glyphicon glyphicon-exclamation-sign text-danger"></span></td>
-            {% else %}
-            <td><span class="glyphicon glyphicon-question-sign text-info"></span></td>
-            {% endif %}
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-            <td>{{ deployment.created |humanize }}</td>
-            <td>{{ deployment.updated |humanize }}</td>
-            <td><a class="btn btn-info" href="{{ url_for('user.deployment_detail', deployment_id=deployment.id) }}"><span class="glyphicon glyphicon-search"></a></td>
-          </tr>
-          {% endfor %}
+  {# ===== DEPLOYMENTS ===== #}
+  {% if application.deployments.count() > 0 %}
+  <div class="card bg-base-200 border border-base-300 lg:col-span-2">
+    <div class="card-body">
+      <h2 class="text-lg font-medium text-white mb-4">Recent Deployments</h2>
+
+      {# Build status alerts #}
+      {% if application.latest_deployment_running and application.latest_deployment_running.version|default(0) > application.latest_deployment.version|default(0) %}
+      <div role="alert" class="alert alert-info text-sm mb-3">
+        <a href="{{ url_for('user.image_detail', image_id=application.latest_image_building.id) }}" class="flex items-center gap-2">
+          {{ icon('search') }}
+          Image Build #{{ application.latest_image_building.version }} in progress
+        </a>
+      </div>
+      {% endif %}
+      {% if application.latest_image_error and application.latest_image_error.version|default(0) > application.latest_image.version|default(0) %}
+      <div role="alert" class="alert alert-error text-sm mb-3">
+        <a href="{{ url_for('user.image_detail', image_id=application.latest_image_error.id) }}" class="flex items-center gap-2">
+          {{ icon('search') }}
+          Image Build #{{ application.latest_image_error.version }} failed
+        </a>
+      </div>
+      {% endif %}
+
+      <div class="overflow-x-auto">
+        <table class="table table-sm">
+          <thead>
+            <tr class="text-base-content/50 text-xs uppercase tracking-wider">
+              <th>Status</th>
+              <th>Started</th>
+              <th>Updated</th>
+              <th class="w-1"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for deployment in application.recent_deployments %}
+            <tr>
+              <td>
+                {% if deployment.complete %}
+                  <span class="status-dot status-dot-success"></span>
+                {% elif deployment.error %}
+                  <span class="status-dot status-dot-error"></span>
+                {% else %}
+                  <span class="status-dot status-dot-info"></span>
+                {% endif %}
+              </td>
+              <td class="text-sm text-base-content/70">{{ deployment.created|humanize }}</td>
+              <td class="text-sm text-base-content/70">{{ deployment.updated|humanize }}</td>
+              <td>
+                <a href="{{ url_for('user.deployment_detail', deployment_id=deployment.id) }}" class="btn btn-ghost btn-xs gap-1">
+                  {{ icon('search', 'w-3 h-3') }}
+                  Details
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
         </table>
       </div>
     </div>
-    {% endif %}
-    {% if application.releases.count() > 0 and application.latest_release.built %}
-    <div class="row">
-      <div class="col-md-8">
-        <h3>Processes</h3>
-        <form action="{{ url_for('user.application_scale', application_id=application.id) }}" method="POST" name="process_count_form">
-          {{ scale_form.hidden_tag() }}
-          <table class="table">
-            <tr>
-              <th>Process Name</th>
-              <th>Count</th>
-              <th>
-                  Class
-                  <a href="#" class="btn btn-small btn-info" style="padding: 1px 5px 1px 5px;" data-toggle="popover" placement="top" title="Pod Classes" data-html="true" data-content="{{ pod_class_info }}">
-                  <small><span class="glyphicon glyphicon-info-sign"></span></small>
-              </th>
+  </div>
+  {% endif %}
+
+  {# ===== PROCESSES ===== #}
+  {% if application.releases.count() > 0 and application.latest_release.built %}
+  <div class="card bg-base-200 border border-base-300">
+    <div class="card-body">
+      <h2 class="text-lg font-medium text-white mb-4">Processes</h2>
+      <form action="{{ url_for('user.application_scale', application_id=application.id) }}" method="POST" name="process_count_form">
+        {{ scale_form.hidden_tag() }}
+        <div class="flex flex-col gap-4">
+          {% for process_name in application.latest_release.processes %}
+          <div class="flex items-center gap-4 p-3 rounded-lg bg-base-300/50">
+            <code class="text-sm text-accent flex-1">{{ process_name }}</code>
+            <div class="count-input">
+              <a class="incr-btn" data-action="decrease" href="#">-</a>
+              <input class="quantity" type="text" name="process-count-{{ process_name }}" value="{{ application.process_counts.get(process_name, 0) }}">
+              <a class="incr-btn" data-action="increase" href="#">+</a>
+            </div>
+            <select class="select select-bordered select-sm bg-base-300 text-base-content border-base-content/10 pod-size" name="process-pod-class-{{ process_name }}">
+              <option value="{{ application.process_pod_classes.get(process_name, DEFAULT_POD_CLASS) }}" selected hidden>
+                {{ application.process_pod_classes.get(process_name, DEFAULT_POD_CLASS) }}
+              </option>
+              {% for class in pod_classes.keys() %}
+              <option value="{{ class }}">{{ class }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="mt-4">
+          <button type="submit" class="btn btn-primary btn-sm update_process_settings hidden">Update Process Settings</button>
+        </div>
+      </form>
+
+      {% if application.latest_release.release_commands %}
+      <div class="mt-6 pt-4 border-t border-base-300">
+        <h3 class="text-sm font-medium text-base-content/50 uppercase tracking-wider mb-3">Release Commands</h3>
+        {% for process_name, proc in application.latest_release.release_commands.items() %}
+        <div class="flex items-center gap-3 text-sm">
+          <code class="text-accent">{{ process_name }}</code>
+          <code class="text-base-content/60">{{ proc['cmd'] }}</code>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ===== LATEST RELEASE ===== #}
+  <div class="card bg-base-200 border border-base-300">
+    <div class="card-body">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-medium text-white">Latest Release</h2>
+        {% if application.releases.count() > 0 %}
+        <a href="{{ url_for('user.application_releases', application_id=application.id) }}" class="btn btn-ghost btn-xs">View All</a>
+        {% endif %}
+      </div>
+
+      {% if application.latest_release %}
+      <div class="flex items-center gap-3 p-3 rounded-lg bg-base-300/50">
+        <div class="flex-1">
+          <div class="flex items-center gap-2">
+            <code class="text-sm text-accent">v{{ application.latest_release.version }}</code>
+            {% if application.latest_release.release_metadata and application.latest_release.release_metadata.get('auto_deploy') %}
+              {{ icon('zap', 'w-3 h-3 text-warning') }}
+            {% endif %}
+          </div>
+          <p class="text-xs text-base-content/40 mt-1">{{ application.latest_release.updated|humanize }}</p>
+        </div>
+        <div class="flex items-center gap-2">
+          {% if application.latest_release.built %}
+            <span class="status-dot status-dot-success"></span>
+          {% elif application.latest_release.error %}
+            <span class="status-dot status-dot-error"></span>
+          {% else %}
+            <span class="status-dot status-dot-info"></span>
+          {% endif %}
+          <a href="{{ url_for('user.release_detail', release_id=application.latest_release.id) }}" class="btn btn-ghost btn-xs gap-1">
+            {{ icon('search', 'w-3 h-3') }}
+          </a>
+        </div>
+      </div>
+      {% else %}
+      <p class="text-sm text-base-content/50">No releases yet.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ===== LATEST IMAGE ===== #}
+  <div class="card bg-base-200 border border-base-300 lg:col-span-2">
+    <div class="card-body">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-medium text-white">Latest Image</h2>
+        {% if application.images.count() > 0 %}
+        <a href="{{ url_for('user.application_images', application_id=application.id) }}" class="btn btn-ghost btn-xs">View All</a>
+        {% endif %}
+      </div>
+
+      {# Build status alerts #}
+      {% if application.latest_image_building and application.latest_image_building.version|default(0) > application.latest_image.version|default(0) %}
+      <div role="alert" class="alert alert-info text-sm mb-3">
+        <a href="{{ url_for('user.image_detail', image_id=application.latest_image_building.id) }}" class="flex items-center gap-2">
+          {{ icon('search') }}
+          Image Build #{{ application.latest_image_building.version }} in progress
+        </a>
+      </div>
+      {% endif %}
+      {% if application.latest_image_error and application.latest_image_error.version|default(0) > application.latest_image.version|default(0) %}
+      <div role="alert" class="alert alert-error text-sm mb-3">
+        <a href="{{ url_for('user.image_detail', image_id=application.latest_image_error.id) }}" class="flex items-center gap-2">
+          {{ icon('search') }}
+          Image Build #{{ application.latest_image_error.version }} failed
+        </a>
+      </div>
+      {% endif %}
+
+      {% if application.latest_image %}
+      <div class="flex items-center gap-3 p-3 rounded-lg bg-base-300/50 mb-4">
+        <div class="flex-1">
+          <div class="flex items-center gap-2">
+            <code class="text-sm text-accent">v{{ application.latest_image.version }}</code>
+            {% if application.latest_image.image_metadata and application.latest_image.image_metadata.get('auto_deploy') %}
+              {{ icon('zap', 'w-3 h-3 text-warning') }}
+            {% endif %}
+          </div>
+          <p class="text-xs text-base-content/40 mt-1">{{ application.latest_image.updated|humanize }}</p>
+        </div>
+        <div class="flex items-center gap-2">
+          {% if application.latest_image.built %}
+            <span class="status-dot status-dot-success"></span>
+          {% elif application.latest_image.error %}
+            <span class="status-dot status-dot-error"></span>
+          {% else %}
+            <span class="status-dot status-dot-info"></span>
+          {% endif %}
+          <a href="{{ url_for('user.image_detail', image_id=application.latest_image.id) }}" class="btn btn-ghost btn-xs gap-1">
+            {{ icon('search', 'w-3 h-3') }}
+          </a>
+        </div>
+      </div>
+      {% endif %}
+
+      <form action="{{ url_for('user.application_images_build_fromsource', application_id=application.id) }}" method="POST" class="inline">
+        <button class="btn btn-sm btn-outline gap-1.5" type="submit">
+          {{ icon('play') }}
+          Build from Source
+        </button>
+      </form>
+    </div>
+  </div>
+
+  {# ===== ENVIRONMENT VARIABLES ===== #}
+  <div class="card bg-base-200 border border-base-300 lg:col-span-2">
+    <div class="card-body">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-medium text-white">Environment Variables</h2>
+        <a href="{{ url_for('user.project_application_configuration_create', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}" class="btn btn-primary btn-sm gap-1.5">
+          {{ icon('plus') }}
+          Add Variable
+        </a>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="table table-sm">
+          <thead>
+            <tr class="text-base-content/50 text-xs uppercase tracking-wider">
+              <th>Name</th>
+              <th>Value</th>
+              <th class="w-1"></th>
             </tr>
-            {% for process_name in application.latest_release.processes %}
+          </thead>
+          <tbody>
+            {% for configuration in application.configurations %}
             <tr>
-              <td><code>{{ process_name }}</code></td>
               <td>
-                <div class="count-input count-input-sm">
-                  <a class="incr-btn" data-action="decrease" href="#">–</a>
-                  <input class="quantity" type="text" name="process-count-{{ process_name }}" value="{{ application.process_counts.get(process_name, 0) }}"/>
-                  <a class="incr-btn" data-action="increase" href="#">&plus;</a>
+                <div class="flex items-center gap-2">
+                  <code class="text-sm text-accent">{{ configuration.name }}</code>
+                  {% if configuration.buildtime %}
+                    <span class="tooltip" data-tip="Build-time variable">{{ icon('settings', 'w-3 h-3 text-base-content/30') }}</span>
+                  {% endif %}
                 </div>
               </td>
+              <td class="max-w-xs">
+                {% if configuration.secret %}
+                  <span class="flex items-center gap-1 text-base-content/40 text-sm">
+                    {{ icon('lock', 'w-3 h-3') }}
+                    <span>Secret</span>
+                  </span>
+                {% else %}
+                  <code class="text-sm text-base-content/70 truncate block max-w-xs">{{ configuration.value }}</code>
+                {% endif %}
+              </td>
               <td>
-                <select class="form-control pod-size" name="process-pod-class-{{ process_name }}">
-                  <option value="{{ application.process_pod_classes.get(process_name, DEFAULT_POD_CLASS) }}" selected hidden>
-                    {{ application.process_pod_classes.get(process_name, DEFAULT_POD_CLASS) }}
-                  </option>
-                  {% for class in pod_classes.keys() %}
-                  <option value="{{ class }}">{{ class }}</option>
-                  {% endfor %}
+                <div class="flex items-center gap-1">
+                  <a href="{{ url_for('user.project_application_configuration_edit', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}" class="btn btn-ghost btn-xs" title="Edit">
+                    {{ icon('edit', 'w-3.5 h-3.5') }}
+                  </a>
+                  <a href="{{ url_for('user.project_application_configuration', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}" class="btn btn-ghost btn-xs" title="History">
+                    {{ icon('refresh', 'w-3.5 h-3.5') }}
+                  </a>
+                  {% if application.configurations|length > 1 %}
+                  <a href="{{ url_for('user.project_application_configuration_delete', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}" class="btn btn-ghost btn-xs text-error" title="Delete">
+                    {{ icon('trash', 'w-3.5 h-3.5') }}
+                  </a>
+                  {% endif %}
                 </div>
               </td>
             </tr>
             {% endfor %}
-            <tr>
-              <td colspan=3>
-                {{ form_button(scale_form.submit, "Update Process Settings", method="POST", class="btn btn-primary pull-right update_process_settings hidden") }}
-              </td>
-            </tr>
-          </table>
-        </form>
-        <h3>Release Commands</h3>
-        <table class="table">
-          {% for process_name, proc in application.latest_release.release_commands.items() %}
-          <tr>
-            <th>Command Name</th>
-            <th>Command</th>
-          </tr>
-          <tr>
-            <td><code>{{ process_name }}</code></td>
-            <td><code>{{ proc['cmd'] }}</code></td>
-          </tr>
-          {% endfor %}
+          </tbody>
         </table>
-      </div>
-    </div>
-    {% endif %}
-    <div class="row">
-      <div class="col-md-12">
-        {% if application.releases.count() > 0 %}
-        <h3>Releases</h3>
-        {% endif %}
-        {% set image_diff, config_diff = application.ready_for_deployment %}
-        {% if image_diff.has_changes() or config_diff.has_changes() %}
-          <div class="row">
-            <div class="alert alert-info">
-              <p>Unapplied changes exist!</p>
-            </div>
-          </div>
-          {% if image_diff.has_changes() %}
-          {% set added = image_diff.added() %}
-          {% set removed = image_diff.removed() %}
-          {% set changed = image_diff.changed() %}
-          <div class="row">
-            <h5>Image Changes</h5>
-            <div class="col-md-12">
-              <table class="table">
-                <tr>
-                  <th></th>
-                  <th>Attribute</th>
-                  <th>Operation</th>
-                </tr>
-                {% for image_added in added %}
-                <tr>
-                  <td><span class="glyphicon glyphicon-plus text-success"></span></td>
-                  <td><code>{{ image_added }}</code></td>
-                  <td>Added</td>
-                </tr>
-                {% endfor %}
-                {% for image_changed in changed %}
-                <tr>
-                  <td><span class="glyphicon glyphicon-pencil text-info"></span></td>
-                  <td><code>{{ image_changed }}</code></td>
-                  <td>Edited</td>
-                </tr>
-                {% endfor %}
-                {% for image_removed in removed %}
-                <tr>
-                  <td><span class="glyphicon glyphicon-minus text-danger"></span></rd>
-                  <td><code>{{ image_removed }}</code></td>
-                  <td>Removed</td>
-                </tr>
-                {% endfor %}
-              </table>
-            </div>
-          </div>
-          {% endif %}
-          {% if config_diff.has_changes() %}
-          {% set added = config_diff.added() %}
-          {% set removed = config_diff.removed() %}
-          {% set changed = config_diff.changed() %}
-          <div class="row">
-            <h5>Configuration Changes</h5>
-            <div class="col-md-12">
-              <table class="table">
-                <tr>
-                  <th></th>
-                  <th>Environment Variable</th>
-                  <th>Operation</th>
-                </tr>
-              {% if added %}
-                {% for config_added in added %}
-                <tr>
-                  <td><span class="glyphicon glyphicon-plus text-success"></span></td>
-                  <td><code>{{ config_added }}</code></td>
-                  <td>Added</td>
-                </tr>
-                {% endfor %}
-              {% endif %}
-              {% if removed  %}
-                {% for config_removed in removed %}
-                <tr>
-                  <td><span class="glyphicon glyphicon-minus text-danger"></span></rd>
-                  <td><code>{{ config_removed }}</code></td>
-                  <td>Removed</td>
-                </tr>
-                {% endfor %}
-              {% endif %}
-              {% if changed %}
-                {% for config_changed in changed %}
-                <tr>
-                  <td><span class="glyphicon glyphicon-pencil text-info"></span></td>
-                  <td><code>{{ config_changed }}</code></td>
-                  <td>Edited</td>
-                </tr>
-                {% endfor %}
-              {% endif %}
-              </table>
-            </div>
-          </div>
-          {% endif %}
-          <div class="row">
-            <a class="btn btn-info pull-right" href="{{ url_for('user.application_release_create', application_id=application.id) }}">
-              Cut a new release!&nbsp;<span class="glyphicon glyphicon-scissors"></span>
-            </a>
-          </div>
-        {% endif %}
-          </div>
-          </div>
-    <div class="row">
-      <div class="col-md-12">
-        {% if application.latest_release %}
-        <h3>Latest Release</h3>
-        <table class="table table-striped">
-          <tr>
-            <th>Version</th>
-            <th>Built</th>
-            <th>Updated</th>
-            <th style="white-space: nowrap; width: 1%;">Details</th>
-          </tr>
-          <tr>
-            <td>
-              <code>{{ application.latest_release.version }}</code>
-              {% if application.latest_release.release_metadata and application.latest_release.release_metadata.get('auto_deploy') %}<span class="glyphicon glyphicon-flash"></span>{% endif %}
-            </td>
-            {% if application.latest_release.built %}
-            <td><span class="glyphicon glyphicon glyphicon-ok-sign text-success"></span></td>
-            {% elif application.latest_release.error %}
-            <td><span class="glyphicon glyphicon-exclamation-sign text-danger"></span></td>
-            {% else %}
-            <td><span class="glyphicon glyphicon-question-sign text-info"></span></td>
-            {% endif %}
-            <td>{{ application.latest_release.updated|humanize }}</td>
-            <td><a class="btn btn-info" href="{{ url_for('user.release_detail', release_id=application.latest_release.id) }}"><span class="glyphicon glyphicon-search"></a></a></td>
-          </tr>
-          <tr>
-            <td colspan="4">
-              {% if application.releases.count() > 0 %}
-              <a class="btn btn-info pull-right" href="{{ url_for('user.application_releases', application_id=application.id) }}">
-                View All Releases
-              </a>
-              {% endif %}
-            </td>
-          </tr>
-        </table>
-        {% endif %}
-      </div>
-    </div>
-    <div class="row">
-      <div class="col-md-12">
-        <h3>Latest Image</h3>
-        {% if application.latest_image_building and application.latest_image_building.version|default(0) > application.latest_image.version|default(0) %}
-        <div class="col-md-12">
-          <div class="row alert alert-info">
-            <a class="text-info" href="{{ url_for('user.image_detail', image_id=application.latest_image_building.id) }}">Image Build #{{ application.latest_image_building.version }} In Progress! Watch it Go! <span class="glyphicon glyphicon-search"></span></a>
-          </div>
-        </div>
-        {% endif %}
-        {% if application.latest_image_error and application.latest_image_error.version|default(0) > application.latest_image.version|default(0) %}
-        <div class="col-md-12">
-          <div class="row alert alert-danger">
-            <a class="text-danger" href="{{ url_for('user.image_detail', image_id=application.latest_image_error.id) }}">Latest Image Build #{{ application.latest_image_error.version }} Failed! Take a closer look! <span class="glyphicon glyphicon-search"></span></a>
-          </div>
-        </div>
-        {% endif %}
-        <table class="table table-striped">
-          <tr>
-            <th>Version</th>
-            <th>Built</th>
-            <th>Updated</th>
-            <th style="white-space: nowrap; width: 1%;">Details</th>
-          </tr>
-          {% if application.latest_image %}
-          <tr>
-            <td>
-              <code>{{ application.latest_image.version }}</code>
-              {% if application.latest_image.image_metadata and application.latest_image.image_metadata.get('auto_deploy') %}<span class="glyphicon glyphicon-flash"></span>{% endif %}
-            </td>
-            {% if application.latest_image.built %}
-            <td><span class="glyphicon glyphicon glyphicon-ok-sign text-success"></span></td>
-            {% elif application.latest_image.error %}
-            <td><span class="glyphicon glyphicon-exclamation-sign text-danger"></span></td>
-            {% else %}
-            <td><span class="glyphicon glyphicon-question-sign text-info"></span></td>
-            {% endif %}
-            <td>{{ application.latest_image.updated |humanize }}</td>
-            <td><a class="btn btn-info" href="{{ url_for('user.image_detail', image_id=application.latest_image.id) }}"><span class="glyphicon glyphicon-search"></a></td>
-          </tr>
-          {% endif %}
-          <tr>
-            <td colspan="2">
-              <form style="padding-top: 0.5em;" action="{{ url_for('user.application_images_build_fromsource', application_id=application.id) }}" method="POST">
-                <button class="btn btn-primary" type="submit">
-                  New Image Build From Source
-                </button>
-              </form>
-            </td>
-            <td colspan="2">
-              {% if application.images.count() > 0 %}
-              <a class="btn btn-info pull-right" href="{{ url_for('user.application_images', application_id=application.id) }}">
-                View All Images
-              </a>
-              {% endif %}
-            </td>
-          </tr>
-        </table>
-      </div>
-    </div>
-    <div class="row">
-      <div class="col-md-12">
-        <h3>Environment Variables</h3>
-        <div class="table-responsive">
-        <table class="table table-striped">
-          <tr>
-            <th>Name</th>
-            <th>Value</th>
-            <th style="white-space: nowrap; width: 1%;"></th>
-            <th style="white-space: nowrap; width: 1%;"></th>
-            <th style="white-space: nowrap; width: 1%;"></th>
-          </tr>
-          {% for configuration in application.configurations %}
-          <tr>
-            <td style="min-width: 5em; width: 10em; max-width: 10em;">
-              <div>
-                <pre style="display: inline-block; margin: 0px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ configuration.name }}</pre>
-                {% if configuration.buildtime %}
-                <span style="display: inline-block; margin: 10px;" class="glyphicon glyphicon-cog"></span>
-                {% endif %}
-              </div>
-            </td>
-            <td style="min-width: 10em; max-width: 25em; width: 25em;">
-              <pre style="margin: 0px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{% if configuration.secret %}<span class="glyphicon glyphicon-lock"></span>{% else %}{{ configuration.value }}{% endif %}</pre>
-            </td>
-            <td style="white-space: nowrap; width: 1%;">
-              <a class="btn btn-sm btn-link narrow" href="{{ url_for('user.project_application_configuration_edit', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}">
-                <span class="glyphicon glyphicon-pencil"></span>
-              </a>
-            </td>
-            <td style="white-space: nowrap; width: 1%;">
-              <a class="btn btn-sm btn-link narrow icon-flipped" href="{{ url_for('user.project_application_configuration', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}">
-                <span class="glyphicon glyphicon-refresh"></span>
-              </a>
-            </td>
-            <td style="white-space: nowrap; width: 1%;">
-              {% if application.configurations|length > 1 %}
-              <a class="btn btn-sm btn-danger narrow" href="{{ url_for('user.project_application_configuration_delete', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}">
-                <span class="glyphicon glyphicon-trash"></span>
-              </a>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-          <tr>
-            <td class="right" colspan="5">
-              <a class="btn btn-primary" href="{{ url_for('user.project_application_configuration_create', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}">
-                Add New Environment Variable
-              </a>
-            </td>
-          </tr>
-        </table>
-        </div>
       </div>
     </div>
   </div>
+
+</div>
 {% endblock %}

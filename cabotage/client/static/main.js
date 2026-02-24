@@ -1,56 +1,90 @@
-// custom javascript
+/* ===== Cabotage PaaS - Vanilla JS ===== */
 
+/**
+ * Slugify a string for URL-safe slugs.
+ */
 function slugify(text) {
-    // https://gist.github.com/mathewbyrne/1280286
-    return text.toString().toLowerCase()
-      .replace(/\s+/g, '-')           // Replace spaces with -
-      .replace(/[^\w\-]+/g, '')       // Remove all non-word chars
-      .replace(/\-\-+/g, '-')         // Replace multiple - with single -
-      .replace(/^-+/, '')             // Trim - from start of text
-      .replace(/-+$/, '')             // Trim - from end of text
-      .replace(/[\s_-]+/g, '-');
+  return text.toString().toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^\w\-]+/g, '')
+    .replace(/\-\-+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '')
+    .replace(/[\s_-]+/g, '-');
 }
 
+/**
+ * Auto-slugify: as user types in source field, destination field gets slugified value.
+ * Stops auto-slugifying once user manually edits the destination field.
+ */
+function applySlugify(sourceSelector, destinationSelector) {
+  var dest = document.querySelector(destinationSelector);
+  var source = document.querySelector(sourceSelector);
+  if (!dest || !source) return;
 
-function applySlugify(source_selector, destination_selector) {
-    $(destination_selector).keyup(function(){
-        if (!$(destination_selector).hasClass("user-has-edited")){
-            console.log('they touched');
-            $(destination_selector).addClass("user-has-edited");
-        }
-    })
-    $(source_selector).keyup(function(){
-        if (!$(destination_selector).hasClass("user-has-edited")){
-            $slug = slugify($(this).val());
-            $(destination_selector).val($slug);
-        }
-    })
-}
-
-$(".incr-btn").on("click", function (e) {
-    var $button = $(this);
-    var oldValue = $button.parent().find('.quantity').val();
-    $button.parent().find('.incr-btn[data-action="decrease"]').removeClass('inactive');
-    if ($button.data('action') == "increase") {
-        var newVal = parseFloat(oldValue) + 1;
-    } else {
-        // Don't allow decrementing below 0
-        if (oldValue > 0) {
-            var newVal = parseFloat(oldValue) - 1;
-        } else {
-            newVal = 0;
-            $button.addClass('inactive');
-        }
+  dest.addEventListener('keyup', function () {
+    if (!dest.classList.contains('user-has-edited')) {
+      dest.classList.add('user-has-edited');
     }
-    $button.parent().find('.quantity').val(newVal);
-    $('.update_process_settings').removeClass('hidden');
-    e.preventDefault();
-});
+  });
 
-$(".pod-size").change(function (e) {
-    $('.update_process_settings').removeClass('hidden');
-});
+  source.addEventListener('keyup', function () {
+    if (!dest.classList.contains('user-has-edited')) {
+      dest.value = slugify(source.value);
+    }
+  });
+}
 
-$(function () {
-  $('[data-toggle="popover"]').popover()
+/**
+ * Increment / Decrement buttons for process count inputs.
+ */
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('.incr-btn').forEach(function (button) {
+    button.addEventListener('click', function (e) {
+      e.preventDefault();
+      var parent = button.closest('.count-input');
+      if (!parent) return;
+      var input = parent.querySelector('.quantity');
+      if (!input) return;
+
+      var oldValue = parseFloat(input.value) || 0;
+      var decrBtn = parent.querySelector('.incr-btn[data-action="decrease"]');
+
+      if (decrBtn) decrBtn.classList.remove('inactive');
+
+      if (button.getAttribute('data-action') === 'increase') {
+        input.value = oldValue + 1;
+      } else {
+        if (oldValue > 0) {
+          input.value = oldValue - 1;
+        } else {
+          input.value = 0;
+          button.classList.add('inactive');
+        }
+      }
+
+      // Show the update button
+      document.querySelectorAll('.update_process_settings').forEach(function (el) {
+        el.classList.remove('hidden');
+      });
+    });
+  });
+
+  // Pod size change handler
+  document.querySelectorAll('.pod-size').forEach(function (select) {
+    select.addEventListener('change', function () {
+      document.querySelectorAll('.update_process_settings').forEach(function (el) {
+        el.classList.remove('hidden');
+      });
+    });
+  });
+
+  // Close dropdown on click outside (DaisyUI dropdowns)
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('.dropdown')) {
+      document.querySelectorAll('.dropdown [tabindex]').forEach(function (el) {
+        el.blur();
+      });
+    }
+  });
 });

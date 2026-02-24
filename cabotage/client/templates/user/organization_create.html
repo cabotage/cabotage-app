@@ -1,19 +1,28 @@
 {% extends "_base.html" %}
-{% from "security/_macros.html" import render_field_with_errors, render_field %}
-{% from "bootstrap/wtf.html" import form_errors, form_field %}
-{% from "bootstrap/utils.html" import form_button %}
+{% from "_macros.html" import render_field, breadcrumbs %}
+
+{% block title %}Create Organization - Cabotage{% endblock %}
+
+{% block breadcrumbs %}
+{{ breadcrumbs([
+  {'label': 'Organizations', 'url': url_for('user.organizations')},
+  {'label': 'Create'}
+]) }}
+{% endblock %}
 
 {% block content %}
-{% include "security/_messages.html" %}
-<div class="container-fluid clearfix" id="content">
-  <div class="row">
-    <div class="col-md-4 col-md-offset-4 col-sm-8 col-xs-8 col-xs-offset-2 col-sm-offset-2">
-      <h1>Create Organization</h1>
-      <form action="{{ url_for('user.organization_create') }}" method="POST" name="organization_create_form">
+<div class="form-card">
+  <div class="card bg-base-200 border border-base-300 shadow-xl">
+    <div class="card-body">
+      <h1 class="text-xl font-semibold text-white mb-4">Create Organization</h1>
+
+      <form action="{{ url_for('user.organization_create') }}" method="POST" name="organization_create_form" class="flex flex-col gap-4">
         {{ organization_create_form.hidden_tag() }}
-        {{ form_field(organization_create_form.name) }}
-        {{ form_field(organization_create_form.slug) }}
-        {{ form_button(organization_create_form.submit, "Create", method="POST", class="btn btn-primary") }}
+        {{ render_field(organization_create_form.name) }}
+        {{ render_field(organization_create_form.slug) }}
+        <div class="pt-2">
+          <button type="submit" class="btn btn-primary w-full">Create Organization</button>
+        </div>
       </form>
     </div>
   </div>
@@ -21,9 +30,7 @@
 {% endblock %}
 
 {% block js %}
-<script type="text/javascript">
-(function() {
+<script>
   applySlugify('#name', '#slug');
-})();
 </script>
 {% endblock %}

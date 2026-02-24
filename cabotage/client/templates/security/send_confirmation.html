@@ -1,19 +1,26 @@
 {% extends "_base.html" %}
-{% from "security/_macros.html" import render_field_with_errors, render_field %}
-{% from "bootstrap/wtf.html" import form_errors, form_field %}
-{% from "bootstrap/utils.html" import form_button %}
+{% from "_macros.html" import render_field %}
+
+{% block title %}Resend Confirmation - Cabotage{% endblock %}
 
 {% block content %}
-{% include "security/_messages.html" %}
-<div class="container-fluid clearfix">
-  <div class="row">
-    <div class="col-md-4 col-md-offset-4 col-sm-8 col-xs-8 col-xs-offset-2 col-sm-offset-2">
-      <h1>{{ _('Resend confirmation instructions') }}</h1>
-      <form action="{{ url_for_security('send_confirmation') }}" method="POST" name="send_confirmation_form">
+<div class="form-card">
+  <div class="card bg-base-200 border border-base-300 shadow-xl">
+    <div class="card-body">
+      <div class="text-center mb-6">
+        <h1 class="text-2xl font-semibold text-white">Resend Confirmation</h1>
+        <p class="text-sm text-base-content/50 mt-1">Enter your email to receive a new confirmation link</p>
+      </div>
+
+      {% include "security/_messages.html" %}
+
+      <form action="{{ url_for_security('send_confirmation') }}" method="POST" name="send_confirmation_form" class="flex flex-col gap-4">
         {{ send_confirmation_form.hidden_tag() }}
-        {{ form_field(send_confirmation_form.email) }}
-        {{ form_button(send_confirmation_form.submit, "Resend Confirmation Email", method="POST", class="btn btn-primary") }}
+        {{ render_field(send_confirmation_form.email, placeholder='you@example.com') }}
+        <button type="submit" class="btn btn-primary w-full mt-2">Resend Confirmation Email</button>
       </form>
+
+      {% include "security/_menu.html" %}
     </div>
   </div>
 </div>

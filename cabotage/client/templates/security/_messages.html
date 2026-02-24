@@ -1,11 +1,15 @@
 {%- with messages = get_flashed_messages(with_categories=true) -%}
   {% if messages %}
-    <div class="container">
-      <div class="row">
+    <div class="flex flex-col gap-2 mb-4">
       {% for category, message in messages %}
-        <div class="col alert alert-info {{ category }}">{{ message }}</div>
+        {% set alert_class = 'alert-info' %}
+        {% if category == 'error' or category == 'danger' %}{% set alert_class = 'alert-error' %}
+        {% elif category == 'success' %}{% set alert_class = 'alert-success' %}
+        {% elif category == 'warning' %}{% set alert_class = 'alert-warning' %}{% endif %}
+        <div role="alert" class="alert {{ alert_class }} text-sm py-2">
+          <span>{{ message }}</span>
+        </div>
       {% endfor %}
-      </div>
     </div>
   {% endif %}
 {%- endwith %}
