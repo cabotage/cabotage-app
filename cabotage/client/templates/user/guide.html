@@ -171,7 +171,208 @@
     </div>
   </div>
 
-  {# ===== SECTION 4: ENVIRONMENT VARIABLES ===== #}
+  {# ===== SECTION 4: PROCESSES & PROCFILE ===== #}
+  <div class="mb-10">
+    <div class="flex items-center gap-2 mb-4">
+      {{ icon('terminal', 'w-4 h-4 text-primary') }}
+      <h2 class="text-base font-semibold text-base-content">Processes &amp; Procfile</h2>
+    </div>
+    <p class="text-sm text-base-content/50 mb-5">
+      Your application's processes are defined in a <code class="text-accent/60 bg-transparent p-0">Procfile</code> at the root of your repository. Each line declares a process type and the command to run it.
+    </p>
+
+    <div class="card bg-base-200 border border-base-300 mb-4">
+      <div class="card-body !p-5">
+        <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Process Types</h3>
+        <div class="flex flex-col gap-3">
+          <div class="flex items-start gap-3">
+            <code class="text-sm text-accent font-medium min-w-[7rem] pt-0.5">web</code>
+            <div class="flex-1">
+              <p class="text-sm text-base-content/60 leading-relaxed">
+                The HTTP-facing process. Receives routed traffic from the load balancer. Must bind to a Unix socket provided by the platform. You can scale this to multiple pods.
+              </p>
+            </div>
+          </div>
+          <div class="border-t border-base-content/5"></div>
+          <div class="flex items-start gap-3">
+            <code class="text-sm text-accent font-medium min-w-[7rem] pt-0.5">worker</code>
+            <div class="flex-1">
+              <p class="text-sm text-base-content/60 leading-relaxed">
+                Background job processors, queue consumers, or any long-running process that doesn't serve HTTP. Scalable independently from web.
+              </p>
+            </div>
+          </div>
+          <div class="border-t border-base-content/5"></div>
+          <div class="flex items-start gap-3">
+            <code class="text-sm text-accent font-medium min-w-[7rem] pt-0.5">release</code>
+            <div class="flex-1">
+              <p class="text-sm text-base-content/60 leading-relaxed">
+                A one-off command that runs once during package creation. Use this for database migrations or other setup tasks that need to complete before traffic is routed. The package build will fail if this command exits non-zero.
+              </p>
+            </div>
+          </div>
+          <div class="border-t border-base-content/5"></div>
+          <div class="flex items-start gap-3">
+            <code class="text-sm text-accent font-medium min-w-[7rem] pt-0.5">postdeploy</code>
+            <div class="flex-1">
+              <p class="text-sm text-base-content/60 leading-relaxed">
+                A one-off command that runs once after each successful deploy. Useful for cache warming, notifications, or cleanup tasks. Failures here do not roll back the deploy.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card bg-base-200 border border-base-300">
+      <div class="card-body !p-5">
+        <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Example Procfile</h3>
+        <div class="code-block !text-xs !leading-relaxed">
+          <div class="procfile-line">
+            <span class="procfile-service">web</span><span class="procfile-sep">:</span> <span class="procfile-command">gunicorn app:app --bind unix:/tmp/nginx.socket</span>
+          </div>
+          <div class="procfile-line">
+            <span class="procfile-service">worker</span><span class="procfile-sep">:</span> <span class="procfile-command">celery -A app.celery worker --loglevel=info</span>
+          </div>
+          <div class="procfile-line">
+            <span class="procfile-service">release</span><span class="procfile-sep">:</span> <span class="procfile-command">flask db upgrade</span>
+          </div>
+        </div>
+        <div class="flex items-start gap-2 p-3 mt-3 rounded-lg bg-base-300/50 border border-base-content/5">
+          {{ icon('info', 'w-3.5 h-3.5 text-info/50 mt-0.5 flex-shrink-0') }}
+          <p class="text-xs text-base-content/40 leading-relaxed">
+            Only <code class="text-accent/60 bg-transparent p-0">web</code> and <code class="text-accent/60 bg-transparent p-0">worker</code> processes are scalable. <code class="text-accent/60 bg-transparent p-0">release</code> and <code class="text-accent/60 bg-transparent p-0">postdeploy</code> always run exactly once.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ===== SECTION 5: POD SIZES ===== #}
+  <div class="mb-10">
+    <div class="flex items-center gap-2 mb-4">
+      {{ icon('box', 'w-4 h-4 text-primary') }}
+      <h2 class="text-base font-semibold text-base-content">Pod Sizes</h2>
+    </div>
+    <p class="text-sm text-base-content/50 mb-5">
+      Each process runs in a pod with dedicated CPU and memory. Choose a size based on your workload. The naming convention indicates the optimization: <strong class="text-base-content/70">m1</strong> is balanced, <strong class="text-base-content/70">c1</strong> is CPU-optimized, and <strong class="text-base-content/70">r1</strong> is memory-optimized.
+    </p>
+
+    <div class="card bg-base-200 border border-base-300">
+      <div class="card-body !p-5">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-base-content/40 text-xs uppercase tracking-wider">
+              <th class="text-left pb-2 font-medium">Size</th>
+              <th class="text-left pb-2 font-medium">Type</th>
+              <th class="text-right pb-2 font-medium">CPU (request)</th>
+              <th class="text-right pb-2 font-medium">CPU (limit)</th>
+              <th class="text-right pb-2 font-medium">Mem (request)</th>
+              <th class="text-right pb-2 font-medium">Mem (limit)</th>
+            </tr>
+          </thead>
+          <tbody class="text-base-content/60">
+            <tr class="border-t border-base-content/5">
+              <td class="py-1.5 font-mono text-accent/70">m1.small</td>
+              <td class="py-1.5">Balanced</td>
+              <td class="py-1.5 text-right">125m</td>
+              <td class="py-1.5 text-right">250m</td>
+              <td class="py-1.5 text-right">256Mi</td>
+              <td class="py-1.5 text-right">384Mi</td>
+            </tr>
+            <tr class="border-t border-base-content/5">
+              <td class="py-1.5 font-mono text-accent/70">m1.medium</td>
+              <td class="py-1.5">Balanced</td>
+              <td class="py-1.5 text-right">250m</td>
+              <td class="py-1.5 text-right">500m</td>
+              <td class="py-1.5 text-right">512Mi</td>
+              <td class="py-1.5 text-right">768Mi</td>
+            </tr>
+            <tr class="border-t border-base-content/5">
+              <td class="py-1.5 font-mono text-accent/70">m1.large</td>
+              <td class="py-1.5">Balanced</td>
+              <td class="py-1.5 text-right">500m</td>
+              <td class="py-1.5 text-right">1000m</td>
+              <td class="py-1.5 text-right">1024Mi</td>
+              <td class="py-1.5 text-right">1536Mi</td>
+            </tr>
+            <tr class="border-t border-base-content/10">
+              <td class="py-1.5 font-mono text-accent/70">c1.small</td>
+              <td class="py-1.5">CPU</td>
+              <td class="py-1.5 text-right">250m</td>
+              <td class="py-1.5 text-right">375m</td>
+              <td class="py-1.5 text-right">256Mi</td>
+              <td class="py-1.5 text-right">384Mi</td>
+            </tr>
+            <tr class="border-t border-base-content/5">
+              <td class="py-1.5 font-mono text-accent/70">c1.medium</td>
+              <td class="py-1.5">CPU</td>
+              <td class="py-1.5 text-right">500m</td>
+              <td class="py-1.5 text-right">750m</td>
+              <td class="py-1.5 text-right">512Mi</td>
+              <td class="py-1.5 text-right">768Mi</td>
+            </tr>
+            <tr class="border-t border-base-content/5">
+              <td class="py-1.5 font-mono text-accent/70">c1.large</td>
+              <td class="py-1.5">CPU</td>
+              <td class="py-1.5 text-right">1000m</td>
+              <td class="py-1.5 text-right">1500m</td>
+              <td class="py-1.5 text-right">1024Mi</td>
+              <td class="py-1.5 text-right">1536Mi</td>
+            </tr>
+            <tr class="border-t border-base-content/10">
+              <td class="py-1.5 font-mono text-accent/70">r1.small</td>
+              <td class="py-1.5">Memory</td>
+              <td class="py-1.5 text-right">125m</td>
+              <td class="py-1.5 text-right">250m</td>
+              <td class="py-1.5 text-right">1024Mi</td>
+              <td class="py-1.5 text-right">1536Mi</td>
+            </tr>
+            <tr class="border-t border-base-content/5">
+              <td class="py-1.5 font-mono text-accent/70">r1.medium</td>
+              <td class="py-1.5">Memory</td>
+              <td class="py-1.5 text-right">250m</td>
+              <td class="py-1.5 text-right">500m</td>
+              <td class="py-1.5 text-right">1536Mi</td>
+              <td class="py-1.5 text-right">2304Mi</td>
+            </tr>
+            <tr class="border-t border-base-content/5">
+              <td class="py-1.5 font-mono text-accent/70">r1.large</td>
+              <td class="py-1.5">Memory</td>
+              <td class="py-1.5 text-right">500m</td>
+              <td class="py-1.5 text-right">1000m</td>
+              <td class="py-1.5 text-right">2048Mi</td>
+              <td class="py-1.5 text-right">3072Mi</td>
+            </tr>
+            <tr class="border-t border-base-content/5">
+              <td class="py-1.5 font-mono text-accent/70">r1.xlarge</td>
+              <td class="py-1.5">Memory</td>
+              <td class="py-1.5 text-right">750m</td>
+              <td class="py-1.5 text-right">1500m</td>
+              <td class="py-1.5 text-right">2048Mi</td>
+              <td class="py-1.5 text-right">3072Mi</td>
+            </tr>
+            <tr class="border-t border-base-content/5">
+              <td class="py-1.5 font-mono text-accent/70">r1.2xlarge</td>
+              <td class="py-1.5">Memory</td>
+              <td class="py-1.5 text-right">1500m</td>
+              <td class="py-1.5 text-right">1500m</td>
+              <td class="py-1.5 text-right">4096Mi</td>
+              <td class="py-1.5 text-right">4096Mi</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="flex items-start gap-2 p-3 mt-3 rounded-lg bg-base-300/50 border border-base-content/5">
+          {{ icon('info', 'w-3.5 h-3.5 text-info/50 mt-0.5 flex-shrink-0') }}
+          <p class="text-xs text-base-content/40 leading-relaxed">
+            <strong class="text-base-content/50">Request</strong> is the guaranteed minimum. <strong class="text-base-content/50">Limit</strong> is the maximum the pod can burst to. CPU is measured in millicores (1000m = 1 core). The default size is <code class="text-accent/60 bg-transparent p-0">m1.large</code>.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ===== SECTION 6: ENVIRONMENT VARIABLES ===== #}
   <div class="mb-6">
     <div class="flex items-center gap-2 mb-4">
       {{ icon('settings', 'w-4 h-4 text-primary') }}
