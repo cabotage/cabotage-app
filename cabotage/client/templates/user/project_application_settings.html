@@ -1,16 +1,29 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import render_field, icon, resource_path %}
+{% from "_macros.html" import render_field_compact, icon, resource_path, app_tab_nav %}
+
+{% set org_slug = application.project.organization.slug %}
+{% set project_slug = application.project.slug %}
+{% set app_slug = application.slug %}
 
 {% block title %}
-  Settings - Cabotage
+  Settings - {{ app_slug }} - Cabotage
 {% endblock title %}
 
 {% block resource_path %}
-  {{ resource_path([{"label": "Settings"}]) }}
+  {{ resource_path([
+    {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug) },
+  {'label': project_slug, 'url': url_for('user.project', org_slug=org_slug, project_slug=project_slug)},
+  {'label': app_slug, 'url': url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug)},
+  {'label': 'Settings'}
+  ]) }}
 {% endblock resource_path %}
 
+{% block tab_bar %}
+  {{ app_tab_nav(application, 'settings') }}
+{% endblock tab_bar %}
+
 {% block content %}
-  <div class="max-w-2xl mx-auto">
+  <div class="settings-page">
 
     {# ===== PAGE HEADER ===== #}
     <div class="flex items-center justify-between mb-6">
@@ -23,112 +36,79 @@
           <p class="text-sm text-base-content/40">Configure how your application builds, deploys, and stays healthy</p>
         </div>
       </div>
+      <button type="submit"
+              form="settings-form"
+              class="btn btn-primary btn-sm gap-1.5">
+        {{ icon('check', 'w-3.5 h-3.5') }}
+        Save Settings
+      </button>
     </div>
 
     <form action="{{ url_for('user.project_application_settings', application_id=form.application_id.data) }}"
           method="post"
-          name="project_application_settings_form"
-          class="flex flex-col gap-5">
+          id="settings-form"
+          name="project_application_settings_form">
       {{ form.hidden_tag() }}
       {{ form.application_id() }}
 
       {# ================================================================ #}
       {# SECTION 1: SOURCE & AUTOMATION                                   #}
-      {# This is the most common thing people configure first             #}
       {# ================================================================ #}
-      <div class="settings-section">
-        <div class="settings-section-header">
-          <div class="settings-section-icon bg-warning/10 text-warning">{{ icon('zap', 'w-4 h-4') }}</div>
+      <div class="settings-row">
+        <div class="settings-row-label">
+          <div class="settings-row-icon bg-warning/10 text-warning">{{ icon('zap', 'w-4 h-4') }}</div>
           <div>
             <h2 class="text-sm font-semibold text-base-content">Source & Automation</h2>
-            <p class="text-xs text-base-content/40">Connect a GitHub repository for automatic builds and deploys</p>
-          </div>
-        </div>
-
-        <div class="settings-section-body">
-          {# GitHub App install hint #}
-          <div class="flex items-start gap-2.5 p-3 rounded-lg bg-info/5 border border-info/10 mb-1">
-            {{ icon('external-link', 'w-3.5 h-3.5 text-info/60 mt-0.5 flex-shrink-0') }}
-            <p class="text-xs text-base-content/50 leading-relaxed">
-              To enable automation, <a href="{{ app_url }}"
+            <p class="text-xs text-base-content/40 mt-0.5">Connect a GitHub repository for automatic builds and deploys</p>
+            <div class="settings-row-hint">
+              {% if application.github_app_installation_id %}
+                {{ icon('check-circle', 'w-3 h-3 text-success/60 flex-shrink-0') }}
+                <span class="text-success/70">GitHub App connected (installation {{ application.github_app_installation_id }})</span>
+              {% else %}
+                {{ icon('external-link', 'w-3 h-3 text-info/60 flex-shrink-0') }}
+                <span>To enable, <a href="{{ app_url }}"
     class="text-accent hover:underline"
-    target="_blank">install the GitHub App</a> and grant it access to your repository.
-            </p>
-          </div>
-
-          {{ render_field(form.github_repository, placeholder='owner/repo') }}
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
-            {{ render_field(form.auto_deploy_branch, placeholder='main') }}
-            {{ render_field(form.subdirectory, placeholder='/') }}
-          </div>
-
-          {{ render_field(form.github_repository_is_private) }}
-
-          <details class="settings-advanced">
-            <summary class="settings-advanced-toggle">
-              {{ icon('settings', 'w-3 h-3') }}
-              <span>Advanced GitHub settings</span>
-              <svg class="collapse-icon w-3 h-3 text-base-content/30 ml-auto"
-                   viewBox="0 0 24 24"
-                   fill="none"
-                   stroke="currentColor"
-                   stroke-width="2">
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
-            </summary>
-            <div class="settings-advanced-body">
-              {{ render_field(form.github_app_installation_id) }}
-              {{ render_field(form.github_environment_name) }}
+    target="_blank">install the GitHub App</a> and grant access.</span>
+              {% endif %}
             </div>
-          </details>
+          </div>
+        </div>
+        <div class="settings-row-fields">
+          <div class="settings-field-grid-3">
+            {{ render_field_compact(form.github_repository, placeholder='owner/repo', label='Repository') }}
+            {{ render_field_compact(form.auto_deploy_branch, placeholder='main', label='Branch') }}
+            {{ render_field_compact(form.subdirectory, placeholder='/', label='Subdirectory') }}
+          </div>
+          <div class="settings-field-grid-2">
+            {{ render_field_compact(form.github_app_installation_id, label='Installation ID') }}
+            {{ render_field_compact(form.github_environment_name, placeholder='cabotage/' + form.application_id.data, label='Environment') }}
+          </div>
+          {{ render_field_compact(form.github_repository_is_private, label='Private Repository') }}
         </div>
       </div>
 
       {# ================================================================ #}
-      {# SECTION 2: HEALTH CHECKS                                        #}
-      {# How the platform knows your app is alive                        #}
+      {# SECTION 2: HEALTH CHECKS + DEPLOYMENT                           #}
       {# ================================================================ #}
-      <div class="settings-section">
-        <div class="settings-section-header">
-          <div class="settings-section-icon bg-success/10 text-success">{{ icon('activity', 'w-4 h-4') }}</div>
+      <div class="settings-row">
+        <div class="settings-row-label">
+          <div class="settings-row-icon bg-success/10 text-success">{{ icon('activity', 'w-4 h-4') }}</div>
           <div>
-            <h2 class="text-sm font-semibold text-base-content">Health Checks</h2>
-            <p class="text-xs text-base-content/40">How the platform verifies your application is running correctly</p>
+            <h2 class="text-sm font-semibold text-base-content">Health & Deployment</h2>
+            <p class="text-xs text-base-content/40 mt-0.5">Health probes and rollout behavior</p>
           </div>
         </div>
-
-        <div class="settings-section-body">
-          <div class="flex items-start gap-2.5 p-3 rounded-lg bg-base-300/50 border border-base-content/5 mb-1">
-            {{ icon('alert-triangle', 'w-3.5 h-3.5 text-warning/50 mt-0.5 flex-shrink-0') }}
-            <p class="text-xs text-base-content/40 leading-relaxed">
-              Changes to health checks require a <strong class="text-base-content/60">new package</strong> to take effect.
-            </p>
+        <div class="settings-row-fields">
+          <div class="settings-field-grid-3">
+            {{ render_field_compact(form.health_check_path, placeholder='/healthz', label='Health Path') }}
+            {{ render_field_compact(form.health_check_host, label='Health Host') }}
+            {{ render_field_compact(form.deployment_timeout, label='Deploy Timeout') }}
           </div>
-
-          {{ render_field(form.health_check_path, placeholder='/healthz') }}
-          {{ render_field(form.health_check_host) }}
         </div>
       </div>
 
-      {# ================================================================ #}
-      {# SECTION 3: DEPLOYMENT                                           #}
-      {# Timeout and rollout behavior                                    #}
-      {# ================================================================ #}
-      <div class="settings-section">
-        <div class="settings-section-header">
-          <div class="settings-section-icon bg-accent/10 text-accent">{{ icon('deploy', 'w-4 h-4') }}</div>
-          <div>
-            <h2 class="text-sm font-semibold text-base-content">Deployment</h2>
-            <p class="text-xs text-base-content/40">Control deployment rollout behavior</p>
-          </div>
-        </div>
-
-        <div class="settings-section-body">{{ render_field(form.deployment_timeout) }}</div>
-      </div>
-
-      {# ===== ACTIONS ===== #}
-      <div class="flex items-center justify-between pt-1 pb-4">
+      {# ===== ACTIONS (bottom) ===== #}
+      <div class="settings-row-actions">
         <a href="#"
            onclick="history.back();return false"
            class="btn btn-ghost btn-sm">Cancel</a>
