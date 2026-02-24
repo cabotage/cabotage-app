@@ -195,11 +195,7 @@ function initThemeToggle() {
     localStorage.setItem('theme-pref', pref);
     var meta = document.querySelector('meta[name="theme-color"]');
     if (meta) {
-      var metaColors = {
-        light: '#fafafe', terminal: '#0a0a0a',
-        'contrast-dark': '#010409', 'contrast-light': '#ffffff'
-      };
-      meta.content = metaColors[resolved] || '#0f0f17';
+      meta.content = resolved === 'light' ? '#fafafe' : resolved === 'terminal' ? '#0a0a0a' : '#0f0f17';
     }
     // When entering terminal, auto-switch accent to white
     var accent = localStorage.getItem('accent-color') || 'purple';
@@ -207,6 +203,7 @@ function initThemeToggle() {
       accent = 'white';
       localStorage.setItem('accent-color', accent);
       document.documentElement.setAttribute('data-accent', accent);
+      // Update swatch highlight if accent picker is initialized
       document.querySelectorAll('.accent-opt').forEach(function (b) {
         b.style.borderColor = b.getAttribute('data-accent') === accent ? 'var(--color-base-content)' : 'transparent';
       });
@@ -555,7 +552,7 @@ function syncDetailLogHeight() {
 }
 
 /* ---------- Build Progress Tracker ---------- */
-function BuildProgressTracker(barFill, phaseLabel, type, stepsContainer, elapsedEl, serverStartTime) {
+function BuildProgressTracker(barFill, phaseLabel, type, stepsContainer, elapsedEl) {
   this.barFill = barFill;
   this.phaseLabel = phaseLabel;
   this.stepsContainer = stepsContainer;
@@ -566,11 +563,10 @@ function BuildProgressTracker(barFill, phaseLabel, type, stepsContainer, elapsed
   this.totalSteps = 0;
   this.activated = false;
   this.currentStepIdx = -1;
-  this.startTime = serverStartTime ? new Date(serverStartTime).getTime() : Date.now();
+  this.startTime = Date.now();
   this.timerInterval = null;
   this.errored = false;
   this.errorStepIdx = -1;
-  this.linesReceived = 0;
   this.phaseStartTimes = {};
   this.phaseDurations = {};
 
@@ -704,7 +700,6 @@ BuildProgressTracker.prototype.setPhase = function (text) {
 };
 
 BuildProgressTracker.prototype.processLine = function (line) {
-  this.linesReceived++;
   if (this.type === 'deploy') {
     this.processDeployLine(line);
   } else {
@@ -788,15 +783,8 @@ BuildProgressTracker.prototype.processDeployLine = function (line) {
 };
 
 BuildProgressTracker.prototype.complete = function () {
-  this.stopTimer();
-
-  // No log content was received — don't show false success
-  if (this.linesReceived === 0) {
-    this.setPhase('No logs available');
-    return;
-  }
-
   this.activate();
+  this.stopTimer();
 
   // Finalize duration for the last active step
   if (
@@ -1466,59 +1454,10 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-/* ---------- Live Timestamp Ticker ---------- */
-/* Keeps all <time data-timestamp="..."> elements up-to-date every second */
-
-function timeago(date) {
-  var now = Date.now();
-  var diff = Math.max(0, Math.floor((now - date.getTime()) / 1000));
-  if (diff < 2) return 'just now';
-  if (diff < 60) return diff + ' seconds ago';
-  var m = Math.floor(diff / 60);
-  if (m === 1) return 'a minute ago';
-  if (m < 60) return m + ' minutes ago';
-  var h = Math.floor(m / 60);
-  if (h === 1) return 'an hour ago';
-  if (h < 24) return h + ' hours ago';
-  var d = Math.floor(h / 24);
-  if (d === 1) return 'a day ago';
-  return d + ' days ago';
-}
-
-var _timestampTickerInterval = null;
-
-function tickTimestamps() {
-  var els = document.querySelectorAll('time[data-timestamp]');
-  for (var i = 0; i < els.length; i++) {
-    var iso = els[i].getAttribute('data-timestamp');
-    if (!iso) continue;
-    var d = new Date(iso);
-    if (isNaN(d.getTime())) continue;
-    els[i].textContent = timeago(d);
-  }
-}
-
-function startTimestampTicker() {
-  if (_timestampTickerInterval) return;
-  tickTimestamps(); // immediate tick
-  _timestampTickerInterval = setInterval(tickTimestamps, 1000);
-}
-
-function stopTimestampTicker() {
-  if (_timestampTickerInterval) {
-    clearInterval(_timestampTickerInterval);
-    _timestampTickerInterval = null;
-  }
-}
-
 function initPipelineTracker() {
   var container = document.querySelector('[data-pipeline-tracker]');
   if (container) {
     window.pipelineTracker = new PipelineTracker(container);
-  }
-  // Always start the timestamp ticker on pages with timestamps
-  if (document.querySelector('time[data-timestamp]')) {
-    startTimestampTicker();
   }
 
   // Auto-deploy form: show spinner, let browser submit normally so
@@ -1659,11 +1598,11 @@ function ObservabilityPanel(container) {
   this.memValue = container.querySelector('[data-obs-mem-value]');
   this.memLimit = container.querySelector('[data-obs-mem-limit]');
   this.memGauge = container.querySelector('[data-obs-mem-gauge]');
-  this.podValue = container.querySelector('[data-obs-pod-count]');
-  this.podLabel = container.querySelector('[data-obs-pod-status]');
-  this.restartValue = container.querySelector('[data-obs-restart-count]');
-  this.cpuChart = container.querySelector('[data-obs-cpu-chart] svg');
-  this.memChart = container.querySelector('[data-obs-mem-chart] svg');
+  this.podValue = container.querySelector('[data-obs-pod-value]');
+  this.podLabel = container.querySelector('[data-obs-pod-label]');
+  this.restartValue = container.querySelector('[data-obs-restart-value]');
+  this.cpuChart = container.querySelector('[data-obs-cpu-chart]');
+  this.memChart = container.querySelector('[data-obs-mem-chart]');
   this.podsGrid = container.querySelector('[data-obs-pods-grid]');
   this.eventsEl = container.querySelector('[data-obs-events]');
 
@@ -1715,18 +1654,8 @@ ObservabilityPanel.prototype.deactivate = function () {
   }
 };
 
-ObservabilityPanel.prototype.setLoading = function (loading) {
-  if (!this.container) return;
-  var cards = this.container.querySelectorAll('.obs-metric-card, .obs-chart-card, .obs-section-card');
-  cards.forEach(function (card) {
-    if (loading) card.classList.add('obs-loading');
-    else card.classList.remove('obs-loading');
-  });
-};
-
 ObservabilityPanel.prototype.fetch = function () {
   var self = this;
-  if (!this._loaded) this.setLoading(true);
   var url = '/applications/' + this.appId + '/observability?range=' + this.range;
   fetch(url, { credentials: 'same-origin' })
     .then(function (r) {
@@ -1734,12 +1663,9 @@ ObservabilityPanel.prototype.fetch = function () {
       return r.json();
     })
     .then(function (data) {
-      self._loaded = true;
-      self.setLoading(false);
       self.render(data);
     })
     .catch(function (err) {
-      self.setLoading(false);
       console.warn('Observability fetch error:', err);
     });
 };
@@ -1826,65 +1752,34 @@ ObservabilityPanel.prototype.renderChart = function (svgEl, history, key, limit,
     return;
   }
 
-  var isMemory = key === 'memory_usage_bytes';
-  var self = this;
   var w = 600,
     h = 200,
-    padL = 52,
-    padR = 10,
-    padT = 30,
-    padB = 30;
+    pad = 30;
   var values = history.map(function (p) {
     return p[key] || 0;
   });
-  var dataMax = Math.max.apply(null, values);
-  var dataMin = Math.min.apply(null, values);
-
-  // Auto-scale to data range with 20% headroom; show limit line as reference
-  var maxVal = dataMax * 1.2 || 1;
-  // If limit is close to the data (within 2x), include it in the range
-  if (limit && limit <= dataMax * 2) maxVal = Math.max(maxVal, limit * 1.05);
+  var maxVal = Math.max.apply(null, values);
+  if (limit && limit > maxVal) maxVal = limit;
   if (maxVal === 0) maxVal = 1;
 
   // Scale values
-  var chartW = w - padL - padR;
-  var chartH = h - padT - padB;
-  var xStep = chartW / Math.max(values.length - 1, 1);
+  var xStep = (w - pad) / Math.max(values.length - 1, 1);
   var points = values.map(function (v, i) {
-    return { x: padL + i * xStep, y: padT + chartH - (v / maxVal) * chartH };
+    return { x: pad + i * xStep, y: h - pad - (v / maxVal) * (h - 2 * pad) };
   });
 
   var svg = '';
 
-  // Grid lines + Y-axis labels
+  // Grid lines
   for (var g = 0; g < 4; g++) {
-    var gy = padT + (chartH / 3) * g;
-    var gridVal = maxVal * (1 - g / 3);
-    var label = isMemory ? self.formatBytes(gridVal) : Math.round(gridVal) + 'm';
-    svg += '<line x1="' + padL + '" y1="' + gy + '" x2="' + (w - padR) + '" y2="' + gy + '" class="obs-grid-line" />';
-    svg +=
-      '<text x="' +
-      (padL - 4) +
-      '" y="' +
-      (gy + 4) +
-      '" text-anchor="end" class="obs-chart-label">' +
-      label +
-      '</text>';
+    var gy = pad + ((h - 2 * pad) / 3) * g;
+    svg += '<line x1="' + pad + '" y1="' + gy + '" x2="' + w + '" y2="' + gy + '" class="obs-grid-line" />';
   }
 
-  // Limit line (only draw if it falls within the visible range)
-  if (limit && limit <= maxVal) {
-    var ly = padT + chartH - (limit / maxVal) * chartH;
-    svg += '<line x1="' + padL + '" y1="' + ly + '" x2="' + (w - padR) + '" y2="' + ly + '" class="obs-limit-line" />';
-    var limitLabel = isMemory ? self.formatBytes(limit) : Math.round(limit) + 'm';
-    svg +=
-      '<text x="' +
-      (w - padR) +
-      '" y="' +
-      (ly - 4) +
-      '" text-anchor="end" class="obs-chart-label obs-chart-limit-label">' +
-      limitLabel +
-      ' limit</text>';
+  // Limit line
+  if (limit) {
+    var ly = h - pad - (limit / maxVal) * (h - 2 * pad);
+    svg += '<line x1="' + pad + '" y1="' + ly + '" x2="' + w + '" y2="' + ly + '" class="obs-limit-line" />';
   }
 
   // Area fill
@@ -1893,24 +1788,9 @@ ObservabilityPanel.prototype.renderChart = function (svgEl, history, key, limit,
     pathD += ' L' + points[i].x + ',' + points[i].y;
   }
   var areaD =
-    pathD + ' L' + points[points.length - 1].x + ',' + (h - padB) + ' L' + points[0].x + ',' + (h - padB) + ' Z';
+    pathD + ' L' + points[points.length - 1].x + ',' + (h - pad) + ' L' + points[0].x + ',' + (h - pad) + ' Z';
   svg += '<path d="' + areaD + '" class="obs-area-fill" fill="' + color + '" />';
   svg += '<path d="' + pathD + '" class="obs-line" stroke="' + color + '" />';
-
-  // Current value label at the last data point
-  var lastPt = points[points.length - 1];
-  var lastVal = values[values.length - 1];
-  var currentLabel = isMemory ? self.formatBytes(lastVal) : Math.round(lastVal) + 'm';
-  svg +=
-    '<text x="' +
-    lastPt.x +
-    '" y="' +
-    (lastPt.y - 8) +
-    '" text-anchor="end" class="obs-chart-current-label" fill="' +
-    color +
-    '">' +
-    currentLabel +
-    '</text>';
 
   svgEl.innerHTML = svg;
 };
@@ -1991,395 +1871,6 @@ function initObservabilityPanel() {
   var container = document.querySelector('[data-observability-panel]');
   if (!container) return;
   window.observabilityPanel = new ObservabilityPanel(container);
-}
-
-/* ---------- Pipeline Metrics Panel ---------- */
-function PipelineMetricsPanel(container) {
-  this.container = container;
-  this.appId = container.getAttribute('data-application-id');
-  this.active = false;
-  this.range = 50;
-
-  // DOM refs — summary cards
-  this.buildRate = container.querySelector('[data-pm-build-rate]');
-  this.buildCounts = container.querySelector('[data-pm-build-counts]');
-  this.buildAvg = container.querySelector('[data-pm-build-avg]');
-  this.deployAvg = container.querySelector('[data-pm-deploy-avg]');
-
-  // DOM refs — stat chips
-  this.buildChips = container.querySelector('[data-pm-build-chips]');
-  this.releaseChips = container.querySelector('[data-pm-release-chips]');
-  this.deployChips = container.querySelector('[data-pm-deploy-chips]');
-
-  // DOM refs — charts
-  this.buildChart = container.querySelector('[data-pm-build-chart]');
-  this.releaseChart = container.querySelector('[data-pm-release-chart]');
-  this.deployChart = container.querySelector('[data-pm-deploy-chart]');
-
-  // Range buttons
-  var self = this;
-  var rangeButtons = container.querySelectorAll('[data-pm-range]');
-  rangeButtons.forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      rangeButtons.forEach(function (b) {
-        b.classList.remove('obs-range-active');
-      });
-      btn.classList.add('obs-range-active');
-      self.range = parseInt(btn.getAttribute('data-pm-range'), 10);
-      self.fetch();
-    });
-  });
-
-  // Tab lifecycle
-  var panel = container.closest('[data-tab-panel]');
-  if (panel) {
-    panel.addEventListener('tab-activated', function () {
-      self.activate();
-    });
-    panel.addEventListener('tab-deactivated', function () {
-      self.deactivate();
-    });
-    if (panel.classList.contains('tab-panel-active')) {
-      self.activate();
-    }
-  }
-}
-
-PipelineMetricsPanel.prototype.activate = function () {
-  if (this.active) return;
-  this.active = true;
-  this.fetch();
-};
-
-PipelineMetricsPanel.prototype.deactivate = function () {
-  this.active = false;
-};
-
-PipelineMetricsPanel.prototype.fetch = function () {
-  var self = this;
-  var url = '/applications/' + this.appId + '/pipeline-metrics?range=' + this.range;
-  fetch(url, { credentials: 'same-origin' })
-    .then(function (r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
-    .then(function (data) {
-      self.render(data);
-    })
-    .catch(function (err) {
-      console.warn('Pipeline metrics fetch error:', err);
-    });
-};
-
-PipelineMetricsPanel.prototype.formatDuration = function (secs) {
-  if (secs == null) return '—';
-  if (secs < 60) return secs + 's';
-  var m = Math.floor(secs / 60);
-  var s = secs % 60;
-  return m + 'm ' + s + 's';
-};
-
-PipelineMetricsPanel.prototype.render = function (data) {
-  // Summary cards
-  if (this.buildRate) {
-    this.buildRate.textContent =
-      data.images.success_rate != null ? data.images.success_rate + '%' : '—';
-  }
-  if (this.buildCounts) {
-    this.buildCounts.textContent =
-      data.images.total > 0
-        ? data.images.success + ' ok / ' + data.images.error + ' err of ' + data.images.total
-        : '';
-  }
-  if (this.buildAvg) {
-    this.buildAvg.textContent = this.formatDuration(data.images.avg_secs);
-  }
-  if (this.deployAvg) {
-    this.deployAvg.textContent = this.formatDuration(data.deployments.avg_secs);
-  }
-
-  // Stage sections
-  this.renderStage(this.buildChips, this.buildChart, data.images, '/image/');
-  this.renderStage(this.releaseChips, this.releaseChart, data.releases, '/release/');
-  this.renderStage(this.deployChips, this.deployChart, data.deployments, '/deployment/');
-};
-
-PipelineMetricsPanel.prototype.renderStage = function (chipsEl, svgEl, stage, urlPrefix) {
-  // Stat chips
-  if (chipsEl) {
-    var chips = '';
-    chips += '<span class="pm-stat-chip">' + stage.total + ' total</span>';
-    chips += '<span class="pm-stat-chip pm-stat-chip-ok">' + stage.success + ' ok</span>';
-    if (stage.error > 0) {
-      chips += '<span class="pm-stat-chip pm-stat-chip-err">' + stage.error + ' err</span>';
-    }
-    if (stage.p50_secs != null) {
-      chips += '<span class="pm-stat-chip">p50 ' + this.formatDuration(stage.p50_secs) + '</span>';
-    }
-    if (stage.p95_secs != null) {
-      chips += '<span class="pm-stat-chip">p95 ' + this.formatDuration(stage.p95_secs) + '</span>';
-    }
-    chipsEl.innerHTML = chips;
-  }
-
-  // Bar chart
-  this.renderBarChart(svgEl, stage.history, stage.avg_secs, urlPrefix);
-};
-
-PipelineMetricsPanel.prototype.renderBarChart = function (svgEl, history, avgSecs, urlPrefix) {
-  if (!svgEl) return;
-  if (!history || !history.length) {
-    svgEl.innerHTML =
-      '<text x="300" y="60" text-anchor="middle" fill="var(--text-muted)" font-size="13">No data yet</text>';
-    return;
-  }
-
-  var w = 600,
-    h = 120,
-    padL = 4,
-    padR = 30, // room for avg label
-    padTB = 4;
-  var n = history.length;
-  var gap = 2;
-  var barW = Math.max(1, (w - padL - padR - (n - 1) * gap) / n);
-
-  // Compute ceiling from durations
-  var maxSecs = 1;
-  history.forEach(function (item) {
-    if (item.secs != null && item.secs > maxSecs) maxSecs = item.secs;
-  });
-  var ceiling = maxSecs * 1.15;
-
-  var svg = '';
-
-  // Avg line
-  if (avgSecs != null && avgSecs > 0) {
-    var avgY = h - padTB - (avgSecs / ceiling) * (h - 2 * padTB);
-    svg +=
-      '<line x1="' + padL + '" y1="' + avgY + '" x2="' + (w - 4) + '" y2="' + avgY + '" ' +
-      'stroke="var(--text-faintest)" stroke-width="1" stroke-dasharray="4 3" />';
-    svg +=
-      '<text x="' + (w - 2) + '" y="' + (avgY - 4) + '" text-anchor="end" ' +
-      'fill="var(--text-faintest)" font-size="10">avg</text>';
-  }
-
-  // Bars
-  var self = this;
-  history.forEach(function (item, i) {
-    var x = padL + i * (barW + gap);
-    var secs = item.secs;
-    var href = item.id && urlPrefix ? urlPrefix + item.id : null;
-    if (secs == null || secs <= 0) {
-      // In-progress or no duration — show minimal gray bar
-      var stub =
-        '<rect x="' + x + '" y="' + (h - padTB - 3) + '" width="' + barW + '" height="3" ' +
-        'rx="1" fill="var(--text-faintest)" opacity="0.3" class="pm-bar">' +
-        '<title>#' + (item.version || '?') + ' — in progress</title></rect>';
-      svg += href ? '<a href="' + href + '">' + stub + '</a>' : stub;
-      return;
-    }
-    var barH = Math.max(2, (secs / ceiling) * (h - 2 * padTB));
-    var barY = h - padTB - barH;
-    var color = item.error ? '#ef4444' : item.ok ? '#22c55e' : 'var(--text-faintest)';
-    var tooltip =
-      '#' + (item.version || '?') + ' — ' + self.formatDuration(secs) + (item.error ? ' (error)' : '');
-    var bar =
-      '<rect x="' + x + '" y="' + barY + '" width="' + barW + '" height="' + barH + '" ' +
-      'rx="1" fill="' + color + '" opacity="0.85" class="pm-bar">' +
-      '<title>' + tooltip + '</title></rect>';
-    svg += href ? '<a href="' + href + '">' + bar + '</a>' : bar;
-  });
-
-  svgEl.innerHTML = svg;
-};
-
-function initPipelineMetricsPanel() {
-  var container = document.querySelector('[data-pipeline-metrics-panel]');
-  if (!container) return;
-  window.pipelineMetricsPanel = new PipelineMetricsPanel(container);
-}
-
-/* ---------- Live Status Mini (Overview tab) ---------- */
-function ObservabilityMini(container) {
-  this.container = container;
-  this.appId = container.getAttribute('data-application-id');
-  this.timer = null;
-  this._loaded = false;
-
-  // DOM refs
-  this.cpuValue = container.querySelector('[data-ls-cpu-value]');
-  this.cpuSpark = container.querySelector('[data-ls-cpu-spark]');
-  this.memValue = container.querySelector('[data-ls-mem-value]');
-  this.memSpark = container.querySelector('[data-ls-mem-spark]');
-  this.podCount = container.querySelector('[data-ls-pod-count]');
-  this.podDots = container.querySelector('[data-ls-pod-dots]');
-}
-
-ObservabilityMini.prototype.activate = function () {
-  if (this.timer) return;
-  this.container.classList.add('ls-loading');
-  this.fetch();
-  var self = this;
-  this.timer = setInterval(function () {
-    self.fetch();
-  }, 30000);
-};
-
-ObservabilityMini.prototype.deactivate = function () {
-  if (this.timer) {
-    clearInterval(this.timer);
-    this.timer = null;
-  }
-};
-
-ObservabilityMini.prototype.fetch = function () {
-  var self = this;
-  var url = '/applications/' + this.appId + '/observability?range=1h';
-  fetch(url, { credentials: 'same-origin' })
-    .then(function (r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
-    .then(function (data) {
-      self.container.classList.remove('ls-loading');
-      self._loaded = true;
-      self.render(data);
-    })
-    .catch(function () {
-      self.container.classList.remove('ls-loading');
-    });
-};
-
-ObservabilityMini.prototype.formatBytes = function (bytes) {
-  if (bytes == null) return '—';
-  if (bytes < 1024) return bytes + 'B';
-  if (bytes < 1048576) return (bytes / 1024).toFixed(0) + 'Ki';
-  if (bytes < 1073741824) return (bytes / 1048576).toFixed(0) + 'Mi';
-  return (bytes / 1073741824).toFixed(1) + 'Gi';
-};
-
-ObservabilityMini.prototype.render = function (data) {
-  var current = data.current;
-  var limits = data.limits;
-  if (!current) return;
-
-  // CPU
-  var cpuVal = current.cpu_usage_m;
-  var cpuLim = limits ? limits.total_cpu_limit_m : 0;
-  var cpuPct = cpuLim ? (cpuVal / cpuLim) * 100 : 0;
-  if (this.cpuValue) {
-    this.cpuValue.textContent = cpuVal != null ? Math.round(cpuVal) + 'm' : '—';
-    this.cpuValue.className = 'ls-val' +
-      (cpuPct > 90 ? ' ls-val-danger' : cpuPct > 70 ? ' ls-val-warn' : '');
-  }
-
-  // Memory
-  var memVal = current.memory_usage_bytes;
-  var memLim = limits ? limits.total_memory_limit_bytes : 0;
-  var memPct = memLim ? (memVal / memLim) * 100 : 0;
-  if (this.memValue) {
-    this.memValue.textContent = memVal != null ? this.formatBytes(memVal) : '—';
-    this.memValue.className = 'ls-val' +
-      (memPct > 90 ? ' ls-val-danger' : memPct > 70 ? ' ls-val-warn' : '');
-  }
-
-  // Pods
-  var podN = current.pod_count || 0;
-  if (this.podCount) {
-    this.podCount.textContent = podN;
-  }
-  if (this.podDots) {
-    var dotsHtml = '';
-    var pods = data.pods || [];
-    if (pods.length > 0) {
-      pods.forEach(function (pod) {
-        var phase = (pod.phase || '').toLowerCase();
-        var cls = 'ls-pod-dot';
-        if (phase === 'pending') cls += ' ls-pod-dot-warn';
-        else if (phase !== 'running') cls += ' ls-pod-dot-err';
-        dotsHtml += '<span class="' + cls + '" title="' + (pod.name || '').replace(/"/g, '') + '"></span>';
-      });
-    } else if (podN > 0) {
-      for (var i = 0; i < podN; i++) {
-        dotsHtml += '<span class="ls-pod-dot"></span>';
-      }
-    }
-    this.podDots.innerHTML = dotsHtml;
-  }
-
-  // Sparklines
-  this.renderSparkline(this.cpuSpark, data.history, 'cpu_usage_m', cpuLim, 'oklch(0.7 0.15 230)');
-  this.renderSparkline(this.memSpark, data.history, 'memory_usage_bytes', memLim, 'oklch(0.7 0.15 290)');
-};
-
-ObservabilityMini.prototype.renderSparkline = function (container, history, key, limit, color) {
-  if (!container) return;
-  var svg = container.querySelector('svg');
-  if (!svg) return;
-  if (!history || !history.length) {
-    // Show flat baseline when no data
-    svg.innerHTML = '<line x1="0" y1="27" x2="120" y2="27" stroke="' + color + '" stroke-opacity="0.15" stroke-width="1"/>';
-    container.classList.add('ls-loaded');
-    return;
-  }
-
-  var values = history.map(function (h) { return h[key] || 0; });
-  var max = limit || Math.max.apply(null, values) || 1;
-  var w = 120;
-  var h = 28;
-  var pad = 2;
-
-  var points = [];
-  for (var i = 0; i < values.length; i++) {
-    var x = (i / Math.max(values.length - 1, 1)) * w;
-    var y = pad + (h - pad * 2) - ((values[i] / max) * (h - pad * 2));
-    points.push(x.toFixed(1) + ',' + y.toFixed(1));
-  }
-  var pathD = 'M' + points.join('L');
-
-  // Gradient fill under the line
-  var areaPath = pathD + 'L' + w + ',' + h + 'L0,' + h + 'Z';
-
-  var gradId = 'ls-grad-' + key;
-  // Baseline at bottom + limit dashed line if applicable
-  var baseline = '<line x1="0" y1="' + (h - 1) + '" x2="' + w + '" y2="' + (h - 1) + '" stroke="' + color + '" stroke-opacity="0.15" stroke-width="1"/>';
-  svg.innerHTML =
-    '<defs><linearGradient id="' + gradId + '" x1="0" y1="0" x2="0" y2="1">' +
-    '<stop offset="0%" stop-color="' + color + '" stop-opacity="0.15"/>' +
-    '<stop offset="100%" stop-color="' + color + '" stop-opacity="0"/>' +
-    '</linearGradient></defs>' +
-    baseline +
-    '<path d="' + areaPath + '" fill="url(#' + gradId + ')"/>' +
-    '<path d="' + pathD + '" fill="none" stroke="' + color + '" stroke-width="1.5" ' +
-    'stroke-linecap="round" stroke-linejoin="round" class="ls-spark-path"/>';
-
-  // Animate the line drawing in
-  var linePath = svg.querySelector('.ls-spark-path');
-  if (linePath) {
-    var len = linePath.getTotalLength();
-    linePath.style.strokeDasharray = len;
-    linePath.style.strokeDashoffset = len;
-    linePath.style.setProperty('--ls-path-len', len);
-    linePath.style.animation = 'ls-spark-draw 0.8s ease-out forwards';
-  }
-
-  container.classList.add('ls-loaded');
-};
-
-function initLiveStatus() {
-  var container = document.querySelector('[data-live-status]');
-  if (!container) return;
-  var mini = new ObservabilityMini(container);
-
-  // Activate when overview tab is visible
-  var panel = container.closest('[data-tab-panel]');
-  if (panel) {
-    panel.addEventListener('tab-activated', function () { mini.activate(); });
-    panel.addEventListener('tab-deactivated', function () { mini.deactivate(); });
-    if (panel.classList.contains('tab-panel-active')) {
-      mini.activate();
-    }
-  }
 }
 
 /* ---------- Init All ---------- */
@@ -2485,16 +1976,6 @@ function initCompactTopbar() {
   });
 }
 
-/* Delegated handler: [data-href] spans open links in new tabs (avoids nested <a>) */
-document.addEventListener('click', function (e) {
-  var el = e.target.closest('[data-href]');
-  if (el) {
-    e.preventDefault();
-    e.stopPropagation();
-    window.open(el.getAttribute('data-href'), '_blank', 'noopener');
-  }
-});
-
 document.addEventListener('DOMContentLoaded', function () {
   initTabs();
   initCompactTopbar();
@@ -2511,8 +1992,6 @@ document.addEventListener('DOMContentLoaded', function () {
   initPipelineTracker();
   initDashboardPoller();
   initObservabilityPanel();
-  initPipelineMetricsPanel();
-  initLiveStatus();
   autoExpandCollapsibleCards();
   syncDetailLogHeight();
   window.addEventListener('resize', function () {

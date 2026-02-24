@@ -11,8 +11,8 @@
       var resolved = pref;
       if (pref === 'system') {
         resolved = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-      } else if (pref === 'terminal' || pref === 'contrast-light' || pref === 'contrast-dark') {
-        resolved = pref;
+      } else if (pref === 'terminal') {
+        resolved = 'terminal';
       }
       document.documentElement.setAttribute('data-theme', resolved);
       document.documentElement.setAttribute('data-theme-pref', pref);
@@ -57,7 +57,7 @@
       window.__ACCENT_PRESETS = ACCENT_PRESETS;
 
       function applyAccent(name, theme) {
-        var mode = theme === 'terminal' ? 'terminal' : (theme === 'light' || theme === 'contrast-light') ? 'light' : 'dark';
+        var mode = theme === 'terminal' ? 'terminal' : theme === 'light' ? 'light' : 'dark';
         var preset = ACCENT_PRESETS[name];
         var p = preset && (preset[mode] || preset[mode === 'terminal' ? 'dark' : mode]);
         if (!p) return;
@@ -242,84 +242,6 @@
       --shadow-primary-glow: rgba(51, 255, 51, 0.2);
       --accent-text: #33ff33;
     }
-    [data-theme="contrast-dark"] {
-      color-scheme: dark;
-      --color-base-100: #010409;
-      --color-base-200: #0d1117;
-      --color-base-300: #161b22;
-      --color-base-content: #f0f6fc;
-      --color-primary: #409eff;
-      --color-primary-content: #010409;
-      --color-secondary: #58a6ff;
-      --color-secondary-content: #010409;
-      --color-accent: #79c0ff;
-      --color-accent-content: #010409;
-      --color-neutral: #21262d;
-      --color-neutral-content: #f0f6fc;
-      --color-success: #3fb950;
-      --color-error: #f85149;
-      --color-warning: #d29922;
-      --color-info: #58a6ff;
-      --topbar-bg: #010409;
-      --border-color: #30363d;
-      --border-color-subtle: #21262d;
-      --text-muted: #c9d1d9;
-      --text-faint: #8b949e;
-      --text-faintest: #6e7681;
-      --text-ghost: #484f58;
-      --text-dim: #30363d;
-      --text-bright: #f0f6fc;
-      --hover-overlay: rgba(64, 158, 255, 0.06);
-      --hover-overlay-strong: rgba(64, 158, 255, 0.12);
-      --surface-card: #0d1117;
-      --surface-inset: #010409;
-      --surface-input: #010409;
-      --surface-neutral: #21262d;
-      --scrollbar-thumb: #30363d;
-      --scrollbar-thumb-hover: #484f58;
-      --shadow-card: rgba(0,0,0,0.6);
-      --shadow-primary-glow: rgba(64, 158, 255, 0.3);
-      --accent-text: #79c0ff;
-    }
-    [data-theme="contrast-light"] {
-      color-scheme: light;
-      --color-base-100: #ffffff;
-      --color-base-200: #f6f8fa;
-      --color-base-300: #d0d7de;
-      --color-base-content: #1f2328;
-      --color-primary: #0349b4;
-      --color-primary-content: #ffffff;
-      --color-secondary: #0550ae;
-      --color-secondary-content: #ffffff;
-      --color-accent: #0969da;
-      --color-accent-content: #ffffff;
-      --color-neutral: #d0d7de;
-      --color-neutral-content: #1f2328;
-      --color-success: #1a7f37;
-      --color-error: #cf222e;
-      --color-warning: #9a6700;
-      --color-info: #0550ae;
-      --topbar-bg: #ffffff;
-      --border-color: #1f2328;
-      --border-color-subtle: #59636e;
-      --text-muted: #32383f;
-      --text-faint: #59636e;
-      --text-faintest: #818b98;
-      --text-ghost: #afb8c1;
-      --text-dim: #d0d7de;
-      --text-bright: #1f2328;
-      --hover-overlay: rgba(3, 73, 180, 0.06);
-      --hover-overlay-strong: rgba(3, 73, 180, 0.12);
-      --surface-card: #ffffff;
-      --surface-inset: #f6f8fa;
-      --surface-input: #ffffff;
-      --surface-neutral: #d0d7de;
-      --scrollbar-thumb: #8c959f;
-      --scrollbar-thumb-hover: #59636e;
-      --shadow-card: rgba(0,0,0,0.12);
-      --shadow-primary-glow: rgba(3, 73, 180, 0.25);
-      --accent-text: #0349b4;
-    }
     </style>
 
     {% if not config.DEBUG %}
@@ -417,26 +339,6 @@
                        stroke-linejoin="round">
                     <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
                   </svg>
-                  <svg class="w-4 h-4 theme-icon-contrast-dark hidden"
-                       viewBox="0 0 24 24"
-                       fill="none"
-                       stroke="currentColor"
-                       stroke-width="2"
-                       stroke-linecap="round"
-                       stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10" />
-                    <path d="M12 2a10 10 0 0 1 0 20z" fill="currentColor" />
-                  </svg>
-                  <svg class="w-4 h-4 theme-icon-contrast-light hidden"
-                       viewBox="0 0 24 24"
-                       fill="none"
-                       stroke="currentColor"
-                       stroke-width="2"
-                       stroke-linecap="round"
-                       stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10" />
-                    <path d="M12 2a10 10 0 0 0 0 20z" fill="currentColor" />
-                  </svg>
                 </button>
                 <div class="theme-dropdown hidden absolute right-0 top-full mt-1 z-[60] bg-base-300 rounded-lg border border-base-content/10 shadow-xl p-1 min-w-[140px]">
                   <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
@@ -491,36 +393,6 @@
                       <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
                     </svg>
                     Terminal
-                  </button>
-                  <div class="border-t border-base-content/10 my-1"></div>
-                  <span class="px-3 py-1 text-[10px] uppercase tracking-wider text-base-content/40 font-medium">High Contrast</span>
-                  <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
-                          data-theme-val="contrast-light">
-                    <svg class="w-3.5 h-3.5 shrink-0"
-                         viewBox="0 0 24 24"
-                         fill="none"
-                         stroke="currentColor"
-                         stroke-width="2"
-                         stroke-linecap="round"
-                         stroke-linejoin="round">
-                      <circle cx="12" cy="12" r="10" />
-                      <path d="M12 2a10 10 0 0 0 0 20z" fill="currentColor" />
-                    </svg>
-                    Light
-                  </button>
-                  <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
-                          data-theme-val="contrast-dark">
-                    <svg class="w-3.5 h-3.5 shrink-0"
-                         viewBox="0 0 24 24"
-                         fill="none"
-                         stroke="currentColor"
-                         stroke-width="2"
-                         stroke-linecap="round"
-                         stroke-linejoin="round">
-                      <circle cx="12" cy="12" r="10" />
-                      <path d="M12 2a10 10 0 0 1 0 20z" fill="currentColor" />
-                    </svg>
-                    Dark
                   </button>
                   <div class="border-t border-base-content/10 my-1"></div>
                   <div class="px-3 py-1.5">
@@ -651,26 +523,6 @@
                        stroke-linejoin="round">
                     <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
                   </svg>
-                  <svg class="w-4 h-4 theme-icon-contrast-dark hidden"
-                       viewBox="0 0 24 24"
-                       fill="none"
-                       stroke="currentColor"
-                       stroke-width="2"
-                       stroke-linecap="round"
-                       stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10" />
-                    <path d="M12 2a10 10 0 0 1 0 20z" fill="currentColor" />
-                  </svg>
-                  <svg class="w-4 h-4 theme-icon-contrast-light hidden"
-                       viewBox="0 0 24 24"
-                       fill="none"
-                       stroke="currentColor"
-                       stroke-width="2"
-                       stroke-linecap="round"
-                       stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10" />
-                    <path d="M12 2a10 10 0 0 0 0 20z" fill="currentColor" />
-                  </svg>
                 </button>
                 <div class="theme-dropdown hidden absolute right-0 top-full mt-1 z-[60] bg-base-300 rounded-lg border border-base-content/10 shadow-xl p-1 min-w-[140px]">
                   <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
@@ -725,36 +577,6 @@
                       <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
                     </svg>
                     Terminal
-                  </button>
-                  <div class="border-t border-base-content/10 my-1"></div>
-                  <span class="px-3 py-1 text-[10px] uppercase tracking-wider text-base-content/40 font-medium">High Contrast</span>
-                  <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
-                          data-theme-val="contrast-light">
-                    <svg class="w-3.5 h-3.5 shrink-0"
-                         viewBox="0 0 24 24"
-                         fill="none"
-                         stroke="currentColor"
-                         stroke-width="2"
-                         stroke-linecap="round"
-                         stroke-linejoin="round">
-                      <circle cx="12" cy="12" r="10" />
-                      <path d="M12 2a10 10 0 0 0 0 20z" fill="currentColor" />
-                    </svg>
-                    Light
-                  </button>
-                  <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
-                          data-theme-val="contrast-dark">
-                    <svg class="w-3.5 h-3.5 shrink-0"
-                         viewBox="0 0 24 24"
-                         fill="none"
-                         stroke="currentColor"
-                         stroke-width="2"
-                         stroke-linecap="round"
-                         stroke-linejoin="round">
-                      <circle cx="12" cy="12" r="10" />
-                      <path d="M12 2a10 10 0 0 1 0 20z" fill="currentColor" />
-                    </svg>
-                    Dark
                   </button>
                   <div class="border-t border-base-content/10 my-1"></div>
                   <div class="px-3 py-1.5">
