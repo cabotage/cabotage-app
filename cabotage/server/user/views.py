@@ -1281,9 +1281,7 @@ def application_release_create(application_id):
 def guide():
     return render_template(
         "user/guide.html",
-        github_app_url=current_app.config.get(
-            "GITHUB_APP_URL", "https://github.com"
-        ),
+        github_app_url=current_app.config.get("GITHUB_APP_URL", "https://github.com"),
     )
 
 
