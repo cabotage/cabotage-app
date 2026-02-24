@@ -106,7 +106,7 @@
           <div class="deploy-progress-spinner"></div>
           <div>
             <p class="text-sm font-medium text-base-content" id="deployPhase">Waiting for logs…</p>
-            <p class="text-xs text-base-content/40">Streaming logs below. Page will refresh on completion.</p>
+            <p class="text-xs text-base-content/40">Streaming logs below. Updates live on completion.</p>
           </div>
         </div>
         <span class="progress-elapsed" id="deployElapsed">00:00</span>
@@ -173,6 +173,12 @@
               <span class="deploy-meta-label">Updated</span>
               <span class="deploy-meta-value text-base-content/70">{{ deployment.updated|humanize }}</span>
             </div>
+            {% if deployment.complete or deployment.error %}
+              <div class="deploy-meta-row">
+                <span class="deploy-meta-label">Duration</span>
+                <span class="deploy-meta-value text-base-content/70">{{ deployment|duration }}</span>
+              </div>
+            {% endif %}
           </div>
         </div>
       </div>
@@ -412,11 +418,14 @@
     var phaseLabel = document.getElementById('deployPhase');
     var stepsEl = document.getElementById('deploySteps');
     var elapsedEl = document.getElementById('deployElapsed');
-    var tracker = (barFill) ? new BuildProgressTracker(barFill, phaseLabel, 'deploy', stepsEl, elapsedEl) : null;
+    var tracker = (barFill) ? new BuildProgressTracker(barFill, phaseLabel, 'deploy', stepsEl, elapsedEl, '{{ deployment.created.isoformat() }}Z') : null;
     var progressBanner = document.querySelector('.deploy-progress-banner');
     var logsFinished = false;
+    var linesReceived = 0;
     var reconnectAttempts = 0;
     var maxReconnectAttempts = 30;
+    var emptyEndAttempts = 0;
+    var maxEmptyEndAttempts = 20; /* 20 × 3s = 60s max wait for pod to start */
     var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
     var wsUrl = protocol + window.location.host + window.location.pathname + '/livelogs';
 
@@ -424,6 +433,15 @@
       var socket = new WebSocket(wsUrl);
       socket.addEventListener('message', function(ev) {
         if (ev.data === '=================END OF LOGS=================') {
+          socket.close();
+          /* If no real log content arrived, the pod may not be running yet.
+             Retry the WebSocket after a delay instead of showing false success. */
+          if (linesReceived === 0 && emptyEndAttempts < maxEmptyEndAttempts) {
+            emptyEndAttempts++;
+            if (tracker) tracker.setPhase('Waiting for pod to start\u2026');
+            setTimeout(connectWebSocket, 3000);
+            return;
+          }
           logsFinished = true;
           reconnectAttempts = 0;
           if (tracker) {
@@ -432,12 +450,12 @@
               progressBanner.classList.add('deploy-progress-banner-error');
             }
           }
-          socket.close();
           /* Fetch final state and update DOM in-place */
           fetchDeploymentStatus();
           return;
         }
         reconnectAttempts = 0;
+        linesReceived++;
         logsPre.textContent += ev.data + '\n';
         logsPre.scrollTop = logsPre.scrollHeight;
         if (tracker) tracker.processLine(ev.data);
@@ -446,7 +464,9 @@
         if (logsFinished) return;
         reconnectAttempts++;
         if (reconnectAttempts >= maxReconnectAttempts) {
-          if (tracker) tracker.setPhase('Connection lost. Refresh to retry.');
+          /* Connection lost — try fetching final status instead of giving up */
+          if (tracker) tracker.setPhase('Checking status\u2026');
+          fetchDeploymentStatus();
           return;
         }
         if (tracker) tracker.setPhase('Reconnecting\u2026');
@@ -455,22 +475,48 @@
       });
     }
 
+    var statusPollAttempts = 0;
+    var maxStatusPolls = 30; /* 30 × 2s = 60s max wait */
+
     function fetchDeploymentStatus() {
-      fetch(window.location.pathname, { headers: { 'Accept': 'text/html' } })
+      statusPollAttempts++;
+      var cacheBust = '?_t=' + Date.now();
+      fetch(window.location.pathname + cacheBust, {
+        credentials: 'same-origin',
+        headers: { 'Accept': 'text/html', 'Cache-Control': 'no-cache' }
+      })
         .then(function(r) { return r.text(); })
         .then(function(html) {
-          var parser = new DOMParser();
-          var doc = parser.parseFromString(html, 'text/html');
-          /* Replace the status orb + header */
+          var doc = new DOMParser().parseFromString(html, 'text/html');
           var newOrb = doc.querySelector('.deploy-status-orb');
-          var curOrb = document.querySelector('.deploy-status-orb');
-          if (newOrb && curOrb) curOrb.parentElement.innerHTML = newOrb.parentElement.innerHTML;
+
+          /* If server still shows "deploying", retry after a delay */
+          if (newOrb && newOrb.classList.contains('deploy-status-deploying') && statusPollAttempts < maxStatusPolls) {
+            setTimeout(fetchDeploymentStatus, 2000);
+            return;
+          }
+
+          /* Server has final state — update entire header row */
+          var newHeader = newOrb ? newOrb.closest('.mb-6') : null;
+          var curHeader = document.querySelector('.deploy-status-orb');
+          curHeader = curHeader ? curHeader.closest('.mb-6') : null;
+          if (newHeader && curHeader) curHeader.innerHTML = newHeader.innerHTML;
           /* Replace deployment info card */
           var newInfo = doc.querySelector('[data-log-left]');
           var curInfo = document.querySelector('[data-log-left]');
           if (newInfo && curInfo) curInfo.innerHTML = newInfo.innerHTML;
+          /* Show error banner if present */
+          var newError = doc.querySelector('.deploy-error-banner');
+          if (newError && !document.querySelector('.deploy-error-banner')) {
+            if (curHeader) curHeader.insertAdjacentElement('afterend', newError);
+          }
           /* Hide the progress banner */
           if (progressBanner) progressBanner.style.display = 'none';
+        })
+        .catch(function() {
+          if (statusPollAttempts < maxStatusPolls) {
+            setTimeout(fetchDeploymentStatus, 2000);
+          }
         });
     }
 
