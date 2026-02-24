@@ -5,15 +5,82 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0f0f17" />
     <script>
-    // Apply theme before render to prevent flash
+    // Apply theme + accent before render to prevent flash
     (function() {
       var pref = localStorage.getItem('theme-pref') || 'system';
       var resolved = pref;
       if (pref === 'system') {
         resolved = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      } else if (pref === 'terminal' || pref === 'contrast-light' || pref === 'contrast-dark') {
+        resolved = pref;
       }
       document.documentElement.setAttribute('data-theme', resolved);
       document.documentElement.setAttribute('data-theme-pref', pref);
+
+      // Accent color presets — applied before paint
+      var ACCENT_PRESETS = {
+        purple: {
+          dark:  { primary: 'oklch(0.54 0.24 285)', accent: 'oklch(0.7 0.15 285)', accentText: '#a78bfa', hoverRgb: '124, 58, 237', glowRgb: '124, 58, 237' },
+          light: { primary: '#7c3aed', accent: '#6d28d9', accentText: '#7c3aed', hoverRgb: '124, 58, 237', glowRgb: '124, 58, 237' }
+        },
+        blue: {
+          dark:  { primary: 'oklch(0.55 0.2 250)', accent: 'oklch(0.7 0.15 250)', accentText: '#60a5fa', hoverRgb: '59, 130, 246', glowRgb: '59, 130, 246' },
+          light: { primary: '#2563eb', accent: '#1d4ed8', accentText: '#2563eb', hoverRgb: '37, 99, 235', glowRgb: '37, 99, 235' }
+        },
+        teal: {
+          dark:  { primary: 'oklch(0.6 0.15 180)', accent: 'oklch(0.72 0.12 180)', accentText: '#2dd4bf', hoverRgb: '20, 184, 166', glowRgb: '20, 184, 166' },
+          light: { primary: '#0d9488', accent: '#0f766e', accentText: '#0d9488', hoverRgb: '13, 148, 136', glowRgb: '13, 148, 136' }
+        },
+        rose: {
+          dark:  { primary: 'oklch(0.55 0.22 10)', accent: 'oklch(0.7 0.16 10)', accentText: '#fb7185', hoverRgb: '225, 29, 72', glowRgb: '225, 29, 72' },
+          light: { primary: '#e11d48', accent: '#be123c', accentText: '#e11d48', hoverRgb: '225, 29, 72', glowRgb: '225, 29, 72' }
+        },
+        amber: {
+          dark:  { primary: 'oklch(0.6 0.18 75)', accent: 'oklch(0.75 0.14 75)', accentText: '#fbbf24', hoverRgb: '217, 119, 6', glowRgb: '217, 119, 6' },
+          light: { primary: '#d97706', accent: '#b45309', accentText: '#d97706', hoverRgb: '217, 119, 6', glowRgb: '217, 119, 6' }
+        },
+        emerald: {
+          dark:  { primary: 'oklch(0.6 0.19 155)', accent: 'oklch(0.72 0.14 155)', accentText: '#34d399', hoverRgb: '5, 150, 105', glowRgb: '5, 150, 105' },
+          light: { primary: '#059669', accent: '#047857', accentText: '#059669', hoverRgb: '5, 150, 105', glowRgb: '5, 150, 105' }
+        },
+        white: {
+          dark:  { primary: '#e8e8e8', primaryContent: '#1a1a2e', accent: '#d4d4d4', accentText: '#e8e8e8', hoverRgb: '232, 232, 232', glowRgb: '232, 232, 232' },
+          light: { primary: '#6b7280', accent: '#4b5563', accentText: '#4b5563', hoverRgb: '107, 114, 128', glowRgb: '107, 114, 128' },
+          terminal: { primary: '#33ff33', primaryContent: '#0a0a0a', accent: '#d4d4d4', accentText: '#e8e8e8', hoverRgb: '51, 255, 51', glowRgb: '51, 255, 51' }
+        },
+        dark: {
+          dark:  { primary: '#555555', accent: '#444444', accentText: '#888888', hoverRgb: '85, 85, 85', glowRgb: '85, 85, 85' },
+          light: { primary: '#1f2937', accent: '#111827', accentText: '#1f2937', hoverRgb: '31, 41, 55', glowRgb: '31, 41, 55' },
+          terminal: { primary: '#555555', accent: '#444444', accentText: '#888888', hoverRgb: '85, 85, 85', glowRgb: '85, 85, 85' }
+        }
+      };
+      window.__ACCENT_PRESETS = ACCENT_PRESETS;
+
+      function applyAccent(name, theme) {
+        var mode = theme === 'terminal' ? 'terminal' : (theme === 'light' || theme === 'contrast-light') ? 'light' : 'dark';
+        var preset = ACCENT_PRESETS[name];
+        var p = preset && (preset[mode] || preset[mode === 'terminal' ? 'dark' : mode]);
+        if (!p) return;
+        var s = document.documentElement.style;
+        s.setProperty('--color-primary', p.primary);
+        if (p.primaryContent) s.setProperty('--color-primary-content', p.primaryContent);
+        else s.removeProperty('--color-primary-content');
+        s.setProperty('--color-accent', p.accent);
+        s.setProperty('--accent-text', p.accentText);
+        s.setProperty('--hover-overlay', 'rgba(' + p.hoverRgb + ', ' + (mode === 'dark' ? '0.03' : '0.05') + ')');
+        s.setProperty('--hover-overlay-strong', 'rgba(' + p.hoverRgb + ', ' + (mode === 'dark' ? '0.06' : '0.1') + ')');
+        s.setProperty('--shadow-primary-glow', 'rgba(' + p.glowRgb + ', ' + (mode === 'dark' ? '0.25' : '0.2') + ')');
+      }
+      window.__applyAccent = applyAccent;
+
+      var accent = localStorage.getItem('accent-color') || 'purple';
+      document.documentElement.setAttribute('data-accent', accent);
+      applyAccent(accent, resolved);
+
+      // Compact mode: apply before paint to prevent flash
+      if (localStorage.getItem('compact-mode') === 'true') {
+        document.documentElement.classList.add('compact-mode-pref');
+      }
     })();
     </script>
     <title>
@@ -136,6 +203,123 @@
       --shadow-primary-glow: rgba(124, 58, 237, 0.2);
       --accent-text: #7c3aed;
     }
+    [data-theme="terminal"] {
+      color-scheme: dark;
+      --color-base-100: #0a0a0a;
+      --color-base-200: #0d0d0d;
+      --color-base-300: #141414;
+      --color-base-content: #33ff33;
+      --color-primary: #33ff33;
+      --color-primary-content: #0a0a0a;
+      --color-secondary: #00cc00;
+      --color-secondary-content: #0a0a0a;
+      --color-accent: #66ff66;
+      --color-accent-content: #0a0a0a;
+      --color-neutral: #1a1a1a;
+      --color-neutral-content: #33ff33;
+      --color-success: #33ff33;
+      --color-error: #ff3333;
+      --color-warning: #ffcc00;
+      --color-info: #33ccff;
+      --topbar-bg: rgba(10, 10, 10, 0.95);
+      --border-color: rgba(51, 255, 51, 0.15);
+      --border-color-subtle: rgba(51, 255, 51, 0.08);
+      --text-muted: rgba(51, 255, 51, 0.6);
+      --text-faint: rgba(51, 255, 51, 0.45);
+      --text-faintest: rgba(51, 255, 51, 0.3);
+      --text-ghost: rgba(51, 255, 51, 0.15);
+      --text-dim: rgba(51, 255, 51, 0.1);
+      --text-bright: #33ff33;
+      --hover-overlay: rgba(51, 255, 51, 0.04);
+      --hover-overlay-strong: rgba(51, 255, 51, 0.08);
+      --surface-card: #0d0d0d;
+      --surface-inset: #050505;
+      --surface-input: #0a0a0a;
+      --surface-neutral: #1a1a1a;
+      --scrollbar-thumb: #1a3a1a;
+      --scrollbar-thumb-hover: #2a5a2a;
+      --shadow-card: rgba(0, 0, 0, 0.5);
+      --shadow-primary-glow: rgba(51, 255, 51, 0.2);
+      --accent-text: #33ff33;
+    }
+    [data-theme="contrast-dark"] {
+      color-scheme: dark;
+      --color-base-100: #010409;
+      --color-base-200: #0d1117;
+      --color-base-300: #161b22;
+      --color-base-content: #f0f6fc;
+      --color-primary: #409eff;
+      --color-primary-content: #010409;
+      --color-secondary: #58a6ff;
+      --color-secondary-content: #010409;
+      --color-accent: #79c0ff;
+      --color-accent-content: #010409;
+      --color-neutral: #21262d;
+      --color-neutral-content: #f0f6fc;
+      --color-success: #3fb950;
+      --color-error: #f85149;
+      --color-warning: #d29922;
+      --color-info: #58a6ff;
+      --topbar-bg: #010409;
+      --border-color: #30363d;
+      --border-color-subtle: #21262d;
+      --text-muted: #c9d1d9;
+      --text-faint: #8b949e;
+      --text-faintest: #6e7681;
+      --text-ghost: #484f58;
+      --text-dim: #30363d;
+      --text-bright: #f0f6fc;
+      --hover-overlay: rgba(64, 158, 255, 0.06);
+      --hover-overlay-strong: rgba(64, 158, 255, 0.12);
+      --surface-card: #0d1117;
+      --surface-inset: #010409;
+      --surface-input: #010409;
+      --surface-neutral: #21262d;
+      --scrollbar-thumb: #30363d;
+      --scrollbar-thumb-hover: #484f58;
+      --shadow-card: rgba(0,0,0,0.6);
+      --shadow-primary-glow: rgba(64, 158, 255, 0.3);
+      --accent-text: #79c0ff;
+    }
+    [data-theme="contrast-light"] {
+      color-scheme: light;
+      --color-base-100: #ffffff;
+      --color-base-200: #f6f8fa;
+      --color-base-300: #d0d7de;
+      --color-base-content: #1f2328;
+      --color-primary: #0349b4;
+      --color-primary-content: #ffffff;
+      --color-secondary: #0550ae;
+      --color-secondary-content: #ffffff;
+      --color-accent: #0969da;
+      --color-accent-content: #ffffff;
+      --color-neutral: #d0d7de;
+      --color-neutral-content: #1f2328;
+      --color-success: #1a7f37;
+      --color-error: #cf222e;
+      --color-warning: #9a6700;
+      --color-info: #0550ae;
+      --topbar-bg: #ffffff;
+      --border-color: #1f2328;
+      --border-color-subtle: #59636e;
+      --text-muted: #32383f;
+      --text-faint: #59636e;
+      --text-faintest: #818b98;
+      --text-ghost: #afb8c1;
+      --text-dim: #d0d7de;
+      --text-bright: #1f2328;
+      --hover-overlay: rgba(3, 73, 180, 0.06);
+      --hover-overlay-strong: rgba(3, 73, 180, 0.12);
+      --surface-card: #ffffff;
+      --surface-inset: #f6f8fa;
+      --surface-input: #ffffff;
+      --surface-neutral: #d0d7de;
+      --scrollbar-thumb: #8c959f;
+      --scrollbar-thumb-hover: #59636e;
+      --shadow-card: rgba(0,0,0,0.12);
+      --shadow-primary-glow: rgba(3, 73, 180, 0.25);
+      --accent-text: #0349b4;
+    }
     </style>
 
     {% if not config.DEBUG %}
@@ -151,10 +335,11 @@
 
     <div class="app-shell">
       {# ===== TOP BAR ===== #}
-      <header class="app-topbar">
-        <div class="flex items-center justify-between px-4 lg:px-6 h-14">
+      <header class="app-topbar" data-topbar>
+        <div class="topbar-row flex items-center justify-between px-4 lg:px-6 h-14"
+             data-topbar-row>
           {# Left: Logo + resource path #}
-          <div class="flex items-center gap-4">
+          <div class="flex items-center gap-4" data-topbar-left>
             <a href="{{ url_for('main.home') }}"
                class="flex items-center gap-2 text-base-content hover:text-accent transition-colors flex-shrink-0"
                aria-label="Cabotage home">
@@ -175,12 +360,15 @@
             {# Resource path breadcrumb #}
             {% block resource_path %}
             {% endblock resource_path %}
+
+            {# Inline tabs (appear when scrolled, populated by JS) #}
+            <div class="topbar-inline-tabs" data-inline-tabs></div>
           </div>
 
           {# Right: Nav + user #}
-          <div class="flex items-center gap-1">
+          <div class="flex items-center gap-1 flex-shrink-0">
             {% if current_user.is_authenticated %}
-              <nav class="hidden md:flex items-center gap-1">
+              <nav class="hidden lg:flex items-center gap-1">
                 <a href="{{ url_for('user.organizations') }}"
                    class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Orgs</a>
                 <a href="{{ url_for('user.projects') }}"
@@ -188,38 +376,201 @@
                 <a href="{{ url_for('user.guide') }}"
                    class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Guide</a>
               </nav>
-              <button id="theme-toggle"
-                      class="btn btn-ghost btn-sm btn-circle"
-                      aria-label="Toggle theme"
-                      title="Toggle theme">
-                <svg class="w-4 h-4 theme-icon-light hidden"
-                     viewBox="0 0 24 24"
-                     fill="none"
-                     stroke="currentColor"
-                     stroke-width="2"
-                     stroke-linecap="round"
-                     stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-                </svg>
-                <svg class="w-4 h-4 theme-icon-dark hidden"
-                     viewBox="0 0 24 24"
-                     fill="none"
-                     stroke="currentColor"
-                     stroke-width="2"
-                     stroke-linecap="round"
-                     stroke-linejoin="round">
-                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-                </svg>
-                <svg class="w-4 h-4 theme-icon-system hidden"
-                     viewBox="0 0 24 24"
-                     fill="none"
-                     stroke="currentColor"
-                     stroke-width="2"
-                     stroke-linecap="round"
-                     stroke-linejoin="round">
-                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" />
-                </svg>
-              </button>
+              <div class="theme-toggle-wrap relative">
+                <button id="theme-toggle"
+                        class="btn btn-ghost btn-sm btn-circle"
+                        aria-label="Toggle theme"
+                        title="Toggle theme">
+                  <svg class="w-4 h-4 theme-icon-light hidden"
+                       viewBox="0 0 24 24"
+                       fill="none"
+                       stroke="currentColor"
+                       stroke-width="2"
+                       stroke-linecap="round"
+                       stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                  </svg>
+                  <svg class="w-4 h-4 theme-icon-dark hidden"
+                       viewBox="0 0 24 24"
+                       fill="none"
+                       stroke="currentColor"
+                       stroke-width="2"
+                       stroke-linecap="round"
+                       stroke-linejoin="round">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                  </svg>
+                  <svg class="w-4 h-4 theme-icon-system hidden"
+                       viewBox="0 0 24 24"
+                       fill="none"
+                       stroke="currentColor"
+                       stroke-width="2"
+                       stroke-linecap="round"
+                       stroke-linejoin="round">
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" />
+                  </svg>
+                  <svg class="w-4 h-4 theme-icon-terminal hidden"
+                       viewBox="0 0 24 24"
+                       fill="none"
+                       stroke="currentColor"
+                       stroke-width="2"
+                       stroke-linecap="round"
+                       stroke-linejoin="round">
+                    <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
+                  </svg>
+                  <svg class="w-4 h-4 theme-icon-contrast-dark hidden"
+                       viewBox="0 0 24 24"
+                       fill="none"
+                       stroke="currentColor"
+                       stroke-width="2"
+                       stroke-linecap="round"
+                       stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 2a10 10 0 0 1 0 20z" fill="currentColor" />
+                  </svg>
+                  <svg class="w-4 h-4 theme-icon-contrast-light hidden"
+                       viewBox="0 0 24 24"
+                       fill="none"
+                       stroke="currentColor"
+                       stroke-width="2"
+                       stroke-linecap="round"
+                       stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 2a10 10 0 0 0 0 20z" fill="currentColor" />
+                  </svg>
+                </button>
+                <div class="theme-dropdown hidden absolute right-0 top-full mt-1 z-[60] bg-base-300 rounded-lg border border-base-content/10 shadow-xl p-1 min-w-[140px]">
+                  <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
+                          data-theme-val="light">
+                    <svg class="w-3.5 h-3.5 shrink-0"
+                         viewBox="0 0 24 24"
+                         fill="none"
+                         stroke="currentColor"
+                         stroke-width="2"
+                         stroke-linecap="round"
+                         stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                    </svg>
+                    Light
+                  </button>
+                  <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
+                          data-theme-val="dark">
+                    <svg class="w-3.5 h-3.5 shrink-0"
+                         viewBox="0 0 24 24"
+                         fill="none"
+                         stroke="currentColor"
+                         stroke-width="2"
+                         stroke-linecap="round"
+                         stroke-linejoin="round">
+                      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                    </svg>
+                    Dark
+                  </button>
+                  <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
+                          data-theme-val="system">
+                    <svg class="w-3.5 h-3.5 shrink-0"
+                         viewBox="0 0 24 24"
+                         fill="none"
+                         stroke="currentColor"
+                         stroke-width="2"
+                         stroke-linecap="round"
+                         stroke-linejoin="round">
+                      <rect x="2" y="3" width="20" height="14" rx="2" ry="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" />
+                    </svg>
+                    System
+                  </button>
+                  <div class="border-t border-base-content/10 my-1"></div>
+                  <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors text-success"
+                          data-theme-val="terminal">
+                    <svg class="w-3.5 h-3.5 shrink-0"
+                         viewBox="0 0 24 24"
+                         fill="none"
+                         stroke="currentColor"
+                         stroke-width="2"
+                         stroke-linecap="round"
+                         stroke-linejoin="round">
+                      <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
+                    </svg>
+                    Terminal
+                  </button>
+                  <div class="border-t border-base-content/10 my-1"></div>
+                  <span class="px-3 py-1 text-[10px] uppercase tracking-wider text-base-content/40 font-medium">High Contrast</span>
+                  <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
+                          data-theme-val="contrast-light">
+                    <svg class="w-3.5 h-3.5 shrink-0"
+                         viewBox="0 0 24 24"
+                         fill="none"
+                         stroke="currentColor"
+                         stroke-width="2"
+                         stroke-linecap="round"
+                         stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M12 2a10 10 0 0 0 0 20z" fill="currentColor" />
+                    </svg>
+                    Light
+                  </button>
+                  <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
+                          data-theme-val="contrast-dark">
+                    <svg class="w-3.5 h-3.5 shrink-0"
+                         viewBox="0 0 24 24"
+                         fill="none"
+                         stroke="currentColor"
+                         stroke-width="2"
+                         stroke-linecap="round"
+                         stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M12 2a10 10 0 0 1 0 20z" fill="currentColor" />
+                    </svg>
+                    Dark
+                  </button>
+                  <div class="border-t border-base-content/10 my-1"></div>
+                  <div class="px-3 py-1.5">
+                    <span class="text-[10px] uppercase tracking-wider text-base-content/40 font-medium">Accent</span>
+                    <div class="flex gap-1.5 mt-1.5">
+                      <button class="accent-opt w-5 h-5 rounded-full border-2 border-transparent hover:scale-110 transition-transform"
+                              data-accent="purple"
+                              style="background: #a78bfa"
+                              title="Purple"></button>
+                      <button class="accent-opt w-5 h-5 rounded-full border-2 border-transparent hover:scale-110 transition-transform"
+                              data-accent="blue"
+                              style="background: #60a5fa"
+                              title="Blue"></button>
+                      <button class="accent-opt w-5 h-5 rounded-full border-2 border-transparent hover:scale-110 transition-transform"
+                              data-accent="teal"
+                              style="background: #2dd4bf"
+                              title="Teal"></button>
+                      <button class="accent-opt w-5 h-5 rounded-full border-2 border-transparent hover:scale-110 transition-transform"
+                              data-accent="rose"
+                              style="background: #fb7185"
+                              title="Rose"></button>
+                      <button class="accent-opt w-5 h-5 rounded-full border-2 border-transparent hover:scale-110 transition-transform"
+                              data-accent="amber"
+                              style="background: #fbbf24"
+                              title="Amber"></button>
+                      <button class="accent-opt w-5 h-5 rounded-full border-2 border-transparent hover:scale-110 transition-transform"
+                              data-accent="emerald"
+                              style="background: #34d399"
+                              title="Emerald"></button>
+                      <button class="accent-opt w-5 h-5 rounded-full border-2 border-transparent hover:scale-110 transition-transform"
+                              data-accent="white"
+                              style="background: #e8e8e8"
+                              title="White"></button>
+                      <button class="accent-opt w-5 h-5 rounded-full border-2 border-transparent hover:scale-110 transition-transform"
+                              data-accent="dark"
+                              style="background: #333333"
+                              title="Dark"></button>
+                    </div>
+                  </div>
+                  <div class="border-t border-base-content/10 my-1"></div>
+                  <div class="px-3 py-1.5">
+                    <span class="text-[10px] uppercase tracking-wider text-base-content/40 font-medium">Layout</span>
+                    <label class="flex items-center gap-2 mt-1.5 cursor-pointer">
+                      <input type="checkbox"
+                             class="toggle toggle-xs toggle-primary compact-mode-toggle" />
+                      <span class="text-xs text-base-content/60">Compact header</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
               <div class="dropdown dropdown-end">
                 <div tabindex="0" role="button" class="btn btn-ghost btn-sm btn-circle">
                   <svg class="w-4 h-4"
@@ -248,7 +599,7 @@
 
               {# Mobile hamburger #}
               <button id="mobile-nav-toggle"
-                      class="btn btn-ghost btn-sm btn-circle md:hidden"
+                      class="btn btn-ghost btn-sm btn-circle lg:hidden"
                       aria-label="Menu">
                 <svg class="w-4 h-4"
                      viewBox="0 0 24 24"
@@ -259,38 +610,201 @@
                 </svg>
               </button>
             {% else %}
-              <button id="theme-toggle-unauth"
-                      class="btn btn-ghost btn-sm btn-circle theme-toggle-btn"
-                      aria-label="Toggle theme"
-                      title="Toggle theme">
-                <svg class="w-4 h-4 theme-icon-light hidden"
-                     viewBox="0 0 24 24"
-                     fill="none"
-                     stroke="currentColor"
-                     stroke-width="2"
-                     stroke-linecap="round"
-                     stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-                </svg>
-                <svg class="w-4 h-4 theme-icon-dark hidden"
-                     viewBox="0 0 24 24"
-                     fill="none"
-                     stroke="currentColor"
-                     stroke-width="2"
-                     stroke-linecap="round"
-                     stroke-linejoin="round">
-                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-                </svg>
-                <svg class="w-4 h-4 theme-icon-system hidden"
-                     viewBox="0 0 24 24"
-                     fill="none"
-                     stroke="currentColor"
-                     stroke-width="2"
-                     stroke-linecap="round"
-                     stroke-linejoin="round">
-                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" />
-                </svg>
-              </button>
+              <div class="theme-toggle-wrap relative">
+                <button id="theme-toggle-unauth"
+                        class="btn btn-ghost btn-sm btn-circle theme-toggle-btn"
+                        aria-label="Toggle theme"
+                        title="Toggle theme">
+                  <svg class="w-4 h-4 theme-icon-light hidden"
+                       viewBox="0 0 24 24"
+                       fill="none"
+                       stroke="currentColor"
+                       stroke-width="2"
+                       stroke-linecap="round"
+                       stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                  </svg>
+                  <svg class="w-4 h-4 theme-icon-dark hidden"
+                       viewBox="0 0 24 24"
+                       fill="none"
+                       stroke="currentColor"
+                       stroke-width="2"
+                       stroke-linecap="round"
+                       stroke-linejoin="round">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                  </svg>
+                  <svg class="w-4 h-4 theme-icon-system hidden"
+                       viewBox="0 0 24 24"
+                       fill="none"
+                       stroke="currentColor"
+                       stroke-width="2"
+                       stroke-linecap="round"
+                       stroke-linejoin="round">
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" />
+                  </svg>
+                  <svg class="w-4 h-4 theme-icon-terminal hidden"
+                       viewBox="0 0 24 24"
+                       fill="none"
+                       stroke="currentColor"
+                       stroke-width="2"
+                       stroke-linecap="round"
+                       stroke-linejoin="round">
+                    <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
+                  </svg>
+                  <svg class="w-4 h-4 theme-icon-contrast-dark hidden"
+                       viewBox="0 0 24 24"
+                       fill="none"
+                       stroke="currentColor"
+                       stroke-width="2"
+                       stroke-linecap="round"
+                       stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 2a10 10 0 0 1 0 20z" fill="currentColor" />
+                  </svg>
+                  <svg class="w-4 h-4 theme-icon-contrast-light hidden"
+                       viewBox="0 0 24 24"
+                       fill="none"
+                       stroke="currentColor"
+                       stroke-width="2"
+                       stroke-linecap="round"
+                       stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 2a10 10 0 0 0 0 20z" fill="currentColor" />
+                  </svg>
+                </button>
+                <div class="theme-dropdown hidden absolute right-0 top-full mt-1 z-[60] bg-base-300 rounded-lg border border-base-content/10 shadow-xl p-1 min-w-[140px]">
+                  <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
+                          data-theme-val="light">
+                    <svg class="w-3.5 h-3.5 shrink-0"
+                         viewBox="0 0 24 24"
+                         fill="none"
+                         stroke="currentColor"
+                         stroke-width="2"
+                         stroke-linecap="round"
+                         stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                    </svg>
+                    Light
+                  </button>
+                  <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
+                          data-theme-val="dark">
+                    <svg class="w-3.5 h-3.5 shrink-0"
+                         viewBox="0 0 24 24"
+                         fill="none"
+                         stroke="currentColor"
+                         stroke-width="2"
+                         stroke-linecap="round"
+                         stroke-linejoin="round">
+                      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                    </svg>
+                    Dark
+                  </button>
+                  <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
+                          data-theme-val="system">
+                    <svg class="w-3.5 h-3.5 shrink-0"
+                         viewBox="0 0 24 24"
+                         fill="none"
+                         stroke="currentColor"
+                         stroke-width="2"
+                         stroke-linecap="round"
+                         stroke-linejoin="round">
+                      <rect x="2" y="3" width="20" height="14" rx="2" ry="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" />
+                    </svg>
+                    System
+                  </button>
+                  <div class="border-t border-base-content/10 my-1"></div>
+                  <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors text-success"
+                          data-theme-val="terminal">
+                    <svg class="w-3.5 h-3.5 shrink-0"
+                         viewBox="0 0 24 24"
+                         fill="none"
+                         stroke="currentColor"
+                         stroke-width="2"
+                         stroke-linecap="round"
+                         stroke-linejoin="round">
+                      <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
+                    </svg>
+                    Terminal
+                  </button>
+                  <div class="border-t border-base-content/10 my-1"></div>
+                  <span class="px-3 py-1 text-[10px] uppercase tracking-wider text-base-content/40 font-medium">High Contrast</span>
+                  <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
+                          data-theme-val="contrast-light">
+                    <svg class="w-3.5 h-3.5 shrink-0"
+                         viewBox="0 0 24 24"
+                         fill="none"
+                         stroke="currentColor"
+                         stroke-width="2"
+                         stroke-linecap="round"
+                         stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M12 2a10 10 0 0 0 0 20z" fill="currentColor" />
+                    </svg>
+                    Light
+                  </button>
+                  <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
+                          data-theme-val="contrast-dark">
+                    <svg class="w-3.5 h-3.5 shrink-0"
+                         viewBox="0 0 24 24"
+                         fill="none"
+                         stroke="currentColor"
+                         stroke-width="2"
+                         stroke-linecap="round"
+                         stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M12 2a10 10 0 0 1 0 20z" fill="currentColor" />
+                    </svg>
+                    Dark
+                  </button>
+                  <div class="border-t border-base-content/10 my-1"></div>
+                  <div class="px-3 py-1.5">
+                    <span class="text-[10px] uppercase tracking-wider text-base-content/40 font-medium">Accent</span>
+                    <div class="flex gap-1.5 mt-1.5">
+                      <button class="accent-opt w-5 h-5 rounded-full border-2 border-transparent hover:scale-110 transition-transform"
+                              data-accent="purple"
+                              style="background: #a78bfa"
+                              title="Purple"></button>
+                      <button class="accent-opt w-5 h-5 rounded-full border-2 border-transparent hover:scale-110 transition-transform"
+                              data-accent="blue"
+                              style="background: #60a5fa"
+                              title="Blue"></button>
+                      <button class="accent-opt w-5 h-5 rounded-full border-2 border-transparent hover:scale-110 transition-transform"
+                              data-accent="teal"
+                              style="background: #2dd4bf"
+                              title="Teal"></button>
+                      <button class="accent-opt w-5 h-5 rounded-full border-2 border-transparent hover:scale-110 transition-transform"
+                              data-accent="rose"
+                              style="background: #fb7185"
+                              title="Rose"></button>
+                      <button class="accent-opt w-5 h-5 rounded-full border-2 border-transparent hover:scale-110 transition-transform"
+                              data-accent="amber"
+                              style="background: #fbbf24"
+                              title="Amber"></button>
+                      <button class="accent-opt w-5 h-5 rounded-full border-2 border-transparent hover:scale-110 transition-transform"
+                              data-accent="emerald"
+                              style="background: #34d399"
+                              title="Emerald"></button>
+                      <button class="accent-opt w-5 h-5 rounded-full border-2 border-transparent hover:scale-110 transition-transform"
+                              data-accent="white"
+                              style="background: #e8e8e8"
+                              title="White"></button>
+                      <button class="accent-opt w-5 h-5 rounded-full border-2 border-transparent hover:scale-110 transition-transform"
+                              data-accent="dark"
+                              style="background: #333333"
+                              title="Dark"></button>
+                    </div>
+                  </div>
+                  <div class="border-t border-base-content/10 my-1"></div>
+                  <div class="px-3 py-1.5">
+                    <span class="text-[10px] uppercase tracking-wider text-base-content/40 font-medium">Layout</span>
+                    <label class="flex items-center gap-2 mt-1.5 cursor-pointer">
+                      <input type="checkbox"
+                             class="toggle toggle-xs toggle-primary compact-mode-toggle" />
+                      <span class="text-xs text-base-content/60">Compact header</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
               <a href="{{ url_for('security.login') }}"
                  class="btn btn-ghost btn-sm text-sm">Sign In</a>
               <a href="{{ url_for('security.register') }}"
@@ -302,7 +816,11 @@
         {# Mobile nav drawer #}
         {% if current_user.is_authenticated %}
           <nav id="mobile-nav-menu"
-               class="hidden md:hidden border-t border-base-content/5 px-4 py-3 flex flex-col gap-1">
+               class="hidden lg:hidden border-t border-base-content/5 px-4 py-3 flex flex-col gap-1">
+            {# Page tabs (cloned from tab bar by JS) #}
+            <div id="mobile-nav-tabs" class="flex flex-col gap-1"></div>
+            <div id="mobile-nav-divider"
+                 class="hidden border-t border-base-content/5 my-1"></div>
             <a href="{{ url_for('user.organizations') }}"
                class="btn btn-ghost btn-sm justify-start text-sm">Organizations</a>
             <a href="{{ url_for('user.projects') }}"
@@ -313,8 +831,10 @@
         {% endif %}
 
         {# Tab bar (used by application detail and similar pages) #}
-        {% block tab_bar %}
-        {% endblock tab_bar %}
+        <div data-tab-bar-wrapper>
+          {% block tab_bar %}
+          {% endblock tab_bar %}
+        </div>
       </header>
 
       {# ===== FLASH MESSAGES ===== #}
@@ -367,5 +887,46 @@
     {% endif %}
     {% block js %}
     {% endblock js %}
+    {# ===== Global Expand Modal ===== #}
+    <div id="expand-modal" class="raw-editor-modal hidden">
+      <div class="raw-editor-backdrop"></div>
+      <div class="raw-editor-dialog"
+           style="max-width: 56rem;
+                  max-height: 85vh;
+                  display: flex;
+                  flex-direction: column">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="expand-modal-title text-base font-semibold text-base-content"></h3>
+          <div class="flex items-center gap-2">
+            <button class="expand-modal-copy btn btn-ghost btn-xs gap-1 text-base-content/40 hover:text-base-content">
+              <svg class="w-3 h-3"
+                   viewBox="0 0 24 24"
+                   fill="none"
+                   stroke="currentColor"
+                   stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+              </svg>
+              Copy
+            </button>
+            <button class="expand-modal-close btn btn-ghost btn-sm btn-circle">
+              <svg class="w-4 h-4"
+                   viewBox="0 0 24 24"
+                   fill="none"
+                   stroke="currentColor"
+                   stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="expand-modal-body overflow-auto flex-1 text-sm"></div>
+      </div>
+    </div>
+
+    {# ===== Pipeline Toast Notifications ===== #}
+    <div id="pipeline-toasts"
+         class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
   </body>
 </html>

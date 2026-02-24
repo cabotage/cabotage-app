@@ -1,13 +1,16 @@
 {# ===== RESOURCE PATH (Breadcrumb in top bar) ===== #}
 
 {% macro resource_path(items) %}
-  <div class="resource-path hidden sm:flex">
+  <div class="resource-path flex">
     {% for item in items %}
       <span class="resource-path-sep">/</span>
       {% if item.url %}
-        <a href="{{ item.url }}">{{ item.label }}</a>
+        <a href="{{ item.url }}"
+           class="resource-path-item"
+           data-short="{{ item.label[:1] }}">{{ item.label }}</a>
       {% else %}
-        <span class="resource-path-current">{{ item.label }}</span>
+        <span class="resource-path-current resource-path-item"
+              data-short="{{ item.label[:1] }}">{{ item.label }}</span>
       {% endif %}
     {% endfor %}
   </div>
@@ -62,11 +65,11 @@
 
 {# ===== SERVICE CARD ===== #}
 
-{% macro service_card(name, slug, url, status='', meta_items=[], color='accent') %}
+{% macro service_card(name, slug, url, status='', meta_items=[], color='accent', icon_name='box', github_repo='') %}
   <a href="{{ url }}"
      class="service-card card-interactive block no-underline">
     <div class="service-card-header">
-      <div class="service-card-icon bg-{{ color }}/10 text-{{ color }}">{{ icon('box', 'w-5 h-5') }}</div>
+      <div class="service-card-icon bg-{{ color }}/10 text-{{ color }}">{{ icon(icon_name, 'w-5 h-5') }}</div>
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2">
           <span class="text-sm font-medium text-base-content truncate">{{ name }}</span>
@@ -77,6 +80,11 @@
         </div>
         <span class="text-xs text-base-content/40 font-mono">{{ slug }}</span>
       </div>
+      {% if github_repo %}
+        <span class="text-base-content/30 hover:text-base-content/60 transition-colors flex-shrink-0"
+              onclick="event.preventDefault(); event.stopPropagation(); window.open('https://github.com/{{ github_repo }}', '_blank')"
+              title="View on GitHub">{{ icon('github', 'w-4 h-4') }}</span>
+      {% endif %}
       <svg class="w-4 h-4 text-base-content/20 flex-shrink-0"
            viewBox="0 0 24 24"
            fill="none"
@@ -88,6 +96,50 @@
     {% if meta_items %}
       <div class="service-card-meta">
         {% for item in meta_items %}<span>{{ item }}</span>{% endfor %}
+      </div>
+    {% endif %}
+  </a>
+{% endmacro %}
+
+
+{# ===== ORG CARD ===== #}
+
+{% macro org_card(name, slug, url, project_count=0, app_count=0, member_count=0, last_deploy=none, color_index=0) %}
+  {% set colors = ["#8b5cf6", "#3b82f6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444"] %}
+  {% set bg_color = colors[color_index % 6] %}
+  <a href="{{ url }}" class="org-card card-interactive block no-underline">
+    <div class="org-card-header">
+      <div class="org-card-avatar" style="background: {{ bg_color }}">{{ slug[:2]|upper }}</div>
+      <div class="flex-1 min-w-0">
+        <span class="text-sm font-semibold text-base-content truncate block">{{ name }}</span>
+        <span class="text-xs text-base-content/40 font-mono">{{ slug }}</span>
+      </div>
+      <svg class="w-4 h-4 text-base-content/20 flex-shrink-0"
+           viewBox="0 0 24 24"
+           fill="none"
+           stroke="currentColor"
+           stroke-width="2">
+        <polyline points="9 18 15 12 9 6" />
+      </svg>
+    </div>
+    <div class="org-card-stats">
+      <span class="org-card-chip" title="Projects">
+        {{ icon('folder', 'w-3.5 h-3.5') }}
+        {{ project_count }}
+      </span>
+      <span class="org-card-chip" title="Applications">
+        {{ icon('box', 'w-3.5 h-3.5') }}
+        {{ app_count }}
+      </span>
+      <span class="org-card-chip" title="Members">
+        {{ icon('users', 'w-3.5 h-3.5') }}
+        {{ member_count }}
+      </span>
+    </div>
+    {% if last_deploy %}
+      <div class="org-card-footer">
+        {{ icon('clock', 'w-3 h-3') }}
+        <span>Last deploy {{ last_deploy|humanize }}</span>
       </div>
     {% endif %}
   </a>
@@ -641,6 +693,107 @@
          stroke-linejoin="round">
       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
       <circle cx="12" cy="12" r="3" />
+    </svg>
+  {% elif name == 'git-branch' %}
+    <svg class="{{ size }}"
+         viewBox="0 0 24 24"
+         fill="none"
+         stroke="currentColor"
+         stroke-width="2"
+         stroke-linecap="round"
+         stroke-linejoin="round">
+      <line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" />
+      <path d="M18 9a9 9 0 0 1-9 9" />
+    </svg>
+  {% elif name == 'git-commit' %}
+    <svg class="{{ size }}"
+         viewBox="0 0 24 24"
+         fill="none"
+         stroke="currentColor"
+         stroke-width="2"
+         stroke-linecap="round"
+         stroke-linejoin="round">
+      <circle cx="12" cy="12" r="4" /><line x1="1.05" y1="12" x2="7" y2="12" /><line x1="17.01" y1="12" x2="22.96" y2="12" />
+    </svg>
+  {% elif name == 'check-circle' %}
+    <svg class="{{ size }}"
+         viewBox="0 0 24 24"
+         fill="none"
+         stroke="currentColor"
+         stroke-width="2"
+         stroke-linecap="round"
+         stroke-linejoin="round">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+      <polyline points="22 4 12 14.01 9 11.01" />
+    </svg>
+  {% elif name == 'x-circle' %}
+    <svg class="{{ size }}"
+         viewBox="0 0 24 24"
+         fill="none"
+         stroke="currentColor"
+         stroke-width="2"
+         stroke-linecap="round"
+         stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+    </svg>
+  {% elif name == 'loader' %}
+    <svg class="{{ size }}"
+         viewBox="0 0 24 24"
+         fill="none"
+         stroke="currentColor"
+         stroke-width="2"
+         stroke-linecap="round"
+         stroke-linejoin="round">
+      <line x1="12" y1="2" x2="12" y2="6" /><line x1="12" y1="18" x2="12" y2="22" />
+      <line x1="4.93" y1="4.93" x2="7.76" y2="7.76" /><line x1="16.24" y1="16.24" x2="19.07" y2="19.07" />
+      <line x1="2" y1="12" x2="6" y2="12" /><line x1="18" y1="12" x2="22" y2="12" />
+      <line x1="4.93" y1="19.07" x2="7.76" y2="16.24" /><line x1="16.24" y1="7.76" x2="19.07" y2="4.93" />
+    </svg>
+  {% elif name == 'arrow-up-right' %}
+    <svg class="{{ size }}"
+         viewBox="0 0 24 24"
+         fill="none"
+         stroke="currentColor"
+         stroke-width="2"
+         stroke-linecap="round"
+         stroke-linejoin="round">
+      <line x1="7" y1="17" x2="17" y2="7" /><polyline points="7 7 17 7 17 17" />
+    </svg>
+  {% elif name == 'bar-chart' %}
+    <svg class="{{ size }}"
+         viewBox="0 0 24 24"
+         fill="none"
+         stroke="currentColor"
+         stroke-width="2"
+         stroke-linecap="round"
+         stroke-linejoin="round">
+      <line x1="12" y1="20" x2="12" y2="10" /><line x1="18" y1="20" x2="18" y2="4" /><line x1="6" y1="20" x2="6" y2="16" />
+    </svg>
+  {% elif name == 'bar-chart-2' %}
+    <svg class="{{ size }}"
+         viewBox="0 0 24 24"
+         fill="none"
+         stroke="currentColor"
+         stroke-width="2"
+         stroke-linecap="round"
+         stroke-linejoin="round">
+      <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /><line x1="2" y1="20" x2="22" y2="20" />
+    </svg>
+  {% elif name == 'upload' %}
+    <svg class="{{ size }}"
+         viewBox="0 0 24 24"
+         fill="none"
+         stroke="currentColor"
+         stroke-width="2"
+         stroke-linecap="round"
+         stroke-linejoin="round">
+      <polyline points="16 16 12 12 8 16" />
+      <line x1="12" y1="12" x2="12" y2="21" />
+      <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3" />
+    </svg>
+  {% elif name == 'github' %}
+    <svg class="{{ size }}" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
     </svg>
   {% endif %}
 {% endmacro %}

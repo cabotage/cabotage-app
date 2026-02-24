@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path %}
+{% from "_macros.html" import icon, resource_path, status_badge %}
 
 {% set app = application %}
 {% set org_slug = app.project.organization.slug %}
@@ -21,67 +21,130 @@
 
 {% block content %}
 
-  <div class="flex items-center justify-between mb-4">
-    <h1 class="text-xl font-semibold text-base-content">Packages</h1>
+  <div class="flex items-center justify-between mb-5">
+    <div>
+      <h1 class="text-xl font-semibold text-base-content">Packages</h1>
+      <p class="text-sm text-base-content/40 mt-0.5">Release packages bundled for deployment</p>
+    </div>
     <a href="{{ url_for('user.application_release_create', application_id=app.id) }}"
        class="btn btn-primary btn-sm gap-1.5">{{ icon('scissors', 'w-3.5 h-3.5') }} Create Package</a>
   </div>
 
   {% if releases|length > 0 %}
-    <div class="card bg-base-200 border border-base-300">
-      <div class="card-body !p-0">
-        <div class="overflow-x-auto">
-          <table class="table table-sm">
-            <thead>
-              <tr class="text-base-content/50 text-xs uppercase tracking-wider">
-                <th>Version</th>
-                <th>Status</th>
-                <th>Updated</th>
-                <th class="w-1"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for release in releases %}
-                <tr>
-                  <td>
-                    <div class="flex items-center gap-2">
-                      <code class="text-sm text-accent">v{{ release.version }}</code>
-                      {% if release.release_metadata and release.release_metadata.get('auto_deploy') %}
-                        {{ icon('zap', 'w-3 h-3 text-warning') }}
-                      {% endif %}
-                    </div>
-                  </td>
-                  <td>
-                    {% if release.built %}
-                      <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-success"></span> Built</span>
-                    {% elif release.error %}
-                      <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-error"></span> Error</span>
-                    {% else %}
-                      <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-info status-dot-pulse"></span> Building</span>
-                    {% endif %}
-                  </td>
-                  <td class="text-sm text-base-content/60">{{ release.updated|humanize }}</td>
-                  <td>
-                    <a href="{{ url_for('user.release_detail', release_id=release.id) }}"
-                       class="btn btn-ghost btn-xs gap-1">Details</a>
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
+    {% set latest_built_release = releases|selectattr('built')|first %}
+
+    <div class="dpl-list">
+      {% for release in releases %}
+        {% set rel_img = release.image_object %}
+        {% set rel_sha = release.commit_sha if release.commit_sha and release.commit_sha != 'null' else none %}
+        {% set rel_ref = (release.release_metadata or {}).get('ref', '') %}
+        {% if not rel_ref and rel_img %}
+          {% set rel_ref = (rel_img.image_metadata or {}).get('ref', '') %}
+        {% endif %}
+        {% set rel_auto = release.release_metadata and release.release_metadata.get('auto_deploy') %}
+        {% set is_latest = latest_built_release and release.id == latest_built_release.id %}
+        {% set cfg_count = release.configuration|length if release.configuration else 0 %}
+        {% set proc_count = release.processes|length if release.built and release.image_object else 0 %}
+
+        <a href="{{ url_for('user.release_detail', release_id=release.id) }}"
+           class="dpl-row {{ 'dpl-row-error' if release.error }}">
+
+          {# Status icon #}
+          {% if release.built %}
+            <span class="dpl-row-icon dpl-row-icon-ok">{{ icon('check', 'w-3.5 h-3.5') }}</span>
+          {% elif release.error %}
+            <span class="dpl-row-icon dpl-row-icon-err">{{ icon('x', 'w-3.5 h-3.5') }}</span>
+          {% else %}
+            <span class="dpl-row-icon dpl-row-icon-run">
+              <svg class="w-3.5 h-3.5 animate-spin"
+                   viewBox="0 0 24 24"
+                   fill="none"
+                   stroke="currentColor"
+                   stroke-width="2.5">
+                <path d="M21 12a9 9 0 11-6.219-8.56" />
+              </svg>
+            </span>
+          {% endif %}
+
+          {# Body #}
+          <div class="dpl-row-body">
+            <div class="dpl-row-primary">
+              <code class="dpl-row-version">v{{ release.version }}</code>
+              {% if release.built %}
+                <span class="dpl-row-status-text dpl-row-status-ok">Built</span>
+              {% elif release.error %}
+                <span class="dpl-row-status-text dpl-row-status-err">Error</span>
+              {% else %}
+                <span class="dpl-row-status-text dpl-row-status-run">Building</span>
+              {% endif %}
+              {% if release.built %}<span class="dpl-row-dur">{{ release|duration }}</span>{% endif %}
+              {% if is_latest %}<span class="dpl-badge dpl-badge-latest">Latest</span>{% endif %}
+              {% if rel_auto %}<span class="dpl-badge dpl-badge-auto">{{ icon('zap', 'w-2.5 h-2.5') }} Auto</span>{% endif %}
+            </div>
+            <div class="dpl-row-meta">
+              {% if rel_ref %}
+                <span class="dpl-meta-chip">
+                  {{ icon('git-branch', 'w-3 h-3') }}
+                  <span>{{ rel_ref }}</span>
+                </span>
+              {% endif %}
+              {% if rel_sha %}
+                <span class="dpl-meta-chip">
+                  {{ icon('git-commit', 'w-3 h-3') }}
+                  {% if app.github_repository %}
+                    <span class="dpl-row-sha-link"
+                          data-href="https://github.com/{{ app.github_repository }}/commit/{{ rel_sha }}">{{ rel_sha[:7] }}</span>
+                  {% else %}
+                    <code>{{ rel_sha[:7] }}</code>
+                  {% endif %}
+                </span>
+              {% endif %}
+              {% if rel_img %}
+                <span class="dpl-meta-chip">
+                  {{ icon('image', 'w-3 h-3') }}
+                  <span>#{{ rel_img.version }}</span>
+                </span>
+              {% endif %}
+              {% if cfg_count > 0 %}
+                <span class="dpl-meta-chip">
+                  {{ icon('key', 'w-3 h-3') }}
+                  <span>{{ cfg_count }} var{{ 's' if cfg_count != 1 }}</span>
+                </span>
+              {% endif %}
+              {% if proc_count > 0 %}
+                <span class="dpl-meta-chip">
+                  {{ icon('terminal', 'w-3 h-3') }}
+                  <span>{{ proc_count }} proc{{ 's' if proc_count != 1 }}</span>
+                </span>
+              {% endif %}
+              {% if release.deposed %}
+                <span class="dpl-meta-chip" style="color: oklch(var(--wa))">
+                  {{ icon('alert-triangle', 'w-3 h-3') }}
+                  <span>deposed</span>
+                </span>
+              {% endif %}
+            </div>
+            {% if release.error and release.error_detail %}
+              <div class="dpl-row-error-detail">{{ release.error_detail[:140] }}</div>
+            {% endif %}
+          </div>
+
+          {# Timestamp #}
+          <span class="dpl-row-time">{{ release.created|humanize }}</span>
+        </a>
+      {% endfor %}
     </div>
 
+    {# Pagination #}
     <div class="flex items-center justify-between mt-4">
       {% if page > 1 %}
-        <a href="?page={{ page - 1 }}" class="btn btn-ghost btn-sm">Previous</a>
+        <a href="?page={{ page - 1 }}" class="btn btn-ghost btn-sm gap-1">{{ icon('arrow-left', 'w-3.5 h-3.5') }} Previous</a>
       {% else %}
         <span></span>
       {% endif %}
       <span class="text-xs text-base-content/40">Page {{ page }}</span>
       {% if releases|length == 20 %}
-        <a href="?page={{ page + 1 }}" class="btn btn-ghost btn-sm">Next</a>
+        <a href="?page={{ page + 1 }}" class="btn btn-ghost btn-sm gap-1">Next {{ icon('chevron-right', 'w-3.5 h-3.5') }}</a>
       {% else %}
         <span></span>
       {% endif %}
@@ -94,6 +157,8 @@
           <div class="text-base-content/15 mb-4">{{ icon('layers', 'w-12 h-12') }}</div>
           <h3 class="text-base font-medium text-base-content/60 mb-1">No packages yet</h3>
           <p class="text-sm text-base-content/40 max-w-sm">Packages are created when you cut a package from pending changes.</p>
+          <a href="{{ url_for('user.application_release_create', application_id=app.id) }}"
+             class="btn btn-primary btn-sm gap-2 mt-4">{{ icon('scissors', 'w-4 h-4') }} Create Package</a>
         </div>
       </div>
     </div>
