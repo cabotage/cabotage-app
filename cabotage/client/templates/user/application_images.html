@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, status_badge %}
+{% from "_macros.html" import icon, resource_path %}
 
 {% set app = application %}
 {% set org_slug = app.project.organization.slug %}
@@ -21,11 +21,8 @@
 
 {% block content %}
 
-  <div class="flex items-center justify-between mb-5">
-    <div>
-      <h1 class="text-xl font-semibold text-base-content">Images</h1>
-      <p class="text-sm text-base-content/40 mt-0.5">Container images built from source</p>
-    </div>
+  <div class="flex items-center justify-between mb-4">
+    <h1 class="text-xl font-semibold text-base-content">Images</h1>
     <form action="{{ url_for('user.application_images_build_fromsource', application_id=app.id) }}"
           method="post"
           class="inline">
@@ -36,105 +33,62 @@
   </div>
 
   {% if images|length > 0 %}
-    {% set latest_built_image = images|selectattr('built')|first %}
-
-    <div class="dpl-list">
-      {% for image in images %}
-        {% set img_sha = image.commit_sha if image.commit_sha and image.commit_sha != 'null' else none %}
-        {% set img_ref = image.build_ref if image.build_ref else '' %}
-        {% set img_auto = image.image_metadata and image.image_metadata.get('auto_deploy') %}
-        {% set img_creator = ((image.image_metadata or {}).get('creator', {}) or {}).get('login', '') %}
-        {% set is_latest = latest_built_image and image.id == latest_built_image.id %}
-
-        <a href="{{ url_for('user.image_detail', image_id=image.id) }}"
-           class="dpl-row {{ 'dpl-row-error' if image.error }}">
-
-          {# Status icon #}
-          {% if image.built %}
-            <span class="dpl-row-icon dpl-row-icon-ok">{{ icon('check', 'w-3.5 h-3.5') }}</span>
-          {% elif image.error %}
-            <span class="dpl-row-icon dpl-row-icon-err">{{ icon('x', 'w-3.5 h-3.5') }}</span>
-          {% else %}
-            <span class="dpl-row-icon dpl-row-icon-run">
-              <svg class="w-3.5 h-3.5 animate-spin"
-                   viewBox="0 0 24 24"
-                   fill="none"
-                   stroke="currentColor"
-                   stroke-width="2.5">
-                <path d="M21 12a9 9 0 11-6.219-8.56" />
-              </svg>
-            </span>
-          {% endif %}
-
-          {# Body #}
-          <div class="dpl-row-body">
-            <div class="dpl-row-primary">
-              <code class="dpl-row-version">#{{ image.version }}</code>
-              {% if image.built %}
-                <span class="dpl-row-status-text dpl-row-status-ok">Built</span>
-              {% elif image.error %}
-                <span class="dpl-row-status-text dpl-row-status-err">Error</span>
-              {% else %}
-                <span class="dpl-row-status-text dpl-row-status-run">Building</span>
-              {% endif %}
-              {% if image.built %}<span class="dpl-row-dur">{{ image|duration }}</span>{% endif %}
-              {% if is_latest %}<span class="dpl-badge dpl-badge-latest">Latest</span>{% endif %}
-              {% if img_auto %}<span class="dpl-badge dpl-badge-auto">{{ icon('zap', 'w-2.5 h-2.5') }} Auto</span>{% endif %}
-            </div>
-            <div class="dpl-row-meta">
-              {% if img_ref %}
-                <span class="dpl-meta-chip">
-                  {{ icon('git-branch', 'w-3 h-3') }}
-                  <span>{{ img_ref[:40] }}
-                    {% if img_ref|length > 40 %}...{% endif %}
-                  </span>
-                </span>
-              {% endif %}
-              {% if img_sha %}
-                <span class="dpl-meta-chip">
-                  {{ icon('git-commit', 'w-3 h-3') }}
-                  {% if app.github_repository %}
-                    <span class="dpl-row-sha-link"
-                          data-href="https://github.com/{{ app.github_repository }}/commit/{{ img_sha }}">{{ img_sha[:7] }}</span>
-                  {% else %}
-                    <code>{{ img_sha[:7] }}</code>
-                  {% endif %}
-                </span>
-              {% endif %}
-              {% if img_creator %}
-                <span class="dpl-meta-chip">
-                  {{ icon('user', 'w-3 h-3') }}
-                  <span>{{ img_creator }}</span>
-                </span>
-              {% endif %}
-              {% if image.processes %}
-                <span class="dpl-meta-chip">
-                  {{ icon('terminal', 'w-3 h-3') }}
-                  <span>{{ image.processes|length }} process{{ 'es' if image.processes|length != 1 }}</span>
-                </span>
-              {% endif %}
-            </div>
-            {% if image.error and image.error_detail %}
-              <div class="dpl-row-error-detail">{{ image.error_detail[:140] }}</div>
-            {% endif %}
-          </div>
-
-          {# Timestamp #}
-          <span class="dpl-row-time">{{ image.created|humanize }}</span>
-        </a>
-      {% endfor %}
+    <div class="card bg-base-200 border border-base-300">
+      <div class="card-body !p-0">
+        <div class="overflow-x-auto">
+          <table class="table table-sm">
+            <thead>
+              <tr class="text-base-content/50 text-xs uppercase tracking-wider">
+                <th>Version</th>
+                <th>Status</th>
+                <th>Branch/Ref</th>
+                <th>Updated</th>
+                <th class="w-1"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for image in images %}
+                <tr>
+                  <td>
+                    <div class="flex items-center gap-2">
+                      <code class="text-sm text-accent">#{{ image.version }}</code>
+                      {% if image.image_metadata and image.image_metadata.get('auto_deploy') %}
+                        {{ icon('zap', 'w-3 h-3 text-warning') }}
+                      {% endif %}
+                    </div>
+                  </td>
+                  <td>
+                    {% if image.built %}
+                      <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-success"></span> Built</span>
+                    {% elif image.error %}
+                      <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-error"></span> Error</span>
+                    {% else %}
+                      <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-info status-dot-pulse"></span> Building</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-sm text-base-content/60 font-mono">{{ image.build_ref or '-' }}</td>
+                  <td class="text-sm text-base-content/60">{{ image.updated|humanize }}</td>
+                  <td>
+                    <a href="{{ url_for('user.image_detail', image_id=image.id) }}"
+                       class="btn btn-ghost btn-xs gap-1">Details</a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
-    {# Pagination #}
     <div class="flex items-center justify-between mt-4">
       {% if page > 1 %}
-        <a href="?page={{ page - 1 }}" class="btn btn-ghost btn-sm gap-1">{{ icon('arrow-left', 'w-3.5 h-3.5') }} Previous</a>
+        <a href="?page={{ page - 1 }}" class="btn btn-ghost btn-sm">Previous</a>
       {% else %}
         <span></span>
       {% endif %}
       <span class="text-xs text-base-content/40">Page {{ page }}</span>
       {% if images|length == 20 %}
-        <a href="?page={{ page + 1 }}" class="btn btn-ghost btn-sm gap-1">Next {{ icon('chevron-right', 'w-3.5 h-3.5') }}</a>
+        <a href="?page={{ page + 1 }}" class="btn btn-ghost btn-sm">Next</a>
       {% else %}
         <span></span>
       {% endif %}

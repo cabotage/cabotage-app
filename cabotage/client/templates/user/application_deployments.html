@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, status_badge %}
+{% from "_macros.html" import icon, resource_path %}
 
 {% set app = application %}
 {% set org_slug = app.project.organization.slug %}
@@ -21,196 +21,64 @@
 
 {% block content %}
 
-  <div class="flex items-center justify-between mb-5">
-    <div>
-      <h1 class="text-xl font-semibold text-base-content">Deployments</h1>
-      <p class="text-sm text-base-content/40 mt-0.5">Deployment history for {{ app_slug }}</p>
-    </div>
-    {% if app.latest_release and app.latest_release.built %}
-      <form action="{{ url_for('user.release_deploy', release_id=app.latest_release.id) }}"
-            method="post"
-            enctype="multipart/form-data"
-            class="inline">
-        {{ deploy_form.hidden_tag() }}
-        <button class="btn btn-primary btn-sm gap-1.5" type="submit">{{ icon('upload', 'w-3.5 h-3.5') }} Push Live</button>
-      </form>
-    {% endif %}
+  <div class="flex items-center justify-between mb-4">
+    <h1 class="text-xl font-semibold text-base-content">Deployments</h1>
   </div>
 
   {% if deployments|length > 0 %}
-    {# Find active deployment (first complete, non-error) #}
-    {% set ns = namespace(found_active=false) %}
-    {% set active_deploy = none %}
-    {% for d in deployments %}
-      {% if d.complete and not d.error and not ns.found_active %}
-        {% set ns.found_active = true %}
-        {% set active_deploy = d %}
-      {% endif %}
-    {% endfor %}
-
-    {# Active deployment hero card #}
-    {% if active_deploy %}
-      {% set active_rel = active_deploy.release_object %}
-      {% set active_img = active_rel.image_object if active_rel else none %}
-      {% set active_sha = active_rel.commit_sha if active_rel and active_rel.commit_sha and active_rel.commit_sha != 'null' else none %}
-      {% set active_ref = "" %}
-      {% if active_rel %}
-        {% set active_ref = (active_rel.release_metadata or {}).get('ref', '') %}
-        {% if not active_ref and active_img %}
-          {% set active_ref = (active_img.image_metadata or {}).get('ref', '') %}
-        {% endif %}
-      {% endif %}
-      <div class="dpl-hero mb-4">
-        <div class="dpl-hero-inner">
-          <div class="dpl-hero-left">
-            <div class="dpl-hero-orb">{{ icon('check', 'w-4 h-4') }}</div>
-            <div class="dpl-hero-info">
-              <div class="dpl-hero-title-row">
-                <span class="dpl-badge dpl-badge-active">Active</span>
-                {% if active_rel %}<code class="dpl-hero-version">v{{ active_rel.version }}</code>{% endif %}
-                <span class="dpl-hero-status dpl-hero-status-ok">Deployment successful</span>
-              </div>
-              <div class="dpl-hero-meta">
-                {% if active_sha %}
-                  <span class="dpl-meta-chip">
-                    {{ icon('git-commit', 'w-3 h-3') }}
-                    {% if app.github_repository %}
-                      <a href="https://github.com/{{ app.github_repository }}/commit/{{ active_sha }}"
-                         target="_blank"
-                         rel="noopener"
-                         class="dpl-meta-link"
-                         onclick="event.stopPropagation()">{{ active_sha[:8] }}</a>
+    <div class="card bg-base-200 border border-base-300">
+      <div class="card-body !p-0">
+        <div class="overflow-x-auto">
+          <table class="table table-sm">
+            <thead>
+              <tr class="text-base-content/50 text-xs uppercase tracking-wider">
+                <th>Status</th>
+                <th>Package</th>
+                <th>Updated</th>
+                <th class="w-1"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for deployment in deployments %}
+                <tr>
+                  <td>
+                    {% if deployment.complete %}
+                      <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-success"></span> Complete</span>
+                    {% elif deployment.error %}
+                      <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-error"></span> Failed</span>
                     {% else %}
-                      <code>{{ active_sha[:8] }}</code>
+                      <span class="inline-flex items-center gap-1.5 text-sm"><span class="status-dot status-dot-info status-dot-pulse"></span> Deploying</span>
                     {% endif %}
-                  </span>
-                {% endif %}
-                {% if active_ref %}
-                  <span class="dpl-meta-chip">
-                    {{ icon('git-branch', 'w-3 h-3') }}
-                    <span>{{ active_ref }}</span>
-                  </span>
-                {% endif %}
-                {% if active_img %}
-                  <span class="dpl-meta-chip">
-                    {{ icon('image', 'w-3 h-3') }}
-                    <span>#{{ active_img.version }}</span>
-                  </span>
-                {% endif %}
-                <span class="dpl-meta-chip dpl-meta-chip-dim">
-                  {{ icon('clock', 'w-3 h-3') }}
-                  <span>{{ active_deploy.updated|humanize }}</span>
-                  {% if active_deploy.complete %}<span class="dpl-meta-duration">({{ active_deploy|duration }})</span>{% endif %}
-                </span>
-              </div>
-            </div>
-          </div>
-          <a href="{{ url_for('user.deployment_detail', deployment_id=active_deploy.id) }}"
-             class="btn btn-ghost btn-sm gap-1.5 dpl-hero-action">{{ icon('file-text', 'w-3.5 h-3.5') }} View logs</a>
+                  </td>
+                  <td>
+                    {% if deployment.release_id %}
+                      <code class="text-sm text-accent">v{{ deployment.release_object.version if deployment.release_object else '-' }}</code>
+                    {% else %}
+                      <span class="text-sm text-base-content/40">-</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-sm text-base-content/60">{{ deployment.updated|humanize }}</td>
+                  <td>
+                    <a href="{{ url_for('user.deployment_detail', deployment_id=deployment.id) }}"
+                       class="btn btn-ghost btn-xs gap-1">Details</a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
         </div>
       </div>
-    {% endif %}
-
-    <div class="dpl-list">
-      {% for deployment in deployments %}
-        {% set dep_rel = deployment.release_object %}
-        {% set dep_img = dep_rel.image_object if dep_rel else none %}
-        {% set dep_sha = dep_rel.commit_sha if dep_rel and dep_rel.commit_sha and dep_rel.commit_sha != 'null' else none %}
-        {% set dep_ref = "" %}
-        {% if dep_rel %}
-          {% set dep_ref = (dep_rel.release_metadata or {}).get('ref', '') %}
-          {% if not dep_ref and dep_img %}
-            {% set dep_ref = (dep_img.image_metadata or {}).get('ref', '') %}
-          {% endif %}
-        {% endif %}
-        {% set dep_auto = dep_rel and dep_rel.release_metadata and dep_rel.release_metadata.get('auto_deploy') %}
-        {% set is_active = active_deploy and deployment.id == active_deploy.id %}
-
-        <a href="{{ url_for('user.deployment_detail', deployment_id=deployment.id) }}"
-           class="dpl-row {{ 'dpl-row-active' if is_active }} {{ 'dpl-row-error' if deployment.error }} {{ 'dpl-row-deploying' if not deployment.complete and not deployment.error }}">
-
-          {# Status icon #}
-          {% if deployment.complete %}
-            <span class="dpl-row-icon dpl-row-icon-ok">{{ icon('check', 'w-3.5 h-3.5') }}</span>
-          {% elif deployment.error %}
-            <span class="dpl-row-icon dpl-row-icon-err">{{ icon('x', 'w-3.5 h-3.5') }}</span>
-          {% else %}
-            <span class="dpl-row-icon dpl-row-icon-run">
-              <svg class="w-3.5 h-3.5 animate-spin"
-                   viewBox="0 0 24 24"
-                   fill="none"
-                   stroke="currentColor"
-                   stroke-width="2.5">
-                <path d="M21 12a9 9 0 11-6.219-8.56" />
-              </svg>
-            </span>
-          {% endif %}
-
-          {# Body #}
-          <div class="dpl-row-body">
-            <div class="dpl-row-primary">
-              {% if dep_rel %}
-                <code class="dpl-row-version">v{{ dep_rel.version }}</code>
-              {% else %}
-                <span class="dpl-row-version dpl-row-version-none">—</span>
-              {% endif %}
-              {% if deployment.complete %}
-                <span class="dpl-row-status-text dpl-row-status-ok">Ready</span>
-              {% elif deployment.error %}
-                <span class="dpl-row-status-text dpl-row-status-err">Error</span>
-              {% else %}
-                <span class="dpl-row-status-text dpl-row-status-run">Deploying</span>
-              {% endif %}
-              {% if deployment.complete or deployment.error %}<span class="dpl-row-dur">{{ deployment|duration }}</span>{% endif %}
-              {% if is_active %}<span class="dpl-badge dpl-badge-active">Active</span>{% endif %}
-              {% if dep_auto %}<span class="dpl-badge dpl-badge-auto">{{ icon('zap', 'w-2.5 h-2.5') }} Auto</span>{% endif %}
-            </div>
-            <div class="dpl-row-meta">
-              {% if dep_ref %}
-                <span class="dpl-meta-chip">
-                  {{ icon('git-branch', 'w-3 h-3') }}
-                  <span>{{ dep_ref }}</span>
-                </span>
-              {% endif %}
-              {% if dep_sha %}
-                <span class="dpl-meta-chip">
-                  {{ icon('git-commit', 'w-3 h-3') }}
-                  {% if app.github_repository %}
-                    <span class="dpl-row-sha-link"
-                          data-href="https://github.com/{{ app.github_repository }}/commit/{{ dep_sha }}">{{ dep_sha[:7] }}</span>
-                  {% else %}
-                    <code>{{ dep_sha[:7] }}</code>
-                  {% endif %}
-                </span>
-              {% endif %}
-              {% if dep_img %}
-                <span class="dpl-meta-chip">
-                  {{ icon('image', 'w-3 h-3') }}
-                  <span>#{{ dep_img.version }}</span>
-                </span>
-              {% endif %}
-            </div>
-            {% if deployment.error and deployment.error_detail %}
-              <div class="dpl-row-error-detail">{{ deployment.error_detail[:140] }}</div>
-            {% endif %}
-          </div>
-
-          {# Timestamp #}
-          <span class="dpl-row-time">{{ deployment.created|humanize }}</span>
-        </a>
-      {% endfor %}
     </div>
 
-    {# Pagination #}
     <div class="flex items-center justify-between mt-4">
       {% if page > 1 %}
-        <a href="?page={{ page - 1 }}" class="btn btn-ghost btn-sm gap-1">{{ icon('arrow-left', 'w-3.5 h-3.5') }} Previous</a>
+        <a href="?page={{ page - 1 }}" class="btn btn-ghost btn-sm">Previous</a>
       {% else %}
         <span></span>
       {% endif %}
       <span class="text-xs text-base-content/40">Page {{ page }}</span>
       {% if deployments|length == 20 %}
-        <a href="?page={{ page + 1 }}" class="btn btn-ghost btn-sm gap-1">Next {{ icon('chevron-right', 'w-3.5 h-3.5') }}</a>
+        <a href="?page={{ page + 1 }}" class="btn btn-ghost btn-sm">Next</a>
       {% else %}
         <span></span>
       {% endif %}
@@ -223,15 +91,6 @@
           <div class="text-base-content/15 mb-4">{{ icon('deploy', 'w-12 h-12') }}</div>
           <h3 class="text-base font-medium text-base-content/60 mb-1">No deployments yet</h3>
           <p class="text-sm text-base-content/40 max-w-sm">Deployments are created when you deploy a package.</p>
-          {% if app.latest_release and app.latest_release.built %}
-            <form action="{{ url_for('user.release_deploy', release_id=app.latest_release.id) }}"
-                  method="post"
-                  enctype="multipart/form-data"
-                  class="inline mt-4">
-              {{ deploy_form.hidden_tag() }}
-              <button class="btn btn-primary btn-sm gap-2" type="submit">{{ icon('upload', 'w-4 h-4') }} Push Live</button>
-            </form>
-          {% endif %}
         </div>
       </div>
     </div>

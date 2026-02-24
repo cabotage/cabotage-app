@@ -20,10 +20,14 @@
       {% for membership in organizations %}
         {% set org = membership.organization %}
         {% set proj_count = org.projects|length %}
+        {% set app_count = namespace(n=0) %}
+        {% for p in org.projects %}
+          {% set app_count.n = app_count.n + p.project_applications|length %}
+        {% endfor %}
         {{ service_card(name=org.slug,
                 slug=proj_count ~ ' project' ~ ('s' if proj_count != 1 else '') ,
         url=url_for('user.organization', org_slug=org.slug),
-        meta_items=[],
+        meta_items=[app_count.n ~ ' app' ~ ('s' if app_count.n != 1 else '')],
         color='primary'
         ) }}
       {% endfor %}

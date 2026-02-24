@@ -26,6 +26,7 @@
   {% set app_count = project.project_applications|length %}
   <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
     {{ stat_card(app_count, 'Applications', 'box', 'accent') }}
+    {{ stat_card(proj_deploy_count, 'Deployments', 'deploy', 'success') }}
   </div>
 
   {# Applications Grid / Service Cards #}
@@ -38,8 +39,10 @@
           {% set status = "running" %}
         {% elif application.latest_image_building %}
           {% set status = "building" %}
-        {% elif application.latest_image_error %}
+        {% elif application.latest_image_error and (not application.latest_image_built or application.latest_image_error.version > application.latest_image_built.version) %}
           {% set status = "error" %}
+        {% elif application.latest_deployment_completed %}
+          {% set status = "running" %}
         {% endif %}
         {% set proc_count = application.process_counts.values()|sum if application.process_counts else 0 %}
         {{ service_card(name=application.name,

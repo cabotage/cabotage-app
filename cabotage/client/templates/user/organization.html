@@ -41,6 +41,8 @@
   <div data-tab-panel="projects" class="tab-panel">
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
       {{ stat_card(proj_count, 'Projects', 'folder', 'secondary') }}
+      {{ stat_card(org_app_count, 'Applications', 'box', 'accent') }}
+      {{ stat_card(org_deploy_count, 'Deployments', 'deploy', 'success') }}
     </div>
 
     {% if organization.projects %}

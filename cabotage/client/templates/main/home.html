@@ -5,94 +5,96 @@
   Cabotage - Platform as a Service
 {% endblock title %}
 
-{% block content %}
+{% block content_full %}
   {% if current_user.is_authenticated %}
 
-    {# ===== Dashboard Header ===== #}
-    <div class="flex items-center justify-between mb-8">
-      <div>
-        <h1 class="text-xl font-semibold text-base-content">Dashboard</h1>
-        <p class="text-sm text-base-content/40 mt-0.5">Welcome back, {{ current_user.username or current_user.email }}</p>
+    <div class="app-content-padded">
+      {# ===== Dashboard Header ===== #}
+      <div class="flex items-center justify-between mb-8">
+        <div>
+          <h1 class="text-xl font-semibold text-base-content">Dashboard</h1>
+          <p class="text-sm text-base-content/40 mt-0.5">Welcome back, {{ current_user.username or current_user.email }}</p>
+        </div>
+        <a href="{{ url_for('user.organization_create') }}"
+           class="btn btn-primary btn-sm gap-2">
+          {{ icon('plus', 'w-4 h-4') }}
+          New Org
+        </a>
       </div>
-      <a href="{{ url_for('user.organization_create') }}"
-         class="btn btn-primary btn-sm gap-2">
-        {{ icon('plus', 'w-4 h-4') }}
-        New Org
-      </a>
-    </div>
 
-    {# ===== Quick Stats ===== #}
-    {% set org_count = current_user.organizations|length if current_user.organizations else 0 %}
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
-      {{ stat_card(org_count, 'Organizations', 'building', 'primary') }}
-      {{ stat_card('-', 'Projects', 'folder', 'secondary') }}
-      {{ stat_card('-', 'Applications', 'box', 'accent') }}
-      {{ stat_card('-', 'Deployments', 'deploy', 'success') }}
-    </div>
+      {# ===== Quick Stats ===== #}
+      {% set org_count = current_user.organizations|length if current_user.organizations else 0 %}
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
+        {{ stat_card(org_count, 'Organizations', 'building', 'primary') }}
+        {{ stat_card(project_count, 'Projects', 'folder', 'secondary') }}
+        {{ stat_card(app_count, 'Applications', 'box', 'accent') }}
+        {{ stat_card(deploy_count, 'Deployments', 'deploy', 'success') }}
+      </div>
 
-    {# ===== Quick Actions ===== #}
-    <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Quick Actions</h2>
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-      <a href="{{ url_for('user.organizations') }}"
-         class="service-card card-interactive block no-underline">
-        <div class="service-card-header">
-          <div class="service-card-icon bg-primary/10 text-primary">{{ icon('building', 'w-5 h-5') }}</div>
-          <div class="flex-1">
-            <span class="text-sm font-medium text-base-content">Organizations</span>
-            <p class="text-xs text-base-content/40">Manage teams and access</p>
+      {# ===== Quick Actions ===== #}
+      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Quick Actions</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <a href="{{ url_for('user.organizations') }}"
+           class="service-card card-interactive block no-underline">
+          <div class="service-card-header">
+            <div class="service-card-icon bg-primary/10 text-primary">{{ icon('building', 'w-5 h-5') }}</div>
+            <div class="flex-1">
+              <span class="text-sm font-medium text-base-content">Organizations</span>
+              <p class="text-xs text-base-content/40">Manage teams and access</p>
+            </div>
+            <svg class="w-4 h-4 text-base-content/20"
+                 viewBox="0 0 24 24"
+                 fill="none"
+                 stroke="currentColor"
+                 stroke-width="2">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
           </div>
-          <svg class="w-4 h-4 text-base-content/20"
-               viewBox="0 0 24 24"
-               fill="none"
-               stroke="currentColor"
-               stroke-width="2">
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        </div>
-      </a>
+        </a>
 
-      <a href="{{ url_for('user.projects') }}"
-         class="service-card card-interactive block no-underline">
-        <div class="service-card-header">
-          <div class="service-card-icon bg-secondary/10 text-secondary">{{ icon('folder', 'w-5 h-5') }}</div>
-          <div class="flex-1">
-            <span class="text-sm font-medium text-base-content">Projects</span>
-            <p class="text-xs text-base-content/40">View all projects</p>
+        <a href="{{ url_for('user.projects') }}"
+           class="service-card card-interactive block no-underline">
+          <div class="service-card-header">
+            <div class="service-card-icon bg-secondary/10 text-secondary">{{ icon('folder', 'w-5 h-5') }}</div>
+            <div class="flex-1">
+              <span class="text-sm font-medium text-base-content">Projects</span>
+              <p class="text-xs text-base-content/40">View all projects</p>
+            </div>
+            <svg class="w-4 h-4 text-base-content/20"
+                 viewBox="0 0 24 24"
+                 fill="none"
+                 stroke="currentColor"
+                 stroke-width="2">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
           </div>
-          <svg class="w-4 h-4 text-base-content/20"
-               viewBox="0 0 24 24"
-               fill="none"
-               stroke="currentColor"
-               stroke-width="2">
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        </div>
-      </a>
+        </a>
 
-      <a href="{{ url_for('user.organization_create') }}"
-         class="service-card card-interactive block no-underline border-dashed">
-        <div class="service-card-header">
-          <div class="service-card-icon bg-accent/10 text-accent">{{ icon('plus', 'w-5 h-5') }}</div>
-          <div class="flex-1">
-            <span class="text-sm font-medium text-base-content">New Organization</span>
-            <p class="text-xs text-base-content/40">Get started deploying</p>
+        <a href="{{ url_for('user.organization_create') }}"
+           class="service-card card-interactive block no-underline border-dashed">
+          <div class="service-card-header">
+            <div class="service-card-icon bg-accent/10 text-accent">{{ icon('plus', 'w-5 h-5') }}</div>
+            <div class="flex-1">
+              <span class="text-sm font-medium text-base-content">New Organization</span>
+              <p class="text-xs text-base-content/40">Get started deploying</p>
+            </div>
+            <svg class="w-4 h-4 text-base-content/20"
+                 viewBox="0 0 24 24"
+                 fill="none"
+                 stroke="currentColor"
+                 stroke-width="2">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
           </div>
-          <svg class="w-4 h-4 text-base-content/20"
-               viewBox="0 0 24 24"
-               fill="none"
-               stroke="currentColor"
-               stroke-width="2">
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        </div>
-      </a>
+        </a>
+      </div>
     </div>
 
   {% else %}
 
     {# ===== Anonymous Landing ===== #}
     <div class="hero-gradient">
-      <div class="flex flex-col items-center text-center py-20 lg:py-32">
+      <div class="flex flex-col items-center text-center py-12 lg:py-20">
         <div class="p-3 rounded-xl bg-primary/10 text-primary mb-6">
           <svg class="w-10 h-10"
                viewBox="0 0 24 24"
@@ -133,4 +135,4 @@
     </div>
 
   {% endif %}
-{% endblock content %}
+{% endblock content_full %}
