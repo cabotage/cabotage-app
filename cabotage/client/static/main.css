@@ -1305,8 +1305,8 @@ details[open] summary .collapse-icon {
 
 /* Process Grid */
 .process-grid {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(24rem, 1fr));
   gap: 0.5rem;
 }
 .process-card {
@@ -1315,14 +1315,14 @@ details[open] summary .collapse-icon {
   justify-content: space-between;
   gap: 0.75rem;
   padding: 0.375rem 0.625rem;
+  min-width: 0;
+  overflow: hidden;
   border-radius: 0.5rem;
   border: 1px solid var(--border-color);
   background: var(--surface-card);
   transition:
     background 0.15s ease,
     border-color 0.15s ease;
-  flex: 1 1 calc(20% - 0.5rem);
-  min-width: 14rem;
 }
 .process-card:hover {
   background: var(--hover-overlay, rgba(124, 58, 237, 0.04));
