@@ -448,7 +448,7 @@
 
 {% block js %}
   <div id="buildPageConfig"
-       data-next-step-url="{{ next_step_url | tojson }}"
+       data-next-step-url="{{ (next_step_url or none) | tojson }}"
        data-app-id="{{ app.id }}"
        data-auto-deploy="{{ (image.image_metadata or {}).get('auto_deploy', false) | tojson }}"
        data-ws-url="/image/{{ image.id }}/livelogs"

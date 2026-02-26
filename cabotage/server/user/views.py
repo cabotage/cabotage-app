@@ -721,6 +721,7 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
                 org_slug=organization.slug,
                 project_slug=project.slug,
                 app_slug=application.slug,
+                _anchor="config",
             )
         )
     return render_template(
@@ -788,6 +789,7 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
                 org_slug=organization.slug,
                 project_slug=project.slug,
                 app_slug=application.slug,
+                _anchor="config",
             )
         )
 
@@ -917,6 +919,7 @@ def project_application_configuration_delete(
                 org_slug=organization.slug,
                 project_slug=project.slug,
                 app_slug=application.slug,
+                _anchor="config",
             )
         )
     return render_template(
@@ -1074,6 +1077,7 @@ def release_detail(release_id):
     return render_template(
         "user/release_detail.html",
         release=release,
+        deploy_form=ReleaseDeployForm(),
         docker_pull_credentials=docker_pull_credentials,
         image_pull_secrets=image_pull_secrets,
     )
