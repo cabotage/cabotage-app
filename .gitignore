@@ -4,3 +4,8 @@ __pycache__
 /buildanddeploy
 /celerybeat-schedule
 /dev
+/node_modules
+cabotage/client/static/tailwind.css
+cabotage/client/static/tailwind.min.css
+cabotage/client/static/main.min.css
+cabotage/client/static/main.min.js

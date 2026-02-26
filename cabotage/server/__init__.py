@@ -129,6 +129,9 @@ def create_app():
     app_settings = os.getenv("APP_SETTINGS", "cabotage.server.config.Config")
     app.config.from_object(app_settings)
 
+    if app.debug:
+        app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+
     # set up extensions
     admin.init_app(app)
     bcrypt.init_app(app)

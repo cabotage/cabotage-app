@@ -94,36 +94,11 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
           rel="stylesheet" />
 
-    <link href="https://unpkg.com/daisyui@5/themes.css"
-          rel="stylesheet"
-          type="text/css" />
-    <link href="https://unpkg.com/daisyui@5/daisyui.css"
-          rel="stylesheet"
-          type="text/css" />
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-
-    <style type="text/tailwindcss">
-    @theme {
-      --color-base-100: #0f0f17;
-      --color-base-200: #16161f;
-      --color-base-300: #1e1e2a;
-      --color-base-content: #e2e2e9;
-      --color-primary: #7c3aed;
-      --color-primary-content: #ffffff;
-      --color-secondary: #3b82f6;
-      --color-secondary-content: #ffffff;
-      --color-accent: #a78bfa;
-      --color-accent-content: #0f0f17;
-      --color-neutral: #27272f;
-      --color-neutral-content: #e2e2e9;
-      --color-success: #22c55e;
-      --color-error: #ef4444;
-      --color-warning: #f59e0b;
-      --color-info: #3b82f6;
-      --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
-      --font-mono: 'JetBrains Mono', ui-monospace, monospace;
-    }
-    </style>
+    {% if not config.DEBUG %}
+      <link href="{{ url_for('static', filename='tailwind.min.css') }}" rel="stylesheet" />
+    {% else %}
+      <link href="{{ url_for('static', filename='tailwind.css') }}" rel="stylesheet" />
+    {% endif %}
     <style>
     [data-theme="dark"] {
       color-scheme: dark;

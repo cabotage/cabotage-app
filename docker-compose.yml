@@ -92,6 +92,13 @@ services:
       - "9001:9001"
     volumes:
       - miniodata:/export
+  static:
+    image: oven/bun:1-slim
+    working_dir: /app
+    command: sh -c "bun install && bunx tailwindcss -i cabotage/client/src/tailwind.css -o cabotage/client/static/tailwind.css --watch=always"
+    volumes:
+      - .:/app:z
+
   base:
     build:
       context: .

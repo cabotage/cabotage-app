@@ -1,0 +1,27 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+@source inline("text-primary/60 text-secondary/60 text-accent/60 text-success/60 text-error/60 bg-primary/10 bg-secondary/10 bg-accent/10 bg-success/10 bg-error/10 text-primary text-secondary text-accent text-success text-error text-info text-warning text-info/60 text-warning/60 bg-info/10 bg-warning/10 badge-sm badge-md badge-lg");
+
+@theme {
+  --color-base-100: #0f0f17;
+  --color-base-200: #16161f;
+  --color-base-300: #1e1e2a;
+  --color-base-content: #e2e2e9;
+  --color-primary: #7c3aed;
+  --color-primary-content: #ffffff;
+  --color-secondary: #3b82f6;
+  --color-secondary-content: #ffffff;
+  --color-accent: #a78bfa;
+  --color-accent-content: #0f0f17;
+  --color-neutral: #27272f;
+  --color-neutral-content: #e2e2e9;
+  --color-success: #22c55e;
+  --color-error: #ef4444;
+  --color-warning: #f59e0b;
+  --color-info: #3b82f6;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+@source "../../templates/**/*.html";
