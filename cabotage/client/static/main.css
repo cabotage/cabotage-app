@@ -1552,8 +1552,8 @@ details[open] summary .collapse-icon {
 .proc-cmd-popup {
   position: absolute;
   bottom: calc(100% + 0.5rem);
-  left: 50%;
-  transform: translateX(-50%) translateY(4px);
+  left: 0;
+  transform: translateY(4px);
   z-index: 100;
   width: 18rem;
   background: var(--color-base-200, oklch(0.2 0 0));
@@ -1575,14 +1575,13 @@ details[open] summary .collapse-icon {
 .proc-cmd-chip-anchor:hover .proc-cmd-popup {
   opacity: 1;
   pointer-events: auto;
-  transform: translateX(-50%) translateY(0);
+  transform: translateY(0);
 }
 .proc-cmd-popup::before {
   content: '';
   position: absolute;
   bottom: -5px;
-  left: 50%;
-  margin-left: -4px;
+  left: 1rem;
   transform: rotate(45deg);
   width: 8px;
   height: 8px;
