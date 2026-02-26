@@ -338,17 +338,24 @@ def project_application_livelogs(ws, org_slug, project_slug, app_slug):
     if not ViewApplicationPermission(application.id).can():
         abort(403)
 
+    org_slug = organization.slug
+    project_slug = project.slug
+    app_slug = application.slug
+
     api_client = kubernetes_ext.kubernetes_client
     core_api_instance = kubernetes.client.CoreV1Api(api_client)
 
     labels = {
-        "organization": organization.slug,
-        "project": project.slug,
-        "application": application.slug,
+        "organization": org_slug,
+        "project": project_slug,
+        "application": app_slug,
     }
     label_selector = ",".join([f"{k}={v}" for k, v in labels.items()])
 
+    db.session.remove()
+
     q = queue.Queue()
+    pod_name_prefix = f"{project_slug}-{app_slug}-"
 
     def worker(pod_name, stream_handler):
         for line in stream_handler:
@@ -359,7 +366,7 @@ def project_application_livelogs(ws, org_slug, project_slug, app_slug):
         pod_watch = kubernetes.watch.Watch()
         for response in pod_watch.stream(
             core_api_instance.list_namespaced_pod,
-            namespace=organization.slug,
+            namespace=org_slug,
             label_selector=label_selector,
         ):
             pod = response["object"]
@@ -386,9 +393,7 @@ def project_application_livelogs(ws, org_slug, project_slug, app_slug):
                 thread = threading.Thread(
                     target=worker,
                     args=(
-                        pod.metadata.name.removeprefix(
-                            f"{project.slug}-{application.slug}-"
-                        ),
+                        pod.metadata.name.removeprefix(pod_name_prefix),
                         stream_handler,
                     ),
                     daemon=True,
@@ -467,6 +472,9 @@ def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
 
+    process_counts = dict(application.process_counts)
+    db.session.remove()
+
     api_client = kubernetes_ext.kubernetes_client
     core_api_instance = kubernetes.client.CoreV1Api(api_client)
 
@@ -476,20 +484,20 @@ def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
     try:
         process_name = [
             k
-            for k, v in application.process_counts.items()
+            for k, v in process_counts.items()
             if (k.startswith("web") or k.startswith("worker")) and v > 0
         ][0]
     except IndexError:
         abort(404)
     labels = {
-        "organization": organization.slug,
-        "project": project.slug,
-        "application": application.slug,
+        "organization": org_slug,
+        "project": project_slug,
+        "application": app_slug,
         "process": process_name,
     }
     label_selector = ",".join([f"{k}={v}" for k, v in labels.items()])
     pod = core_api_instance.list_namespaced_pod(
-        namespace=organization.slug, label_selector=label_selector
+        namespace=org_slug, label_selector=label_selector
     ).items[0]
 
     # =============================================================================== #
@@ -515,21 +523,24 @@ def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
         _preload_content=False,
     )
 
+    last_ping = time.monotonic()
     while resp.is_open():
         resp.update()
+        now = time.monotonic()
+        if now - last_ping >= 25:
+            try:
+                resp.sock.ping()
+            except Exception:
+                break
+            last_ping = now
         if data := ws.receive(timeout=0.01):
-            print((data,))
             if data[0] == "\x00":
                 resp.write_stdin(data[1:])
             elif data[0] == "\x01":
                 resp.write_channel(kubernetes.stream.ws_client.RESIZE_CHANNEL, data[1:])
-            else:
-                print((data[0],))
         if data := resp.read_stdout(timeout=0.01):
-            print((data,))
             ws.send("\x00" + data)
         if data := resp.read_stderr(timeout=0.01):
-            print((data,))
             ws.send("\x00" + data)
 
     resp.close()
@@ -956,17 +967,21 @@ def image_build_livelogs(ws, image_id):
         abort(404)
     if not ViewApplicationPermission(image.application.id).can():
         abort(403)
-    if image.image_build_log is not None:
-        ws.send(f"Job Pod imagebuild-{image.build_job_id}")
-        for line in image.image_build_log.split("\n"):
+    build_job_id = image.build_job_id
+    image_build_log = image.image_build_log
+    if image_build_log is not None:
+        ws.send(f"Job Pod imagebuild-{build_job_id}")
+        for line in image_build_log.split("\n"):
             ws.send(f"  {line}")
         ws.send("=================END OF LOGS=================")
+
+    db.session.remove()
 
     api_client = kubernetes_ext.kubernetes_client
     core_api_instance = kubernetes.client.CoreV1Api(api_client)
     batch_api_instance = kubernetes.client.BatchV1Api(api_client)
 
-    job_name, namespace = (f"imagebuild-{image.build_job_id}", "default")
+    job_name, namespace = (f"imagebuild-{build_job_id}", "default")
 
     @backoff.on_exception(
         backoff.constant,
@@ -1008,7 +1023,7 @@ def image_build_livelogs(ws, image_id):
         if pod.status.phase == "Running":
             break
         time.sleep(1)
-    ws.send(f"Job Pod imagebuild-{image.build_job_id}")
+    ws.send(f"Job Pod imagebuild-{build_job_id}")
     w = kubernetes.watch.Watch()
     for line in w.stream(
         core_api_instance.read_namespaced_pod_log,
@@ -1073,17 +1088,21 @@ def release_build_livelogs(ws, release_id):
         abort(404)
     if not ViewApplicationPermission(release.application.id).can():
         abort(403)
-    if release.release_build_log is not None:
-        ws.send(f"Job Pod releasebuild-{release.build_job_id}")
-        for line in release.release_build_log.split("\n"):
+    build_job_id = release.build_job_id
+    release_build_log = release.release_build_log
+    if release_build_log is not None:
+        ws.send(f"Job Pod releasebuild-{build_job_id}")
+        for line in release_build_log.split("\n"):
             ws.send(f"  {line}")
         ws.send("=================END OF LOGS=================")
+
+    db.session.remove()
 
     api_client = kubernetes_ext.kubernetes_client
     core_api_instance = kubernetes.client.CoreV1Api(api_client)
     batch_api_instance = kubernetes.client.BatchV1Api(api_client)
 
-    job_name, namespace = (f"releasebuild-{release.build_job_id}", "default")
+    job_name, namespace = (f"releasebuild-{build_job_id}", "default")
 
     @backoff.on_exception(
         backoff.constant,
@@ -1125,7 +1144,7 @@ def release_build_livelogs(ws, release_id):
         if pod.status.phase == "Running":
             break
         time.sleep(1)
-    ws.send(f"Job Pod releasebuild-{release.build_job_id}")
+    ws.send(f"Job Pod releasebuild-{build_job_id}")
     w = kubernetes.watch.Watch()
     for line in w.stream(
         core_api_instance.read_namespaced_pod_log,
@@ -1147,21 +1166,23 @@ def deployment_livelogs(ws, deployment_id):
     deployment = Deployment.query.filter_by(id=deployment_id).first_or_404()
     if not ViewApplicationPermission(deployment.application.id).can():
         abort(403)
+    job_id = deployment.job_id
+    deploy_log = deployment.deploy_log
+    namespace = deployment.application.project.organization.slug
 
-    if deployment.deploy_log is not None:
-        ws.send(f"Job Pod deployment-{deployment.job_id}")
-        for line in deployment.deploy_log.split("\n"):
+    if deploy_log is not None:
+        ws.send(f"Job Pod deployment-{job_id}")
+        for line in deploy_log.split("\n"):
             ws.send(f"  {line}")
         ws.send("=================END OF LOGS=================")
+
+    db.session.remove()
 
     api_client = kubernetes_ext.kubernetes_client
     core_api_instance = kubernetes.client.CoreV1Api(api_client)
     batch_api_instance = kubernetes.client.BatchV1Api(api_client)
 
-    job_name, namespace = (
-        f"deployment-{deployment.job_id}",
-        deployment.application.project.organization.slug,
-    )
+    job_name = f"deployment-{job_id}"
 
     @backoff.on_exception(
         backoff.constant,
@@ -1209,7 +1230,7 @@ def deployment_livelogs(ws, deployment_id):
             print(f"Encountered exception: {exc}")
             return False
 
-    ws.send(f"Job Pod deployment-{deployment.job_id}")
+    ws.send(f"Job Pod deployment-{job_id}")
     w = kubernetes.watch.Watch()
     for line in w.stream(
         core_api_instance.read_namespaced_pod_log,
