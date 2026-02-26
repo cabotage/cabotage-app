@@ -35,7 +35,7 @@ function initTabs(containerSelector) {
   var tabs = container.querySelectorAll('[data-tab]');
   var panels = document.querySelectorAll('[data-tab-panel]');
 
-  function activateTab(tabId) {
+  function activateTab(tabId, pushHistory) {
     tabs.forEach(function (t) {
       t.classList.toggle('tab-active', t.getAttribute('data-tab') === tabId);
     });
@@ -51,16 +51,27 @@ function initTabs(containerSelector) {
       }
     });
 
-    if (history.replaceState) {
-      history.replaceState(null, null, '#' + tabId);
+    if (pushHistory) {
+      history.pushState(null, null, '#' + tabId);
     }
   }
 
   tabs.forEach(function (tab) {
     tab.addEventListener('click', function (e) {
       e.preventDefault();
-      activateTab(tab.getAttribute('data-tab'));
+      activateTab(tab.getAttribute('data-tab'), true);
     });
+  });
+
+  window.addEventListener('popstate', function () {
+    var hash = window.location.hash.replace('#', '');
+    var validTab = false;
+    tabs.forEach(function (t) {
+      if (t.getAttribute('data-tab') === hash) validTab = true;
+    });
+    if (validTab) {
+      activateTab(hash, false);
+    }
   });
 
   var hash = window.location.hash.replace('#', '');
@@ -70,9 +81,9 @@ function initTabs(containerSelector) {
   });
 
   if (validTab) {
-    activateTab(hash);
+    activateTab(hash, false);
   } else if (tabs.length > 0) {
-    activateTab(tabs[0].getAttribute('data-tab'));
+    activateTab(tabs[0].getAttribute('data-tab'), false);
   }
 }
 
