@@ -7,7 +7,7 @@
 {% set app_slug = app.slug %}
 
 {% block title %}
-  Packages - {{ app_slug }} - Cabotage
+  Releases - {{ app_slug }} - Cabotage
 {% endblock title %}
 
 {% block resource_path %}
@@ -15,7 +15,7 @@
     {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug) },
   {'label': project_slug, 'url': url_for('user.project', org_slug=org_slug, project_slug=project_slug)},
   {'label': app_slug, 'url': url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug)},
-  {'label': 'Packages'}
+  {'label': 'Releases'}
   ]) }}
 {% endblock resource_path %}
 
@@ -26,12 +26,12 @@
 {% block content %}
 
   <div class="flex items-center justify-between mb-4">
-    <h2 class="text-base font-medium text-base-content">Packages</h2>
+    <h2 class="text-base font-medium text-base-content">Releases</h2>
     <form action="{{ url_for('user.application_release_create', application_id=app.id) }}"
           method="post"
           class="inline">
       <button class="btn btn-primary btn-sm gap-1.5" type="submit">
-        {{ icon('scissors', 'w-3.5 h-3.5') }} Create Package
+        {{ icon('scissors', 'w-3.5 h-3.5') }} Create Release
       </button>
     </form>
   </div>
@@ -41,7 +41,7 @@
     <div class="dpl-history-header">
       <h2 class="dpl-history-title">
         {{ icon('layers', 'w-3.5 h-3.5') }}
-        Package History
+        Release History
       </h2>
       <span class="dpl-history-count">Page {{ page }}</span>
     </div>
@@ -167,12 +167,12 @@
       <div class="card-body">
         <div class="empty-state !py-12">
           <div class="text-base-content/15 mb-4">{{ icon('layers', 'w-12 h-12') }}</div>
-          <h3 class="text-base font-medium text-base-content/60 mb-1">No packages yet</h3>
-          <p class="text-sm text-base-content/40 max-w-sm">Packages are created when you cut a package from pending changes.</p>
+          <h3 class="text-base font-medium text-base-content/60 mb-1">No releases yet</h3>
+          <p class="text-sm text-base-content/40 max-w-sm">Releases are created when you cut a release from pending changes.</p>
           <form action="{{ url_for('user.application_release_create', application_id=app.id) }}"
                 method="post"
                 class="inline mt-4">
-            <button class="btn btn-primary btn-sm gap-2" type="submit">{{ icon('scissors', 'w-4 h-4') }} Create Package</button>
+            <button class="btn btn-primary btn-sm gap-2" type="submit">{{ icon('scissors', 'w-4 h-4') }} Create Release</button>
           </form>
         </div>
       </div>

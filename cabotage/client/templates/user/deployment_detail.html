@@ -225,7 +225,7 @@
       {% if deployment.release_object %}
         <div class="card bg-base-200 border border-base-300">
           <div class="card-body !p-4">
-            <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Package</h2>
+            <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Release</h2>
             <a href="{{ url_for('user.release_detail', release_id=deployment.release_object.id) }}"
                class="inline-flex items-center gap-2 text-accent hover:text-accent/80 transition-colors">
               {{ icon('layers', 'w-3.5 h-3.5') }}
@@ -380,7 +380,7 @@
     <details class="card bg-base-200 border border-base-300 group">
       <summary class="!py-2.5 !px-4 cursor-pointer flex items-center gap-2 text-left">
         <span class="collapse-icon text-base-content/30">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</span>
-        <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Package Data</span>
+        <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Release Data</span>
       </summary>
       <div class="!py-2 !px-4">
         <div class="code-block !text-xs text-left whitespace-pre-wrap">

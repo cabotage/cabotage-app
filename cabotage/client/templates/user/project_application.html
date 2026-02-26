@@ -24,7 +24,7 @@
         {'id': 'observe', 'label': 'Observe (Soon)', 'icon': 'bar-chart', 'disabled': true},
         {'id': 'config', 'label': 'Config', 'icon': 'key', 'badge': application.configurations|rejectattr('name', 'equalto', 'CABOTAGE_SENTINEL') |list|length},
     {'id': 'images', 'label': 'Images', 'icon': 'image'},
-    {'id': 'releases', 'label': 'Packages', 'icon': 'layers'},
+    {'id': 'releases', 'label': 'Releases', 'icon': 'layers'},
     {'id': 'deployments', 'label': 'Deploys', 'icon': 'deploy'},
     {'id': 'pipeline', 'label': 'Pipeline (Soon)', 'icon': 'bar-chart-2', 'disabled': true}
     ]) }}
@@ -149,7 +149,7 @@
           </div>
           <div data-segment="release" class="pipe-segment pipe-seg-waiting">
             <div class="pipe-seg-header">
-              <span class="pipe-seg-name">Package</span>
+              <span class="pipe-seg-name">Release</span>
               <span class="pipe-seg-version"></span>
             </div>
             <div class="pipe-seg-row">
@@ -212,15 +212,15 @@
               <div class="deploy-step deploy-step-pending">
                 <div class="deploy-step-number">2</div>
                 <div class="deploy-step-content">
-                  <p class="text-sm text-base-content/50">Create a package</p>
-                  <p class="text-xs text-base-content/30">Bundle your image + config into a deployable package</p>
+                  <p class="text-sm text-base-content/50">Create a release</p>
+                  <p class="text-xs text-base-content/30">Bundle your image + config into a deployable release</p>
                 </div>
               </div>
               <div class="deploy-step deploy-step-pending">
                 <div class="deploy-step-number">3</div>
                 <div class="deploy-step-content">
                   <p class="text-sm text-base-content/50">Deploy</p>
-                  <p class="text-xs text-base-content/30">Push the package live</p>
+                  <p class="text-xs text-base-content/30">Push the release live</p>
                 </div>
               </div>
             </div>
@@ -279,7 +279,7 @@
                   <div class="action-banner-spinner"></div>
                   <div>
                     <p class="text-sm font-medium text-base-content">
-                      Package <span class="font-mono text-accent">v{{ is_building_release.version }}</span> building
+                      Release <span class="font-mono text-accent">v{{ is_building_release.version }}</span> building
                     </p>
                     <p class="text-xs text-base-content/40">Deploy will be available when complete</p>
                   </div>
@@ -294,11 +294,11 @@
                     {{ icon('zap', 'w-4 h-4 text-primary') }}
                     <span class="text-sm font-medium text-base-content">
                       {% if has_config_changes and not has_image_changes %}
-                        Configuration changed since last package
+                        Configuration changed since last release
                       {% elif has_image_changes and not has_config_changes %}
-                        New image available since last package
+                        New image available since last release
                       {% else %}
-                        New image and configuration changes since last package
+                        New image and configuration changes since last release
                       {% endif %}
                     </span>
                   </div>
@@ -370,13 +370,13 @@
 
                   <div class="deploy-steps-inline">
                     {% if has_config_changes and not has_image_changes %}
-                      <span class="deploy-step-inline deploy-step-inline-next">Create Package</span>
+                      <span class="deploy-step-inline deploy-step-inline-next">Create Release</span>
                       <span class="deploy-step-inline-arrow">→</span>
                       <span class="deploy-step-inline deploy-step-inline-pending">Deploy</span>
                     {% else %}
                       <span class="deploy-step-inline deploy-step-inline-done">{{ icon('check', 'w-3 h-3') }} Build</span>
                       <span class="deploy-step-inline-arrow">→</span>
-                      <span class="deploy-step-inline deploy-step-inline-next">Create Package</span>
+                      <span class="deploy-step-inline deploy-step-inline-next">Create Release</span>
                       <span class="deploy-step-inline-arrow">→</span>
                       <span class="deploy-step-inline deploy-step-inline-pending">Deploy</span>
                     {% endif %}
@@ -385,7 +385,7 @@
                 <a class="btn btn-primary btn-sm gap-1.5 flex-shrink-0"
                    href="{{ url_for('user.application_release_create', application_id=application.id) }}">
                   {{ icon('scissors', 'w-3.5 h-3.5') }}
-                  Create Package
+                  Create Release
                 </a>
               </div>
             {% endif %}
@@ -397,7 +397,7 @@
                   <div class="action-banner-spinner"></div>
                   <div>
                     <p class="text-sm font-medium text-base-content">
-                      Deploying package
+                      Deploying release
                       {% if application.latest_deployment.release_object %}
                         <span class="font-mono text-accent">v{{ application.latest_deployment.release_object.version }}</span>
                       {% endif %}
@@ -422,11 +422,11 @@
                     <span class="status-dot status-dot-success status-dot-lg"></span>
                     <div>
                       <p class="text-sm font-medium text-base-content">
-                        Package <span class="font-mono text-accent">v{{ application.latest_release.version }}</span> ready to deploy
+                        Release <span class="font-mono text-accent">v{{ application.latest_release.version }}</span> ready to deploy
                       </p>
                       {% if has_pending %}
                         <p class="text-xs text-warning/70">
-                          There are also unpackaged changes above -- deploy this package now or create a new package first.
+                          There are also unreleased changes above -- deploy this release now or create a new release first.
                         </p>
                       {% else %}
                         <p class="text-xs text-base-content/40">
@@ -438,7 +438,7 @@
                   <div class="deploy-steps-inline mt-2">
                     <span class="deploy-step-inline deploy-step-inline-done">{{ icon('check', 'w-3 h-3') }} Build</span>
                     <span class="deploy-step-inline-arrow">→</span>
-                    <span class="deploy-step-inline deploy-step-inline-done">{{ icon('check', 'w-3 h-3') }} Package</span>
+                    <span class="deploy-step-inline deploy-step-inline-done">{{ icon('check', 'w-3 h-3') }} Release</span>
                     <span class="deploy-step-inline-arrow">→</span>
                     <span class="deploy-step-inline deploy-step-inline-next">Deploy</span>
                   </div>
@@ -557,7 +557,7 @@
                   </div>
                   <div class="info-popup-row">
                     <code class="info-popup-type">release</code>
-                    <span class="info-popup-desc">Runs once per package build. Use for DB migrations.</span>
+                    <span class="info-popup-desc">Runs once per release build. Use for DB migrations.</span>
                   </div>
                   <div class="info-popup-row">
                     <code class="info-popup-type">postdeploy</code>
@@ -672,7 +672,7 @@
                       <span class="info-popup-header-text">{{ process_name }}</span>
                       <span class="proc-cmd-popup-badge">
                         {% if process_name == 'release' %}
-                          package build
+                          release build
                         {% elif process_name == 'postdeploy' %}
                           post-deploy
                         {% else %}
@@ -685,7 +685,7 @@
                     </div>
                     <div class="proc-cmd-popup-desc">
                       {% if process_name == 'release' %}
-                        Runs once during each package build. Typically used for database migrations. The package build fails if this exits non-zero.
+                        Runs once during each release build. Typically used for database migrations. The release build fails if this exits non-zero.
                       {% elif process_name == 'postdeploy' %}
                         Runs once after each successful deploy. Used for cache warming, notifications, or cleanup. Failures do not roll back the deploy.
                       {% else %}
@@ -804,7 +804,7 @@
             <div class="p-4">
               <div class="flex items-center gap-1.5 mb-2">
                 {{ icon('layers', 'w-3 h-3 text-base-content/30') }}
-                <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Packages</span>
+                <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Releases</span>
               </div>
               {% for rel in releases[:3] %}
                 <a href="{{ url_for('user.release_detail', release_id=rel.id) }}"
@@ -828,7 +828,7 @@
               </span>
             </a>
           {% else %}
-            <p class="text-xs text-base-content/20 py-1">No packages yet</p>
+            <p class="text-xs text-base-content/20 py-1">No releases yet</p>
           {% endfor %}
         </div>
         <div class="p-4">
@@ -933,7 +933,7 @@
                 {% if application.latest_release and application.latest_release.error %}pipeline-stage-error{% endif %}">
       <div class="pipeline-stage-header">
         <div>
-          <span class="text-xs text-base-content/40">Package</span>
+          <span class="text-xs text-base-content/40">Release</span>
           <span class="text-xs text-base-content/25 ml-1.5 hidden sm:inline">Image + config snapshot</span>
         </div>
         {% if application.latest_release %}
@@ -958,7 +958,7 @@
         </a>
       {% else %}
         <div class="pipeline-stage-body">
-          <p class="text-xs text-base-content/30">No packages</p>
+          <p class="text-xs text-base-content/30">No releases</p>
         </div>
       {% endif %}
       <div class="pipeline-stage-action flex gap-1">
@@ -985,7 +985,7 @@
       <div class="pipeline-stage-header">
         <div>
           <span class="text-xs text-base-content/40">Deploy</span>
-          <span class="text-xs text-base-content/25 ml-1.5 hidden sm:inline">Push package live</span>
+          <span class="text-xs text-base-content/25 ml-1.5 hidden sm:inline">Push release live</span>
         </div>
         {% if application.latest_deployment %}
           {% if application.latest_deployment.complete %}
@@ -1589,12 +1589,12 @@
 
 <div data-tab-panel="releases" class="tab-panel">
   <div class="flex items-center justify-between mb-4">
-    <h2 class="text-base font-medium text-base-content">Packages</h2>
+    <h2 class="text-base font-medium text-base-content">Releases</h2>
     <form action="{{ url_for('user.application_release_create', application_id=application.id) }}"
           method="post"
           class="inline">
       <button class="btn btn-primary btn-sm gap-1.5" type="submit">
-        {{ icon('scissors', 'w-3.5 h-3.5') }} Create Package
+        {{ icon('scissors', 'w-3.5 h-3.5') }} Create Release
       </button>
     </form>
   </div>
@@ -1604,9 +1604,9 @@
     <div class="dpl-history-header">
       <h2 class="dpl-history-title">
         {{ icon('layers', 'w-3.5 h-3.5') }}
-        Package History
+        Release History
       </h2>
-      <span class="dpl-history-count">{{ releases|length }} package{{ 's' if releases|length != 1 }}</span>
+      <span class="dpl-history-count">{{ releases|length }} release{{ 's' if releases|length != 1 }}</span>
     </div>
 
     <div class="dpl-list">
@@ -1713,16 +1713,16 @@
 
     <div class="mt-3 text-center">
       <a href="{{ url_for('user.application_releases', application_id=application.id) }}"
-         class="text-xs text-base-content/40 hover:text-accent transition-colors">View All Packages</a>
+         class="text-xs text-base-content/40 hover:text-accent transition-colors">View All Releases</a>
     </div>
   {% else %}
     <div class="card bg-base-200 border border-base-300">
       <div class="card-body">
         <div class="empty-state !py-12">
           <div class="text-base-content/15 mb-4">{{ icon('layers', 'w-12 h-12') }}</div>
-          <h3 class="text-base font-medium text-base-content/60 mb-1">No packages yet</h3>
+          <h3 class="text-base font-medium text-base-content/60 mb-1">No releases yet</h3>
           <p class="text-sm text-base-content/40 max-w-sm">
-            Packages bundle an image with configuration into a deployable snapshot.
+            Releases bundle an image with configuration into a deployable snapshot.
           </p>
         </div>
       </div>
@@ -1939,7 +1939,7 @@
         <div class="empty-state !py-12">
           <div class="text-base-content/15 mb-4">{{ icon('deploy', 'w-12 h-12') }}</div>
           <h3 class="text-base font-medium text-base-content/60 mb-1">No deploys yet</h3>
-          <p class="text-sm text-base-content/40 max-w-sm">Deploy a package to push it live.</p>
+          <p class="text-sm text-base-content/40 max-w-sm">Deploy a release to push it live.</p>
         </div>
       </div>
     </div>
@@ -1990,7 +1990,7 @@
 
     <div class="pm-stage-section">
       <div class="pm-stage-header">
-        <span class="pm-stage-label">Package</span>
+        <span class="pm-stage-label">Release</span>
         <div class="pm-stat-chips" data-pm-release-chips></div>
       </div>
       <div class="pm-bar-chart">

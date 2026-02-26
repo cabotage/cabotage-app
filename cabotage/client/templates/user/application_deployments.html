@@ -167,7 +167,7 @@
         <div class="empty-state !py-12">
           <div class="text-base-content/15 mb-4">{{ icon('deploy', 'w-12 h-12') }}</div>
           <h3 class="text-base font-medium text-base-content/60 mb-1">No deployments yet</h3>
-          <p class="text-sm text-base-content/40 max-w-sm">Deployments are created when you deploy a package.</p>
+          <p class="text-sm text-base-content/40 max-w-sm">Deployments are created when you deploy a release.</p>
           {% if app.latest_release and app.latest_release.built %}
             <form action="{{ url_for('user.release_deploy', release_id=app.latest_release.id) }}"
                   method="post"

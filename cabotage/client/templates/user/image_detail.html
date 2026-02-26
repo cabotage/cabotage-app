@@ -64,7 +64,7 @@
           <a href="{{ url_for('user.application_release_create', application_id=app.id) }}"
              class="btn btn-primary btn-sm gap-1.5">
             {{ icon('scissors', 'w-3.5 h-3.5') }}
-            Create Package
+            Create Release
           </a>
         {% endif %}
         {% if image.error %}
@@ -344,7 +344,7 @@
               <div class="flex items-center gap-1.5">
                 <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Processes</h2>
                 <div class="tooltip tooltip-right"
-                     data-tip="Defined in your Procfile. 'web' receives HTTP traffic. 'worker' runs background jobs. 'release' runs once per package build. 'postdeploy' runs once after each deploy.">
+                     data-tip="Defined in your Procfile. 'web' receives HTTP traffic. 'worker' runs background jobs. 'release' runs once per release build. 'postdeploy' runs once after each deploy.">
                   {{ icon('info', 'w-3 h-3 text-base-content/25 cursor-help') }}
                 </div>
               </div>

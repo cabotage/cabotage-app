@@ -42,7 +42,7 @@
         <div class="guide-step-card">
           <div class="flex items-center gap-2 mb-1.5">
             {{ icon('scissors', 'w-4 h-4 text-primary') }}
-            <h3 class="text-sm font-semibold text-base-content">Create Package</h3>
+            <h3 class="text-sm font-semibold text-base-content">Create Release</h3>
           </div>
           <p class="text-sm text-base-content/50 leading-relaxed">
             Snapshots the latest image together with your current environment variables into a single deployable unit. Nothing goes live yet — this just locks in what will be deployed.
@@ -58,7 +58,7 @@
             <h3 class="text-sm font-semibold text-base-content">Deploy</h3>
           </div>
           <p class="text-sm text-base-content/50 leading-relaxed">
-            Pushes the package to your pods. Traffic switches over once the new pods pass health checks.
+            Pushes the release to your pods. Traffic switches over once the new pods pass health checks.
           </p>
         </div>
       </div>
@@ -79,12 +79,12 @@
         <div class="guide-shortcut">
           <span class="guide-shortcut-step guide-shortcut-skip">Build</span>
           <span class="guide-shortcut-arrow text-base-content/15">→</span>
-          <span class="guide-shortcut-step guide-shortcut-active">Create Package</span>
+          <span class="guide-shortcut-step guide-shortcut-active">Create Release</span>
           <span class="guide-shortcut-arrow text-base-content/15">→</span>
           <span class="guide-shortcut-step guide-shortcut-active">Deploy</span>
         </div>
         <p class="text-xs text-base-content/40 mt-4">
-          The package automatically picks up the most recent built image. This is the fastest way to roll out a config change — no rebuild required.
+          The release automatically picks up the most recent built image. This is the fastest way to roll out a config change — no rebuild required.
         </p>
       </div>
     </div>
@@ -158,9 +158,9 @@
       <div class="guide-step">
         <div class="guide-step-number">4</div>
         <div class="guide-step-card">
-          <h3 class="text-sm font-semibold text-base-content mb-1.5">Package and deploy</h3>
+          <h3 class="text-sm font-semibold text-base-content mb-1.5">Release and deploy</h3>
           <p class="text-sm text-base-content/50 leading-relaxed">
-            You still create packages and deploy manually from the Overview tab. Fully automated deploy can be configured later.
+            You still create releases and deploy manually from the Overview tab. Fully automated deploy can be configured later.
           </p>
         </div>
       </div>
@@ -202,7 +202,7 @@
             <code class="text-sm text-accent font-medium min-w-[7rem] pt-0.5">release</code>
             <div class="flex-1">
               <p class="text-sm text-base-content/60 leading-relaxed">
-                A one-off command that runs once during package creation. Use this for database migrations or other setup tasks that need to complete before traffic is routed. The package build will fail if this command exits non-zero.
+                A one-off command that runs once during release creation. Use this for database migrations or other setup tasks that need to complete before traffic is routed. The release build will fail if this command exits non-zero.
               </p>
             </div>
           </div>
@@ -243,13 +243,13 @@
     </div>
   </div>
 
-  <div class="mb-10" id="package-build-commands">
+  <div class="mb-10" id="release-build-commands">
     <div class="flex items-center gap-2 mb-4">
       {{ icon('zap', 'w-4 h-4 text-primary') }}
-      <h2 class="text-base font-semibold text-base-content">Package build commands</h2>
+      <h2 class="text-base font-semibold text-base-content">Release build commands</h2>
     </div>
     <p class="text-sm text-base-content/50 mb-5">
-      When you create a package, Cabotage runs any one-off commands defined in your Procfile before the package is finalized. These are shown as chips in the Processes section on the Overview tab.
+      When you create a release, Cabotage runs any one-off commands defined in your Procfile before the release is finalized. These are shown as chips in the Processes section on the Overview tab.
     </p>
 
     <div class="card bg-base-200 border border-base-300 mb-4">
@@ -260,9 +260,9 @@
             <div class="guide-step-number">1</div>
             <div class="guide-step-connector"></div>
             <div class="guide-step-card">
-              <h3 class="text-sm font-semibold text-base-content mb-1">You click "Create Package"</h3>
+              <h3 class="text-sm font-semibold text-base-content mb-1">You click "Create Release"</h3>
               <p class="text-sm text-base-content/50 leading-relaxed">
-                Cabotage snapshots your latest image and current config into a new package.
+                Cabotage snapshots your latest image and current config into a new release.
               </p>
             </div>
           </div>
@@ -274,16 +274,16 @@
                 <code class="text-accent/60 bg-transparent p-0">release</code> commands run
               </h3>
               <p class="text-sm text-base-content/50 leading-relaxed">
-                Each <code class="text-accent/60 bg-transparent p-0">release</code> process from your Procfile runs inside the new image. If any command exits non-zero, the package build fails and nothing is deployed.
+                Each <code class="text-accent/60 bg-transparent p-0">release</code> process from your Procfile runs inside the new image. If any command exits non-zero, the release build fails and nothing is deployed.
               </p>
             </div>
           </div>
           <div class="guide-step">
             <div class="guide-step-number">3</div>
             <div class="guide-step-card">
-              <h3 class="text-sm font-semibold text-base-content mb-1">Package is ready to deploy</h3>
+              <h3 class="text-sm font-semibold text-base-content mb-1">Release is ready to deploy</h3>
               <p class="text-sm text-base-content/50 leading-relaxed">
-                Once all release commands succeed, the package is sealed and ready. After deploy, any <code class="text-accent/60 bg-transparent p-0">postdeploy</code> commands run automatically.
+                Once all release commands succeed, the release is sealed and ready. After deploy, any <code class="text-accent/60 bg-transparent p-0">postdeploy</code> commands run automatically.
               </p>
             </div>
           </div>
@@ -306,7 +306,7 @@
           </div>
         </div>
         <div class="text-xs text-base-content/40 mt-2 flex flex-col gap-0.5">
-          <span><code class="text-accent/60 bg-transparent p-0">release</code> commands run during package build (DB migrations, etc.)</span>
+          <span><code class="text-accent/60 bg-transparent p-0">release</code> commands run during release build (DB migrations, etc.)</span>
           <span><code class="text-accent/60 bg-transparent p-0">postdeploy</code> commands run after a successful deploy (cache warming, etc.)</span>
         </div>
         <div class="flex items-start gap-2 p-3 mt-3 rounded-lg bg-base-300/50 border border-base-content/5">
@@ -483,7 +483,7 @@
         <div class="flex items-start gap-2 p-3 rounded-lg bg-base-300/50 border border-base-content/5">
           {{ icon('alert-triangle', 'w-3.5 h-3.5 text-warning/50 mt-0.5 flex-shrink-0') }}
           <p class="text-xs text-base-content/40 leading-relaxed">
-            Changes don't take effect until you create a new package. The package snapshots whatever config exists at that moment.
+            Changes don't take effect until you create a new release. The release snapshots whatever config exists at that moment.
           </p>
         </div>
       </div>
