@@ -184,7 +184,7 @@ class DeleteApplicationForm(FlaskForm):
 
 
 class CreateConfigurationForm(FlaskForm):
-    application_id = SelectField(
+    application_id = HiddenField(
         "Application",
         [DataRequired()],
         description="Application this Configuration belongs to.",
@@ -321,7 +321,7 @@ class EditApplicationSettingsForm(FlaskForm):
 
 
 class EditConfigurationForm(FlaskForm):
-    application_id = SelectField(
+    application_id = HiddenField(
         "Application",
         [DataRequired()],
         description="Application this Configuration belongs to.",

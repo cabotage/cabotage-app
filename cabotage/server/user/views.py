@@ -680,9 +680,6 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
         abort(403)
 
     form = CreateConfigurationForm()
-    form.application_id.choices = [
-        (str(application.id), f"{organization.slug}/{project.slug}: {application.slug}")
-    ]
     form.application_id.data = str(application.id)
 
     if form.validate_on_submit():
@@ -755,12 +752,6 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
         abort(403)
 
     form = EditConfigurationForm(obj=configuration)
-    form.application_id.choices = [
-        (
-            str(configuration.application.id),
-            f"{organization.slug}/{project.slug}: {application.slug}",
-        )
-    ]
     form.application_id.data = str(configuration.application.id)
     form.name.data = str(configuration.name)
     form.secure.data = configuration.secret

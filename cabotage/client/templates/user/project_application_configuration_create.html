@@ -16,7 +16,6 @@
               name="project_application_configuration_create_form"
               class="flex flex-col gap-4">
           {{ form.hidden_tag() }}
-          {{ form.application_id() }}
           {{ render_field(form.name, placeholder='MY_VARIABLE') }}
           {{ render_field(form.value, placeholder='value') }}
           {{ render_field(form.secure) }}
