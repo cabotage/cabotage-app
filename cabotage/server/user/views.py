@@ -523,21 +523,24 @@ def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
         _preload_content=False,
     )
 
+    last_ping = time.monotonic()
     while resp.is_open():
         resp.update()
+        now = time.monotonic()
+        if now - last_ping >= 25:
+            try:
+                resp.sock.ping()
+            except Exception:
+                break
+            last_ping = now
         if data := ws.receive(timeout=0.01):
-            print((data,))
             if data[0] == "\x00":
                 resp.write_stdin(data[1:])
             elif data[0] == "\x01":
                 resp.write_channel(kubernetes.stream.ws_client.RESIZE_CHANNEL, data[1:])
-            else:
-                print((data[0],))
         if data := resp.read_stdout(timeout=0.01):
-            print((data,))
             ws.send("\x00" + data)
         if data := resp.read_stderr(timeout=0.01):
-            print((data,))
             ws.send("\x00" + data)
 
     resp.close()
