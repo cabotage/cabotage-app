@@ -139,7 +139,6 @@ html:not([data-theme-pref]) .theme-icon-system {
   -webkit-backdrop-filter: blur(12px);
   background: var(--topbar-bg);
   border-bottom: 1px solid var(--border-color);
-  overflow-x: clip;
   max-width: 100vw;
 }
 
