@@ -91,18 +91,8 @@
 
     <div class="hero-gradient">
       <div class="flex flex-col items-center text-center py-12 lg:py-20">
-        <div class="p-3 rounded-xl bg-primary/10 text-primary mb-6">
-          <svg class="w-10 h-10"
-               viewBox="0 0 24 24"
-               fill="none"
-               stroke="currentColor"
-               stroke-width="1.5"
-               stroke-linecap="round"
-               stroke-linejoin="round">
-            <path d="M12 2L2 7l10 5 10-5-10-5z" />
-            <path d="M2 17l10 5 10-5" />
-            <path d="M2 12l10 5 10-5" />
-          </svg>
+        <div class="p-3 rounded-2xl bg-primary/10 text-primary mb-6">
+          <span class="inline-block w-20 h-20 bg-current" style="-webkit-mask: url('{{ url_for('static', filename='cabotage.svg') }}') center/contain no-repeat; mask: url('{{ url_for('static', filename='cabotage.svg') }}') center/contain no-repeat;" aria-hidden="true"></span>
         </div>
         <h1 class="text-4xl lg:text-5xl font-bold text-base-content mb-4 text-balance">Cabotage</h1>
         <p class="text-lg text-base-content/50 max-w-xl mb-8 text-pretty leading-relaxed">
