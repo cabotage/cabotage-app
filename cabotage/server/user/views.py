@@ -485,6 +485,7 @@ def project_application_shell(org_slug, project_slug, app_slug):
 
     return render_template(
         "user/project_application_shell.html",
+        application=application,
         org_slug=org_slug,
         project_slug=project_slug,
         app_slug=app_slug,
