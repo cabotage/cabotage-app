@@ -1038,8 +1038,14 @@ def delete_job(batch_api_instance, namespace, job_object):
         )
 
 
-def run_job(core_api_instance, batch_api_instance, namespace, job_object,
-            redis_client=None, log_key=None):
+def run_job(
+    core_api_instance,
+    batch_api_instance,
+    namespace,
+    job_object,
+    redis_client=None,
+    log_key=None,
+):
     try:
         batch_api_instance.create_namespaced_job(namespace, job_object)
     except ApiException as exc:
@@ -1050,8 +1056,12 @@ def run_job(core_api_instance, batch_api_instance, namespace, job_object,
 
     if redis_client is not None and log_key is not None:
         return _run_job_streaming(
-            core_api_instance, batch_api_instance, namespace, job_object,
-            redis_client, log_key,
+            core_api_instance,
+            batch_api_instance,
+            namespace,
+            job_object,
+            redis_client,
+            log_key,
         )
 
     try:
@@ -1076,8 +1086,9 @@ def run_job(core_api_instance, batch_api_instance, namespace, job_object,
             pass
 
 
-def _run_job_streaming(core_api_instance, batch_api_instance, namespace, job_object,
-                       redis_client, log_key):
+def _run_job_streaming(
+    core_api_instance, batch_api_instance, namespace, job_object, redis_client, log_key
+):
     """Run a k8s job, streaming pod logs line-by-line to Redis."""
     job_name = job_object.metadata.name
     log_lines = []
@@ -1085,8 +1096,7 @@ def _run_job_streaming(core_api_instance, batch_api_instance, namespace, job_obj
     try:
         # Wait for the job's pod to appear and reach Running state
         label_selector = ",".join(
-            f"{k}={v}"
-            for k, v in job_object.spec.template.metadata.labels.items()
+            f"{k}={v}" for k, v in job_object.spec.template.metadata.labels.items()
         )
         pod = None
         for _ in range(120):  # up to ~2 minutes waiting for pod
@@ -1167,9 +1177,7 @@ def deploy_release(deployment):
 
     # Set up Redis streaming for live deploy logs
     try:
-        redis_client = get_redis_client(
-            current_app.config["CELERY_BROKER_URL"]
-        )
+        redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
         log_key = stream_key("deploy", job_id)
     except Exception:
         redis_client = None
@@ -1180,7 +1188,7 @@ def deploy_release(deployment):
         if redis_client is not None and log_key is not None:
             try:
                 publish_log_line(redis_client, log_key, msg)
-            except Exception:
+            except Exception:  # nosec B110
                 pass
 
     try:
@@ -1309,7 +1317,8 @@ def deploy_release(deployment):
                     updated == desired
                     and _zero_if_none(dep_obj.status.replicas) == desired
                     and available == desired
-                    and dep_obj.status.observed_generation >= dep_obj.metadata.generation
+                    and dep_obj.status.observed_generation
+                    >= dep_obj.metadata.generation
                 )
                 status_tuple = (ready, updated, available, complete)
                 if status_tuple != _last_status.get(process_name):
@@ -1318,7 +1327,9 @@ def deploy_release(deployment):
                         log(f"  {process_name}: {available}/{desired} available — done")
                         _go[process_name] = True
                     else:
-                        log(f"  {process_name}: {ready}/{desired} ready, {updated}/{desired} updated, {available}/{desired} available")
+                        log(
+                            f"  {process_name}: {ready}/{desired} ready, {updated}/{desired} updated, {available}/{desired} available"
+                        )
             if all(_go.values()):
                 break
         else:
@@ -1370,7 +1381,7 @@ def deploy_release(deployment):
         if redis_client is not None and log_key is not None:
             try:
                 publish_end(redis_client, log_key, error=True)
-            except Exception:
+            except Exception:  # nosec B110
                 pass
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
@@ -1395,7 +1406,7 @@ def deploy_release(deployment):
         if redis_client is not None and log_key is not None:
             try:
                 publish_end(redis_client, log_key, error=True)
-            except Exception:
+            except Exception:  # nosec B110
                 pass
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
@@ -1403,7 +1414,7 @@ def deploy_release(deployment):
     if redis_client is not None and log_key is not None:
         try:
             publish_end(redis_client, log_key, error=False)
-        except Exception:
+        except Exception:  # nosec B110
             pass
     deployment.deploy_log = "\n".join(deploy_log)
     db.session.commit()
