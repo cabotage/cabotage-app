@@ -7,5 +7,5 @@ sqlalchemy-stubs
 types-PyYAML 
 types-requests
 types-toml
-typing-extensions==4.7.1
-urllib3==2.2.2
+typing-extensions==4.15.0
+urllib3==2.6.3
