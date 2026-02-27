@@ -46,6 +46,7 @@ from cabotage.utils.docker_auth import (
     generate_kubernetes_imagepullsecrets,
 )
 
+from cabotage.utils.build_log_stream import run_and_stream
 from cabotage.utils.release_build_context import RELEASE_DOCKERFILE_TEMPLATE
 from cabotage.utils.github import post_deployment_status_update
 from cabotage.utils import procfile
@@ -340,23 +341,24 @@ def build_release_buildkit(release):
                 os.makedirs(os.path.join(tempdir, ".docker"), exist_ok=True)
                 with open(os.path.join(tempdir, ".docker", "config.json"), "w") as f:
                     f.write(dockerconfigjson)
+
                 try:
-                    completed_subprocess = subprocess.run(  # nosec
+                    output = run_and_stream(
                         buildctl_command + buildctl_args,
                         env={"BUILDKIT_HOST": buildkitd_url, "HOME": tempdir},
                         cwd=tempdir,
-                        check=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,
-                        text=True,
+                        broker_url=current_app.config["CELERY_BROKER_URL"],
+                        build_type="release",
+                        build_job_id=release.build_job_id,
                     )
-                except subprocess.CalledProcessError as exc:
-                    raise BuildError(f"Build subprocess failed: {exc}")
-            release.release_build_log = (
-                " ".join(buildctl_command + buildctl_args)
-                + "\n"
-                + completed_subprocess.stdout
-            )
+                except subprocess.CalledProcessError as proc_exc:
+                    release.release_build_log = proc_exc.output
+                    db.session.commit()
+                    raise BuildError(
+                        f"Build subprocess failed with exit code {proc_exc.returncode}"
+                    )
+
+            release.release_build_log = output
             db.session.commit()
     except Exception as exc:
         raise BuildError(f"Build failed: {exc}")
@@ -892,27 +894,24 @@ def build_image_buildkit(image=None):
                         os.path.join(tempdir, ".secret", "github_access_token"), "w"
                     ) as f:
                         f.write(access_token)
+
                 try:
-                    completed_subprocess = subprocess.run(  # nosec
+                    output = run_and_stream(
                         buildctl_command + buildctl_args,
                         env={"BUILDKIT_HOST": buildkitd_url, "HOME": tempdir},
                         cwd=tempdir,
-                        check=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,
-                        text=True,
+                        broker_url=current_app.config["CELERY_BROKER_URL"],
+                        build_type="image",
+                        build_job_id=image.build_job_id,
                     )
-                except subprocess.CalledProcessError as exc:
-                    image.image_build_log = (
-                        " ".join(buildctl_command + buildctl_args) + "\n" + exc.output
-                    )
+                except subprocess.CalledProcessError as proc_exc:
+                    image.image_build_log = proc_exc.output
                     db.session.commit()
-                    raise BuildError(f"Build subprocess failed: {exc}")
-            image.image_build_log = (
-                " ".join(buildctl_command + buildctl_args)
-                + "\n"
-                + completed_subprocess.stdout
-            )
+                    raise BuildError(
+                        f"Build subprocess failed with exit code {proc_exc.returncode}"
+                    )
+
+            image.image_build_log = output
             db.session.commit()
     except Exception as exc:
         raise BuildError(f"Build failed: {exc}")

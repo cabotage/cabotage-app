@@ -5,6 +5,7 @@ pip-tools
 ruff
 sqlalchemy-stubs
 types-PyYAML 
+types-redis
 types-requests
 types-toml
 typing-extensions==4.7.1
