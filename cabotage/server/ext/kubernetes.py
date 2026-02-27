@@ -15,7 +15,8 @@ class Kubernetes(object):
         except Exception:
             try:
                 kubernetes.config.load_kube_config(
-                    context=app.config["KUBERNETES_CONTEXT"]
+                    config_file=app.config["KUBERNETES_CONFIG"],
+                    context=app.config["KUBERNETES_CONTEXT"],
                 )
             except Exception:
                 if app.config["KUBERNETES_ENABLED"]:
