@@ -1192,7 +1192,6 @@ def deployment_livelogs(ws, deployment_id):
         abort(403)
     job_id = deployment.job_id
     deploy_log = deployment.deploy_log
-    namespace = deployment.application.project.organization.slug
 
     if deploy_log is not None:
         ws.send(f"Job Pod deployment-{job_id}")
@@ -1204,11 +1203,34 @@ def deployment_livelogs(ws, deployment_id):
     db.session.remove()
 
     if current_app.config["KUBERNETES_ENABLED"]:
-        _stream_k8s_job_logs(
+        # Wait for the worker to set job_id if it hasn't yet
+        if job_id is None:
+            for _ in range(60):  # up to ~30 seconds
+                time.sleep(0.5)
+                dep = Deployment.query.filter_by(id=deployment_id).first()
+                if dep is None:
+                    ws.send("=================END OF LOGS=================")
+                    return
+                if dep.job_id is not None:
+                    job_id = dep.job_id
+                    break
+                # Check if deploy already finished while we were waiting
+                if dep.deploy_log is not None:
+                    ws.send(f"Job Pod deployment-{dep.job_id}")
+                    for line in dep.deploy_log.split("\n"):
+                        ws.send(f"  {line}")
+                    ws.send("=================END OF LOGS=================")
+                    return
+                db.session.remove()
+            else:
+                ws.send("=================END OF LOGS=================")
+                return
+
+        _stream_redis_build_logs(
             ws,
+            "deploy",
+            job_id,
             f"deployment-{job_id}",
-            namespace,
-            poll_interval=0.25,
         )
     else:
         # deploy runs synchronously, log should already be in DB

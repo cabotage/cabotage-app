@@ -20,6 +20,12 @@ from cabotage.server import (
 
 from cabotage.server.models.projects import Deployment, DEFAULT_POD_CLASS, pod_classes
 
+from cabotage.utils.build_log_stream import (
+    get_redis_client,
+    publish_end,
+    publish_log_line,
+    stream_key,
+)
 from cabotage.utils.github import post_deployment_status_update
 
 
@@ -1032,13 +1038,20 @@ def delete_job(batch_api_instance, namespace, job_object):
         )
 
 
-def run_job(core_api_instance, batch_api_instance, namespace, job_object):
+def run_job(core_api_instance, batch_api_instance, namespace, job_object,
+            redis_client=None, log_key=None):
     try:
         batch_api_instance.create_namespaced_job(namespace, job_object)
     except ApiException as exc:
         raise DeployError(
             "Unexpected exception creating Job/"
             f"{job_object.metadata.name} in {namespace}: {exc}"
+        )
+
+    if redis_client is not None and log_key is not None:
+        return _run_job_streaming(
+            core_api_instance, batch_api_instance, namespace, job_object,
+            redis_client, log_key,
         )
 
     try:
@@ -1063,28 +1076,129 @@ def run_job(core_api_instance, batch_api_instance, namespace, job_object):
             pass
 
 
+def _run_job_streaming(core_api_instance, batch_api_instance, namespace, job_object,
+                       redis_client, log_key):
+    """Run a k8s job, streaming pod logs line-by-line to Redis."""
+    job_name = job_object.metadata.name
+    log_lines = []
+
+    try:
+        # Wait for the job's pod to appear and reach Running state
+        label_selector = ",".join(
+            f"{k}={v}"
+            for k, v in job_object.spec.template.metadata.labels.items()
+        )
+        pod = None
+        for _ in range(120):  # up to ~2 minutes waiting for pod
+            try:
+                pods = core_api_instance.list_namespaced_pod(
+                    namespace, label_selector=label_selector
+                )
+                if pods.items:
+                    pod = pods.items[0]
+                    if pod.status.phase in ("Running", "Succeeded", "Failed"):
+                        break
+            except ApiException:
+                pass
+            time.sleep(1)
+
+        if pod is None:
+            raise DeployError(
+                f"Timed out waiting for pod for Job/{job_name} in {namespace}"
+            )
+
+        # Stream logs from the pod
+        container = job_object.metadata.labels.get("process", None)
+        try:
+            w = kubernetes.watch.Watch()
+            kwargs = dict(
+                name=pod.metadata.name,
+                namespace=namespace,
+                follow=True,
+                _preload_content=False,
+            )
+            if container:
+                kwargs["container"] = container
+            for line in w.stream(
+                core_api_instance.read_namespaced_pod_log,
+                **kwargs,
+            ):
+                if isinstance(line, bytes):
+                    line = line.decode("utf-8", errors="replace")
+                line = line.rstrip("\n")
+                publish_log_line(redis_client, log_key, line)
+                log_lines.append(line)
+        except ApiException:
+            # Pod may have already terminated; logs were collected above
+            pass
+
+        # Poll for final job status — k8s may not have updated it yet
+        succeeded = False
+        for _ in range(30):
+            job_status = batch_api_instance.read_namespaced_job_status(
+                job_name, namespace
+            )
+            if job_status.status.succeeded and job_status.status.succeeded > 0:
+                succeeded = True
+                break
+            if job_status.status.failed and job_status.status.failed > 0:
+                break
+            time.sleep(1)
+
+        # Build log string matching fetch_job_logs format
+        log_string = f"Job Pod {pod.metadata.name}:\n"
+        for log_line in log_lines:
+            log_string += f"  {log_line}\n"
+
+        return succeeded, log_string
+    finally:
+        try:
+            delete_job(batch_api_instance, namespace, job_object)
+        except (DeployError, ApiException):
+            pass
+
+
 def deploy_release(deployment):
     job_id = secrets.token_hex(4)
     deployment.job_id = job_id
     db.session.add(deployment)
     db.session.commit()
     deploy_log = []
+
+    # Set up Redis streaming for live deploy logs
     try:
-        deploy_log.append("Constructing API Clients")
+        redis_client = get_redis_client(
+            current_app.config["CELERY_BROKER_URL"]
+        )
+        log_key = stream_key("deploy", job_id)
+    except Exception:
+        redis_client = None
+        log_key = None
+
+    def log(msg):
+        deploy_log.append(msg)
+        if redis_client is not None and log_key is not None:
+            try:
+                publish_log_line(redis_client, log_key, msg)
+            except Exception:
+                pass
+
+    try:
+        log("Constructing API Clients")
         api_client = kubernetes_ext.kubernetes_client
         core_api_instance = kubernetes.client.CoreV1Api(api_client)
         apps_api_instance = kubernetes.client.AppsV1Api(api_client)
         batch_api_instance = kubernetes.client.BatchV1Api(api_client)
         custom_objects_api_instance = kubernetes.client.CustomObjectsApi(api_client)
-        deploy_log.append("Fetching Namespace")
+        log("Fetching Namespace")
         namespace = fetch_namespace(core_api_instance, deployment.release_object)
-        deploy_log.append("Fetching Cabotage CA Cert ConfigMap")
+        log("Fetching Cabotage CA Cert ConfigMap")
         fetch_cabotage_ca_configmap(core_api_instance, deployment.release_object)
-        deploy_log.append("Fetching ServiceAccount")
+        log("Fetching ServiceAccount")
         service_account = fetch_service_account(
             core_api_instance, deployment.release_object
         )
-        deploy_log.append("Fetching CabotageEnrollment")
+        log("Fetching CabotageEnrollment")
         fetch_cabotage_enrollment(
             custom_objects_api_instance, deployment.release_object
         )
@@ -1094,10 +1208,10 @@ def deploy_release(deployment):
                 for process_name in deployment.release_object.processes
             ]
         ):
-            deploy_log.append("Fetching web Service(s)")
+            log("Fetching web Service(s)")
             for process_name in deployment.release_object.processes:
                 if process_name.startswith("web"):
-                    deploy_log.append(f"Fetching {process_name} Service")
+                    log(f"Fetching {process_name} Service")
                     fetch_service(
                         core_api_instance, deployment.release_object, process_name
                     )
@@ -1107,18 +1221,18 @@ def deploy_release(deployment):
                 for process_name in deployment.release_object.processes
             ]
         ):
-            deploy_log.append("Fetching tcp Service(s)")
+            log("Fetching tcp Service(s)")
             for process_name in deployment.release_object.processes:
                 if process_name.startswith("tcp"):
-                    deploy_log.append(f"Fetching {process_name} Service")
+                    log(f"Fetching {process_name} Service")
                     fetch_service(
                         core_api_instance, deployment.release_object, process_name
                     )
-        deploy_log.append("Fetching ImagePullSecrets")
+        log("Fetching ImagePullSecrets")
         image_pull_secrets = fetch_image_pull_secrets(
             core_api_instance, deployment.release_object
         )
-        deploy_log.append("Patching ServiceAccount with ImagePullSecrets")
+        log("Patching ServiceAccount with ImagePullSecrets")
         service_account = core_api_instance.patch_namespaced_service_account(
             service_account.metadata.name,
             namespace.metadata.name,
@@ -1131,7 +1245,7 @@ def deploy_release(deployment):
             ),
         )
         for release_command in deployment.release_object.release_commands:
-            deploy_log.append(f"Running release command {release_command}")
+            log(f"Running release command {release_command}")
             job_object = render_job(
                 namespace.metadata.name,
                 deployment.release_object,
@@ -1144,14 +1258,16 @@ def deploy_release(deployment):
                 batch_api_instance,
                 namespace.metadata.name,
                 job_object,
+                redis_client=redis_client,
+                log_key=log_key,
             )
-            deploy_log.append(job_logs)
+            log(job_logs)
             if not job_complete:
                 raise DeployError(f"Release command {release_command} failed!")
             else:
-                deploy_log.append(f"Release command {release_command} complete!")
+                log(f"Release command {release_command} complete!")
         for process_name in deployment.release_object.processes:
-            deploy_log.append(
+            log(
                 f"Creating deployment for {process_name} "
                 f"with {deployment.application.process_counts.get(process_name, 0)} "
                 "replicas"
@@ -1164,34 +1280,54 @@ def deploy_release(deployment):
                 process_name,
             )
 
-        deploy_log.append("Waiting on deployment to rollout...")
+        log("Waiting on deployment to rollout...")
         start = time.time()
         timeout = deployment.release_object.application.deployment_timeout
         _go = {
             process_name: False for process_name in deployment.release_object.processes
         }
+        _last_status = {}
         while time.time() - start < timeout:
             time.sleep(2)
             for process_name in deployment.release_object.processes:
-                if deployment_is_complete(
+                if _go[process_name]:
+                    continue
+                dep_obj = fetch_deployment(
                     apps_api_instance,
                     namespace.metadata.name,
                     deployment.release_object,
                     service_account.metadata.name,
                     process_name,
-                ):
-                    _go[process_name] = True
-                else:
+                )
+                if dep_obj is None:
                     continue
+                desired = _zero_if_none(dep_obj.spec.replicas)
+                updated = _zero_if_none(dep_obj.status.updated_replicas)
+                available = _zero_if_none(dep_obj.status.available_replicas)
+                ready = _zero_if_none(dep_obj.status.ready_replicas)
+                complete = (
+                    updated == desired
+                    and _zero_if_none(dep_obj.status.replicas) == desired
+                    and available == desired
+                    and dep_obj.status.observed_generation >= dep_obj.metadata.generation
+                )
+                status_tuple = (ready, updated, available, complete)
+                if status_tuple != _last_status.get(process_name):
+                    _last_status[process_name] = status_tuple
+                    if complete:
+                        log(f"  {process_name}: {available}/{desired} available — done")
+                        _go[process_name] = True
+                    else:
+                        log(f"  {process_name}: {ready}/{desired} ready, {updated}/{desired} updated, {available}/{desired} available")
             if all(_go.values()):
                 break
         else:
-            deploy_log.append("Unable to launch replicas in time")
-            deploy_log.append(str(_go))
+            log("Unable to launch replicas in time")
+            log(str(_go))
             raise DeployError("Unable to launch replicas in time")
 
         for postdeploy_command in deployment.release_object.postdeploy_commands:
-            deploy_log.append(f"Running postdeploy command {postdeploy_command}")
+            log(f"Running postdeploy command {postdeploy_command}")
             job_object = render_job(
                 namespace.metadata.name,
                 deployment.release_object,
@@ -1204,14 +1340,16 @@ def deploy_release(deployment):
                 batch_api_instance,
                 namespace.metadata.name,
                 job_object,
+                redis_client=redis_client,
+                log_key=log_key,
             )
-            deploy_log.append(job_logs)
+            log(job_logs)
             if not job_complete:
                 raise DeployError(f"Release command {postdeploy_command} failed!")
             else:
-                deploy_log.append(f"Release command {postdeploy_command} complete!")
+                log(f"Release command {postdeploy_command} complete!")
         deployment.complete = True
-        deploy_log.append(f"Deployment {deployment.id} complete")
+        log(f"Deployment {deployment.id} complete")
     except DeployError as exc:
         deployment.error = True
         deployment.error_detail = str(exc)
@@ -1229,6 +1367,11 @@ def deploy_release(deployment):
                 "failure",
                 f"Deployment failed: {exc}",
             )
+        if redis_client is not None and log_key is not None:
+            try:
+                publish_end(redis_client, log_key, error=True)
+            except Exception:
+                pass
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
         return False
@@ -1249,9 +1392,19 @@ def deploy_release(deployment):
                 "error",
                 f"Deployment failed: {exc}",
             )
+        if redis_client is not None and log_key is not None:
+            try:
+                publish_end(redis_client, log_key, error=True)
+            except Exception:
+                pass
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
         return False
+    if redis_client is not None and log_key is not None:
+        try:
+            publish_end(redis_client, log_key, error=False)
+        except Exception:
+            pass
     deployment.deploy_log = "\n".join(deploy_log)
     db.session.commit()
     if (
