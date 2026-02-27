@@ -873,45 +873,6 @@ BuildProgressTracker.prototype.complete = function () {
    stage = 'build' → wait for release, 'release' → wait for deploy. */
 function pollForNextStep(appId, stage) {
   // TODO(#180): re-enable when pipeline_status endpoint exists
-  /* disabled – endpoint not yet implemented
-  var url = '/applications/' + appId + '/pipeline_status';
-  var attempts = 0;
-  var maxAttempts = 40; // 40 × 3s = 2 min max wait
-  var banner = document.getElementById('nextStepBanner');
-
-  if (banner) banner.hidden = false;
-
-  (function poll() {
-    attempts++;
-    setTimeout(function () {
-      fetch(url, { credentials: 'same-origin' })
-        .then(function (r) {
-          if (!r.ok) throw new Error('pipeline_status ' + r.status);
-          return r.json();
-        })
-        .then(function (data) {
-          var target = null;
-          if (stage === 'build' && data.release && data.release.id) {
-            target = '/release/' + data.release.id;
-          } else if (stage === 'release' && data.deploy && data.deploy.id) {
-            target = '/deployment/' + data.deploy.id;
-          }
-          if (target) {
-            if (banner) {
-              var link = banner.querySelector('a');
-              if (link) link.href = target;
-            }
-            window.location.replace(target);
-          } else if (attempts < maxAttempts) {
-            poll();
-          }
-        })
-        .catch(function () {
-          if (attempts < maxAttempts) poll();
-        });
-    }, 3000);
-  })();
-  */
 }
 
 /* Pipeline Tracker (Overview Page) */
@@ -1577,12 +1538,6 @@ function stopAllPollers() {
 
 function initPipelineTracker() {
   // TODO(#179/#180): re-enable when pipeline_status endpoint exists
-  /* disabled – endpoint not yet implemented
-  var container = document.querySelector('[data-pipeline-tracker]');
-  if (container && !isLowDataMode()) {
-    window.pipelineTracker = new PipelineTracker(container);
-  }
-  */
   if (document.querySelector('time[data-timestamp]')) {
     startTimestampTicker();
   }
@@ -1696,15 +1651,6 @@ DashboardPipelinePoller.prototype.update = function (pipelines) {
 
 function initDashboardPoller() {
   // TODO(#179): re-enable when active_pipelines endpoint exists
-  /* disabled – endpoint not yet implemented
-  if (isLowDataMode()) return;
-  var toastContainer = document.getElementById('pipeline-toasts');
-  if (!toastContainer) return;
-  var trackedAppId = null;
-  var trackerEl = document.querySelector('[data-pipeline-tracker]');
-  if (trackerEl) trackedAppId = trackerEl.getAttribute('data-application-id');
-  window.dashboardPoller = new DashboardPipelinePoller(trackedAppId);
-  */
 }
 
 /* Observability Panel */
@@ -2089,12 +2035,6 @@ ObservabilityPanel.prototype.updateEvents = function (events) {
 
 function initObservabilityPanel() {
   // TODO(#180): re-enable when observability endpoint exists
-  /* disabled – endpoint not yet implemented
-  if (isLowDataMode()) return;
-  var container = document.querySelector('[data-observability-panel]');
-  if (!container) return;
-  window.observabilityPanel = new ObservabilityPanel(container);
-  */
 }
 
 /* Pipeline Metrics Panel */
@@ -2286,12 +2226,6 @@ PipelineMetricsPanel.prototype.renderBarChart = function (svgEl, history, avgSec
 
 function initPipelineMetricsPanel() {
   // TODO(#180): re-enable when pipeline-metrics endpoint exists
-  /* disabled – endpoint not yet implemented
-  if (isLowDataMode()) return;
-  var container = document.querySelector('[data-pipeline-metrics-panel]');
-  if (!container) return;
-  window.pipelineMetricsPanel = new PipelineMetricsPanel(container);
-  */
 }
 
 /* Live Status Mini (Overview tab) */
@@ -2454,21 +2388,6 @@ ObservabilityMini.prototype.renderSparkline = function (container, history, key,
 
 function initLiveStatus() {
   // TODO(#180): re-enable when observability endpoint exists
-  /* disabled – endpoint not yet implemented
-  if (isLowDataMode()) return;
-  var container = document.querySelector('[data-live-status]');
-  if (!container) return;
-  var mini = new ObservabilityMini(container);
-
-  var panel = container.closest('[data-tab-panel]');
-  if (panel) {
-    panel.addEventListener('tab-activated', function () { mini.activate(); });
-    panel.addEventListener('tab-deactivated', function () { mini.deactivate(); });
-    if (panel.classList.contains('tab-panel-active')) {
-      mini.activate();
-    }
-  }
-  */
 }
 
 /* Build/Release Detail Page */
