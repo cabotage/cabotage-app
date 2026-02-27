@@ -588,8 +588,10 @@
               </div>
               <a href="{{ url_for('security.login') }}"
                  class="btn btn-ghost btn-sm text-sm">Sign In</a>
+              {% if security.registerable %}
               <a href="{{ url_for('security.register') }}"
                  class="btn btn-primary btn-sm text-sm">Sign Up</a>
+              {% endif %}
             {% endif %}
           </div>
         </div>

@@ -99,7 +99,9 @@
           Self-hosted Platform as a Service.
         </p>
         <div class="flex items-center gap-3">
+          {% if security.registerable %}
           <a href="{{ url_for('security.register') }}" class="btn btn-primary">Get Started</a>
+          {% endif %}
           <a href="{{ url_for('security.login') }}" class="btn btn-ghost">Sign In</a>
         </div>
       </div>
