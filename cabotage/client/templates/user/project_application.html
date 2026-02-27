@@ -43,8 +43,9 @@
   {% set has_pending = has_image_changes or has_config_changes %}
   {% set has_deployable = application.latest_release and application.latest_release.built %}
   {% set latest_release_id = (application.latest_release.id|string) if application.latest_release else none %}
-  {% set latest_deployed_release_id = (application.latest_deployment.release.get('id')|string) if application.latest_deployment and application.latest_deployment.release and application.latest_deployment.release.get('id') else none %}
-  {% set latest_release_live = application.latest_deployment and application.latest_deployment.complete and latest_release_id and latest_deployed_release_id == latest_release_id %}
+  {% set _completed_deploy = (deployments|selectattr('complete')|first) if deployments else none %}
+  {% set latest_deployed_release_id = (_completed_deploy.release.get('id')|string) if _completed_deploy and _completed_deploy.release and _completed_deploy.release.get('id') else none %}
+  {% set latest_release_live = latest_release_id and latest_deployed_release_id == latest_release_id %}
   {% set is_deploying = application.latest_deployment and not application.latest_deployment.complete and not application.latest_deployment.error %}
   {% set show_ready_to_deploy = has_deployable and not latest_release_live and not is_deploying %}
 
