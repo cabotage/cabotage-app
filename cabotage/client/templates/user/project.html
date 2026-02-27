@@ -1,25 +1,131 @@
 {% extends "_base.html" %}
-{% from "bootstrap/utils.html" import form_button %}
+{% from "_macros.html" import icon, resource_path, page_header, empty_state, service_card, stat_card, create_modal, render_field %}
+
+{% block title %}
+  {{ project.name }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': project.organization.slug, 'url': url_for('user.organization', org_slug=project.organization.slug) },
+  {'label': project.slug}
+  ]) }}
+{% endblock resource_path %}
+
 {% block content %}
-  <div class="container" id="content">
-    <div class="row pull-right">
-      <p>Organization: {{ project.organization.name }}</p>
-    </div>
-    <div class="row">
-      <h1>Project: {{ project.name }}</h1>
-    </div>
-    <div class="row">
-      <h2>Applications</h2>
-    </div>
-    <table class="table">
-    {% for application in project.project_applications %}
-      <tr>
-        <td><a href="{{ url_for('user.project_application', org_slug=project.organization.slug, project_slug=project.slug, app_slug=application.slug) }}">{{ application.name }}</a></td>
-      </tr>
-    {% endfor %}
-      <tr>
-        <td>{{ form_button(url_for('user.project_application_create', org_slug=project.organization.slug, project_slug=project.slug), "Create a new Application", method="GET", class="btn btn-primary pull-right") }}</td>
-      </tr>
-    </table>
+  {% call page_header(project.name, project.organization.slug ~ '/' ~ project.slug) %}
+    <button type="button"
+            onclick="document.getElementById('create-app-modal').classList.remove('hidden')"
+            class="btn btn-primary btn-sm gap-2">
+      {{ icon('plus', 'w-4 h-4') }}
+      New Application
+    </button>
+  {% endcall %}
+
+  {% set app_count = project.project_applications|length %}
+  {% set total_instances = namespace(n=0) %}
+  {% set running_count = namespace(n=0) %}
+  {% set errored_count = namespace(n=0) %}
+  {% set building_count = namespace(n=0) %}
+  {% for app in project.project_applications %}
+    {% set total_instances.n = total_instances.n + (app.process_counts.values()|sum if app.process_counts else 0) %}
+    {% if app.latest_deployment_running or app.latest_deployment_completed %}
+      {% set running_count.n = running_count.n + 1 %}
+    {% endif %}
+    {% if app.latest_image_error and (not app.latest_image_built or app.latest_image_error.version > app.latest_image_built.version) %}
+      {% set errored_count.n = errored_count.n + 1 %}
+    {% endif %}
+    {% if app.latest_image_building %}
+      {% set building_count.n = building_count.n + 1 %}
+    {% endif %}
+  {% endfor %}
+
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+    {{ stat_card(app_count, 'Applications', 'box', 'accent') }}
+    {{ stat_card(total_instances.n, 'Instances', 'layers', 'secondary') }}
+    {{ stat_card(proj_deploy_count, 'Deployments', 'deploy', 'success') }}
+    {% if errored_count.n > 0 %}{{ stat_card(errored_count.n, 'Errors', 'alert-triangle', 'error') }}{% endif %}
   </div>
-{% endblock %}
+
+  {% if project.project_applications %}
+    <div class="flex items-center gap-3 mb-3">
+      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider">Services</h2>
+      {% if app_count > 0 %}
+        <div class="health-bar">
+          {% if running_count.n > 0 %}
+            <span class="health-bar-segment text-success">
+              <span class="status-dot status-dot-success"></span>
+              {{ running_count.n }}
+            </span>
+          {% endif %}
+          {% if errored_count.n > 0 %}
+            <span class="health-bar-segment text-error">
+              <span class="status-dot status-dot-error"></span>
+              {{ errored_count.n }}
+            </span>
+          {% endif %}
+          {% if building_count.n > 0 %}
+            <span class="health-bar-segment text-warning">
+              <span class="status-dot status-dot-warning status-dot-pulse"></span>
+              {{ building_count.n }}
+            </span>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      {% for application in project.project_applications %}
+        {% set status = "" %}
+        {% if application.latest_deployment_running %}
+          {% set status = "running" %}
+        {% elif application.latest_image_building %}
+          {% set status = "building" %}
+        {% elif application.latest_image_error and (not application.latest_image_built or application.latest_image_error.version > application.latest_image_built.version) %}
+          {% set status = "error" %}
+        {% elif application.latest_deployment_completed %}
+          {% set status = "running" %}
+        {% endif %}
+        {% set proc_count = application.process_counts.values()|sum if application.process_counts else 0 %}
+        {% set meta = [
+                  (proc_count ~ ' instance' ~ ('s' if proc_count != 1 else '')) if proc_count else 'No instances',
+                  (application.configurations|length ~ ' env vars') if application.configurations else ''
+                ]|select|list %}
+        {% if application.latest_deployment_completed %}
+          {% set _ = meta.append('deployed ' ~ application.latest_deployment_completed.completed|humanize) %}
+        {% endif %}
+        {{ service_card(name=application.name,
+                slug=application.slug,
+                url=url_for('user.project_application', org_slug=project.organization.slug, project_slug=project.slug, app_slug=application.slug) ,
+        status=status,
+        meta_items=meta,
+        color='accent',
+        github_repo=application.github_repository or ''
+        ) }}
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <div class="text-base-content/15 mb-4">{{ icon('box', 'w-12 h-12') }}</div>
+      <h3 class="text-base font-medium text-base-content/60 mb-1">No applications yet</h3>
+      <p class="text-sm text-base-content/40 max-w-sm">Create your first application to deploy a service.</p>
+      <button type="button"
+              onclick="document.getElementById('create-app-modal').classList.remove('hidden')"
+              class="btn btn-primary btn-sm gap-2 mt-4">
+        {{ icon('plus', 'w-4 h-4') }}
+        Create Application
+      </button>
+    </div>
+  {% endif %}
+
+  {% if app_create_form is defined %}
+    {{ create_modal(modal_id='create-app-modal',
+      title='Create Application',
+      subtitle='In ' ~ project.organization.slug ~ '/' ~ project.slug,
+      form=app_create_form,
+      action_url=url_for('user.project_application_create', org_slug=project.organization.slug, project_slug=project.slug) ,
+    submit_text='Create Application',
+    name_field=app_create_form.name,
+    slug_field=app_create_form.slug
+    ) }}
+  {% endif %}
+{% endblock content %}

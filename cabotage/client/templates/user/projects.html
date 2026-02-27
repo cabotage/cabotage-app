@@ -1,19 +1,155 @@
 {% extends "_base.html" %}
-{% from "bootstrap/utils.html" import form_button %}
+{% from "_macros.html" import icon, page_header, empty_state, service_card, stat_card, render_field %}
+
+{% block title %}
+  Projects - Cabotage
+{% endblock title %}
+
 {% block content %}
-  <div class="container" id="content">
-    <div class="row">
-      <h1>Your Projects</h1>
-    </div>
-    <table class="table">
+  {% call page_header('Projects', 'All projects across your organizations') %}
+    {% if project_create_form is defined and project_create_form.organization_id.choices %}
+      <button type="button"
+              onclick="document.getElementById('create-project-modal').classList.remove('hidden')"
+              class="btn btn-primary btn-sm gap-2">
+        {{ icon("plus") }}
+        New Project
+      </button>
+    {% else %}
+      <a href="{{ url_for('user.project_create') }}"
+         class="btn btn-primary btn-sm gap-2">
+        {{ icon("plus") }}
+        New Project
+      </a>
+    {% endif %}
+  {% endcall %}
+
+  {% if projects %}
+    {% set total_apps = namespace(n=0) %}
     {% for project in projects %}
-      <tr>
-        <td><a href="{{ url_for("user.project", org_slug=project.organization.slug, project_slug=project.slug) }}">{{ project.organization.slug }}/{{ project.slug }}</a></td>
-      </tr>
+      {% set total_apps.n = total_apps.n + project.project_applications|length %}
     {% endfor %}
-      <tr>
-        <td>{{ form_button(url_for('user.project_create'), "Create a new Project", method="GET", class="btn btn-primary pull-right") }}</td>
-      </tr>
-    </table>
-  </div>
-{% endblock %}
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      {{ stat_card(projects|length, 'Projects', 'folder', 'secondary') }}
+      {{ stat_card(total_apps.n, 'Applications', 'box', 'accent') }}
+    </div>
+
+    {% set org_groups = {} %}
+    {% for project in projects %}
+      {% set org_slug = project.organization.slug %}
+      {% if org_slug not in org_groups %}
+        {% set _ = org_groups.update({org_slug: {'org': project.organization, 'projects': []}}) %}
+      {% endif %}
+      {% set _ = org_groups[org_slug]['projects'].append(project) %}
+    {% endfor %}
+
+    <div class="flex flex-col gap-6">
+      {% for org_slug, group in org_groups.items() %}
+        <div>
+          <div class="flex items-center gap-2 mb-3">
+            <span class="text-base-content/40">{{ icon('building', 'w-4 h-4') }}</span>
+            <a href="{{ url_for('user.organization', org_slug=org_slug) }}"
+               class="text-sm font-medium text-base-content/60 hover:text-base-content transition-colors">
+              {{ org_slug }}
+            </a>
+            <span class="badge badge-xs badge-ghost">{{ group.projects|length }}</span>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {% for project in group.projects %}
+              {% set app_count = project.project_applications|length %}
+              {% set running = namespace(n=0) %}
+              {% set errored = namespace(n=0) %}
+              {% for app in project.project_applications %}
+                {% if app.latest_deployment_running or app.latest_deployment_completed %}
+                  {% set running.n = running.n + 1 %}
+                {% endif %}
+                {% if app.latest_image_error and (not app.latest_image_built or app.latest_image_error.version > app.latest_image_built.version) %}
+                  {% set errored.n = errored.n + 1 %}
+                {% endif %}
+              {% endfor %}
+              {% set status = "" %}
+              {% if errored.n > 0 %}
+                {% set status = "error" %}
+              {% elif running.n > 0 %}
+                {% set status = "running" %}
+              {% endif %}
+              {% set meta = [app_count ~ ' app' ~ ('s' if app_count != 1 else '')] %}
+              {% if running.n > 0 %}
+                {% set _ = meta.append(running.n ~ ' running') %}
+              {% endif %}
+              {% if errored.n > 0 %}
+                {% set _ = meta.append(errored.n ~ ' errored') %}
+              {% endif %}
+              {{ service_card(name=project.name or project.slug,
+                            slug=org_slug ~ '/' ~ project.slug,
+                            url=url_for('user.project', org_slug=org_slug, project_slug=project.slug) ,
+              status=status,
+              meta_items=meta,
+              color='secondary',
+              icon_name='folder'
+              ) }}
+            {% endfor %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <div class="text-base-content/15 mb-4">{{ icon('folder', 'w-12 h-12') }}</div>
+      <h3 class="text-base font-medium text-base-content/60 mb-1">No projects yet</h3>
+      <p class="text-sm text-base-content/40 max-w-sm">Create your first project to start deploying applications.</p>
+      <a href="{{ url_for('user.project_create') }}"
+         class="btn btn-primary btn-sm gap-2 mt-4">
+        {{ icon('plus', 'w-4 h-4') }}
+        Create Project
+      </a>
+    </div>
+  {% endif %}
+
+  {% if project_create_form is defined and project_create_form.organization_id.choices %}
+    <div id="create-project-modal" class="raw-editor-modal hidden">
+      <div class="raw-editor-backdrop" data-modal-close="create-project-modal"></div>
+      <div class="raw-editor-dialog max-w-md">
+        <div class="flex items-center justify-between mb-5">
+          <h3 class="text-base font-semibold text-base-content">Create Project</h3>
+          <button type="button"
+                  data-modal-close="create-project-modal"
+                  class="btn btn-ghost btn-sm btn-circle">{{ icon('x', 'w-4 h-4') }}</button>
+        </div>
+        <form action="{{ url_for('user.project_create') }}"
+              method="post"
+              class="flex flex-col gap-4">
+          {{ project_create_form.hidden_tag() }}
+          {{ render_field(project_create_form.organization_id) }}
+          {{ render_field(project_create_form.name) }}
+          <details class="group">
+            <summary class="text-xs text-base-content/40 font-medium uppercase tracking-wider cursor-pointer select-none hover:text-base-content/60 transition-colors">
+              Advanced Settings
+            </summary>
+            <div class="mt-3">{{ render_field(project_create_form.slug) }}</div>
+          </details>
+          <div class="pt-2">
+            <button type="submit" class="btn btn-primary w-full">Create Project</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <script>
+(function() {
+  var modal = document.getElementById('create-project-modal');
+  var nameInput = modal.querySelector('[name="name"]');
+  var slugInput = modal.querySelector('[name="slug"]');
+  if (nameInput && slugInput) {
+    slugInput.addEventListener('keyup', function() {
+      if (!slugInput.classList.contains('user-has-edited')) slugInput.classList.add('user-has-edited');
+    });
+    nameInput.addEventListener('keyup', function() {
+      if (!slugInput.classList.contains('user-has-edited')) slugInput.value = slugify(nameInput.value);
+    });
+  }
+  modal.querySelectorAll('[data-modal-close="create-project-modal"]').forEach(function(el) {
+    el.addEventListener('click', function() { modal.classList.add('hidden'); });
+  });
+})();
+    </script>
+  {% endif %}
+{% endblock content %}

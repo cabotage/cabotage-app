@@ -1,72 +1,50 @@
 {% extends "_base.html" %}
-{% block styles %}
-{{ super() }}
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css" integrity="sha256-uo5phWaUiJgcz0DAzv46uoByLLbJLeetYosL1xf68rY=" crossorigin="anonymous">
-{% endblock %}
+{% from "_macros.html" import icon, resource_path %}
 
-{% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js" integrity="sha256-H5kaw7Syg+v5bmCuI6AKUnZd06Lkb6b92p8aqwMvdJU=" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js" integrity="sha256-va76Nwsb/ELuiNRv5gckAJAqTUstRc2TQ43amyPJcIk=" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-attach@0.11.0/lib/addon-attach.js" integrity="sha256-r4EPozChUDzzwwWgporcO0NhZx+ljsRysPro5Zp8O2Y=" crossorigin="anonymous"></script>
-{% endblock %}
+{% block title %}
+  Shell - Cabotage
+{% endblock title %}
+
+{% block css %}
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css"
+        integrity="sha256-uo5phWaUiJgcz0DAzv46uoByLLbJLeetYosL1xf68rY="
+        crossorigin="anonymous" />
+{% endblock css %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': application.project.organization.slug, 'url': url_for('user.organization', org_slug=application.project.organization.slug) },
+  {'label': application.project.slug, 'url': url_for('user.project', org_slug=application.project.organization.slug, project_slug=application.project.slug)},
+  {'label': application.slug, 'url': url_for('user.project_application', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug)},
+  {'label': 'Shell'}
+  ]) }}
+{% endblock resource_path %}
 
 {% block content %}
-  <div class="container" id="content">
-    <div class="row">
-      <div class="col-12">
-        <div style="height: 50vh; min-height: 512px; padding: .25rem; background-color: black; border-radius: .5rem;">
-          <div id="terminal" style="margin: auto; height: 90%;"></div>
-        </div>
-      </div>
-    </div>
-    <script>
-      function wrap(object, method, wrapper) {
-          var fn = object[method];
-          return object[method] = function() {
-              return wrapper.apply(this, [fn.bind(this)].concat(
-                  Array.prototype.slice.call(arguments)));
-          };
-      }
-      window.onload = function() {
-          const protocol = (window.location.protocol == 'https:') ? 'wss://' : 'ws://';
-          const socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/socket');
-
-          const term = new Terminal({
-              fontFamily: '"Cascadia Code", Menlo, monospace',
-              fontSize: 13,
-              cursorBlink: true,
-              allowProposedApi: true
-          });
-          const attachAddon = new AttachAddon.AttachAddon(socket, true);
-          wrap(attachAddon, "_sendData", function(original, data) {
-              original('\x00' + data);
-          });
-          const fitAddon = new FitAddon.FitAddon(socket, true);
-          term.loadAddon(attachAddon);
-          term.loadAddon(fitAddon);
-          term.open(document.getElementById('terminal'));
-          fitAddon.fit();
-
-          const debounce = (callback, wait) => {
-              let timeoutId = null;
-              return (...args) => {
-                  window.clearTimeout(timeoutId);
-                  timeoutId = window.setTimeout(() => {
-                      callback.apply(null, args);
-                  }, wait);
-              };
-          }
-          const sendResize = debounce((event) => {
-              fitAddon.fit();
-              socket.send("\x01" + JSON.stringify({
-                  Width: term.cols,
-                  Height: term.rows
-              }));
-              console.log(event);
-          }, 100);
-          window.addEventListener("resize", sendResize);
-          socket.addEventListener("open", (event) => {sendResize(null)});
-      }
-    </script>
+  <div class="flex items-center gap-3 mb-4">
+    <a href="{{ url_for('user.project_application', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}"
+       class="btn btn-ghost btn-sm">{{ icon("arrow-left") }}</a>
+    <h1 class="text-lg font-semibold text-base-content">Shell</h1>
+    <span class="text-sm text-base-content/40 font-mono">{{ application.slug }}</span>
   </div>
-{% endblock %}
+
+  <div class="rounded-lg border border-base-300 overflow-hidden"
+       style="background: #000;
+              padding: 0.25rem">
+    <div id="terminal" style="height: 65vh; min-height: 400px;"></div>
+  </div>
+{% endblock content %}
+
+{% block js %}
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"
+          integrity="sha256-H5kaw7Syg+v5bmCuI6AKUnZd06Lkb6b92p8aqwMvdJU="
+          crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"
+          integrity="sha256-va76Nwsb/ELuiNRv5gckAJAqTUstRc2TQ43amyPJcIk="
+          crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-attach@0.11.0/lib/addon-attach.js"
+          integrity="sha256-r4EPozChUDzzwwWgporcO0NhZx+ljsRysPro5Zp8O2Y="
+          crossorigin="anonymous"></script>
+  <script>initAppShell();</script>
+{% endblock js %}

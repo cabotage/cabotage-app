@@ -1,64 +1,109 @@
 {% extends "_base.html" %}
+{% from "_macros.html" import icon, stat_card, service_card, empty_state %}
 
-{% block content %}
-  <div class="container" id="content">
-    <div class="row">
-      <h1>Welcome!</h1>
+{% block title %}
+  Cabotage - Platform as a Service
+{% endblock title %}
+
+{% block content_full %}
+  {% if current_user.is_authenticated %}
+
+    <div class="app-content-padded" data-page="dashboard">
+      <div class="flex items-center justify-between mb-8">
+        <div>
+          <h1 class="text-xl font-semibold text-base-content">Dashboard</h1>
+          <p class="text-sm text-base-content/40 mt-0.5">Welcome back, {{ current_user.username or current_user.email }}</p>
+        </div>
+        <a href="{{ url_for('user.organization_create') }}"
+           class="btn btn-primary btn-sm gap-2">
+          {{ icon('plus', 'w-4 h-4') }}
+          New Org
+        </a>
+      </div>
+
+      {% set org_count = current_user.organizations|length if current_user.organizations else 0 %}
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
+        {{ stat_card(org_count, 'Organizations', 'building', 'primary') }}
+        {{ stat_card(project_count, 'Projects', 'folder', 'secondary') }}
+        {{ stat_card(app_count, 'Applications', 'box', 'accent') }}
+        {{ stat_card(deploy_count, 'Deployments', 'deploy', 'success') }}
+      </div>
+
+      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Quick Actions</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <a href="{{ url_for('user.organizations') }}"
+           class="service-card card-interactive block no-underline">
+          <div class="service-card-header">
+            <div class="service-card-icon bg-primary/10 text-primary">{{ icon('building', 'w-5 h-5') }}</div>
+            <div class="flex-1">
+              <span class="text-sm font-medium text-base-content">Organizations</span>
+              <p class="text-xs text-base-content/40">Manage teams and access</p>
+            </div>
+            <svg class="w-4 h-4 text-base-content/20"
+                 viewBox="0 0 24 24"
+                 fill="none"
+                 stroke="currentColor"
+                 stroke-width="2">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </div>
+        </a>
+
+        <a href="{{ url_for('user.projects') }}"
+           class="service-card card-interactive block no-underline">
+          <div class="service-card-header">
+            <div class="service-card-icon bg-secondary/10 text-secondary">{{ icon('folder', 'w-5 h-5') }}</div>
+            <div class="flex-1">
+              <span class="text-sm font-medium text-base-content">Projects</span>
+              <p class="text-xs text-base-content/40">View all projects</p>
+            </div>
+            <svg class="w-4 h-4 text-base-content/20"
+                 viewBox="0 0 24 24"
+                 fill="none"
+                 stroke="currentColor"
+                 stroke-width="2">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </div>
+        </a>
+
+        <a href="{{ url_for('user.organization_create') }}"
+           class="service-card card-interactive block no-underline border-dashed">
+          <div class="service-card-header">
+            <div class="service-card-icon bg-accent/10 text-accent">{{ icon('plus', 'w-5 h-5') }}</div>
+            <div class="flex-1">
+              <span class="text-sm font-medium text-base-content">New Organization</span>
+              <p class="text-xs text-base-content/40">Get started deploying</p>
+            </div>
+            <svg class="w-4 h-4 text-base-content/20"
+                 viewBox="0 0 24 24"
+                 fill="none"
+                 stroke="currentColor"
+                 stroke-width="2">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </div>
+        </a>
+      </div>
     </div>
 
-    {% if current_user.is_authenticated %}
-      <div class="row">
-        <div class="col-md-6">
-          <h2>Your Organizations</h2>
-          <table class="table">
-            {% for organization in current_user.organizations %}
-              <tr>
-                <td>
-                  <a href="{{ url_for('user.organization', org_slug=organization.organization.slug) }}">
-                    {{ organization.organization.name }}
-                  </a>
-                  {% if organization.admin %}
-                    <span class="label label-primary pull-right">Admin</span>
-                  {% else %}
-                    <span class="label label-default pull-right">Member</span>
-                  {% endif %}
-                </td>
-              </tr>
-            {% else %}
-              <tr>
-                <td>No organizations yet</td>
-              </tr>
-            {% endfor %}
-          </table>
-        </div>
+  {% else %}
 
-        <div class="col-md-6">
-          <h2>Your Projects</h2>
-          <table class="table">
-            {% for project in current_user.projects %}
-              <tr>
-                <td>
-                  <a href="{{ url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug) }}">
-                    {{ project.organization.slug }}/{{ project.name }}
-                  </a>
-                </td>
-              </tr>
-            {% else %}
-              <tr>
-                <td>No projects yet</td>
-              </tr>
-            {% endfor %}
-          </table>
+    <div class="hero-gradient">
+      <div class="flex flex-col items-center text-center py-12 lg:py-20">
+        <div class="p-3 rounded-2xl bg-primary/10 text-primary mb-6">
+          <span class="inline-block w-20 h-20 bg-current" style="-webkit-mask: url('{{ url_for('static', filename='cabotage.svg') }}') center/contain no-repeat; mask: url('{{ url_for('static', filename='cabotage.svg') }}') center/contain no-repeat;" aria-hidden="true"></span>
+        </div>
+        <h1 class="text-4xl lg:text-5xl font-bold text-base-content mb-4 text-balance">Cabotage</h1>
+        <p class="text-lg text-base-content/50 max-w-xl mb-8 text-pretty leading-relaxed">
+          Self-hosted Platform as a Service.
+        </p>
+        <div class="flex items-center gap-3">
+          <a href="{{ url_for('security.register') }}" class="btn btn-primary">Get Started</a>
+          <a href="{{ url_for('security.login') }}" class="btn btn-ghost">Sign In</a>
         </div>
       </div>
-    {% else %}
-      <div class="jumbotron text-center">
-        <h1>Welcome to Cabotage</h1>
-        <p>Please log in to manage your organizations and projects</p>
-        <p>
-          <a href="{{ url_for('security.login') }}" class="btn btn-primary btn-lg">Log In</a>
-        </p>
-      </div>
-    {% endif %}
-  </div>
-{% endblock %}
+    </div>
+
+  {% endif %}
+{% endblock content_full %}

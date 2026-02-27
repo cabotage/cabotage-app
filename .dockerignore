@@ -1,6 +1,7 @@
 /.git
 /.ruff_cache
 /dev
+/node_modules
 __pycache__
 .swp
 buildanddeploy

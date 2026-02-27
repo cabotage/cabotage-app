@@ -1,25 +1,35 @@
 {% extends "_base.html" %}
-{% from "security/_macros.html" import render_field_with_errors, render_field %}
-{% from "bootstrap/wtf.html" import form_errors, form_field %}
-{% from "bootstrap/utils.html" import form_button %}
+{% from "_macros.html" import render_field %}
+
+{% block title %}
+  Sign Up - Cabotage
+{% endblock title %}
 
 {% block content %}
-{% include "security/_messages.html" %}
-<div class="container-fluid clearfix">
-  <div class="row">
-    <div class="col-md-4 col-md-offset-4 col-sm-8 col-xs-8 col-xs-offset-2 col-sm-offset-2">
-      <h1>{{ _('Register') }}</h1>
-      <form action="{{ url_for_security('register') }}" method="POST" name="register_user_form">
-        {{ register_user_form.hidden_tag() }}
-        {{ form_field(register_user_form.email) }}
-        {{ form_field(register_user_form.username) }}
-        {{ form_field(register_user_form.password) }}
-        {% if register_user_form.password_confirm %}
-          {{ form_field(register_user_form.password_confirm) }}
-        {% endif %}
-        {{ form_button(register_user_form.submit, "Register", method="POST", class="btn btn-primary") }}
-      </form>
+  <div class="form-card">
+    <div class="card bg-base-200 border border-base-300 shadow-xl">
+      <div class="card-body">
+        <div class="text-center mb-6">
+          <h1 class="text-2xl font-semibold text-base-content">Create an account</h1>
+          <p class="text-sm text-base-content/50 mt-1">Get started with Cabotage</p>
+        </div>
+
+        {% include "security/_messages.html" %}
+
+        <form action="{{ url_for_security('register') }}"
+              method="post"
+              name="register_user_form"
+              class="flex flex-col gap-4">
+          {{ register_user_form.hidden_tag() }}
+          {{ render_field(register_user_form.email, placeholder='you@example.com') }}
+          {{ render_field(register_user_form.username, placeholder='username') }}
+          {{ render_field(register_user_form.password) }}
+          {% if register_user_form.password_confirm %}{{ render_field(register_user_form.password_confirm) }}{% endif %}
+          <button type="submit" class="btn btn-primary w-full mt-2">Create Account</button>
+        </form>
+
+        {% include "security/_menu.html" %}
+      </div>
     </div>
   </div>
-</div>
-{% endblock %}
+{% endblock content %}

@@ -121,7 +121,16 @@ def organization(org_slug):
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     if not ViewOrganizationPermission(organization.id).can():
         abort(403)
-    return render_template("user/organization.html", organization=organization)
+    project_create_form = CreateProjectForm()
+    project_create_form.organization_id.choices = [
+        (str(organization.id), organization.name)
+    ]
+    project_create_form.organization_id.data = str(organization.id)
+    return render_template(
+        "user/organization.html",
+        organization=organization,
+        project_create_form=project_create_form,
+    )
 
 
 @user_blueprint.route("/organizations/create", methods=["GET", "POST"])
@@ -218,8 +227,16 @@ def project(org_slug, project_slug):
     ).first_or_404()
     if not ViewProjectPermission(project.id).can():
         abort(403)
-
-    return render_template("user/project.html", project=project)
+    app_create_form = CreateApplicationForm()
+    app_create_form.organization_id.choices = [
+        (str(organization.id), organization.name)
+    ]
+    app_create_form.project_id.choices = [(str(project.id), project.name)]
+    app_create_form.organization_id.data = str(organization.id)
+    app_create_form.project_id.data = str(project.id)
+    return render_template(
+        "user/project.html", project=project, app_create_form=app_create_form
+    )
 
 
 @user_blueprint.route("/projects/create", methods=["GET", "POST"])
@@ -289,6 +306,16 @@ def project_application(org_slug, project_slug, app_slug):
 
     scale_form = ApplicationScaleForm()
     scale_form.application_id.data = str(application.id)
+
+    config_create_form = CreateConfigurationForm()
+    config_create_form.application_id.data = str(application.id)
+
+    releases = application.releases.order_by(Release.version.desc()).limit(10).all()
+    images = application.images.order_by(Image.version.desc()).limit(10).all()
+    deployments = (
+        application.deployments.order_by(Deployment.created.desc()).limit(10).all()
+    )
+
     return render_template(
         "user/project_application.html",
         application=application,
@@ -298,6 +325,10 @@ def project_application(org_slug, project_slug, app_slug):
         .query.filter_by(application_id=application.id)
         .order_by(desc(version_class(Release).version_id))
         .limit(5),
+        config_create_form=config_create_form,
+        releases=releases,
+        images=images,
+        deployments=deployments,
         DEFAULT_POD_CLASS=DEFAULT_POD_CLASS,
         pod_classes=pod_classes,
         pod_class_info=pod_class_info,
@@ -321,6 +352,7 @@ def project_application_logs(org_slug, project_slug, app_slug):
 
     return render_template(
         "user/project_application_logs.html",
+        application=application,
         org_slug=org_slug,
         project_slug=project_slug,
         app_slug=app_slug,
@@ -453,6 +485,7 @@ def project_application_shell(org_slug, project_slug, app_slug):
 
     return render_template(
         "user/project_application_shell.html",
+        application=application,
         org_slug=org_slug,
         project_slug=project_slug,
         app_slug=app_slug,
@@ -674,9 +707,6 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
         abort(403)
 
     form = CreateConfigurationForm()
-    form.application_id.choices = [
-        (str(application.id), f"{organization.slug}/{project.slug}: {application.slug}")
-    ]
     form.application_id.data = str(application.id)
 
     if form.validate_on_submit():
@@ -718,6 +748,7 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
                 org_slug=organization.slug,
                 project_slug=project.slug,
                 app_slug=application.slug,
+                _anchor="config",
             )
         )
     return render_template(
@@ -749,12 +780,6 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
         abort(403)
 
     form = EditConfigurationForm(obj=configuration)
-    form.application_id.choices = [
-        (
-            str(configuration.application.id),
-            f"{organization.slug}/{project.slug}: {application.slug}",
-        )
-    ]
     form.application_id.data = str(configuration.application.id)
     form.name.data = str(configuration.name)
     form.secure.data = configuration.secret
@@ -791,6 +816,7 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
                 org_slug=organization.slug,
                 project_slug=project.slug,
                 app_slug=application.slug,
+                _anchor="config",
             )
         )
 
@@ -852,6 +878,7 @@ def project_application_settings(application_id):
 
     return render_template(
         "user/project_application_settings.html",
+        application=application,
         form=form,
         app_url=current_app.config.get("GITHUB_APP_URL", "https://github.com"),
     )
@@ -919,6 +946,7 @@ def project_application_configuration_delete(
                 org_slug=organization.slug,
                 project_slug=project.slug,
                 app_slug=application.slug,
+                _anchor="config",
             )
         )
     return render_template(
@@ -1115,6 +1143,7 @@ def release_detail(release_id):
     return render_template(
         "user/release_detail.html",
         release=release,
+        deploy_form=ReleaseDeployForm(),
         docker_pull_credentials=docker_pull_credentials,
         image_pull_secrets=image_pull_secrets,
     )
@@ -1163,7 +1192,6 @@ def deployment_livelogs(ws, deployment_id):
         abort(403)
     job_id = deployment.job_id
     deploy_log = deployment.deploy_log
-    namespace = deployment.application.project.organization.slug
 
     if deploy_log is not None:
         ws.send(f"Job Pod deployment-{job_id}")
@@ -1175,11 +1203,34 @@ def deployment_livelogs(ws, deployment_id):
     db.session.remove()
 
     if current_app.config["KUBERNETES_ENABLED"]:
-        _stream_k8s_job_logs(
+        # Wait for the worker to set job_id if it hasn't yet
+        if job_id is None:
+            for _ in range(60):  # up to ~30 seconds
+                time.sleep(0.5)
+                dep = Deployment.query.filter_by(id=deployment_id).first()
+                if dep is None:
+                    ws.send("=================END OF LOGS=================")
+                    return
+                if dep.job_id is not None:
+                    job_id = dep.job_id
+                    break
+                # Check if deploy already finished while we were waiting
+                if dep.deploy_log is not None:
+                    ws.send(f"Job Pod deployment-{dep.job_id}")
+                    for line in dep.deploy_log.split("\n"):
+                        ws.send(f"  {line}")
+                    ws.send("=================END OF LOGS=================")
+                    return
+                db.session.remove()
+            else:
+                ws.send("=================END OF LOGS=================")
+                return
+
+        _stream_redis_build_logs(
             ws,
+            "deploy",
+            job_id,
             f"deployment-{job_id}",
-            namespace,
-            poll_interval=0.25,
         )
     else:
         # deploy runs synchronously, log should already be in DB
@@ -1219,6 +1270,15 @@ def application_release_create(application_id):
     db.session.commit()
     run_release_build.delay(release_id=release.id)
     return redirect(url_for("user.release_detail", release_id=release.id))
+
+
+@user_blueprint.route("/guide")
+@login_required
+def guide():
+    return render_template(
+        "user/guide.html",
+        github_app_url=current_app.config.get("GITHUB_APP_URL", "https://github.com"),
+    )
 
 
 @user_blueprint.route("/docker/auth")

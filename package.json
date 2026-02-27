@@ -1,0 +1,23 @@
+{
+  "private": true,
+  "description": "Frontend dev tooling only — not a Node/Bun application",
+  "devDependencies": {
+    "@tailwindcss/cli": "^4",
+    "daisyui": "^5",
+    "oxlint": "latest",
+    "oxfmt": "latest",
+    "lightningcss-cli": "latest"
+  },
+  "scripts": {
+    "build:tw": "tailwindcss -i cabotage/client/src/tailwind.css -o cabotage/client/static/tailwind.css",
+    "watch:tw": "tailwindcss -i cabotage/client/src/tailwind.css -o cabotage/client/static/tailwind.css --watch=always",
+    "minify:tw": "lightningcss --minify --bundle cabotage/client/static/tailwind.css -o cabotage/client/static/tailwind.min.css",
+    "build": "bun run build:tw && bun run minify:tw && bun run minify:css && bun run minify:js",
+    "fmt:js": "oxfmt --indent-width=2 cabotage/client/static/main.js",
+    "fmt:css": "oxfmt --indent-width=2 cabotage/client/static/main.css",
+    "fmt": "oxfmt --indent-width=2 cabotage/client/static/",
+    "lint": "oxlint cabotage/client/static/",
+    "minify:css": "lightningcss --minify --bundle cabotage/client/static/main.css -o cabotage/client/static/main.min.css",
+    "minify:js": "bun build cabotage/client/static/main.js --minify-whitespace --minify-syntax --no-bundle --outfile cabotage/client/static/main.min.js"
+  }
+}

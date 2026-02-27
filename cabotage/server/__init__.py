@@ -1,6 +1,17 @@
 import os
+from html import escape
 
 import sentry_sdk
+
+try:
+    from pygments import highlight
+    from pygments.formatters import HtmlFormatter
+    from pygments.lexers import DockerLexer, TextLexer
+except ImportError:
+    highlight = None
+    HtmlFormatter = None
+    DockerLexer = None
+    TextLexer = None
 
 from flask import Flask, render_template
 from flask_admin import Admin
@@ -118,6 +129,9 @@ def create_app():
     app_settings = os.getenv("APP_SETTINGS", "cabotage.server.config.Config")
     app.config.from_object(app_settings)
 
+    if app.debug:
+        app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+
     # set up extensions
     admin.init_app(app)
     bcrypt.init_app(app)
@@ -142,6 +156,41 @@ def create_app():
     @app.template_filter("humanize")
     def humanize_filter(value):
         return humanize_lib.naturaltime(value)
+
+    @app.template_filter("isoformat_utc")
+    def isoformat_utc_filter(value):
+        if value is None:
+            return ""
+        return value.isoformat() + "Z"
+
+    @app.template_filter("duration")
+    def duration_filter(obj):
+        if not getattr(obj, "created", None) or not getattr(obj, "updated", None):
+            return ""
+        total = int((obj.updated - obj.created).total_seconds())
+        if total < 0:
+            return ""
+        if total < 60:
+            return f"{total}s"
+        m, s = divmod(total, 60)
+        if m < 60:
+            return f"{m}m {s}s" if s else f"{m}m"
+        h, m = divmod(m, 60)
+        return f"{h}h {m}m"
+
+    @app.template_filter("highlight_code")
+    def highlight_code_filter(value, language="text"):
+        text = "" if value is None else str(value)
+        if not text or text == "None":
+            return ""
+        if highlight is None:
+            return f"<pre>{escape(text)}</pre>"
+        lexer = DockerLexer() if language == "dockerfile" else TextLexer()
+        formatter = HtmlFormatter(nowrap=False, noclasses=False)
+        try:
+            return highlight(text, lexer, formatter)
+        except Exception:
+            return f"<pre>{escape(text)}</pre>"
 
     consul.init_app(app)
     vault.init_app(app)

@@ -1,29 +1,41 @@
 {% extends "_base.html" %}
-{% from "security/_macros.html" import render_field_with_errors, render_field %}
-{% from "bootstrap/wtf.html" import form_errors, form_field %}
-{% from "bootstrap/utils.html" import form_button %}
+{% from "_macros.html" import render_field %}
+
+{% block title %}
+  Sign In - Cabotage
+{% endblock title %}
 
 {% block content %}
-{% include "security/_messages.html" %}
-<div class="container-fluid clearfix">
-  <div class="row">
-    <div class="col-md-4 col-md-offset-4 col-sm-8 col-xs-8 col-xs-offset-2 col-sm-offset-2">
-      <h1>{{ _('Login') }}</h1>
-      <form action="{{ url_for_security('us_signin') }}" method="POST" name="us_signin_form">
-        {{ us_signin_form.hidden_tag() }}
-        {{ form_field(us_signin_form.identity) }}
-        {{ form_field(us_signin_form.passcode) }}
-        {{ form_field(us_signin_form.remember) }}
-        {{ form_button(us_signin_form.submit, "Login", method="POST", class="btn btn-primary") }}
-      </form>
+  <div class="form-card">
+    <div class="card bg-base-200 border border-base-300 shadow-xl">
+      <div class="card-body">
+        <div class="text-center mb-6">
+          <h1 class="text-2xl font-semibold text-base-content">Sign In</h1>
+          <p class="text-sm text-base-content/50 mt-1">Sign in to your Cabotage account</p>
+        </div>
+
+        {% include "security/_messages.html" %}
+
+        <form action="{{ url_for_security('us_signin') }}"
+              method="post"
+              name="us_signin_form"
+              class="flex flex-col gap-4">
+          {{ us_signin_form.hidden_tag() }}
+          {{ render_field(us_signin_form.identity) }}
+          {{ render_field(us_signin_form.passcode) }}
+          {{ render_field(us_signin_form.remember) }}
+          <button type="submit" class="btn btn-primary w-full mt-2">Sign In</button>
+        </form>
+
+        {% if security.registerable %}
+          <div class="text-center mt-4">
+            <a href="{{ url_for_security("register") }}{% if 'next' in request.args %}?next={{ request.args.next|urlencode }}{% endif %}"
+               class="btn btn-ghost btn-sm text-accent">Create an account</a>
+          </div>
+        {% endif %}
+
+        {% include "security/_menu.html" %}
+      </div>
     </div>
   </div>
-  <div class="row">
-    <div class="col-md-4 col-md-offset-7 col-sm-8 col-xs-8 col-xs-offset-8 col-sm-offset-8">
-      {% if security.registerable %}
-        <a class="btn btn-primary" href="{{ url_for_security('register') }}{% if 'next' in request.args %}?next={{ request.args.next|urlencode }}{% endif %}">{{ _('Register') }}</a>
-      {% endif %}
-    </div>
-  </div>
-</div>
-{% endblock %}
+{% endblock content %}

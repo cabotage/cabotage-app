@@ -1,45 +1,61 @@
 {% extends "_base.html" %}
-{% from "security/_macros.html" import render_field_with_errors, render_field %}
-{% from "bootstrap/wtf.html" import form_errors, form_field %}
-{% from "bootstrap/utils.html" import form_button %}
+{% from "_macros.html" import render_field, icon %}
+
+{% block title %}
+  Edit {{ configuration.name }} - Cabotage
+{% endblock title %}
 
 {% block content %}
-{% include "security/_messages.html" %}
-<div class="container-fluid clearfix" id="content">
-  <div class="row">
-    <div class="col-md-4 col-md-offset-4 col-sm-8 col-xs-8 col-xs-offset-2 col-sm-offset-2">
-      <h1>Update Application Configuration</h1>
-      <form action="{{ url_for('user.project_application_configuration_edit', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, config_id=configuration.id) }}" method="POST" name="project_application_configuration_edit_form">
-        {{ form.hidden_tag() }}
-        {{ form_field(form.application_id, disabled="disabled") }}
-        {{ form_field(form.name, disabled="disabled") }}
-        <div class="form-group">
-          <label>Current Value</label>
-          <pre style="margin: 0px;">{% if configuration.secret %}<span class="glyphicon glyphicon-lock"></span>{% else %}{{ configuration.value }}{% endif %}</pre>
-        </div>
-        {{ form_field(form.value) }}
-        <div class="checkbox" onclick="return false;">
-          <label>
-            {{form.secure()|safe}} {{form.secure.label.text|safe}}
-          </label>
-          <p class="help-block">{{form.secure.description|safe}}</p>
-        </div>
-        <div class="checkbox" onclick="return false;">
-          <label>
-            {{form.buildtime()|safe}} {{form.buildtime.label.text|safe}}
-          </label>
-          <p class="help-block">{{form.buildtime.description|safe}}</p>
-        </div>
-        <div class="row">
-          <div class="col-md-6">
-            {{ form_button(form.submit, "Update Environment Variable", method="POST", class="btn btn-primary") }}
+  <div class="form-card">
+    <div class="card bg-base-200 border border-base-300 shadow-xl">
+      <div class="card-body">
+        <h1 class="text-xl font-semibold text-base-content mb-1">Edit Environment Variable</h1>
+        <p class="text-sm text-base-content/50 mb-4 font-mono">{{ configuration.name }}</p>
+
+        <form action="{{ url_for('user.project_application_configuration_edit', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, config_id=configuration.id) }}"
+              method="post"
+              name="project_application_configuration_edit_form"
+              class="flex flex-col gap-4">
+          {{ form.hidden_tag() }}
+          {{ form.name(type='hidden') }}
+
+          <div class="p-3 rounded-lg bg-base-300/50">
+            <p class="text-xs text-base-content/50 mb-1">Current Value</p>
+            {% if configuration.secret %}
+              <span class="inline-flex items-center gap-1 text-base-content/40 text-sm">
+                {{ icon('lock', 'w-3 h-3') }}
+                Secret
+              </span>
+            {% else %}
+              <code class="text-sm text-base-content/70">{{ configuration.value }}</code>
+            {% endif %}
           </div>
-          <div class="col-md-6">
-            <a class="btn btn-info pull-right" onclick="window.history.back()">Cancel</a>
+
+          {{ render_field(form.value, placeholder='New value') }}
+
+          <div class="p-3 rounded-lg bg-base-300/30">
+            <div class="flex items-center gap-3 text-sm text-base-content/50">
+              {% if form.secure.data %}
+                {{ icon('lock', 'w-3.5 h-3.5') }}
+                <span>Secret (encrypted)</span>
+              {% else %}
+                {{ icon('unlock', 'w-3.5 h-3.5') }}
+                <span>Not secret</span>
+              {% endif %}
+              {% if form.buildtime.data %}
+                <span class="text-base-content/20">|</span>
+                {{ icon('settings', 'w-3.5 h-3.5') }}
+                <span>Build-time</span>
+              {% endif %}
+            </div>
           </div>
-        </div>
-      </form>
+
+          <div class="flex items-center gap-3 pt-2">
+            <button type="submit" class="btn btn-primary">Update Variable</button>
+            <a href="#" onclick="history.back();return false" class="btn btn-ghost">Cancel</a>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
-</div>
-{% endblock %}
+{% endblock content %}

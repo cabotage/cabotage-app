@@ -38,3 +38,12 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 COPY . /opt/cabotage-app/src/
 WORKDIR /opt/cabotage-app/src/
 
+# Build and minify static assets for production
+COPY --from=oven/bun:1-slim /usr/local/bin/bun /usr/local/bin/bun
+RUN if [ "$DEVEL" != "yes" ]; then \
+    cd /opt/cabotage-app/src && \
+    bun install --frozen-lockfile && \
+    bun run build && \
+    rm -rf node_modules; \
+    fi
+
