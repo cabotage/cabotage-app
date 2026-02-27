@@ -332,6 +332,13 @@ def build_release_buildkit(release):
             buildctl_command = ["buildctl"]
             if buildkitd_ca is not None:
                 buildctl_args.insert(0, f"--tlscacert={buildkitd_ca}")
+            # Prune the shared buildkitd content store to avoid cross-repo
+            # blob mount attempts that fail with insufficient_scope.
+            subprocess.run(  # nosec
+                ["buildctl", "prune"],
+                env={"BUILDKIT_HOST": buildkitd_url},
+                check=False,
+            )
             with TemporaryDirectory() as tempdir:
                 os.makedirs(os.path.join(tempdir, "context"), exist_ok=True)
                 for file, contents in context_configmap_object.data.items():
@@ -879,6 +886,13 @@ def build_image_buildkit(image=None):
                 buildctl_args.append(
                     "id=GIT_AUTH_TOKEN,src=.secret/github_access_token"
                 )
+            # Prune the shared buildkitd content store to avoid cross-repo
+            # blob mount attempts that fail with insufficient_scope.
+            subprocess.run(  # nosec
+                ["buildctl", "prune"],
+                env={"BUILDKIT_HOST": buildkitd_url},
+                check=False,
+            )
             with TemporaryDirectory() as tempdir:
                 os.makedirs(os.path.join(tempdir, ".docker"), exist_ok=True)
                 with open(os.path.join(tempdir, ".docker", "config.json"), "w") as f:
