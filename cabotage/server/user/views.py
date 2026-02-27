@@ -117,9 +117,15 @@ def organization(org_slug):
     if not ViewOrganizationPermission(organization.id).can():
         abort(403)
     project_create_form = CreateProjectForm()
-    project_create_form.organization_id.choices = [(str(organization.id), organization.name)]
+    project_create_form.organization_id.choices = [
+        (str(organization.id), organization.name)
+    ]
     project_create_form.organization_id.data = str(organization.id)
-    return render_template("user/organization.html", organization=organization, project_create_form=project_create_form)
+    return render_template(
+        "user/organization.html",
+        organization=organization,
+        project_create_form=project_create_form,
+    )
 
 
 @user_blueprint.route("/organizations/create", methods=["GET", "POST"])
@@ -217,11 +223,15 @@ def project(org_slug, project_slug):
     if not ViewProjectPermission(project.id).can():
         abort(403)
     app_create_form = CreateApplicationForm()
-    app_create_form.organization_id.choices = [(str(organization.id), organization.name)]
+    app_create_form.organization_id.choices = [
+        (str(organization.id), organization.name)
+    ]
     app_create_form.project_id.choices = [(str(project.id), project.name)]
     app_create_form.organization_id.data = str(organization.id)
     app_create_form.project_id.data = str(project.id)
-    return render_template("user/project.html", project=project, app_create_form=app_create_form)
+    return render_template(
+        "user/project.html", project=project, app_create_form=app_create_form
+    )
 
 
 @user_blueprint.route("/projects/create", methods=["GET", "POST"])
