@@ -872,6 +872,8 @@ BuildProgressTracker.prototype.complete = function () {
 /* Poll pipeline_status until the next stage appears, then redirect.
    stage = 'build' → wait for release, 'release' → wait for deploy. */
 function pollForNextStep(appId, stage) {
+  // TODO(#180): re-enable when pipeline_status endpoint exists
+  return;
   var url = '/applications/' + appId + '/pipeline_status';
   var attempts = 0;
   var maxAttempts = 40; // 40 × 3s = 2 min max wait
@@ -1573,6 +1575,8 @@ function stopAllPollers() {
 }
 
 function initPipelineTracker() {
+  // TODO(#179/#180): re-enable when pipeline_status endpoint exists
+  return;
   var container = document.querySelector('[data-pipeline-tracker]');
   if (container && !isLowDataMode()) {
     window.pipelineTracker = new PipelineTracker(container);
@@ -1689,6 +1693,8 @@ DashboardPipelinePoller.prototype.update = function (pipelines) {
 };
 
 function initDashboardPoller() {
+  // TODO(#179): re-enable when active_pipelines endpoint exists
+  return;
   if (isLowDataMode()) return;
   var toastContainer = document.getElementById('pipeline-toasts');
   if (!toastContainer) return;
@@ -2079,6 +2085,8 @@ ObservabilityPanel.prototype.updateEvents = function (events) {
 };
 
 function initObservabilityPanel() {
+  // TODO(#180): re-enable when observability endpoint exists
+  return;
   if (isLowDataMode()) return;
   var container = document.querySelector('[data-observability-panel]');
   if (!container) return;
@@ -2273,6 +2281,8 @@ PipelineMetricsPanel.prototype.renderBarChart = function (svgEl, history, avgSec
 };
 
 function initPipelineMetricsPanel() {
+  // TODO(#180): re-enable when pipeline-metrics endpoint exists
+  return;
   if (isLowDataMode()) return;
   var container = document.querySelector('[data-pipeline-metrics-panel]');
   if (!container) return;
@@ -2438,6 +2448,8 @@ ObservabilityMini.prototype.renderSparkline = function (container, history, key,
 };
 
 function initLiveStatus() {
+  // TODO(#180): re-enable when observability endpoint exists
+  return;
   if (isLowDataMode()) return;
   var container = document.querySelector('[data-live-status]');
   if (!container) return;
