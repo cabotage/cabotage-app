@@ -873,7 +873,7 @@ BuildProgressTracker.prototype.complete = function () {
    stage = 'build' → wait for release, 'release' → wait for deploy. */
 function pollForNextStep(appId, stage) {
   // TODO(#180): re-enable when pipeline_status endpoint exists
-  return;
+  /* disabled – endpoint not yet implemented
   var url = '/applications/' + appId + '/pipeline_status';
   var attempts = 0;
   var maxAttempts = 40; // 40 × 3s = 2 min max wait
@@ -911,6 +911,7 @@ function pollForNextStep(appId, stage) {
         });
     }, 3000);
   })();
+  */
 }
 
 /* Pipeline Tracker (Overview Page) */
@@ -1576,11 +1577,12 @@ function stopAllPollers() {
 
 function initPipelineTracker() {
   // TODO(#179/#180): re-enable when pipeline_status endpoint exists
-  return;
+  /* disabled – endpoint not yet implemented
   var container = document.querySelector('[data-pipeline-tracker]');
   if (container && !isLowDataMode()) {
     window.pipelineTracker = new PipelineTracker(container);
   }
+  */
   if (document.querySelector('time[data-timestamp]')) {
     startTimestampTicker();
   }
@@ -1694,7 +1696,7 @@ DashboardPipelinePoller.prototype.update = function (pipelines) {
 
 function initDashboardPoller() {
   // TODO(#179): re-enable when active_pipelines endpoint exists
-  return;
+  /* disabled – endpoint not yet implemented
   if (isLowDataMode()) return;
   var toastContainer = document.getElementById('pipeline-toasts');
   if (!toastContainer) return;
@@ -1702,6 +1704,7 @@ function initDashboardPoller() {
   var trackerEl = document.querySelector('[data-pipeline-tracker]');
   if (trackerEl) trackedAppId = trackerEl.getAttribute('data-application-id');
   window.dashboardPoller = new DashboardPipelinePoller(trackedAppId);
+  */
 }
 
 /* Observability Panel */
@@ -2086,11 +2089,12 @@ ObservabilityPanel.prototype.updateEvents = function (events) {
 
 function initObservabilityPanel() {
   // TODO(#180): re-enable when observability endpoint exists
-  return;
+  /* disabled – endpoint not yet implemented
   if (isLowDataMode()) return;
   var container = document.querySelector('[data-observability-panel]');
   if (!container) return;
   window.observabilityPanel = new ObservabilityPanel(container);
+  */
 }
 
 /* Pipeline Metrics Panel */
@@ -2282,11 +2286,12 @@ PipelineMetricsPanel.prototype.renderBarChart = function (svgEl, history, avgSec
 
 function initPipelineMetricsPanel() {
   // TODO(#180): re-enable when pipeline-metrics endpoint exists
-  return;
+  /* disabled – endpoint not yet implemented
   if (isLowDataMode()) return;
   var container = document.querySelector('[data-pipeline-metrics-panel]');
   if (!container) return;
   window.pipelineMetricsPanel = new PipelineMetricsPanel(container);
+  */
 }
 
 /* Live Status Mini (Overview tab) */
@@ -2449,7 +2454,7 @@ ObservabilityMini.prototype.renderSparkline = function (container, history, key,
 
 function initLiveStatus() {
   // TODO(#180): re-enable when observability endpoint exists
-  return;
+  /* disabled – endpoint not yet implemented
   if (isLowDataMode()) return;
   var container = document.querySelector('[data-live-status]');
   if (!container) return;
@@ -2463,6 +2468,7 @@ function initLiveStatus() {
       mini.activate();
     }
   }
+  */
 }
 
 /* Build/Release Detail Page */
