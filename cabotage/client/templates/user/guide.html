@@ -41,6 +41,20 @@
         <div class="guide-step-connector"></div>
         <div class="guide-step-card">
           <div class="flex items-center gap-2 mb-1.5">
+            {{ icon('key', 'w-4 h-4 text-primary') }}
+            <h3 class="text-sm font-semibold text-base-content">Configure</h3>
+          </div>
+          <p class="text-sm text-base-content/50 leading-relaxed">
+            Configure environment variables that your application needs. These are versioned, allowing for rollback of both configuration and code. They can be marked as secret to ensure that they are not recoverable via the UI.
+          </p>
+        </div>
+      </div>
+
+      <div class="guide-step">
+        <div class="guide-step-number">3</div>
+        <div class="guide-step-connector"></div>
+        <div class="guide-step-card">
+          <div class="flex items-center gap-2 mb-1.5">
             {{ icon('scissors', 'w-4 h-4 text-primary') }}
             <h3 class="text-sm font-semibold text-base-content">Create Release</h3>
           </div>
@@ -51,7 +65,7 @@
       </div>
 
       <div class="guide-step">
-        <div class="guide-step-number">3</div>
+        <div class="guide-step-number">4</div>
         <div class="guide-step-card">
           <div class="flex items-center gap-2 mb-1.5">
             {{ icon('deploy', 'w-4 h-4 text-primary') }}
