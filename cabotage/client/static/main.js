@@ -577,8 +577,8 @@ function BuildProgressTracker(barFill, phaseLabel, type, stepsContainer, elapsed
     ];
   } else {
     this.steps = [
-      { id: 'resolve', label: 'Resolve', patterns: [/load build definition/i, /resolve image config/i], progress: 5 },
-      { id: 'build', label: 'Build', patterns: [/\[\d+\/\d+\]/], progress: 40, substep: true },
+      { id: 'resolve', label: 'Resolve', patterns: [/load build definition/i, /resolve image config/i, /load remote build context/i], progress: 5 },
+      { id: 'build', label: 'Build', patterns: [/\[(?:\S+\s+)?\d+\/\d+\]/], progress: 40, substep: true },
       { id: 'export', label: 'Export', patterns: [/exporting to image/i], progress: 78 },
       { id: 'push', label: 'Push', patterns: [/pushing manifest/i, /pushing layers/i], progress: 92 },
       { id: 'complete', label: 'Done', patterns: [], progress: 100 },
@@ -607,7 +607,7 @@ BuildProgressTracker.prototype.renderSteps = function () {
       step.label +
       '</span>' +
       '<span class="step-duration" data-step-duration></span>' +
-      (step.substep ? '<span class="step-substep" data-substep></span>' : '');
+      (step.substep ? '<div class="step-stages" data-stages></div>' : '');
     this.stepsContainer.appendChild(el);
   }
   this.stepEls = this.stepsContainer.querySelectorAll('.progress-step');
@@ -693,24 +693,52 @@ BuildProgressTracker.prototype.processLine = function (line) {
 };
 
 BuildProgressTracker.prototype.processBuildLine = function (line) {
-  if (/error|failed|failure|exception|traceback/i.test(line) && !/no error/i.test(line) && !/warning/i.test(line)) {
+  if (/error|failed|failure|exception|traceback/i.test(line) && !/no error/i.test(line) && !/warning/i.test(line) && !/cache importer/i.test(line)) {
     this.errored = true;
     if (this.errorStepIdx < 0) this.errorStepIdx = Math.max(this.currentStepIdx, 0);
   }
 
-  var stepMatch = line.match(/\[(\d+)\/(\d+)\]/);
+  var stepMatch = line.match(/\[(?:(\S+)\s+)?(\d+)\/(\d+)\]/);
   if (stepMatch) {
     this.activate();
-    var current = parseInt(stepMatch[1], 10);
-    var total = parseInt(stepMatch[2], 10);
-    if (total > this.totalSteps) this.totalSteps = total;
-    if (current > this.maxStep) this.maxStep = current;
-    var pct = 5 + (this.maxStep / this.totalSteps) * 70;
+    var stageName = stepMatch[1] || null;
+    var current = parseInt(stepMatch[2], 10);
+    var total = parseInt(stepMatch[3], 10);
+    if (!this.stages) this.stages = {};
+    if (!this.stageOrder) this.stageOrder = [];
+    var key = stageName || '_default';
+    if (!this.stages[key]) {
+      this.stages[key] = { maxStep: 0, totalSteps: 0, name: stageName };
+      this.stageOrder.push(key);
+    }
+    var stage = this.stages[key];
+    if (total > stage.totalSteps) stage.totalSteps = total;
+    if (current > stage.maxStep) stage.maxStep = current;
+    var completed = 0, grandTotal = 0;
+    for (var i = 0; i < this.stageOrder.length; i++) {
+      var s = this.stages[this.stageOrder[i]];
+      completed += s.maxStep;
+      grandTotal += s.totalSteps;
+    }
+    var pct = 5 + (completed / grandTotal) * 70;
     this.setProgress(pct);
-    this.setPhase('Building step ' + this.maxStep + ' of ' + this.totalSteps);
+    var phaseText = 'Building';
+    if (this.stageOrder.length > 1) {
+      var activeNames = [];
+      for (var i = 0; i < this.stageOrder.length; i++) {
+        var s = this.stages[this.stageOrder[i]];
+        if (s.maxStep < s.totalSteps) activeNames.push(s.name || 'build');
+      }
+      phaseText = activeNames.length > 0
+        ? 'Building ' + activeNames.join(', ')
+        : 'Building (' + this.stageOrder.length + ' stages)';
+    } else {
+      phaseText = 'Building step ' + current + '/' + total;
+      if (stageName) phaseText += ' (' + stageName + ')';
+    }
+    this.setPhase(phaseText);
     this.setStep(1);
-    var sub = this.stepsContainer && this.stepsContainer.querySelector('[data-substep]');
-    if (sub) sub.textContent = this.maxStep + '/' + this.totalSteps;
+    this.renderStageProgress();
     return;
   }
 
@@ -730,13 +758,37 @@ BuildProgressTracker.prototype.processBuildLine = function (line) {
     return;
   }
 
-  if (/load build definition/i.test(line) || /resolve image config/i.test(line)) {
+  if (/load build definition/i.test(line) || /resolve image config/i.test(line) || /load remote build context/i.test(line)) {
     this.activate();
     this.setProgress(2);
     this.setPhase('Resolving build definition');
     this.setStep(0);
     return;
   }
+};
+
+BuildProgressTracker.prototype.renderStageProgress = function () {
+  var container = this.stepsContainer && this.stepsContainer.querySelector('[data-stages]');
+  if (!container || !this.stages || !this.stageOrder) return;
+  // Single unnamed stage: just show the count
+  if (this.stageOrder.length === 1 && !this.stages[this.stageOrder[0]].name) {
+    var s = this.stages[this.stageOrder[0]];
+    container.innerHTML = '<span class="stage-count-solo">' + s.maxStep + '/' + s.totalSteps + '</span>';
+    return;
+  }
+  var html = '';
+  for (var i = 0; i < this.stageOrder.length; i++) {
+    var s = this.stages[this.stageOrder[i]];
+    if (s.maxStep >= s.totalSteps) continue;
+    var pct = s.totalSteps > 0 ? Math.round((s.maxStep / s.totalSteps) * 100) : 0;
+    var name = s.name || 'stage ' + (i + 1);
+    html += '<div class="stage-row stage-active">' +
+      '<span class="stage-name">' + name + '</span>' +
+      '<span class="stage-bar"><span class="stage-bar-fill" style="width:' + pct + '%"></span></span>' +
+      '<span class="stage-count">' + s.maxStep + '/' + s.totalSteps + '</span>' +
+      '</div>';
+  }
+  container.innerHTML = html;
 };
 
 BuildProgressTracker.prototype.processDeployLine = function (line) {
@@ -2420,11 +2472,21 @@ function initBuildDetailPage(opts) {
   var tracker = barFill ? new BuildProgressTracker(barFill, phaseLabel, 'build', stepsEl, elapsedEl) : null;
   var logsFinished = false;
   var progressBanner = document.querySelector('.build-progress-banner');
+  var pendingLines = [];
+  var flushScheduled = false;
+  function flushPendingLines() {
+    if (pendingLines.length === 0) return;
+    logsPre.appendChild(document.createTextNode(pendingLines.join('\n') + '\n'));
+    logsPre.scrollTop = logsPre.scrollHeight;
+    pendingLines = [];
+    flushScheduled = false;
+  }
   var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
   var wsUrl = opts.wsUrl || (window.location.pathname + '/livelogs');
   var socket = new WebSocket(protocol + window.location.host + wsUrl);
   socket.addEventListener('message', function(ev) {
     if (ev.data === '=================END OF LOGS=================') {
+      flushPendingLines();
       logsFinished = true;
       if (tracker) {
         tracker.complete();
@@ -2433,9 +2495,12 @@ function initBuildDetailPage(opts) {
       socket.close();
       return;
     }
-    logsPre.textContent += ev.data + '\n';
-    logsPre.scrollTop = logsPre.scrollHeight;
     if (tracker) tracker.processLine(ev.data);
+    pendingLines.push(ev.data);
+    if (!flushScheduled) {
+      flushScheduled = true;
+      requestAnimationFrame(flushPendingLines);
+    }
   });
   var statusPollAttempts = 0;
   var maxStatusPolls = 30;
@@ -2508,12 +2573,22 @@ function initDeployDetailPage(opts) {
   var maxReconnectAttempts = 30;
   var emptyEndAttempts = 0;
   var maxEmptyEndAttempts = 20;
+  var pendingLines = [];
+  var flushScheduled = false;
+  function flushPendingLines() {
+    if (pendingLines.length === 0) return;
+    logsPre.appendChild(document.createTextNode(pendingLines.join('\n') + '\n'));
+    logsPre.scrollTop = logsPre.scrollHeight;
+    pendingLines = [];
+    flushScheduled = false;
+  }
   var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
   var wsUrl = protocol + window.location.host + window.location.pathname + '/livelogs';
   function connectWebSocket() {
     var socket = new WebSocket(wsUrl);
     socket.addEventListener('message', function(ev) {
       if (ev.data === '=================END OF LOGS=================') {
+        flushPendingLines();
         socket.close();
         if (linesReceived === 0 && emptyEndAttempts < maxEmptyEndAttempts) {
           emptyEndAttempts++;
@@ -2532,9 +2607,12 @@ function initDeployDetailPage(opts) {
       }
       reconnectAttempts = 0;
       linesReceived++;
-      logsPre.textContent += ev.data + '\n';
-      logsPre.scrollTop = logsPre.scrollHeight;
       if (tracker) tracker.processLine(ev.data);
+      pendingLines.push(ev.data);
+      if (!flushScheduled) {
+        flushScheduled = true;
+        requestAnimationFrame(flushPendingLines);
+      }
     });
     socket.addEventListener('close', function() {
       if (logsFinished) return;

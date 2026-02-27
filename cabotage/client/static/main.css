@@ -2619,16 +2619,60 @@ a.pipeline-stage-body:hover {
   display: block;
 }
 
-.step-substep {
-  font-size: 0.625rem;
-  color: var(--color-primary);
-  margin-top: 0.125rem;
-  font-variant-numeric: tabular-nums;
+.step-stages {
+  margin-top: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1875rem;
   opacity: 0;
   transition: opacity 0.2s ease;
+  min-width: 6rem;
 }
-.step-active .step-substep {
+.step-active .step-stages,
+.step-done .step-stages {
   opacity: 1;
+}
+.stage-count-solo {
+  font-size: 0.625rem;
+  color: var(--color-primary);
+  font-variant-numeric: tabular-nums;
+}
+.stage-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.5625rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.stage-name {
+  color: var(--color-primary);
+  font-weight: 600;
+  min-width: 3.5rem;
+  max-width: 5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stage-bar {
+  flex: 1;
+  height: 0.25rem;
+  border-radius: 0.125rem;
+  background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  overflow: hidden;
+  min-width: 1.5rem;
+}
+.stage-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 0.125rem;
+  background: var(--color-primary);
+  transition: width 0.3s ease;
+}
+.stage-count {
+  color: var(--color-primary);
+  min-width: 1.75rem;
+  text-align: right;
 }
 
 .step-error .step-dot {
