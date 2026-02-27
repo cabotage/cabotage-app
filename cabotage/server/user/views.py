@@ -94,6 +94,11 @@ from cabotage.celery.tasks import (
 )
 
 from cabotage.celery.tasks.deploy import scale_deployment
+from cabotage.utils.build_log_stream import (
+    get_redis_client,
+    read_log_stream,
+    stream_key,
+)
 
 Activity = activity_plugin.activity_cls
 user_blueprint = Blueprint(
@@ -959,29 +964,11 @@ def image_detail(image_id):
     )
 
 
-@sock.route("/image/<image_id>/livelogs", bp=user_blueprint)
-@login_required
-def image_build_livelogs(ws, image_id):
-    image = Image.query.filter_by(id=image_id).first_or_404()
-    if image.error:
-        abort(404)
-    if not ViewApplicationPermission(image.application.id).can():
-        abort(403)
-    build_job_id = image.build_job_id
-    image_build_log = image.image_build_log
-    if image_build_log is not None:
-        ws.send(f"Job Pod imagebuild-{build_job_id}")
-        for line in image_build_log.split("\n"):
-            ws.send(f"  {line}")
-        ws.send("=================END OF LOGS=================")
-
-    db.session.remove()
-
+def _stream_k8s_job_logs(ws, job_name, namespace, poll_interval=1):
+    """Stream logs from a Kubernetes job pod over a WebSocket."""
     api_client = kubernetes_ext.kubernetes_client
     core_api_instance = kubernetes.client.CoreV1Api(api_client)
     batch_api_instance = kubernetes.client.BatchV1Api(api_client)
-
-    job_name, namespace = (f"imagebuild-{build_job_id}", "default")
 
     @backoff.on_exception(
         backoff.constant,
@@ -1008,22 +995,28 @@ def image_build_livelogs(ws, image_id):
     except kubernetes.client.exceptions.ApiException as exc:
         ws.send("=================END OF LOGS=================")
         print(f"Encountered exception: {exc}")
-        return False
+        return
 
     if len(pods.items) != 1:
         ws.send("=================END OF LOGS=================")
         print("Found too many pods!")
-        return False
+        return
 
     pod = pods.items[0]
     while True:
-        pod = core_api_instance.read_namespaced_pod(
-            pod.metadata.name, pod.metadata.namespace
-        )
-        if pod.status.phase == "Running":
-            break
-        time.sleep(1)
-    ws.send(f"Job Pod imagebuild-{build_job_id}")
+        try:
+            pod = core_api_instance.read_namespaced_pod(
+                pod.metadata.name, pod.metadata.namespace
+            )
+            if pod.status.phase == "Running":
+                break
+            time.sleep(poll_interval)
+        except kubernetes.client.exceptions.ApiException as exc:
+            ws.send("=================END OF LOGS=================")
+            print(f"Encountered exception: {exc}")
+            return
+
+    ws.send(f"Job Pod {job_name}")
     w = kubernetes.watch.Watch()
     for line in w.stream(
         core_api_instance.read_namespaced_pod_log,
@@ -1037,6 +1030,53 @@ def image_build_livelogs(ws, image_id):
         ws.send(f"  {line}")
 
     ws.send("=================END OF LOGS=================")
+
+
+def _stream_redis_build_logs(ws, build_type, build_job_id, job_label):
+    """Stream build logs from Redis over a WebSocket."""
+    redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
+    log_key = stream_key(build_type, build_job_id)
+    ws.send(f"Job Pod {job_label}")
+    for line in read_log_stream(redis_client, log_key):
+        if line is None:
+            continue
+        ws.send(f"  {line}")
+    ws.send("=================END OF LOGS=================")
+
+
+@sock.route("/image/<image_id>/livelogs", bp=user_blueprint)
+@login_required
+def image_build_livelogs(ws, image_id):
+    image = Image.query.filter_by(id=image_id).first_or_404()
+    if image.error:
+        abort(404)
+    if not ViewApplicationPermission(image.application.id).can():
+        abort(403)
+    build_job_id = image.build_job_id
+    image_build_log = image.image_build_log
+
+    if image_build_log is not None:
+        ws.send(f"Job Pod imagebuild-{build_job_id}")
+        for line in image_build_log.split("\n"):
+            ws.send(f"  {line}")
+        ws.send("=================END OF LOGS=================")
+        return
+
+    db.session.remove()
+
+    if current_app.config["KUBERNETES_ENABLED"]:
+        _stream_k8s_job_logs(
+            ws,
+            f"imagebuild-{build_job_id}",
+            "default",
+        )
+    else:
+        _stream_redis_build_logs(
+            ws,
+            "image",
+            build_job_id,
+            f"imagebuild-{build_job_id}",
+        )
 
 
 @user_blueprint.route("/applications/<application_id>/releases")
@@ -1090,74 +1130,29 @@ def release_build_livelogs(ws, release_id):
         abort(403)
     build_job_id = release.build_job_id
     release_build_log = release.release_build_log
+
     if release_build_log is not None:
         ws.send(f"Job Pod releasebuild-{build_job_id}")
         for line in release_build_log.split("\n"):
             ws.send(f"  {line}")
         ws.send("=================END OF LOGS=================")
+        return
 
     db.session.remove()
 
-    api_client = kubernetes_ext.kubernetes_client
-    core_api_instance = kubernetes.client.CoreV1Api(api_client)
-    batch_api_instance = kubernetes.client.BatchV1Api(api_client)
-
-    job_name, namespace = (f"releasebuild-{build_job_id}", "default")
-
-    @backoff.on_exception(
-        backoff.constant,
-        kubernetes.client.exceptions.ApiException,
-        max_tries=20,
-        interval=0.25,
-    )
-    def fetch_job_object():
-        return batch_api_instance.read_namespaced_job(job_name, namespace)
-
-    try:
-        job_object = fetch_job_object()
-    except kubernetes.client.exceptions.ApiException:
-        ws.send("=================END OF LOGS=================")
-        return
-
-    label_selector = ",".join(
-        [f"{k}={v}" for k, v in job_object.spec.template.metadata.labels.items()]
-    )
-    try:
-        pods = core_api_instance.list_namespaced_pod(
-            namespace, label_selector=label_selector
+    if current_app.config["KUBERNETES_ENABLED"]:
+        _stream_k8s_job_logs(
+            ws,
+            f"releasebuild-{build_job_id}",
+            "default",
         )
-    except kubernetes.client.exceptions.ApiException as exc:
-        ws.send("=================END OF LOGS=================")
-        print(f"Encountered exception: {exc}")
-        return False
-
-    if len(pods.items) != 1:
-        ws.send("=================END OF LOGS=================")
-        print("Found too many pods!")
-        return False
-
-    pod = pods.items[0]
-    while True:
-        pod = core_api_instance.read_namespaced_pod(
-            pod.metadata.name, pod.metadata.namespace
+    else:
+        _stream_redis_build_logs(
+            ws,
+            "release",
+            build_job_id,
+            f"releasebuild-{build_job_id}",
         )
-        if pod.status.phase == "Running":
-            break
-        time.sleep(1)
-    ws.send(f"Job Pod releasebuild-{build_job_id}")
-    w = kubernetes.watch.Watch()
-    for line in w.stream(
-        core_api_instance.read_namespaced_pod_log,
-        name=pod.metadata.name,
-        namespace=namespace,
-        container=job_object.metadata.labels["process"],
-        follow=True,
-        _preload_content=False,
-        pretty="true",
-    ):
-        ws.send(f"  {line}")
-
-    ws.send("=================END OF LOGS=================")
 
 
 @sock.route("/deployment/<deployment_id>/livelogs", bp=user_blueprint)
@@ -1175,75 +1170,20 @@ def deployment_livelogs(ws, deployment_id):
         for line in deploy_log.split("\n"):
             ws.send(f"  {line}")
         ws.send("=================END OF LOGS=================")
+        return
 
     db.session.remove()
 
-    api_client = kubernetes_ext.kubernetes_client
-    core_api_instance = kubernetes.client.CoreV1Api(api_client)
-    batch_api_instance = kubernetes.client.BatchV1Api(api_client)
-
-    job_name = f"deployment-{job_id}"
-
-    @backoff.on_exception(
-        backoff.constant,
-        kubernetes.client.exceptions.ApiException,
-        max_tries=20,
-        interval=0.25,
-    )
-    def fetch_job_object():
-        return batch_api_instance.read_namespaced_job(job_name, namespace)
-
-    try:
-        job_object = fetch_job_object()
-    except kubernetes.client.exceptions.ApiException:
-        ws.send("=================END OF LOGS=================")
-        return
-
-    label_selector = ",".join(
-        [f"{k}={v}" for k, v in job_object.spec.template.metadata.labels.items()]
-    )
-    try:
-        pods = core_api_instance.list_namespaced_pod(
-            namespace, label_selector=label_selector
+    if current_app.config["KUBERNETES_ENABLED"]:
+        _stream_k8s_job_logs(
+            ws,
+            f"deployment-{job_id}",
+            namespace,
+            poll_interval=0.25,
         )
-    except kubernetes.client.exceptions.ApiException as exc:
+    else:
+        # deploy runs synchronously, log should already be in DB
         ws.send("=================END OF LOGS=================")
-        print(f"Encountered exception: {exc}")
-        return False
-
-    if len(pods.items) != 1:
-        ws.send("=================END OF LOGS=================")
-        print("Found too many pods!")
-        return False
-
-    pod = pods.items[0]
-    while True:
-        try:
-            pod = core_api_instance.read_namespaced_pod(
-                pod.metadata.name, pod.metadata.namespace
-            )
-            if pod.status.phase == "Running":
-                break
-            time.sleep(0.25)
-        except kubernetes.client.exceptions.ApiException as exc:
-            ws.send("=================END OF LOGS=================")
-            print(f"Encountered exception: {exc}")
-            return False
-
-    ws.send(f"Job Pod deployment-{job_id}")
-    w = kubernetes.watch.Watch()
-    for line in w.stream(
-        core_api_instance.read_namespaced_pod_log,
-        name=pod.metadata.name,
-        namespace=namespace,
-        container=job_object.metadata.labels["process"],
-        follow=True,
-        _preload_content=False,
-        pretty="true",
-    ):
-        ws.send(f"  {line}")
-
-    ws.send("=================END OF LOGS=================")
 
 
 @user_blueprint.route("/deployment/<deployment_id>")
