@@ -9,6 +9,7 @@ from .deploy import (
 
 from .maintain import (
     reap_pods,  # noqa: F401
+    reap_stale_builds,  # noqa: F401
 )
 
 from .prune_images import (
