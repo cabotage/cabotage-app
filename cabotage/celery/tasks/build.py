@@ -526,7 +526,7 @@ def build_image_buildkit(image=None):
     buildkitd_ca = current_app.config["BUILDKITD_VERIFY"]
     buildkit_image = current_app.config["BUILDKIT_IMAGE"]
 
-    access_token = None
+    access_token = current_app.config.get("GITHUB_TOKEN")
 
     if (
         image.application.github_repository_is_private

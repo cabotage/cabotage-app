@@ -80,6 +80,7 @@ class Config(metaclass=MetaFlaskEnv):
     GITHUB_APP_ID = None
     GITHUB_APP_PRIVATE_KEY = None
     GITHUB_WEBHOOK_SECRET = None
+    GITHUB_TOKEN = None
     SHELLZ_ENABLED = False
     SOCK_SERVER_OPTIONS = {"ping_interval": 25}
     SIDECAR_IMAGE = "cabotage/sidecar:3"
