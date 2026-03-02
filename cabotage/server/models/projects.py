@@ -223,7 +223,7 @@ class Application(db.Model, Timestamp):
     def release_candidate(self):
         release = Release(
             application_id=self.id,
-            image=self.latest_image.asdict if self.latest_image else {},
+            image=self.latest_image_built.asdict if self.latest_image_built else {},
             configuration={c.name: c.asdict for c in self.configurations},
             platform=self.platform,
         )
