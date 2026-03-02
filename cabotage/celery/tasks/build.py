@@ -69,8 +69,6 @@ def build_release_buildkit(release):
     registry = current_app.config["REGISTRY_BUILD"]
     registry_secure = current_app.config["REGISTRY_SECURE"]
     registry_ca = current_app.config["REGISTRY_VERIFY"]
-    buildkitd_url = current_app.config["BUILDKITD_URL"]
-    buildkitd_ca = current_app.config["BUILDKITD_VERIFY"]
     buildkit_image = current_app.config["BUILDKIT_IMAGE"]
 
     process_commands = "\n".join(
@@ -355,9 +353,7 @@ def build_release_buildkit(release):
                 "context=context",
             ]
             context_configmap_object = release.release_build_context_configmap
-            buildctl_command = ["buildctl"]
-            if buildkitd_ca is not None:
-                buildctl_args.insert(0, f"--tlscacert={buildkitd_ca}")
+            buildctl_command = ["buildctl-daemonless.sh"]
             with TemporaryDirectory() as tempdir:
                 os.makedirs(os.path.join(tempdir, "context"), exist_ok=True)
                 for file, contents in context_configmap_object.data.items():
@@ -366,11 +362,21 @@ def build_release_buildkit(release):
                 os.makedirs(os.path.join(tempdir, ".docker"), exist_ok=True)
                 with open(os.path.join(tempdir, ".docker", "config.json"), "w") as f:
                     f.write(dockerconfigjson)
+                with open(os.path.join(tempdir, "buildkitd.toml"), "w") as f:
+                    f.write(buildkitd_toml)
 
                 try:
                     output = run_and_stream(
                         buildctl_command + buildctl_args,
-                        env={"BUILDKIT_HOST": buildkitd_url, "HOME": tempdir},
+                        env={
+                            **os.environ,
+                            "BUILDKITD_FLAGS": (
+                                f"--root=/tmp/buildkit-{release.application.id}"
+                                f" --config={tempdir}/buildkitd.toml"
+                                " --oci-worker=true --oci-worker-binary=/usr/bin/buildkit-runc"
+                            ),
+                            "HOME": tempdir,
+                        },
                         cwd=tempdir,
                         broker_url=current_app.config["CELERY_BROKER_URL"],
                         build_type="release",
@@ -522,8 +528,6 @@ def build_image_buildkit(image=None):
     registry = current_app.config["REGISTRY_BUILD"]
     registry_secure = current_app.config["REGISTRY_SECURE"]
     registry_ca = current_app.config["REGISTRY_VERIFY"]
-    buildkitd_url = current_app.config["BUILDKITD_URL"]
-    buildkitd_ca = current_app.config["BUILDKITD_VERIFY"]
     buildkit_image = current_app.config["BUILDKIT_IMAGE"]
 
     access_token = current_app.config.get("GITHUB_TOKEN")
@@ -919,9 +923,7 @@ def build_image_buildkit(image=None):
             if not job_complete:
                 raise BuildError("Image build failed!")
         else:
-            buildctl_command = ["buildctl"]
-            if buildkitd_ca is not None:
-                buildctl_args.insert(0, f"--tlscacert={buildkitd_ca}")
+            buildctl_command = ["buildctl-daemonless.sh"]
             if image.application.github_repository_is_private:
                 buildctl_args.append("--secret")
                 buildctl_args.append(
@@ -940,11 +942,21 @@ def build_image_buildkit(image=None):
                         os.path.join(tempdir, ".secret", "github_access_token"), "w"
                     ) as f:
                         f.write(access_token)
+                with open(os.path.join(tempdir, "buildkitd.toml"), "w") as f:
+                    f.write(buildkitd_toml)
 
                 try:
                     output = run_and_stream(
                         buildctl_command + buildctl_args,
-                        env={"BUILDKIT_HOST": buildkitd_url, "HOME": tempdir},
+                        env={
+                            **os.environ,
+                            "BUILDKITD_FLAGS": (
+                                f"--root=/tmp/buildkit-{image.application.id}"
+                                f" --config={tempdir}/buildkitd.toml"
+                                " --oci-worker=true --oci-worker-binary=/usr/bin/buildkit-runc"
+                            ),
+                            "HOME": tempdir,
+                        },
                         cwd=tempdir,
                         broker_url=current_app.config["CELERY_BROKER_URL"],
                         build_type="image",
