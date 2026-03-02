@@ -154,6 +154,8 @@ services:
     env_file:
       - path: .env
         required: false
+    # worker runs buildkitd-daemonless directly to simulate cache isolation locally
+    privileged: true
     volumes:
       - .:/opt/cabotage-app/src:z
       - $HOME/.kube:/var/run/kube
