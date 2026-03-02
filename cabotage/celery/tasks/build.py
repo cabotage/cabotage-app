@@ -46,7 +46,13 @@ from cabotage.utils.docker_auth import (
     generate_kubernetes_imagepullsecrets,
 )
 
-from cabotage.utils.build_log_stream import run_and_stream
+from cabotage.utils.build_log_stream import (
+    get_redis_client,
+    publish_end,
+    refresh_heartbeat,
+    run_and_stream,
+    stream_key,
+)
 from cabotage.utils.release_build_context import RELEASE_DOCKERFILE_TEMPLATE
 from cabotage.utils.github import post_deployment_status_update
 from cabotage.utils import procfile
@@ -350,6 +356,8 @@ def build_release_buildkit(release):
                         broker_url=current_app.config["CELERY_BROKER_URL"],
                         build_type="release",
                         build_job_id=release.build_job_id,
+                        heartbeat_type="release_build",
+                        heartbeat_id=str(release.id),
                     )
                 except subprocess.CalledProcessError as proc_exc:
                     release.release_build_log = proc_exc.output
@@ -903,6 +911,8 @@ def build_image_buildkit(image=None):
                         broker_url=current_app.config["CELERY_BROKER_URL"],
                         build_type="image",
                         build_job_id=image.build_job_id,
+                        heartbeat_type="image_build",
+                        heartbeat_id=str(image.id),
                     )
                 except subprocess.CalledProcessError as proc_exc:
                     image.image_build_log = proc_exc.output
@@ -964,6 +974,15 @@ def run_image_build(image_id=None, buildkit=False):
     image.build_job_id = secrets.token_hex(4)
     db.session.add(image)
     db.session.commit()
+
+    try:
+        redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
+        refresh_heartbeat(redis_client, "image_build", str(image.id))
+    except Exception:  # nosec B110
+        # blind capture any issues sending heartbeat to redis,
+        # we don't want to fail the build for this!
+        pass
+
     try:
         try:
             build_metadata = build_image_buildkit(image)
@@ -1000,6 +1019,12 @@ def run_image_build(image_id=None, buildkit=False):
                 )
             raise
     except Exception:
+        try:
+            log_key = stream_key("image", image.build_job_id)
+            redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
+            publish_end(redis_client, log_key, error=True)
+        except Exception:  # nosec B110
+            pass
         db.session.add(image)
         if not image.error:
             image.error = True
@@ -1049,6 +1074,7 @@ def run_image_build(image_id=None, buildkit=False):
 
 @shared_task()
 def run_release_build(release_id=None):
+    release = None
     try:
         current_app.config["REGISTRY_AUTH_SECRET"]
         current_app.config["REGISTRY_BUILD"]
@@ -1062,6 +1088,14 @@ def run_release_build(release_id=None):
         release.build_job_id = secrets.token_hex(4)
         db.session.add(release)
         db.session.commit()
+
+        try:
+            redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
+            refresh_heartbeat(redis_client, "release_build", str(release.id))
+        except Exception:  # nosec B110
+            # blind capture any issues sending heartbeat to redis,
+            # we don't want to fail the build for this!
+            pass
 
         try:
             build_metadata = build_release_buildkit(release)
@@ -1083,6 +1117,12 @@ def run_release_build(release_id=None):
         except BuildError as exc:
             release.error = True
             release.error_detail = str(exc)
+            try:
+                log_key = stream_key("release", release.build_job_id)
+                redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
+                publish_end(redis_client, log_key, error=True)
+            except Exception:  # nosec B110
+                pass
             if (
                 "installation_id" in release.release_metadata
                 and "statuses_url" in release.release_metadata
@@ -1097,6 +1137,12 @@ def run_release_build(release_id=None):
                     "Release build failed.",
                 )
         except Exception:
+            try:
+                log_key = stream_key("release", release.build_job_id)
+                redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
+                publish_end(redis_client, log_key, error=True)
+            except Exception:  # nosec B110
+                pass
             release.error = True
             release.error_detail = "Release build failed due to an internal error"
             db.session.add(release)

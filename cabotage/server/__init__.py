@@ -95,7 +95,12 @@ def celery_init_app(app):
             "task": "cabotage.celery.tasks.maintain.reap_pods",
             "schedule": crontab(minute="*/5"),
             "args": None,
-        }
+        },
+        "stale-build-reaper": {
+            "task": "cabotage.celery.tasks.maintain.reap_stale_builds",
+            "schedule": 10.0,
+            "args": None,
+        },
     }
     app.extensions["celery"] = celery_app
     return celery_app

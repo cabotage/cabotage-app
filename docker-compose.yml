@@ -146,7 +146,7 @@ services:
 
   cabotage-app-worker:
     image: cabotage-app:docker-compose
-    command: hupper -m celery -A cabotage.celery.worker.celery_app worker -E --loglevel=INFO
+    command: hupper -m celery -A cabotage.celery.worker.celery_app worker --concurrency=1 --beat --scheduler redbeat.RedBeatScheduler -E --loglevel=INFO
     environment: *base_environment
     volumes:
       - .:/opt/cabotage-app/src:z
