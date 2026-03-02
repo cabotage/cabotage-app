@@ -48,8 +48,10 @@ from cabotage.utils.docker_auth import (
 
 from cabotage.utils.build_log_stream import (
     get_redis_client,
+    publish_end,
     refresh_heartbeat,
     run_and_stream,
+    stream_key,
 )
 from cabotage.utils.release_build_context import RELEASE_DOCKERFILE_TEMPLATE
 from cabotage.utils.github import post_deployment_status_update
@@ -1017,6 +1019,12 @@ def run_image_build(image_id=None, buildkit=False):
                 )
             raise
     except Exception:
+        try:
+            log_key = stream_key("image", image.build_job_id)
+            redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
+            publish_end(redis_client, log_key, error=True)
+        except Exception:  # nosec B110
+            pass
         raise
 
     db.session.add(image)
@@ -1104,6 +1112,12 @@ def run_release_build(release_id=None):
         except BuildError as exc:
             release.error = True
             release.error_detail = str(exc)
+            try:
+                log_key = stream_key("release", release.build_job_id)
+                redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
+                publish_end(redis_client, log_key, error=True)
+            except Exception:  # nosec B110
+                pass
             if (
                 "installation_id" in release.release_metadata
                 and "statuses_url" in release.release_metadata
@@ -1118,6 +1132,12 @@ def run_release_build(release_id=None):
                     "Release build failed.",
                 )
         except Exception:
+            try:
+                log_key = stream_key("release", release.build_job_id)
+                redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
+                publish_end(redis_client, log_key, error=True)
+            except Exception:  # nosec B110
+                pass
             if (
                 "installation_id" in release.release_metadata
                 and "statuses_url" in release.release_metadata

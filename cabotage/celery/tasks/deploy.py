@@ -1087,7 +1087,9 @@ def run_job(
                 return True, job_logs
             else:
                 if heartbeat_type and heartbeat_id and redis_client:
-                    refresh_heartbeat(redis_client, heartbeat_type, heartbeat_id, ttl=heartbeat_ttl)
+                    refresh_heartbeat(
+                        redis_client, heartbeat_type, heartbeat_id, ttl=heartbeat_ttl
+                    )
                 time.sleep(1)
     finally:
         try:
@@ -1129,7 +1131,9 @@ def _run_job_streaming(
             except ApiException:
                 pass
             if heartbeat_type and heartbeat_id:
-                refresh_heartbeat(redis_client, heartbeat_type, heartbeat_id, ttl=heartbeat_ttl)
+                refresh_heartbeat(
+                    redis_client, heartbeat_type, heartbeat_id, ttl=heartbeat_ttl
+                )
             time.sleep(1)
 
         if pod is None:
@@ -1159,7 +1163,9 @@ def _run_job_streaming(
                 publish_log_line(redis_client, log_key, line)
                 log_lines.append(line)
                 if heartbeat_type and heartbeat_id:
-                    refresh_heartbeat(redis_client, heartbeat_type, heartbeat_id, ttl=heartbeat_ttl)
+                    refresh_heartbeat(
+                        redis_client, heartbeat_type, heartbeat_id, ttl=heartbeat_ttl
+                    )
         except ApiException:
             # Pod may have already terminated; logs were collected above
             pass
@@ -1176,7 +1182,9 @@ def _run_job_streaming(
             if job_status.status.failed and job_status.status.failed > 0:
                 break
             if heartbeat_type and heartbeat_id:
-                refresh_heartbeat(redis_client, heartbeat_type, heartbeat_id, ttl=heartbeat_ttl)
+                refresh_heartbeat(
+                    redis_client, heartbeat_type, heartbeat_id, ttl=heartbeat_ttl
+                )
             time.sleep(1)
 
         # Build log string matching fetch_job_logs format
@@ -1200,7 +1208,9 @@ def deploy_release(deployment):
     deploy_log = []
 
     deployment_id_str = str(deployment.id)
-    heartbeat_ttl = deployment.release_object.application.deployment_timeout + _HEARTBEAT_TTL
+    heartbeat_ttl = (
+        deployment.release_object.application.deployment_timeout + _HEARTBEAT_TTL
+    )
 
     # Set up Redis streaming for live deploy logs
     try:
@@ -1216,7 +1226,9 @@ def deploy_release(deployment):
         if redis_client is not None and log_key is not None:
             try:
                 publish_log_line(redis_client, log_key, msg)
-                refresh_heartbeat(redis_client, "deploy", deployment_id_str, ttl=heartbeat_ttl)
+                refresh_heartbeat(
+                    redis_client, "deploy", deployment_id_str, ttl=heartbeat_ttl
+                )
             except Exception:  # nosec B110
                 pass
 
@@ -1330,7 +1342,9 @@ def deploy_release(deployment):
         while time.time() - start < timeout:
             time.sleep(2)
             if redis_client is not None:
-                refresh_heartbeat(redis_client, "deploy", deployment_id_str, ttl=heartbeat_ttl)
+                refresh_heartbeat(
+                    redis_client, "deploy", deployment_id_str, ttl=heartbeat_ttl
+                )
             for process_name in deployment.release_object.processes:
                 if _go[process_name]:
                     continue
