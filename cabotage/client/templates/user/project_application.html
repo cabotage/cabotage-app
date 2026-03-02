@@ -1025,7 +1025,7 @@
         <a href="#deployments"
            class="btn btn-ghost btn-xs flex-1 gap-1"
            data-switch-tab="deployments">{{ icon('deploy', 'w-3 h-3') }} All</a>
-        {% if has_deployable %}
+        {% if show_ready_to_deploy %}
           <form action="{{ url_for('user.release_deploy', release_id=application.latest_release.id) }}"
                 method="post"
                 name="pipeline_deploy_form"
