@@ -191,7 +191,7 @@
         {% set has_no_image = not application.latest_image %}
         {% set has_no_release = application.releases.count() == 0 %}
 
-        {% if not latest_release_live %}
+        {% if not latest_release_live and not application.latest_deployment_completed %}
           {% set repo_done = application.github_repository %}
           {% set image_done = application.latest_image_built %}
           {% set release_done = application.latest_release_built %}
