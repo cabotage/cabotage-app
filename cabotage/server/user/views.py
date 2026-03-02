@@ -126,9 +126,7 @@ def organization(org_slug):
         (str(organization.id), organization.name)
     ]
     project_create_form.organization_id.data = str(organization.id)
-    org_app_count = sum(
-        len(p.project_applications) for p in organization.projects
-    )
+    org_app_count = sum(len(p.project_applications) for p in organization.projects)
     org_deploy_count = sum(
         app.deployments.filter_by(complete=True).count()
         for p in organization.projects
