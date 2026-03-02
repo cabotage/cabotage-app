@@ -1313,7 +1313,7 @@ def deploy_release(deployment):
                 heartbeat_id=deployment_id_str,
                 heartbeat_ttl=heartbeat_ttl,
             )
-            log(job_logs)
+            deploy_log.append(job_logs)
             if not job_complete:
                 raise DeployError(f"Release command {release_command} failed!")
             else:
@@ -1405,7 +1405,7 @@ def deploy_release(deployment):
                 heartbeat_id=deployment_id_str,
                 heartbeat_ttl=heartbeat_ttl,
             )
-            log(job_logs)
+            deploy_log.append(job_logs)
             if not job_complete:
                 raise DeployError(f"Release command {postdeploy_command} failed!")
             else:
