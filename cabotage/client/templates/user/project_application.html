@@ -191,37 +191,79 @@
         {% set has_no_image = not application.latest_image %}
         {% set has_no_release = application.releases.count() == 0 %}
 
-        {% if has_no_image and has_no_release %}
+        {% if not latest_release_live %}
+          {% set repo_done = application.github_repository %}
+          {% set image_done = application.latest_image_built %}
+          {% set release_done = application.latest_release_built %}
           <div class="getting-started mb-4">
             <div class="flex items-center gap-2 mb-3">
               {{ icon('zap', 'w-4 h-4 text-primary') }}
               <h2 class="text-sm font-semibold text-base-content">Get started</h2>
             </div>
             <div class="deploy-steps">
-              <div class="deploy-step deploy-step-active">
-                <div class="deploy-step-number">1</div>
+              {% if not repo_done %}
+                <div class="deploy-step deploy-step-active">
+                  <div class="deploy-step-number">1</div>
+                  <div class="deploy-step-content">
+                    <p class="text-sm font-medium text-base-content">Configure your repository</p>
+                    <p class="text-xs text-base-content/40">Connect a GitHub repository to build from</p>
+                    <a href="{{ url_for('user.project_application_settings', application_id=application.id) }}"
+                       class="btn btn-primary btn-sm gap-1.5 mt-2">{{ icon('settings', 'w-3.5 h-3.5') }} Configure Repo</a>
+                  </div>
+                </div>
+                <div class="deploy-step deploy-step-pending">
+                  <div class="deploy-step-number">2</div>
+                  <div class="deploy-step-content">
+                    <p class="text-sm text-base-content/50">Build an image</p>
+                    <p class="text-xs text-base-content/30">Compile your source code into a container image</p>
+                  </div>
+                </div>
+              {% else %}
+                <div class="deploy-step {% if image_done %}deploy-step-done{% else %}deploy-step-active{% endif %}">
+                  <div class="deploy-step-number">1</div>
+                  <div class="deploy-step-content">
+                    <p class="text-sm font-medium text-base-content">Build an image</p>
+                    <p class="text-xs text-base-content/40">Compile your source code into a container image</p>
+                    {% if not image_done %}
+                      <form action="{{ url_for('user.application_images_build_fromsource', application_id=application.id) }}"
+                            method="post"
+                            class="mt-2">
+                        <button class="btn btn-primary btn-sm gap-1.5" type="submit">{{ icon('play', 'w-3.5 h-3.5') }} Build Image</button>
+                      </form>
+                    {% endif %}
+                  </div>
+                </div>
+              {% endif %}
+              <div class="deploy-step {% if release_done %}deploy-step-done{% elif image_done %}deploy-step-active{% else %}deploy-step-pending{% endif %}">
+                <div class="deploy-step-number">{{ 3 if not repo_done else 2 }}</div>
                 <div class="deploy-step-content">
-                  <p class="text-sm font-medium text-base-content">Build an image</p>
-                  <p class="text-xs text-base-content/40">Compile your source code into a container image</p>
-                  <form action="{{ url_for('user.application_images_build_fromsource', application_id=application.id) }}"
-                        method="post"
-                        class="mt-2">
-                    <button class="btn btn-primary btn-sm gap-1.5" type="submit">{{ icon('play', 'w-3.5 h-3.5') }} Build Image</button>
-                  </form>
+                  {% if image_done and not release_done %}
+                    <p class="text-sm font-medium text-base-content">Create a release</p>
+                    <p class="text-xs text-base-content/40">Bundle your image + config into a deployable release</p>
+                    <a href="{{ url_for('user.application_release_create', application_id=application.id) }}"
+                       class="btn btn-primary btn-sm gap-1.5 mt-2">{{ icon('scissors', 'w-3.5 h-3.5') }} Create Release</a>
+                  {% else %}
+                    <p class="text-sm {% if release_done %}font-medium text-base-content{% else %}text-base-content/50{% endif %}">Create a release</p>
+                    <p class="text-xs {% if release_done %}text-base-content/40{% else %}text-base-content/30{% endif %}">Bundle your image + config into a deployable release</p>
+                  {% endif %}
                 </div>
               </div>
-              <div class="deploy-step deploy-step-pending">
-                <div class="deploy-step-number">2</div>
+              <div class="deploy-step {% if release_done %}deploy-step-active{% else %}deploy-step-pending{% endif %}">
+                <div class="deploy-step-number">{{ 4 if not repo_done else 3 }}</div>
                 <div class="deploy-step-content">
-                  <p class="text-sm text-base-content/50">Create a release</p>
-                  <p class="text-xs text-base-content/30">Bundle your image + config into a deployable release</p>
-                </div>
-              </div>
-              <div class="deploy-step deploy-step-pending">
-                <div class="deploy-step-number">3</div>
-                <div class="deploy-step-content">
-                  <p class="text-sm text-base-content/50">Deploy</p>
-                  <p class="text-xs text-base-content/30">Push the release live</p>
+                  {% if release_done %}
+                    <p class="text-sm font-medium text-base-content">Deploy</p>
+                    <p class="text-xs text-base-content/40">Push the release live</p>
+                    <form action="{{ url_for('user.release_deploy', release_id=application.latest_release.id) }}"
+                          method="post"
+                          class="mt-2">
+                      {{ deploy_form.hidden_tag() }}
+                      <button class="btn btn-primary btn-sm gap-1.5" type="submit">{{ icon('upload', 'w-3.5 h-3.5') }} Deploy</button>
+                    </form>
+                  {% else %}
+                    <p class="text-sm text-base-content/50">Deploy</p>
+                    <p class="text-xs text-base-content/30">Push the release live</p>
+                  {% endif %}
                 </div>
               </div>
             </div>
@@ -895,7 +937,12 @@
           {% endif %}
         {% endif %}
       </div>
-      {% if application.latest_image %}
+      {% if not application.github_repository %}
+        <a href="{{ url_for('user.project_application_settings', application_id=application.id) }}"
+           class="pipeline-stage-body group">
+          <span class="text-sm text-base-content/50">No repo configured</span>
+        </a>
+      {% elif application.latest_image %}
         <a href="{{ url_for('user.image_detail', image_id=application.latest_image.id) }}"
            class="pipeline-stage-body group">
           <code class="text-sm text-accent">#{{ application.latest_image.version }}</code>
@@ -909,14 +956,19 @@
         </div>
       {% endif %}
       <div class="pipeline-stage-action flex gap-1">
-        <a href="#images"
-           class="btn btn-ghost btn-xs flex-1 gap-1"
-           data-switch-tab="images">{{ icon('image', 'w-3 h-3') }} All</a>
-        <form action="{{ url_for('user.application_images_build_fromsource', application_id=application.id) }}"
-              method="post"
-              class="flex-1">
-          <button class="btn btn-ghost btn-xs w-full gap-1" type="submit">{{ icon('play', 'w-3 h-3') }} Build</button>
-        </form>
+        {% if not application.github_repository %}
+          <a href="{{ url_for('user.project_application_settings', application_id=application.id) }}"
+             class="btn btn-ghost btn-xs flex-1 gap-1">{{ icon('settings', 'w-3 h-3') }} Configure repo</a>
+        {% else %}
+          <a href="#images"
+             class="btn btn-ghost btn-xs flex-1 gap-1"
+             data-switch-tab="images">{{ icon('image', 'w-3 h-3') }} All</a>
+          <form action="{{ url_for('user.application_images_build_fromsource', application_id=application.id) }}"
+                method="post"
+                class="flex-1">
+            <button class="btn btn-ghost btn-xs w-full gap-1" type="submit">{{ icon('play', 'w-3 h-3') }} Build</button>
+          </form>
+        {% endif %}
       </div>
     </div>
 
@@ -1001,6 +1053,7 @@
         {% endif %}
       </div>
       {% if application.latest_deployment %}
+        {% set _deploy_release = application.latest_deployment.release_object %}
         <a href="{{ url_for('user.deployment_detail', deployment_id=application.latest_deployment.id) }}"
            class="pipeline-stage-body group">
           <span class="text-sm text-base-content">
@@ -1010,6 +1063,9 @@
               Failed
             {% else %}
               In progress
+            {% endif %}
+            {% if _deploy_release %}
+              <code class="text-accent ml-1">v{{ _deploy_release.version }}</code>
             {% endif %}
           </span>
           <p class="text-xs text-base-content/40">
@@ -1025,7 +1081,7 @@
         <a href="#deployments"
            class="btn btn-ghost btn-xs flex-1 gap-1"
            data-switch-tab="deployments">{{ icon('deploy', 'w-3 h-3') }} All</a>
-        {% if has_deployable %}
+        {% if show_ready_to_deploy %}
           <form action="{{ url_for('user.release_deploy', release_id=application.latest_release.id) }}"
                 method="post"
                 name="pipeline_deploy_form"
