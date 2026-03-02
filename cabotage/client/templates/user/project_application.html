@@ -1001,6 +1001,7 @@
         {% endif %}
       </div>
       {% if application.latest_deployment %}
+        {% set _deploy_release = application.latest_deployment.release_object %}
         <a href="{{ url_for('user.deployment_detail', deployment_id=application.latest_deployment.id) }}"
            class="pipeline-stage-body group">
           <span class="text-sm text-base-content">
@@ -1010,6 +1011,9 @@
               Failed
             {% else %}
               In progress
+            {% endif %}
+            {% if _deploy_release %}
+              <code class="text-accent ml-1">v{{ _deploy_release.version }}</code>
             {% endif %}
           </span>
           <p class="text-xs text-base-content/40">
