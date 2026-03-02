@@ -134,6 +134,9 @@ services:
     image: cabotage-app:docker-compose
     command: hupper -m gunicorn.app.wsgiapp -c gunicorn.conf -w 4 --threads 100 -b 0.0.0.0:8000 cabotage.server.wsgi:app
     environment: *base_environment
+    env_file:
+      - path: .env
+        required: false
     volumes:
       - .:/opt/cabotage-app/src:z
       - $HOME/.kube:/var/run/kube
@@ -148,6 +151,9 @@ services:
     image: cabotage-app:docker-compose
     command: hupper -m celery -A cabotage.celery.worker.celery_app worker --concurrency=1 --beat --scheduler redbeat.RedBeatScheduler -E --loglevel=INFO
     environment: *base_environment
+    env_file:
+      - path: .env
+        required: false
     volumes:
       - .:/opt/cabotage-app/src:z
       - $HOME/.kube:/var/run/kube
