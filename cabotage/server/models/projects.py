@@ -261,9 +261,7 @@ class Application(db.Model, Timestamp):
 
     @property
     def latest_deployment(self):
-        return (
-            self.deployments.filter_by().order_by(Deployment.created.desc()).first()
-        )
+        return self.deployments.filter_by().order_by(Deployment.created.desc()).first()
 
     @property
     def latest_deployment_completed(self):
