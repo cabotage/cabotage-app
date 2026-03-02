@@ -1192,7 +1192,14 @@ def _run_job_streaming(
         for log_line in log_lines:
             log_string += f"  {log_line}\n"
 
+        publish_end(redis_client, log_key, error=not succeeded)
         return succeeded, log_string
+    except Exception:
+        try:
+            publish_end(redis_client, log_key, error=True)
+        except Exception:  # nosec B110
+            pass
+        raise
     finally:
         try:
             delete_job(batch_api_instance, namespace, job_object)

@@ -303,8 +303,22 @@ def build_release_buildkit(release):
             core_api_instance.create_namespaced_secret("default", docker_secret_object)
 
             try:
+                redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
+                log_key = stream_key("release", release.build_job_id)
+            except Exception:  # nosec B110
+                redis_client = None
+                log_key = None
+
+            try:
                 job_complete, job_logs = run_job(
-                    core_api_instance, batch_api_instance, "default", job_object
+                    core_api_instance,
+                    batch_api_instance,
+                    "default",
+                    job_object,
+                    redis_client=redis_client,
+                    log_key=log_key,
+                    heartbeat_type="release_build",
+                    heartbeat_id=str(release.id),
                 )
             finally:
                 core_api_instance.delete_namespaced_secret(
@@ -855,8 +869,22 @@ def build_image_buildkit(image=None):
             core_api_instance.create_namespaced_secret("default", github_secret_object)
 
             try:
+                redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
+                log_key = stream_key("image", image.build_job_id)
+            except Exception:  # nosec B110
+                redis_client = None
+                log_key = None
+
+            try:
                 job_complete, job_logs = run_job(
-                    core_api_instance, batch_api_instance, "default", job_object
+                    core_api_instance,
+                    batch_api_instance,
+                    "default",
+                    job_object,
+                    redis_client=redis_client,
+                    log_key=log_key,
+                    heartbeat_type="image_build",
+                    heartbeat_id=str(image.id),
                 )
             finally:
                 core_api_instance.delete_namespaced_secret(

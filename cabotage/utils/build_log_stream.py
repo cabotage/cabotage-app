@@ -41,9 +41,9 @@ def heartbeat_key(entity_type, entity_id):
     return f"heartbeat:{entity_type}:{entity_id}"
 
 
-def refresh_heartbeat(redis_client, entity_type, entity_id):
+def refresh_heartbeat(redis_client, entity_type, entity_id, ttl=None):
     key = heartbeat_key(entity_type, entity_id)
-    redis_client.set(key, "1", ex=_HEARTBEAT_TTL)
+    redis_client.set(key, "1", ex=ttl or _HEARTBEAT_TTL)
 
 
 def get_redis_client(broker_url):
