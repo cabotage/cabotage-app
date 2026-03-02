@@ -23,12 +23,12 @@
   {% endcall %}
 
   {% set app_count = project.project_applications|length %}
-  {% set total_instances = namespace(n=0) %}
+  {% set total_pods = namespace(n=0) %}
   {% set running_count = namespace(n=0) %}
   {% set errored_count = namespace(n=0) %}
   {% set building_count = namespace(n=0) %}
   {% for app in project.project_applications %}
-    {% set total_instances.n = total_instances.n + (app.process_counts.values()|sum if app.process_counts else 0) %}
+    {% set total_pods.n = total_pods.n + (app.process_counts.values()|sum if app.process_counts else 0) %}
     {% if app.latest_deployment_running or app.latest_deployment_completed %}
       {% set running_count.n = running_count.n + 1 %}
     {% endif %}
@@ -42,7 +42,7 @@
 
   <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
     {{ stat_card(app_count, 'Applications', 'box', 'accent') }}
-    {{ stat_card(total_instances.n, 'Instances', 'layers', 'secondary') }}
+    {{ stat_card(total_pods.n, 'Pods', 'layers', 'secondary') }}
     {{ stat_card(proj_deploy_count, 'Deployments', 'deploy', 'success') }}
     {% if errored_count.n > 0 %}{{ stat_card(errored_count.n, 'Errors', 'alert-triangle', 'error') }}{% endif %}
   </div>
@@ -87,7 +87,7 @@
         {% endif %}
         {% set proc_count = application.process_counts.values()|sum if application.process_counts else 0 %}
         {% set meta = [
-                  (proc_count ~ ' instance' ~ ('s' if proc_count != 1 else '')) if proc_count else 'No instances',
+                  (proc_count ~ ' instance' ~ ('s' if proc_count != 1 else '')) if proc_count else 'No pods',
                   (application.configurations|length ~ ' env vars') if application.configurations else ''
                 ]|select|list %}
         {% if application.latest_deployment_completed %}

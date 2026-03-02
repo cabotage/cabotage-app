@@ -126,10 +126,20 @@ def organization(org_slug):
         (str(organization.id), organization.name)
     ]
     project_create_form.organization_id.data = str(organization.id)
+    org_app_count = sum(
+        len(p.project_applications) for p in organization.projects
+    )
+    org_deploy_count = sum(
+        app.deployments.filter_by(complete=True).count()
+        for p in organization.projects
+        for app in p.project_applications
+    )
     return render_template(
         "user/organization.html",
         organization=organization,
         project_create_form=project_create_form,
+        org_app_count=org_app_count,
+        org_deploy_count=org_deploy_count,
     )
 
 
@@ -234,8 +244,15 @@ def project(org_slug, project_slug):
     app_create_form.project_id.choices = [(str(project.id), project.name)]
     app_create_form.organization_id.data = str(organization.id)
     app_create_form.project_id.data = str(project.id)
+    proj_deploy_count = sum(
+        app.deployments.filter_by(complete=True).count()
+        for app in project.project_applications
+    )
     return render_template(
-        "user/project.html", project=project, app_create_form=app_create_form
+        "user/project.html",
+        project=project,
+        app_create_form=app_create_form,
+        proj_deploy_count=proj_deploy_count,
     )
 
 
