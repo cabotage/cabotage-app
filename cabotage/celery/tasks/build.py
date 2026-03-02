@@ -1025,6 +1025,11 @@ def run_image_build(image_id=None, buildkit=False):
             publish_end(redis_client, log_key, error=True)
         except Exception:  # nosec B110
             pass
+        db.session.add(image)
+        if not image.error:
+            image.error = True
+            image.error_detail = "Image build failed due to an internal error"
+            db.session.commit()
         raise
 
     db.session.add(image)
@@ -1138,6 +1143,10 @@ def run_release_build(release_id=None):
                 publish_end(redis_client, log_key, error=True)
             except Exception:  # nosec B110
                 pass
+            release.error = True
+            release.error_detail = "Release build failed due to an internal error"
+            db.session.add(release)
+            db.session.commit()
             if (
                 "installation_id" in release.release_metadata
                 and "statuses_url" in release.release_metadata
@@ -1152,6 +1161,7 @@ def run_release_build(release_id=None):
                     "Release build failed.",
                 )
             raise
+
         db.session.add(release)
         db.session.commit()
 
@@ -1190,4 +1200,8 @@ def run_release_build(release_id=None):
                 deployment.complete = True
                 db.session.commit()
     except Exception:
+        if release is not None and not release.error:
+            release.error = True
+            release.error_detail = "Release build failed due to an internal error"
+            db.session.commit()
         raise

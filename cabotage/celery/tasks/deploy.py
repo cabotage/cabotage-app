@@ -1439,7 +1439,7 @@ def deploy_release(deployment):
         return False
     except Exception as exc:
         deployment.error = True
-        deployment.error_detail = f"Unexpected Error: {str(exc)}"
+        deployment.error_detail = "Deploy failed due to an internal error"
         if (
             deployment.deploy_metadata
             and "installation_id" in deployment.deploy_metadata
