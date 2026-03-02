@@ -9,7 +9,7 @@ permissions:
 jobs:
   release-to-ghcr:
     concurrency:
-      group: release-to-ghcr
+      group: release-to-ghcr-${{ matrix.config.arch }}
       cancel-in-progress: false
     runs-on: ${{ matrix.config.os }}
     strategy:
