@@ -320,6 +320,11 @@ def build_release_buildkit(release):
                     heartbeat_type="release_build",
                     heartbeat_id=str(release.id),
                 )
+                if redis_client and log_key:
+                    try:
+                        publish_end(redis_client, log_key, error=not job_complete)
+                    except Exception:  # nosec B110
+                        pass
             finally:
                 core_api_instance.delete_namespaced_secret(
                     f"buildkit-registry-auth-{release.build_job_id}",
@@ -886,6 +891,11 @@ def build_image_buildkit(image=None):
                     heartbeat_type="image_build",
                     heartbeat_id=str(image.id),
                 )
+                if redis_client and log_key:
+                    try:
+                        publish_end(redis_client, log_key, error=not job_complete)
+                    except Exception:  # nosec B110
+                        pass
             finally:
                 core_api_instance.delete_namespaced_secret(
                     f"buildkit-registry-auth-{image.build_job_id}",
