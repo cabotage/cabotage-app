@@ -56,24 +56,41 @@
   </div>
 
   {# ── Macro: render an app card ── #}
-  {% macro app_card(application, env_slug=none) %}
+  {% macro app_card(application, env_slug=none, app_env=none) %}
     {% set status = "" %}
-    {% if application.latest_deployment_running %}
-      {% set status = "running" %}
-    {% elif application.latest_image_building %}
-      {% set status = "building" %}
-    {% elif application.latest_image_error and (not application.latest_image_built or application.latest_image_error.version > application.latest_image_built.version) %}
-      {% set status = "error" %}
-    {% elif application.latest_deployment_completed %}
-      {% set status = "running" %}
+    {% if app_env %}
+      {% if app_env.latest_deployment and not app_env.latest_deployment.complete and not app_env.latest_deployment.error %}
+        {% set status = "running" %}
+      {% elif app_env.latest_image_building %}
+        {% set status = "building" %}
+      {% elif app_env.latest_image_error and (not app_env.latest_image_built or app_env.latest_image_error.version > app_env.latest_image_built.version) %}
+        {% set status = "error" %}
+      {% elif app_env.latest_deployment_completed %}
+        {% set status = "running" %}
+      {% endif %}
+      {% set configs = app_env.configurations %}
+      {% set proc_counts = app_env.process_counts if app_env.process_counts else application.process_counts %}
+    {% else %}
+      {% if application.latest_deployment_running %}
+        {% set status = "running" %}
+      {% elif application.latest_image_building %}
+        {% set status = "building" %}
+      {% elif application.latest_image_error and (not application.latest_image_built or application.latest_image_error.version > application.latest_image_built.version) %}
+        {% set status = "error" %}
+      {% elif application.latest_deployment_completed %}
+        {% set status = "running" %}
+      {% endif %}
+      {% set configs = application.configurations %}
+      {% set proc_counts = application.process_counts %}
     {% endif %}
-    {% set proc_count = application.process_counts.values()|sum if application.process_counts else 0 %}
+    {% set proc_count = proc_counts.values()|sum if proc_counts else 0 %}
     {% set meta = [
               (proc_count ~ ' instance' ~ ('s' if proc_count != 1 else '')) if proc_count else 'No pods',
-              (application.configurations|length ~ ' env vars') if application.configurations else ''
+              (configs|length ~ ' env vars') if configs else ''
             ]|select|list %}
-    {% if application.latest_deployment_completed %}
-      {% set _ = meta.append('deployed ' ~ application.latest_deployment_completed.completed|humanize) %}
+    {% set latest_completed = app_env.latest_deployment_completed if app_env else application.latest_deployment_completed %}
+    {% if latest_completed %}
+      {% set _ = meta.append('deployed ' ~ latest_completed.created|humanize) %}
     {% endif %}
     {{ service_card(name=application.name,
             slug=application.slug,
@@ -105,7 +122,7 @@
           {% if env.application_environments %}
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {% for ae in env.application_environments %}
-                {{ app_card(ae.application, env_slug=env.slug) }}
+                {{ app_card(ae.application, env_slug=env.slug, app_env=ae) }}
               {% endfor %}
             </div>
           {% else %}
