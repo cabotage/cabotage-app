@@ -10,7 +10,7 @@
 {% endblock title %}
 
 {% block resource_path %}
-  {% if app_env %}
+  {% if environment %}
     {{ resource_path([
       {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug) },
       {'label': project_slug, 'url': url_for('user.project', org_slug=org_slug, project_slug=project_slug)},
@@ -27,23 +27,42 @@
 {% endblock resource_path %}
 
 {% block tab_bar %}
+  {% if app_env %}
   <div class="app-content-padded !py-0">
     {{ tab_nav([
         {'id': 'overview', 'label': 'Overview', 'icon': 'activity'},
         {'id': 'observe', 'label': 'Observe (Soon)', 'icon': 'bar-chart', 'disabled': true},
-        {'id': 'config', 'label': 'Config', 'icon': 'key', 'badge': (app_env.configurations if app_env else application.configurations)|rejectattr('name', 'equalto', 'CABOTAGE_SENTINEL') |list|length},
+        {'id': 'config', 'label': 'Config', 'icon': 'key', 'badge': app_env.configurations|rejectattr('name', 'equalto', 'CABOTAGE_SENTINEL') |list|length},
     {'id': 'images', 'label': 'Images', 'icon': 'image'},
     {'id': 'releases', 'label': 'Releases', 'icon': 'layers'},
     {'id': 'deployments', 'label': 'Deploys', 'icon': 'deploy'},
     {'id': 'pipeline', 'label': 'Pipeline (Soon)', 'icon': 'bar-chart-2', 'disabled': true}
     ]) }}
   </div>
+  {% endif %}
 {% endblock tab_bar %}
 
 {% block content %}
 
-  {% set src = app_env if app_env else application %}
-  {% set configs = (app_env.configurations if app_env else application.configurations) %}
+  {% if not app_env %}
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+    <div class="flex items-center gap-3">
+      <h1 class="text-xl font-semibold text-base-content">{{ app_slug }}</h1>
+    </div>
+    <div class="flex items-center gap-2">
+      <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+         class="btn btn-ghost btn-sm gap-1.5">{{ icon('settings', 'w-3.5 h-3.5') }} Settings</a>
+    </div>
+  </div>
+  <div class="empty-state">
+    <div class="text-base-content/15 mb-4">{{ icon('layers', 'w-12 h-12') }}</div>
+    <h3 class="text-base font-medium text-base-content/60 mb-1">Not enrolled in any environment</h3>
+    <p class="text-sm text-base-content/40 max-w-sm">Add this application to an environment to start configuring and deploying it.</p>
+  </div>
+  {% else %}
+
+  {% set src = app_env %}
+  {% set configs = app_env.configurations %}
   {% set system_var_names = ["CABOTAGE_SENTINEL"] %}
   {% set user_configs = configs|rejectattr('name', 'in', system_var_names)|list %}
   {% set system_configs = configs|selectattr('name', 'in', system_var_names)|list %}
@@ -136,7 +155,7 @@
            class="btn btn-ghost btn-sm gap-1.5">{{ icon('terminal', 'w-3.5 h-3.5') }} Shell</a>
       {% endif %}
       {% if application.github_repository %}
-        {% set _effective_branch = app_env.effective_auto_deploy_branch if app_env else application.auto_deploy_branch %}
+        {% set _effective_branch = app_env.effective_auto_deploy_branch %}
         <a href="https://github.com/{{ application.github_repository }}{%- if _effective_branch -%}/tree/{{ _effective_branch }}{%- endif -%}"
            target="_blank"
            rel="noopener"
@@ -144,7 +163,7 @@
       {% endif %}
       <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
          class="btn btn-ghost btn-sm gap-1.5">{{ icon('settings', 'w-3.5 h-3.5') }} Settings</a>
-      {% if app_env %}
+      {% if environment %}
         <a href="{{ url_for('user.project_application_environment_settings', org_slug=org_slug, project_slug=project_slug, env_slug=environment.slug, app_slug=app_slug) }}"
            class="btn btn-ghost btn-sm gap-1.5">{{ icon('sliders', 'w-3.5 h-3.5') }} Env Settings</a>
       {% endif %}
@@ -262,7 +281,7 @@
                       <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
                             method="post"
                             class="mt-2">
-                        {% if app_env %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
+                        {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
                         <button class="btn btn-primary btn-sm gap-1.5" type="submit">{{ icon('play', 'w-3.5 h-3.5') }} Build Image</button>
                       </form>
                     {% endif %}
@@ -277,7 +296,7 @@
                     <p class="text-xs text-base-content/40">Bundle your image + config into a deployable release</p>
                     <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
                           method="post" class="mt-2">
-                      {% if app_env %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
+                      {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
                       <button type="submit" class="btn btn-primary btn-sm gap-1.5">{{ icon('scissors', 'w-3.5 h-3.5') }} Create Release</button>
                     </form>
                   {% else %}
@@ -465,7 +484,7 @@
                 </div>
                 <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
                       method="post" class="flex-shrink-0">
-                  {% if app_env %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
+                  {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
                   <button type="submit" class="btn btn-primary btn-sm gap-1.5">
                     {{ icon('scissors', 'w-3.5 h-3.5') }}
                     Create Release
@@ -689,7 +708,7 @@
               method="post"
               name="process_count_form">
           {{ scale_form.hidden_tag() }}
-          {% if app_env %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
+          {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
           <div class="process-grid">
             {% for process_name in src.latest_release.processes %}
               {% set count = src.process_counts.get(process_name, 0) %}
@@ -1008,7 +1027,7 @@
           <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
                 method="post"
                 class="flex-1">
-            {% if app_env %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
+            {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
             <button class="btn btn-ghost btn-xs w-full gap-1" type="submit">{{ icon('play', 'w-3 h-3') }} Build</button>
           </form>
         {% endif %}
@@ -1063,7 +1082,7 @@
            data-switch-tab="releases">{{ icon('layers', 'w-3 h-3') }} All</a>
         <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
               method="post" class="flex-1">
-          {% if app_env %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
+          {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
           <button type="submit" class="btn btn-ghost btn-xs w-full gap-1">{{ icon('scissors', 'w-3 h-3') }} Create</button>
         </form>
       </div>
@@ -1169,11 +1188,11 @@
                  class="deploy-meta-value text-accent hover:text-accent/80 transition-colors">{{ application.github_repository }}</a>
             </div>
           {% endif %}
-          {% set _effective_deploy_branch = app_env.effective_auto_deploy_branch if app_env else application.auto_deploy_branch %}
+          {% set _effective_deploy_branch = app_env.effective_auto_deploy_branch %}
           {% if _effective_deploy_branch %}
             <div class="deploy-meta-row">
               <span class="deploy-meta-label">Auto-deploy</span>
-              <span class="deploy-meta-value text-base-content/50">{{ _effective_deploy_branch }}{% if app_env and app_env.auto_deploy_branch %} <span class="badge badge-xs badge-ghost">env</span>{% endif %}</span>
+              <span class="deploy-meta-value text-base-content/50">{{ _effective_deploy_branch }}{% if app_env.auto_deploy_branch %} <span class="badge badge-xs badge-ghost">env</span>{% endif %}</span>
             </div>
           {% endif %}
         </div>
@@ -1569,7 +1588,7 @@
     <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
           method="post"
           class="inline">
-      {% if app_env %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
+      {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
       <button class="btn btn-primary btn-sm gap-1.5" type="submit">
         {{ icon('play', 'w-3.5 h-3.5') }} Build from Source
       </button>
@@ -1684,7 +1703,7 @@
           <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
                 method="post"
                 class="inline mt-4">
-            {% if app_env %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
+            {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
             <button class="btn btn-primary btn-sm gap-2" type="submit">{{ icon('play', 'w-4 h-4') }} Build from Source</button>
           </form>
         </div>
@@ -1699,7 +1718,7 @@
     <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
           method="post"
           class="inline">
-      {% if app_env %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
+      {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
       <button class="btn btn-primary btn-sm gap-1.5" type="submit">
         {{ icon('scissors', 'w-3.5 h-3.5') }} Create Release
       </button>
@@ -2121,6 +2140,8 @@
 
   </div>
 </div>
+
+  {% endif %}{# end if app_env #}
 
 {% endblock content %}
 

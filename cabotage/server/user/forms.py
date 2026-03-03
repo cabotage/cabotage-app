@@ -134,6 +134,11 @@ class EditProjectSettingsForm(FlaskForm):
             "Each environment gets its own config variables, releases, and deploy history."
         ),
     )
+    initial_env_name = StringField(
+        "Initial Environment Name",
+        [Optional()],
+        description="Name for the default environment (e.g., \"Production\"). All existing applications will be migrated into it.",
+    )
 
 
 class DeleteProjectForm(FlaskForm):
@@ -499,11 +504,6 @@ class CreateEnvironmentForm(FlaskForm):
             "must be unique within the Project."
         ),
     )
-    sort_order = IntegerField(
-        "Sort Order",
-        description="Order in which environments are displayed (lower = first).",
-        default=100,
-    )
     is_default = BooleanField(
         "Default Environment",
         [],
@@ -543,10 +543,6 @@ class EditEnvironmentForm(FlaskForm):
         "Environment Name",
         [InputRequired()],
         description="Friendly name for this Environment.",
-    )
-    sort_order = IntegerField(
-        "Sort Order",
-        description="Order in which environments are displayed (lower = first).",
     )
     is_default = BooleanField(
         "Default Environment",

@@ -52,9 +52,131 @@
           </div>
         </div>
         <div class="settings-row-fields">
-          {{ render_field_compact(form.environments_enabled, label='Enable Environments') }}
+          {% if project.environments_enabled and not can_disable_environments %}
+            <fieldset class="fieldset w-full">
+              <legend class="fieldset-legend text-xs text-base-content/50 font-medium uppercase tracking-wider">Enable Environments</legend>
+              <label class="label cursor-not-allowed justify-start gap-3">
+                {{ form.environments_enabled(class="checkbox checkbox-primary checkbox-sm", disabled="disabled") }}
+                <span class="text-sm text-base-content/40">Enable Environments</span>
+              </label>
+              <p class="text-xs text-base-content/40 mt-1">Remove all non-default environments to disable</p>
+            </fieldset>
+          {% else %}
+            {{ render_field_compact(form.environments_enabled, label='Enable Environments') }}
+          {% endif %}
+          {% if not project.environments_enabled %}
+            <div id="initial-env-name" class="hidden">
+              {{ render_field_compact(form.initial_env_name, label='Initial Environment Name', placeholder='e.g. Production') }}
+              {% if project.project_applications %}
+                <p class="text-xs text-base-content/40 mt-1">
+                  {{ project.project_applications|length }} existing application{{ 's' if project.project_applications|length != 1 }} will be migrated into this environment.
+                </p>
+              {% endif %}
+            </div>
+          {% endif %}
         </div>
       </div>
+
+      {% if project.environments_enabled and project.project_environments %}
+        {% set envs_sorted = project.project_environments|sort(attribute='sort_order') %}
+        {% set standard_envs = envs_sorted|selectattr('ephemeral', 'false')|list %}
+        {% set ephemeral_envs = envs_sorted|selectattr('ephemeral', 'true')|list %}
+
+        {% if standard_envs %}
+          <div class="overflow-x-auto -mx-1">
+            <table class="table table-sm">
+              <thead>
+                <tr class="text-base-content/50 text-xs uppercase tracking-wider">
+                  <th class="w-8"></th>
+                  <th>Name</th>
+                  <th>Default</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody class="env-sortable">
+                {% for env in standard_envs %}
+                  <tr data-env-id="{{ env.id }}">
+                    <td class="w-8 cursor-grab drag-handle text-base-content/25 hover:text-base-content/50">
+                      {{ icon('grip-vertical', 'w-4 h-4') }}
+                    </td>
+                    <td>
+                      <a href="{{ url_for('user.project_environment', org_slug=org_slug, project_slug=project_slug, env_slug=env.slug) }}"
+                         class="link link-hover font-medium">{{ env.name }}</a>
+                    </td>
+                    <td>
+                      {% if env.is_default %}
+                        <span class="badge badge-sm badge-primary">default</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-right">
+                      <a href="{{ url_for('user.project_environment_settings', org_slug=org_slug, project_slug=project_slug, env_slug=env.slug) }}"
+                         class="btn btn-ghost btn-xs gap-1">
+                        {{ icon('settings', 'w-3 h-3') }}
+                        Edit
+                      </a>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+
+        {% if ephemeral_envs %}
+          <h3 class="text-xs font-semibold text-base-content/50 uppercase tracking-wider mt-6 mb-2 px-1">Ephemeral Environments</h3>
+          <div class="overflow-x-auto -mx-1">
+            <table class="table table-sm">
+              <thead>
+                <tr class="text-base-content/50 text-xs uppercase tracking-wider">
+                  <th class="w-8"></th>
+                  <th>Name</th>
+                  <th>Default</th>
+                  <th>TTL</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody class="env-sortable">
+                {% for env in ephemeral_envs %}
+                  <tr data-env-id="{{ env.id }}">
+                    <td class="w-8 cursor-grab drag-handle text-base-content/25 hover:text-base-content/50">
+                      {{ icon('grip-vertical', 'w-4 h-4') }}
+                    </td>
+                    <td>
+                      <a href="{{ url_for('user.project_environment', org_slug=org_slug, project_slug=project_slug, env_slug=env.slug) }}"
+                         class="link link-hover font-medium">{{ env.name }}</a>
+                    </td>
+                    <td>
+                      {% if env.is_default %}
+                        <span class="badge badge-sm badge-primary">default</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      {% if env.ttl_hours %}
+                        {{ env.ttl_hours }}h
+                      {% else %}
+                        <span class="text-base-content/20">&mdash;</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-right">
+                      <a href="{{ url_for('user.project_environment_settings', org_slug=org_slug, project_slug=project_slug, env_slug=env.slug) }}"
+                         class="btn btn-ghost btn-xs gap-1">
+                        {{ icon('settings', 'w-3 h-3') }}
+                        Edit
+                      </a>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+
+        <div id="env-order-inputs">
+          {% for env in standard_envs + ephemeral_envs %}
+            <input type="hidden" name="env_order" value="{{ env.id }}">
+          {% endfor %}
+        </div>
+      {% endif %}
 
       <div class="settings-row-actions">
         <a href="{{ url_for('user.project', org_slug=org_slug, project_slug=project_slug) }}"
@@ -67,3 +189,45 @@
     </form>
   </div>
 {% endblock content %}
+
+{% block js %}
+  {% if not project.environments_enabled %}
+    <script>
+      (function () {
+        var checkbox = document.getElementById('environments_enabled');
+        var panel = document.getElementById('initial-env-name');
+        if (checkbox && panel) {
+          checkbox.addEventListener('change', function () {
+            panel.classList.toggle('hidden', !this.checked);
+          });
+        }
+      })();
+    </script>
+  {% endif %}
+  {% if project.environments_enabled and project.project_environments %}
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
+    <script>
+      (function () {
+        function syncHiddenInputs() {
+          var container = document.getElementById('env-order-inputs');
+          var ids = [];
+          document.querySelectorAll('.env-sortable tr[data-env-id]').forEach(function (tr) {
+            ids.push(tr.getAttribute('data-env-id'));
+          });
+          container.innerHTML = ids.map(function (id) {
+            return '<input type="hidden" name="env_order" value="' + id + '">';
+          }).join('');
+        }
+
+        document.querySelectorAll('.env-sortable').forEach(function (tbody) {
+          new Sortable(tbody, {
+            handle: '.drag-handle',
+            animation: 150,
+            ghostClass: 'opacity-30',
+            onEnd: syncHiddenInputs,
+          });
+        });
+      })();
+    </script>
+  {% endif %}
+{% endblock js %}

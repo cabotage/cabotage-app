@@ -11,7 +11,7 @@
 {% endblock title %}
 
 {% block resource_path %}
-  {{ app_resource_path(image.application, 'Build #' ~ image.version, env=image.application_environment.environment if image.application_environment_id else none) }}
+  {{ app_resource_path(image.application, 'Build #' ~ image.version, env=image.application_environment.environment if app.project.environments_enabled else none) }}
 {% endblock resource_path %}
 
 {% block content %}

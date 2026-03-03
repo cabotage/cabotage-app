@@ -63,7 +63,9 @@
                 url=url_for('user.project_application', org_slug=project.organization.slug, project_slug=project.slug, app_slug=app.slug, env_slug=environment.slug),
         status=status,
         meta_items=meta,
-        color='accent'
+        color='accent',
+        github_repo=app.github_repository or '',
+        github_branch=app_env.effective_auto_deploy_branch or ''
         ) }}
       {% endfor %}
     </div>

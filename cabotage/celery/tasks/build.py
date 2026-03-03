@@ -521,8 +521,9 @@ def fetch_image_build_cache_volume_claim(core_api_instance, image):
         f"{image.application.project.k8s_identifier}-"
         f"{image.application.k8s_identifier}"
     )
-    if image.application_environment_id:
-        volume_claim_name += f"-{image.application_environment.environment.k8s_identifier}"
+    app_env = image.application_environment
+    if app_env.k8s_identifier is not None:
+        volume_claim_name += f"-{app_env.environment.k8s_identifier}"
     if len(volume_claim_name) > 63:
         import hashlib
         suffix = hashlib.sha256(volume_claim_name.encode()).hexdigest()[:8]
@@ -1160,7 +1161,7 @@ def run_image_build(image_id=None, buildkit=False):
         and image.image_metadata
         and image.image_metadata.get("auto_deploy", False)
     ):
-        app_env = image.application_environment if image.application_environment_id else None
+        app_env = image.application_environment
         release = image.application.create_release(app_env=app_env)
         release.release_metadata = image.image_metadata
         db.session.add(release)

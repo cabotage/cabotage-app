@@ -25,7 +25,7 @@
     <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
           method="post"
           class="inline">
-      {% if app_env %}
+      {% if environment %}
         <input type="hidden" name="environment_id" value="{{ environment.id }}" />
       {% endif %}
       <button class="btn btn-primary btn-sm gap-1.5" type="submit">

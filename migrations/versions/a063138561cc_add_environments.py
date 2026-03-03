@@ -32,6 +32,7 @@ def upgrade():
     sa.Column('health_check_host', sa.String(length=256), autoincrement=False, nullable=True),
     sa.Column('auto_deploy_branch', sa.Text(), autoincrement=False, nullable=True),
     sa.Column('github_environment_name', sa.Text(), autoincrement=False, nullable=True),
+    sa.Column('k8s_identifier', sa.String(length=64), autoincrement=False, nullable=True),
     sa.Column('version_id', sa.Integer(), autoincrement=False, nullable=True),
     sa.Column('transaction_id', sa.BigInteger(), autoincrement=False, nullable=False),
     sa.Column('end_transaction_id', sa.BigInteger(), nullable=True),
@@ -93,6 +94,7 @@ def upgrade():
     sa.Column('health_check_host', sa.String(length=256), nullable=True),
     sa.Column('auto_deploy_branch', sa.Text(), nullable=True),
     sa.Column('github_environment_name', sa.Text(), nullable=True),
+    sa.Column('k8s_identifier', sa.String(length=64), nullable=True),
     sa.Column('version_id', sa.Integer(), nullable=False),
     sa.ForeignKeyConstraint(['application_id'], ['project_applications.id'], name=op.f('fk_application_environments_application_id_project_applications')),
     sa.ForeignKeyConstraint(['environment_id'], ['project_environments.id'], name=op.f('fk_application_environments_environment_id_project_environments')),
@@ -118,9 +120,130 @@ def upgrade():
     op.add_column('projects_version', sa.Column('environments_enabled', sa.Boolean(), server_default='false', autoincrement=False, nullable=True))
     # ### end Alembic commands ###
 
+    # ==================== Data Migration ====================
+    # Every project gets an implicit "default" environment, every app gets
+    # an ApplicationEnvironment (k8s_identifier=NULL to signal legacy paths),
+    # and all NULL application_environment_id records are re-parented.
+
+    conn = op.get_bind()
+
+    # 1. For every project, create an implicit Environment (if one doesn't exist)
+    projects = conn.execute(sa.text("SELECT id FROM projects")).fetchall()
+    now = sa.func.now()
+    for (project_id,) in projects:
+        existing = conn.execute(
+            sa.text("SELECT id FROM project_environments WHERE project_id = :pid"),
+            {"pid": project_id},
+        ).fetchone()
+        if existing is None:
+            conn.execute(
+                sa.text(
+                    "INSERT INTO project_environments "
+                    "(id, project_id, name, slug, k8s_identifier, sort_order, ephemeral, is_default, version_id, created, updated) "
+                    "VALUES (gen_random_uuid(), :pid, 'default', 'default', 'default', 0, false, true, 1, now(), now())"
+                ),
+                {"pid": project_id},
+            )
+
+    # 2. For every app, create an ApplicationEnvironment with k8s_identifier=NULL
+    #    (linking to the project's default environment)
+    apps = conn.execute(
+        sa.text("SELECT pa.id, pa.project_id FROM project_applications pa")
+    ).fetchall()
+    for app_id, project_id in apps:
+        # Find the default environment for this project
+        default_env = conn.execute(
+            sa.text(
+                "SELECT id FROM project_environments "
+                "WHERE project_id = :pid AND is_default = true "
+                "ORDER BY sort_order LIMIT 1"
+            ),
+            {"pid": project_id},
+        ).fetchone()
+        if default_env is None:
+            # Fallback: get any environment
+            default_env = conn.execute(
+                sa.text(
+                    "SELECT id FROM project_environments "
+                    "WHERE project_id = :pid ORDER BY sort_order LIMIT 1"
+                ),
+                {"pid": project_id},
+            ).fetchone()
+        env_id = default_env[0]
+
+        # Check if app_env already exists for this app + env
+        existing_ae = conn.execute(
+            sa.text(
+                "SELECT id FROM application_environments "
+                "WHERE application_id = :aid AND environment_id = :eid"
+            ),
+            {"aid": app_id, "eid": env_id},
+        ).fetchone()
+        if existing_ae is None:
+            conn.execute(
+                sa.text(
+                    "INSERT INTO application_environments "
+                    "(id, application_id, environment_id, k8s_identifier, version_id, created, updated) "
+                    "VALUES (gen_random_uuid(), :aid, :eid, NULL, 1, now(), now())"
+                ),
+                {"aid": app_id, "eid": env_id},
+            )
+
+    # 3. Re-parent NULL application_environment_id records to the implicit app_env
+    for table in ['project_app_images', 'project_app_releases', 'deployments', 'project_app_configurations']:
+        conn.execute(
+            sa.text(
+                f"UPDATE {table} t SET application_environment_id = ae.id "
+                f"FROM application_environments ae "
+                f"WHERE t.application_id = ae.application_id "
+                f"AND ae.k8s_identifier IS NULL "
+                f"AND t.application_environment_id IS NULL"
+            )
+        )
+
+    # 4. Drop the partial unique index (no longer needed since all configs have app_env_id)
+    op.drop_index('uq_project_app_configurations_app_name_no_env', table_name='project_app_configurations', postgresql_where=sa.text('application_environment_id IS NULL'))
+
+    # 5. ALTER columns to NOT NULL
+    op.alter_column('project_app_images', 'application_environment_id', nullable=False)
+    op.alter_column('project_app_releases', 'application_environment_id', nullable=False)
+    op.alter_column('deployments', 'application_environment_id', nullable=False)
+    op.alter_column('project_app_configurations', 'application_environment_id', nullable=False)
+
 
 def downgrade():
     # ### commands auto generated by Alembic - please adjust! ###
+
+    # Reverse NOT NULL constraints first
+    op.alter_column('project_app_configurations', 'application_environment_id', nullable=True)
+    op.alter_column('deployments', 'application_environment_id', nullable=True)
+    op.alter_column('project_app_releases', 'application_environment_id', nullable=True)
+    op.alter_column('project_app_images', 'application_environment_id', nullable=True)
+
+    # Re-create the partial unique index that was dropped
+    op.create_index('uq_project_app_configurations_app_name_no_env', 'project_app_configurations', ['application_id', 'name'], unique=True, postgresql_where=sa.text('application_environment_id IS NULL'))
+
+    # Set app_env_id back to NULL for records that belong to implicit (k8s_identifier IS NULL) enrollments
+    conn = op.get_bind()
+    for table in ['project_app_images', 'project_app_releases', 'deployments', 'project_app_configurations']:
+        conn.execute(
+            sa.text(
+                f"UPDATE {table} t SET application_environment_id = NULL "
+                f"FROM application_environments ae "
+                f"WHERE t.application_environment_id = ae.id "
+                f"AND ae.k8s_identifier IS NULL"
+            )
+        )
+    # Delete implicit ApplicationEnvironments and Environments
+    conn.execute(sa.text("DELETE FROM application_environments WHERE k8s_identifier IS NULL"))
+    conn.execute(
+        sa.text(
+            "DELETE FROM project_environments pe "
+            "WHERE pe.slug = 'default' AND pe.is_default = true "
+            "AND NOT EXISTS (SELECT 1 FROM application_environments ae WHERE ae.environment_id = pe.id)"
+        )
+    )
+
     op.drop_column('projects_version', 'environments_enabled')
     op.drop_column('projects', 'environments_enabled')
     op.drop_column('project_app_releases_version', 'application_environment_id')
@@ -131,7 +254,6 @@ def downgrade():
     op.drop_column('project_app_images', 'application_environment_id')
     op.drop_column('project_app_configurations_version', 'application_environment_id')
     op.drop_constraint(op.f('fk_project_app_configurations_application_environment_id_application_environments'), 'project_app_configurations', type_='foreignkey')
-    op.drop_index('uq_project_app_configurations_app_name_no_env', table_name='project_app_configurations', postgresql_where=sa.text('application_environment_id IS NULL'))
     op.drop_constraint('uq_project_app_configurations_app_env_name', 'project_app_configurations', type_='unique')
     op.create_unique_constraint('uq_project_app_configurations_application_id', 'project_app_configurations', ['application_id', 'name'])
     op.drop_column('project_app_configurations', 'application_environment_id')

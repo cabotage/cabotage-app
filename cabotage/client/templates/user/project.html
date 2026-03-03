@@ -36,15 +36,18 @@
   {% set errored_count = namespace(n=0) %}
   {% set building_count = namespace(n=0) %}
   {% for app in project.project_applications %}
-    {% set total_pods.n = total_pods.n + (app.process_counts.values()|sum if app.process_counts else 0) %}
-    {% if app.latest_deployment_running or app.latest_deployment_completed %}
-      {% set running_count.n = running_count.n + 1 %}
-    {% endif %}
-    {% if app.latest_image_error and (not app.latest_image_built or app.latest_image_error.version > app.latest_image_built.version) %}
-      {% set errored_count.n = errored_count.n + 1 %}
-    {% endif %}
-    {% if app.latest_image_building %}
-      {% set building_count.n = building_count.n + 1 %}
+    {% set dae = app.default_app_env %}
+    {% if dae %}
+      {% set total_pods.n = total_pods.n + (dae.process_counts.values()|sum if dae.process_counts else 0) %}
+      {% if dae.latest_deployment and (dae.latest_deployment.complete or not dae.latest_deployment.error) %}
+        {% set running_count.n = running_count.n + 1 %}
+      {% endif %}
+      {% if dae.latest_image_error and (not dae.latest_image_built or dae.latest_image_error.version > dae.latest_image_built.version) %}
+        {% set errored_count.n = errored_count.n + 1 %}
+      {% endif %}
+      {% if dae.latest_image_building %}
+        {% set building_count.n = building_count.n + 1 %}
+      {% endif %}
     {% endif %}
   {% endfor %}
 
@@ -57,48 +60,38 @@
 
   {# ── Macro: render an app card ── #}
   {% macro app_card(application, env_slug=none, app_env=none) %}
+    {% set ae = app_env if app_env else application.default_app_env %}
     {% set status = "" %}
-    {% if app_env %}
-      {% if app_env.latest_deployment and not app_env.latest_deployment.complete and not app_env.latest_deployment.error %}
+    {% if ae %}
+      {% if ae.latest_deployment and not ae.latest_deployment.complete and not ae.latest_deployment.error %}
         {% set status = "running" %}
-      {% elif app_env.latest_image_building %}
+      {% elif ae.latest_image_building %}
         {% set status = "building" %}
-      {% elif app_env.latest_image_error and (not app_env.latest_image_built or app_env.latest_image_error.version > app_env.latest_image_built.version) %}
+      {% elif ae.latest_image_error and (not ae.latest_image_built or ae.latest_image_error.version > ae.latest_image_built.version) %}
         {% set status = "error" %}
-      {% elif app_env.latest_deployment_completed %}
+      {% elif ae.latest_deployment_completed %}
         {% set status = "running" %}
       {% endif %}
-      {% set configs = app_env.configurations %}
-      {% set proc_counts = app_env.process_counts if app_env.process_counts else application.process_counts %}
-    {% else %}
-      {% if application.latest_deployment_running %}
-        {% set status = "running" %}
-      {% elif application.latest_image_building %}
-        {% set status = "building" %}
-      {% elif application.latest_image_error and (not application.latest_image_built or application.latest_image_error.version > application.latest_image_built.version) %}
-        {% set status = "error" %}
-      {% elif application.latest_deployment_completed %}
-        {% set status = "running" %}
-      {% endif %}
-      {% set configs = application.configurations %}
-      {% set proc_counts = application.process_counts %}
+      {% set configs = ae.configurations %}
+      {% set proc_counts = ae.process_counts %}
     {% endif %}
-    {% set proc_count = proc_counts.values()|sum if proc_counts else 0 %}
+    {% set proc_count = proc_counts.values()|sum if proc_counts is defined and proc_counts else 0 %}
     {% set meta = [
               (proc_count ~ ' instance' ~ ('s' if proc_count != 1 else '')) if proc_count else 'No pods',
-              (configs|length ~ ' env vars') if configs else ''
+              (configs|length ~ ' env vars') if configs is defined and configs else ''
             ]|select|list %}
-    {% set latest_completed = app_env.latest_deployment_completed if app_env else application.latest_deployment_completed %}
-    {% if latest_completed %}
-      {% set _ = meta.append('deployed ' ~ latest_completed.created|humanize) %}
+    {% if ae and ae.latest_deployment_completed %}
+      {% set _ = meta.append('deployed ' ~ ae.latest_deployment_completed.created|humanize) %}
     {% endif %}
+    {% set branch = ae.effective_auto_deploy_branch if ae else application.auto_deploy_branch %}
     {{ service_card(name=application.name,
             slug=application.slug,
             url=url_for('user.project_application', org_slug=project.organization.slug, project_slug=project.slug, app_slug=application.slug, env_slug=env_slug),
     status=status,
     meta_items=meta,
     color='accent',
-    github_repo=application.github_repository or ''
+    github_repo=application.github_repository or '',
+    github_branch=branch or ''
     ) }}
   {% endmacro %}
 
@@ -117,7 +110,7 @@
               <span class="badge badge-xs badge-ghost">ephemeral</span>
             {% endif %}
             <a href="{{ url_for('user.project_environment', org_slug=project.organization.slug, project_slug=project.slug, env_slug=env.slug) }}"
-               class="text-xs text-base-content/30 hover:text-accent transition-colors ml-auto">Manage</a>
+               class="text-xs text-base-content/30 hover:text-accent transition-colors ml-auto inline-flex items-center gap-1">{{ icon('settings', 'w-3 h-3') }} Settings</a>
           </div>
           {% if env.application_environments %}
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">

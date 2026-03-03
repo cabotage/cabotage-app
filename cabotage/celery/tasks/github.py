@@ -31,6 +31,77 @@ class HookError(Exception):
     pass
 
 
+def _resolve_app_env_for_hook(installation_id, repository_name, environment):
+    """Resolve an ApplicationEnvironment from GitHub deployment hook data.
+
+    Tries in order:
+    1. ApplicationEnvironment.github_environment_name match
+    2. Application.github_environment_name match -> default_app_env
+    3. Slug-based parsing: project/env/app or project/app -> default_app_env
+    """
+    # 1. Try matching an ApplicationEnvironment by github_environment_name
+    app_env = ApplicationEnvironment.query.join(Application).filter(
+        and_(
+            ApplicationEnvironment.github_environment_name == environment,
+            Application.github_app_installation_id == installation_id,
+            Application.github_repository == repository_name,
+        )
+    ).first()
+    if app_env:
+        return app_env
+
+    # 2. Try matching Application by github_environment_name
+    try:
+        application = Application.query.filter(
+            and_(
+                Application.github_app_installation_id == installation_id,
+                Application.github_repository == repository_name,
+                Application.github_environment_name == environment,
+            )
+        ).one()
+        return application.default_app_env
+    except NoResultFound:
+        pass
+    except MultipleResultsFound:
+        print(
+            f"multiple apps configured for installation {installation_id} "
+            f"on {repository_name} with environment {environment}!"
+        )
+        return None
+
+    # 3. Fall back to slug-based parsing
+    slugs = environment.split("/")
+    if len(slugs) == 2:
+        project_slug, app_slug = slugs
+        application = Application.query.join(Project).filter(
+            and_(
+                Project.slug == project_slug,
+                Application.slug == app_slug,
+                Application.github_app_installation_id == installation_id,
+                Application.github_repository == repository_name,
+            )
+        ).first()
+        if application:
+            return application.default_app_env
+    elif len(slugs) == 3:
+        project_slug, env_slug, app_slug = slugs
+        app_env = ApplicationEnvironment.query.join(Application).join(
+            Environment, ApplicationEnvironment.environment_id == Environment.id
+        ).join(Project, Application.project_id == Project.id).filter(
+            and_(
+                Project.slug == project_slug,
+                Environment.slug == env_slug,
+                Application.slug == app_slug,
+                Application.github_app_installation_id == installation_id,
+                Application.github_repository == repository_name,
+            )
+        ).first()
+        if app_env:
+            return app_env
+
+    return None
+
+
 def process_deployment_hook(hook):
     installation_id = hook.payload["installation"]["id"]
     deployment = hook.payload["deployment"]
@@ -44,71 +115,11 @@ def process_deployment_hook(hook):
     hook.commit_sha = commit_sha
 
     try:
-        application = None
-        app_env = None
-
-        # 1. Try matching an ApplicationEnvironment by github_environment_name
-        app_env = ApplicationEnvironment.query.join(Application).filter(
-            and_(
-                ApplicationEnvironment.github_environment_name == environment,
-                Application.github_app_installation_id == installation_id,
-                Application.github_repository == repository_name,
-            )
-        ).first()
-
-        if app_env:
-            application = app_env.application
-        else:
-            # 2. Try matching Application by github_environment_name
-            try:
-                application = Application.query.filter(
-                    and_(
-                        Application.github_app_installation_id == installation_id,
-                        Application.github_repository == repository_name,
-                        Application.github_environment_name == environment,
-                    )
-                ).one()
-            except NoResultFound:
-                # 3. Fall back to slug-based parsing:
-                #    project_slug/app_slug or project_slug/env_slug/app_slug
-                slugs = environment.split("/")
-                if len(slugs) == 2:
-                    project_slug, app_slug = slugs
-                    application = Application.query.join(Project).filter(
-                        and_(
-                            Project.slug == project_slug,
-                            Application.slug == app_slug,
-                            Application.github_app_installation_id == installation_id,
-                            Application.github_repository == repository_name,
-                        )
-                    ).first()
-                elif len(slugs) == 3:
-                    project_slug, env_slug, app_slug = slugs
-                    app_env = ApplicationEnvironment.query.join(Application).join(
-                        Environment, ApplicationEnvironment.environment_id == Environment.id
-                    ).join(Project, Application.project_id == Project.id).filter(
-                        and_(
-                            Project.slug == project_slug,
-                            Environment.slug == env_slug,
-                            Application.slug == app_slug,
-                            Application.github_app_installation_id == installation_id,
-                            Application.github_repository == repository_name,
-                        )
-                    ).first()
-                    if app_env:
-                        application = app_env.application
-                else:
-                    application = None
-
-                if application is None:
-                    print("not configured for this environment")
-                    return False
-            except MultipleResultsFound:
-                print(
-                    f"multiple apps configured for installation {installation_id} "
-                    f"on {repository_name} with environment {environment}!"
-                )
-                return False
+        app_env = _resolve_app_env_for_hook(installation_id, repository_name, environment)
+        if app_env is None:
+            print("not configured for this environment")
+            return False
+        application = app_env.application
 
         access_token_response = requests.post(
             f"https://api.github.com/app/installations/{installation_id}/access_tokens",
@@ -134,7 +145,7 @@ def process_deployment_hook(hook):
 
         image = Image(
             application_id=application.id,
-            application_environment_id=app_env.id if app_env else None,
+            application_environment_id=app_env.id,
             _repository_name=application.registry_repository_name(app_env),
             image_metadata={
                 **deployment,
@@ -191,13 +202,7 @@ def create_deployment(
     app_env=None,
 ):
     try:
-        if app_env is not None:
-            environment_string = app_env.effective_github_environment_name
-        else:
-            if application.github_environment_name is not None:
-                environment_string = application.github_environment_name
-            else:
-                environment_string = f"{application.project.slug}/{application.slug}"
+        environment_string = app_env.effective_github_environment_name
 
         deployment_response = requests.post(
             f"https://api.github.com/repos/{repository_name}/deployments",
@@ -232,14 +237,6 @@ def process_push_hook(hook):
 
     hook.commit_sha = commit_sha
 
-    applications = Application.query.join(Project).filter(
-        and_(
-            Application.auto_deploy_branch.in_(branch_names),
-            Application.github_app_installation_id == installation_id,
-            Application.github_repository == repository_name,
-            Project.environments_enabled == False,
-        )
-    ).all()
     env_matches = ApplicationEnvironment.query.join(Application).join(
         Project, Application.project_id == Project.id
     ).filter(
@@ -253,10 +250,9 @@ def process_push_hook(hook):
             ),
             Application.github_app_installation_id == installation_id,
             Application.github_repository == repository_name,
-            Project.environments_enabled == True,
         )
     ).all()
-    if len(applications) == 0 and len(env_matches) == 0:
+    if len(env_matches) == 0:
         print(
             f"could not find application! "
             f"installation_id: {installation_id}, "
@@ -284,14 +280,6 @@ def process_check_suite_hook(hook):
         )
         if pushes == 0:
             return False
-        applications = Application.query.join(Project).filter(
-            and_(
-                Application.auto_deploy_branch.in_(branch_names),
-                Application.github_app_installation_id == installation_id,
-                Application.github_repository == repository_name,
-                Project.environments_enabled == False,
-            )
-        ).all()
         env_matches = ApplicationEnvironment.query.join(Application).join(
             Project, Application.project_id == Project.id
         ).filter(
@@ -305,10 +293,9 @@ def process_check_suite_hook(hook):
                 ),
                 Application.github_app_installation_id == installation_id,
                 Application.github_repository == repository_name,
-                Project.environments_enabled == True,
             )
         ).all()
-        if len(applications) == 0 and len(env_matches) == 0:
+        if len(env_matches) == 0:
             print(
                 f"could not find application! "
                 f"installation_id: {installation_id}, "
@@ -351,16 +338,6 @@ def process_check_suite_hook(hook):
             return False
 
         results = []
-        for application in applications:
-            print(f"deploying {repository_name}@{commit_sha} to {application.id}")
-            deployment_result = create_deployment(
-                access_token=access_token,
-                application=application,
-                repository_name=repository_name,
-                ref=commit_sha,
-            )
-            results.append(deployment_result)
-
         for app_env in env_matches:
             print(
                 f"deploying {repository_name}@{commit_sha} to "

@@ -23,7 +23,6 @@
       <form method="POST" action="{{ url_for('user.project_environment_settings', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}">
         {{ form.hidden_tag() }}
         {{ render_field(form.name) }}
-        {{ render_field(form.sort_order) }}
         {{ render_field(form.is_default) }}
         {% if environment.ephemeral %}
           {{ render_field(form.ttl_hours) }}
@@ -47,6 +46,7 @@
       <div class="collapse-content">
         <form method="POST" action="{{ url_for('user.project_environment_delete', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}">
           {{ delete_form.hidden_tag() }}
+          <div style="display:none">{{ delete_form.name() }}</div>
           {{ render_field(delete_form.confirm) }}
           <button type="submit" class="btn btn-error btn-sm gap-2 mt-2">
             {{ icon('trash-2', 'w-4 h-4') }}

@@ -109,7 +109,7 @@
   </div>
 {% endmacro %}
 
-{% macro service_card(name, slug, url, status='', meta_items=[], color='accent', icon_name='box', github_repo='') %}
+{% macro service_card(name, slug, url, status='', meta_items=[], color='accent', icon_name='box', github_repo='', github_branch='') %}
   <a href="{{ url }}"
      class="service-card card-interactive block no-underline">
     <div class="service-card-header">
@@ -125,9 +125,9 @@
         <span class="text-xs text-base-content/40 font-mono">{{ slug }}</span>
       </div>
       {% if github_repo %}
-        <span class="text-base-content/30 hover:text-base-content/60 transition-colors flex-shrink-0"
-              onclick="event.preventDefault(); event.stopPropagation(); window.open('https://github.com/{{ github_repo }}', '_blank')"
-              title="View on GitHub">{{ icon('github', 'w-4 h-4') }}</span>
+        <span class="text-base-content/30 hover:text-base-content/60 transition-colors flex-shrink-0 flex items-center gap-1"
+              onclick="event.preventDefault(); event.stopPropagation(); window.open('https://github.com/{{ github_repo }}{% if github_branch %}/tree/{{ github_branch }}{% endif %}', '_blank')"
+              title="View on GitHub">{{ icon('github', 'w-4 h-4') }}{% if github_branch %}<span class="text-xs font-mono truncate max-w-[8rem]">{{ github_branch }}</span>{% endif %}</span>
       {% endif %}
       <svg class="w-4 h-4 text-base-content/20 flex-shrink-0"
            viewBox="0 0 24 24"
@@ -857,6 +857,17 @@
       <polyline points="16 16 12 12 8 16" />
       <line x1="12" y1="12" x2="12" y2="21" />
       <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3" />
+    </svg>
+  {% elif name == 'grip-vertical' %}
+    <svg class="{{ size }}"
+         viewBox="0 0 24 24"
+         fill="none"
+         stroke="currentColor"
+         stroke-width="2"
+         stroke-linecap="round"
+         stroke-linejoin="round">
+      <circle cx="9" cy="12" r="1" /><circle cx="9" cy="5" r="1" /><circle cx="9" cy="19" r="1" />
+      <circle cx="15" cy="12" r="1" /><circle cx="15" cy="5" r="1" /><circle cx="15" cy="19" r="1" />
     </svg>
   {% elif name == 'github' %}
     <svg class="{{ size }}" viewBox="0 0 24 24" fill="currentColor">

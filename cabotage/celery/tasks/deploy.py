@@ -36,11 +36,10 @@ class DeployError(RuntimeError):
     pass
 
 
-def k8s_namespace(release, app_env=None):
+def k8s_namespace(release):
     org_k8s = release.application.project.organization.k8s_identifier
-    if app_env is None and release.application_environment_id is not None:
-        app_env = release.application_environment
-    if app_env is not None:
+    app_env = release.application_environment
+    if app_env.k8s_identifier is not None:
         return safe_k8s_name(org_k8s, app_env.environment.k8s_identifier)
     return org_k8s
 
@@ -551,15 +550,10 @@ def render_process_container(
                 name="cabotage-sock", mount_path="/var/run/cabotage"
             )
         )
-    if release.application_environment_id is not None:
-        app_env = release.application_environment
-        process_pod_cls = (app_env.process_pod_classes or {}).get(
-            process_name, DEFAULT_POD_CLASS
-        )
-    else:
-        process_pod_cls = release.application.process_pod_classes.get(
-            process_name, DEFAULT_POD_CLASS
-        )
+    app_env = release.application_environment
+    process_pod_cls = (app_env.process_pod_classes or {}).get(
+        process_name, DEFAULT_POD_CLASS
+    )
     pod_class = pod_classes[process_pod_cls]
     return kubernetes.client.V1Container(
         name=process_name,
@@ -800,12 +794,8 @@ def render_podspec(release, process_name, service_account_name):
 def render_deployment(namespace, release, service_account_name, process_name):
     role_name = k8s_role_name(release)
     resource_prefix = k8s_resource_prefix(release)
-    # Use ApplicationEnvironment process_counts if env-scoped, else Application
-    if release.application_environment_id is not None:
-        app_env = release.application_environment
-        process_counts = app_env.process_counts or {}
-    else:
-        process_counts = release.application.process_counts or {}
+    app_env = release.application_environment
+    process_counts = app_env.process_counts or {}
     deployment_object = kubernetes.client.V1Deployment(
         metadata=kubernetes.client.V1ObjectMeta(
             name=f"{resource_prefix}-{process_name}",
@@ -1209,10 +1199,7 @@ def deploy_release(deployment):
     deploy_log = []
 
     deployment_id_str = str(deployment.id)
-    if deployment.application_environment_id is not None:
-        _timeout = deployment.application_environment.effective_deployment_timeout
-    else:
-        _timeout = deployment.release_object.application.deployment_timeout
+    _timeout = deployment.application_environment.effective_deployment_timeout
     heartbeat_ttl = _timeout + _HEARTBEAT_TTL
 
     # Set up Redis streaming for live deploy logs
@@ -1322,10 +1309,7 @@ def deploy_release(deployment):
             else:
                 log(f"Release command {release_command} complete!")
         for process_name in deployment.release_object.processes:
-            if deployment.application_environment_id is not None:
-                _pc = (deployment.application_environment.process_counts or {})
-            else:
-                _pc = deployment.application.process_counts or {}
+            _pc = (deployment.application_environment.process_counts or {})
             log(
                 f"Creating deployment for {process_name} "
                 f"with {_pc.get(process_name, 0)} "
@@ -1341,10 +1325,7 @@ def deploy_release(deployment):
 
         log("Waiting on deployment to rollout...")
         start = time.time()
-        if deployment.application_environment_id is not None:
-            timeout = deployment.application_environment.effective_deployment_timeout
-        else:
-            timeout = deployment.release_object.application.deployment_timeout
+        timeout = deployment.application_environment.effective_deployment_timeout
         _go = {
             process_name: False for process_name in deployment.release_object.processes
         }
