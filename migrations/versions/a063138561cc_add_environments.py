@@ -189,6 +189,18 @@ def upgrade():
                 {"aid": app_id, "eid": env_id},
             )
 
+    # 2b. Copy process_counts and process_pod_classes from Application to AppEnv
+    conn.execute(
+        sa.text(
+            "UPDATE application_environments ae "
+            "SET process_counts = pa.process_counts, "
+            "    process_pod_classes = pa.process_pod_classes "
+            "FROM project_applications pa "
+            "WHERE ae.application_id = pa.id "
+            "AND ae.k8s_identifier IS NULL"
+        )
+    )
+
     # 3. Re-parent NULL application_environment_id records to the implicit app_env
     for table in ['project_app_images', 'project_app_releases', 'deployments', 'project_app_configurations']:
         conn.execute(
