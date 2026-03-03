@@ -89,9 +89,6 @@ def _prune_repository(repository_name, dry_run=False):
 def prune_images(dry_run=False):
     for app in reversed(Application.query.all()):
         if app.project.organization is not None:
-            # Prune the base (non-env) repository
-            _prune_repository(app.registry_repository_name(), dry_run=dry_run)
-            # Prune per-environment repositories
             for app_env in app.application_environments:
                 _prune_repository(
                     app.registry_repository_name(app_env), dry_run=dry_run
