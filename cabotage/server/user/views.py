@@ -266,7 +266,10 @@ def organization_project_create(org_slug):
 
     if form.validate_on_submit():
         project = Project(
-            organization_id=organization.id, name=form.name.data, slug=form.slug.data
+            organization_id=organization.id,
+            name=form.name.data,
+            slug=form.slug.data,
+            environments_enabled=form.environments_enabled.data,
         )
         db.session.add(project)
         db.session.flush()

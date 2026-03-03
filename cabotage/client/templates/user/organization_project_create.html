@@ -21,6 +21,7 @@
         {{ organization_project_create_form.hidden_tag() }}
         {{ render_field(organization_project_create_form.organization_id, extra_class='hidden') }}
         {{ render_field(organization_project_create_form.name) }}
+        {{ render_field(organization_project_create_form.environments_enabled) }}
         {{ render_field(organization_project_create_form.slug) }}
         <div class="pt-2">
           <button type="submit" class="btn btn-primary w-full">Create Project</button>

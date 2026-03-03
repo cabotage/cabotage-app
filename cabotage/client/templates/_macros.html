@@ -317,7 +317,7 @@
   {% endif %}
 {% endmacro %}
 
-{% macro create_modal(modal_id, title, form, action_url, submit_text, name_field, slug_field, extra_fields=[], subtitle='') %}
+{% macro create_modal(modal_id, title, form, action_url, submit_text, name_field, slug_field, extra_fields=[], subtitle='', fields=[]) %}
   <div id="{{ modal_id }}" class="raw-editor-modal hidden">
     <div class="raw-editor-backdrop"
          data-modal-close="{{ modal_id }}"
@@ -337,6 +337,7 @@
         {{ form.hidden_tag() }}
         {% for field in extra_fields %}{{ field(type="hidden") }}{% endfor %}
         {{ render_field(name_field) }}
+        {%- for field in fields %}{{ render_field(field) }}{% endfor %}
         <details class="group">
           <summary class="text-xs text-base-content/40 font-medium uppercase tracking-wider cursor-pointer select-none hover:text-base-content/60 transition-colors">
             Advanced Settings

@@ -219,10 +219,11 @@
       title='Create Project',
       subtitle='In organization ' ~ organization.slug,
       form=project_create_form,
-      action_url=url_for('user.organization_project_create', org_slug=organization.slug) ,
-    submit_text='Create Project',
-    name_field=project_create_form.name,
-    slug_field=project_create_form.slug
+      action_url=url_for('user.organization_project_create', org_slug=organization.slug),
+      submit_text='Create Project',
+      name_field=project_create_form.name,
+      slug_field=project_create_form.slug,
+      fields=[project_create_form.environments_enabled]
     ) }}
   {% endif %}
 
