@@ -113,10 +113,6 @@ services:
       - CABOTAGE_BCRYPT_LOG_ROUNDS=4
       - CABOTAGE_DEBUG=True
       - CABOTAGE_DEBUG_TB_ENABLED=True
-      - CABOTAGE_GITHUB_APP_ID=
-      - CABOTAGE_GITHUB_APP_PRIVATE_KEY=
-      - CABOTAGE_GITHUB_APP_URL=https://github.com/apps/cabotage-local
-      - CABOTAGE_GITHUB_WEBHOOK_SECRET=
       - CABOTAGE_KUBERNETES_CONTEXT=minikube
       - CABOTAGE_KUBERNETES_ENABLED=False
       - CABOTAGE_SECURITY_CONFIRMABLE=False
@@ -147,9 +143,22 @@ services:
       - redis
       - vault
 
+  cabotage-app-worker-beat:
+    image: cabotage-app:docker-compose
+    command: hupper -m celery -A cabotage.celery.worker.celery_app beat -l info -S redbeat.RedBeatScheduler
+    environment: *base_environment
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - .:/opt/cabotage-app/src:z
+    links:
+      - db
+      - redis
+
   cabotage-app-worker:
     image: cabotage-app:docker-compose
-    command: hupper -m celery -A cabotage.celery.worker.celery_app worker --concurrency=1 --beat --scheduler redbeat.RedBeatScheduler -E --loglevel=INFO
+    command: hupper -m celery -A cabotage.celery.worker.celery_app worker --concurrency=4 -E --loglevel=INFO
     environment: *base_environment
     env_file:
       - path: .env

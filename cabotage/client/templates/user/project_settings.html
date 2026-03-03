@@ -1,0 +1,69 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import render_field_compact, icon, resource_path %}
+
+{% set org_slug = project.organization.slug %}
+{% set project_slug = project.slug %}
+
+{% block title %}
+  Settings - {{ project_slug }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug) },
+  {'label': project_slug, 'url': url_for('user.project', org_slug=org_slug, project_slug=project_slug)},
+  {'label': 'Settings'}
+  ]) }}
+{% endblock resource_path %}
+
+{% block content %}
+  <div class="settings-page">
+
+    <div class="flex items-center justify-between mb-6">
+      <div class="flex items-center gap-3">
+        <a href="{{ url_for('user.project', org_slug=org_slug, project_slug=project_slug) }}"
+           class="btn btn-ghost btn-sm btn-circle">{{ icon('arrow-left', 'w-4 h-4') }}</a>
+        <div>
+          <h1 class="text-xl font-semibold text-base-content">Project Settings</h1>
+          <p class="text-sm text-base-content/40">Configure project-level features</p>
+        </div>
+      </div>
+      <button type="submit"
+              form="settings-form"
+              class="btn btn-primary btn-sm gap-1.5">
+        {{ icon('check', 'w-3.5 h-3.5') }}
+        Save Settings
+      </button>
+    </div>
+
+    <form action="{{ url_for('user.project_settings', org_slug=org_slug, project_slug=project_slug) }}"
+          method="post"
+          id="settings-form"
+          name="project_settings_form">
+      {{ form.hidden_tag() }}
+      <div style="display:none">{{ form.project_id() }}</div>
+
+      <div class="settings-row">
+        <div class="settings-row-label">
+          <div class="settings-row-icon bg-secondary/10 text-secondary">{{ icon('layers', 'w-4 h-4') }}</div>
+          <div>
+            <h2 class="text-sm font-semibold text-base-content">Environments</h2>
+            <p class="text-xs text-base-content/40 mt-0.5">Run applications with different configuration across isolated namespaces</p>
+          </div>
+        </div>
+        <div class="settings-row-fields">
+          {{ render_field_compact(form.environments_enabled, label='Enable Environments') }}
+        </div>
+      </div>
+
+      <div class="settings-row-actions">
+        <a href="{{ url_for('user.project', org_slug=org_slug, project_slug=project_slug) }}"
+           class="btn btn-ghost btn-sm">Cancel</a>
+        <button type="submit" class="btn btn-primary btn-sm gap-1.5">
+          {{ icon('check', 'w-3.5 h-3.5') }}
+          Save Settings
+        </button>
+      </div>
+    </form>
+  </div>
+{% endblock content %}

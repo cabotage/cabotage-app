@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path %}
+{% from "_macros.html" import icon, resource_path, app_resource_path %}
 
 {% set app = release.application %}
 {% set org_slug = app.project.organization.slug %}
@@ -11,12 +11,7 @@
 {% endblock title %}
 
 {% block resource_path %}
-  {{ resource_path([
-    {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug) },
-  {'label': project_slug, 'url': url_for('user.project', org_slug=org_slug, project_slug=project_slug)},
-  {'label': app_slug, 'url': url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug)},
-  {'label': 'Release v' ~ release.version}
-  ]) }}
+  {{ app_resource_path(app, 'Release v' ~ release.version, env=release.application_environment.environment if release.application_environment_id else none) }}
 {% endblock resource_path %}
 
 {% block content %}
@@ -61,7 +56,7 @@
 
       <div class="flex items-center gap-2">
         {% if release.built and not release.deposed %}
-          <form action="{{ url_for('user.release_deploy', release_id=release.id) }}"
+          <form action="{{ url_for('user.release_deploy', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id=release.id) }}"
                 method="post"
                 name="deploy_release_form"
                 enctype="multipart/form-data">
@@ -70,8 +65,9 @@
           </form>
         {% endif %}
         {% if release.error %}
-          <form action="{{ url_for('user.application_release_create', application_id=app.id) }}"
+          <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
                 method="post">
+            {% if release.application_environment_id %}<input type="hidden" name="environment_id" value="{{ release.application_environment.environment_id }}" />{% endif %}
             <button type="submit"
                     class="btn btn-ghost btn-sm gap-1.5 text-error hover:bg-error/10">
               {{ icon('refresh-cw', 'w-3.5 h-3.5') }}
@@ -279,7 +275,7 @@
         <div class="card-body !p-4">
           <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Image</h2>
           {% if release.image_object %}
-            <a href="{{ url_for('user.image_detail', image_id=release.image_object.id) }}"
+            <a href="{{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id=release.image_object.id) }}"
                class="inline-flex items-center gap-2 text-accent hover:text-accent/80 transition-colors">
               {{ icon('layers', 'w-3.5 h-3.5') }}
               <code class="text-sm">{{ release.image_object.repository_name }}:{{ release.image_object.version }}</code>

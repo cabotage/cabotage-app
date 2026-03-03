@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, status_badge, app_tab_nav %}
+{% from "_macros.html" import icon, resource_path, status_badge, app_tab_nav, app_resource_path %}
 
 {% set app = application %}
 {% set org_slug = app.project.organization.slug %}
@@ -11,25 +11,23 @@
 {% endblock title %}
 
 {% block resource_path %}
-  {{ resource_path([
-    {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug) },
-  {'label': project_slug, 'url': url_for('user.project', org_slug=org_slug, project_slug=project_slug)},
-  {'label': app_slug, 'url': url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug)},
-  {'label': 'Images'}
-  ]) }}
+  {{ app_resource_path(application, 'Images', env=environment|default(none)) }}
 {% endblock resource_path %}
 
 {% block tab_bar %}
-  {{ app_tab_nav(application, 'images') }}
+  {{ app_tab_nav(application, 'images', env=environment) }}
 {% endblock tab_bar %}
 
 {% block content %}
 
   <div class="flex items-center justify-between mb-4">
     <h2 class="text-base font-medium text-base-content">Images</h2>
-    <form action="{{ url_for('user.application_images_build_fromsource', application_id=app.id) }}"
+    <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
           method="post"
           class="inline">
+      {% if app_env %}
+        <input type="hidden" name="environment_id" value="{{ environment.id }}" />
+      {% endif %}
       <button class="btn btn-primary btn-sm gap-1.5" type="submit">
         {{ icon('play', 'w-3.5 h-3.5') }} Build from Source
       </button>
@@ -57,7 +55,7 @@
         {% set img_creator = ((image.image_metadata or {}).get('creator', {}) or {}).get('login', '') %}
         {% set is_latest = latest_built_image and image.id == latest_built_image.id %}
 
-        <a href="{{ url_for('user.image_detail', image_id=image.id) }}"
+        <a href="{{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id=image.id) }}"
            class="dpl-row {{ 'dpl-row-error' if image.error }}">
 
           {% if image.built %}
@@ -154,7 +152,7 @@
           <div class="text-base-content/15 mb-4">{{ icon('image', 'w-12 h-12') }}</div>
           <h3 class="text-base font-medium text-base-content/60 mb-1">No images yet</h3>
           <p class="text-sm text-base-content/40 max-w-sm">Build your first image from source.</p>
-          <form action="{{ url_for('user.application_images_build_fromsource', application_id=app.id) }}"
+          <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
                 method="post"
                 class="inline mt-4">
             <button class="btn btn-primary btn-sm gap-2" type="submit">{{ icon('play', 'w-4 h-4') }} Build from Source</button>

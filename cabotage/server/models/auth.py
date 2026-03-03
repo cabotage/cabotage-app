@@ -18,7 +18,7 @@ from .auth_associations import (
 )
 
 from cabotage.server.models.plugins import ActivityPlugin
-from cabotage.server.models.utils import slugify
+from cabotage.server.models.utils import generate_k8s_identifier, slugify
 
 activity_plugin = ActivityPlugin()
 make_versioned(plugins=[activity_plugin])
@@ -110,6 +110,8 @@ class Organization(db.Model):
     def __init__(self, *args, **kwargs):
         if "slug" not in kwargs:
             kwargs["slug"] = slugify(kwargs.get("name"))
+        if "k8s_identifier" not in kwargs:
+            kwargs["k8s_identifier"] = generate_k8s_identifier(kwargs["slug"])
         super().__init__(*args, **kwargs)
 
     id = db.Column(
@@ -120,6 +122,7 @@ class Organization(db.Model):
     )
     name = db.Column(db.Text(), nullable=False)
     slug = db.Column(CIText(), nullable=False, unique=True)
+    k8s_identifier = db.Column(db.String(64), unique=True, nullable=False)
 
     members = db.relationship("OrganizationMember", back_populates="organization")
     teams = db.relationship("OrganizationTeam", back_populates="organization")

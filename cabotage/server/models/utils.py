@@ -1,4 +1,6 @@
+import hashlib
 import re
+import secrets
 
 from unidecode import unidecode
 
@@ -11,6 +13,26 @@ def slugify(text, delim="-"):
     for word in _punct_re.split(text.lower()):
         result.extend(unidecode(word).split())
     return str(delim.join(result))
+
+
+def generate_k8s_identifier(slug, hex_bytes=4):
+    """Generate a k8s-safe identifier: '{slug_prefix}-{random_hex}'.
+
+    Truncates slug to keep total length <= 40 chars.
+    """
+    hex_suffix = secrets.token_hex(hex_bytes)  # 8 hex chars
+    max_prefix_len = 40 - len(hex_suffix) - 1  # room for hyphen
+    prefix = slug[:max_prefix_len].rstrip("-")
+    return f"{prefix}-{hex_suffix}"
+
+
+def safe_k8s_name(*parts, max_len=63):
+    """Join parts with hyphens, truncating with a hash suffix if too long."""
+    name = "-".join(parts)
+    if len(name) <= max_len:
+        return name
+    digest = hashlib.sha256(name.encode()).hexdigest()[:8]
+    return name[: max_len - 9].rstrip("-") + "-" + digest
 
 
 class DictDiffer(object):

@@ -14,13 +14,31 @@
   </div>
 {% endmacro %}
 
+{% macro app_resource_path(application, leaf, env=None) %}
+  {% set org_slug = application.project.organization.slug %}
+  {% set project_slug = application.project.slug %}
+  {% set app_slug = application.slug %}
+  {% set items = [
+    {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug)},
+    {'label': project_slug, 'url': url_for('user.project', org_slug=org_slug, project_slug=project_slug)},
+  ] %}
+  {% if env %}
+    {% set _ = items.append({'label': env.slug, 'url': url_for('user.project_environment', org_slug=org_slug, project_slug=project_slug, env_slug=env.slug)}) %}
+    {% set _ = items.append({'label': app_slug, 'url': url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env.slug)}) %}
+  {% else %}
+    {% set _ = items.append({'label': app_slug, 'url': url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug)}) %}
+  {% endif %}
+  {% set _ = items.append({'label': leaf}) %}
+  {{ resource_path(items) }}
+{% endmacro %}
+
 {% macro page_header(title, subtitle='') %}
   <div class="page-header">
     <div>
       <h1 class="page-title text-balance">{{ title }}</h1>
       {% if subtitle %}<p class="page-subtitle">{{ subtitle }}</p>{% endif %}
     </div>
-    <div class="flex items-center gap-2 flex-shrink-0">{{ caller() }}</div>
+    {% if caller is defined %}<div class="flex items-center gap-2 flex-shrink-0">{{ caller() }}</div>{% endif %}
   </div>
 {% endmacro %}
 
@@ -58,11 +76,12 @@
   </div>
 {% endmacro %}
 
-{% macro app_tab_nav(application, active='') %}
+{% macro app_tab_nav(application, active='', env=none) %}
   {% set org_slug = application.project.organization.slug %}
   {% set project_slug = application.project.slug %}
   {% set app_slug = application.slug %}
-  {% set overview_url = url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) %}
+  {% set env_slug = env.slug if env else none %}
+  {% set overview_url = url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) %}
   <div class="app-content-padded !py-0">
     <div class="tab-bar">
       <a href="{{ overview_url }}"
@@ -76,14 +95,14 @@
         {% set config_count = application.configurations|rejectattr('name', 'equalto', 'CABOTAGE_SENTINEL')|list|length %}
         {% if config_count %}<span class="badge badge-sm badge-neutral ml-1">{{ config_count }}</span>{% endif %}
       </a>
-      <a href="{{ url_for('user.application_images', application_id=application.id) }}"
+      <a href="{{ url_for('user.application_images', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
          class="tab-item
                 {% if active == 'images' %}tab-active{% endif %}">{{ icon('image', 'w-4 h-4') }} Images</a>
-      <a href="{{ url_for('user.application_releases', application_id=application.id) }}"
+      <a href="{{ url_for('user.application_releases', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
          class="tab-item
                 {% if active == 'releases' %}tab-active{% endif %}">{{ icon('layers', 'w-4 h-4') }} Releases</a>
       <span class="tab-item tab-disabled">{{ icon('bar-chart-2', 'w-4 h-4') }} Pipeline <span class="text-[0.6rem] opacity-50">(Soon)</span></span>
-      <a href="{{ url_for('user.project_application_settings', application_id=application.id) }}"
+      <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
          class="tab-item
                 {% if active == 'settings' %}tab-active{% endif %}">{{ icon('settings', 'w-4 h-4') }} Settings</a>
     </div>

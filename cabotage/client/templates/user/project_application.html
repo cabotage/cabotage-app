@@ -10,11 +10,20 @@
 {% endblock title %}
 
 {% block resource_path %}
-  {{ resource_path([
-    {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug) },
-  {'label': project_slug, 'url': url_for('user.project', org_slug=org_slug, project_slug=project_slug)},
-  {'label': app_slug}
-  ]) }}
+  {% if app_env %}
+    {{ resource_path([
+      {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug) },
+      {'label': project_slug, 'url': url_for('user.project', org_slug=org_slug, project_slug=project_slug)},
+      {'label': environment.slug, 'url': url_for('user.project_environment', org_slug=org_slug, project_slug=project_slug, env_slug=environment.slug)},
+      {'label': app_slug}
+    ]) }}
+  {% else %}
+    {{ resource_path([
+      {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug) },
+      {'label': project_slug, 'url': url_for('user.project', org_slug=org_slug, project_slug=project_slug)},
+      {'label': app_slug}
+    ]) }}
+  {% endif %}
 {% endblock resource_path %}
 
 {% block tab_bar %}
@@ -22,7 +31,7 @@
     {{ tab_nav([
         {'id': 'overview', 'label': 'Overview', 'icon': 'activity'},
         {'id': 'observe', 'label': 'Observe (Soon)', 'icon': 'bar-chart', 'disabled': true},
-        {'id': 'config', 'label': 'Config', 'icon': 'key', 'badge': application.configurations|rejectattr('name', 'equalto', 'CABOTAGE_SENTINEL') |list|length},
+        {'id': 'config', 'label': 'Config', 'icon': 'key', 'badge': (app_env.configurations if app_env else application.configurations)|rejectattr('name', 'equalto', 'CABOTAGE_SENTINEL') |list|length},
     {'id': 'images', 'label': 'Images', 'icon': 'image'},
     {'id': 'releases', 'label': 'Releases', 'icon': 'layers'},
     {'id': 'deployments', 'label': 'Deploys', 'icon': 'deploy'},
@@ -33,29 +42,49 @@
 
 {% block content %}
 
+  {% set src = app_env if app_env else application %}
+  {% set configs = (app_env.configurations if app_env else application.configurations) %}
   {% set system_var_names = ["CABOTAGE_SENTINEL"] %}
-  {% set user_configs = application.configurations|rejectattr('name', 'in', system_var_names)|list %}
-  {% set system_configs = application.configurations|selectattr('name', 'in', system_var_names)|list %}
+  {% set user_configs = configs|rejectattr('name', 'in', system_var_names)|list %}
+  {% set system_configs = configs|selectattr('name', 'in', system_var_names)|list %}
 
-  {% set image_diff, config_diff = application.ready_for_deployment %}
+  {% set image_diff, config_diff = src.ready_for_deployment %}
   {% set has_image_changes = image_diff.has_changes() %}
   {% set has_config_changes = config_diff.has_changes() %}
   {% set has_pending = has_image_changes or has_config_changes %}
-  {% set has_deployable = application.latest_release and application.latest_release.built %}
-  {% set latest_release_id = (application.latest_release.id|string) if application.latest_release else none %}
+  {% set has_deployable = src.latest_release and src.latest_release.built %}
+  {% set latest_release_id = (src.latest_release.id|string) if src.latest_release else none %}
   {% set _completed_deploy = (deployments|selectattr('complete')|first) if deployments else none %}
   {% set latest_deployed_release_id = (_completed_deploy.release.get('id')|string) if _completed_deploy and _completed_deploy.release and _completed_deploy.release.get('id') else none %}
   {% set latest_release_live = latest_release_id and latest_deployed_release_id == latest_release_id %}
-  {% set is_deploying = application.latest_deployment and not application.latest_deployment.complete and not application.latest_deployment.error %}
+  {% set is_deploying = src.latest_deployment and not src.latest_deployment.complete and not src.latest_deployment.error %}
   {% set show_ready_to_deploy = has_deployable and not latest_release_live and not is_deploying %}
 
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
     <div class="flex items-center gap-3">
       <h1 class="text-xl font-semibold text-base-content">{{ app_slug }}</h1>
+      {% if environments %}
+        <div class="dropdown" id="env-switcher">
+          <div tabindex="0" role="button" class="badge badge-sm badge-secondary gap-1 cursor-pointer">
+            {{ icon('layers', 'w-3 h-3') }} {{ environment.slug }}
+            {{ icon('chevron-down', 'w-3 h-3') }}
+          </div>
+          <ul tabindex="0" class="dropdown-content menu menu-sm z-50 p-2 shadow-lg bg-base-200 border border-base-300 rounded-lg w-48">
+            {% for env in environments %}
+              <li>
+                <a href="{{ url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env.slug) }}" class="env-switch-link {{ 'active' if environment and env.id == environment.id }}">
+                  {{ env.slug }}
+                  {% if env.is_default %}<span class="badge badge-xs badge-ghost">default</span>{% endif %}
+                </a>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
       {% if application.github_app_installation_id %}
         <span class="badge badge-sm badge-neutral gap-1">{{ icon('zap', 'w-3 h-3') }} GitHub</span>
       {% endif %}
-      {% set _deployed = application.latest_deployment_completed %}
+      {% set _deployed = src.latest_deployment_completed %}
       {% set _rel = _deployed.release_object if _deployed else none %}
       {% set _sha = _rel.commit_sha if _rel and _rel.commit_sha and _rel.commit_sha != 'null' else none %}
       {% set _img = _rel.image_object if _rel else none %}
@@ -70,7 +99,7 @@
             data-commit-author="{{ ((_img.image_metadata or {}).get('creator', {}) or {}).get('login', '') if _img else '' }}"
             data-release-id="{{ _rel.id if _rel else '' }}"
             data-image-id="{{ _img.id if _img else '' }}"
-            data-deploys-url="{{ url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}#deployments">
+            data-deploys-url="{{ url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none, _anchor='deployments') }}">
         {% if _sha %}
           <span class="live-commit-dot live-commit-dot-ok"></span>
           {% if application.github_repository %}
@@ -81,7 +110,7 @@
           {% else %}
             <code class="live-commit-sha">{{ _sha[:8] }}</code>
           {% endif %}
-        {% elif not has_pending and not show_ready_to_deploy and not is_deploying and application.latest_image and application.releases.count() > 0 %}
+        {% elif not has_pending and not show_ready_to_deploy and not is_deploying and src.latest_image and src.releases.count() > 0 %}
           <span class="live-commit-dot live-commit-dot-ok"></span>
           <span class="text-xs text-success/40">Up to date</span>
         {% endif %}
@@ -94,7 +123,7 @@
                 disabled>{{ icon('deploy', 'w-3.5 h-3.5') }} Deploy</button>
       </div>
 
-      <form action="{{ url_for('user.application_clear_cache', application_id=application.id) }}"
+      <form action="{{ url_for('user.application_clear_cache', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
             method="post"
             class="inline">
         <button class="btn btn-ghost btn-sm gap-1.5 text-base-content/40 hover:text-error"
@@ -107,13 +136,18 @@
            class="btn btn-ghost btn-sm gap-1.5">{{ icon('terminal', 'w-3.5 h-3.5') }} Shell</a>
       {% endif %}
       {% if application.github_repository %}
-        <a href="https://github.com/{{ application.github_repository }}{%- if application.auto_deploy_branch -%}/tree/{{ application.auto_deploy_branch }}{%- endif -%}"
+        {% set _effective_branch = app_env.effective_auto_deploy_branch if app_env else application.auto_deploy_branch %}
+        <a href="https://github.com/{{ application.github_repository }}{%- if _effective_branch -%}/tree/{{ _effective_branch }}{%- endif -%}"
            target="_blank"
            rel="noopener"
            class="btn btn-ghost btn-sm gap-1.5">{{ icon('github', 'w-3.5 h-3.5') }} Code</a>
       {% endif %}
-      <a href="{{ url_for('user.project_application_settings', application_id=application.id) }}"
+      <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
          class="btn btn-ghost btn-sm gap-1.5">{{ icon('settings', 'w-3.5 h-3.5') }} Settings</a>
+      {% if app_env %}
+        <a href="{{ url_for('user.project_application_environment_settings', org_slug=org_slug, project_slug=project_slug, env_slug=environment.slug, app_slug=app_slug) }}"
+           class="btn btn-ghost btn-sm gap-1.5">{{ icon('sliders', 'w-3.5 h-3.5') }} Env Settings</a>
+      {% endif %}
     </div>
   </div>
 
@@ -185,16 +219,16 @@
 
       <div data-pipeline-banners>
 
-        {% set is_building_image = application.latest_image_building and (application.latest_image_building.version|default(0) > (application.latest_image.version|default(0) if application.latest_image else 0)) %}
-        {% set has_build_error = application.latest_image_error and (application.latest_image_error.version|default(0) > (application.latest_image.version|default(0) if application.latest_image else 0)) %}
-        {% set is_building_release = application.latest_release_building %}
-        {% set has_no_image = not application.latest_image %}
-        {% set has_no_release = application.releases.count() == 0 %}
+        {% set is_building_image = src.latest_image_building and (src.latest_image_building.version|default(0) > (src.latest_image.version|default(0) if src.latest_image else 0)) %}
+        {% set has_build_error = src.latest_image_error and (src.latest_image_error.version|default(0) > (src.latest_image.version|default(0) if src.latest_image else 0)) %}
+        {% set is_building_release = src.latest_release_building %}
+        {% set has_no_image = not src.latest_image %}
+        {% set has_no_release = src.releases.count() == 0 %}
 
-        {% if not latest_release_live and not application.latest_deployment_completed %}
+        {% if not latest_release_live and not src.latest_deployment_completed %}
           {% set repo_done = application.github_repository %}
-          {% set image_done = application.latest_image_built %}
-          {% set release_done = application.latest_release_built %}
+          {% set image_done = src.latest_image_built %}
+          {% set release_done = src.latest_release_built %}
           <div class="getting-started mb-4">
             <div class="flex items-center gap-2 mb-3">
               {{ icon('zap', 'w-4 h-4 text-primary') }}
@@ -207,7 +241,7 @@
                   <div class="deploy-step-content">
                     <p class="text-sm font-medium text-base-content">Configure your repository</p>
                     <p class="text-xs text-base-content/40">Connect a GitHub repository to build from</p>
-                    <a href="{{ url_for('user.project_application_settings', application_id=application.id) }}"
+                    <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
                        class="btn btn-primary btn-sm gap-1.5 mt-2">{{ icon('settings', 'w-3.5 h-3.5') }} Configure Repo</a>
                   </div>
                 </div>
@@ -225,9 +259,10 @@
                     <p class="text-sm font-medium text-base-content">Build an image</p>
                     <p class="text-xs text-base-content/40">Compile your source code into a container image</p>
                     {% if not image_done %}
-                      <form action="{{ url_for('user.application_images_build_fromsource', application_id=application.id) }}"
+                      <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
                             method="post"
                             class="mt-2">
+                        {% if app_env %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
                         <button class="btn btn-primary btn-sm gap-1.5" type="submit">{{ icon('play', 'w-3.5 h-3.5') }} Build Image</button>
                       </form>
                     {% endif %}
@@ -240,8 +275,11 @@
                   {% if image_done and not release_done %}
                     <p class="text-sm font-medium text-base-content">Create a release</p>
                     <p class="text-xs text-base-content/40">Bundle your image + config into a deployable release</p>
-                    <a href="{{ url_for('user.application_release_create', application_id=application.id) }}"
-                       class="btn btn-primary btn-sm gap-1.5 mt-2">{{ icon('scissors', 'w-3.5 h-3.5') }} Create Release</a>
+                    <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+                          method="post" class="mt-2">
+                      {% if app_env %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
+                      <button type="submit" class="btn btn-primary btn-sm gap-1.5">{{ icon('scissors', 'w-3.5 h-3.5') }} Create Release</button>
+                    </form>
                   {% else %}
                     <p class="text-sm {% if release_done %}font-medium text-base-content{% else %}text-base-content/50{% endif %}">Create a release</p>
                     <p class="text-xs {% if release_done %}text-base-content/40{% else %}text-base-content/30{% endif %}">Bundle your image + config into a deployable release</p>
@@ -254,7 +292,7 @@
                   {% if release_done %}
                     <p class="text-sm font-medium text-base-content">Deploy</p>
                     <p class="text-xs text-base-content/40">Push the release live</p>
-                    <form action="{{ url_for('user.release_deploy', release_id=application.latest_release.id) }}"
+                    <form action="{{ url_for('user.release_deploy', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id=src.latest_release.id) }}"
                           method="post"
                           class="mt-2">
                       {{ deploy_form.hidden_tag() }}
@@ -273,13 +311,13 @@
           <div class="flex flex-col gap-3 mb-4">
 
             {% if is_building_image %}
-              <a href="{{ url_for('user.image_detail', image_id=application.latest_image_building.id) }}"
+              <a href="{{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id=src.latest_image_building.id) }}"
                  class="action-banner action-banner-info">
                 <div class="flex items-center gap-3">
                   <div class="action-banner-spinner"></div>
                   <div>
                     <p class="text-sm font-medium text-base-content">
-                      Building image <span class="font-mono text-accent">#{{ application.latest_image_building.version }}</span>
+                      Building image <span class="font-mono text-accent">#{{ src.latest_image_building.version }}</span>
                     </p>
                     <p class="text-xs text-base-content/40">Click to view build logs</p>
                   </div>
@@ -295,13 +333,13 @@
             {% endif %}
 
             {% if has_build_error %}
-              <a href="{{ url_for('user.image_detail', image_id=application.latest_image_error.id) }}"
+              <a href="{{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id=src.latest_image_error.id) }}"
                  class="action-banner action-banner-error">
                 <div class="flex items-center gap-3">
                   {{ icon('alert-triangle', 'w-4 h-4 text-error flex-shrink-0') }}
                   <div>
                     <p class="text-sm font-medium text-base-content">
-                      Build <span class="font-mono text-error">#{{ application.latest_image_error.version }}</span> failed
+                      Build <span class="font-mono text-error">#{{ src.latest_image_error.version }}</span> failed
                     </p>
                     <p class="text-xs text-base-content/40">Click to view error details</p>
                   </div>
@@ -425,24 +463,27 @@
                     {% endif %}
                   </div>
                 </div>
-                <a class="btn btn-primary btn-sm gap-1.5 flex-shrink-0"
-                   href="{{ url_for('user.application_release_create', application_id=application.id) }}">
-                  {{ icon('scissors', 'w-3.5 h-3.5') }}
-                  Create Release
-                </a>
+                <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+                      method="post" class="flex-shrink-0">
+                  {% if app_env %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
+                  <button type="submit" class="btn btn-primary btn-sm gap-1.5">
+                    {{ icon('scissors', 'w-3.5 h-3.5') }}
+                    Create Release
+                  </button>
+                </form>
               </div>
             {% endif %}
 
             {% if is_deploying %}
-              <a href="{{ url_for('user.deployment_detail', deployment_id=application.latest_deployment.id) }}"
+              <a href="{{ url_for('user.deployment_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id=src.latest_deployment.id) }}"
                  class="action-banner action-banner-info">
                 <div class="flex items-center gap-3">
                   <div class="action-banner-spinner"></div>
                   <div>
                     <p class="text-sm font-medium text-base-content">
                       Deploying release
-                      {% if application.latest_deployment.release_object %}
-                        <span class="font-mono text-accent">v{{ application.latest_deployment.release_object.version }}</span>
+                      {% if src.latest_deployment.release_object %}
+                        <span class="font-mono text-accent">v{{ src.latest_deployment.release_object.version }}</span>
                       {% endif %}
                     </p>
                     <p class="text-xs text-base-content/40">Click to view deployment progress</p>
@@ -465,7 +506,7 @@
                     <span class="status-dot status-dot-success status-dot-lg"></span>
                     <div>
                       <p class="text-sm font-medium text-base-content">
-                        Release <span class="font-mono text-accent">v{{ application.latest_release.version }}</span> ready to deploy
+                        Release <span class="font-mono text-accent">v{{ src.latest_release.version }}</span> ready to deploy
                       </p>
                       {% if has_pending %}
                         <p class="text-xs text-warning/70">
@@ -473,7 +514,7 @@
                         </p>
                       {% else %}
                         <p class="text-xs text-base-content/40">
-                          <time data-timestamp="{{ application.latest_release.updated|isoformat_utc }}">{{ application.latest_release.updated|humanize }}</time>
+                          <time data-timestamp="{{ src.latest_release.updated|isoformat_utc }}">{{ src.latest_release.updated|humanize }}</time>
                         </p>
                       {% endif %}
                     </div>
@@ -486,7 +527,7 @@
                     <span class="deploy-step-inline deploy-step-inline-next">Deploy</span>
                   </div>
                 </div>
-                <form action="{{ url_for('user.release_deploy', release_id=application.latest_release.id) }}"
+                <form action="{{ url_for('user.release_deploy', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id=src.latest_release.id) }}"
                       method="post"
                       name="deploy_release_form"
                       enctype="multipart/form-data">
@@ -524,9 +565,9 @@
             <div class="dpl-hero-orb">{{ icon('check', 'w-4 h-4') }}</div>
             <div class="dpl-hero-info">
               <div class="dpl-hero-title-row">
-                <span class="dpl-badge dpl-badge-active">{{ icon('radio', 'w-2.5 h-2.5') }} Live in Production</span>
+                <span class="dpl-badge dpl-badge-active">{{ icon('radio', 'w-2.5 h-2.5') }} Live in {{ environment.name if environment else 'Production' }}</span>
                 {% if _arel %}
-                  <a href="{{ url_for('user.release_detail', release_id=_arel.id) }}"
+                  <a href="{{ url_for('user.release_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id=_arel.id) }}"
                      class="dpl-hero-version dpl-meta-chip-link">v{{ _arel.version }}</a>
                 {% endif %}
               </div>
@@ -560,7 +601,7 @@
                 {% if _aimg %}
                   <span class="dpl-meta-chip">
                     {{ icon('image', 'w-3 h-3') }}
-                    <a href="{{ url_for('user.image_detail', image_id=_aimg.id) }}"
+                    <a href="{{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id=_aimg.id) }}"
                        class="dpl-meta-chip-link">#{{ _aimg.version }}</a>
                   </span>
                 {% endif %}
@@ -571,13 +612,13 @@
               </div>
             </div>
           </div>
-          <a href="{{ url_for('user.deployment_detail', deployment_id=_active.id) }}"
+          <a href="{{ url_for('user.deployment_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id=_active.id) }}"
              class="btn btn-ghost btn-sm gap-1.5 dpl-hero-action">{{ icon('file-text', 'w-3.5 h-3.5') }} Deploy Logs</a>
         </div>
       </div>
     {% endif %}
 
-    {% if application.releases.count() > 0 and application.latest_release.built %}
+    {% if src.releases.count() > 0 and src.latest_release.built %}
       <div class="mb-4" data-live-processes>
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center gap-1.5">
@@ -644,14 +685,15 @@
           </div>
         </div>
 
-        <form action="{{ url_for('user.application_scale', application_id=application.id) }}"
+        <form action="{{ url_for('user.application_scale', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
               method="post"
               name="process_count_form">
           {{ scale_form.hidden_tag() }}
+          {% if app_env %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
           <div class="process-grid">
-            {% for process_name in application.latest_release.processes %}
-              {% set count = application.process_counts.get(process_name, 0) %}
-              {% set pod_class = application.process_pod_classes.get(process_name, DEFAULT_POD_CLASS) %}
+            {% for process_name in src.latest_release.processes %}
+              {% set count = src.process_counts.get(process_name, 0) %}
+              {% set pod_class = src.process_pod_classes.get(process_name, DEFAULT_POD_CLASS) %}
               <div class="process-card {{ 'process-card-active' if count > 0 else 'process-card-idle' }}">
                 <div class="process-name">
                   {% if count > 0 %}
@@ -699,10 +741,10 @@
           </div>
         </form>
 
-        {% if application.latest_release.release_commands %}
+        {% if src.latest_release.release_commands %}
           <div class="proc-footer">
             <div class="proc-footer-cmds">
-              {% for process_name, proc in application.latest_release.release_commands.items() %}
+              {% for process_name, proc in src.latest_release.release_commands.items() %}
                 <div class="proc-cmd-chip-anchor">
                   <div class="proc-cmd-chip">
                     {{ icon('terminal', 'w-2.5 h-2.5 proc-cmd-icon') }}
@@ -745,12 +787,12 @@
     {% endif %}
 
     {% set has_any_activity = images[:3]|length > 0 or releases[:3]|length > 0 or deployments[:3]|length > 0 %}
-    {% set has_live_status = application.releases.count() > 0 and application.latest_release.built %}
+    {% set has_live_status = src.releases.count() > 0 and src.latest_release.built %}
 
     <div class="mb-4">
       <div class="flex items-center justify-between mb-3">
         <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Recent Activity</h2>
-        {% if application.releases.count() > 0 and application.latest_release.built %}
+        {% if src.releases.count() > 0 and src.latest_release.built %}
           <div class="flex items-center gap-2 text-xs text-base-content/30">
             <span class="inline-flex items-center gap-1">
               {{ icon('key', 'w-2.5 h-2.5') }}
@@ -820,7 +862,7 @@
                     <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Builds</span>
                   </div>
                   {% for img in images[:3] %}
-                    <a href="{{ url_for('user.image_detail', image_id=img.id) }}"
+                    <a href="{{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id=img.id) }}"
                        class="activity-row flex items-center gap-1.5 py-1 px-1.5 -mx-1.5 rounded">
                       {% if img.built %}
                         <span class="status-dot status-dot-success flex-shrink-0"
@@ -850,7 +892,7 @@
                 <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Releases</span>
               </div>
               {% for rel in releases[:3] %}
-                <a href="{{ url_for('user.release_detail', release_id=rel.id) }}"
+                <a href="{{ url_for('user.release_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id=rel.id) }}"
                    class="activity-row flex items-center gap-1.5 py-1 px-1.5 -mx-1.5 rounded">
                   {% if rel.built %}
                     <span class="status-dot status-dot-success flex-shrink-0"
@@ -880,7 +922,7 @@
             <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Deploys</span>
           </div>
           {% for dep in deployments[:3] %}
-            <a href="{{ url_for('user.deployment_detail', deployment_id=dep.id) }}"
+            <a href="{{ url_for('user.deployment_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id=dep.id) }}"
                class="activity-row flex items-center gap-1.5 py-1 px-1.5 -mx-1.5 rounded">
               {% if dep.complete %}
                 <span class="status-dot status-dot-success flex-shrink-0"
@@ -919,16 +961,16 @@
   <div class="pipeline-row">
 
     <div class="pipeline-stage
-                {% if application.latest_image and application.latest_image.error %}pipeline-stage-error{% endif %}">
+                {% if src.latest_image and src.latest_image.error %}pipeline-stage-error{% endif %}">
       <div class="pipeline-stage-header">
         <div>
           <span class="text-xs text-base-content/40">Build</span>
           <span class="text-xs text-base-content/25 ml-1.5 hidden sm:inline">Source to image</span>
         </div>
-        {% if application.latest_image %}
-          {% if application.latest_image.built %}
+        {% if src.latest_image %}
+          {% if src.latest_image.built %}
             <span class="status-dot status-dot-success" style="width:6px;height:6px"></span>
-          {% elif application.latest_image.error %}
+          {% elif src.latest_image.error %}
             <span class="status-dot status-dot-error" style="width:6px;height:6px"></span>
           {% else %}
             <span class="status-dot status-dot-info status-dot-pulse"
@@ -938,16 +980,16 @@
         {% endif %}
       </div>
       {% if not application.github_repository %}
-        <a href="{{ url_for('user.project_application_settings', application_id=application.id) }}"
+        <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
            class="pipeline-stage-body group">
           <span class="text-sm text-base-content/50">No repo configured</span>
         </a>
-      {% elif application.latest_image %}
-        <a href="{{ url_for('user.image_detail', image_id=application.latest_image.id) }}"
+      {% elif src.latest_image %}
+        <a href="{{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id=src.latest_image.id) }}"
            class="pipeline-stage-body group">
-          <code class="text-sm text-accent">#{{ application.latest_image.version }}</code>
+          <code class="text-sm text-accent">#{{ src.latest_image.version }}</code>
           <p class="text-xs text-base-content/40">
-            <time data-timestamp="{{ application.latest_image.updated|isoformat_utc }}">{{ application.latest_image.updated|humanize }}</time>
+            <time data-timestamp="{{ src.latest_image.updated|isoformat_utc }}">{{ src.latest_image.updated|humanize }}</time>
           </p>
         </a>
       {% else %}
@@ -957,15 +999,16 @@
       {% endif %}
       <div class="pipeline-stage-action flex gap-1">
         {% if not application.github_repository %}
-          <a href="{{ url_for('user.project_application_settings', application_id=application.id) }}"
+          <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
              class="btn btn-ghost btn-xs flex-1 gap-1">{{ icon('settings', 'w-3 h-3') }} Configure repo</a>
         {% else %}
           <a href="#images"
              class="btn btn-ghost btn-xs flex-1 gap-1"
              data-switch-tab="images">{{ icon('image', 'w-3 h-3') }} All</a>
-          <form action="{{ url_for('user.application_images_build_fromsource', application_id=application.id) }}"
+          <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
                 method="post"
                 class="flex-1">
+            {% if app_env %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
             <button class="btn btn-ghost btn-xs w-full gap-1" type="submit">{{ icon('play', 'w-3 h-3') }} Build</button>
           </form>
         {% endif %}
@@ -983,16 +1026,16 @@
     </div>
 
     <div class="pipeline-stage
-                {% if application.latest_release and application.latest_release.error %}pipeline-stage-error{% endif %}">
+                {% if src.latest_release and src.latest_release.error %}pipeline-stage-error{% endif %}">
       <div class="pipeline-stage-header">
         <div>
           <span class="text-xs text-base-content/40">Release</span>
           <span class="text-xs text-base-content/25 ml-1.5 hidden sm:inline">Image + config snapshot</span>
         </div>
-        {% if application.latest_release %}
-          {% if application.latest_release.built %}
+        {% if src.latest_release %}
+          {% if src.latest_release.built %}
             <span class="status-dot status-dot-success" style="width:6px;height:6px"></span>
-          {% elif application.latest_release.error %}
+          {% elif src.latest_release.error %}
             <span class="status-dot status-dot-error" style="width:6px;height:6px"></span>
           {% else %}
             <span class="status-dot status-dot-info status-dot-pulse"
@@ -1001,12 +1044,12 @@
           {% endif %}
         {% endif %}
       </div>
-      {% if application.latest_release %}
-        <a href="{{ url_for('user.release_detail', release_id=application.latest_release.id) }}"
+      {% if src.latest_release %}
+        <a href="{{ url_for('user.release_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id=src.latest_release.id) }}"
            class="pipeline-stage-body group">
-          <code class="text-sm text-accent">v{{ application.latest_release.version }}</code>
+          <code class="text-sm text-accent">v{{ src.latest_release.version }}</code>
           <p class="text-xs text-base-content/40">
-            <time data-timestamp="{{ application.latest_release.updated|isoformat_utc }}">{{ application.latest_release.updated|humanize }}</time>
+            <time data-timestamp="{{ src.latest_release.updated|isoformat_utc }}">{{ src.latest_release.updated|humanize }}</time>
           </p>
         </a>
       {% else %}
@@ -1018,8 +1061,11 @@
         <a href="#releases"
            class="btn btn-ghost btn-xs flex-1 gap-1"
            data-switch-tab="releases">{{ icon('layers', 'w-3 h-3') }} All</a>
-        <a href="{{ url_for('user.application_release_create', application_id=application.id) }}"
-           class="btn btn-ghost btn-xs flex-1 gap-1">{{ icon('scissors', 'w-3 h-3') }} Create</a>
+        <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+              method="post" class="flex-1">
+          {% if app_env %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
+          <button type="submit" class="btn btn-ghost btn-xs w-full gap-1">{{ icon('scissors', 'w-3 h-3') }} Create</button>
+        </form>
       </div>
     </div>
 
@@ -1034,16 +1080,16 @@
     </div>
 
     <div class="pipeline-stage
-                {% if application.latest_deployment and application.latest_deployment.error %}pipeline-stage-error{% endif %}">
+                {% if src.latest_deployment and src.latest_deployment.error %}pipeline-stage-error{% endif %}">
       <div class="pipeline-stage-header">
         <div>
           <span class="text-xs text-base-content/40">Deploy</span>
           <span class="text-xs text-base-content/25 ml-1.5 hidden sm:inline">Push release live</span>
         </div>
-        {% if application.latest_deployment %}
-          {% if application.latest_deployment.complete %}
+        {% if src.latest_deployment %}
+          {% if src.latest_deployment.complete %}
             <span class="status-dot status-dot-success" style="width:6px;height:6px"></span>
-          {% elif application.latest_deployment.error %}
+          {% elif src.latest_deployment.error %}
             <span class="status-dot status-dot-error" style="width:6px;height:6px"></span>
           {% else %}
             <span class="status-dot status-dot-info status-dot-pulse"
@@ -1052,14 +1098,14 @@
           {% endif %}
         {% endif %}
       </div>
-      {% if application.latest_deployment %}
-        {% set _deploy_release = application.latest_deployment.release_object %}
-        <a href="{{ url_for('user.deployment_detail', deployment_id=application.latest_deployment.id) }}"
+      {% if src.latest_deployment %}
+        {% set _deploy_release = src.latest_deployment.release_object %}
+        <a href="{{ url_for('user.deployment_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id=src.latest_deployment.id) }}"
            class="pipeline-stage-body group">
           <span class="text-sm text-base-content">
-            {% if application.latest_deployment.complete %}
+            {% if src.latest_deployment.complete %}
               Live
-            {% elif application.latest_deployment.error %}
+            {% elif src.latest_deployment.error %}
               Failed
             {% else %}
               In progress
@@ -1069,7 +1115,7 @@
             {% endif %}
           </span>
           <p class="text-xs text-base-content/40">
-            <time data-timestamp="{{ application.latest_deployment.updated|isoformat_utc }}">{{ application.latest_deployment.updated|humanize }}</time>
+            <time data-timestamp="{{ src.latest_deployment.updated|isoformat_utc }}">{{ src.latest_deployment.updated|humanize }}</time>
           </p>
         </a>
       {% else %}
@@ -1082,7 +1128,7 @@
            class="btn btn-ghost btn-xs flex-1 gap-1"
            data-switch-tab="deployments">{{ icon('deploy', 'w-3 h-3') }} All</a>
         {% if show_ready_to_deploy %}
-          <form action="{{ url_for('user.release_deploy', release_id=application.latest_release.id) }}"
+          <form action="{{ url_for('user.release_deploy', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id=src.latest_release.id) }}"
                 method="post"
                 name="pipeline_deploy_form"
                 enctype="multipart/form-data"
@@ -1123,10 +1169,11 @@
                  class="deploy-meta-value text-accent hover:text-accent/80 transition-colors">{{ application.github_repository }}</a>
             </div>
           {% endif %}
-          {% if application.auto_deploy_branch %}
+          {% set _effective_deploy_branch = app_env.effective_auto_deploy_branch if app_env else application.auto_deploy_branch %}
+          {% if _effective_deploy_branch %}
             <div class="deploy-meta-row">
               <span class="deploy-meta-label">Auto-deploy</span>
-              <span class="deploy-meta-value text-base-content/50">{{ application.auto_deploy_branch }}</span>
+              <span class="deploy-meta-value text-base-content/50">{{ _effective_deploy_branch }}{% if app_env and app_env.auto_deploy_branch %} <span class="badge badge-xs badge-ghost">env</span>{% endif %}</span>
             </div>
           {% endif %}
         </div>
@@ -1512,16 +1559,17 @@
   </div>
 
   <script id="env-export-data" type="application/json">
-    [{% for c in application.configurations %}{"name": {{ c.name|tojson }}, "value": {{ c.value|tojson }}, "secret": {{ c.secret|tojson }}}{% if not loop.last %}, {% endif %}{% endfor %}]
+    [{% for c in configs %}{"name": {{ c.name|tojson }}, "value": {{ c.value|tojson }}, "secret": {{ c.secret|tojson }}}{% if not loop.last %}, {% endif %}{% endfor %}]
   </script>
 </div>
 
 <div data-tab-panel="images" class="tab-panel">
   <div class="flex items-center justify-between mb-4">
     <h2 class="text-base font-medium text-base-content">Images</h2>
-    <form action="{{ url_for('user.application_images_build_fromsource', application_id=application.id) }}"
+    <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
           method="post"
           class="inline">
+      {% if app_env %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
       <button class="btn btn-primary btn-sm gap-1.5" type="submit">
         {{ icon('play', 'w-3.5 h-3.5') }} Build from Source
       </button>
@@ -1546,7 +1594,7 @@
         {% set img_creator = ((image.image_metadata or {}).get('creator', {}) or {}).get('login', '') %}
         {% set is_latest = latest_built_image and image.id == latest_built_image.id %}
 
-        <a href="{{ url_for('user.image_detail', image_id=image.id) }}"
+        <a href="{{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id=image.id) }}"
            class="dpl-row {{ 'dpl-row-error' if image.error }}">
 
           {% if image.built %}
@@ -1623,7 +1671,7 @@
     </div>
 
     <div class="mt-3 text-center">
-      <a href="{{ url_for('user.application_images', application_id=application.id) }}"
+      <a href="{{ url_for('user.application_images', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
          class="text-xs text-base-content/40 hover:text-accent transition-colors">View All Images</a>
     </div>
   {% else %}
@@ -1633,9 +1681,10 @@
           <div class="text-base-content/15 mb-4">{{ icon('image', 'w-12 h-12') }}</div>
           <h3 class="text-base font-medium text-base-content/60 mb-1">No images yet</h3>
           <p class="text-sm text-base-content/40 max-w-sm">Build your first image from source.</p>
-          <form action="{{ url_for('user.application_images_build_fromsource', application_id=application.id) }}"
+          <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
                 method="post"
                 class="inline mt-4">
+            {% if app_env %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
             <button class="btn btn-primary btn-sm gap-2" type="submit">{{ icon('play', 'w-4 h-4') }} Build from Source</button>
           </form>
         </div>
@@ -1647,9 +1696,10 @@
 <div data-tab-panel="releases" class="tab-panel">
   <div class="flex items-center justify-between mb-4">
     <h2 class="text-base font-medium text-base-content">Releases</h2>
-    <form action="{{ url_for('user.application_release_create', application_id=application.id) }}"
+    <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
           method="post"
           class="inline">
+      {% if app_env %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
       <button class="btn btn-primary btn-sm gap-1.5" type="submit">
         {{ icon('scissors', 'w-3.5 h-3.5') }} Create Release
       </button>
@@ -1679,7 +1729,7 @@
         {% set cfg_count = release.configuration|length if release.configuration else 0 %}
         {% set proc_count = release.processes|length if release.built and release.image_object else 0 %}
 
-        <a href="{{ url_for('user.release_detail', release_id=release.id) }}"
+        <a href="{{ url_for('user.release_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id=release.id) }}"
            class="dpl-row {{ 'dpl-row-error' if release.error }}">
 
           {% if release.built %}
@@ -1742,7 +1792,7 @@
                 <span class="dpl-meta-chip">
                   {{ icon('image', 'w-3 h-3') }}
                   <span class="dpl-meta-chip-link"
-                        data-href="{{ url_for('user.image_detail', image_id=rel_img.id) }}">#{{ rel_img.version }}</span>
+                        data-href="{{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id=rel_img.id) }}">#{{ rel_img.version }}</span>
                 </span>
               {% endif %}
               {% if cfg_count > 0 %}
@@ -1769,7 +1819,7 @@
     </div>
 
     <div class="mt-3 text-center">
-      <a href="{{ url_for('user.application_releases', application_id=application.id) }}"
+      <a href="{{ url_for('user.application_releases', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
          class="text-xs text-base-content/40 hover:text-accent transition-colors">View All Releases</a>
     </div>
   {% else %}
@@ -1790,8 +1840,8 @@
 <div data-tab-panel="deployments" class="tab-panel">
   <div class="flex items-center justify-between mb-4">
     <h2 class="text-base font-medium text-base-content">Deployments</h2>
-    {% if application.latest_release and application.latest_release.built %}
-      <form action="{{ url_for('user.release_deploy', release_id=application.latest_release.id) }}"
+    {% if src.latest_release and src.latest_release.built %}
+      <form action="{{ url_for('user.release_deploy', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id=src.latest_release.id) }}"
             method="post"
             enctype="multipart/form-data"
             class="inline">
@@ -1822,7 +1872,7 @@
             <div class="dpl-hero-title-row">
               <span class="dpl-badge dpl-badge-active">Active</span>
               {% if active_rel %}
-                <a href="{{ url_for('user.release_detail', release_id=active_rel.id) }}"
+                <a href="{{ url_for('user.release_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id=active_rel.id) }}"
                    class="dpl-hero-version dpl-meta-chip-link">v{{ active_rel.version }}</a>
               {% endif %}
               {% if active_deploy.complete %}
@@ -1860,7 +1910,7 @@
               {% if active_img %}
                 <span class="dpl-meta-chip">
                   {{ icon('image', 'w-3 h-3') }}
-                  <a href="{{ url_for('user.image_detail', image_id=active_img.id) }}"
+                  <a href="{{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id=active_img.id) }}"
                      class="dpl-meta-chip-link">#{{ active_img.version }}</a>
                 </span>
               {% endif %}
@@ -1872,7 +1922,7 @@
             </div>
           </div>
         </div>
-        <a href="{{ url_for('user.deployment_detail', deployment_id=active_deploy.id) }}"
+        <a href="{{ url_for('user.deployment_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id=active_deploy.id) }}"
            class="btn btn-ghost btn-sm gap-1.5 dpl-hero-action">{{ icon('file-text', 'w-3.5 h-3.5') }} View logs</a>
       </div>
     </div>
@@ -1906,7 +1956,7 @@
         {% set dep_auto = dep_rel and dep_rel.release_metadata and dep_rel.release_metadata.get('auto_deploy') %}
         {% set is_active = active_deploy and deployment.id == active_deploy.id %}
 
-        <a href="{{ url_for('user.deployment_detail', deployment_id=deployment.id) }}"
+        <a href="{{ url_for('user.deployment_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id=deployment.id) }}"
            class="dpl-row {{ 'dpl-row-active' if is_active }} {{ 'dpl-row-error' if deployment.error }} {{ 'dpl-row-deploying' if not deployment.complete and not deployment.error }}">
 
           {% if deployment.complete %}
@@ -1973,7 +2023,7 @@
                 <span class="dpl-meta-chip">
                   {{ icon('image', 'w-3 h-3') }}
                   <span class="dpl-meta-chip-link"
-                        data-href="{{ url_for('user.image_detail', image_id=dep_img.id) }}">#{{ dep_img.version }}</span>
+                        data-href="{{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id=dep_img.id) }}">#{{ dep_img.version }}</span>
                 </span>
               {% endif %}
             </div>
@@ -2083,6 +2133,16 @@
       var tabId = el.getAttribute('data-switch-tab');
       var tabBtn = document.querySelector('[data-tab="' + tabId + '"]');
       if (tabBtn) tabBtn.click();
+    });
+  });
+
+  // Preserve current tab when switching environments
+  document.querySelectorAll('.env-switch-link').forEach(function(link) {
+    link.addEventListener('click', function(e) {
+      if (window.location.hash) {
+        e.preventDefault();
+        window.location.href = link.getAttribute('href') + window.location.hash;
+      }
     });
   });
   </script>

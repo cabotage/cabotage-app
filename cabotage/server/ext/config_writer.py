@@ -17,19 +17,30 @@ class ConfigWriter(object):
     def teardown(self, exception):
         pass
 
-    def write_configuration(self, org_slug, project_slug, app_slug, configuration):
+    def _config_path_segment(self, org_slug, project_slug, app_slug, env_slug=None):
+        base = f"/{org_slug}/{project_slug}-{app_slug}"
+        if env_slug:
+            base = f"{base}/{env_slug}"
+        return base
+
+    def write_configuration(
+        self, org_slug, project_slug, app_slug, configuration, env_slug=None
+    ):
         version = configuration.version_id + 1 if configuration.version_id else 1
+        path_segment = self._config_path_segment(
+            org_slug, project_slug, app_slug, env_slug
+        )
         if configuration.secret:
             if self.vault is None:
                 raise RuntimeError("No Vault extension configured!")
             config_key_name = (
                 f"{self.vault_prefix}/automation"
-                f"/{org_slug}/{project_slug}-{app_slug}/configuration/"
+                f"{path_segment}/configuration/"
                 f"{configuration.name}/{version}"
             )
             build_key_name = (
                 f"{self.vault_prefix}/buildtime"
-                f"/{org_slug}/{project_slug}-{app_slug}/configuration/"
+                f"{path_segment}/configuration/"
                 f"{configuration.name}/{version}"
             )
             storage = "vault"
@@ -47,7 +58,7 @@ class ConfigWriter(object):
                 raise RuntimeError("No Consul extension configured!")
             config_key_name = (
                 f"{self.consul_prefix}"
-                f"/{org_slug}/{project_slug}-{app_slug}/configuration/"
+                f"{path_segment}/configuration/"
                 f"{configuration.name}/{version}/{configuration.name}"
             )
             build_key_name = config_key_name

@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path %}
+{% from "_macros.html" import icon, resource_path, app_resource_path %}
 
 {% block title %}
   Shell - Cabotage
@@ -13,12 +13,7 @@
 {% endblock css %}
 
 {% block resource_path %}
-  {{ resource_path([
-    {'label': application.project.organization.slug, 'url': url_for('user.organization', org_slug=application.project.organization.slug) },
-  {'label': application.project.slug, 'url': url_for('user.project', org_slug=application.project.organization.slug, project_slug=application.project.slug)},
-  {'label': application.slug, 'url': url_for('user.project_application', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug)},
-  {'label': 'Shell'}
-  ]) }}
+  {{ app_resource_path(application, 'Shell', env=environment|default(none)) }}
 {% endblock resource_path %}
 
 {% block content %}

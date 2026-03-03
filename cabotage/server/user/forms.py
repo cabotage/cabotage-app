@@ -16,6 +16,7 @@ from wtforms.validators import (
     InputRequired,
     EqualTo,
     Length,
+    Optional,
     Regexp,
     ValidationError,
 )
@@ -23,7 +24,9 @@ from wtforms.validators import (
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import (
     Application,
+    ApplicationEnvironment,
     Configuration,
+    Environment,
     Project,
 )
 
@@ -98,6 +101,16 @@ class CreateProjectForm(FlaskForm):
             "must be unique within the Organization."
         ),
     )
+    environments_enabled = BooleanField(
+        "Enable Environments",
+        [],
+        default=True,
+        description=(
+            "Environments let you run the same application with different "
+            "configuration in isolated namespaces (e.g., staging and production). "
+            "Each environment gets its own config variables, releases, and deploy history."
+        ),
+    )
 
     def validate_slug(form, field):
         project = (
@@ -108,6 +121,19 @@ class CreateProjectForm(FlaskForm):
         if project is not None:
             raise ValidationError("Project slugs must be unique within organizations.")
         return True
+
+
+class EditProjectSettingsForm(FlaskForm):
+    project_id = HiddenField("Project ID", [DataRequired()])
+    environments_enabled = BooleanField(
+        "Enable Environments",
+        [],
+        description=(
+            "Environments let you run the same application with different "
+            "configuration in isolated namespaces (e.g., staging and production). "
+            "Each environment gets its own config variables, releases, and deploy history."
+        ),
+    )
 
 
 class DeleteProjectForm(FlaskForm):
@@ -189,6 +215,10 @@ class CreateConfigurationForm(FlaskForm):
         [DataRequired()],
         description="Application this Configuration belongs to.",
     )
+    environment_id = HiddenField(
+        "Environment",
+        description="Environment this Configuration belongs to (optional).",
+    )
     name = StringField(
         "Name",
         [
@@ -223,15 +253,26 @@ class CreateConfigurationForm(FlaskForm):
     )
 
     def validate_name(form, field):
+        app_env_id = None
+        env_id = form.environment_id.data or None
+        if env_id:
+            app_env = ApplicationEnvironment.query.filter_by(
+                application_id=form.application_id.data,
+                environment_id=env_id,
+            ).first()
+            if app_env:
+                app_env_id = app_env.id
         configuration = Configuration.query.filter_by(
-            application_id=form.application_id.data, name=field.data
+            application_id=form.application_id.data,
+            application_environment_id=app_env_id,
+            name=field.data,
         ).first()
         if configuration is not None:
             if form.name.data.lower() != configuration.name.lower():
                 return True
             raise ValidationError(
                 "Configuration names must be unique (case insensitive) "
-                "within Applications"
+                "within an environment"
             )
         return True
 
@@ -433,6 +474,158 @@ class ApplicationScaleForm(FlaskForm):
         "Application ID",
         [DataRequired()],
         description="Application to scale.",
+    )
+
+
+class CreateEnvironmentForm(FlaskForm):
+    project_id = HiddenField(
+        "Project",
+        [DataRequired()],
+        description="Project this Environment belongs to.",
+    )
+    name = StringField(
+        "Environment Name",
+        [InputRequired()],
+        description="Friendly name for this Environment (e.g., Staging, Production).",
+    )
+    slug = StringField(
+        "Environment Slug",
+        [
+            InputRequired(),
+            Regexp("^[-a-z0-9]+$", message="Invalid Slug! Must match ^[-a-z0-9]+$"),
+        ],
+        description=(
+            "URL Safe short name for this Environment, "
+            "must be unique within the Project."
+        ),
+    )
+    sort_order = IntegerField(
+        "Sort Order",
+        description="Order in which environments are displayed (lower = first).",
+        default=100,
+    )
+    is_default = BooleanField(
+        "Default Environment",
+        [],
+        description="Make this the default environment for new applications.",
+    )
+    ephemeral = BooleanField(
+        "Ephemeral",
+        [],
+        description="This environment is temporary (e.g., for PR previews).",
+    )
+    ttl_hours = IntegerField(
+        "TTL (hours)",
+        [Optional()],
+        description="Auto-delete this environment after N hours (ephemeral only).",
+    )
+
+    def validate_slug(form, field):
+        environment = (
+            Environment.query.filter_by(project_id=form.project_id.data)
+            .filter_by(slug=field.data)
+            .first()
+        )
+        if environment is not None:
+            raise ValidationError(
+                "Environment slugs must be unique within Projects."
+            )
+        return True
+
+
+class EditEnvironmentForm(FlaskForm):
+    environment_id = HiddenField(
+        "Environment ID",
+        [DataRequired()],
+        description="ID of the Environment to edit.",
+    )
+    name = StringField(
+        "Environment Name",
+        [InputRequired()],
+        description="Friendly name for this Environment.",
+    )
+    sort_order = IntegerField(
+        "Sort Order",
+        description="Order in which environments are displayed (lower = first).",
+    )
+    is_default = BooleanField(
+        "Default Environment",
+        [],
+        description="Make this the default environment for new applications.",
+    )
+    ttl_hours = IntegerField(
+        "TTL (hours)",
+        [Optional()],
+        description="Auto-delete this environment after N hours (ephemeral only).",
+    )
+
+
+class DeleteEnvironmentForm(FlaskForm):
+    environment_id = HiddenField(
+        "Environment ID",
+        [DataRequired()],
+        description="ID of the Environment to delete.",
+    )
+    name = StringField(
+        "Name",
+        [InputRequired()],
+        description="Name for the Environment being deleted.",
+    )
+    confirm = StringField(
+        "Type the name of the Environment.",
+        [
+            EqualTo(
+                "name",
+                message="Must confirm the *exact* name of the Environment!",
+            )
+        ],
+    )
+
+
+class AddApplicationToEnvironmentForm(FlaskForm):
+    application_id = SelectField(
+        "Application",
+        [DataRequired()],
+        description="Application to add to this Environment.",
+    )
+    environment_id = HiddenField(
+        "Environment",
+        [DataRequired()],
+        description="Environment to add the Application to.",
+    )
+
+
+class EditApplicationEnvironmentSettingsForm(FlaskForm):
+    app_env_id = HiddenField(
+        "Application Environment ID",
+        [DataRequired()],
+    )
+    auto_deploy_branch = StringField(
+        "Branch",
+        [Optional()],
+        description="Branch to auto-deploy for this environment (blank = inherit from app)",
+    )
+    github_environment_name = StringField(
+        "GitHub Environment Name",
+        [Optional()],
+        description="GitHub environment name for this environment (blank = inherit from app)",
+        filters=[(lambda x: x.strip() if x else x), (lambda x: x if x else None)],
+    )
+    deployment_timeout = IntegerField(
+        "Deployment Timeout",
+        [Optional()],
+        description="Timeout (in seconds) when waiting for a deployment to complete",
+    )
+    health_check_path = StringField(
+        "HTTP Health Check Path",
+        [Optional()],
+        description="Path for health check probes",
+    )
+    health_check_host = StringField(
+        "HTTP Health Check Host Header",
+        [Optional()],
+        description="Host header for health check probes",
+        filters=[(lambda x: x.strip() if x else x), (lambda x: x if x else None)],
     )
 
 

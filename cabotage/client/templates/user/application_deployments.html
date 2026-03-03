@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, status_badge, app_tab_nav %}
+{% from "_macros.html" import icon, resource_path, status_badge, app_tab_nav, app_resource_path %}
 
 {% set app = application %}
 {% set org_slug = app.project.organization.slug %}
@@ -11,12 +11,7 @@
 {% endblock title %}
 
 {% block resource_path %}
-  {{ resource_path([
-    {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug) },
-  {'label': project_slug, 'url': url_for('user.project', org_slug=org_slug, project_slug=project_slug)},
-  {'label': app_slug, 'url': url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug)},
-  {'label': 'Deployments'}
-  ]) }}
+  {{ app_resource_path(application, 'Deployments', env=environment|default(none)) }}
 {% endblock resource_path %}
 
 {% block tab_bar %}
@@ -28,7 +23,7 @@
   <div class="flex items-center justify-between mb-4">
     <h2 class="text-base font-medium text-base-content">Deployments</h2>
     {% if app.latest_release and app.latest_release.built %}
-      <form action="{{ url_for('user.release_deploy', release_id=app.latest_release.id) }}"
+      <form action="{{ url_for('user.release_deploy', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id=app.latest_release.id) }}"
             method="post"
             enctype="multipart/form-data"
             class="inline">
@@ -66,7 +61,7 @@
         {% endif %}
         {% set dep_auto = dep_rel and dep_rel.release_metadata and dep_rel.release_metadata.get('auto_deploy') %}
 
-        <a href="{{ url_for('user.deployment_detail', deployment_id=deployment.id) }}"
+        <a href="{{ url_for('user.deployment_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id=deployment.id) }}"
            class="dpl-row {{ 'dpl-row-active' if is_active }} {{ 'dpl-row-error' if deployment.error }} {{ 'dpl-row-deploying' if not deployment.complete and not deployment.error }}">
 
           {% if deployment.complete %}
@@ -133,7 +128,7 @@
                 <span class="dpl-meta-chip">
                   {{ icon('image', 'w-3 h-3') }}
                   <span class="dpl-meta-chip-link"
-                        data-href="{{ url_for('user.image_detail', image_id=dep_img.id) }}">#{{ dep_img.version }}</span>
+                        data-href="{{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id=dep_img.id) }}">#{{ dep_img.version }}</span>
                 </span>
               {% endif %}
             </div>
@@ -169,7 +164,7 @@
           <h3 class="text-base font-medium text-base-content/60 mb-1">No deployments yet</h3>
           <p class="text-sm text-base-content/40 max-w-sm">Deployments are created when you deploy a release.</p>
           {% if app.latest_release and app.latest_release.built %}
-            <form action="{{ url_for('user.release_deploy', release_id=app.latest_release.id) }}"
+            <form action="{{ url_for('user.release_deploy', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id=app.latest_release.id) }}"
                   method="post"
                   enctype="multipart/form-data"
                   class="inline mt-4">

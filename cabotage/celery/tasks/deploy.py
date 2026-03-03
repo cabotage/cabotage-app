@@ -19,6 +19,7 @@ from cabotage.server import (
 )
 
 from cabotage.server.models.projects import Deployment, DEFAULT_POD_CLASS, pod_classes
+from cabotage.server.models.utils import safe_k8s_name
 
 from cabotage.utils.build_log_stream import (
     _HEARTBEAT_TTL,
@@ -35,11 +36,34 @@ class DeployError(RuntimeError):
     pass
 
 
+def k8s_namespace(release, app_env=None):
+    org_k8s = release.application.project.organization.k8s_identifier
+    if app_env is None and release.application_environment_id is not None:
+        app_env = release.application_environment
+    if app_env is not None:
+        return safe_k8s_name(org_k8s, app_env.environment.k8s_identifier)
+    return org_k8s
+
+
+def k8s_resource_prefix(release):
+    return safe_k8s_name(
+        release.application.project.k8s_identifier,
+        release.application.k8s_identifier,
+    )
+
+
+def k8s_role_name(release):
+    return safe_k8s_name(
+        release.application.project.organization.k8s_identifier,
+        release.application.project.k8s_identifier,
+        release.application.k8s_identifier,
+    )
+
+
 def render_namespace(release):
-    namespace_name = release.application.project.organization.slug
     namespace_object = kubernetes.client.V1Namespace(
         metadata=kubernetes.client.V1ObjectMeta(
-            name=namespace_name,
+            name=k8s_namespace(release),
         ),
     )
     return namespace_object
@@ -57,7 +81,7 @@ def create_namespace(core_api_instance, release):
 
 
 def fetch_namespace(core_api_instance, release):
-    namespace_name = release.application.project.organization.slug
+    namespace_name = k8s_namespace(release)
     try:
         namespace = core_api_instance.read_namespace(namespace_name)
     except ApiException as exc:
@@ -86,7 +110,7 @@ def render_cabotage_ca_configmap(release):
 
 def create_cabotage_ca_configmap(core_api_instance, release):
     configmap_object = render_cabotage_ca_configmap(release)
-    namespace_name = release.application.project.organization.slug
+    namespace_name = k8s_namespace(release)
     try:
         return core_api_instance.create_namespaced_config_map(
             namespace_name, configmap_object
@@ -99,7 +123,7 @@ def create_cabotage_ca_configmap(core_api_instance, release):
 
 
 def fetch_cabotage_ca_configmap(core_api_instance, release):
-    namespace_name = release.application.project.organization.slug
+    namespace_name = k8s_namespace(release)
     try:
         configmap = core_api_instance.read_namespaced_config_map(
             "cabotage-ca", namespace_name
@@ -116,9 +140,7 @@ def fetch_cabotage_ca_configmap(core_api_instance, release):
 
 
 def render_service_account(release):
-    service_account_name = (
-        f"{release.application.project.slug}-{release.application.slug}"
-    )
+    service_account_name = k8s_resource_prefix(release)
     service_account_object = kubernetes.client.V1ServiceAccount(
         metadata=kubernetes.client.V1ObjectMeta(
             name=service_account_name,
@@ -128,7 +150,7 @@ def render_service_account(release):
 
 
 def create_service_account(core_api_instance, release):
-    namespace = release.application.project.organization.slug
+    namespace = k8s_namespace(release)
     service_account_object = render_service_account(release)
     try:
         return core_api_instance.create_namespaced_service_account(
@@ -142,10 +164,8 @@ def create_service_account(core_api_instance, release):
 
 
 def fetch_service_account(core_api_instance, release):
-    namespace = release.application.project.organization.slug
-    service_account_name = (
-        f"{release.application.project.slug}-{release.application.slug}"
-    )
+    namespace = k8s_namespace(release)
+    service_account_name = k8s_resource_prefix(release)
     try:
         service_account = core_api_instance.read_namespaced_service_account(
             service_account_name, namespace
@@ -162,9 +182,7 @@ def fetch_service_account(core_api_instance, release):
 
 
 def render_cabotage_enrollment(release):
-    cabotage_enrollment_name = (
-        f"{release.application.project.slug}-{release.application.slug}"
-    )
+    cabotage_enrollment_name = k8s_resource_prefix(release)
     cabotage_enrollment_object = {
         "apiVersion": "cabotage.io/v1",
         "kind": "CabotageEnrollment",
@@ -176,7 +194,7 @@ def render_cabotage_enrollment(release):
 
 
 def create_cabotage_enrollment(custom_objects_api_instance, release):
-    namespace = release.application.project.organization.slug
+    namespace = k8s_namespace(release)
     cabotage_enrollment_object = render_cabotage_enrollment(release)
     try:
         return custom_objects_api_instance.create_namespaced_custom_object(
@@ -194,8 +212,8 @@ def create_cabotage_enrollment(custom_objects_api_instance, release):
 
 
 def fetch_cabotage_enrollment(custom_objects_api_instance, release):
-    namespace = release.application.project.organization.slug
-    name = f"{release.application.project.slug}-{release.application.slug}"
+    namespace = k8s_namespace(release)
+    name = k8s_resource_prefix(release)
     try:
         cabotage_enrollment = custom_objects_api_instance.get_namespaced_custom_object(
             "cabotage.io", "v1", namespace, "cabotageenrollments", name
@@ -214,16 +232,15 @@ def fetch_cabotage_enrollment(custom_objects_api_instance, release):
 
 
 def render_service(release, process_name):
-    namespace = release.application.project.organization.slug
-    service_name = (
-        f"{release.application.project.slug}-{release.application.slug}-{process_name}"
-    )
+    resource_prefix = k8s_resource_prefix(release)
+    service_name = f"{resource_prefix}-{process_name}"
+    role_name = k8s_role_name(release)
     service_object = kubernetes.client.V1Service(
         metadata=kubernetes.client.V1ObjectMeta(
             name=service_name,
             labels={
                 "resident-service.cabotage.io": "true",
-                "app": f"{release.application.project.slug}-{release.application.slug}",
+                "app": resource_prefix,
                 "process": process_name,
             },
         ),
@@ -235,7 +252,7 @@ def render_service(release, process_name):
                 )
             ],
             selector={
-                "app": f"{namespace}-{release.application.project.slug}-{release.application.slug}",
+                "app": role_name,
                 "process": process_name,
             },
         ),
@@ -244,7 +261,7 @@ def render_service(release, process_name):
 
 
 def create_service(core_api_instance, release, process_name):
-    namespace = release.application.project.organization.slug
+    namespace = k8s_namespace(release)
     service_object = render_service(release, process_name)
     try:
         return core_api_instance.create_namespaced_service(namespace, service_object)
@@ -256,10 +273,8 @@ def create_service(core_api_instance, release, process_name):
 
 
 def fetch_service(core_api_instance, release, process_name):
-    namespace = release.application.project.organization.slug
-    service_name = (
-        f"{release.application.project.slug}-{release.application.slug}-{process_name}"
-    )
+    namespace = k8s_namespace(release)
+    service_name = f"{k8s_resource_prefix(release)}-{process_name}"
     try:
         service = core_api_instance.read_namespaced_service(service_name, namespace)
     except ApiException as exc:
@@ -278,7 +293,7 @@ def render_image_pull_secrets(release):
     secret = kubernetes.client.V1Secret(
         type="kubernetes.io/dockerconfigjson",
         metadata=kubernetes.client.V1ObjectMeta(
-            name=f"{release.application.project.slug}-{release.application.slug}",
+            name=k8s_resource_prefix(release),
         ),
         data={
             ".dockerconfigjson": b64encode(
@@ -293,8 +308,8 @@ def render_image_pull_secrets(release):
 
 
 def create_image_pull_secret(core_api_instance, release):
-    namespace = release.application.project.organization.slug
-    secret_name = f"{release.application.project.slug}-{release.application.slug}"
+    namespace = k8s_namespace(release)
+    secret_name = k8s_resource_prefix(release)
     image_pull_secrets = render_image_pull_secrets(release)
     try:
         return core_api_instance.create_namespaced_secret(namespace, image_pull_secrets)
@@ -305,8 +320,8 @@ def create_image_pull_secret(core_api_instance, release):
 
 
 def fetch_image_pull_secrets(core_api_instance, release):
-    namespace = release.application.project.organization.slug
-    secret_name = f"{release.application.project.slug}-{release.application.slug}"
+    namespace = k8s_namespace(release)
+    secret_name = k8s_resource_prefix(release)
     try:
         secret = core_api_instance.read_namespaced_secret(secret_name, namespace)
     except ApiException as exc:
@@ -321,11 +336,8 @@ def fetch_image_pull_secrets(core_api_instance, release):
 
 
 def render_cabotage_enroller_container(release, process_name, with_tls=True):
-    role_name = (
-        f"{release.application.project.organization.slug}"
-        f"-{release.application.project.slug}"
-        f"-{release.application.slug}"
-    )
+    role_name = k8s_role_name(release)
+    resource_prefix = k8s_resource_prefix(release)
 
     args = [
         "kube-login",
@@ -341,7 +353,7 @@ def render_cabotage_enroller_container(release, process_name, with_tls=True):
         args.append("--fetch-cert")
         args.append(f"--vault-pki-role={role_name}")
         args.append(
-            f"--service-names={release.application.project.slug}-{release.application.slug}-{process_name}"
+            f"--service-names={resource_prefix}-{process_name}"
         )
 
     return kubernetes.client.V1Container(
@@ -384,11 +396,7 @@ def render_cabotage_enroller_container(release, process_name, with_tls=True):
 
 
 def render_cabotage_sidecar_container(release, with_tls=True):
-    role_name = (
-        f"{release.application.project.organization.slug}"
-        f"-{release.application.project.slug}"
-        f"-{release.application.slug}"
-    )
+    role_name = k8s_role_name(release)
     args = ["maintain"]
     if with_tls:
         args.append(f"--vault-pki-role={role_name}")
@@ -543,9 +551,16 @@ def render_process_container(
                 name="cabotage-sock", mount_path="/var/run/cabotage"
             )
         )
-    pod_class = pod_classes[
-        release.application.process_pod_classes.get(process_name, DEFAULT_POD_CLASS)
-    ]
+    if release.application_environment_id is not None:
+        app_env = release.application_environment
+        process_pod_cls = (app_env.process_pod_classes or {}).get(
+            process_name, DEFAULT_POD_CLASS
+        )
+    else:
+        process_pod_cls = release.application.process_pod_classes.get(
+            process_name, DEFAULT_POD_CLASS
+        )
+    pod_class = pod_classes[process_pod_cls]
     return kubernetes.client.V1Container(
         name=process_name,
         image=f'{current_app.config["REGISTRY_PULL"]}/{release.repository_name}:release-{release.version}',
@@ -663,11 +678,7 @@ def render_podspec(release, process_name, service_account_name):
         "project": release.application.project.slug,
         "application": release.application.slug,
         "process": process_name,
-        "app": (
-            f"{release.application.project.organization.slug}"
-            f"-{release.application.project.slug}"
-            f"-{release.application.slug}"
-        ),
+        "app": k8s_role_name(release),
         "release": str(release.version),
     }
     volumes = [
@@ -787,18 +798,17 @@ def render_podspec(release, process_name, service_account_name):
 
 
 def render_deployment(namespace, release, service_account_name, process_name):
-    role_name = (
-        f"{release.application.project.organization.slug}"
-        f"-{release.application.project.slug}"
-        f"-{release.application.slug}"
-    )
+    role_name = k8s_role_name(release)
+    resource_prefix = k8s_resource_prefix(release)
+    # Use ApplicationEnvironment process_counts if env-scoped, else Application
+    if release.application_environment_id is not None:
+        app_env = release.application_environment
+        process_counts = app_env.process_counts or {}
+    else:
+        process_counts = release.application.process_counts or {}
     deployment_object = kubernetes.client.V1Deployment(
         metadata=kubernetes.client.V1ObjectMeta(
-            name=(
-                f"{release.application.project.slug}"
-                f"-{release.application.slug}"
-                f"-{process_name}"
-            ),
+            name=f"{resource_prefix}-{process_name}",
             labels={
                 "organization": release.application.project.organization.slug,
                 "project": release.application.project.slug,
@@ -809,14 +819,11 @@ def render_deployment(namespace, release, service_account_name, process_name):
             },
         ),
         spec=kubernetes.client.V1DeploymentSpec(
-            replicas=release.application.process_counts.get(process_name, 0),
+            replicas=process_counts.get(process_name, 0),
             selector=kubernetes.client.V1LabelSelector(
                 match_labels={
-                    "organization": release.application.project.organization.slug,
-                    "project": release.application.project.slug,
-                    "application": release.application.slug,
-                    "process": process_name,
                     "app": role_name,
+                    "process": process_name,
                 },
             ),
             template=kubernetes.client.V1PodTemplateSpec(
@@ -928,9 +935,7 @@ def create_deployment(
 def scale_deployment(namespace, release, process_name, replicas):
     api_client = kubernetes_ext.kubernetes_client
     apps_api_instance = kubernetes.client.AppsV1Api(api_client)
-    deployment_name = (
-        f"{release.application.project.slug}-{release.application.slug}-{process_name}"
-    )
+    deployment_name = f"{k8s_resource_prefix(release)}-{process_name}"
     deployment = None
     try:
         deployment = apps_api_instance.read_namespaced_deployment(
@@ -949,11 +954,7 @@ def scale_deployment(namespace, release, process_name, replicas):
 
 
 def render_job(namespace, release, service_account_name, process_name, job_id):
-    role_name = (
-        f"{release.application.project.organization.slug}"
-        f"-{release.application.project.slug}"
-        f"-{release.application.slug}"
-    )
+    role_name = k8s_role_name(release)
     job_object = kubernetes.client.V1Job(
         metadata=kubernetes.client.V1ObjectMeta(
             name=f"deployment-{job_id}",
@@ -1208,9 +1209,11 @@ def deploy_release(deployment):
     deploy_log = []
 
     deployment_id_str = str(deployment.id)
-    heartbeat_ttl = (
-        deployment.release_object.application.deployment_timeout + _HEARTBEAT_TTL
-    )
+    if deployment.application_environment_id is not None:
+        _timeout = deployment.application_environment.effective_deployment_timeout
+    else:
+        _timeout = deployment.release_object.application.deployment_timeout
+    heartbeat_ttl = _timeout + _HEARTBEAT_TTL
 
     # Set up Redis streaming for live deploy logs
     try:
@@ -1319,9 +1322,13 @@ def deploy_release(deployment):
             else:
                 log(f"Release command {release_command} complete!")
         for process_name in deployment.release_object.processes:
+            if deployment.application_environment_id is not None:
+                _pc = (deployment.application_environment.process_counts or {})
+            else:
+                _pc = deployment.application.process_counts or {}
             log(
                 f"Creating deployment for {process_name} "
-                f"with {deployment.application.process_counts.get(process_name, 0)} "
+                f"with {_pc.get(process_name, 0)} "
                 "replicas"
             )
             create_deployment(
@@ -1334,7 +1341,10 @@ def deploy_release(deployment):
 
         log("Waiting on deployment to rollout...")
         start = time.time()
-        timeout = deployment.release_object.application.deployment_timeout
+        if deployment.application_environment_id is not None:
+            timeout = deployment.application_environment.effective_deployment_timeout
+        else:
+            timeout = deployment.release_object.application.deployment_timeout
         _go = {
             process_name: False for process_name in deployment.release_object.processes
         }

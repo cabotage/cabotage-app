@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path %}
+{% from "_macros.html" import icon, resource_path, app_resource_path %}
 
 {% set app = deployment.application %}
 {% set org_slug = app.project.organization.slug %}
@@ -11,12 +11,7 @@
 {% endblock title %}
 
 {% block resource_path %}
-  {{ resource_path([
-    {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug) },
-  {'label': project_slug, 'url': url_for('user.project', org_slug=org_slug, project_slug=project_slug)},
-  {'label': app_slug, 'url': url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug)},
-  {'label': 'Deployment'}
-  ]) }}
+  {{ app_resource_path(app, 'Deployment', env=deployment.application_environment.environment if deployment.application_environment_id else none) }}
 {% endblock resource_path %}
 
 {% block content %}
@@ -62,7 +57,7 @@
 
       <div class="flex items-center gap-2">
         {% if deployment.error and deployment.release_object %}
-          <form action="{{ url_for('user.release_deploy', release_id=deployment.release_object.id) }}"
+          <form action="{{ url_for('user.release_deploy', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id=deployment.release_object.id) }}"
                 method="post">
             <button type="submit"
                     class="btn btn-ghost btn-sm gap-1.5 text-error hover:bg-error/10">
@@ -212,7 +207,7 @@
         <div class="card bg-base-200 border border-base-300">
           <div class="card-body !p-4">
             <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Image</h2>
-            <a href="{{ url_for('user.image_detail', image_id=image.id) }}"
+            <a href="{{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id=image.id) }}"
                class="inline-flex items-center gap-2 text-accent hover:text-accent/80 transition-colors">
               {{ icon('box', 'w-3.5 h-3.5') }}
               <code class="text-sm">v{{ image.version }}</code>
@@ -226,7 +221,7 @@
         <div class="card bg-base-200 border border-base-300">
           <div class="card-body !p-4">
             <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Release</h2>
-            <a href="{{ url_for('user.release_detail', release_id=deployment.release_object.id) }}"
+            <a href="{{ url_for('user.release_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id=deployment.release_object.id) }}"
                class="inline-flex items-center gap-2 text-accent hover:text-accent/80 transition-colors">
               {{ icon('layers', 'w-3.5 h-3.5') }}
               <code class="text-sm">v{{ deployment.release_object.version }}</code>

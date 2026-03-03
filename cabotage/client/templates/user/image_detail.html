@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path %}
+{% from "_macros.html" import icon, resource_path, app_resource_path %}
 
 {% set app = image.application %}
 {% set org_slug = app.project.organization.slug %}
@@ -11,12 +11,7 @@
 {% endblock title %}
 
 {% block resource_path %}
-  {{ resource_path([
-    {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug) },
-  {'label': project_slug, 'url': url_for('user.project', org_slug=org_slug, project_slug=project_slug)},
-  {'label': app_slug, 'url': url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug)},
-  {'label': 'Build #' ~ image.version}
-  ]) }}
+  {{ app_resource_path(image.application, 'Build #' ~ image.version, env=image.application_environment.environment if image.application_environment_id else none) }}
 {% endblock resource_path %}
 
 {% block content %}
@@ -61,15 +56,22 @@
 
       <div class="flex items-center gap-2">
         {% if image.built %}
-          <a href="{{ url_for('user.application_release_create', application_id=app.id) }}"
-             class="btn btn-primary btn-sm gap-1.5">
-            {{ icon('scissors', 'w-3.5 h-3.5') }}
-            Create Release
-          </a>
+          <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+                method="post">
+            {% if image.application_environment_id %}
+              <input type="hidden" name="environment_id" value="{{ image.application_environment.environment_id }}">
+            {% endif %}
+            <button type="submit"
+                    class="btn btn-primary btn-sm gap-1.5">
+              {{ icon('scissors', 'w-3.5 h-3.5') }}
+              Create Release
+            </button>
+          </form>
         {% endif %}
         {% if image.error %}
-          <form action="{{ url_for('user.application_images_build_fromsource', application_id=app.id) }}"
+          <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
                 method="post">
+            {% if image.application_environment_id %}<input type="hidden" name="environment_id" value="{{ image.application_environment.environment_id }}" />{% endif %}
             <button type="submit"
                     class="btn btn-ghost btn-sm gap-1.5 text-error hover:bg-error/10">
               {{ icon('refresh-cw', 'w-3.5 h-3.5') }}
@@ -451,7 +453,7 @@
        data-next-step-url="{{ (next_step_url or none) | tojson }}"
        data-app-id="{{ app.id }}"
        data-auto-deploy="{{ (image.image_metadata or {}).get('auto_deploy', false) | tojson }}"
-       data-ws-url="/image/{{ image.id }}/livelogs"
+       data-ws-url=""
        data-stage="build"
        style="display:none"></div>
   <script>
