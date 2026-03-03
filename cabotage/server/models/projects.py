@@ -130,7 +130,7 @@ class Project(db.Model, Timestamp):
 
     __table_args__ = (
         UniqueConstraint(organization_id, slug),
-        UniqueConstraint(organization_id, k8s_identifier),
+        UniqueConstraint(organization_id, k8s_identifier, name="uq_projects_org_k8s_identifier"),
     )
 
 
@@ -173,7 +173,7 @@ class Environment(db.Model, Timestamp):
 
     __table_args__ = (
         UniqueConstraint(project_id, slug),
-        UniqueConstraint(project_id, k8s_identifier),
+        UniqueConstraint(project_id, k8s_identifier, name="uq_project_environments_project_k8s_identifier"),
     )
 
     __mapper_args__ = {"version_id_col": version_id}
@@ -671,7 +671,7 @@ class Application(db.Model, Timestamp):
 
     __table_args__ = (
         UniqueConstraint(project_id, slug),
-        UniqueConstraint(project_id, k8s_identifier),
+        UniqueConstraint(project_id, k8s_identifier, name="uq_project_applications_project_k8s_identifier"),
         db.Index(
             "github_deployments_unique",
             github_app_installation_id,
