@@ -242,33 +242,35 @@
 {% endmacro %}
 
 {% macro render_field(field, placeholder='', extra_class='') %}
-  <fieldset class="fieldset w-full">
-    <legend class="fieldset-legend text-xs text-base-content/50 font-medium uppercase tracking-wider">
-      {{ field.label.text }}
-    </legend>
+  <div class="w-full">
     {% if field.type == 'BooleanField' %}
       <label class="label cursor-pointer justify-start gap-3">
         {{ field(class="checkbox checkbox-primary checkbox-sm") }}
         <span class="text-sm">{{ field.label.text }}</span>
       </label>
     {% elif field.type == 'SelectField' or field.type == 'SelectMultipleField' %}
+      <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">{{ field.label.text }}</label>
       {{ field(class="select select-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary " + extra_class) }}
     {% elif field.type == 'TextAreaField' %}
+      <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">{{ field.label.text }}</label>
       {{ field(class="textarea textarea-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono text-sm " + extra_class, placeholder=placeholder) }}
     {% elif field.type == 'FileField' %}
+      <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">{{ field.label.text }}</label>
       {{ field(class="file-input file-input-bordered w-full bg-base-100 text-base-content border-base-content/10 " + extra_class) }}
     {% elif field.type == 'PasswordField' %}
+      <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">{{ field.label.text }}</label>
       {{ field(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary " + extra_class, placeholder=placeholder or '********') }}
     {% elif field.type == 'HiddenField' %}
       {{ field() }}
     {% elif field.type == 'SubmitField' %}
       <button type="submit" class="btn btn-primary {{ extra_class }}">{{ field.label.text }}</button>
     {% else %}
+      <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">{{ field.label.text }}</label>
       {{ field(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary " + extra_class, placeholder=placeholder) }}
     {% endif %}
     {% if field.description %}<p class="text-xs text-base-content/40 mt-1">{{ field.description }}</p>{% endif %}
     {% for error in field.errors %}<p class="text-xs text-error mt-0.5">{{ error }}</p>{% endfor %}
-  </fieldset>
+  </div>
 {% endmacro %}
 
 {% macro render_form(form, action='', method='post', enctype=None, btn_text='Submit', btn_class='btn-primary') %}
