@@ -630,6 +630,12 @@ def project_settings(org_slug, project_slug):
                     default_env.slug = slugify(initial_name)
             # Existing app_envs keep k8s_identifier=NULL so all their paths
             # (registry, namespace, consul/vault, build cache) remain unchanged.
+            # Copy app-level github_environment_name to each app's default app_env
+            for app in project.project_applications:
+                if app.github_environment_name is not None:
+                    default_ae = app.default_app_env
+                    if default_ae and default_ae.github_environment_name is None:
+                        default_ae.github_environment_name = app.github_environment_name
         form.populate_obj(project)
         env_order = request.form.getlist("env_order")
         if env_order:

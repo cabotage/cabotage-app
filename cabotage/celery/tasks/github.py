@@ -19,6 +19,7 @@ from cabotage.server.models.projects import (
     ApplicationEnvironment,
     Project,
 )
+from cabotage.server.models.auth import Organization
 from cabotage.celery.tasks import (
     run_image_build,
 )
@@ -99,6 +100,27 @@ def _resolve_app_env_for_hook(installation_id, repository_name, environment):
             .join(Project, Application.project_id == Project.id)
             .filter(
                 and_(
+                    Project.slug == project_slug,
+                    Environment.slug == env_slug,
+                    Application.slug == app_slug,
+                    Application.github_app_installation_id == installation_id,
+                    Application.github_repository == repository_name,
+                )
+            )
+            .first()
+        )
+        if app_env:
+            return app_env
+    elif len(slugs) == 4:
+        org_slug, project_slug, env_slug, app_slug = slugs
+        app_env = (
+            ApplicationEnvironment.query.join(Application)
+            .join(Environment, ApplicationEnvironment.environment_id == Environment.id)
+            .join(Project, Application.project_id == Project.id)
+            .join(Organization, Project.organization_id == Organization.id)
+            .filter(
+                and_(
+                    Organization.slug == org_slug,
                     Project.slug == project_slug,
                     Environment.slug == env_slug,
                     Application.slug == app_slug,

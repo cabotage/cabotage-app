@@ -587,7 +587,7 @@ class EditApplicationEnvironmentSettingsForm(FlaskForm):
     github_environment_name = StringField(
         "GitHub Environment Name",
         [Optional()],
-        description="GitHub environment name for this environment (blank = inherit from app)",
+        description="GitHub environment name for this environment (blank = inherit from app or auto-generated from slugs)",
         filters=[(lambda x: x.strip() if x else x), (lambda x: x if x else None)],
     )
     deployment_timeout = IntegerField(
