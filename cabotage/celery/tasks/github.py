@@ -117,6 +117,15 @@ def _resolve_app_env_for_hook(installation_id, repository_name, environment):
 def process_deployment_hook(hook):
     installation_id = hook.payload["installation"]["id"]
     deployment = hook.payload["deployment"]
+
+    # Only process deployments created by this app's bot
+    if deployment["creator"]["login"] != github_app.bot_login:
+        print(
+            f"ignoring deployment created by {deployment['creator']['login']} "
+            f"(not {github_app.bot_login})"
+        )
+        return False
+
     environment = deployment["environment"]
     repository_name = hook.payload["repository"]["full_name"]
     commit_sha = hook.payload["deployment"]["sha"]

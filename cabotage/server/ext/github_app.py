@@ -21,6 +21,7 @@ class GitHubApp(object):
         self.app_private_key_pem = None
         self._bearer_token = None
         self._bearer_token_exp = -1
+        self._bot_login = None
 
         if app.config["GITHUB_WEBHOOK_SECRET"]:
             self.webhook_secret = app.config["GITHUB_WEBHOOK_SECRET"]
@@ -64,6 +65,21 @@ class GitHubApp(object):
             )
             self._bearer_token_exp = issued + 599
         return self._bearer_token
+
+    @property
+    def bot_login(self):
+        if self._bot_login is None:
+            resp = requests.get(
+                "https://api.github.com/app",
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "Authorization": f"Bearer {self.bearer_token}",
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            self._bot_login = f"{resp.json()['slug']}[bot]"
+        return self._bot_login
 
     def fetch_installation_access_token(self, installation_id):
         access_token_response = requests.post(
