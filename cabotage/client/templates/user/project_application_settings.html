@@ -71,10 +71,16 @@
             {{ render_field_compact(form.subdirectory, placeholder='/', label='Subdirectory') }}
             {{ render_field_compact(form.dockerfile_path, placeholder='Dockerfile.cabotage', label='Dockerfile Path') }}
           </div>
+          {% if not application.project.environments_enabled %}
           <div class="settings-field-grid-2">
             {{ render_field_compact(form.github_app_installation_id, label='Installation ID') }}
             {{ render_field_compact(form.github_environment_name, placeholder=project_slug + '/' + app_slug, label='Environment') }}
           </div>
+          {% else %}
+          <div class="settings-field-grid-1">
+            {{ render_field_compact(form.github_app_installation_id, label='Installation ID') }}
+          </div>
+          {% endif %}
           {{ render_field_compact(form.github_repository_is_private, label='Private Repository') }}
         </div>
       </div>
