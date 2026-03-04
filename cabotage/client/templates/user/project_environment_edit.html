@@ -1,0 +1,56 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, resource_path, page_header, render_field %}
+
+{% block title %}
+  Settings - {{ environment.name }} - {{ project.name }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': project.organization.slug, 'url': url_for('user.organization', org_slug=project.organization.slug) },
+    {'label': project.slug, 'url': url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug)},
+    {'label': 'environments', 'url': url_for('user.project_environments', org_slug=project.organization.slug, project_slug=project.slug)},
+    {'label': environment.slug, 'url': url_for('user.project_environment', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug)},
+    {'label': 'settings'}
+  ]) }}
+{% endblock resource_path %}
+
+{% block content %}
+  {{ page_header('Environment Settings', environment.name) }}
+
+  <div class="card bg-base-200/50 border border-base-300/50 max-w-2xl">
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('user.project_environment_settings', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}">
+        {{ form.hidden_tag() }}
+        {{ render_field(form.name) }}
+        {{ render_field(form.is_default) }}
+        <div class="mt-4">
+          <button type="submit" class="btn btn-primary gap-2">
+            {{ icon('check', 'w-4 h-4') }}
+            Save Changes
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="mt-8 max-w-2xl">
+    <div class="collapse collapse-arrow bg-error/5 border border-error/20">
+      <input type="checkbox" />
+      <div class="collapse-title text-sm font-medium text-error">
+        Danger Zone
+      </div>
+      <div class="collapse-content">
+        <form method="POST" action="{{ url_for('user.project_environment_delete', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}">
+          {{ delete_form.hidden_tag() }}
+          <div style="display:none">{{ delete_form.name() }}</div>
+          {{ render_field(delete_form.confirm) }}
+          <button type="submit" class="btn btn-error btn-sm gap-2 mt-2">
+            {{ icon('trash-2', 'w-4 h-4') }}
+            Delete Environment
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endblock content %}

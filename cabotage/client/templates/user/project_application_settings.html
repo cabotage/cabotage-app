@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import render_field_compact, icon, resource_path, app_tab_nav %}
+{% from "_macros.html" import render_field_compact, icon, resource_path, app_tab_nav, app_resource_path %}
 
 {% set org_slug = application.project.organization.slug %}
 {% set project_slug = application.project.slug %}
@@ -10,16 +10,11 @@
 {% endblock title %}
 
 {% block resource_path %}
-  {{ resource_path([
-    {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug) },
-  {'label': project_slug, 'url': url_for('user.project', org_slug=org_slug, project_slug=project_slug)},
-  {'label': app_slug, 'url': url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug)},
-  {'label': 'Settings'}
-  ]) }}
+  {{ app_resource_path(application, 'Settings', env=environment|default(none)) }}
 {% endblock resource_path %}
 
 {% block tab_bar %}
-  {{ app_tab_nav(application, 'settings') }}
+  {{ app_tab_nav(application, 'settings', env=environment|default(none)) }}
 {% endblock tab_bar %}
 
 {% block content %}
@@ -43,7 +38,7 @@
       </button>
     </div>
 
-    <form action="{{ url_for('user.project_application_settings', application_id=form.application_id.data) }}"
+    <form action="{{ url_for('user.project_application_settings', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}"
           method="post"
           id="settings-form"
           name="project_application_settings_form">
@@ -78,7 +73,7 @@
           </div>
           <div class="settings-field-grid-2">
             {{ render_field_compact(form.github_app_installation_id, label='Installation ID') }}
-            {{ render_field_compact(form.github_environment_name, placeholder='cabotage/' + form.application_id.data, label='Environment') }}
+            {{ render_field_compact(form.github_environment_name, placeholder=project_slug + '/' + app_slug, label='Environment') }}
           </div>
           {{ render_field_compact(form.github_repository_is_private, label='Private Repository') }}
         </div>

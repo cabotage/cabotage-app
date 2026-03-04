@@ -12,6 +12,7 @@ from cabotage.server import db
 
 from cabotage.server.models.plugins import ActivityPlugin
 from cabotage.server.models.utils import (
+    generate_k8s_identifier,
     slugify,
     DictDiffer,
 )
@@ -94,6 +95,8 @@ class Project(db.Model, Timestamp):
     def __init__(self, *args, **kwargs):
         if "slug" not in kwargs:
             kwargs["slug"] = slugify(kwargs.get("name"))
+        if "k8s_identifier" not in kwargs:
+            kwargs["k8s_identifier"] = generate_k8s_identifier(kwargs["slug"])
         super().__init__(*args, **kwargs)
 
     id = db.Column(
@@ -108,19 +111,272 @@ class Project(db.Model, Timestamp):
     )
     name = db.Column(db.Text(), nullable=False)
     slug = db.Column(CIText(), nullable=False)
+    k8s_identifier = db.Column(db.String(64), nullable=False)
+    environments_enabled = db.Column(
+        db.Boolean, nullable=False, default=False, server_default="false"
+    )
 
     project_applications = db.relationship(
         "Application",
         backref="project",
         cascade="all, delete-orphan",
     )
+    project_environments = db.relationship(
+        "Environment",
+        backref="project",
+        cascade="all, delete-orphan",
+        order_by="Environment.sort_order",
+    )
 
-    UniqueConstraint(organization_id, slug)
+    __table_args__ = (
+        UniqueConstraint(organization_id, slug),
+        UniqueConstraint(
+            organization_id, k8s_identifier, name="uq_projects_org_k8s_identifier"
+        ),
+    )
+
+
+class Environment(db.Model, Timestamp):
+    __versioned__: dict = {}
+    __tablename__ = "project_environments"
+
+    def __init__(self, *args, **kwargs):
+        if "slug" not in kwargs and "name" in kwargs:
+            kwargs["slug"] = slugify(kwargs["name"])
+        if "k8s_identifier" not in kwargs and "slug" in kwargs:
+            kwargs["k8s_identifier"] = generate_k8s_identifier(kwargs["slug"])
+        super().__init__(*args, **kwargs)
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True,
+    )
+    project_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("projects.id"),
+        nullable=False,
+        index=True,
+    )
+    name = db.Column(db.Text(), nullable=False)
+    slug = db.Column(CIText(), nullable=False)
+    k8s_identifier = db.Column(db.String(64), nullable=False)
+    sort_order = db.Column(db.Integer, nullable=False, default=100)
+    ephemeral = db.Column(db.Boolean, nullable=False, default=False)
+    ttl_hours = db.Column(db.Integer, nullable=True)
+    is_default = db.Column(db.Boolean, nullable=False, default=False)
+    version_id = db.Column(db.Integer, nullable=False)
+
+    application_environments = db.relationship(
+        "ApplicationEnvironment",
+        backref="environment",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        UniqueConstraint(project_id, slug),
+        UniqueConstraint(
+            project_id,
+            k8s_identifier,
+            name="uq_project_environments_project_k8s_identifier",
+        ),
+    )
+
+    __mapper_args__ = {"version_id_col": version_id}
+
+
+class ApplicationEnvironment(db.Model, Timestamp):
+    __versioned__: dict = {}
+    __tablename__ = "application_environments"
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True,
+    )
+    application_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("project_applications.id"),
+        nullable=False,
+        index=True,
+    )
+    environment_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("project_environments.id"),
+        nullable=False,
+        index=True,
+    )
+    process_counts = db.Column(
+        postgresql.JSONB(), server_default=text("json_object('{}')")
+    )
+    process_pod_classes = db.Column(
+        postgresql.JSONB(), server_default=text("json_object('{}')")
+    )
+    deployment_timeout = db.Column(
+        db.Integer,
+        nullable=True,
+    )
+    health_check_path = db.Column(
+        db.String(64),
+        nullable=True,
+    )
+    health_check_host = db.Column(
+        db.String(256),
+        nullable=True,
+    )
+    auto_deploy_branch = db.Column(
+        db.Text(),
+        nullable=True,
+    )
+    github_environment_name = db.Column(
+        db.Text(),
+        nullable=True,
+    )
+    k8s_identifier = db.Column(
+        db.String(64),
+        nullable=True,
+    )
+    version_id = db.Column(db.Integer, nullable=False)
+
+    configurations = db.relationship(
+        "Configuration",
+        backref="application_environment",
+        foreign_keys="Configuration.application_environment_id",
+    )
+    images = db.relationship(
+        "Image",
+        backref="application_environment",
+        foreign_keys="Image.application_environment_id",
+        lazy="dynamic",
+    )
+    releases = db.relationship(
+        "Release",
+        backref="application_environment",
+        foreign_keys="Release.application_environment_id",
+        lazy="dynamic",
+    )
+    deployments = db.relationship(
+        "Deployment",
+        backref="application_environment",
+        foreign_keys="Deployment.application_environment_id",
+        lazy="dynamic",
+    )
+
+    __table_args__ = (UniqueConstraint(application_id, environment_id),)
+
+    __mapper_args__ = {"version_id_col": version_id}
+
+    @property
+    def env_slug_for_paths(self):
+        """Return the environment slug for path-building if this is a real
+        (non-legacy) enrollment, or None for legacy (k8s_identifier is NULL)."""
+        if self.k8s_identifier is not None:
+            return self.environment.slug
+        return None
+
+    @property
+    def latest_image(self):
+        return self.images.order_by(Image.version.desc()).first()
+
+    @property
+    def latest_image_built(self):
+        return self.images.filter_by(built=True).order_by(Image.version.desc()).first()
+
+    @property
+    def latest_release(self):
+        return self.releases.order_by(Release.version.desc()).first()
+
+    @property
+    def latest_release_built(self):
+        return (
+            self.releases.filter_by(built=True).order_by(Release.version.desc()).first()
+        )
+
+    @property
+    def latest_image_error(self):
+        return self.images.filter_by(error=True).order_by(Image.version.desc()).first()
+
+    @property
+    def latest_image_building(self):
+        return (
+            self.images.filter_by(built=False, error=False)
+            .order_by(Image.version.desc())
+            .first()
+        )
+
+    @property
+    def latest_release_error(self):
+        return (
+            self.releases.filter_by(error=True).order_by(Release.version.desc()).first()
+        )
+
+    @property
+    def latest_release_building(self):
+        return (
+            self.releases.filter_by(built=False, error=False)
+            .order_by(Release.version.desc())
+            .first()
+        )
+
+    @property
+    def latest_deployment(self):
+        return self.deployments.order_by(Deployment.created.desc()).first()
+
+    @property
+    def latest_deployment_completed(self):
+        return (
+            self.deployments.filter_by(complete=True)
+            .order_by(Deployment.created.desc())
+            .first()
+        )
+
+    @property
+    def latest_deployment_running(self):
+        return (
+            self.deployments.filter_by(complete=False, error=False)
+            .order_by(Deployment.created.desc())
+            .first()
+        )
+
+    @property
+    def ready_for_deployment(self):
+        return self.application.ready_for_deployment_in_env(self)
+
+    @property
+    def effective_auto_deploy_branch(self):
+        return self.auto_deploy_branch or self.application.auto_deploy_branch
+
+    @property
+    def effective_github_environment_name(self):
+        if self.github_environment_name is not None:
+            return self.github_environment_name
+        return f"{self.application.project.slug}/{self.environment.slug}/{self.application.slug}"
+
+    @property
+    def effective_deployment_timeout(self):
+        if self.deployment_timeout is not None:
+            return self.deployment_timeout
+        return self.application.deployment_timeout
+
+    @property
+    def effective_health_check_path(self):
+        return self.health_check_path or self.application.health_check_path
+
+    @property
+    def effective_health_check_host(self):
+        return self.health_check_host or self.application.health_check_host
 
 
 class Application(db.Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_applications"
+
+    def __init__(self, *args, **kwargs):
+        if "slug" in kwargs and "k8s_identifier" not in kwargs:
+            kwargs["k8s_identifier"] = generate_k8s_identifier(kwargs["slug"])
+        super().__init__(*args, **kwargs)
 
     id = db.Column(
         postgresql.UUID(as_uuid=True),
@@ -135,6 +391,7 @@ class Application(db.Model, Timestamp):
     )
     name = db.Column(db.Text(), nullable=False)
     slug = db.Column(CIText(), nullable=False)
+    k8s_identifier = db.Column(db.String(64), nullable=False)
     platform = db.Column(platform_version, nullable=False, default="wind")
     process_counts = db.Column(
         postgresql.JSONB(), server_default=text("json_object('{}')")
@@ -166,6 +423,11 @@ class Application(db.Model, Timestamp):
         backref="application",
         cascade="all, delete-orphan",
         lazy="dynamic",
+    )
+    application_environments = db.relationship(
+        "ApplicationEnvironment",
+        backref="application",
+        cascade="all, delete-orphan",
     )
     version_id = db.Column(db.Integer, nullable=False)
 
@@ -225,87 +487,50 @@ class Application(db.Model, Timestamp):
     )
 
     @property
-    def release_candidate(self):
-        release = Release(
-            application_id=self.id,
-            image=self.latest_image_built.asdict if self.latest_image_built else {},
-            configuration={c.name: c.asdict for c in self.configurations},
-            platform=self.platform,
+    def default_app_env(self):
+        """Return the implicit/default ApplicationEnvironment for this app."""
+        return next(
+            (ae for ae in self.application_environments if ae.k8s_identifier is None),
+            self.application_environments[0] if self.application_environments else None,
         )
-        return release.asdict
+
+    # Proxy properties that delegate to default_app_env so listing-page
+    # templates (organization.html, projects.html, etc.) can use app.latest_*
+    @property
+    def latest_image_built(self):
+        ae = self.default_app_env
+        return ae.latest_image_built if ae else None
+
+    @property
+    def latest_image_error(self):
+        ae = self.default_app_env
+        return ae.latest_image_error if ae else None
+
+    @property
+    def latest_image_building(self):
+        ae = self.default_app_env
+        return ae.latest_image_building if ae else None
 
     @property
     def latest_release(self):
-        return self.releases.filter_by().order_by(Release.version.desc()).first()
-
-    @property
-    def latest_release_built(self):
-        return (
-            self.releases.filter_by(built=True).order_by(Release.version.desc()).first()
-        )
-
-    @property
-    def latest_release_error(self):
-        return (
-            self.releases.filter_by(error=True).order_by(Release.version.desc()).first()
-        )
-
-    @property
-    def latest_release_building(self):
-        return (
-            self.releases.filter_by(built=False, error=False)
-            .order_by(Release.version.desc())
-            .first()
-        )
-
-    @property
-    def current_release(self):
-        if self.latest_release:
-            return self.latest_release.asdict
-        return {}
-
-    @property
-    def latest_deployment(self):
-        return self.deployments.filter_by().order_by(Deployment.created.desc()).first()
+        ae = self.default_app_env
+        return ae.latest_release if ae else None
 
     @property
     def latest_deployment_completed(self):
-        return (
-            self.deployments.filter_by(complete=True)
-            .order_by(Deployment.created.desc())
-            .first()
-        )
-
-    @property
-    def latest_deployment_error(self):
-        return (
-            self.deployments.filter_by(error=True)
-            .order_by(Deployment.created.desc())
-            .first()
-        )
+        ae = self.default_app_env
+        return ae.latest_deployment_completed if ae else None
 
     @property
     def latest_deployment_running(self):
-        return (
-            self.deployments.filter_by(complete=False, error=False)
-            .order_by(Deployment.created.desc())
-            .first()
-        )
+        ae = self.default_app_env
+        return ae.latest_deployment_running if ae else None
 
-    @property
-    def current_deployment(self):
-        if self.latest_deployment:
-            return self.latest_deployment.asdict
-        return {}
-
-    @property
-    def recent_deployments(self):
-        return self.deployments.order_by(Deployment.created.desc()).limit(5)
-
-    @property
-    def ready_for_deployment(self):
-        current = self.current_release
-        candidate = self.release_candidate
+    def ready_for_deployment_in_env(self, app_env):
+        current = {}
+        if app_env.latest_release:
+            current = app_env.latest_release.asdict
+        candidate = self.release_candidate_for_env(app_env)
         configuration_diff = DictDiffer(
             candidate.get("configuration", {}),
             current.get("configuration", {}),
@@ -318,50 +543,51 @@ class Application(db.Model, Timestamp):
         )
         return image_diff, configuration_diff
 
-    def create_release(self):
-        image_diff, configuration_diff = self.ready_for_deployment
-        organization_slug = self.project.organization.slug
-        project_slug = self.project.slug
-        application_slug = self.slug
-        repository_name = (
-            f"cabotage/{organization_slug}/{project_slug}/{application_slug}"
-        )
+    def release_candidate_for_env(self, app_env):
         release = Release(
             application_id=self.id,
-            image=self.latest_image.asdict,
-            repository_name=repository_name,
-            configuration={c.name: c.asdict for c in self.configurations},
+            application_environment_id=app_env.id,
+            image=(
+                app_env.latest_image_built.asdict if app_env.latest_image_built else {}
+            ),
+            configuration={c.name: c.asdict for c in app_env.configurations},
+            platform=self.platform,
+        )
+        return release.asdict
+
+    def registry_repository_name(self, app_env):
+        """Build the registry repo name using k8s identifiers."""
+        org_k8s = self.project.organization.k8s_identifier
+        project_k8s = self.project.k8s_identifier
+        app_k8s = self.k8s_identifier
+        env_k8s = app_env.k8s_identifier
+        return Image._build_repository_name(org_k8s, project_k8s, app_k8s, env_k8s)
+
+    def create_release(self, app_env):
+        image_diff, configuration_diff = self.ready_for_deployment_in_env(app_env)
+        release = Release(
+            application_id=self.id,
+            application_environment_id=app_env.id,
+            image=(
+                app_env.latest_image_built.asdict if app_env.latest_image_built else {}
+            ),
+            _repository_name=self.registry_repository_name(app_env),
+            configuration={c.name: c.asdict for c in app_env.configurations},
             image_changes=image_diff.asdict,
             configuration_changes=configuration_diff.asdict,
             platform=self.platform,
-            health_check_path=self.health_check_path,
-            health_check_host=self.health_check_host,
+            health_check_path=app_env.effective_health_check_path,
+            health_check_host=app_env.effective_health_check_host,
         )
         return release
 
-    @property
-    def latest_image(self):
-        return self.images.filter_by().order_by(Image.version.desc()).first()
-
-    @property
-    def latest_image_built(self):
-        return self.images.filter_by(built=True).order_by(Image.version.desc()).first()
-
-    @property
-    def latest_image_error(self):
-        return self.images.filter_by(error=True).order_by(Image.version.desc()).first()
-
-    @property
-    def latest_image_building(self):
-        return (
-            self.images.filter_by(built=False, error=False)
-            .order_by(Image.version.desc())
-            .first()
-        )
-
-    UniqueConstraint(project_id, slug)
-
     __table_args__ = (
+        UniqueConstraint(project_id, slug),
+        UniqueConstraint(
+            project_id,
+            k8s_identifier,
+            name="uq_project_applications_project_k8s_identifier",
+        ),
         db.Index(
             "github_deployments_unique",
             github_app_installation_id,
@@ -389,6 +615,12 @@ class Deployment(db.Model, Timestamp):
         postgresql.UUID(as_uuid=True),
         db.ForeignKey("project_applications.id"),
         nullable=False,
+    )
+    application_environment_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("application_environments.id"),
+        nullable=False,
+        index=True,
     )
     release = db.Column(postgresql.JSONB(), nullable=False)
     version_id = db.Column(db.Integer, nullable=False)
@@ -433,6 +665,12 @@ class Release(db.Model, Timestamp):
         db.ForeignKey("project_applications.id"),
         nullable=False,
     )
+    application_environment_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("application_environments.id"),
+        nullable=False,
+        index=True,
+    )
     platform = db.Column(platform_version, nullable=False, default="wind")
     image = db.Column(postgresql.JSONB(), nullable=False)
     configuration = db.Column(postgresql.JSONB(), nullable=False)
@@ -440,7 +678,8 @@ class Release(db.Model, Timestamp):
     configuration_changes = db.Column(postgresql.JSONB(), nullable=False)
     version_id = db.Column(db.Integer, nullable=False)
 
-    repository_name = db.Column(
+    _repository_name = db.Column(
+        "repository_name",
         db.String(256),
         nullable=False,
     )
@@ -597,6 +836,10 @@ class Release(db.Model, Timestamp):
             if k.startswith("postdeploy")
         }
 
+    @property
+    def repository_name(self):
+        return self._repository_name
+
     def docker_pull_credentials(self, secret):
         return generate_docker_credentials(
             secret=secret,
@@ -643,8 +886,12 @@ class Release(db.Model, Timestamp):
 
 @listens_for(Release, "before_insert")
 def release_before_insert_listener(mapper, connection, target):
+    filters = {
+        "application_id": target.application_id,
+        "application_environment_id": target.application_environment_id,
+    }
     most_recent_release = (
-        mapper.class_.query.filter_by(application_id=target.application_id)
+        mapper.class_.query.filter_by(**filters)
         .order_by(mapper.class_.version.desc())
         .first()
     )
@@ -669,6 +916,12 @@ class Configuration(db.Model, Timestamp):
         db.ForeignKey("project_applications.id"),
         nullable=False,
     )
+    application_environment_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("application_environments.id"),
+        nullable=False,
+        index=True,
+    )
 
     name = db.Column(
         CIText(),
@@ -691,7 +944,14 @@ class Configuration(db.Model, Timestamp):
     secret = db.Column(db.Boolean, nullable=False, default=False)
     buildtime = db.Column(db.Boolean, nullable=False, default=False)
 
-    UniqueConstraint(application_id, name)
+    __table_args__ = (
+        db.UniqueConstraint(
+            application_id,
+            application_environment_id,
+            name,
+            name="uq_project_app_configurations_app_env_name",
+        ),
+    )
 
     __mapper_args__ = {"version_id_col": version_id}
 
@@ -774,8 +1034,15 @@ class Image(db.Model, Timestamp):
         db.ForeignKey("project_applications.id"),
         nullable=False,
     )
+    application_environment_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("application_environments.id"),
+        nullable=False,
+        index=True,
+    )
 
-    repository_name = db.Column(
+    _repository_name = db.Column(
+        "repository_name",
         db.String(256),
         nullable=False,
     )
@@ -841,6 +1108,10 @@ class Image(db.Model, Timestamp):
     )
 
     @property
+    def repository_name(self):
+        return self._repository_name
+
+    @property
     def asdict(self):
         return {
             "id": str(self.id),
@@ -857,10 +1128,16 @@ class Image(db.Model, Timestamp):
             resource_actions=["pull"],
         )
 
+    @staticmethod
+    def _build_repository_name(org_k8s, project_k8s, app_k8s, env_k8s=None):
+        if env_k8s is not None:
+            return f"cabotage/{org_k8s}/{env_k8s}/{project_k8s}/{app_k8s}"
+        return f"cabotage/{org_k8s}/{project_k8s}/{app_k8s}"
+
     def buildargs(self, reader):
         return {
             c.name: c.read_value(reader)
-            for c in self.application.configurations
+            for c in self.application_environment.configurations
             if c.buildtime
         }
 
@@ -873,8 +1150,12 @@ class Image(db.Model, Timestamp):
 
 @listens_for(Image, "before_insert")
 def image_before_insert_listener(mapper, connection, target):
+    filters = {
+        "application_id": target.application_id,
+        "application_environment_id": target.application_environment_id,
+    }
     most_recent_image = (
-        mapper.class_.query.filter_by(application_id=target.application_id)
+        mapper.class_.query.filter_by(**filters)
         .order_by(mapper.class_.version.desc())
         .first()
     )

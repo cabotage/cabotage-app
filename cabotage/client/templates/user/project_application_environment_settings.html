@@ -1,0 +1,98 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import render_field_compact, icon, resource_path %}
+
+{% set org_slug = application.project.organization.slug %}
+{% set project_slug = application.project.slug %}
+{% set app_slug = application.slug %}
+{% set env_slug = environment.slug %}
+
+{% block title %}
+  Environment Settings - {{ env_slug }} / {{ app_slug }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug) },
+    {'label': project_slug, 'url': url_for('user.project', org_slug=org_slug, project_slug=project_slug)},
+    {'label': env_slug, 'url': url_for('user.project_environment', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug)},
+    {'label': app_slug, 'url': url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug)},
+    {'label': 'Settings'}
+  ]) }}
+{% endblock resource_path %}
+
+{% block content %}
+  <div class="settings-page">
+
+    <div class="flex items-center justify-between mb-6">
+      <div class="flex items-center gap-3">
+        <a href="#"
+           onclick="history.back();return false"
+           class="btn btn-ghost btn-sm btn-circle">{{ icon('arrow-left', 'w-4 h-4') }}</a>
+        <div>
+          <h1 class="text-xl font-semibold text-base-content">Environment Settings</h1>
+          <p class="text-sm text-base-content/40">
+            Override settings for <span class="font-medium">{{ env_slug }}</span>.
+            Blank fields inherit from the application defaults.
+          </p>
+        </div>
+      </div>
+      <button type="submit"
+              form="env-settings-form"
+              class="btn btn-primary btn-sm gap-1.5">
+        {{ icon('check', 'w-3.5 h-3.5') }}
+        Save Settings
+      </button>
+    </div>
+
+    <form action="{{ url_for('user.project_application_environment_settings', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug, app_slug=app_slug) }}"
+          method="post"
+          id="env-settings-form"
+          name="env_settings_form">
+      {{ form.hidden_tag() }}
+      <div style="display:none">{{ form.app_env_id() }}</div>
+
+      <div class="settings-row">
+        <div class="settings-row-label">
+          <div class="settings-row-icon bg-warning/10 text-warning">{{ icon('git-branch', 'w-4 h-4') }}</div>
+          <div>
+            <h2 class="text-sm font-semibold text-base-content">Branch & Deployment Source</h2>
+            <p class="text-xs text-base-content/40 mt-0.5">Override the branch and GitHub environment for this environment</p>
+          </div>
+        </div>
+        <div class="settings-row-fields">
+          <div class="settings-field-grid-2">
+            {{ render_field_compact(form.auto_deploy_branch, placeholder=application.auto_deploy_branch or 'inherited from app', label='Branch') }}
+            {{ render_field_compact(form.github_environment_name, placeholder=app_env.effective_github_environment_name, label='GitHub Environment') }}
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-row">
+        <div class="settings-row-label">
+          <div class="settings-row-icon bg-success/10 text-success">{{ icon('activity', 'w-4 h-4') }}</div>
+          <div>
+            <h2 class="text-sm font-semibold text-base-content">Health & Deployment</h2>
+            <p class="text-xs text-base-content/40 mt-0.5">Health probes and rollout behavior for this environment</p>
+          </div>
+        </div>
+        <div class="settings-row-fields">
+          <div class="settings-field-grid-3">
+            {{ render_field_compact(form.health_check_path, placeholder=application.health_check_path, label='Health Path') }}
+            {{ render_field_compact(form.health_check_host, placeholder=application.health_check_host or 'none', label='Health Host') }}
+            {{ render_field_compact(form.deployment_timeout, placeholder=application.deployment_timeout, label='Deploy Timeout') }}
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-row-actions">
+        <a href="#"
+           onclick="history.back();return false"
+           class="btn btn-ghost btn-sm">Cancel</a>
+        <button type="submit" class="btn btn-primary btn-sm gap-1.5">
+          {{ icon('check', 'w-3.5 h-3.5') }}
+          Save Settings
+        </button>
+      </div>
+    </form>
+  </div>
+{% endblock content %}

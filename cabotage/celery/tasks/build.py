@@ -353,7 +353,6 @@ def build_release_buildkit(release):
                 "context=context",
             ]
             context_configmap_object = release.release_build_context_configmap
-            buildctl_command = ["buildctl-daemonless.sh"]
             with TemporaryDirectory() as tempdir:
                 os.makedirs(os.path.join(tempdir, "context"), exist_ok=True)
                 for file, contents in context_configmap_object.data.items():
@@ -365,13 +364,40 @@ def build_release_buildkit(release):
                 with open(os.path.join(tempdir, "buildkitd.toml"), "w") as f:
                     f.write(buildkitd_toml)
 
+                buildkit_root = f"/tmp/buildkit-{release.application.id}-{release.application_environment_id or 'base'}"  # nosec B108 — deterministic path scoped by app+env ID
+                os.makedirs(buildkit_root, exist_ok=True)
+                sock_addr = f"unix://{buildkit_root}/buildkitd.sock"
+                wrapper = os.path.join(tempdir, "buildctl-daemonless.sh")
+                with open(wrapper, "w") as f:
+                    f.write(
+                        "#!/bin/sh\n"
+                        "set -eu\n"
+                        f"buildkitd --addr={sock_addr} $BUILDKITD_FLAGS &\n"
+                        "pid=$!\n"
+                        'trap "kill $pid || true; wait $pid || true" EXIT\n'
+                        "try=0; max=10\n"
+                        f"until buildctl --addr={sock_addr} debug workers >/dev/null 2>&1; do\n"
+                        "  if [ $try -gt $max ]; then\n"
+                        f'    echo >&2 "could not connect to {sock_addr} after $max trials"\n'
+                        "    exit 1\n"
+                        "  fi\n"
+                        "  sleep 0.1\n"
+                        "  try=$((try + 1))\n"
+                        "done\n"
+                        f'buildctl --addr={sock_addr} "$@"\n'
+                    )
+                os.chmod(
+                    wrapper, 0o755
+                )  # nosec B103 — wrapper script must be executable
+                buildctl_command = [wrapper]
+
                 try:
                     output = run_and_stream(
                         buildctl_command + buildctl_args,
                         env={
                             **os.environ,
                             "BUILDKITD_FLAGS": (
-                                f"--root=/tmp/buildkit-{release.application.id}"
+                                f"--root={buildkit_root}"
                                 f" --config={tempdir}/buildkitd.toml"
                                 " --oci-worker=true --oci-worker-binary=/usr/bin/buildkit-runc"
                             ),
@@ -476,6 +502,7 @@ def _fetch_commit_sha_for_ref(
     except GithubException as e:
         if e.status == 404:
             return None
+        raise
     except UnknownObjectException:
         return None
 
@@ -492,10 +519,18 @@ def _fetch_commit_sha_for_ref(
 def fetch_image_build_cache_volume_claim(core_api_instance, image):
     volume_claim_name = (
         "build-image-cache-"
-        f"{image.application.project.organization.slug}-"
-        f"{image.application.project.slug}-"
-        f"{image.application.slug}"
+        f"{image.application.project.organization.k8s_identifier}-"
+        f"{image.application.project.k8s_identifier}-"
+        f"{image.application.k8s_identifier}"
     )
+    app_env = image.application_environment
+    if app_env.k8s_identifier is not None:
+        volume_claim_name += f"-{app_env.environment.k8s_identifier}"
+    if len(volume_claim_name) > 63:
+        import hashlib
+
+        suffix = hashlib.sha256(volume_claim_name.encode()).hexdigest()[:8]
+        volume_claim_name = volume_claim_name[:54] + "-" + suffix
     try:
         volume_claim = core_api_instance.read_namespaced_persistent_volume_claim(
             volume_claim_name, "default"
@@ -923,7 +958,6 @@ def build_image_buildkit(image=None):
             if not job_complete:
                 raise BuildError("Image build failed!")
         else:
-            buildctl_command = ["buildctl-daemonless.sh"]
             if image.application.github_repository_is_private:
                 buildctl_args.append("--secret")
                 buildctl_args.append(
@@ -945,13 +979,40 @@ def build_image_buildkit(image=None):
                 with open(os.path.join(tempdir, "buildkitd.toml"), "w") as f:
                     f.write(buildkitd_toml)
 
+                buildkit_root = f"/tmp/buildkit-{image.application.id}-{image.application_environment_id or 'base'}"  # nosec B108 — deterministic path scoped by app+env ID
+                os.makedirs(buildkit_root, exist_ok=True)
+                sock_addr = f"unix://{buildkit_root}/buildkitd.sock"
+                wrapper = os.path.join(tempdir, "buildctl-daemonless.sh")
+                with open(wrapper, "w") as f:
+                    f.write(
+                        "#!/bin/sh\n"
+                        "set -eu\n"
+                        f"buildkitd --addr={sock_addr} $BUILDKITD_FLAGS &\n"
+                        "pid=$!\n"
+                        'trap "kill $pid || true; wait $pid || true" EXIT\n'
+                        "try=0; max=10\n"
+                        f"until buildctl --addr={sock_addr} debug workers >/dev/null 2>&1; do\n"
+                        "  if [ $try -gt $max ]; then\n"
+                        f'    echo >&2 "could not connect to {sock_addr} after $max trials"\n'
+                        "    exit 1\n"
+                        "  fi\n"
+                        "  sleep 0.1\n"
+                        "  try=$((try + 1))\n"
+                        "done\n"
+                        f'buildctl --addr={sock_addr} "$@"\n'
+                    )
+                os.chmod(
+                    wrapper, 0o755
+                )  # nosec B103 — wrapper script must be executable
+                buildctl_command = [wrapper]
+
                 try:
                     output = run_and_stream(
                         buildctl_command + buildctl_args,
                         env={
                             **os.environ,
                             "BUILDKITD_FLAGS": (
-                                f"--root=/tmp/buildkit-{image.application.id}"
+                                f"--root={buildkit_root}"
                                 f" --config={tempdir}/buildkitd.toml"
                                 " --oci-worker=true --oci-worker-binary=/usr/bin/buildkit-runc"
                             ),
@@ -1037,7 +1098,8 @@ def run_image_build(image_id=None, buildkit=False):
         try:
             build_metadata = build_image_buildkit(image)
             if (
-                "installation_id" in image.image_metadata
+                image.image_metadata
+                and "installation_id" in image.image_metadata
                 and "statuses_url" in image.image_metadata
             ):
                 access_token = github_app.fetch_installation_access_token(
@@ -1055,7 +1117,8 @@ def run_image_build(image_id=None, buildkit=False):
             image.error_detail = str(exc)
             db.session.commit()
             if (
-                "installation_id" in image.image_metadata
+                image.image_metadata
+                and "installation_id" in image.image_metadata
                 and "statuses_url" in image.image_metadata
             ):
                 access_token = github_app.fetch_installation_access_token(
@@ -1103,7 +1166,8 @@ def run_image_build(image_id=None, buildkit=False):
         and image.image_metadata
         and image.image_metadata.get("auto_deploy", False)
     ):
-        release = image.application.create_release()
+        app_env = image.application_environment
+        release = image.application.create_release(app_env=app_env)
         release.release_metadata = image.image_metadata
         db.session.add(release)
         db.session.flush()
@@ -1222,6 +1286,7 @@ def run_release_build(release_id=None):
         ):
             deployment = Deployment(
                 application_id=release.application.id,
+                application_environment_id=release.application_environment_id,
                 release=release.asdict,
                 deploy_metadata=release.release_metadata,
             )

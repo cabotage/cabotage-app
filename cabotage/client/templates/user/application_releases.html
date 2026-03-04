@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, status_badge, app_tab_nav %}
+{% from "_macros.html" import icon, resource_path, status_badge, app_tab_nav, app_resource_path %}
 
 {% set app = application %}
 {% set org_slug = app.project.organization.slug %}
@@ -11,25 +11,23 @@
 {% endblock title %}
 
 {% block resource_path %}
-  {{ resource_path([
-    {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug) },
-  {'label': project_slug, 'url': url_for('user.project', org_slug=org_slug, project_slug=project_slug)},
-  {'label': app_slug, 'url': url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug)},
-  {'label': 'Releases'}
-  ]) }}
+  {{ app_resource_path(application, 'Releases', env=environment|default(none)) }}
 {% endblock resource_path %}
 
 {% block tab_bar %}
-  {{ app_tab_nav(application, 'releases') }}
+  {{ app_tab_nav(application, 'releases', env=environment) }}
 {% endblock tab_bar %}
 
 {% block content %}
 
   <div class="flex items-center justify-between mb-4">
     <h2 class="text-base font-medium text-base-content">Releases</h2>
-    <form action="{{ url_for('user.application_release_create', application_id=app.id) }}"
+    <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
           method="post"
           class="inline">
+      {% if environment %}
+        <input type="hidden" name="environment_id" value="{{ environment.id }}" />
+      {% endif %}
       <button class="btn btn-primary btn-sm gap-1.5" type="submit">
         {{ icon('scissors', 'w-3.5 h-3.5') }} Create Release
       </button>
@@ -59,7 +57,7 @@
         {% set cfg_count = release.configuration|length if release.configuration else 0 %}
         {% set proc_count = release.processes|length if release.built and release.image_object else 0 %}
 
-        <a href="{{ url_for('user.release_detail', release_id=release.id) }}"
+        <a href="{{ url_for('user.release_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id=release.id) }}"
            class="dpl-row {{ 'dpl-row-error' if release.error }}">
 
           {% if release.built %}
@@ -122,7 +120,7 @@
                 <span class="dpl-meta-chip">
                   {{ icon('image', 'w-3 h-3') }}
                   <span class="dpl-meta-chip-link"
-                        data-href="{{ url_for('user.image_detail', image_id=rel_img.id) }}">#{{ rel_img.version }}</span>
+                        data-href="{{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id=rel_img.id) }}">#{{ rel_img.version }}</span>
                 </span>
               {% endif %}
               {% if cfg_count > 0 %}
@@ -169,7 +167,7 @@
           <div class="text-base-content/15 mb-4">{{ icon('layers', 'w-12 h-12') }}</div>
           <h3 class="text-base font-medium text-base-content/60 mb-1">No releases yet</h3>
           <p class="text-sm text-base-content/40 max-w-sm">Releases are created when you cut a release from pending changes.</p>
-          <form action="{{ url_for('user.application_release_create', application_id=app.id) }}"
+          <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
                 method="post"
                 class="inline mt-4">
             <button class="btn btn-primary btn-sm gap-2" type="submit">{{ icon('scissors', 'w-4 h-4') }} Create Release</button>

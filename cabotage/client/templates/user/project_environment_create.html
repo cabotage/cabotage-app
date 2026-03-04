@@ -1,0 +1,37 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, resource_path, page_header, render_field %}
+
+{% block title %}
+  Create Environment - {{ project.name }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': project.organization.slug, 'url': url_for('user.organization', org_slug=project.organization.slug) },
+    {'label': project.slug, 'url': url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug)},
+    {'label': 'environments', 'url': url_for('user.project_environments', org_slug=project.organization.slug, project_slug=project.slug)},
+    {'label': 'create'}
+  ]) }}
+{% endblock resource_path %}
+
+{% block content %}
+  {{ page_header('Create Environment', 'In ' ~ project.organization.slug ~ '/' ~ project.slug) }}
+
+  <div class="card bg-base-200/50 border border-base-300/50 max-w-2xl">
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('user.project_environment_create', org_slug=project.organization.slug, project_slug=project.slug) }}">
+        {{ form.hidden_tag() }}
+        {{ render_field(form.name) }}
+        {{ render_field(form.slug) }}
+        {{ render_field(form.is_default) }}
+        <div class="mt-4">
+          <button type="submit" class="btn btn-primary gap-2">
+            {{ icon('plus', 'w-4 h-4') }}
+            Create Environment
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock content %}
+

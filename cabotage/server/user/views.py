@@ -55,8 +55,10 @@ from cabotage.server.models.auth_associations import OrganizationMember
 from cabotage.server.models.projects import (
     DEFAULT_POD_CLASS,
     Application,
+    ApplicationEnvironment,
     Configuration,
     Deployment,
+    Environment,
     Hook,
     Image,
     Project,
@@ -64,16 +66,23 @@ from cabotage.server.models.projects import (
     pod_classes,
 )
 from cabotage.server.models.projects import activity_plugin
+from cabotage.server.models.utils import safe_k8s_name, slugify
 
 from cabotage.server.user.forms import (
+    AddApplicationToEnvironmentForm,
     ApplicationScaleForm,
     CreateApplicationForm,
     CreateConfigurationForm,
+    CreateEnvironmentForm,
     CreateOrganizationForm,
     CreateProjectForm,
     DeleteConfigurationForm,
+    DeleteEnvironmentForm,
+    EditApplicationEnvironmentSettingsForm,
     EditApplicationSettingsForm,
     EditConfigurationForm,
+    EditEnvironmentForm,
+    EditProjectSettingsForm,
     ReleaseDeployForm,
     AddOrganizationUserForm,
 )
@@ -104,6 +113,130 @@ user_blueprint = Blueprint(
     "user",
     __name__,
 )
+
+
+def _config_k8s_namespace(organization, app_env):
+    if app_env.k8s_identifier is not None:
+        return safe_k8s_name(
+            organization.k8s_identifier, app_env.environment.k8s_identifier
+        )
+    return organization.k8s_identifier
+
+
+def _config_k8s_resource_prefix(project, application):
+    return safe_k8s_name(project.k8s_identifier, application.k8s_identifier)
+
+
+def _associate_app_with_environment(application, environment, organization, project):
+    """Create ApplicationEnvironment + sentinel config + activity log."""
+    app_env = ApplicationEnvironment(
+        application_id=application.id,
+        environment_id=environment.id,
+        k8s_identifier=environment.k8s_identifier,
+    )
+    db.session.add(app_env)
+    db.session.flush()
+    sentinel = Configuration(
+        application_id=application.id,
+        application_environment_id=app_env.id,
+        name="CABOTAGE_SENTINEL",
+        value="at least one environment variable must exist",
+        secret=False,
+        buildtime=False,
+    )
+    try:
+        ns = _config_k8s_namespace(organization, app_env)
+        prefix = _config_k8s_resource_prefix(project, application)
+        key_slugs = config_writer.write_configuration(ns, prefix, sentinel)
+    except Exception:
+        raise
+    sentinel.key_slug = key_slugs["config_key_slug"]
+    sentinel.build_key_slug = key_slugs["build_key_slug"]
+    db.session.add(sentinel)
+    db.session.flush()
+    activity = Activity(
+        verb="create",
+        object=app_env,
+        data={
+            "user_id": str(current_user.id),
+            "timestamp": datetime.datetime.utcnow().isoformat(),
+        },
+    )
+    db.session.add(activity)
+    return app_env
+
+
+def _lookup_app_context(org_slug, project_slug, app_slug, require_admin=False):
+    """Resolve org/project/app from slugs and check permissions."""
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    application = Application.query.filter_by(
+        project_id=project.id, slug=app_slug
+    ).first_or_404()
+    perm = (
+        AdministerApplicationPermission if require_admin else ViewApplicationPermission
+    )
+    if not perm(application.id).can():
+        abort(403)
+    return organization, project, application
+
+
+def _default_environment(project):
+    """Return the default environment for breadcrumbs, or None."""
+    if not project.environments_enabled:
+        return None
+    return next(
+        (e for e in project.project_environments if e.is_default),
+        project.project_environments[0] if project.project_environments else None,
+    )
+
+
+def _resolve_app_env(
+    application, environment_id=None, env_slug=None, project=None, required=True
+):
+    """Resolve an ApplicationEnvironment for the given application.
+
+    For env-enabled projects with an env_slug or environment_id, resolves the
+    specific enrollment. Otherwise returns the default (implicit) app_env.
+
+    If required=True (default), aborts with 404 when no app_env is found.
+    If required=False, returns None instead.
+    """
+    if environment_id:
+        return ApplicationEnvironment.query.filter_by(
+            application_id=application.id,
+            environment_id=environment_id,
+        ).first_or_404()
+    if env_slug and project:
+        environment = Environment.query.filter_by(
+            project_id=project.id,
+            slug=env_slug,
+        ).first_or_404()
+        return ApplicationEnvironment.query.filter_by(
+            application_id=application.id,
+            environment_id=environment.id,
+        ).first_or_404()
+    app_env = application.default_app_env
+    if app_env is None and required:
+        abort(404)
+    return app_env
+
+
+def _create_bare_app_env(application, environment):
+    """Create an ApplicationEnvironment without sentinel config or enrollment.
+
+    Used for non-env projects where k8s_identifier=NULL signals legacy paths.
+    """
+    app_env = ApplicationEnvironment(
+        application_id=application.id,
+        environment_id=environment.id,
+        k8s_identifier=None,
+    )
+    db.session.add(app_env)
+    db.session.flush()
+    return app_env
 
 
 @user_blueprint.route("/organizations")
@@ -191,7 +324,10 @@ def organization_project_create(org_slug):
 
     if form.validate_on_submit():
         project = Project(
-            organization_id=organization.id, name=form.name.data, slug=form.slug.data
+            organization_id=organization.id,
+            name=form.name.data,
+            slug=form.slug.data,
+            environments_enabled=form.environments_enabled.data,
         )
         db.session.add(project)
         db.session.flush()
@@ -245,11 +381,136 @@ def project(org_slug, project_slug):
         app.deployments.filter_by(complete=True).count()
         for app in project.project_applications
     )
+    unassigned_apps = []
+    if project.environments_enabled:
+        assigned_app_ids = set()
+        for env in project.project_environments:
+            for ae in env.application_environments:
+                assigned_app_ids.add(ae.application_id)
+        unassigned_apps = [
+            a for a in project.project_applications if a.id not in assigned_app_ids
+        ]
     return render_template(
         "user/project.html",
         project=project,
         app_create_form=app_create_form,
         proj_deploy_count=proj_deploy_count,
+        unassigned_apps=unassigned_apps,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/settings", methods=["GET", "POST"]
+)
+@login_required
+def project_settings(org_slug, project_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+
+    form = EditProjectSettingsForm(obj=project)
+    form.project_id.data = str(project.id)
+
+    envs = project.project_environments
+    non_default_envs = [e for e in envs if not e.is_default]
+    can_disable_environments = (
+        project.environments_enabled and len(non_default_envs) == 0
+    )
+
+    if form.validate_on_submit():
+        if (
+            project.environments_enabled
+            and not form.environments_enabled.data
+            and not can_disable_environments
+        ):
+            flash(
+                "Cannot disable environments while non-default environments exist.",
+                "error",
+            )
+            return redirect(
+                url_for(
+                    "user.project_settings",
+                    org_slug=organization.slug,
+                    project_slug=project.slug,
+                )
+            )
+        disabling_environments = (
+            project.environments_enabled
+            and not form.environments_enabled.data
+            and can_disable_environments
+        )
+        if disabling_environments:
+            # Delete non-default environments and their enrollments/records.
+            # The default env + its app_envs remain (they're implicit).
+            for env in non_default_envs:
+                for app_env in env.application_environments:
+                    for config in list(app_env.configurations):
+                        db.session.delete(config)
+                    for image in app_env.images.all():
+                        db.session.delete(image)
+                    for release in app_env.releases.all():
+                        db.session.delete(release)
+                    for deployment in app_env.deployments.all():
+                        db.session.delete(deployment)
+                db.session.flush()
+                db.session.delete(env)
+            db.session.flush()
+            # Reset k8s_identifier on default app_envs to NULL (legacy mode)
+            default_env = next((e for e in envs if e.is_default), None)
+            if default_env:
+                for app_env in default_env.application_environments:
+                    app_env.k8s_identifier = None
+                db.session.flush()
+        enabling_environments = (
+            not project.environments_enabled and form.environments_enabled.data
+        )
+        if enabling_environments:
+            # Rename the default environment if an initial name was provided.
+            initial_name = form.initial_env_name.data
+            if initial_name:
+                default_env = next(
+                    (e for e in project.project_environments if e.is_default),
+                    None,
+                )
+                if default_env:
+                    default_env.name = initial_name
+                    default_env.slug = slugify(initial_name)
+            # Existing app_envs keep k8s_identifier=NULL so all their paths
+            # (registry, namespace, consul/vault, build cache) remain unchanged.
+        form.populate_obj(project)
+        env_order = request.form.getlist("env_order")
+        if env_order:
+            env_map = {str(e.id): e for e in project.project_environments}
+            for i, eid in enumerate(env_order):
+                if eid in env_map:
+                    env_map[eid].sort_order = i
+        db.session.flush()
+        activity = Activity(
+            verb="edit",
+            object=project,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            },
+        )
+        db.session.add(activity)
+        db.session.commit()
+        return redirect(
+            url_for(
+                "user.project_settings",
+                org_slug=organization.slug,
+                project_slug=project.slug,
+            )
+        )
+
+    return render_template(
+        "user/project_settings.html",
+        project=project,
+        form=form,
+        can_disable_environments=can_disable_environments,
     )
 
 
@@ -272,6 +533,7 @@ def project_create():
             organization_id=form.organization_id.data,
             name=form.name.data,
             slug=form.slug.data,
+            environments_enabled=form.environments_enabled.data,
         )
         db.session.add(project)
         db.session.flush()
@@ -295,9 +557,239 @@ def project_create():
     return render_template("user/project_create.html", project_create_form=form)
 
 
-@user_blueprint.route("/projects/<org_slug>/<project_slug>/applications/<app_slug>")
+@user_blueprint.route("/projects/<org_slug>/<project_slug>/environments")
 @login_required
-def project_application(org_slug, project_slug, app_slug):
+def project_environments(org_slug, project_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not ViewProjectPermission(project.id).can():
+        abort(403)
+    return render_template(
+        "user/project_environments.html",
+        project=project,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/create",
+    methods=["GET", "POST"],
+)
+@login_required
+def project_environment_create(org_slug, project_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    form = CreateEnvironmentForm()
+    form.project_id.data = str(project.id)
+    if form.validate_on_submit():
+        if form.is_default.data:
+            for env in project.project_environments:
+                env.is_default = False
+        environment = Environment(
+            project_id=project.id,
+            name=form.name.data,
+            slug=form.slug.data,
+            is_default=form.is_default.data,
+        )
+        db.session.add(environment)
+        db.session.flush()
+        activity = Activity(
+            verb="create",
+            object=environment,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            },
+        )
+        db.session.add(activity)
+        db.session.commit()
+        return redirect(
+            url_for(
+                "user.project_environment",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                env_slug=environment.slug,
+            )
+        )
+    return render_template(
+        "user/project_environment_create.html",
+        project=project,
+        form=form,
+    )
+
+
+@user_blueprint.route("/projects/<org_slug>/<project_slug>/environments/<env_slug>")
+@login_required
+def project_environment(org_slug, project_slug, env_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not ViewProjectPermission(project.id).can():
+        abort(403)
+    environment = Environment.query.filter_by(
+        project_id=project.id, slug=env_slug
+    ).first_or_404()
+    add_app_form = AddApplicationToEnvironmentForm()
+    add_app_form.environment_id.data = str(environment.id)
+    # Only show applications not already in this environment
+    existing_app_ids = {
+        ae.application_id for ae in environment.application_environments
+    }
+    available_apps = [
+        a for a in project.project_applications if a.id not in existing_app_ids
+    ]
+    add_app_form.application_id.choices = [(str(a.id), a.name) for a in available_apps]
+    return render_template(
+        "user/project_environment.html",
+        project=project,
+        environment=environment,
+        add_app_form=add_app_form,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/settings",
+    methods=["GET", "POST"],
+)
+@login_required
+def project_environment_settings(org_slug, project_slug, env_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    environment = Environment.query.filter_by(
+        project_id=project.id, slug=env_slug
+    ).first_or_404()
+    form = EditEnvironmentForm(obj=environment)
+    form.environment_id.data = str(environment.id)
+    if form.validate_on_submit():
+        if form.is_default.data and not environment.is_default:
+            for env in project.project_environments:
+                env.is_default = False
+        environment.name = form.name.data
+        environment.is_default = form.is_default.data
+        db.session.add(environment)
+        db.session.commit()
+        return redirect(
+            url_for(
+                "user.project_environment",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                env_slug=environment.slug,
+            )
+        )
+    delete_form = DeleteEnvironmentForm()
+    delete_form.environment_id.data = str(environment.id)
+    delete_form.name.data = environment.name
+    return render_template(
+        "user/project_environment_edit.html",
+        project=project,
+        environment=environment,
+        form=form,
+        delete_form=delete_form,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/delete",
+    methods=["POST"],
+)
+@login_required
+def project_environment_delete(org_slug, project_slug, env_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    environment = Environment.query.filter_by(
+        project_id=project.id, slug=env_slug
+    ).first_or_404()
+    form = DeleteEnvironmentForm()
+    if environment.is_default:
+        flash("The default environment cannot be deleted.", "error")
+        return redirect(
+            url_for(
+                "user.project_environment_settings",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                env_slug=env_slug,
+            )
+        )
+    if form.validate_on_submit():
+        for app_env in environment.application_environments:
+            for config in list(app_env.configurations):
+                db.session.delete(config)
+            for image in app_env.images.all():
+                db.session.delete(image)
+            for release in app_env.releases.all():
+                db.session.delete(release)
+            for deployment in app_env.deployments.all():
+                db.session.delete(deployment)
+        db.session.flush()
+        db.session.delete(environment)
+        db.session.commit()
+        flash(f"Environment {environment.name} deleted.", "success")
+        return redirect(
+            url_for(
+                "user.project_environments",
+                org_slug=org_slug,
+                project_slug=project_slug,
+            )
+        )
+    abort(400)
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/add_application",
+    methods=["POST"],
+)
+@login_required
+def project_environment_add_application(org_slug, project_slug, env_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    environment = Environment.query.filter_by(
+        project_id=project.id, slug=env_slug
+    ).first_or_404()
+    form = AddApplicationToEnvironmentForm()
+    form.application_id.choices = [
+        (str(a.id), a.name) for a in project.project_applications
+    ]
+    if form.validate_on_submit():
+        application = Application.query.filter_by(
+            id=form.application_id.data
+        ).first_or_404()
+        _associate_app_with_environment(application, environment, organization, project)
+        db.session.commit()
+        return redirect(
+            url_for(
+                "user.project_environment",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                env_slug=env_slug,
+            )
+        )
+    abort(400)
+
+
+@user_blueprint.route("/projects/<org_slug>/<project_slug>/applications/<app_slug>")
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>"
+)
+@login_required
+def project_application(org_slug, project_slug, app_slug, env_slug=None):
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     project = Project.query.filter_by(
         organization_id=organization.id, slug=project_slug
@@ -307,6 +799,46 @@ def project_application(org_slug, project_slug, app_slug):
     ).first_or_404()
     if not ViewApplicationPermission(application.id).can():
         abort(403)
+
+    environment = None
+    environments = []
+    if project.environments_enabled:
+        # Only show environments this application is enrolled in
+        all_app_envs = ApplicationEnvironment.query.filter_by(
+            application_id=application.id,
+        ).all()
+        enrolled_env_ids = {ae.environment_id for ae in all_app_envs}
+        environments = sorted(
+            [e for e in project.project_environments if e.id in enrolled_env_ids],
+            key=lambda e: e.sort_order,
+        )
+        if env_slug:
+            environment = Environment.query.filter_by(
+                project_id=project.id, slug=env_slug
+            ).first_or_404()
+        else:
+            environment = next(
+                (e for e in environments if e.is_default),
+                environments[0] if environments else None,
+            )
+            if environment:
+                return redirect(
+                    url_for(
+                        "user.project_application",
+                        org_slug=org_slug,
+                        project_slug=project_slug,
+                        app_slug=app_slug,
+                        env_slug=environment.slug,
+                    )
+                )
+
+    # Resolve app_env (may be None for unenrolled apps in env-enabled projects)
+    app_env = _resolve_app_env(
+        application,
+        env_slug=env_slug if env_slug else None,
+        project=project,
+        required=False,
+    )
 
     pod_class_info = (
         '<table class="table"><tr><th>Class</th><th>CPU</th><th>Mem</th></tr>'
@@ -323,16 +855,26 @@ def project_application(org_slug, project_slug, app_slug):
 
     config_create_form = CreateConfigurationForm()
     config_create_form.application_id.data = str(application.id)
+    if environment:
+        config_create_form.environment_id.data = str(environment.id)
 
-    releases = application.releases.order_by(Release.version.desc()).limit(10).all()
-    images = application.images.order_by(Image.version.desc()).limit(10).all()
-    deployments = (
-        application.deployments.order_by(Deployment.created.desc()).limit(10).all()
-    )
+    if app_env is not None:
+        releases = app_env.releases.order_by(Release.version.desc()).limit(10).all()
+        images = app_env.images.order_by(Image.version.desc()).limit(10).all()
+        deployments = (
+            app_env.deployments.order_by(Deployment.created.desc()).limit(10).all()
+        )
+    else:
+        releases = []
+        images = []
+        deployments = []
 
     return render_template(
         "user/project_application.html",
         application=application,
+        app_env=app_env,
+        environment=environment,
+        environments=environments,
         deploy_form=ReleaseDeployForm(),
         scale_form=scale_form,
         view_releases=version_class(Release)
@@ -370,6 +912,7 @@ def project_application_logs(org_slug, project_slug, app_slug):
         org_slug=org_slug,
         project_slug=project_slug,
         app_slug=app_slug,
+        environment=_default_environment(project),
     )
 
 
@@ -485,13 +1028,15 @@ def project_application_shell(org_slug, project_slug, app_slug):
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
 
+    app_env = _resolve_app_env(application)
+
     # =============================================================================== #
     #  this should be removed when we start a shell pod instead of attaching          #
     # =============================================================================== #
     try:
         [
             k
-            for k, v in application.process_counts.items()
+            for k, v in app_env.process_counts.items()
             if (k.startswith("web") or k.startswith("worker")) and v > 0
         ][0]
     except IndexError:
@@ -503,6 +1048,7 @@ def project_application_shell(org_slug, project_slug, app_slug):
         org_slug=org_slug,
         project_slug=project_slug,
         app_slug=app_slug,
+        environment=_default_environment(project),
     )
 
 
@@ -524,7 +1070,8 @@ def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
 
-    process_counts = dict(application.process_counts)
+    app_env = _resolve_app_env(application)
+    process_counts = dict(app_env.process_counts)
     db.session.remove()
 
     api_client = kubernetes_ext.kubernetes_client
@@ -623,26 +1170,45 @@ def project_application_create(org_slug, project_slug):
         )
         db.session.add(application)
         db.session.flush()
-        configuration = Configuration(
-            application_id=application.id,
-            name="CABOTAGE_SENTINEL",
-            value="at least one environment variable must exist",
-            secret=False,
-            buildtime=False,
-        )
-        try:
-            key_slugs = config_writer.write_configuration(
-                application.project.organization.slug,
-                application.project.slug,
-                application.slug,
-                configuration,
+
+        if project.environments_enabled:
+            # Env-enabled: app is a shell until added to environments
+            # via the environment page's "Add Application" form.
+            pass
+        else:
+            # Non-env project: lazily create default environment if needed,
+            # then create bare app_env + sentinel config.
+            default_env = next(
+                (e for e in project.project_environments if e.is_default),
+                None,
             )
-        except Exception:
-            raise  # No, we should def not do this
-        configuration.key_slug = key_slugs["config_key_slug"]
-        configuration.build_key_slug = key_slugs["build_key_slug"]
-        db.session.add(configuration)
-        db.session.flush()
+            if default_env is None:
+                default_env = Environment(
+                    project_id=project.id,
+                    name="default",
+                    is_default=True,
+                )
+                db.session.add(default_env)
+                db.session.flush()
+            app_env = _create_bare_app_env(application, default_env)
+            configuration = Configuration(
+                application_id=application.id,
+                application_environment_id=app_env.id,
+                name="CABOTAGE_SENTINEL",
+                value="at least one environment variable must exist",
+                secret=False,
+                buildtime=False,
+            )
+            try:
+                ns = _config_k8s_namespace(organization, app_env)
+                prefix = _config_k8s_resource_prefix(project, application)
+                key_slugs = config_writer.write_configuration(ns, prefix, configuration)
+            except Exception:
+                raise  # No, we should def not do this
+            configuration.key_slug = key_slugs["config_key_slug"]
+            configuration.build_key_slug = key_slugs["build_key_slug"]
+            db.session.add(configuration)
+            db.session.flush()
         activity = Activity(
             verb="create",
             object=application,
@@ -700,7 +1266,9 @@ def project_application_configuration(org_slug, project_slug, app_slug, config_i
         abort(403)
 
     return render_template(
-        "user/project_application_configuration.html", configuration=configuration
+        "user/project_application_configuration.html",
+        configuration=configuration,
+        environment=_default_environment(project),
     )
 
 
@@ -720,24 +1288,26 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
 
+    environment_id = request.form.get("environment_id")
+    app_env = _resolve_app_env(application, environment_id=environment_id)
+
     form = CreateConfigurationForm()
     form.application_id.data = str(application.id)
+    form.environment_id.data = environment_id or ""
 
     if form.validate_on_submit():
         configuration = Configuration(
             application_id=form.application_id.data,
+            application_environment_id=app_env.id,
             name=form.name.data,
             value=form.value.data,
             secret=form.secure.data,
             buildtime=form.buildtime.data,
         )
         try:
-            key_slugs = config_writer.write_configuration(
-                org_slug,
-                project_slug,
-                app_slug,
-                configuration,
-            )
+            ns = _config_k8s_namespace(organization, app_env)
+            prefix = _config_k8s_resource_prefix(project, application)
+            key_slugs = config_writer.write_configuration(ns, prefix, configuration)
         except Exception:
             raise  # No, we should def not do this
         configuration.key_slug = key_slugs["config_key_slug"]
@@ -762,6 +1332,9 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
                 org_slug=organization.slug,
                 project_slug=project.slug,
                 app_slug=application.slug,
+                env_slug=(
+                    app_env.environment.slug if project.environments_enabled else None
+                ),
                 _anchor="config",
             )
         )
@@ -801,12 +1374,10 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
     if form.validate_on_submit():
         form.populate_obj(configuration)
         try:
-            key_slugs = config_writer.write_configuration(
-                org_slug,
-                project_slug,
-                app_slug,
-                configuration,
-            )
+            app_env = configuration.application_environment
+            ns = _config_k8s_namespace(organization, app_env)
+            prefix = _config_k8s_resource_prefix(project, application)
+            key_slugs = config_writer.write_configuration(ns, prefix, configuration)
         except Exception:
             raise  # No, we should def not do this
         configuration.key_slug = key_slugs["config_key_slug"]
@@ -824,12 +1395,18 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
         )
         db.session.add(activity)
         db.session.commit()
+        _redirect_env_slug = (
+            configuration.application_environment.environment.slug
+            if project.environments_enabled
+            else None
+        )
         return redirect(
             url_for(
                 "user.project_application",
                 org_slug=organization.slug,
                 project_slug=project.slug,
                 app_slug=application.slug,
+                env_slug=_redirect_env_slug,
                 _anchor="config",
             )
         )
@@ -848,13 +1425,14 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
 
 
 @user_blueprint.route(
-    "/application/<application_id>/settings/edit", methods=["GET", "POST"]
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/settings",
+    methods=["GET", "POST"],
 )
 @login_required
-def project_application_settings(application_id):
-    application = Application.query.filter_by(id=application_id).first_or_404()
-    if not AdministerApplicationPermission(application.id).can():
-        abort(403)
+def project_application_settings(org_slug, project_slug, app_slug):
+    org, project, application = _lookup_app_context(
+        org_slug, project_slug, app_slug, require_admin=True
+    )
 
     form = EditApplicationSettingsForm(obj=application)
     form.application_id.choices = [
@@ -881,12 +1459,14 @@ def project_application_settings(application_id):
         )
         db.session.add(activity)
         db.session.commit()
+        environment = _default_environment(project)
         return redirect(
             url_for(
                 "user.project_application",
                 org_slug=application.project.organization.slug,
                 project_slug=application.project.slug,
                 app_slug=application.slug,
+                env_slug=environment.slug if environment else None,
             )
         )
 
@@ -895,6 +1475,84 @@ def project_application_settings(application_id):
         application=application,
         form=form,
         app_url=current_app.config.get("GITHUB_APP_URL", "https://github.com"),
+        environment=_default_environment(project),
+    )
+
+
+@user_blueprint.route(
+    "/application/<application_id>/settings/edit", methods=["GET", "POST"]
+)
+@login_required
+def project_application_settings_legacy(application_id):
+    application = Application.query.filter_by(id=application_id).first_or_404()
+    if not AdministerApplicationPermission(application.id).can():
+        abort(403)
+    return redirect(
+        url_for(
+            "user.project_application_settings",
+            org_slug=application.project.organization.slug,
+            project_slug=application.project.slug,
+            app_slug=application.slug,
+        ),
+        code=301,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/settings",
+    methods=["GET", "POST"],
+)
+@login_required
+def project_application_environment_settings(
+    org_slug, project_slug, env_slug, app_slug
+):
+    org, project, application = _lookup_app_context(
+        org_slug, project_slug, app_slug, require_admin=True
+    )
+
+    environment = Environment.query.filter_by(
+        project_id=project.id, slug=env_slug
+    ).first_or_404()
+    app_env = ApplicationEnvironment.query.filter_by(
+        application_id=application.id, environment_id=environment.id
+    ).first_or_404()
+
+    form = EditApplicationEnvironmentSettingsForm(obj=app_env)
+    form.app_env_id.data = str(app_env.id)
+
+    if form.validate_on_submit():
+        app_env.auto_deploy_branch = form.auto_deploy_branch.data or None
+        app_env.github_environment_name = form.github_environment_name.data or None
+        app_env.deployment_timeout = form.deployment_timeout.data
+        app_env.health_check_path = form.health_check_path.data or None
+        app_env.health_check_host = form.health_check_host.data or None
+        db.session.flush()
+        activity = Activity(
+            verb="edit",
+            object=app_env,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            },
+        )
+        db.session.add(activity)
+        db.session.commit()
+        return redirect(
+            url_for(
+                "user.project_application",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                app_slug=app_slug,
+                env_slug=env_slug,
+            )
+        )
+
+    return render_template(
+        "user/project_application_environment_settings.html",
+        application=application,
+        app_env=app_env,
+        environment=environment,
+        form=form,
     )
 
 
@@ -919,7 +1577,7 @@ def project_application_configuration_delete(
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
 
-    if len(application.configurations) <= 1:
+    if len(configuration.application_environment.configurations) <= 1:
         abort(400)
 
     if request.method == "GET":
@@ -930,6 +1588,12 @@ def project_application_configuration_delete(
     form.name.data = str(configuration.name)
     form.value.data = str(configuration.value)
     form.secure.data = str(configuration.secret)
+
+    env_slug = (
+        configuration.application_environment.environment.slug
+        if project.environments_enabled
+        else None
+    )
 
     if form.validate_on_submit():
         db.session.delete(configuration)
@@ -960,6 +1624,7 @@ def project_application_configuration_delete(
                 org_slug=organization.slug,
                 project_slug=project.slug,
                 app_slug=application.slug,
+                env_slug=env_slug,
                 _anchor="config",
             )
         )
@@ -973,28 +1638,52 @@ def project_application_configuration_delete(
     )
 
 
-@user_blueprint.route("/applications/<application_id>/images")
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/images"
+)
 @login_required
-def application_images(application_id):
-    application = Application.query.filter_by(id=application_id).first_or_404()
-    if not ViewApplicationPermission(application.id).can():
-        abort(403)
+def application_images(org_slug, project_slug, app_slug):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     page = request.args.get("page", 1, type=int)
-    images = application.images.order_by(Image.version.desc()).paginate(page, 20, False)
+    env_slug = request.args.get("env_slug")
+    app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
+    images = app_env.images.order_by(Image.version.desc()).paginate(page, 20, False)
     return render_template(
         "user/application_images.html",
         page=page,
         application=application,
         images=images.items,
+        environment=app_env.environment if project.environments_enabled else None,
+        app_env=app_env,
     )
 
 
-@user_blueprint.route("/image/<image_id>")
+@user_blueprint.route("/applications/<application_id>/images")
 @login_required
-def image_detail(image_id):
-    image = Image.query.filter_by(id=image_id).first_or_404()
-    if not ViewApplicationPermission(image.application.id).can():
+def application_images_legacy(application_id):
+    application = Application.query.filter_by(id=application_id).first_or_404()
+    if not ViewApplicationPermission(application.id).can():
         abort(403)
+    return redirect(
+        url_for(
+            "user.application_images",
+            org_slug=application.project.organization.slug,
+            project_slug=application.project.slug,
+            app_slug=application.slug,
+        ),
+        code=301,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/images/<image_id>"
+)
+@login_required
+def image_detail(org_slug, project_slug, app_slug, image_id):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    image = Image.query.filter_by(
+        id=image_id, application_id=application.id
+    ).first_or_404()
     if image.error:
         image.image_build_log = f"{image.image_build_log}\n**Error!**"
     secret = current_app.config["REGISTRY_AUTH_SECRET"]
@@ -1003,6 +1692,24 @@ def image_detail(image_id):
         "user/image_detail.html",
         image=image,
         docker_pull_credentials=docker_pull_credentials,
+    )
+
+
+@user_blueprint.route("/image/<image_id>")
+@login_required
+def image_detail_legacy(image_id):
+    image = Image.query.filter_by(id=image_id).first_or_404()
+    if not ViewApplicationPermission(image.application.id).can():
+        abort(403)
+    return redirect(
+        url_for(
+            "user.image_detail",
+            org_slug=image.application.project.organization.slug,
+            project_slug=image.application.project.slug,
+            app_slug=image.application.slug,
+            image_id=image_id,
+        ),
+        code=301,
     )
 
 
@@ -1018,14 +1725,17 @@ def _stream_redis_build_logs(ws, build_type, build_job_id, job_label):
     ws.send("=================END OF LOGS=================")
 
 
-@sock.route("/image/<image_id>/livelogs", bp=user_blueprint)
-@login_required
-def image_build_livelogs(ws, image_id):
-    image = Image.query.filter_by(id=image_id).first_or_404()
+def _stream_image_build_logs(ws, image):
+    """Stream image build logs over a websocket, handling error state."""
     if image.error:
-        abort(404)
-    if not ViewApplicationPermission(image.application.id).can():
-        abort(403)
+        ws.send(f"Job Pod imagebuild-{image.build_job_id}")
+        if image.image_build_log:
+            for line in image.image_build_log.split("\n"):
+                ws.send(f"  {line}")
+        if image.error_detail:
+            ws.send(f"  Error: {image.error_detail}")
+        ws.send("=================END OF LOGS=================")
+        return
     build_job_id = image.build_job_id
     image_build_log = image.image_build_log
 
@@ -1046,14 +1756,38 @@ def image_build_livelogs(ws, image_id):
     )
 
 
-@user_blueprint.route("/applications/<application_id>/releases")
+@sock.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/images/<image_id>/livelogs",
+    bp=user_blueprint,
+)
 @login_required
-def application_releases(application_id):
-    application = Application.query.filter_by(id=application_id).first_or_404()
-    if not ViewApplicationPermission(application.id).can():
+def image_build_livelogs(ws, org_slug, project_slug, app_slug, image_id):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    image = Image.query.filter_by(
+        id=image_id, application_id=application.id
+    ).first_or_404()
+    _stream_image_build_logs(ws, image)
+
+
+@sock.route("/image/<image_id>/livelogs", bp=user_blueprint)
+@login_required
+def image_build_livelogs_legacy(ws, image_id):
+    image = Image.query.filter_by(id=image_id).first_or_404()
+    if not ViewApplicationPermission(image.application.id).can():
         abort(403)
+    _stream_image_build_logs(ws, image)
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/releases"
+)
+@login_required
+def application_releases(org_slug, project_slug, app_slug):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     page = request.args.get("page", 1, type=int)
-    releases = application.releases.order_by(Release.version.desc()).paginate(
+    env_slug = request.args.get("env_slug")
+    app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
+    releases = app_env.releases.order_by(Release.version.desc()).paginate(
         page, 20, False
     )
     return render_template(
@@ -1061,15 +1795,37 @@ def application_releases(application_id):
         page=page,
         application=application,
         releases=releases.items,
+        environment=app_env.environment if project.environments_enabled else None,
+        app_env=app_env,
     )
 
 
-@user_blueprint.route("/release/<release_id>")
+@user_blueprint.route("/applications/<application_id>/releases")
 @login_required
-def release_detail(release_id):
-    release = Release.query.filter_by(id=release_id).first_or_404()
-    if not ViewApplicationPermission(release.application.id).can():
+def application_releases_legacy(application_id):
+    application = Application.query.filter_by(id=application_id).first_or_404()
+    if not ViewApplicationPermission(application.id).can():
         abort(403)
+    return redirect(
+        url_for(
+            "user.application_releases",
+            org_slug=application.project.organization.slug,
+            project_slug=application.project.slug,
+            app_slug=application.slug,
+        ),
+        code=301,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/releases/<release_id>"
+)
+@login_required
+def release_detail(org_slug, project_slug, app_slug, release_id):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    release = Release.query.filter_by(
+        id=release_id, application_id=application.id
+    ).first_or_404()
     secret = current_app.config["REGISTRY_AUTH_SECRET"]
     docker_pull_credentials = release.docker_pull_credentials(secret)
     image_pull_secrets = release.image_pull_secrets(
@@ -1088,14 +1844,35 @@ def release_detail(release_id):
     )
 
 
-@sock.route("/release/<release_id>/livelogs", bp=user_blueprint)
+@user_blueprint.route("/release/<release_id>")
 @login_required
-def release_build_livelogs(ws, release_id):
+def release_detail_legacy(release_id):
     release = Release.query.filter_by(id=release_id).first_or_404()
-    if release.error:
-        abort(404)
     if not ViewApplicationPermission(release.application.id).can():
         abort(403)
+    return redirect(
+        url_for(
+            "user.release_detail",
+            org_slug=release.application.project.organization.slug,
+            project_slug=release.application.project.slug,
+            app_slug=release.application.slug,
+            release_id=release_id,
+        ),
+        code=301,
+    )
+
+
+def _stream_release_build_logs(ws, release):
+    """Stream release build logs over a websocket, handling error state."""
+    if release.error:
+        ws.send(f"Job Pod releasebuild-{release.build_job_id}")
+        if release.release_build_log:
+            for line in release.release_build_log.split("\n"):
+                ws.send(f"  {line}")
+        if release.error_detail:
+            ws.send(f"  Error: {release.error_detail}")
+        ws.send("=================END OF LOGS=================")
+        return
     build_job_id = release.build_job_id
     release_build_log = release.release_build_log
 
@@ -1116,12 +1893,31 @@ def release_build_livelogs(ws, release_id):
     )
 
 
-@sock.route("/deployment/<deployment_id>/livelogs", bp=user_blueprint)
+@sock.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/releases/<release_id>/livelogs",
+    bp=user_blueprint,
+)
 @login_required
-def deployment_livelogs(ws, deployment_id):
-    deployment = Deployment.query.filter_by(id=deployment_id).first_or_404()
-    if not ViewApplicationPermission(deployment.application.id).can():
+def release_build_livelogs(ws, org_slug, project_slug, app_slug, release_id):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    release = Release.query.filter_by(
+        id=release_id, application_id=application.id
+    ).first_or_404()
+    _stream_release_build_logs(ws, release)
+
+
+@sock.route("/release/<release_id>/livelogs", bp=user_blueprint)
+@login_required
+def release_build_livelogs_legacy(ws, release_id):
+    release = Release.query.filter_by(id=release_id).first_or_404()
+    if not ViewApplicationPermission(release.application.id).can():
         abort(403)
+    _stream_release_build_logs(ws, release)
+
+
+def _stream_deployment_logs(ws, deployment):
+    """Stream deploy logs for a deployment over a websocket."""
+    deployment_id = deployment.id
     job_id = deployment.job_id
     deploy_log = deployment.deploy_log
 
@@ -1135,9 +1931,8 @@ def deployment_livelogs(ws, deployment_id):
     db.session.remove()
 
     if current_app.config["KUBERNETES_ENABLED"]:
-        # Wait for the worker to set job_id if it hasn't yet
         if job_id is None:
-            for _ in range(60):  # up to ~30 seconds
+            for _ in range(60):
                 time.sleep(0.5)
                 dep = Deployment.query.filter_by(id=deployment_id).first()
                 if dep is None:
@@ -1146,7 +1941,6 @@ def deployment_livelogs(ws, deployment_id):
                 if dep.job_id is not None:
                     job_id = dep.job_id
                     break
-                # Check if deploy already finished while we were waiting
                 if dep.deploy_log is not None:
                     ws.send(f"Job Pod deployment-{dep.job_id}")
                     for line in dep.deploy_log.split("\n"):
@@ -1165,29 +1959,73 @@ def deployment_livelogs(ws, deployment_id):
             f"deployment-{job_id}",
         )
     else:
-        # deploy runs synchronously, log should already be in DB
         ws.send("=================END OF LOGS=================")
+
+
+@sock.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/deployments/<deployment_id>/livelogs",
+    bp=user_blueprint,
+)
+@login_required
+def deployment_livelogs(ws, org_slug, project_slug, app_slug, deployment_id):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    deployment = Deployment.query.filter_by(
+        id=deployment_id, application_id=application.id
+    ).first_or_404()
+    _stream_deployment_logs(ws, deployment)
+
+
+@sock.route("/deployment/<deployment_id>/livelogs", bp=user_blueprint)
+@login_required
+def deployment_livelogs_legacy(ws, deployment_id):
+    deployment = Deployment.query.filter_by(id=deployment_id).first_or_404()
+    if not ViewApplicationPermission(deployment.application.id).can():
+        abort(403)
+    _stream_deployment_logs(ws, deployment)
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/deployments/<deployment_id>"
+)
+@login_required
+def deployment_detail(org_slug, project_slug, app_slug, deployment_id):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    deployment = Deployment.query.filter_by(
+        id=deployment_id, application_id=application.id
+    ).first_or_404()
+    return render_template("user/deployment_detail.html", deployment=deployment)
 
 
 @user_blueprint.route("/deployment/<deployment_id>")
 @login_required
-def deployment_detail(deployment_id):
+def deployment_detail_legacy(deployment_id):
     deployment = Deployment.query.filter_by(id=deployment_id).first_or_404()
     if not ViewApplicationPermission(deployment.application.id).can():
         abort(403)
-    return render_template("user/deployment_detail.html", deployment=deployment)
+    return redirect(
+        url_for(
+            "user.deployment_detail",
+            org_slug=deployment.application.project.organization.slug,
+            project_slug=deployment.application.project.slug,
+            app_slug=deployment.application.slug,
+            deployment_id=deployment_id,
+        ),
+        code=301,
+    )
 
 
 @user_blueprint.route(
-    "/applications/<application_id>/release/create", methods=["GET", "POST"]
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/releases/create",
+    methods=["POST"],
 )
 @login_required
-def application_release_create(application_id):
-    application = Application.query.filter_by(id=application_id).first_or_404()
-    if not ViewApplicationPermission(application.id).can():
-        abort(403)
+def application_release_create(org_slug, project_slug, app_slug):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
 
-    release = application.create_release()
+    environment_id = request.form.get("environment_id")
+    app_env = _resolve_app_env(application, environment_id=environment_id)
+
+    release = application.create_release(app_env=app_env)
     db.session.add(release)
     db.session.flush()
     activity = Activity(
@@ -1201,7 +2039,34 @@ def application_release_create(application_id):
     db.session.add(activity)
     db.session.commit()
     run_release_build.delay(release_id=release.id)
-    return redirect(url_for("user.release_detail", release_id=release.id))
+    return redirect(
+        url_for(
+            "user.release_detail",
+            org_slug=org_slug,
+            project_slug=project_slug,
+            app_slug=app_slug,
+            release_id=release.id,
+        )
+    )
+
+
+@user_blueprint.route(
+    "/applications/<application_id>/release/create", methods=["GET", "POST"]
+)
+@login_required
+def application_release_create_legacy(application_id):
+    application = Application.query.filter_by(id=application_id).first_or_404()
+    if not ViewApplicationPermission(application.id).can():
+        abort(403)
+    return redirect(
+        url_for(
+            "user.application_release_create",
+            org_slug=application.project.organization.slug,
+            project_slug=application.project.slug,
+            app_slug=application.slug,
+        ),
+        code=307,
+    )
 
 
 @user_blueprint.route("/guide")
@@ -1217,7 +2082,8 @@ def guide():
 def docker_auth():
     secret = current_app.config["REGISTRY_AUTH_SECRET"]
     password = request.authorization.password
-    scope = request.args.get("scope", "registry:catalog:*")
+    scope_params = request.args.getlist("scope")
+    scope = " ".join(scope_params) if scope_params else "registry:catalog:*"
     requested_access = parse_docker_scope(scope)
     max_age = None
     if "push" in [
@@ -1232,25 +2098,23 @@ def docker_auth():
 
 
 @user_blueprint.route(
-    "/applications/<application_id>/images/fromsource", methods=["POST"]
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/images/fromsource",
+    methods=["POST"],
 )
 @login_required
-def application_images_build_fromsource(application_id):
-    application = Application.query.filter_by(id=application_id).first_or_404()
-    if not AdministerApplicationPermission(application.id).can():
-        abort(403)
-    project = application.project
-    organization = application.project.organization
+def application_images_build_fromsource(org_slug, project_slug, app_slug):
+    org, project, application = _lookup_app_context(
+        org_slug, project_slug, app_slug, require_admin=True
+    )
 
-    organization_slug = organization.slug
-    project_slug = project.slug
-    application_slug = application.slug
-    repository_name = f"cabotage/{organization_slug}/{project_slug}/{application_slug}"
+    environment_id = request.form.get("environment_id")
+    app_env = _resolve_app_env(application, environment_id=environment_id)
 
     image = Image(
         application_id=application.id,
-        repository_name=repository_name,
-        build_ref=application.auto_deploy_branch,
+        application_environment_id=app_env.id,
+        _repository_name=application.registry_repository_name(app_env),
+        build_ref=app_env.effective_auto_deploy_branch,
     )
     db.session.add(image)
     db.session.flush()
@@ -1265,23 +2129,48 @@ def application_images_build_fromsource(application_id):
     db.session.add(activity)
     db.session.commit()
     run_image_build.delay(image_id=image.id, buildkit=True)
-    return redirect(url_for("user.image_detail", image_id=image.id))
+    return redirect(
+        url_for(
+            "user.image_detail",
+            org_slug=org_slug,
+            project_slug=project_slug,
+            app_slug=app_slug,
+            image_id=image.id,
+        )
+    )
 
 
-@user_blueprint.route("/applications/<application_id>/clearcache", methods=["POST"])
+@user_blueprint.route(
+    "/applications/<application_id>/images/fromsource", methods=["POST"]
+)
 @login_required
-def application_clear_cache(application_id):
+def application_images_build_fromsource_legacy(application_id):
     application = Application.query.filter_by(id=application_id).first_or_404()
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
+    return redirect(
+        url_for(
+            "user.application_images_build_fromsource",
+            org_slug=application.project.organization.slug,
+            project_slug=application.project.slug,
+            app_slug=application.slug,
+        ),
+        code=307,
+    )
 
-    project = application.project
-    organization = application.project.organization
 
-    organization_slug = organization.slug
-    project_slug = project.slug
-    application_slug = application.slug
-    repository_name = f"cabotage/{organization_slug}/{project_slug}/{application_slug}"
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/clearcache",
+    methods=["POST"],
+)
+@login_required
+def application_clear_cache(org_slug, project_slug, app_slug):
+    org, project, application = _lookup_app_context(
+        org_slug, project_slug, app_slug, require_admin=True
+    )
+
+    app_env = application.default_app_env
+    repository_name = application.registry_repository_name(app_env)
 
     api_client = kubernetes_ext.kubernetes_client
     core_api_instance = kubernetes.client.CoreV1Api(api_client)
@@ -1435,22 +2324,48 @@ def application_clear_cache(application_id):
         else:
             raise
 
+    _env = _default_environment(project)
     return redirect(
         url_for(
             "user.project_application",
             org_slug=application.project.organization.slug,
             project_slug=application.project.slug,
             app_slug=application.slug,
+            env_slug=_env.slug if _env else None,
         )
     )
 
 
-@user_blueprint.route("/application/<application_id>/scale", methods=["POST"])
+@user_blueprint.route("/applications/<application_id>/clearcache", methods=["POST"])
 @login_required
-def application_scale(application_id):
+def application_clear_cache_legacy(application_id):
     application = Application.query.filter_by(id=application_id).first_or_404()
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
+    return redirect(
+        url_for(
+            "user.application_clear_cache",
+            org_slug=application.project.organization.slug,
+            project_slug=application.project.slug,
+            app_slug=application.slug,
+        ),
+        code=307,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/scale",
+    methods=["POST"],
+)
+@login_required
+def application_scale(org_slug, project_slug, app_slug):
+    org, project, application = _lookup_app_context(
+        org_slug, project_slug, app_slug, require_admin=True
+    )
+
+    environment_id = request.form.get("environment_id")
+    app_env = _resolve_app_env(application, environment_id=environment_id)
+
     form = ApplicationScaleForm()
     form.application_id.data = str(application.id)
     if form.validate_on_submit():
@@ -1458,23 +2373,24 @@ def application_scale(application_id):
         for key, value in request.form.items():
             if key.startswith("process-count-"):
                 process_name = key[len("process-count-") :]
-                if application.process_counts.get(process_name, 0) != int(value):
+                if app_env.process_counts.get(process_name, 0) != int(value):
                     scaled[process_name]["process_count"] = {
-                        "old_value": application.process_counts.get(process_name, 0),
+                        "old_value": app_env.process_counts.get(process_name, 0),
                         "new_value": int(value),
                     }
-                    application.process_counts[process_name] = int(value)
-                    flag_modified(application, "process_counts")
+                    app_env.process_counts[process_name] = int(value)
+                    flag_modified(app_env, "process_counts")
             if key.startswith("process-pod-class-"):
-                if application.process_pod_classes.get(process_name, 0) != value:
+                process_name = key[len("process-pod-class-") :]
+                if app_env.process_pod_classes.get(process_name, 0) != value:
                     scaled[process_name]["pod_class"] = {
-                        "old_value": application.process_pod_classes.get(
+                        "old_value": app_env.process_pod_classes.get(
                             process_name, DEFAULT_POD_CLASS
                         ),
                         "new_value": value,
                     }
-                    application.process_pod_classes[process_name] = value
-                    flag_modified(application, "process_pod_classes")
+                    app_env.process_pod_classes[process_name] = value
+                    flag_modified(app_env, "process_pod_classes")
         if scaled:
             activity = Activity(
                 verb="scale",
@@ -1485,19 +2401,24 @@ def application_scale(application_id):
                     "changes": scaled,
                 },
             )
-            db.session.add(application)
+            db.session.add(app_env)
             db.session.add(activity)
             db.session.commit()
 
             if current_app.config["KUBERNETES_ENABLED"]:
-                for process_name, change in scaled.items():
-                    if "process_count" in change.keys():
-                        scale_deployment(
-                            application.project.organization.slug,
-                            application.latest_release,
-                            process_name,
-                            change["process_count"]["new_value"],
-                        )
+                from cabotage.celery.tasks.deploy import k8s_namespace as _k8s_ns
+
+                latest = app_env.latest_release_built
+                if latest:
+                    namespace = _k8s_ns(latest)
+                    for process_name, change in scaled.items():
+                        if "process_count" in change.keys():
+                            scale_deployment(
+                                namespace,
+                                latest,
+                                process_name,
+                                change["process_count"]["new_value"],
+                            )
     else:
         return jsonify(form.errors), 400
     return redirect(
@@ -1506,18 +2427,43 @@ def application_scale(application_id):
             org_slug=application.project.organization.slug,
             project_slug=application.project.slug,
             app_slug=application.slug,
+            env_slug=app_env.environment.slug if project.environments_enabled else None,
         )
     )
 
 
-@user_blueprint.route("/release/<release_id>/deploy", methods=["POST"])
+@user_blueprint.route("/application/<application_id>/scale", methods=["POST"])
 @login_required
-def release_deploy(release_id):
-    release = Release.query.filter_by(id=release_id).first_or_404()
-    if not AdministerApplicationPermission(release.application.id).can():
+def application_scale_legacy(application_id):
+    application = Application.query.filter_by(id=application_id).first_or_404()
+    if not AdministerApplicationPermission(application.id).can():
         abort(403)
+    return redirect(
+        url_for(
+            "user.application_scale",
+            org_slug=application.project.organization.slug,
+            project_slug=application.project.slug,
+            app_slug=application.slug,
+        ),
+        code=307,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/releases/<release_id>/deploy",
+    methods=["POST"],
+)
+@login_required
+def release_deploy(org_slug, project_slug, app_slug, release_id):
+    org, project, application = _lookup_app_context(
+        org_slug, project_slug, app_slug, require_admin=True
+    )
+    release = Release.query.filter_by(
+        id=release_id, application_id=application.id
+    ).first_or_404()
     deployment = Deployment(
         application_id=release.application.id,
+        application_environment_id=release.application_environment_id,
         release=release.asdict,
     )
     db.session.add(deployment)
@@ -1542,7 +2488,33 @@ def release_deploy(release_id):
         fake_deploy_release(deployment)
         deployment.complete = True
         db.session.commit()
-    return redirect(url_for("user.deployment_detail", deployment_id=deployment.id))
+    return redirect(
+        url_for(
+            "user.deployment_detail",
+            org_slug=org_slug,
+            project_slug=project_slug,
+            app_slug=app_slug,
+            deployment_id=deployment.id,
+        )
+    )
+
+
+@user_blueprint.route("/release/<release_id>/deploy", methods=["POST"])
+@login_required
+def release_deploy_legacy(release_id):
+    release = Release.query.filter_by(id=release_id).first_or_404()
+    if not AdministerApplicationPermission(release.application.id).can():
+        abort(403)
+    return redirect(
+        url_for(
+            "user.release_deploy",
+            org_slug=release.application.project.organization.slug,
+            project_slug=release.application.project.slug,
+            app_slug=release.application.slug,
+            release_id=release_id,
+        ),
+        code=307,
+    )
 
 
 @user_blueprint.route("/signing-cert", methods=["GET"])
