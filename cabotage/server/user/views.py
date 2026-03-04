@@ -66,6 +66,14 @@ from cabotage.server.models.projects import (
     pod_classes,
 )
 from cabotage.server.models.projects import activity_plugin
+from cabotage.server.query_helpers import (
+    compute_app_status_sets,
+    compute_ae_status_sets,
+    compute_process_counts,
+    extract_latest_variants,
+    RelatedObjectResolver,
+    split_image_processes,
+)
 from cabotage.server.models.utils import safe_k8s_name, slugify
 
 from cabotage.server.user.forms import (
@@ -339,77 +347,10 @@ def organization(org_slug):
         org_deploy_count = deploy_stats[0]
         last_deploy_ts = deploy_stats[1]
 
-        # Apps with any running or completed deployment
-        deployed_app_ids = {
-            row[0]
-            for row in db.session.query(Deployment.application_id)
-            .join(ApplicationEnvironment)
-            .filter(
-                Deployment.application_id.in_(app_ids),
-                ApplicationEnvironment.k8s_identifier.is_(None),
-                or_(
-                    Deployment.complete == True,  # noqa: E712
-                    and_(
-                        Deployment.complete == False,  # noqa: E712
-                        Deployment.error == False,  # noqa: E712
-                    ),
-                ),
-            )
-            .distinct()
-        }
-
-        # Apps where latest error image version > latest built image version
-        error_sub = (
-            db.session.query(
-                Image.application_id,
-                func.max(Image.version).label("v"),
-            )
-            .join(ApplicationEnvironment)
-            .filter(
-                Image.application_id.in_(app_ids),
-                ApplicationEnvironment.k8s_identifier.is_(None),
-                Image.error == True,  # noqa: E712
-            )
-            .group_by(Image.application_id)
-            .subquery()
-        )
-        built_sub = (
-            db.session.query(
-                Image.application_id,
-                func.max(Image.version).label("v"),
-            )
-            .join(ApplicationEnvironment)
-            .filter(
-                Image.application_id.in_(app_ids),
-                ApplicationEnvironment.k8s_identifier.is_(None),
-                Image.built == True,  # noqa: E712
-            )
-            .group_by(Image.application_id)
-            .subquery()
-        )
-        errored_app_ids = {
-            row[0]
-            for row in db.session.query(error_sub.c.application_id)
-            .outerjoin(
-                built_sub,
-                error_sub.c.application_id == built_sub.c.application_id,
-            )
-            .filter(or_(built_sub.c.v.is_(None), error_sub.c.v > built_sub.c.v))
-        }
-
-        # Apps with any in-progress image build
-        building_app_ids = {
-            row[0]
-            for row in db.session.query(Image.application_id)
-            .join(ApplicationEnvironment)
-            .filter(
-                Image.application_id.in_(app_ids),
-                ApplicationEnvironment.k8s_identifier.is_(None),
-                Image.built == False,  # noqa: E712
-                Image.error == False,  # noqa: E712
-            )
-            .distinct()
-        }
+        status = compute_app_status_sets(app_ids)
+        deployed_app_ids = status["deployed_app_ids"]
+        errored_app_ids = status["errored_app_ids"]
+        building_app_ids = status["building_app_ids"]
 
     return render_template(
         "user/organization.html",
@@ -528,63 +469,9 @@ def projects():
     errored_app_ids = set()
 
     if app_ids:
-        # Apps with any running or completed deployment (via default app_env)
-        deployed_app_ids = {
-            row[0]
-            for row in db.session.query(Deployment.application_id)
-            .join(ApplicationEnvironment)
-            .filter(
-                Deployment.application_id.in_(app_ids),
-                ApplicationEnvironment.k8s_identifier.is_(None),
-                or_(
-                    Deployment.complete == True,  # noqa: E712
-                    and_(
-                        Deployment.complete == False,  # noqa: E712
-                        Deployment.error == False,  # noqa: E712
-                    ),
-                ),
-            )
-            .distinct()
-        }
-
-        # Apps where latest error image version > latest built image version
-        error_sub = (
-            db.session.query(
-                Image.application_id,
-                func.max(Image.version).label("v"),
-            )
-            .join(ApplicationEnvironment)
-            .filter(
-                Image.application_id.in_(app_ids),
-                ApplicationEnvironment.k8s_identifier.is_(None),
-                Image.error == True,  # noqa: E712
-            )
-            .group_by(Image.application_id)
-            .subquery()
-        )
-        built_sub = (
-            db.session.query(
-                Image.application_id,
-                func.max(Image.version).label("v"),
-            )
-            .join(ApplicationEnvironment)
-            .filter(
-                Image.application_id.in_(app_ids),
-                ApplicationEnvironment.k8s_identifier.is_(None),
-                Image.built == True,  # noqa: E712
-            )
-            .group_by(Image.application_id)
-            .subquery()
-        )
-        errored_app_ids = {
-            row[0]
-            for row in db.session.query(error_sub.c.application_id)
-            .outerjoin(
-                built_sub,
-                error_sub.c.application_id == built_sub.c.application_id,
-            )
-            .filter(or_(built_sub.c.v.is_(None), error_sub.c.v > built_sub.c.v))
-        }
+        status = compute_app_status_sets(app_ids)
+        deployed_app_ids = status["deployed_app_ids"]
+        errored_app_ids = status["errored_app_ids"]
 
     return render_template(
         "user/projects.html",
@@ -597,7 +484,6 @@ def projects():
 @user_blueprint.route("/projects/<org_slug>/<project_slug>")
 @login_required
 def project(org_slug, project_slug):
-    from sqlalchemy import case
     from sqlalchemy.orm import selectinload
 
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
@@ -629,94 +515,14 @@ def project(org_slug, project_slug):
             ae_ids.append(ae.id)
             ae_by_env.setdefault(ae.environment_id, []).append(ae)
 
-    proj_deploy_count = 0
-    deploying_ae_ids = set()
-    completed_ae_ids = set()
-    stats_running_ae_ids = set()
-    building_ae_ids = set()
-    errored_ae_ids = set()
-    last_deploy_by_ae = {}
-
-    if ae_ids:
-        # Latest deployment status per ae (for deploying/stats_running)
-        latest_deploy_created_sub = (
-            db.session.query(
-                Deployment.application_environment_id,
-                func.max(Deployment.created).label("max_created"),
-            )
-            .filter(Deployment.application_environment_id.in_(ae_ids))
-            .group_by(Deployment.application_environment_id)
-            .subquery()
-        )
-        latest_deploys = (
-            db.session.query(
-                Deployment.application_environment_id,
-                Deployment.complete,
-                Deployment.error,
-            )
-            .join(
-                latest_deploy_created_sub,
-                and_(
-                    Deployment.application_environment_id
-                    == latest_deploy_created_sub.c.application_environment_id,
-                    Deployment.created == latest_deploy_created_sub.c.max_created,
-                ),
-            )
-            .all()
-        )
-        deploying_ae_ids = {r[0] for r in latest_deploys if not r[1] and not r[2]}
-        stats_running_ae_ids = {r[0] for r in latest_deploys if r[1] or not r[2]}
-
-        # Completed deploy stats: count + last deploy per ae
-        deploy_stats = (
-            db.session.query(
-                Deployment.application_environment_id,
-                func.count(Deployment.id),
-                func.max(Deployment.created),
-            )
-            .filter(
-                Deployment.application_environment_id.in_(ae_ids),
-                Deployment.complete == True,  # noqa: E712
-            )
-            .group_by(Deployment.application_environment_id)
-            .all()
-        )
-        completed_ae_ids = {r[0] for r in deploy_stats}
-        last_deploy_by_ae = {r[0]: r[2] for r in deploy_stats}
-        proj_deploy_count = sum(r[1] for r in deploy_stats)
-
-        # Image stats: one query for error, built, and building checks
-        image_stats = (
-            db.session.query(
-                Image.application_environment_id,
-                func.max(
-                    case((Image.error == True, Image.version), else_=None)  # noqa: E712
-                ).label("max_error_v"),
-                func.max(
-                    case((Image.built == True, Image.version), else_=None)  # noqa: E712
-                ).label("max_built_v"),
-                func.count(
-                    case(
-                        (
-                            and_(
-                                Image.built == False,  # noqa: E712
-                                Image.error == False,  # noqa: E712
-                            ),
-                            1,
-                        )
-                    )
-                ).label("building_count"),
-            )
-            .filter(Image.application_environment_id.in_(ae_ids))
-            .group_by(Image.application_environment_id)
-            .all()
-        )
-        errored_ae_ids = {
-            r[0]
-            for r in image_stats
-            if r[1] is not None and (r[2] is None or r[1] > r[2])
-        }
-        building_ae_ids = {r[0] for r in image_stats if r[3] > 0}
+    ae_status = compute_ae_status_sets(ae_ids)
+    proj_deploy_count = ae_status["deploy_count"]
+    deploying_ae_ids = ae_status["deploying_ae_ids"]
+    completed_ae_ids = ae_status["completed_ae_ids"]
+    stats_running_ae_ids = ae_status["running_ae_ids"]
+    building_ae_ids = ae_status["building_ae_ids"]
+    errored_ae_ids = ae_status["errored_ae_ids"]
+    last_deploy_by_ae = ae_status["last_deploy_by_ae"]
 
     unassigned_apps = []
     assigned_app_ids = set()
@@ -1247,102 +1053,34 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         releases = all_releases[:10]
         deployments = all_deployments[:10]
 
-        latest_image = all_images[0] if all_images else None
-        latest_image_built = next((i for i in all_images if i.built), None)
-        latest_image_error = next((i for i in all_images if i.error), None)
-        latest_image_building = next(
-            (i for i in all_images if not i.built and not i.error), None
+        # Extract latest_* variants from pre-fetched lists
+        variants = extract_latest_variants(all_images, all_releases, all_deployments)
+        latest_image = variants["latest_image"]
+        latest_image_built = variants["latest_image_built"]
+        latest_image_error = variants["latest_image_error"]
+        latest_image_building = variants["latest_image_building"]
+        latest_release = variants["latest_release"]
+        latest_release_built = variants["latest_release_built"]
+        latest_release_building = variants["latest_release_building"]
+        latest_deployment = variants["latest_deployment"]
+        latest_deployment_completed = variants["latest_deployment_completed"]
+        has_releases = variants["has_releases"]
+
+        # Pre-resolve Release/Image objects referenced by JSONB foreign keys
+        resolver = RelatedObjectResolver(images=all_images, releases=all_releases)
+        deployed_release = resolver.get_release(latest_deployment_completed)
+        deployed_image = resolver.get_image_for_release(deployed_release)
+        latest_deploy_release = resolver.get_release(latest_deployment)
+        latest_release_image = resolver.get_image_for_release(latest_release)
+
+        latest_release_processes, latest_release_release_commands, _ = (
+            split_image_processes(latest_release_image)
         )
 
-        latest_release = all_releases[0] if all_releases else None
-        latest_release_built = next(
-            (r for r in all_releases if r.built), None
-        )
-        latest_release_building = next(
-            (r for r in all_releases if not r.built and not r.error), None
-        )
-        has_releases = latest_release is not None
-
-        latest_deployment = all_deployments[0] if all_deployments else None
-        latest_deployment_completed = next(
-            (d for d in all_deployments if d.complete), None
-        )
-
-        # Pre-resolve Release/Image objects that the template needs
-        # (deployment.release_object, release.image_object, release.commit_sha)
-        _release_cache = {}
-        _image_cache = {i.id: i for i in all_images}
-
-        def _get_release(deploy):
-            if not deploy or not deploy.release:
-                return None
-            rid = deploy.release.get("id")
-            if not rid:
-                return None
-            import uuid as _uuid
-
-            rid = _uuid.UUID(rid) if isinstance(rid, str) else rid
-            if rid not in _release_cache:
-                # Check if it's in our already-fetched releases
-                found = next((r for r in all_releases if r.id == rid), None)
-                if found is None:
-                    found = Release.query.get(rid)
-                _release_cache[rid] = found
-            return _release_cache[rid]
-
-        def _get_image_for_release(rel):
-            if not rel or not rel.image:
-                return None
-            iid = rel.image.get("id")
-            if not iid:
-                return None
-            import uuid as _uuid
-
-            iid = _uuid.UUID(iid) if isinstance(iid, str) else iid
-            if iid not in _image_cache:
-                _image_cache[iid] = Image.query.get(iid)
-            return _image_cache[iid]
-
-        deployed_release = _get_release(latest_deployment_completed)
-        deployed_image = _get_image_for_release(deployed_release)
-        latest_deploy_release = _get_release(latest_deployment)
-        latest_release_image = _get_image_for_release(latest_release)
-
-        if latest_release_image and latest_release_image.processes:
-            all_procs = latest_release_image.processes
-            latest_release_processes = {
-                k: v
-                for k, v in all_procs.items()
-                if not (k.startswith("release") or k.startswith("postdeploy"))
-            }
-            latest_release_release_commands = {
-                k: v
-                for k, v in all_procs.items()
-                if k.startswith("release")
-            }
-
-        # Batch-fetch Release/Image objects referenced by deployment and
-        # release lists so the template loops don't trigger per-row queries
-        for d in all_deployments:
-            _get_release(d)
-        for r in all_releases:
-            _get_image_for_release(r)
-
-        # Build string-keyed lookup dicts for Jinja (UUIDs render as strings)
-        release_by_id = {str(k): v for k, v in _release_cache.items() if v}
-        image_by_id = {str(k): v for k, v in _image_cache.items() if v}
-
-        # Pre-compute service process count per release (for the releases tab)
-        release_proc_counts = {}
-        for r in releases:
-            img = _get_image_for_release(r)
-            if r.built and img and img.processes:
-                release_proc_counts[str(r.id)] = sum(
-                    1
-                    for k in img.processes
-                    if not k.startswith("release")
-                    and not k.startswith("postdeploy")
-                )
+        # Batch-warm caches for template loops
+        resolver.warm_caches(all_deployments, all_releases)
+        release_by_id, image_by_id = resolver.build_lookup_dicts()
+        release_proc_counts = compute_process_counts(releases, resolver)
 
         # Compute ready_for_deployment diffs inline (avoids re-querying
         # latest_release and latest_image_built inside the model method)
@@ -2314,6 +2052,13 @@ def application_releases(org_slug, project_slug, app_slug):
     releases = app_env.releases.order_by(Release.version.desc()).paginate(
         page, 20, False
     )
+
+    # Pre-resolve Image objects to avoid N+1 on release.image_object per row
+    resolver = RelatedObjectResolver(releases=releases.items)
+    resolver.warm_caches([], releases.items)
+    _, image_by_id = resolver.build_lookup_dicts()
+    release_proc_counts = compute_process_counts(releases.items, resolver)
+
     return render_template(
         "user/application_releases.html",
         page=page,
@@ -2321,6 +2066,8 @@ def application_releases(org_slug, project_slug, app_slug):
         releases=releases.items,
         environment=app_env.environment if project.environments_enabled else None,
         app_env=app_env,
+        image_by_id=image_by_id,
+        release_proc_counts=release_proc_counts,
     )
 
 
