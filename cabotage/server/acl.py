@@ -3,6 +3,7 @@ from functools import partial
 
 from flask_security import current_user
 from flask_principal import Permission, UserNeed, RoleNeed
+from sqlalchemy.orm import joinedload
 
 OrganizationNeed = namedtuple("OrganizationNeed", ["method", "value"])
 ViewOrganizationNeed = partial(OrganizationNeed, "view")
@@ -28,21 +29,32 @@ def cabotage_on_identity_loaded(sender, identity):
             identity.provides.add(RoleNeed(role.name))
 
     if hasattr(current_user, "id"):
-        for organization in current_user.organizations:
-            identity.provides.add(ViewOrganizationNeed(organization.organization_id))
-            if organization.admin:
+        from cabotage.server.models.auth_associations import OrganizationMember
+
+        memberships = (
+            OrganizationMember.query.filter_by(user_id=current_user.id)
+            .options(
+                joinedload(OrganizationMember.organization)
+                .joinedload("projects")
+                .joinedload("project_applications")
+            )
+            .all()
+        )
+        for membership in memberships:
+            identity.provides.add(ViewOrganizationNeed(membership.organization_id))
+            if membership.admin:
                 identity.provides.add(
-                    AdministerOrganizationNeed(organization.organization_id)
+                    AdministerOrganizationNeed(membership.organization_id)
                 )
 
-            for project in organization.organization.projects:
+            for project in membership.organization.projects:
                 identity.provides.add(ViewProjectNeed(project.id))
-                if organization.admin:
+                if membership.admin:
                     identity.provides.add(AdministerProjectNeed(project.id))
 
                 for application in project.project_applications:
                     identity.provides.add(ViewApplicationNeed(application.id))
-                    if organization.admin:
+                    if membership.admin:
                         identity.provides.add(AdministerApplicationNeed(application.id))
 
 

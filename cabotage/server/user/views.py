@@ -25,7 +25,7 @@ import kubernetes
 
 from dxf import DXF
 from requests.exceptions import HTTPError
-from sqlalchemy import desc
+from sqlalchemy import and_, desc, func, or_
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy_continuum import version_class
 
@@ -242,15 +242,69 @@ def _create_bare_app_env(application, environment):
 @user_blueprint.route("/organizations")
 @login_required
 def organizations():
-    user = current_user
-    organizations = user.organizations
-    return render_template("user/organizations.html", organizations=organizations)
+    from sqlalchemy.orm import joinedload
+
+    memberships = (
+        OrganizationMember.query.filter(OrganizationMember.user_id == current_user.id)
+        .options(
+            joinedload(OrganizationMember.organization)
+            .joinedload(Organization.projects)
+            .joinedload(Project.project_applications),
+            joinedload(OrganizationMember.organization).joinedload(
+                Organization.members
+            ),
+        )
+        .all()
+    )
+
+    # Pre-compute last deploy timestamp per organization
+    org_ids = [m.organization_id for m in memberships]
+    last_deploy_by_org = {}
+    if org_ids:
+        rows = (
+            db.session.query(
+                Project.organization_id,
+                func.max(Deployment.created).label("last_deploy"),
+            )
+            .join(Application, Application.project_id == Project.id)
+            .join(
+                ApplicationEnvironment,
+                ApplicationEnvironment.application_id == Application.id,
+            )
+            .join(
+                Deployment,
+                Deployment.application_environment_id == ApplicationEnvironment.id,
+            )
+            .filter(
+                Project.organization_id.in_(org_ids),
+                ApplicationEnvironment.k8s_identifier.is_(None),
+                Deployment.complete == True,  # noqa: E712
+            )
+            .group_by(Project.organization_id)
+            .all()
+        )
+        last_deploy_by_org = {row[0]: row[1] for row in rows}
+
+    return render_template(
+        "user/organizations.html",
+        organizations=memberships,
+        last_deploy_by_org=last_deploy_by_org,
+    )
 
 
 @user_blueprint.route("/organizations/<org_slug>")
 @login_required
 def organization(org_slug):
-    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    from sqlalchemy.orm import joinedload
+
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .options(
+            joinedload(Organization.projects).joinedload(Project.project_applications),
+            joinedload(Organization.members).joinedload(OrganizationMember.user),
+        )
+        .first_or_404()
+    )
     if not ViewOrganizationPermission(organization.id).can():
         abort(403)
     project_create_form = CreateProjectForm()
@@ -258,18 +312,115 @@ def organization(org_slug):
         (str(organization.id), organization.name)
     ]
     project_create_form.organization_id.data = str(organization.id)
-    org_app_count = sum(len(p.project_applications) for p in organization.projects)
-    org_deploy_count = sum(
-        app.deployments.filter_by(complete=True).count()
-        for p in organization.projects
-        for app in p.project_applications
-    )
+
+    app_ids = [app.id for p in organization.projects for app in p.project_applications]
+    org_app_count = len(app_ids)
+    org_deploy_count = 0
+    last_deploy_ts = None
+    deployed_app_ids = set()
+    errored_app_ids = set()
+    building_app_ids = set()
+
+    if app_ids:
+        # Deploy count + last deploy timestamp in one query
+        deploy_stats = (
+            db.session.query(
+                func.count(Deployment.id),
+                func.max(Deployment.created),
+            )
+            .join(ApplicationEnvironment)
+            .filter(
+                Deployment.application_id.in_(app_ids),
+                ApplicationEnvironment.k8s_identifier.is_(None),
+                Deployment.complete == True,  # noqa: E712
+            )
+            .one()
+        )
+        org_deploy_count = deploy_stats[0]
+        last_deploy_ts = deploy_stats[1]
+
+        # Apps with any running or completed deployment
+        deployed_app_ids = {
+            row[0]
+            for row in db.session.query(Deployment.application_id)
+            .join(ApplicationEnvironment)
+            .filter(
+                Deployment.application_id.in_(app_ids),
+                ApplicationEnvironment.k8s_identifier.is_(None),
+                or_(
+                    Deployment.complete == True,  # noqa: E712
+                    and_(
+                        Deployment.complete == False,  # noqa: E712
+                        Deployment.error == False,  # noqa: E712
+                    ),
+                ),
+            )
+            .distinct()
+        }
+
+        # Apps where latest error image version > latest built image version
+        error_sub = (
+            db.session.query(
+                Image.application_id,
+                func.max(Image.version).label("v"),
+            )
+            .join(ApplicationEnvironment)
+            .filter(
+                Image.application_id.in_(app_ids),
+                ApplicationEnvironment.k8s_identifier.is_(None),
+                Image.error == True,  # noqa: E712
+            )
+            .group_by(Image.application_id)
+            .subquery()
+        )
+        built_sub = (
+            db.session.query(
+                Image.application_id,
+                func.max(Image.version).label("v"),
+            )
+            .join(ApplicationEnvironment)
+            .filter(
+                Image.application_id.in_(app_ids),
+                ApplicationEnvironment.k8s_identifier.is_(None),
+                Image.built == True,  # noqa: E712
+            )
+            .group_by(Image.application_id)
+            .subquery()
+        )
+        errored_app_ids = {
+            row[0]
+            for row in db.session.query(error_sub.c.application_id)
+            .outerjoin(
+                built_sub,
+                error_sub.c.application_id == built_sub.c.application_id,
+            )
+            .filter(or_(built_sub.c.v.is_(None), error_sub.c.v > built_sub.c.v))
+        }
+
+        # Apps with any in-progress image build
+        building_app_ids = {
+            row[0]
+            for row in db.session.query(Image.application_id)
+            .join(ApplicationEnvironment)
+            .filter(
+                Image.application_id.in_(app_ids),
+                ApplicationEnvironment.k8s_identifier.is_(None),
+                Image.built == False,  # noqa: E712
+                Image.error == False,  # noqa: E712
+            )
+            .distinct()
+        }
+
     return render_template(
         "user/organization.html",
         organization=organization,
         project_create_form=project_create_form,
         org_app_count=org_app_count,
         org_deploy_count=org_deploy_count,
+        deployed_app_ids=deployed_app_ids,
+        errored_app_ids=errored_app_ids,
+        building_app_ids=building_app_ids,
+        last_deploy_ts=last_deploy_ts,
     )
 
 
@@ -358,16 +509,108 @@ def organization_project_create(org_slug):
 @user_blueprint.route("/projects")
 @login_required
 def projects():
-    return render_template("user/projects.html", projects=current_user.projects)
+    from sqlalchemy.orm import joinedload
+
+    user_projects = (
+        Project.query.join(Organization)
+        .join(Organization.members)
+        .filter(OrganizationMember.user_id == current_user.id)
+        .options(
+            joinedload(Project.organization),
+            joinedload(Project.project_applications),
+        )
+        .all()
+    )
+
+    # Pre-compute app status to avoid per-app queries in the template
+    app_ids = [app.id for p in user_projects for app in p.project_applications]
+    deployed_app_ids = set()
+    errored_app_ids = set()
+
+    if app_ids:
+        # Apps with any running or completed deployment (via default app_env)
+        deployed_app_ids = {
+            row[0]
+            for row in db.session.query(Deployment.application_id)
+            .join(ApplicationEnvironment)
+            .filter(
+                Deployment.application_id.in_(app_ids),
+                ApplicationEnvironment.k8s_identifier.is_(None),
+                or_(
+                    Deployment.complete == True,  # noqa: E712
+                    and_(
+                        Deployment.complete == False,  # noqa: E712
+                        Deployment.error == False,  # noqa: E712
+                    ),
+                ),
+            )
+            .distinct()
+        }
+
+        # Apps where latest error image version > latest built image version
+        error_sub = (
+            db.session.query(
+                Image.application_id,
+                func.max(Image.version).label("v"),
+            )
+            .join(ApplicationEnvironment)
+            .filter(
+                Image.application_id.in_(app_ids),
+                ApplicationEnvironment.k8s_identifier.is_(None),
+                Image.error == True,  # noqa: E712
+            )
+            .group_by(Image.application_id)
+            .subquery()
+        )
+        built_sub = (
+            db.session.query(
+                Image.application_id,
+                func.max(Image.version).label("v"),
+            )
+            .join(ApplicationEnvironment)
+            .filter(
+                Image.application_id.in_(app_ids),
+                ApplicationEnvironment.k8s_identifier.is_(None),
+                Image.built == True,  # noqa: E712
+            )
+            .group_by(Image.application_id)
+            .subquery()
+        )
+        errored_app_ids = {
+            row[0]
+            for row in db.session.query(error_sub.c.application_id)
+            .outerjoin(
+                built_sub,
+                error_sub.c.application_id == built_sub.c.application_id,
+            )
+            .filter(or_(built_sub.c.v.is_(None), error_sub.c.v > built_sub.c.v))
+        }
+
+    return render_template(
+        "user/projects.html",
+        projects=user_projects,
+        deployed_app_ids=deployed_app_ids,
+        errored_app_ids=errored_app_ids,
+    )
 
 
 @user_blueprint.route("/projects/<org_slug>/<project_slug>")
 @login_required
 def project(org_slug, project_slug):
+    from sqlalchemy import case
+    from sqlalchemy.orm import selectinload
+
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
-    project = Project.query.filter_by(
-        organization_id=organization.id, slug=project_slug
-    ).first_or_404()
+    project = (
+        Project.query.filter_by(organization_id=organization.id, slug=project_slug)
+        .options(
+            selectinload(Project.project_applications)
+            .selectinload(Application.application_environments)
+            .selectinload(ApplicationEnvironment.configurations),
+            selectinload(Project.project_environments),
+        )
+        .first_or_404()
+    )
     if not ViewProjectPermission(project.id).can():
         abort(403)
     app_create_form = CreateApplicationForm()
@@ -377,15 +620,109 @@ def project(org_slug, project_slug):
     app_create_form.project_id.choices = [(str(project.id), project.name)]
     app_create_form.organization_id.data = str(organization.id)
     app_create_form.project_id.data = str(project.id)
-    proj_deploy_count = sum(
-        app.deployments.filter_by(complete=True).count()
-        for app in project.project_applications
-    )
+
+    # Build ae_by_env mapping in Python (avoids duplicate eager-load path)
+    ae_ids = []
+    ae_by_env = {}
+    for app in project.project_applications:
+        for ae in app.application_environments:
+            ae_ids.append(ae.id)
+            ae_by_env.setdefault(ae.environment_id, []).append(ae)
+
+    proj_deploy_count = 0
+    deploying_ae_ids = set()
+    completed_ae_ids = set()
+    stats_running_ae_ids = set()
+    building_ae_ids = set()
+    errored_ae_ids = set()
+    last_deploy_by_ae = {}
+
+    if ae_ids:
+        # Latest deployment status per ae (for deploying/stats_running)
+        latest_deploy_created_sub = (
+            db.session.query(
+                Deployment.application_environment_id,
+                func.max(Deployment.created).label("max_created"),
+            )
+            .filter(Deployment.application_environment_id.in_(ae_ids))
+            .group_by(Deployment.application_environment_id)
+            .subquery()
+        )
+        latest_deploys = (
+            db.session.query(
+                Deployment.application_environment_id,
+                Deployment.complete,
+                Deployment.error,
+            )
+            .join(
+                latest_deploy_created_sub,
+                and_(
+                    Deployment.application_environment_id
+                    == latest_deploy_created_sub.c.application_environment_id,
+                    Deployment.created == latest_deploy_created_sub.c.max_created,
+                ),
+            )
+            .all()
+        )
+        deploying_ae_ids = {r[0] for r in latest_deploys if not r[1] and not r[2]}
+        stats_running_ae_ids = {r[0] for r in latest_deploys if r[1] or not r[2]}
+
+        # Completed deploy stats: count + last deploy per ae
+        deploy_stats = (
+            db.session.query(
+                Deployment.application_environment_id,
+                func.count(Deployment.id),
+                func.max(Deployment.created),
+            )
+            .filter(
+                Deployment.application_environment_id.in_(ae_ids),
+                Deployment.complete == True,  # noqa: E712
+            )
+            .group_by(Deployment.application_environment_id)
+            .all()
+        )
+        completed_ae_ids = {r[0] for r in deploy_stats}
+        last_deploy_by_ae = {r[0]: r[2] for r in deploy_stats}
+        proj_deploy_count = sum(r[1] for r in deploy_stats)
+
+        # Image stats: one query for error, built, and building checks
+        image_stats = (
+            db.session.query(
+                Image.application_environment_id,
+                func.max(
+                    case((Image.error == True, Image.version), else_=None)  # noqa: E712
+                ).label("max_error_v"),
+                func.max(
+                    case((Image.built == True, Image.version), else_=None)  # noqa: E712
+                ).label("max_built_v"),
+                func.count(
+                    case(
+                        (
+                            and_(
+                                Image.built == False,  # noqa: E712
+                                Image.error == False,  # noqa: E712
+                            ),
+                            1,
+                        )
+                    )
+                ).label("building_count"),
+            )
+            .filter(Image.application_environment_id.in_(ae_ids))
+            .group_by(Image.application_environment_id)
+            .all()
+        )
+        errored_ae_ids = {
+            r[0]
+            for r in image_stats
+            if r[1] is not None and (r[2] is None or r[1] > r[2])
+        }
+        building_ae_ids = {r[0] for r in image_stats if r[3] > 0}
+
     unassigned_apps = []
+    assigned_app_ids = set()
     if project.environments_enabled:
-        assigned_app_ids = set()
-        for env in project.project_environments:
-            for ae in env.application_environments:
+        for env_ae_list in ae_by_env.values():
+            for ae in env_ae_list:
                 assigned_app_ids.add(ae.application_id)
         unassigned_apps = [
             a for a in project.project_applications if a.id not in assigned_app_ids
@@ -396,6 +733,13 @@ def project(org_slug, project_slug):
         app_create_form=app_create_form,
         proj_deploy_count=proj_deploy_count,
         unassigned_apps=unassigned_apps,
+        deploying_ae_ids=deploying_ae_ids,
+        completed_ae_ids=completed_ae_ids,
+        stats_running_ae_ids=stats_running_ae_ids,
+        building_ae_ids=building_ae_ids,
+        errored_ae_ids=errored_ae_ids,
+        last_deploy_by_ae=last_deploy_by_ae,
+        ae_by_env=ae_by_env,
     )
 
 

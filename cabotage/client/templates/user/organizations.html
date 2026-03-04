@@ -20,16 +20,8 @@
         {% set org = membership.organization %}
         {% set proj_count = org.projects|length %}
         {% set app_count = namespace(n=0) %}
-        {% set latest_deploy = namespace(ts=none) %}
         {% for p in org.projects %}
           {% set app_count.n = app_count.n + p.project_applications|length %}
-          {% for app in p.project_applications %}
-            {% if app.latest_deployment_completed %}
-              {% if not latest_deploy.ts or app.latest_deployment_completed.completed > latest_deploy.ts %}
-                {% set latest_deploy.ts = app.latest_deployment_completed.completed %}
-              {% endif %}
-            {% endif %}
-          {% endfor %}
         {% endfor %}
         {{ org_card(name=org.name or org.slug,
                 slug=org.slug,
@@ -37,7 +29,7 @@
         project_count=proj_count,
         app_count=app_count.n,
         member_count=org.members|length,
-        last_deploy=latest_deploy.ts,
+        last_deploy=last_deploy_by_org.get(org.id),
         color_index=loop.index0
         ) }}
       {% endfor %}

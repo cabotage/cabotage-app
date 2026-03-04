@@ -1,5 +1,10 @@
 from flask import render_template, Blueprint
 from flask_login import current_user
+from sqlalchemy import func
+
+from cabotage.server import db
+from cabotage.server.models.auth_associations import OrganizationMember
+from cabotage.server.models.projects import Application, Deployment, Project
 
 
 main_blueprint = Blueprint(
@@ -14,12 +19,27 @@ def home():
     app_count = 0
     deploy_count = 0
     if current_user.is_authenticated:
-        for membership in current_user.organizations:
-            for project in membership.organization.projects:
-                project_count += 1
-                for app in project.project_applications:
-                    app_count += 1
-                    deploy_count += app.deployments.filter_by(complete=True).count()
+        user_orgs = db.session.query(OrganizationMember.organization_id).filter(
+            OrganizationMember.user_id == current_user.id
+        )
+        project_count = Project.query.filter(
+            Project.organization_id.in_(user_orgs)
+        ).count()
+        app_count = (
+            Application.query.join(Project)
+            .filter(Project.organization_id.in_(user_orgs))
+            .count()
+        )
+        deploy_count = (
+            db.session.query(func.count(Deployment.id))
+            .join(Application)
+            .join(Project)
+            .filter(
+                Project.organization_id.in_(user_orgs),
+                Deployment.complete == True,  # noqa: E712
+            )
+            .scalar()
+        )
     return render_template(
         "main/home.html",
         project_count=project_count,

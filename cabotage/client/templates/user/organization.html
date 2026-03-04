@@ -27,16 +27,7 @@
   {% set proj_count = organization.projects|length %}
   {% set member_count = organization.members|length %}
 
-  {% set latest_deploy = namespace(ts=none) %}
-  {% for p in organization.projects %}
-    {% for app in p.project_applications %}
-      {% if app.latest_deployment_completed %}
-        {% if not latest_deploy.ts or app.latest_deployment_completed.completed > latest_deploy.ts %}
-          {% set latest_deploy.ts = app.latest_deployment_completed.completed %}
-        {% endif %}
-      {% endif %}
-    {% endfor %}
-  {% endfor %}
+  {% set latest_deploy = namespace(ts=last_deploy_ts) %}
 
   {% call page_header(organization.name, 'Organization') %}
     <button type="button"
@@ -72,13 +63,13 @@
           {% set errored = namespace(n=0) %}
           {% set building = namespace(n=0) %}
           {% for app in project.project_applications %}
-            {% if app.latest_deployment_running or app.latest_deployment_completed %}
+            {% if app.id in deployed_app_ids %}
               {% set running.n = running.n + 1 %}
             {% endif %}
-            {% if app.latest_image_error and (not app.latest_image_built or app.latest_image_error.version > app.latest_image_built.version) %}
+            {% if app.id in errored_app_ids %}
               {% set errored.n = errored.n + 1 %}
             {% endif %}
-            {% if app.latest_image_building %}
+            {% if app.id in building_app_ids %}
               {% set building.n = building.n + 1 %}
             {% endif %}
           {% endfor %}
