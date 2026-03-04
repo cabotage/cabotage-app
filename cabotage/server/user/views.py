@@ -25,7 +25,7 @@ import kubernetes
 
 from dxf import DXF
 from requests.exceptions import HTTPError
-from sqlalchemy import and_, desc, func, or_
+from sqlalchemy import desc, func
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy_continuum import version_class
 
@@ -1042,9 +1042,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     if app_env is not None:
         # 3 queries: fetch recent items, extract latest_* variants in Python
         all_images = app_env.images.order_by(Image.version.desc()).limit(50).all()
-        all_releases = (
-            app_env.releases.order_by(Release.version.desc()).limit(50).all()
-        )
+        all_releases = app_env.releases.order_by(Release.version.desc()).limit(50).all()
         all_deployments = (
             app_env.deployments.order_by(Deployment.created.desc()).limit(50).all()
         )
@@ -1090,12 +1088,8 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         candidate = Release(
             application_id=application.id,
             application_environment_id=app_env.id,
-            image=(
-                latest_image_built.asdict if latest_image_built else {}
-            ),
-            configuration={
-                c.name: c.asdict for c in app_env.configurations
-            },
+            image=(latest_image_built.asdict if latest_image_built else {}),
+            configuration={c.name: c.asdict for c in app_env.configurations},
             platform=application.platform,
         ).asdict
         image_diff = DictDiffer(

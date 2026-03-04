@@ -213,9 +213,7 @@ def compute_ae_status_sets(ae_ids):
         .all()
     )
     errored_ae_ids = {
-        r[0]
-        for r in image_stats
-        if r[1] is not None and (r[2] is None or r[1] > r[2])
+        r[0] for r in image_stats if r[1] is not None and (r[2] is None or r[1] > r[2])
     }
     building_ae_ids = {r[0] for r in image_stats if r[3] > 0}
 
@@ -327,8 +325,7 @@ def compute_process_counts(releases, resolver):
             release_proc_counts[str(r.id)] = sum(
                 1
                 for k in img.processes
-                if not k.startswith("release")
-                and not k.startswith("postdeploy")
+                if not k.startswith("release") and not k.startswith("postdeploy")
             )
     return release_proc_counts
 
@@ -347,10 +344,6 @@ def split_image_processes(image):
         for k, v in all_procs.items()
         if not (k.startswith("release") or k.startswith("postdeploy"))
     }
-    release_cmds = {
-        k: v for k, v in all_procs.items() if k.startswith("release")
-    }
-    postdeploy_cmds = {
-        k: v for k, v in all_procs.items() if k.startswith("postdeploy")
-    }
+    release_cmds = {k: v for k, v in all_procs.items() if k.startswith("release")}
+    postdeploy_cmds = {k: v for k, v in all_procs.items() if k.startswith("postdeploy")}
     return service_procs, release_cmds, postdeploy_cmds
