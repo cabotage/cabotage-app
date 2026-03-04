@@ -30,6 +30,7 @@ from cabotage.utils.build_log_stream import (
     stream_key,
 )
 from cabotage.utils.github import post_deployment_status_update
+from cabotage.celery.tasks.branch_deploy import maybe_update_pr_comment_for_app_env
 
 
 class DeployError(RuntimeError):
@@ -185,6 +186,19 @@ def render_cabotage_enrollment(release):
             "name": cabotage_enrollment_name,
         },
     }
+    env = release.application_environment.environment
+    forked_from = env.forked_from_environment
+    if forked_from:
+        org_k8s = release.application.project.organization.k8s_identifier
+        base_ns = safe_k8s_name(org_k8s, forked_from.k8s_identifier)
+        cabotage_enrollment_object["spec"] = {
+            "inheritsFrom": [
+                {
+                    "namespace": base_ns,
+                    "name": cabotage_enrollment_name,
+                }
+            ],
+        }
     return cabotage_enrollment_object
 
 
@@ -263,7 +277,7 @@ def create_service(core_api_instance, release, process_name):
     except Exception as exc:
         raise DeployError(
             "Unexpected exception creating Service/"
-            f"{service_object.name} in {namespace}: {exc}"
+            f"{service_object.metadata.name} in {namespace}: {exc}"
         )
 
 
@@ -1421,6 +1435,7 @@ def deploy_release(deployment):
                 pass
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
+        maybe_update_pr_comment_for_app_env(deployment.application_environment)
         return False
     except Exception as exc:
         deployment.error = True
@@ -1446,6 +1461,7 @@ def deploy_release(deployment):
                 pass
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
+        maybe_update_pr_comment_for_app_env(deployment.application_environment)
         return False
     if redis_client is not None and log_key is not None:
         try:
@@ -1468,6 +1484,7 @@ def deploy_release(deployment):
             "success",
             "Deployment complete!",
         )
+    maybe_update_pr_comment_for_app_env(deployment.application_environment)
 
 
 def fake_deploy_release(deployment):

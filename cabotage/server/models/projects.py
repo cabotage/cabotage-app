@@ -178,8 +178,18 @@ class Environment(db.Model, Timestamp):
     ephemeral = db.Column(db.Boolean, nullable=False, default=False)
     ttl_hours = db.Column(db.Integer, nullable=True)
     is_default = db.Column(db.Boolean, nullable=False, default=False)
+    forked_from_environment_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("project_environments.id"),
+        nullable=True,
+    )
     version_id = db.Column(db.Integer, nullable=False)
 
+    forked_from_environment = db.relationship(
+        "Environment",
+        remote_side="Environment.id",
+        foreign_keys=[forked_from_environment_id],
+    )
     application_environments = db.relationship(
         "ApplicationEnvironment",
         backref="environment",
