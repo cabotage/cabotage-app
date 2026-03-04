@@ -17,19 +17,12 @@ class ConfigWriter(object):
     def teardown(self, exception):
         pass
 
-    def _config_path_segment(self, org_slug, project_slug, app_slug, env_slug=None):
-        base = f"/{org_slug}/{project_slug}-{app_slug}"
-        if env_slug:
-            base = f"{base}/{env_slug}"
-        return base
+    def _config_path_segment(self, k8s_namespace, k8s_resource_prefix):
+        return f"/{k8s_namespace}/{k8s_resource_prefix}"
 
-    def write_configuration(
-        self, org_slug, project_slug, app_slug, configuration, env_slug=None
-    ):
+    def write_configuration(self, k8s_namespace, k8s_resource_prefix, configuration):
         version = configuration.version_id + 1 if configuration.version_id else 1
-        path_segment = self._config_path_segment(
-            org_slug, project_slug, app_slug, env_slug
-        )
+        path_segment = self._config_path_segment(k8s_namespace, k8s_resource_prefix)
         if configuration.secret:
             if self.vault is None:
                 raise RuntimeError("No Vault extension configured!")

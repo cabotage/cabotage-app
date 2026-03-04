@@ -66,7 +66,7 @@ from cabotage.server.models.projects import (
     pod_classes,
 )
 from cabotage.server.models.projects import activity_plugin
-from cabotage.server.models.utils import slugify
+from cabotage.server.models.utils import safe_k8s_name, slugify
 
 from cabotage.server.user.forms import (
     AddApplicationToEnvironmentForm,
@@ -115,9 +115,17 @@ user_blueprint = Blueprint(
 )
 
 
-def _associate_app_with_environment(
-    application, environment, org_slug, project_slug, env_slug
-):
+def _config_k8s_namespace(organization, app_env):
+    if app_env.k8s_identifier is not None:
+        return safe_k8s_name(organization.k8s_identifier, app_env.environment.k8s_identifier)
+    return organization.k8s_identifier
+
+
+def _config_k8s_resource_prefix(project, application):
+    return safe_k8s_name(project.k8s_identifier, application.k8s_identifier)
+
+
+def _associate_app_with_environment(application, environment, organization, project):
     """Create ApplicationEnvironment + sentinel config + activity log."""
     app_env = ApplicationEnvironment(
         application_id=application.id,
@@ -135,13 +143,9 @@ def _associate_app_with_environment(
         buildtime=False,
     )
     try:
-        key_slugs = config_writer.write_configuration(
-            org_slug,
-            project_slug,
-            application.slug,
-            sentinel,
-            env_slug=env_slug,
-        )
+        ns = _config_k8s_namespace(organization, app_env)
+        prefix = _config_k8s_resource_prefix(project, application)
+        key_slugs = config_writer.write_configuration(ns, prefix, sentinel)
     except Exception:
         raise
     sentinel.key_slug = key_slugs["config_key_slug"]
@@ -766,7 +770,7 @@ def project_environment_add_application(org_slug, project_slug, env_slug):
             id=form.application_id.data
         ).first_or_404()
         _associate_app_with_environment(
-            application, environment, org_slug, project_slug, env_slug
+            application, environment, organization, project
         )
         db.session.commit()
         return redirect(
@@ -1196,12 +1200,10 @@ def project_application_create(org_slug, project_slug):
                 buildtime=False,
             )
             try:
+                ns = _config_k8s_namespace(organization, app_env)
+                prefix = _config_k8s_resource_prefix(project, application)
                 key_slugs = config_writer.write_configuration(
-                    application.project.organization.slug,
-                    application.project.slug,
-                    application.slug,
-                    configuration,
-                    env_slug=app_env.env_slug_for_paths,
+                    ns, prefix, configuration
                 )
             except Exception:
                 raise  # No, we should def not do this
@@ -1290,7 +1292,6 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
 
     environment_id = request.form.get("environment_id")
     app_env = _resolve_app_env(application, environment_id=environment_id)
-    env_slug = app_env.env_slug_for_paths
 
     form = CreateConfigurationForm()
     form.application_id.data = str(application.id)
@@ -1306,13 +1307,9 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
             buildtime=form.buildtime.data,
         )
         try:
-            key_slugs = config_writer.write_configuration(
-                org_slug,
-                project_slug,
-                app_slug,
-                configuration,
-                env_slug=env_slug,
-            )
+            ns = _config_k8s_namespace(organization, app_env)
+            prefix = _config_k8s_resource_prefix(project, application)
+            key_slugs = config_writer.write_configuration(ns, prefix, configuration)
         except Exception:
             raise  # No, we should def not do this
         configuration.key_slug = key_slugs["config_key_slug"]
@@ -1371,8 +1368,6 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
 
-    env_slug = configuration.application_environment.env_slug_for_paths
-
     form = EditConfigurationForm(obj=configuration)
     form.application_id.data = str(configuration.application.id)
     form.name.data = str(configuration.name)
@@ -1381,13 +1376,10 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
     if form.validate_on_submit():
         form.populate_obj(configuration)
         try:
-            key_slugs = config_writer.write_configuration(
-                org_slug,
-                project_slug,
-                app_slug,
-                configuration,
-                env_slug=env_slug,
-            )
+            app_env = configuration.application_environment
+            ns = _config_k8s_namespace(organization, app_env)
+            prefix = _config_k8s_resource_prefix(project, application)
+            key_slugs = config_writer.write_configuration(ns, prefix, configuration)
         except Exception:
             raise  # No, we should def not do this
         configuration.key_slug = key_slugs["config_key_slug"]
