@@ -139,6 +139,16 @@ class EditProjectSettingsForm(FlaskForm):
         [Optional()],
         description='Name for the default environment (e.g., "Production"). All existing applications will be migrated into it.',
     )
+    branch_deploys_enabled = BooleanField(
+        "Enable Branch Deploys",
+        [],
+        description="Automatically create ephemeral environments for pull requests.",
+    )
+    branch_deploy_base_environment_id = SelectField(
+        "Base Environment",
+        [Optional()],
+        description="Environment to use as a template for branch deploy environments.",
+    )
 
 
 class DeleteProjectForm(FlaskForm):

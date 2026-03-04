@@ -115,7 +115,18 @@ class Project(db.Model, Timestamp):
     environments_enabled = db.Column(
         db.Boolean, nullable=False, default=False, server_default="false"
     )
+    branch_deploys_enabled = db.Column(
+        db.Boolean, nullable=False, default=False, server_default="false"
+    )
+    branch_deploy_base_environment_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("project_environments.id"),
+        nullable=True,
+    )
 
+    branch_deploy_base_environment = db.relationship(
+        "Environment", foreign_keys=[branch_deploy_base_environment_id]
+    )
     project_applications = db.relationship(
         "Application",
         backref="project",
@@ -126,6 +137,7 @@ class Project(db.Model, Timestamp):
         backref="project",
         cascade="all, delete-orphan",
         order_by="Environment.sort_order",
+        foreign_keys="Environment.project_id",
     )
 
     __table_args__ = (
