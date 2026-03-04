@@ -46,8 +46,9 @@
 
     <div class="dpl-list">
       {% for release in releases %}
-        {% set rel_img = release.image_object %}
-        {% set rel_sha = release.commit_sha if release.commit_sha and release.commit_sha != 'null' else none %}
+        {% set rel_img = image_by_id.get(release.image.get('id', '')|string) %}
+        {% set rel_sha = (release.release_metadata or {}).get('sha') or (rel_img.image_metadata or {}).get('sha') if rel_img else (release.release_metadata or {}).get('sha') %}
+        {% set rel_sha = rel_sha if rel_sha and rel_sha != 'null' else none %}
         {% set rel_ref = (release.release_metadata or {}).get('ref', '') %}
         {% if not rel_ref and rel_img %}
           {% set rel_ref = (rel_img.image_metadata or {}).get('ref', '') %}
@@ -55,7 +56,7 @@
         {% set rel_auto = release.release_metadata and release.release_metadata.get('auto_deploy') %}
         {% set is_latest = latest_built_release and release.id == latest_built_release.id %}
         {% set cfg_count = release.configuration|length if release.configuration else 0 %}
-        {% set proc_count = release.processes|length if release.built and release.image_object else 0 %}
+        {% set proc_count = release_proc_counts.get(release.id|string, 0) %}
 
         <a href="{{ url_for('user.release_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id=release.id) }}"
            class="dpl-row {{ 'dpl-row-error' if release.error }}">

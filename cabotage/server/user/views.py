@@ -25,7 +25,7 @@ import kubernetes
 
 from dxf import DXF
 from requests.exceptions import HTTPError
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy_continuum import version_class
 
@@ -66,6 +66,14 @@ from cabotage.server.models.projects import (
     pod_classes,
 )
 from cabotage.server.models.projects import activity_plugin
+from cabotage.server.query_helpers import (
+    compute_app_status_sets,
+    compute_ae_status_sets,
+    compute_process_counts,
+    extract_latest_variants,
+    RelatedObjectResolver,
+    split_image_processes,
+)
 from cabotage.server.models.utils import safe_k8s_name, slugify
 
 from cabotage.server.user.forms import (
@@ -242,15 +250,69 @@ def _create_bare_app_env(application, environment):
 @user_blueprint.route("/organizations")
 @login_required
 def organizations():
-    user = current_user
-    organizations = user.organizations
-    return render_template("user/organizations.html", organizations=organizations)
+    from sqlalchemy.orm import joinedload
+
+    memberships = (
+        OrganizationMember.query.filter(OrganizationMember.user_id == current_user.id)
+        .options(
+            joinedload(OrganizationMember.organization)
+            .joinedload(Organization.projects)
+            .joinedload(Project.project_applications),
+            joinedload(OrganizationMember.organization).joinedload(
+                Organization.members
+            ),
+        )
+        .all()
+    )
+
+    # Pre-compute last deploy timestamp per organization
+    org_ids = [m.organization_id for m in memberships]
+    last_deploy_by_org = {}
+    if org_ids:
+        rows = (
+            db.session.query(
+                Project.organization_id,
+                func.max(Deployment.created).label("last_deploy"),
+            )
+            .join(Application, Application.project_id == Project.id)
+            .join(
+                ApplicationEnvironment,
+                ApplicationEnvironment.application_id == Application.id,
+            )
+            .join(
+                Deployment,
+                Deployment.application_environment_id == ApplicationEnvironment.id,
+            )
+            .filter(
+                Project.organization_id.in_(org_ids),
+                ApplicationEnvironment.k8s_identifier.is_(None),
+                Deployment.complete == True,  # noqa: E712
+            )
+            .group_by(Project.organization_id)
+            .all()
+        )
+        last_deploy_by_org = {row[0]: row[1] for row in rows}
+
+    return render_template(
+        "user/organizations.html",
+        organizations=memberships,
+        last_deploy_by_org=last_deploy_by_org,
+    )
 
 
 @user_blueprint.route("/organizations/<org_slug>")
 @login_required
 def organization(org_slug):
-    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    from sqlalchemy.orm import joinedload
+
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .options(
+            joinedload(Organization.projects).joinedload(Project.project_applications),
+            joinedload(Organization.members).joinedload(OrganizationMember.user),
+        )
+        .first_or_404()
+    )
     if not ViewOrganizationPermission(organization.id).can():
         abort(403)
     project_create_form = CreateProjectForm()
@@ -258,18 +320,48 @@ def organization(org_slug):
         (str(organization.id), organization.name)
     ]
     project_create_form.organization_id.data = str(organization.id)
-    org_app_count = sum(len(p.project_applications) for p in organization.projects)
-    org_deploy_count = sum(
-        app.deployments.filter_by(complete=True).count()
-        for p in organization.projects
-        for app in p.project_applications
-    )
+
+    app_ids = [app.id for p in organization.projects for app in p.project_applications]
+    org_app_count = len(app_ids)
+    org_deploy_count = 0
+    last_deploy_ts = None
+    deployed_app_ids = set()
+    errored_app_ids = set()
+    building_app_ids = set()
+
+    if app_ids:
+        # Deploy count + last deploy timestamp in one query
+        deploy_stats = (
+            db.session.query(
+                func.count(Deployment.id),
+                func.max(Deployment.created),
+            )
+            .join(ApplicationEnvironment)
+            .filter(
+                Deployment.application_id.in_(app_ids),
+                ApplicationEnvironment.k8s_identifier.is_(None),
+                Deployment.complete == True,  # noqa: E712
+            )
+            .one()
+        )
+        org_deploy_count = deploy_stats[0]
+        last_deploy_ts = deploy_stats[1]
+
+        status = compute_app_status_sets(app_ids)
+        deployed_app_ids = status["deployed_app_ids"]
+        errored_app_ids = status["errored_app_ids"]
+        building_app_ids = status["building_app_ids"]
+
     return render_template(
         "user/organization.html",
         organization=organization,
         project_create_form=project_create_form,
         org_app_count=org_app_count,
         org_deploy_count=org_deploy_count,
+        deployed_app_ids=deployed_app_ids,
+        errored_app_ids=errored_app_ids,
+        building_app_ids=building_app_ids,
+        last_deploy_ts=last_deploy_ts,
     )
 
 
@@ -358,16 +450,53 @@ def organization_project_create(org_slug):
 @user_blueprint.route("/projects")
 @login_required
 def projects():
-    return render_template("user/projects.html", projects=current_user.projects)
+    from sqlalchemy.orm import joinedload
+
+    user_projects = (
+        Project.query.join(Organization)
+        .join(Organization.members)
+        .filter(OrganizationMember.user_id == current_user.id)
+        .options(
+            joinedload(Project.organization),
+            joinedload(Project.project_applications),
+        )
+        .all()
+    )
+
+    # Pre-compute app status to avoid per-app queries in the template
+    app_ids = [app.id for p in user_projects for app in p.project_applications]
+    deployed_app_ids = set()
+    errored_app_ids = set()
+
+    if app_ids:
+        status = compute_app_status_sets(app_ids)
+        deployed_app_ids = status["deployed_app_ids"]
+        errored_app_ids = status["errored_app_ids"]
+
+    return render_template(
+        "user/projects.html",
+        projects=user_projects,
+        deployed_app_ids=deployed_app_ids,
+        errored_app_ids=errored_app_ids,
+    )
 
 
 @user_blueprint.route("/projects/<org_slug>/<project_slug>")
 @login_required
 def project(org_slug, project_slug):
+    from sqlalchemy.orm import selectinload
+
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
-    project = Project.query.filter_by(
-        organization_id=organization.id, slug=project_slug
-    ).first_or_404()
+    project = (
+        Project.query.filter_by(organization_id=organization.id, slug=project_slug)
+        .options(
+            selectinload(Project.project_applications)
+            .selectinload(Application.application_environments)
+            .selectinload(ApplicationEnvironment.configurations),
+            selectinload(Project.project_environments),
+        )
+        .first_or_404()
+    )
     if not ViewProjectPermission(project.id).can():
         abort(403)
     app_create_form = CreateApplicationForm()
@@ -377,15 +506,29 @@ def project(org_slug, project_slug):
     app_create_form.project_id.choices = [(str(project.id), project.name)]
     app_create_form.organization_id.data = str(organization.id)
     app_create_form.project_id.data = str(project.id)
-    proj_deploy_count = sum(
-        app.deployments.filter_by(complete=True).count()
-        for app in project.project_applications
-    )
+
+    # Build ae_by_env mapping in Python (avoids duplicate eager-load path)
+    ae_ids = []
+    ae_by_env = {}
+    for app in project.project_applications:
+        for ae in app.application_environments:
+            ae_ids.append(ae.id)
+            ae_by_env.setdefault(ae.environment_id, []).append(ae)
+
+    ae_status = compute_ae_status_sets(ae_ids)
+    proj_deploy_count = ae_status["deploy_count"]
+    deploying_ae_ids = ae_status["deploying_ae_ids"]
+    completed_ae_ids = ae_status["completed_ae_ids"]
+    stats_running_ae_ids = ae_status["running_ae_ids"]
+    building_ae_ids = ae_status["building_ae_ids"]
+    errored_ae_ids = ae_status["errored_ae_ids"]
+    last_deploy_by_ae = ae_status["last_deploy_by_ae"]
+
     unassigned_apps = []
+    assigned_app_ids = set()
     if project.environments_enabled:
-        assigned_app_ids = set()
-        for env in project.project_environments:
-            for ae in env.application_environments:
+        for env_ae_list in ae_by_env.values():
+            for ae in env_ae_list:
                 assigned_app_ids.add(ae.application_id)
         unassigned_apps = [
             a for a in project.project_applications if a.id not in assigned_app_ids
@@ -396,6 +539,13 @@ def project(org_slug, project_slug):
         app_create_form=app_create_form,
         proj_deploy_count=proj_deploy_count,
         unassigned_apps=unassigned_apps,
+        deploying_ae_ids=deploying_ae_ids,
+        completed_ae_ids=completed_ae_ids,
+        stats_running_ae_ids=stats_running_ae_ids,
+        building_ae_ids=building_ae_ids,
+        errored_ae_ids=errored_ae_ids,
+        last_deploy_by_ae=last_deploy_by_ae,
+        ae_by_env=ae_by_env,
     )
 
 
@@ -858,16 +1008,100 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     if environment:
         config_create_form.environment_id.data = str(environment.id)
 
+    # Pre-fetch all data from dynamic relationships once to avoid
+    # repeated per-access queries in the template (~50+ calls to
+    # src.latest_* each triggering a fresh DB query).
+    latest_image = None
+    latest_image_built = None
+    latest_image_error = None
+    latest_image_building = None
+    latest_release = None
+    latest_release_built = None
+    latest_release_building = None
+    latest_deployment = None
+    latest_deployment_completed = None
+    has_releases = False
+    image_diff = None
+    config_diff = None
+    releases = []
+    images = []
+    deployments = []
+
+    # Pre-resolved related objects (avoid cascading queries for
+    # deployment.release_object → release.image_object → image.processes)
+    deployed_release = None
+    deployed_image = None
+    latest_deploy_release = None
+    latest_release_image = None
+    latest_release_processes = {}
+    latest_release_release_commands = {}
+    release_by_id = {}
+    image_by_id = {}
+    release_proc_counts = {}
+
     if app_env is not None:
-        releases = app_env.releases.order_by(Release.version.desc()).limit(10).all()
-        images = app_env.images.order_by(Image.version.desc()).limit(10).all()
-        deployments = (
-            app_env.deployments.order_by(Deployment.created.desc()).limit(10).all()
+        # 3 queries: fetch recent items, extract latest_* variants in Python
+        all_images = app_env.images.order_by(Image.version.desc()).limit(50).all()
+        all_releases = app_env.releases.order_by(Release.version.desc()).limit(50).all()
+        all_deployments = (
+            app_env.deployments.order_by(Deployment.created.desc()).limit(50).all()
         )
-    else:
-        releases = []
-        images = []
-        deployments = []
+
+        images = all_images[:10]
+        releases = all_releases[:10]
+        deployments = all_deployments[:10]
+
+        # Extract latest_* variants from pre-fetched lists
+        variants = extract_latest_variants(all_images, all_releases, all_deployments)
+        latest_image = variants["latest_image"]
+        latest_image_built = variants["latest_image_built"]
+        latest_image_error = variants["latest_image_error"]
+        latest_image_building = variants["latest_image_building"]
+        latest_release = variants["latest_release"]
+        latest_release_built = variants["latest_release_built"]
+        latest_release_building = variants["latest_release_building"]
+        latest_deployment = variants["latest_deployment"]
+        latest_deployment_completed = variants["latest_deployment_completed"]
+        has_releases = variants["has_releases"]
+
+        # Pre-resolve Release/Image objects referenced by JSONB foreign keys
+        resolver = RelatedObjectResolver(images=all_images, releases=all_releases)
+        deployed_release = resolver.get_release(latest_deployment_completed)
+        deployed_image = resolver.get_image_for_release(deployed_release)
+        latest_deploy_release = resolver.get_release(latest_deployment)
+        latest_release_image = resolver.get_image_for_release(latest_release)
+
+        latest_release_processes, latest_release_release_commands, _ = (
+            split_image_processes(latest_release_image)
+        )
+
+        # Batch-warm caches for template loops
+        resolver.warm_caches(all_deployments, all_releases)
+        release_by_id, image_by_id = resolver.build_lookup_dicts()
+        release_proc_counts = compute_process_counts(releases, resolver)
+
+        # Compute ready_for_deployment diffs inline (avoids re-querying
+        # latest_release and latest_image_built inside the model method)
+        from cabotage.server.models.projects import DictDiffer
+
+        current = latest_release.asdict if latest_release else {}
+        candidate = Release(
+            application_id=application.id,
+            application_environment_id=app_env.id,
+            image=(latest_image_built.asdict if latest_image_built else {}),
+            configuration={c.name: c.asdict for c in app_env.configurations},
+            platform=application.platform,
+        ).asdict
+        image_diff = DictDiffer(
+            candidate.get("image", {}),
+            current.get("image", {}),
+            ignored_keys=["id", "version_id"],
+        )
+        config_diff = DictDiffer(
+            candidate.get("configuration", {}),
+            current.get("configuration", {}),
+            ignored_keys=["id", "version_id"],
+        )
 
     return render_template(
         "user/project_application.html",
@@ -888,6 +1122,28 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         DEFAULT_POD_CLASS=DEFAULT_POD_CLASS,
         pod_classes=pod_classes,
         pod_class_info=pod_class_info,
+        # Pre-fetched latest_* values (avoid per-access queries)
+        latest_image=latest_image,
+        latest_image_built=latest_image_built,
+        latest_image_error=latest_image_error,
+        latest_image_building=latest_image_building,
+        latest_release=latest_release,
+        latest_release_built=latest_release_built,
+        latest_release_building=latest_release_building,
+        latest_deployment=latest_deployment,
+        latest_deployment_completed=latest_deployment_completed,
+        has_releases=has_releases,
+        image_diff=image_diff,
+        config_diff=config_diff,
+        deployed_release=deployed_release,
+        deployed_image=deployed_image,
+        latest_deploy_release=latest_deploy_release,
+        latest_release_image=latest_release_image,
+        latest_release_processes=latest_release_processes,
+        latest_release_release_commands=latest_release_release_commands,
+        release_by_id=release_by_id,
+        image_by_id=image_by_id,
+        release_proc_counts=release_proc_counts,
     )
 
 
@@ -1790,6 +2046,13 @@ def application_releases(org_slug, project_slug, app_slug):
     releases = app_env.releases.order_by(Release.version.desc()).paginate(
         page, 20, False
     )
+
+    # Pre-resolve Image objects to avoid N+1 on release.image_object per row
+    resolver = RelatedObjectResolver(releases=releases.items)
+    resolver.warm_caches([], releases.items)
+    _, image_by_id = resolver.build_lookup_dicts()
+    release_proc_counts = compute_process_counts(releases.items, resolver)
+
     return render_template(
         "user/application_releases.html",
         page=page,
@@ -1797,6 +2060,8 @@ def application_releases(org_slug, project_slug, app_slug):
         releases=releases.items,
         environment=app_env.environment if project.environments_enabled else None,
         app_env=app_env,
+        image_by_id=image_by_id,
+        release_proc_counts=release_proc_counts,
     )
 
 
