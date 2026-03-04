@@ -66,6 +66,7 @@ from cabotage.server.models.projects import (
     pod_classes,
 )
 from cabotage.server.models.projects import activity_plugin
+from cabotage.server.models.utils import slugify
 
 from cabotage.server.user.forms import (
     AddApplicationToEnvironmentForm,
@@ -461,11 +462,18 @@ def project_settings(org_slug, project_slug):
             not project.environments_enabled and form.environments_enabled.data
         )
         if enabling_environments:
-            # The default environment already exists. Existing app_envs keep
-            # k8s_identifier=NULL so all their paths (registry, namespace,
-            # consul/vault, build cache) remain unchanged. Only new
-            # environments created after enabling will get real k8s_identifiers.
-            pass
+            # Rename the default environment if an initial name was provided.
+            initial_name = form.initial_env_name.data
+            if initial_name:
+                default_env = next(
+                    (e for e in project.project_environments if e.is_default),
+                    None,
+                )
+                if default_env:
+                    default_env.name = initial_name
+                    default_env.slug = slugify(initial_name)
+            # Existing app_envs keep k8s_identifier=NULL so all their paths
+            # (registry, namespace, consul/vault, build cache) remain unchanged.
         form.populate_obj(project)
         env_order = request.form.getlist("env_order")
         if env_order:
