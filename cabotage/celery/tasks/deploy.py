@@ -52,11 +52,7 @@ def k8s_resource_prefix(release):
 
 
 def k8s_role_name(release):
-    return safe_k8s_name(
-        release.application.project.organization.k8s_identifier,
-        release.application.project.k8s_identifier,
-        release.application.k8s_identifier,
-    )
+    return f"{k8s_namespace(release)}-{k8s_resource_prefix(release)}"
 
 
 def render_namespace(release):
