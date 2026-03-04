@@ -1202,16 +1202,174 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     if environment:
         config_create_form.environment_id.data = str(environment.id)
 
+    # Pre-fetch all data from dynamic relationships once to avoid
+    # repeated per-access queries in the template (~50+ calls to
+    # src.latest_* each triggering a fresh DB query).
+    latest_image = None
+    latest_image_built = None
+    latest_image_error = None
+    latest_image_building = None
+    latest_release = None
+    latest_release_built = None
+    latest_release_building = None
+    latest_deployment = None
+    latest_deployment_completed = None
+    has_releases = False
+    image_diff = None
+    config_diff = None
+    releases = []
+    images = []
+    deployments = []
+
+    # Pre-resolved related objects (avoid cascading queries for
+    # deployment.release_object → release.image_object → image.processes)
+    deployed_release = None
+    deployed_image = None
+    latest_deploy_release = None
+    latest_release_image = None
+    latest_release_processes = {}
+    latest_release_release_commands = {}
+    release_by_id = {}
+    image_by_id = {}
+    release_proc_counts = {}
+
     if app_env is not None:
-        releases = app_env.releases.order_by(Release.version.desc()).limit(10).all()
-        images = app_env.images.order_by(Image.version.desc()).limit(10).all()
-        deployments = (
-            app_env.deployments.order_by(Deployment.created.desc()).limit(10).all()
+        # 3 queries: fetch recent items, extract latest_* variants in Python
+        all_images = app_env.images.order_by(Image.version.desc()).limit(50).all()
+        all_releases = (
+            app_env.releases.order_by(Release.version.desc()).limit(50).all()
         )
-    else:
-        releases = []
-        images = []
-        deployments = []
+        all_deployments = (
+            app_env.deployments.order_by(Deployment.created.desc()).limit(50).all()
+        )
+
+        images = all_images[:10]
+        releases = all_releases[:10]
+        deployments = all_deployments[:10]
+
+        latest_image = all_images[0] if all_images else None
+        latest_image_built = next((i for i in all_images if i.built), None)
+        latest_image_error = next((i for i in all_images if i.error), None)
+        latest_image_building = next(
+            (i for i in all_images if not i.built and not i.error), None
+        )
+
+        latest_release = all_releases[0] if all_releases else None
+        latest_release_built = next(
+            (r for r in all_releases if r.built), None
+        )
+        latest_release_building = next(
+            (r for r in all_releases if not r.built and not r.error), None
+        )
+        has_releases = latest_release is not None
+
+        latest_deployment = all_deployments[0] if all_deployments else None
+        latest_deployment_completed = next(
+            (d for d in all_deployments if d.complete), None
+        )
+
+        # Pre-resolve Release/Image objects that the template needs
+        # (deployment.release_object, release.image_object, release.commit_sha)
+        _release_cache = {}
+        _image_cache = {i.id: i for i in all_images}
+
+        def _get_release(deploy):
+            if not deploy or not deploy.release:
+                return None
+            rid = deploy.release.get("id")
+            if not rid:
+                return None
+            import uuid as _uuid
+
+            rid = _uuid.UUID(rid) if isinstance(rid, str) else rid
+            if rid not in _release_cache:
+                # Check if it's in our already-fetched releases
+                found = next((r for r in all_releases if r.id == rid), None)
+                if found is None:
+                    found = Release.query.get(rid)
+                _release_cache[rid] = found
+            return _release_cache[rid]
+
+        def _get_image_for_release(rel):
+            if not rel or not rel.image:
+                return None
+            iid = rel.image.get("id")
+            if not iid:
+                return None
+            import uuid as _uuid
+
+            iid = _uuid.UUID(iid) if isinstance(iid, str) else iid
+            if iid not in _image_cache:
+                _image_cache[iid] = Image.query.get(iid)
+            return _image_cache[iid]
+
+        deployed_release = _get_release(latest_deployment_completed)
+        deployed_image = _get_image_for_release(deployed_release)
+        latest_deploy_release = _get_release(latest_deployment)
+        latest_release_image = _get_image_for_release(latest_release)
+
+        if latest_release_image and latest_release_image.processes:
+            all_procs = latest_release_image.processes
+            latest_release_processes = {
+                k: v
+                for k, v in all_procs.items()
+                if not (k.startswith("release") or k.startswith("postdeploy"))
+            }
+            latest_release_release_commands = {
+                k: v
+                for k, v in all_procs.items()
+                if k.startswith("release")
+            }
+
+        # Batch-fetch Release/Image objects referenced by deployment and
+        # release lists so the template loops don't trigger per-row queries
+        for d in all_deployments:
+            _get_release(d)
+        for r in all_releases:
+            _get_image_for_release(r)
+
+        # Build string-keyed lookup dicts for Jinja (UUIDs render as strings)
+        release_by_id = {str(k): v for k, v in _release_cache.items() if v}
+        image_by_id = {str(k): v for k, v in _image_cache.items() if v}
+
+        # Pre-compute service process count per release (for the releases tab)
+        release_proc_counts = {}
+        for r in releases:
+            img = _get_image_for_release(r)
+            if r.built and img and img.processes:
+                release_proc_counts[str(r.id)] = sum(
+                    1
+                    for k in img.processes
+                    if not k.startswith("release")
+                    and not k.startswith("postdeploy")
+                )
+
+        # Compute ready_for_deployment diffs inline (avoids re-querying
+        # latest_release and latest_image_built inside the model method)
+        from cabotage.server.models.projects import DictDiffer
+
+        current = latest_release.asdict if latest_release else {}
+        candidate = Release(
+            application_id=application.id,
+            application_environment_id=app_env.id,
+            image=(
+                latest_image_built.asdict if latest_image_built else {}
+            ),
+            configuration={
+                c.name: c.asdict for c in app_env.configurations
+            },
+            platform=application.platform,
+        ).asdict
+        image_diff = DictDiffer(
+            candidate.get("image", {}),
+            current.get("image", {}),
+            ignored_keys=["id", "version_id"],
+        )
+        config_diff = DictDiffer(
+            candidate.get("configuration", {}),
+            current.get("configuration", {}),
+            ignored_keys=["id", "version_id"],
+        )
 
     return render_template(
         "user/project_application.html",
@@ -1232,6 +1390,28 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         DEFAULT_POD_CLASS=DEFAULT_POD_CLASS,
         pod_classes=pod_classes,
         pod_class_info=pod_class_info,
+        # Pre-fetched latest_* values (avoid per-access queries)
+        latest_image=latest_image,
+        latest_image_built=latest_image_built,
+        latest_image_error=latest_image_error,
+        latest_image_building=latest_image_building,
+        latest_release=latest_release,
+        latest_release_built=latest_release_built,
+        latest_release_building=latest_release_building,
+        latest_deployment=latest_deployment,
+        latest_deployment_completed=latest_deployment_completed,
+        has_releases=has_releases,
+        image_diff=image_diff,
+        config_diff=config_diff,
+        deployed_release=deployed_release,
+        deployed_image=deployed_image,
+        latest_deploy_release=latest_deploy_release,
+        latest_release_image=latest_release_image,
+        latest_release_processes=latest_release_processes,
+        latest_release_release_commands=latest_release_release_commands,
+        release_by_id=release_by_id,
+        image_by_id=image_by_id,
+        release_proc_counts=release_proc_counts,
     )
 
 
