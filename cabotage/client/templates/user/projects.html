@@ -59,10 +59,10 @@
               {% set running = namespace(n=0) %}
               {% set errored = namespace(n=0) %}
               {% for app in project.project_applications %}
-                {% if app.latest_deployment_running or app.latest_deployment_completed %}
+                {% if app.id in deployed_app_ids %}
                   {% set running.n = running.n + 1 %}
                 {% endif %}
-                {% if app.latest_image_error and (not app.latest_image_built or app.latest_image_error.version > app.latest_image_built.version) %}
+                {% if app.id in errored_app_ids %}
                   {% set errored.n = errored.n + 1 %}
                 {% endif %}
               {% endfor %}
