@@ -24,9 +24,6 @@
         {{ form.hidden_tag() }}
         {{ render_field(form.name) }}
         {{ render_field(form.is_default) }}
-        {% if environment.ephemeral %}
-          {{ render_field(form.ttl_hours) }}
-        {% endif %}
         <div class="mt-4">
           <button type="submit" class="btn btn-primary gap-2">
             {{ icon('check', 'w-4 h-4') }}

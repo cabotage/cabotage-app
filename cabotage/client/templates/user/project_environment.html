@@ -28,12 +28,6 @@
     {% if environment.is_default %}
       <span class="badge badge-sm badge-primary">Default</span>
     {% endif %}
-    {% if environment.ephemeral %}
-      <span class="badge badge-sm badge-warning">Ephemeral</span>
-      {% if environment.ttl_hours %}
-        <span class="badge badge-sm badge-ghost">TTL: {{ environment.ttl_hours }}h</span>
-      {% endif %}
-    {% endif %}
     <span class="badge badge-sm badge-ghost">k8s: {{ project.organization.k8s_identifier }}-{{ environment.k8s_identifier }}</span>
   </div>
 

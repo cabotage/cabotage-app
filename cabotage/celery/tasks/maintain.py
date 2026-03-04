@@ -6,7 +6,7 @@ from celery import shared_task
 from flask import current_app
 
 from cabotage.server import db, github_app, kubernetes as kubernetes_ext
-from cabotage.server.models.projects import Deployment, Environment, Image, Release
+from cabotage.server.models.projects import Deployment, Image, Release
 from cabotage.utils.build_log_stream import (
     get_redis_client,
     heartbeat_key,
@@ -127,23 +127,6 @@ def reap_stale_builds():
                 except Exception:  # nosec B110
                     pass
 
-    db.session.commit()
-
-
-@shared_task()
-def reap_ephemeral_environments():
-    """Delete ephemeral environments that have exceeded their TTL."""
-    now = datetime.datetime.utcnow()
-    ephemeral_envs = Environment.query.filter(
-        Environment.ephemeral == True,  # noqa: E712
-        Environment.ttl_hours.isnot(None),
-    ).all()
-    for env in ephemeral_envs:
-        if env.created is None:
-            continue
-        expiry = env.created + datetime.timedelta(hours=env.ttl_hours)
-        if now > expiry:
-            db.session.delete(env)
     db.session.commit()
 
 

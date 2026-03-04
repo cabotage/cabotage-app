@@ -509,16 +509,6 @@ class CreateEnvironmentForm(FlaskForm):
         [],
         description="Make this the default environment for new applications.",
     )
-    ephemeral = BooleanField(
-        "Ephemeral",
-        [],
-        description="This environment is temporary (e.g., for PR previews).",
-    )
-    ttl_hours = IntegerField(
-        "TTL (hours)",
-        [Optional()],
-        description="Auto-delete this environment after N hours (ephemeral only).",
-    )
 
     def validate_slug(form, field):
         environment = (
@@ -546,11 +536,6 @@ class EditEnvironmentForm(FlaskForm):
         "Default Environment",
         [],
         description="Make this the default environment for new applications.",
-    )
-    ttl_hours = IntegerField(
-        "TTL (hours)",
-        [Optional()],
-        description="Auto-delete this environment after N hours (ephemeral only).",
     )
 
 

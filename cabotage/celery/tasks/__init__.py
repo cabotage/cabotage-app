@@ -8,7 +8,6 @@ from .deploy import (
 )
 
 from .maintain import (
-    reap_ephemeral_environments,  # noqa: F401
     reap_pods,  # noqa: F401
     reap_stale_builds,  # noqa: F401
 )

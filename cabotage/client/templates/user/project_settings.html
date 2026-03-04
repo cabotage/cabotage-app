@@ -79,100 +79,47 @@
 
       {% if project.environments_enabled and project.project_environments %}
         {% set envs_sorted = project.project_environments|sort(attribute='sort_order') %}
-        {% set standard_envs = envs_sorted|selectattr('ephemeral', 'false')|list %}
-        {% set ephemeral_envs = envs_sorted|selectattr('ephemeral', 'true')|list %}
 
-        {% if standard_envs %}
-          <div class="overflow-x-auto -mx-1">
-            <table class="table table-sm">
-              <thead>
-                <tr class="text-base-content/50 text-xs uppercase tracking-wider">
-                  <th class="w-8"></th>
-                  <th>Name</th>
-                  <th>Default</th>
-                  <th></th>
+        <div class="overflow-x-auto -mx-1">
+          <table class="table table-sm">
+            <thead>
+              <tr class="text-base-content/50 text-xs uppercase tracking-wider">
+                <th class="w-8"></th>
+                <th>Name</th>
+                <th>Default</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody class="env-sortable">
+              {% for env in envs_sorted %}
+                <tr data-env-id="{{ env.id }}">
+                  <td class="w-8 cursor-grab drag-handle text-base-content/25 hover:text-base-content/50">
+                    {{ icon('grip-vertical', 'w-4 h-4') }}
+                  </td>
+                  <td>
+                    <a href="{{ url_for('user.project_environment', org_slug=org_slug, project_slug=project_slug, env_slug=env.slug) }}"
+                       class="link link-hover font-medium">{{ env.name }}</a>
+                  </td>
+                  <td>
+                    {% if env.is_default %}
+                      <span class="badge badge-sm badge-primary">default</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-right">
+                    <a href="{{ url_for('user.project_environment_settings', org_slug=org_slug, project_slug=project_slug, env_slug=env.slug) }}"
+                       class="btn btn-ghost btn-xs gap-1">
+                      {{ icon('settings', 'w-3 h-3') }}
+                      Edit
+                    </a>
+                  </td>
                 </tr>
-              </thead>
-              <tbody class="env-sortable">
-                {% for env in standard_envs %}
-                  <tr data-env-id="{{ env.id }}">
-                    <td class="w-8 cursor-grab drag-handle text-base-content/25 hover:text-base-content/50">
-                      {{ icon('grip-vertical', 'w-4 h-4') }}
-                    </td>
-                    <td>
-                      <a href="{{ url_for('user.project_environment', org_slug=org_slug, project_slug=project_slug, env_slug=env.slug) }}"
-                         class="link link-hover font-medium">{{ env.name }}</a>
-                    </td>
-                    <td>
-                      {% if env.is_default %}
-                        <span class="badge badge-sm badge-primary">default</span>
-                      {% endif %}
-                    </td>
-                    <td class="text-right">
-                      <a href="{{ url_for('user.project_environment_settings', org_slug=org_slug, project_slug=project_slug, env_slug=env.slug) }}"
-                         class="btn btn-ghost btn-xs gap-1">
-                        {{ icon('settings', 'w-3 h-3') }}
-                        Edit
-                      </a>
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        {% endif %}
-
-        {% if ephemeral_envs %}
-          <h3 class="text-xs font-semibold text-base-content/50 uppercase tracking-wider mt-6 mb-2 px-1">Ephemeral Environments</h3>
-          <div class="overflow-x-auto -mx-1">
-            <table class="table table-sm">
-              <thead>
-                <tr class="text-base-content/50 text-xs uppercase tracking-wider">
-                  <th class="w-8"></th>
-                  <th>Name</th>
-                  <th>Default</th>
-                  <th>TTL</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody class="env-sortable">
-                {% for env in ephemeral_envs %}
-                  <tr data-env-id="{{ env.id }}">
-                    <td class="w-8 cursor-grab drag-handle text-base-content/25 hover:text-base-content/50">
-                      {{ icon('grip-vertical', 'w-4 h-4') }}
-                    </td>
-                    <td>
-                      <a href="{{ url_for('user.project_environment', org_slug=org_slug, project_slug=project_slug, env_slug=env.slug) }}"
-                         class="link link-hover font-medium">{{ env.name }}</a>
-                    </td>
-                    <td>
-                      {% if env.is_default %}
-                        <span class="badge badge-sm badge-primary">default</span>
-                      {% endif %}
-                    </td>
-                    <td>
-                      {% if env.ttl_hours %}
-                        {{ env.ttl_hours }}h
-                      {% else %}
-                        <span class="text-base-content/20">&mdash;</span>
-                      {% endif %}
-                    </td>
-                    <td class="text-right">
-                      <a href="{{ url_for('user.project_environment_settings', org_slug=org_slug, project_slug=project_slug, env_slug=env.slug) }}"
-                         class="btn btn-ghost btn-xs gap-1">
-                        {{ icon('settings', 'w-3 h-3') }}
-                        Edit
-                      </a>
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        {% endif %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
 
         <div id="env-order-inputs">
-          {% for env in standard_envs + ephemeral_envs %}
+          {% for env in envs_sorted %}
             <input type="hidden" name="env_order" value="{{ env.id }}">
           {% endfor %}
         </div>

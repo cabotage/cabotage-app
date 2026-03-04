@@ -589,8 +589,6 @@ def project_environment_create(org_slug, project_slug):
             name=form.name.data,
             slug=form.slug.data,
             is_default=form.is_default.data,
-            ephemeral=form.ephemeral.data,
-            ttl_hours=form.ttl_hours.data if form.ephemeral.data else None,
         )
         db.session.add(environment)
         db.session.flush()
@@ -672,7 +670,6 @@ def project_environment_settings(org_slug, project_slug, env_slug):
                 env.is_default = False
         environment.name = form.name.data
         environment.is_default = form.is_default.data
-        environment.ttl_hours = form.ttl_hours.data if environment.ephemeral else None
         db.session.add(environment)
         db.session.commit()
         return redirect(

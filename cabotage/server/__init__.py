@@ -101,11 +101,6 @@ def celery_init_app(app):
             "schedule": 10.0,
             "args": None,
         },
-        "ephemeral-env-reaper": {
-            "task": "cabotage.celery.tasks.maintain.reap_ephemeral_environments",
-            "schedule": crontab(minute="*/15"),
-            "args": None,
-        },
     }
     app.extensions["celery"] = celery_app
     return celery_app

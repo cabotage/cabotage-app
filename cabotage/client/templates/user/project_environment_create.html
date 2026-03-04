@@ -24,10 +24,6 @@
         {{ render_field(form.name) }}
         {{ render_field(form.slug) }}
         {{ render_field(form.is_default) }}
-        {{ render_field(form.ephemeral) }}
-        <div id="ttl-hours-wrapper" {% if not form.ephemeral.data %}class="hidden"{% endif %}>
-          {{ render_field(form.ttl_hours) }}
-        </div>
         <div class="mt-4">
           <button type="submit" class="btn btn-primary gap-2">
             {{ icon('plus', 'w-4 h-4') }}
@@ -39,10 +35,3 @@
   </div>
 {% endblock content %}
 
-{% block js %}
-<script>
-  document.getElementById('ephemeral').addEventListener('change', function() {
-    document.getElementById('ttl-hours-wrapper').classList.toggle('hidden', !this.checked);
-  });
-</script>
-{% endblock js %}

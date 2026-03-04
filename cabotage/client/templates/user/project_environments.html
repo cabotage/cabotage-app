@@ -27,7 +27,6 @@
       {% for env in project.project_environments|sort(attribute='sort_order') %}
         {% set app_count = env.application_environments|length %}
         {% set meta = [app_count ~ ' application' ~ ('s' if app_count != 1 else '')] %}
-        {% if env.ephemeral %} {% set _ = meta.append('ephemeral') %} {% endif %}
         {% if env.is_default %} {% set _ = meta.append('default') %} {% endif %}
         {{ service_card(name=env.name,
                 slug=env.slug,

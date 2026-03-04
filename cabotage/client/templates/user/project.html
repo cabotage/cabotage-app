@@ -106,9 +106,6 @@
             {% if env.is_default %}
               <span class="badge badge-xs badge-ghost">default</span>
             {% endif %}
-            {% if env.ephemeral %}
-              <span class="badge badge-xs badge-ghost">ephemeral</span>
-            {% endif %}
             <a href="{{ url_for('user.project_environment', org_slug=project.organization.slug, project_slug=project.slug, env_slug=env.slug) }}"
                class="text-xs text-base-content/30 hover:text-accent transition-colors ml-auto inline-flex items-center gap-1">{{ icon('settings', 'w-3 h-3') }} Settings</a>
           </div>
