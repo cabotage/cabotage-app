@@ -15,24 +15,29 @@
          data-collapsible-card>
   <summary class="!p-4 cursor-pointer">
     <div class="flex items-center justify-between w-full">
-      <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider flex items-center gap-2">
-        {{ icon('box', 'w-3.5 h-3.5') }}
-        Image Build
-        {% if image.built %}
-          <span class="badge badge-sm badge-success gap-1">{{ icon('check', 'w-2.5 h-2.5') }} Built</span>
-        {% elif image.error %}
-          <span class="badge badge-sm badge-error gap-1">{{ icon('x', 'w-2.5 h-2.5') }} Failed</span>
-        {% else %}
-          <span class="badge badge-sm badge-info gap-1">Building...</span>
-        {% endif %}
-      </h2>
       <div class="flex items-center gap-2">
-        <span class="text-xs text-base-content/40">
-          Build <span class="font-mono text-accent">#{{ image.version }}</span>
-          {% if image.built or image.error %} &middot; {{ image|duration }}{% endif %}
-        </span>
         <span class="collapse-icon text-base-content/30">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</span>
+        <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider flex items-center gap-2">
+          {{ icon('box', 'w-3.5 h-3.5') }}
+          Image Build
+          {% if image.built %}
+            <span class="badge badge-sm gap-1 bg-success/15 text-success border-success/20">{{ icon('check', 'w-2.5 h-2.5') }} Built</span>
+          {% elif image.error %}
+            <span class="badge badge-sm badge-error gap-1">{{ icon('x', 'w-2.5 h-2.5') }} Failed</span>
+          {% else %}
+            <span class="badge badge-sm badge-info gap-1">Building...</span>
+          {% endif %}
+        </h2>
+        {% if image.built or image.error %}
+          <span class="text-xs text-base-content/30">&middot; {{ image|duration }}</span>
+        {% endif %}
       </div>
+      <a href="{{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id=image.id) }}"
+         class="inline-flex items-center gap-1.5 text-xs text-accent hover:text-accent/80 transition-colors"
+         onclick="event.stopPropagation()">
+        Image Build <span class="font-mono">#{{ image.version }}</span>
+        {{ icon('chevron-right', 'w-3 h-3') }}
+      </a>
     </div>
   </summary>
   <div class="!px-4 !pb-4">
