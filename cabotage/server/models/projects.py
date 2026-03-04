@@ -352,8 +352,9 @@ class ApplicationEnvironment(db.Model, Timestamp):
     def effective_github_environment_name(self):
         if self.github_environment_name is not None:
             return self.github_environment_name
-        if self.application.github_environment_name is not None:
-            return self.application.github_environment_name
+        if not self.application.project.environments_enabled:
+            if self.application.github_environment_name is not None:
+                return self.application.github_environment_name
         return f"{self.application.project.organization.slug}/{self.application.project.slug}/{self.environment.slug}/{self.application.slug}"
 
     @property
