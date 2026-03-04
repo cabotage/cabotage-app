@@ -351,9 +351,7 @@ def render_cabotage_enroller_container(release, process_name, with_tls=True):
     if with_tls:
         args.append("--fetch-cert")
         args.append(f"--vault-pki-role={role_name}")
-        args.append(
-            f"--service-names={resource_prefix}-{process_name}"
-        )
+        args.append(f"--service-names={resource_prefix}-{process_name}")
 
     return kubernetes.client.V1Container(
         name="cabotage-enroller",
@@ -1309,7 +1307,7 @@ def deploy_release(deployment):
             else:
                 log(f"Release command {release_command} complete!")
         for process_name in deployment.release_object.processes:
-            _pc = (deployment.application_environment.process_counts or {})
+            _pc = deployment.application_environment.process_counts or {}
             log(
                 f"Creating deployment for {process_name} "
                 f"with {_pc.get(process_name, 0)} "

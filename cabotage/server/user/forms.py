@@ -137,7 +137,7 @@ class EditProjectSettingsForm(FlaskForm):
     initial_env_name = StringField(
         "Initial Environment Name",
         [Optional()],
-        description="Name for the default environment (e.g., \"Production\"). All existing applications will be migrated into it.",
+        description='Name for the default environment (e.g., "Production"). All existing applications will be migrated into it.',
     )
 
 
@@ -527,9 +527,7 @@ class CreateEnvironmentForm(FlaskForm):
             .first()
         )
         if environment is not None:
-            raise ValidationError(
-                "Environment slugs must be unique within Projects."
-            )
+            raise ValidationError("Environment slugs must be unique within Projects.")
         return True
 
 

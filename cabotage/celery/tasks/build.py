@@ -364,7 +364,7 @@ def build_release_buildkit(release):
                 with open(os.path.join(tempdir, "buildkitd.toml"), "w") as f:
                     f.write(buildkitd_toml)
 
-                buildkit_root = f"/tmp/buildkit-{release.application.id}-{release.application_environment_id or 'base'}"
+                buildkit_root = f"/tmp/buildkit-{release.application.id}-{release.application_environment_id or 'base'}"  # nosec B108 — deterministic path scoped by app+env ID
                 os.makedirs(buildkit_root, exist_ok=True)
                 sock_addr = f"unix://{buildkit_root}/buildkitd.sock"
                 wrapper = os.path.join(tempdir, "buildctl-daemonless.sh")
@@ -372,11 +372,11 @@ def build_release_buildkit(release):
                     f.write(
                         "#!/bin/sh\n"
                         "set -eu\n"
-                        f'buildkitd --addr={sock_addr} $BUILDKITD_FLAGS &\n'
+                        f"buildkitd --addr={sock_addr} $BUILDKITD_FLAGS &\n"
                         "pid=$!\n"
-                        "trap \"kill $pid || true; wait $pid || true\" EXIT\n"
+                        'trap "kill $pid || true; wait $pid || true" EXIT\n'
                         "try=0; max=10\n"
-                        f'until buildctl --addr={sock_addr} debug workers >/dev/null 2>&1; do\n'
+                        f"until buildctl --addr={sock_addr} debug workers >/dev/null 2>&1; do\n"
                         "  if [ $try -gt $max ]; then\n"
                         f'    echo >&2 "could not connect to {sock_addr} after $max trials"\n'
                         "    exit 1\n"
@@ -386,7 +386,9 @@ def build_release_buildkit(release):
                         "done\n"
                         f'buildctl --addr={sock_addr} "$@"\n'
                     )
-                os.chmod(wrapper, 0o755)
+                os.chmod(
+                    wrapper, 0o755
+                )  # nosec B103 — wrapper script must be executable
                 buildctl_command = [wrapper]
 
                 try:
@@ -526,6 +528,7 @@ def fetch_image_build_cache_volume_claim(core_api_instance, image):
         volume_claim_name += f"-{app_env.environment.k8s_identifier}"
     if len(volume_claim_name) > 63:
         import hashlib
+
         suffix = hashlib.sha256(volume_claim_name.encode()).hexdigest()[:8]
         volume_claim_name = volume_claim_name[:54] + "-" + suffix
     try:
@@ -976,7 +979,7 @@ def build_image_buildkit(image=None):
                 with open(os.path.join(tempdir, "buildkitd.toml"), "w") as f:
                     f.write(buildkitd_toml)
 
-                buildkit_root = f"/tmp/buildkit-{image.application.id}-{image.application_environment_id or 'base'}"
+                buildkit_root = f"/tmp/buildkit-{image.application.id}-{image.application_environment_id or 'base'}"  # nosec B108 — deterministic path scoped by app+env ID
                 os.makedirs(buildkit_root, exist_ok=True)
                 sock_addr = f"unix://{buildkit_root}/buildkitd.sock"
                 wrapper = os.path.join(tempdir, "buildctl-daemonless.sh")
@@ -984,11 +987,11 @@ def build_image_buildkit(image=None):
                     f.write(
                         "#!/bin/sh\n"
                         "set -eu\n"
-                        f'buildkitd --addr={sock_addr} $BUILDKITD_FLAGS &\n'
+                        f"buildkitd --addr={sock_addr} $BUILDKITD_FLAGS &\n"
                         "pid=$!\n"
-                        "trap \"kill $pid || true; wait $pid || true\" EXIT\n"
+                        'trap "kill $pid || true; wait $pid || true" EXIT\n'
                         "try=0; max=10\n"
-                        f'until buildctl --addr={sock_addr} debug workers >/dev/null 2>&1; do\n'
+                        f"until buildctl --addr={sock_addr} debug workers >/dev/null 2>&1; do\n"
                         "  if [ $try -gt $max ]; then\n"
                         f'    echo >&2 "could not connect to {sock_addr} after $max trials"\n'
                         "    exit 1\n"
@@ -998,7 +1001,9 @@ def build_image_buildkit(image=None):
                         "done\n"
                         f'buildctl --addr={sock_addr} "$@"\n'
                     )
-                os.chmod(wrapper, 0o755)
+                os.chmod(
+                    wrapper, 0o755
+                )  # nosec B103 — wrapper script must be executable
                 buildctl_command = [wrapper]
 
                 try:

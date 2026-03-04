@@ -130,7 +130,9 @@ class Project(db.Model, Timestamp):
 
     __table_args__ = (
         UniqueConstraint(organization_id, slug),
-        UniqueConstraint(organization_id, k8s_identifier, name="uq_projects_org_k8s_identifier"),
+        UniqueConstraint(
+            organization_id, k8s_identifier, name="uq_projects_org_k8s_identifier"
+        ),
     )
 
 
@@ -155,6 +157,7 @@ class Environment(db.Model, Timestamp):
         postgresql.UUID(as_uuid=True),
         db.ForeignKey("projects.id"),
         nullable=False,
+        index=True,
     )
     name = db.Column(db.Text(), nullable=False)
     slug = db.Column(CIText(), nullable=False)
@@ -173,7 +176,11 @@ class Environment(db.Model, Timestamp):
 
     __table_args__ = (
         UniqueConstraint(project_id, slug),
-        UniqueConstraint(project_id, k8s_identifier, name="uq_project_environments_project_k8s_identifier"),
+        UniqueConstraint(
+            project_id,
+            k8s_identifier,
+            name="uq_project_environments_project_k8s_identifier",
+        ),
     )
 
     __mapper_args__ = {"version_id_col": version_id}
@@ -193,11 +200,13 @@ class ApplicationEnvironment(db.Model, Timestamp):
         postgresql.UUID(as_uuid=True),
         db.ForeignKey("project_applications.id"),
         nullable=False,
+        index=True,
     )
     environment_id = db.Column(
         postgresql.UUID(as_uuid=True),
         db.ForeignKey("project_environments.id"),
         nullable=False,
+        index=True,
     )
     process_counts = db.Column(
         postgresql.JSONB(), server_default=text("json_object('{}')")
@@ -255,9 +264,7 @@ class ApplicationEnvironment(db.Model, Timestamp):
         lazy="dynamic",
     )
 
-    __table_args__ = (
-        UniqueConstraint(application_id, environment_id),
-    )
+    __table_args__ = (UniqueConstraint(application_id, environment_id),)
 
     __mapper_args__ = {"version_id_col": version_id}
 
@@ -283,7 +290,9 @@ class ApplicationEnvironment(db.Model, Timestamp):
 
     @property
     def latest_release_built(self):
-        return self.releases.filter_by(built=True).order_by(Release.version.desc()).first()
+        return (
+            self.releases.filter_by(built=True).order_by(Release.version.desc()).first()
+        )
 
     @property
     def latest_image_error(self):
@@ -299,7 +308,9 @@ class ApplicationEnvironment(db.Model, Timestamp):
 
     @property
     def latest_release_error(self):
-        return self.releases.filter_by(error=True).order_by(Release.version.desc()).first()
+        return (
+            self.releases.filter_by(error=True).order_by(Release.version.desc()).first()
+        )
 
     @property
     def latest_release_building(self):
@@ -317,6 +328,14 @@ class ApplicationEnvironment(db.Model, Timestamp):
     def latest_deployment_completed(self):
         return (
             self.deployments.filter_by(complete=True)
+            .order_by(Deployment.created.desc())
+            .first()
+        )
+
+    @property
+    def latest_deployment_running(self):
+        return (
+            self.deployments.filter_by(complete=False, error=False)
             .order_by(Deployment.created.desc())
             .first()
         )
@@ -475,6 +494,38 @@ class Application(db.Model, Timestamp):
             self.application_environments[0] if self.application_environments else None,
         )
 
+    # Proxy properties that delegate to default_app_env so listing-page
+    # templates (organization.html, projects.html, etc.) can use app.latest_*
+    @property
+    def latest_image_built(self):
+        ae = self.default_app_env
+        return ae.latest_image_built if ae else None
+
+    @property
+    def latest_image_error(self):
+        ae = self.default_app_env
+        return ae.latest_image_error if ae else None
+
+    @property
+    def latest_image_building(self):
+        ae = self.default_app_env
+        return ae.latest_image_building if ae else None
+
+    @property
+    def latest_release(self):
+        ae = self.default_app_env
+        return ae.latest_release if ae else None
+
+    @property
+    def latest_deployment_completed(self):
+        ae = self.default_app_env
+        return ae.latest_deployment_completed if ae else None
+
+    @property
+    def latest_deployment_running(self):
+        ae = self.default_app_env
+        return ae.latest_deployment_running if ae else None
+
     def ready_for_deployment_in_env(self, app_env):
         current = {}
         if app_env.latest_release:
@@ -496,7 +547,9 @@ class Application(db.Model, Timestamp):
         release = Release(
             application_id=self.id,
             application_environment_id=app_env.id,
-            image=app_env.latest_image_built.asdict if app_env.latest_image_built else {},
+            image=(
+                app_env.latest_image_built.asdict if app_env.latest_image_built else {}
+            ),
             configuration={c.name: c.asdict for c in app_env.configurations},
             platform=self.platform,
         )
@@ -515,7 +568,9 @@ class Application(db.Model, Timestamp):
         release = Release(
             application_id=self.id,
             application_environment_id=app_env.id,
-            image=app_env.latest_image_built.asdict if app_env.latest_image_built else {},
+            image=(
+                app_env.latest_image_built.asdict if app_env.latest_image_built else {}
+            ),
             _repository_name=self.registry_repository_name(app_env),
             configuration={c.name: c.asdict for c in app_env.configurations},
             image_changes=image_diff.asdict,
@@ -528,7 +583,11 @@ class Application(db.Model, Timestamp):
 
     __table_args__ = (
         UniqueConstraint(project_id, slug),
-        UniqueConstraint(project_id, k8s_identifier, name="uq_project_applications_project_k8s_identifier"),
+        UniqueConstraint(
+            project_id,
+            k8s_identifier,
+            name="uq_project_applications_project_k8s_identifier",
+        ),
         db.Index(
             "github_deployments_unique",
             github_app_installation_id,
@@ -561,6 +620,7 @@ class Deployment(db.Model, Timestamp):
         postgresql.UUID(as_uuid=True),
         db.ForeignKey("application_environments.id"),
         nullable=False,
+        index=True,
     )
     release = db.Column(postgresql.JSONB(), nullable=False)
     version_id = db.Column(db.Integer, nullable=False)
@@ -609,6 +669,7 @@ class Release(db.Model, Timestamp):
         postgresql.UUID(as_uuid=True),
         db.ForeignKey("application_environments.id"),
         nullable=False,
+        index=True,
     )
     platform = db.Column(platform_version, nullable=False, default="wind")
     image = db.Column(postgresql.JSONB(), nullable=False)
@@ -859,6 +920,7 @@ class Configuration(db.Model, Timestamp):
         postgresql.UUID(as_uuid=True),
         db.ForeignKey("application_environments.id"),
         nullable=False,
+        index=True,
     )
 
     name = db.Column(
@@ -884,7 +946,9 @@ class Configuration(db.Model, Timestamp):
 
     __table_args__ = (
         db.UniqueConstraint(
-            application_id, application_environment_id, name,
+            application_id,
+            application_environment_id,
+            name,
             name="uq_project_app_configurations_app_env_name",
         ),
     )
@@ -974,6 +1038,7 @@ class Image(db.Model, Timestamp):
         postgresql.UUID(as_uuid=True),
         db.ForeignKey("application_environments.id"),
         nullable=False,
+        index=True,
     )
 
     _repository_name = db.Column(

@@ -92,7 +92,13 @@
          class="tab-item
                 {% if active == 'config' %}tab-active{% endif %}">
         {{ icon('key', 'w-4 h-4') }} Config
-        {% set config_count = application.configurations|rejectattr('name', 'equalto', 'CABOTAGE_SENTINEL')|list|length %}
+        {% if env %}
+          {% set app_env = application.application_environments|selectattr('environment_id', 'equalto', env.id)|first %}
+          {% set configs = app_env.configurations if app_env else [] %}
+        {% else %}
+          {% set configs = application.configurations %}
+        {% endif %}
+        {% set config_count = configs|rejectattr('name', 'equalto', 'CABOTAGE_SENTINEL')|list|length %}
         {% if config_count %}<span class="badge badge-sm badge-neutral ml-1">{{ config_count }}</span>{% endif %}
       </a>
       <a href="{{ url_for('user.application_images', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"

@@ -43,11 +43,7 @@ def _prune_repository(repository_name, dry_run=False):
     try:
         aliases = client.list_aliases()
         image_aliases = sorted(
-            [
-                a
-                for a in aliases
-                if a.startswith("image-") and a != "image-buildcache"
-            ],
+            [a for a in aliases if a.startswith("image-") and a != "image-buildcache"],
             key=natsort,
         )
         release_aliases = sorted(
