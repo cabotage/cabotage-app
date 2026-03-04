@@ -1,0 +1,56 @@
+{#
+  Image Build Phase partial (collapsible card for pipeline view).
+  Expects: image, prefix, org_slug, project_slug, app_slug
+  Optional: phase_ws_url (WS URL for live log streaming)
+  prefix is used to namespace element IDs (e.g. "image" -> "imageProgressFill", "imagePhase", etc.)
+#}
+{% from "_macros.html" import icon %}
+
+<details class="card bg-base-200 border border-base-300 group phase-section"
+         data-prefix="{{ prefix }}"
+         data-phase-type="build"
+         {% if phase_ws_url %}data-ws-url="{{ phase_ws_url }}"{% endif %}
+         {% if image.created %}data-start-time="{{ image.created.isoformat() }}Z"{% endif %}
+         {% if not image.built and not image.error %}open{% elif image.error %}open{% endif %}
+         data-collapsible-card>
+  <summary class="!p-4 cursor-pointer">
+    <div class="flex items-center justify-between w-full">
+      <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider flex items-center gap-2">
+        {{ icon('box', 'w-3.5 h-3.5') }}
+        Image Build
+        {% if image.built %}
+          <span class="badge badge-sm badge-success gap-1">{{ icon('check', 'w-2.5 h-2.5') }} Built</span>
+        {% elif image.error %}
+          <span class="badge badge-sm badge-error gap-1">{{ icon('x', 'w-2.5 h-2.5') }} Failed</span>
+        {% else %}
+          <span class="badge badge-sm badge-info gap-1">Building...</span>
+        {% endif %}
+      </h2>
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-base-content/40">
+          Build <span class="font-mono text-accent">#{{ image.version }}</span>
+          {% if image.built or image.error %} &middot; {{ image|duration }}{% endif %}
+        </span>
+        <span class="collapse-icon text-base-content/30">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</span>
+      </div>
+    </div>
+  </summary>
+  <div class="!px-4 !pb-4">
+
+    {% if image.error %}
+      {% with banner_class="build-error-banner mb-4", error_label="Build Failed", error_detail=image.error_detail %}
+        {% include "user/_error_banner.html" %}
+      {% endwith %}
+    {% endif %}
+
+    {% if not image.built and not image.error %}
+      {% with progress_type="build", extra_class="mb-4" %}
+        {% include "user/_progress_banner.html" %}
+      {% endwith %}
+    {% endif %}
+
+    {% with log_content=image.image_build_log, viewer_class="build-log-viewer build-log-viewer-primary", placeholder_text="Waiting for build output…", viewer_style="max-height: 400px;" %}
+      {% include "user/_log_viewer.html" %}
+    {% endwith %}
+  </div>
+</details>

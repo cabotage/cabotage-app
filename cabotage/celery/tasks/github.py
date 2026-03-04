@@ -23,7 +23,7 @@ from cabotage.server.models.auth import Organization
 from cabotage.celery.tasks import (
     run_image_build,
 )
-from cabotage.utils.github import post_deployment_status_update
+from cabotage.utils.github import github_deployment_url, post_deployment_status_update
 
 Activity = activity_plugin.activity_cls
 
@@ -181,11 +181,14 @@ def process_deployment_hook(hook):
 
         access_token = access_token_response.json()
 
+        pipeline_url = github_deployment_url(deployment["id"], application)
+
         post_deployment_status_update(
             access_token["token"],
             deployment["statuses_url"],
             "in_progress",
             "Deployment is starting!",
+            log_url=pipeline_url,
         )
 
         image = Image(
@@ -219,6 +222,7 @@ def process_deployment_hook(hook):
             deployment["statuses_url"],
             "in_progress",
             "Image build commencing.",
+            log_url=pipeline_url,
         )
         return True
     except HookError as exc:
@@ -265,13 +269,15 @@ def create_deployment(
             },
             timeout=10,
         )
+        deployment_response.raise_for_status()
+        dep_data = deployment_response.json()
         post_deployment_status_update(
             access_token["token"],
-            deployment_response.json()["statuses_url"],
+            dep_data["statuses_url"],
             "pending",
             "Deployment created.",
+            log_url=github_deployment_url(dep_data["id"], application),
         )
-        deployment_response.raise_for_status()
     except Exception:
         return False
     return True
@@ -280,7 +286,7 @@ def create_deployment(
 def process_push_hook(hook):
     installation_id = hook.payload["installation"]["id"]
     repository_name = hook.payload["repository"]["full_name"]
-    branch_names = [hook.payload["ref"].lstrip("refs/heads/")]
+    branch_names = [hook.payload["ref"].removeprefix("refs/heads/")]
     commit_sha = hook.payload["after"]
 
     hook.commit_sha = commit_sha

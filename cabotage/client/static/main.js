@@ -1200,25 +1200,34 @@ function initTimestampsAndDeployForm() {
 /* Build/Release Detail Page */
 function initBuildDetailPage(opts) {
   var nextStepUrl = opts.nextStepUrl;
-  var nextStepBanner = document.getElementById('nextStepBanner');
+  var nextStepBannerId = opts.nextStepBannerId || 'nextStepBanner';
+  var nextStepBanner = document.getElementById(nextStepBannerId);
   if (nextStepUrl && nextStepBanner) {
     nextStepBanner.querySelector('a').href = nextStepUrl;
     nextStepBanner.hidden = false;
   }
   var logsPre = document.getElementById(opts.logElementId);
-  var placeholder = document.getElementById('logPlaceholder');
+  var placeholderId = opts.placeholderId || 'logPlaceholder';
+  var placeholder = document.getElementById(placeholderId);
   if (!logsPre || !placeholder) return;
   logsPre.innerHTML = '';
-  var barFill = document.getElementById('buildProgressFill');
-  var phaseLabel = document.getElementById('buildPhase');
-  var stepsEl = document.getElementById('buildSteps');
-  var elapsedEl = document.getElementById('buildElapsed');
-  var tracker = barFill ? new BuildProgressTracker(barFill, phaseLabel, 'build', stepsEl, elapsedEl) : null;
+  var progressFillId = opts.progressFillId || 'buildProgressFill';
+  var phaseId = opts.phaseId || 'buildPhase';
+  var stepsId = opts.stepsId || 'buildSteps';
+  var elapsedId = opts.elapsedId || 'buildElapsed';
+  var barFill = document.getElementById(progressFillId);
+  var phaseLabel = document.getElementById(phaseId);
+  var stepsEl = document.getElementById(stepsId);
+  var elapsedEl = document.getElementById(elapsedId);
+  var tracker = barFill ? new BuildProgressTracker(barFill, phaseLabel, 'build', stepsEl, elapsedEl, opts.startTime) : null;
   var logsFinished = false;
   var linesReceived = 0;
+  var reconnectAttempts = 0;
+  var maxReconnectAttempts = 30;
   var emptyEndAttempts = 0;
   var maxEmptyEndAttempts = 20;
-  var progressBanner = document.querySelector('.build-progress-banner');
+  var progressBannerSelector = opts.progressBannerSelector || '.build-progress-banner';
+  var progressBanner = document.querySelector(progressBannerSelector);
   var pendingLines = [];
   var flushScheduled = false;
   function flushPendingLines() {
@@ -1229,9 +1238,10 @@ function initBuildDetailPage(opts) {
     flushScheduled = false;
   }
   var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
-  var wsUrl = opts.wsUrl || (window.location.pathname + '/livelogs');
+  var wsPath = opts.wsUrl || (window.location.pathname + '/livelogs');
+  var wsUrl = /^wss?:\/\//.test(wsPath) ? wsPath : protocol + window.location.host + wsPath;
   function connectWebSocket() {
-    var socket = new WebSocket(protocol + window.location.host + wsUrl);
+    var socket = new WebSocket(wsUrl);
     socket.addEventListener('message', function(ev) {
       if (ev.data === '=================END OF LOGS=================') {
         flushPendingLines();
@@ -1245,10 +1255,17 @@ function initBuildDetailPage(opts) {
         logsFinished = true;
         if (tracker) {
           tracker.complete();
-          if (tracker.errored && progressBanner) progressBanner.classList.add('deploy-progress-banner-error');
+          if (tracker.errored && progressBanner) {
+            progressBanner.classList.add(
+              progressBanner.classList.contains('deploy-progress-banner')
+                ? 'deploy-progress-banner-error'
+                : 'build-progress-banner-error'
+            );
+          }
         }
         return;
       }
+      reconnectAttempts = 0;
       linesReceived++;
       if (tracker) tracker.processLine(ev.data);
       pendingLines.push(ev.data);
@@ -1260,17 +1277,30 @@ function initBuildDetailPage(opts) {
     socket.addEventListener('close', function() {
       if (logsFinished) {
         fetchBuildStatus();
-      } else if (linesReceived > 0) {
-        if (tracker) tracker.setPhase('Waiting for build logs\u2026');
-        setTimeout(function() { window.location.reload(); }, 10000);
+        return;
       }
+      reconnectAttempts++;
+      if (reconnectAttempts >= maxReconnectAttempts) {
+        if (tracker) tracker.setPhase('Checking status\u2026');
+        fetchBuildStatus();
+        return;
+      }
+      if (tracker) tracker.setPhase('Reconnecting\u2026');
+      setTimeout(connectWebSocket, Math.min(2000, 500 * reconnectAttempts));
     });
   }
   var statusPollAttempts = 0;
   var maxStatusPolls = 30;
+  var statusPollUrl = opts.statusPollUrl || window.location.pathname;
+  var skipStatusPoll = opts.skipStatusPoll || false;
   function fetchBuildStatus() {
+    if (skipStatusPoll) {
+      if (progressBanner) progressBanner.style.display = 'none';
+      if (opts.onComplete) opts.onComplete();
+      return;
+    }
     statusPollAttempts++;
-    fetch(window.location.pathname + '?_t=' + Date.now(), {
+    fetch(statusPollUrl + '?_t=' + Date.now(), {
       credentials: 'same-origin',
       headers: { 'Accept': 'text/html', 'Cache-Control': 'no-cache' }
     })
@@ -1315,15 +1345,21 @@ function copyBuildLog() {
 /* Deploy Detail Page */
 function initDeployDetailPage(opts) {
   var logsPre = document.getElementById(opts.logElementId);
-  var placeholder = document.getElementById('logPlaceholder');
+  var placeholderId = opts.placeholderId || 'logPlaceholder';
+  var placeholder = document.getElementById(placeholderId);
   if (!logsPre || !placeholder) return;
   logsPre.innerHTML = '';
-  var barFill = document.getElementById('deployProgressFill');
-  var phaseLabel = document.getElementById('deployPhase');
-  var stepsEl = document.getElementById('deploySteps');
-  var elapsedEl = document.getElementById('deployElapsed');
+  var progressFillId = opts.progressFillId || 'deployProgressFill';
+  var phaseId = opts.phaseId || 'deployPhase';
+  var stepsId = opts.stepsId || 'deploySteps';
+  var elapsedId = opts.elapsedId || 'deployElapsed';
+  var barFill = document.getElementById(progressFillId);
+  var phaseLabel = document.getElementById(phaseId);
+  var stepsEl = document.getElementById(stepsId);
+  var elapsedEl = document.getElementById(elapsedId);
   var tracker = barFill ? new BuildProgressTracker(barFill, phaseLabel, 'deploy', stepsEl, elapsedEl, opts.startTime) : null;
-  var progressBanner = document.querySelector('.deploy-progress-banner');
+  var progressBannerSelector = opts.progressBannerSelector || '.deploy-progress-banner';
+  var progressBanner = document.querySelector(progressBannerSelector);
   var logsFinished = false;
   var linesReceived = 0;
   var reconnectAttempts = 0;
@@ -1340,7 +1376,8 @@ function initDeployDetailPage(opts) {
     flushScheduled = false;
   }
   var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
-  var wsUrl = protocol + window.location.host + window.location.pathname + '/livelogs';
+  var wsPath = opts.wsUrl || (window.location.pathname + '/livelogs');
+  var wsUrl = /^wss?:\/\//.test(wsPath) ? wsPath : protocol + window.location.host + wsPath;
   function connectWebSocket() {
     var socket = new WebSocket(wsUrl);
     socket.addEventListener('message', function(ev) {
@@ -1385,7 +1422,13 @@ function initDeployDetailPage(opts) {
   }
   var statusPollAttempts = 0;
   var maxStatusPolls = 30;
+  var skipStatusPoll = opts.skipStatusPoll || false;
   function fetchDeploymentStatus() {
+    if (skipStatusPoll) {
+      if (progressBanner) progressBanner.style.display = 'none';
+      if (opts.onComplete) opts.onComplete();
+      return;
+    }
     statusPollAttempts++;
     fetch(window.location.pathname + '?_t=' + Date.now(), {
       credentials: 'same-origin',

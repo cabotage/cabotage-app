@@ -54,7 +54,10 @@ from cabotage.utils.build_log_stream import (
     stream_key,
 )
 from cabotage.utils.release_build_context import RELEASE_DOCKERFILE_TEMPLATE
-from cabotage.utils.github import post_deployment_status_update
+from cabotage.utils.github import (
+    github_deployment_url,
+    post_deployment_status_update,
+)
 from cabotage.utils import procfile
 
 Activity = activity_plugin.activity_cls
@@ -1110,6 +1113,9 @@ def run_image_build(image_id=None, buildkit=False):
                     image.image_metadata["statuses_url"],
                     "in_progress",
                     "Image built, Release build commencing.",
+                    log_url=github_deployment_url(
+                        image.image_metadata["id"], image.application
+                    ),
                 )
         except BuildError as exc:
             db.session.add(image)
@@ -1129,6 +1135,9 @@ def run_image_build(image_id=None, buildkit=False):
                     image.image_metadata["statuses_url"],
                     "failure",
                     "Image build failed.",
+                    log_url=github_deployment_url(
+                        image.image_metadata["id"], image.application
+                    ),
                 )
             raise
     except Exception:
@@ -1227,6 +1236,9 @@ def run_release_build(release_id=None):
                     release.release_metadata["statuses_url"],
                     "in_progress",
                     "Release built, Deployment commencing.",
+                    log_url=github_deployment_url(
+                        release.release_metadata["id"], release.application
+                    ),
                 )
         except BuildError as exc:
             release.error = True
@@ -1249,6 +1261,9 @@ def run_release_build(release_id=None):
                     release.release_metadata["statuses_url"],
                     "failure",
                     "Release build failed.",
+                    log_url=github_deployment_url(
+                        release.release_metadata["id"], release.application
+                    ),
                 )
         except Exception:
             try:
@@ -1273,6 +1288,9 @@ def run_release_build(release_id=None):
                     release.release_metadata["statuses_url"],
                     "error",
                     "Release build failed.",
+                    log_url=github_deployment_url(
+                        release.release_metadata["id"], release.application
+                    ),
                 )
             raise
 

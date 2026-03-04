@@ -2907,3 +2907,39 @@ def organization_demote_user(org_slug):
     else:
         flash("User not found.", "error")
     return redirect(url_for("user.organization", org_slug=org_slug))
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/github-deployments/<int:github_deployment_id>"
+)
+@login_required
+def github_deployment_detail(org_slug, project_slug, app_slug, github_deployment_id):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    github_dep_id_str = str(github_deployment_id)
+
+    image = Image.query.filter(
+        Image.application_id == application.id,
+        Image.image_metadata["id"].astext == github_dep_id_str,
+    ).first()
+
+    releases = Release.query.filter(
+        Release.application_id == application.id,
+        Release.release_metadata["id"].astext == github_dep_id_str,
+    ).order_by(Release.created).all()
+
+    deployments = Deployment.query.filter(
+        Deployment.application_id == application.id,
+        Deployment.deploy_metadata["id"].astext == github_dep_id_str,
+    ).order_by(Deployment.created).all()
+
+    if not image and not releases and not deployments:
+        abort(404)
+
+    return render_template(
+        "user/github_deployment_detail.html",
+        application=application,
+        github_deployment_id=github_deployment_id,
+        image=image,
+        releases=releases,
+        deployments=deployments,
+    )

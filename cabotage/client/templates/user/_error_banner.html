@@ -1,0 +1,17 @@
+{#
+  Shared error banner partial.
+  Expects: banner_class, error_label, error_detail
+  Example: banner_class="build-error-banner", error_label="Build Failed"
+#}
+{% from "_macros.html" import icon %}
+<div class="{{ banner_class }}">
+  <div class="flex items-start gap-3">
+    <div class="flex-shrink-0 mt-0.5">{{ icon('alert-triangle', 'w-4 h-4 text-error') }}</div>
+    <div class="flex-1 min-w-0">
+      <p class="text-sm font-medium text-error">{{ error_label }}</p>
+      {% if error_detail %}
+        <pre class="text-xs text-base-content/60 mt-1.5 whitespace-pre-wrap break-words leading-relaxed">{{ error_detail }}</pre>
+      {% endif %}
+    </div>
+  </div>
+</div>

@@ -76,36 +76,15 @@
   </div>
 
   {% if deployment.error %}
-    <div class="deploy-error-banner mb-6">
-      <div class="flex items-start gap-3">
-        <div class="flex-shrink-0 mt-0.5">{{ icon('alert-triangle', 'w-4 h-4 text-error') }}</div>
-        <div class="flex-1 min-w-0">
-          <p class="text-sm font-medium text-error">Deployment Failed</p>
-          {% if deployment.error_detail %}
-            <pre class="text-xs text-base-content/60 mt-1.5 whitespace-pre-wrap break-words leading-relaxed">{{ deployment.error_detail }}</pre>
-          {% endif %}
-        </div>
-      </div>
-    </div>
+    {% with banner_class="deploy-error-banner mb-6", error_label="Deployment Failed", error_detail=deployment.error_detail %}
+      {% include "user/_error_banner.html" %}
+    {% endwith %}
   {% endif %}
 
   {% if not deployment.complete and not deployment.error %}
-    <div class="deploy-progress-banner mb-6">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <div class="deploy-progress-spinner"></div>
-          <div>
-            <p class="text-sm font-medium text-base-content" id="deployPhase">Waiting for logs…</p>
-            <p class="text-xs text-base-content/40">Streaming logs below. Updates live on completion.</p>
-          </div>
-        </div>
-        <span class="progress-elapsed" id="deployElapsed">00:00</span>
-      </div>
-      <div class="deploy-progress-bar mt-3">
-        <div class="deploy-progress-bar-fill" id="deployProgressFill"></div>
-      </div>
-      <div class="progress-steps" id="deploySteps"></div>
-    </div>
+    {% with prefix="deploy", progress_type="deploy", extra_class="mb-6" %}
+      {% include "user/_progress_banner.html" %}
+    {% endwith %}
   {% endif %}
 
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
@@ -336,24 +315,9 @@
               </button>
             {% endif %}
           </div>
-          <div class="deploy-log-viewer deploy-log-viewer-primary flex-1"
-               id="deployLog"
-               data-log-viewer>
-            {%- if deployment.deploy_log and deployment.deploy_log != 'None' -%}
-              {{ deployment.deploy_log }}
-            {%- else -%}
-              <div class="log-placeholder" id="logPlaceholder">
-                <div class="log-placeholder-icon">{{ icon('terminal', 'w-6 h-6') }}</div>
-                <div class="log-placeholder-lines">
-                  <div class="log-placeholder-line" style="width: 100%"></div>
-                  <div class="log-placeholder-line"></div>
-                  <div class="log-placeholder-line"></div>
-                  <div class="log-placeholder-line"></div>
-                </div>
-                <span class="log-placeholder-text">Waiting for deploy output…</span>
-              </div>
-            {%- endif -%}
-          </div>
+          {% with prefix="deploy", log_content=deployment.deploy_log, viewer_class="deploy-log-viewer deploy-log-viewer-primary", viewer_extra_class="flex-1", placeholder_text="Waiting for deploy output…" %}
+            {% include "user/_log_viewer.html" %}
+          {% endwith %}
         </div>
       </div>
     </div>
@@ -396,6 +360,7 @@
     var cfg = document.getElementById('deployPageConfig').dataset;
     initDeployDetailPage({
       logElementId: 'deployLog',
+      placeholderId: 'deployPlaceholder',
       startTime: cfg.startTime
     });
   })();

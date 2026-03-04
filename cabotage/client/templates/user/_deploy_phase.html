@@ -1,0 +1,55 @@
+{#
+  Deploy Phase partial (collapsible card for pipeline view).
+  Expects: deployment, prefix, org_slug, project_slug, app_slug
+  Optional: phase_ws_url (WS URL for live log streaming)
+  prefix is used to namespace element IDs (e.g. "deploy" -> "deployProgressFill", "deployPhase", etc.)
+#}
+{% from "_macros.html" import icon %}
+
+<details class="card bg-base-200 border border-base-300 group phase-section"
+         data-prefix="{{ prefix }}"
+         data-phase-type="deploy"
+         {% if phase_ws_url %}data-ws-url="{{ phase_ws_url }}"{% endif %}
+         {% if deployment.created %}data-start-time="{{ deployment.created.isoformat() }}Z"{% endif %}
+         {% if not deployment.complete and not deployment.error %}open{% elif deployment.error %}open{% endif %}
+         data-collapsible-card>
+  <summary class="!p-4 cursor-pointer">
+    <div class="flex items-center justify-between w-full">
+      <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider flex items-center gap-2">
+        {{ icon('upload-cloud', 'w-3.5 h-3.5') }}
+        Deploy
+        {% if deployment.complete %}
+          <span class="badge badge-sm badge-success gap-1">{{ icon('check', 'w-2.5 h-2.5') }} Complete</span>
+        {% elif deployment.error %}
+          <span class="badge badge-sm badge-error gap-1">{{ icon('x', 'w-2.5 h-2.5') }} Failed</span>
+        {% else %}
+          <span class="badge badge-sm badge-info gap-1">Deploying...</span>
+        {% endif %}
+      </h2>
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-base-content/40">
+          {% if deployment.complete or deployment.error %}{{ deployment|duration }}{% endif %}
+        </span>
+        <span class="collapse-icon text-base-content/30">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</span>
+      </div>
+    </div>
+  </summary>
+  <div class="!px-4 !pb-4">
+
+    {% if deployment.error %}
+      {% with banner_class="deploy-error-banner mb-4", error_label="Deployment Failed", error_detail=deployment.error_detail %}
+        {% include "user/_error_banner.html" %}
+      {% endwith %}
+    {% endif %}
+
+    {% if not deployment.complete and not deployment.error %}
+      {% with progress_type="deploy", extra_class="mb-4" %}
+        {% include "user/_progress_banner.html" %}
+      {% endwith %}
+    {% endif %}
+
+    {% with log_content=deployment.deploy_log, viewer_class="deploy-log-viewer deploy-log-viewer-primary", placeholder_text="Waiting for deploy output…", viewer_style="max-height: 400px;" %}
+      {% include "user/_log_viewer.html" %}
+    {% endwith %}
+  </div>
+</details>

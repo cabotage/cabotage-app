@@ -1,0 +1,26 @@
+{#
+  Shared log viewer partial (the inner <div> only, not the card wrapper).
+  Expects: prefix, log_content, viewer_class, placeholder_text
+  Optional: viewer_style, viewer_extra_class
+  Element IDs: {prefix}Log, {prefix}Placeholder
+#}
+{% from "_macros.html" import icon %}
+<div class="{{ viewer_class }}{{ ' ' ~ viewer_extra_class if viewer_extra_class else '' }}"
+     {% if viewer_style %}style="{{ viewer_style }}"{% endif %}
+     id="{{ prefix }}Log"
+     data-log-viewer>
+  {%- if log_content and log_content != 'None' -%}
+    {{ log_content }}
+  {%- else -%}
+    <div class="log-placeholder" id="{{ prefix }}Placeholder">
+      <div class="log-placeholder-icon">{{ icon('terminal', 'w-6 h-6') }}</div>
+      <div class="log-placeholder-lines">
+        <div class="log-placeholder-line" style="width: 100%"></div>
+        <div class="log-placeholder-line"></div>
+        <div class="log-placeholder-line"></div>
+        <div class="log-placeholder-line"></div>
+      </div>
+      <span class="log-placeholder-text">{{ placeholder_text }}</span>
+    </div>
+  {%- endif -%}
+</div>

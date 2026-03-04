@@ -89,36 +89,15 @@
   </div>
 
   {% if image.error %}
-    <div class="build-error-banner mb-6">
-      <div class="flex items-start gap-3">
-        <div class="flex-shrink-0 mt-0.5">{{ icon('alert-triangle', 'w-4 h-4 text-error') }}</div>
-        <div class="flex-1 min-w-0">
-          <p class="text-sm font-medium text-error">Build Failed</p>
-          {% if image.error_detail %}
-            <pre class="text-xs text-base-content/60 mt-1.5 whitespace-pre-wrap break-words leading-relaxed">{{ image.error_detail }}</pre>
-          {% endif %}
-        </div>
-      </div>
-    </div>
+    {% with banner_class="build-error-banner mb-6", error_label="Build Failed", error_detail=image.error_detail %}
+      {% include "user/_error_banner.html" %}
+    {% endwith %}
   {% endif %}
 
   {% if not image.built and not image.error %}
-    <div class="build-progress-banner mb-6">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <div class="build-progress-spinner"></div>
-          <div>
-            <p class="text-sm font-medium text-base-content" id="buildPhase">Waiting for logs…</p>
-            <p class="text-xs text-base-content/40">Streaming logs below. Updates live on completion.</p>
-          </div>
-        </div>
-        <span class="progress-elapsed" id="buildElapsed">00:00</span>
-      </div>
-      <div class="build-progress-bar mt-3">
-        <div class="build-progress-bar-fill" id="buildProgressFill"></div>
-      </div>
-      <div class="progress-steps" id="buildSteps"></div>
-    </div>
+    {% with prefix="build", progress_type="build", extra_class="mb-6" %}
+      {% include "user/_progress_banner.html" %}
+    {% endwith %}
   {% endif %}
 
   <div id="nextStepBanner" hidden class="mb-6">
@@ -399,24 +378,9 @@
               </button>
             {% endif %}
           </div>
-          <div class="build-log-viewer build-log-viewer-primary flex-1"
-               id="buildLog"
-               data-log-viewer>
-            {%- if image.image_build_log and image.image_build_log != 'None' -%}
-              {{ image.image_build_log }}
-            {%- else -%}
-              <div class="log-placeholder" id="logPlaceholder">
-                <div class="log-placeholder-icon">{{ icon('terminal', 'w-6 h-6') }}</div>
-                <div class="log-placeholder-lines">
-                  <div class="log-placeholder-line" style="width: 100%"></div>
-                  <div class="log-placeholder-line"></div>
-                  <div class="log-placeholder-line"></div>
-                  <div class="log-placeholder-line"></div>
-                </div>
-                <span class="log-placeholder-text">Waiting for build output…</span>
-              </div>
-            {%- endif -%}
-          </div>
+          {% with prefix="build", log_content=image.image_build_log, viewer_class="build-log-viewer build-log-viewer-primary", viewer_extra_class="flex-1", placeholder_text="Waiting for build output…" %}
+            {% include "user/_log_viewer.html" %}
+          {% endwith %}
         </div>
       </div>
     </div>
@@ -461,6 +425,7 @@
     var cfg = document.getElementById('buildPageConfig').dataset;
     initBuildDetailPage({
       logElementId: 'buildLog',
+      placeholderId: 'buildPlaceholder',
       nextStepUrl: JSON.parse(cfg.nextStepUrl),
       appId: cfg.appId,
       isAutoDeploy: JSON.parse(cfg.autoDeploy),

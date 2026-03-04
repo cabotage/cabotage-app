@@ -29,7 +29,7 @@ from cabotage.utils.build_log_stream import (
     refresh_heartbeat,
     stream_key,
 )
-from cabotage.utils.github import post_deployment_status_update
+from cabotage.utils.github import github_deployment_url, post_deployment_status_update
 
 
 class DeployError(RuntimeError):
@@ -1413,6 +1413,9 @@ def deploy_release(deployment):
                 deployment.deploy_metadata["statuses_url"],
                 "failure",
                 f"Deployment failed: {exc}",
+                log_url=github_deployment_url(
+                    deployment.deploy_metadata["id"], deployment.application
+                ),
             )
         if redis_client is not None and log_key is not None:
             try:
@@ -1438,6 +1441,9 @@ def deploy_release(deployment):
                 deployment.deploy_metadata["statuses_url"],
                 "error",
                 f"Deployment failed: {exc}",
+                log_url=github_deployment_url(
+                    deployment.deploy_metadata["id"], deployment.application
+                ),
             )
         if redis_client is not None and log_key is not None:
             try:
@@ -1467,6 +1473,9 @@ def deploy_release(deployment):
             deployment.deploy_metadata["statuses_url"],
             "success",
             "Deployment complete!",
+            log_url=github_deployment_url(
+                deployment.deploy_metadata["id"], deployment.application
+            ),
         )
 
 
@@ -1562,6 +1571,9 @@ def fake_deploy_release(deployment):
             deployment.deploy_metadata["statuses_url"],
             "success",
             "Deployment complete!",
+            log_url=github_deployment_url(
+                deployment.deploy_metadata["id"], deployment.application
+            ),
         )
 
 

@@ -1,0 +1,22 @@
+{#
+  Shared progress banner partial.
+  Expects: prefix, progress_type ("build" or "deploy")
+  Optional: banner_id (defaults to prefix + "ProgressBanner"), extra_class
+  Element IDs: {prefix}Phase, {prefix}Elapsed, {prefix}ProgressFill, {prefix}Steps
+#}
+<div class="{{ progress_type }}-progress-banner{{ ' ' ~ extra_class if extra_class else '' }}" id="{{ banner_id|default(prefix ~ 'ProgressBanner') }}">
+  <div class="flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="{{ progress_type }}-progress-spinner"></div>
+      <div>
+        <p class="text-sm font-medium text-base-content" id="{{ prefix }}Phase">Waiting for logs…</p>
+        <p class="text-xs text-base-content/40">Streaming logs below. Updates live on completion.</p>
+      </div>
+    </div>
+    <span class="progress-elapsed" id="{{ prefix }}Elapsed">00:00</span>
+  </div>
+  <div class="{{ progress_type }}-progress-bar mt-3">
+    <div class="{{ progress_type }}-progress-bar-fill" id="{{ prefix }}ProgressFill"></div>
+  </div>
+  <div class="progress-steps" id="{{ prefix }}Steps"></div>
+</div>

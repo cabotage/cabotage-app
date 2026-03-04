@@ -1,0 +1,56 @@
+{#
+  Release Build Phase partial (collapsible card for pipeline view).
+  Expects: release, prefix, org_slug, project_slug, app_slug
+  Optional: phase_ws_url (WS URL for live log streaming)
+  prefix is used to namespace element IDs (e.g. "release" -> "releaseProgressFill", "releasePhase", etc.)
+#}
+{% from "_macros.html" import icon %}
+
+<details class="card bg-base-200 border border-base-300 group phase-section"
+         data-prefix="{{ prefix }}"
+         data-phase-type="build"
+         {% if phase_ws_url %}data-ws-url="{{ phase_ws_url }}"{% endif %}
+         {% if release.created %}data-start-time="{{ release.created.isoformat() }}Z"{% endif %}
+         {% if not release.built and not release.error %}open{% elif release.error %}open{% endif %}
+         data-collapsible-card>
+  <summary class="!p-4 cursor-pointer">
+    <div class="flex items-center justify-between w-full">
+      <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider flex items-center gap-2">
+        {{ icon('layers', 'w-3.5 h-3.5') }}
+        Release Build
+        {% if release.built %}
+          <span class="badge badge-sm badge-success gap-1">{{ icon('check', 'w-2.5 h-2.5') }} Built</span>
+        {% elif release.error %}
+          <span class="badge badge-sm badge-error gap-1">{{ icon('x', 'w-2.5 h-2.5') }} Failed</span>
+        {% else %}
+          <span class="badge badge-sm badge-info gap-1">Building...</span>
+        {% endif %}
+      </h2>
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-base-content/40">
+          Release <span class="font-mono text-accent">v{{ release.version }}</span>
+          {% if release.built or release.error %} &middot; {{ release|duration }}{% endif %}
+        </span>
+        <span class="collapse-icon text-base-content/30">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</span>
+      </div>
+    </div>
+  </summary>
+  <div class="!px-4 !pb-4">
+
+    {% if release.error %}
+      {% with banner_class="build-error-banner mb-4", error_label="Release Build Failed", error_detail=release.error_detail %}
+        {% include "user/_error_banner.html" %}
+      {% endwith %}
+    {% endif %}
+
+    {% if not release.built and not release.error %}
+      {% with progress_type="build", extra_class="mb-4" %}
+        {% include "user/_progress_banner.html" %}
+      {% endwith %}
+    {% endif %}
+
+    {% with log_content=release.release_build_log, viewer_class="build-log-viewer build-log-viewer-primary", placeholder_text="Waiting for build output…", viewer_style="max-height: 400px;" %}
+      {% include "user/_log_viewer.html" %}
+    {% endwith %}
+  </div>
+</details>

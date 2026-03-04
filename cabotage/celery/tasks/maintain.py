@@ -13,7 +13,10 @@ from cabotage.utils.build_log_stream import (
     publish_end,
     stream_key,
 )
-from cabotage.utils.github import post_deployment_status_update
+from cabotage.utils.github import (
+    github_deployment_url,
+    post_deployment_status_update,
+)
 
 
 @shared_task()
@@ -53,6 +56,9 @@ def reap_stale_builds():
                         image.image_metadata["statuses_url"],
                         "failure",
                         "Image build timed out.",
+                        log_url=github_deployment_url(
+                            image.image_metadata["id"], image.application
+                        ),
                     )
                 except Exception:  # nosec B110
                     pass
@@ -88,6 +94,9 @@ def reap_stale_builds():
                         release.release_metadata["statuses_url"],
                         "failure",
                         "Release build timed out.",
+                        log_url=github_deployment_url(
+                            release.release_metadata["id"], release.application
+                        ),
                     )
                 except Exception:  # nosec B110
                     pass
@@ -123,6 +132,9 @@ def reap_stale_builds():
                         deployment.deploy_metadata["statuses_url"],
                         "failure",
                         "Deploy timed out.",
+                        log_url=github_deployment_url(
+                            deployment.deploy_metadata["id"], deployment.application
+                        ),
                     )
                 except Exception:  # nosec B110
                     pass
