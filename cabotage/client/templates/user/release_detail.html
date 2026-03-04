@@ -456,6 +456,23 @@
       </div>
     </details>
 
+    {% if release.built and release.envconsul_configurations %}
+    <details class="card bg-base-200 border border-base-300 group">
+      <summary class="!py-2.5 !px-4 cursor-pointer flex items-center gap-2 text-left">
+        <span class="collapse-icon text-base-content/30">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</span>
+        <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Envconsul Configs</span>
+      </summary>
+      <div class="!py-2 !px-4 space-y-3">
+        {% for process_name, config in release.envconsul_configurations.items() %}
+        <div>
+          <div class="text-xs font-mono font-semibold text-base-content/60 mb-1">envconsul-{{ process_name }}.hcl</div>
+          <div class="code-block !text-xs text-left whitespace-pre-wrap">{{ config }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+
     <details class="card bg-base-200 border border-base-300 group">
       <summary class="!py-2.5 !px-4 cursor-pointer flex items-center gap-2 text-left">
         <span class="collapse-icon text-base-content/30">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</span>
