@@ -85,3 +85,4 @@ class Config(metaclass=MetaFlaskEnv):
     SOCK_SERVER_OPTIONS = {"ping_interval": 25}
     SIDECAR_IMAGE = "cabotage/sidecar:3"
     DATADOG_IMAGE = "datadog/agent:7.55.2"
+    INGRESS_DOMAIN = None

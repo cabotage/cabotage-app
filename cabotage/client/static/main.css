@@ -4060,3 +4060,15 @@ a.obs-pod-link:hover {
   opacity: 1 !important;
   filter: brightness(1.2);
 }
+
+/* Ingress page */
+.ingress-collapse .collapse-title { padding: 0.35rem 0.75rem; min-height: 0; font-size: 0.75rem; }
+.ingress-collapse .collapse-content { padding: 0 0.75rem 0.5rem; }
+.ingress-collapse[open] .collapse-content { padding-top: 0.25rem; overflow: visible; }
+.ingress-card .table th, .ingress-card .table td { padding: 0.2rem 0.5rem; }
+.ingress-card .divider { margin: 0.25rem 0; }
+.ingress-collapse .fieldset-legend { font-size: 0.65rem; text-transform: none; letter-spacing: 0; }
+.ingress-collapse .input, .ingress-collapse .select { font-size: 0.75rem; height: 1.75rem; min-height: 1.75rem; padding: 0 0.5rem; }
+.ingress-collapse .label { padding: 0; }
+.ingress-collapse .label .text-sm { font-size: 0.75rem; }
+.ingress-collapse .checkbox { width: 0.875rem; height: 0.875rem; }

@@ -1696,8 +1696,161 @@ document.addEventListener('DOMContentLoaded', function () {
   initTimestampsAndDeployForm();
   autoExpandCollapsibleCards();
   syncDetailLogHeight();
+  initAnnotationTables();
+  initIngressForms();
   window.addEventListener('resize', function () {
     autoExpandCollapsibleCards();
     syncDetailLogHeight();
   });
 });
+
+/* Ingress: dynamic annotation key/value tables */
+function initAnnotationTables() {
+  document.querySelectorAll('[data-annotations-toggle]').forEach(function (checkbox) {
+    var name = checkbox.getAttribute('data-annotations-toggle');
+    var target = document.getElementById('annotations-table-' + name);
+    if (!target) return;
+    checkbox.addEventListener('change', function () {
+      target.classList.toggle('hidden', !this.checked);
+    });
+  });
+
+  document.querySelectorAll('[data-annotations-add]').forEach(function (addBtn) {
+    var name = addBtn.getAttribute('data-annotations-add');
+    var table = document.getElementById('annotations-list-' + name);
+    if (!table) return;
+
+    table.addEventListener('click', function (e) {
+      if (e.target.closest('.annotation-remove')) {
+        e.target.closest('tr').remove();
+      }
+    });
+
+    var nextIdx = table.querySelectorAll('tbody tr').length;
+    addBtn.addEventListener('click', function () {
+      var tbody = table.querySelector('tbody');
+      var idx = nextIdx++;
+      var tr = document.createElement('tr');
+
+      var keyTd = document.createElement('td');
+      var keyInput = document.createElement('input');
+      keyInput.type = 'text';
+      keyInput.name = '_annotation_key_' + idx;
+      keyInput.className = 'input input-bordered input-xs w-full';
+      keyInput.placeholder = 'nginx.ingress.kubernetes.io/...';
+      keyTd.appendChild(keyInput);
+
+      var valTd = document.createElement('td');
+      var valInput = document.createElement('input');
+      valInput.type = 'text';
+      valInput.name = '_annotation_value_' + idx;
+      valInput.className = 'input input-bordered input-xs w-full';
+      valTd.appendChild(valInput);
+
+      var rmTd = document.createElement('td');
+      var rmBtn = document.createElement('button');
+      rmBtn.type = 'button';
+      rmBtn.className = 'btn btn-ghost btn-xs text-error p-0';
+      rmBtn.textContent = '\u00d7';
+      rmBtn.addEventListener('click', function () { tr.remove(); });
+      rmTd.appendChild(rmBtn);
+
+      tr.appendChild(keyTd);
+      tr.appendChild(valTd);
+      tr.appendChild(rmTd);
+      tbody.appendChild(tr);
+    });
+  });
+}
+
+/* Ingress: unified form host/path add/remove */
+function initIngressForms() {
+  // Remove host or path row (generic)
+  document.querySelectorAll('.btn-remove-row').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var row = btn.closest('.host-row') || btn.closest('.path-row');
+      if (row) row.remove();
+    });
+  });
+
+  // Add host
+  document.querySelectorAll('[data-add-host]').forEach(function (btn) {
+    var name = btn.getAttribute('data-add-host');
+    var container = document.getElementById('new-hosts-' + name);
+    if (!container) return;
+
+    btn.addEventListener('click', function () {
+      var row = document.createElement('div');
+      row.className = 'host-row flex items-center gap-2 mb-0.5';
+
+      var input = document.createElement('input');
+      input.type = 'text';
+      input.name = '_new_host';
+      input.className = 'input input-bordered input-xs flex-1';
+      input.placeholder = 'app.example.com';
+
+      var rmBtn = document.createElement('button');
+      rmBtn.type = 'button';
+      rmBtn.className = 'btn btn-ghost btn-xs text-error p-0';
+      rmBtn.textContent = '\u00d7';
+      rmBtn.addEventListener('click', function () { row.remove(); });
+
+      row.appendChild(input);
+      row.appendChild(rmBtn);
+      container.appendChild(row);
+      input.focus();
+    });
+  });
+
+  // Add path
+  document.querySelectorAll('[data-add-path]').forEach(function (btn) {
+    var name = btn.getAttribute('data-add-path');
+    var container = document.getElementById('new-paths-' + name);
+    if (!container) return;
+    var choices = JSON.parse(container.getAttribute('data-web-processes') || '[]');
+    var nextIdx = 0;
+
+    btn.addEventListener('click', function () {
+      var idx = nextIdx++;
+      var row = document.createElement('div');
+      row.className = 'path-row flex items-center gap-2 mb-1';
+
+      var pathInput = document.createElement('input');
+      pathInput.type = 'text';
+      pathInput.name = '_new_path_' + idx + '_path';
+      pathInput.className = 'input input-bordered input-xs flex-1';
+      pathInput.placeholder = '/';
+
+      var typeSelect = document.createElement('select');
+      typeSelect.name = '_new_path_' + idx + '_type';
+      typeSelect.className = 'select select-bordered select-xs';
+      ['Prefix', 'Exact', 'ImplementationSpecific'].forEach(function (t) {
+        var opt = document.createElement('option');
+        opt.value = t; opt.textContent = t;
+        typeSelect.appendChild(opt);
+      });
+
+      var targetSelect = document.createElement('select');
+      targetSelect.name = '_new_path_' + idx + '_target';
+      targetSelect.className = 'select select-bordered select-xs';
+      choices.forEach(function (p) {
+        var opt = document.createElement('option');
+        opt.value = p; opt.textContent = p;
+        targetSelect.appendChild(opt);
+      });
+
+      var rmBtn = document.createElement('button');
+      rmBtn.type = 'button';
+      rmBtn.className = 'btn btn-ghost btn-xs text-error p-0';
+      rmBtn.textContent = '\u00d7';
+      rmBtn.addEventListener('click', function () { row.remove(); });
+
+      row.appendChild(pathInput);
+      row.appendChild(typeSelect);
+      row.appendChild(targetSelect);
+      row.appendChild(rmBtn);
+      container.appendChild(row);
+      pathInput.focus();
+    });
+  });
+}
