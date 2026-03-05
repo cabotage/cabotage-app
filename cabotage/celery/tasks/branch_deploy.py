@@ -29,8 +29,6 @@ def _create_app_env_for_branch_deploy(
     application,
     environment,
     base_environment,
-    organization,
-    project,
     auto_deploy_branch=None,
 ):
     """Create ApplicationEnvironment for a branch deploy.
@@ -288,7 +286,6 @@ def maybe_update_pr_comment_for_app_env(app_env):
 
 def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref=None):
     """Create an ephemeral environment for a PR and build images for all enrolled apps."""
-    organization = project.organization
     base_env = project.branch_deploy_base_environment
     env_slug = f"pr-{pr_number}"
 
@@ -330,8 +327,6 @@ def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref
             app,
             environment,
             base_env,
-            organization,
-            project,
             auto_deploy_branch=head_ref,
         )
         new_app_envs.append(app_env)
@@ -372,7 +367,9 @@ def teardown_branch_deploy(project, pr_number):
     _post_teardown_comment(environment, pr_number)
     _teardown_environment(environment)
     db.session.commit()
-    logger.info("torn down ephemeral environment %s for project %s", env_slug, project.id)
+    logger.info(
+        "torn down ephemeral environment %s for project %s", env_slug, project.id
+    )
 
 
 def _post_teardown_comment(environment, pr_number):
