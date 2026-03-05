@@ -563,6 +563,9 @@ def project_settings(org_slug, project_slug):
 
     form = EditProjectSettingsForm(obj=project)
     form.project_id.data = str(project.id)
+    form.branch_deploy_base_environment_id.choices = [("", "— select —")] + [
+        (str(e.id), e.name) for e in project.project_environments
+    ]
 
     envs = project.project_environments
     non_default_envs = [e for e in envs if not e.is_default]
@@ -571,22 +574,11 @@ def project_settings(org_slug, project_slug):
     )
 
     if form.validate_on_submit():
-        if (
-            project.environments_enabled
-            and not form.environments_enabled.data
-            and not can_disable_environments
-        ):
-            flash(
-                "Cannot disable environments while non-default environments exist.",
-                "error",
-            )
-            return redirect(
-                url_for(
-                    "user.project_settings",
-                    org_slug=organization.slug,
-                    project_slug=project.slug,
-                )
-            )
+        # A disabled checkbox doesn't submit a value, so the form sees False
+        # even though environments are still enabled. Restore the real value
+        # when the checkbox was rendered as disabled.
+        if project.environments_enabled and not can_disable_environments:
+            form.environments_enabled.data = True
         disabling_environments = (
             project.environments_enabled
             and not form.environments_enabled.data
@@ -636,6 +628,42 @@ def project_settings(org_slug, project_slug):
                     default_ae = app.default_app_env
                     if default_ae and default_ae.github_environment_name is None:
                         default_ae.github_environment_name = app.github_environment_name
+        # Branch deploy validation
+        if form.branch_deploys_enabled.data:
+            if not form.environments_enabled.data:
+                flash(
+                    "Branch deploys require environments to be enabled.",
+                    "error",
+                )
+                return redirect(
+                    url_for(
+                        "user.project_settings",
+                        org_slug=organization.slug,
+                        project_slug=project.slug,
+                    )
+                )
+            if not form.branch_deploy_base_environment_id.data:
+                flash(
+                    "A base environment must be selected for branch deploys.",
+                    "error",
+                )
+                return redirect(
+                    url_for(
+                        "user.project_settings",
+                        org_slug=organization.slug,
+                        project_slug=project.slug,
+                    )
+                )
+        if disabling_environments:
+            form.branch_deploys_enabled.data = False
+            form.branch_deploy_base_environment_id.data = ""
+        if not form.branch_deploys_enabled.data:
+            form.branch_deploy_base_environment_id.data = ""
+
+        # Convert empty string to None for the UUID FK
+        if not form.branch_deploy_base_environment_id.data:
+            form.branch_deploy_base_environment_id.data = None
+
         form.populate_obj(project)
         env_order = request.form.getlist("env_order")
         if env_order:

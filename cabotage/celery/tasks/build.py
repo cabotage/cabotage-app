@@ -56,6 +56,7 @@ from cabotage.utils.build_log_stream import (
 from cabotage.utils.release_build_context import RELEASE_DOCKERFILE_TEMPLATE
 from cabotage.utils.github import post_deployment_status_update
 from cabotage.utils import procfile
+from cabotage.celery.tasks.branch_deploy import maybe_update_pr_comment_for_app_env
 
 Activity = activity_plugin.activity_cls
 
@@ -1130,6 +1131,7 @@ def run_image_build(image_id=None, buildkit=False):
                     "failure",
                     "Image build failed.",
                 )
+            maybe_update_pr_comment_for_app_env(image.application_environment)
             raise
     except Exception:
         try:
@@ -1143,6 +1145,7 @@ def run_image_build(image_id=None, buildkit=False):
             image.error = True
             image.error_detail = "Image build failed due to an internal error"
             db.session.commit()
+        maybe_update_pr_comment_for_app_env(image.application_environment)
         raise
 
     db.session.add(image)
@@ -1160,6 +1163,7 @@ def run_image_build(image_id=None, buildkit=False):
 
     db.session.add(image)
     db.session.commit()
+    maybe_update_pr_comment_for_app_env(image.application_environment)
 
     if (
         image.built
@@ -1183,6 +1187,7 @@ def run_image_build(image_id=None, buildkit=False):
         )
         db.session.add(activity)
         db.session.commit()
+        maybe_update_pr_comment_for_app_env(app_env)
         run_release_build.delay(release_id=release.id)
 
 
@@ -1250,6 +1255,7 @@ def run_release_build(release_id=None):
                     "failure",
                     "Release build failed.",
                 )
+            maybe_update_pr_comment_for_app_env(release.application_environment)
         except Exception:
             try:
                 log_key = stream_key("release", release.build_job_id)
@@ -1274,10 +1280,12 @@ def run_release_build(release_id=None):
                     "error",
                     "Release build failed.",
                 )
+            maybe_update_pr_comment_for_app_env(release.application_environment)
             raise
 
         db.session.add(release)
         db.session.commit()
+        maybe_update_pr_comment_for_app_env(release.application_environment)
 
         if (
             release.built
@@ -1304,6 +1312,7 @@ def run_release_build(release_id=None):
             )
             db.session.add(activity)
             db.session.commit()
+            maybe_update_pr_comment_for_app_env(release.application_environment)
             if current_app.config["KUBERNETES_ENABLED"]:
                 deployment_id = deployment.id
                 run_deploy.delay(deployment_id=deployment.id)
@@ -1314,6 +1323,7 @@ def run_release_build(release_id=None):
                 fake_deploy_release(deployment)
                 deployment.complete = True
                 db.session.commit()
+                maybe_update_pr_comment_for_app_env(release.application_environment)
     except Exception:
         if release is not None and not release.error:
             release.error = True

@@ -23,6 +23,11 @@ from cabotage.server.models.auth import Organization
 from cabotage.celery.tasks import (
     run_image_build,
 )
+from cabotage.celery.tasks.branch_deploy import (
+    create_branch_deploy,
+    sync_branch_deploy,
+    teardown_branch_deploy,
+)
 from cabotage.utils.github import post_deployment_status_update
 
 Activity = activity_plugin.activity_cls
@@ -288,8 +293,10 @@ def process_push_hook(hook):
     env_matches = (
         ApplicationEnvironment.query.join(Application)
         .join(Project, Application.project_id == Project.id)
+        .join(Environment, ApplicationEnvironment.environment_id == Environment.id)
         .filter(
             and_(
+                Environment.ephemeral.is_(False),
                 or_(
                     ApplicationEnvironment.auto_deploy_branch.in_(branch_names),
                     and_(
@@ -334,8 +341,10 @@ def process_check_suite_hook(hook):
         env_matches = (
             ApplicationEnvironment.query.join(Application)
             .join(Project, Application.project_id == Project.id)
+            .join(Environment, ApplicationEnvironment.environment_id == Environment.id)
             .filter(
                 and_(
+                    Environment.ephemeral.is_(False),
                     or_(
                         ApplicationEnvironment.auto_deploy_branch.in_(branch_names),
                         and_(
@@ -411,6 +420,44 @@ def process_check_suite_hook(hook):
             db.session.commit()
 
 
+def process_pull_request_hook(hook):
+    action = hook.payload["action"]
+    if action not in ("opened", "reopened", "synchronize", "closed"):
+        return
+
+    installation_id = hook.payload["installation"]["id"]
+    repository_name = hook.payload["repository"]["full_name"]
+    pr = hook.payload["pull_request"]
+    pr_number = pr["number"]
+    head_sha = pr["head"]["sha"]
+    head_ref = pr["head"]["ref"]
+    hook.commit_sha = head_sha
+
+    projects = (
+        Project.query.join(Application)
+        .filter(
+            Application.github_app_installation_id == installation_id,
+            Application.github_repository == repository_name,
+            Project.branch_deploys_enabled.is_(True),
+            Project.branch_deploy_base_environment_id.isnot(None),
+        )
+        .distinct()
+        .all()
+    )
+    if not projects:
+        return
+
+    for project in projects:
+        if action in ("opened", "reopened"):
+            create_branch_deploy(
+                project, pr_number, head_sha, installation_id, head_ref
+            )
+        elif action == "synchronize":
+            sync_branch_deploy(project, pr_number, head_sha, installation_id)
+        elif action == "closed":
+            teardown_branch_deploy(project, pr_number)
+
+
 @shared_task()
 def process_github_hook(hook_id):
     hook = Hook.query.filter_by(id=hook_id).first()
@@ -443,5 +490,9 @@ def process_github_hook(hook_id):
         db.session.commit()
     if event == "installation_repositories":
         process_installation_repositories_hook(hook)
+        hook.processed = True
+        db.session.commit()
+    if event == "pull_request":
+        process_pull_request_hook(hook)
         hook.processed = True
         db.session.commit()

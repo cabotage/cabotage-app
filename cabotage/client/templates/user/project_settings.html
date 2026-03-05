@@ -125,6 +125,25 @@
         </div>
       {% endif %}
 
+      {% if project.environments_enabled %}
+      <hr class="border-base-content/10">
+      <div class="settings-row">
+        <div class="settings-row-label">
+          <div class="settings-row-icon bg-accent/10 text-accent">{{ icon('git-branch', 'w-4 h-4') }}</div>
+          <div>
+            <h2 class="text-sm font-semibold text-base-content">Branch Deploys</h2>
+            <p class="text-xs text-base-content/40 mt-0.5">Automatically create ephemeral environments for pull requests</p>
+          </div>
+        </div>
+        <div class="settings-row-fields">
+          {{ render_field_compact(form.branch_deploys_enabled, label='Enable Branch Deploys') }}
+          <div id="branch-deploy-base-env" class="{% if not project.branch_deploys_enabled %}hidden{% endif %}">
+            {{ render_field_compact(form.branch_deploy_base_environment_id, label='Base Environment') }}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
       <div class="settings-row-actions">
         <a href="{{ url_for('user.project', org_slug=org_slug, project_slug=project_slug) }}"
            class="btn btn-ghost btn-sm">Cancel</a>
@@ -143,6 +162,19 @@
       (function () {
         var checkbox = document.getElementById('environments_enabled');
         var panel = document.getElementById('initial-env-name');
+        if (checkbox && panel) {
+          checkbox.addEventListener('change', function () {
+            panel.classList.toggle('hidden', !this.checked);
+          });
+        }
+      })();
+    </script>
+  {% endif %}
+  {% if project.environments_enabled %}
+    <script>
+      (function () {
+        var checkbox = document.getElementById('branch_deploys_enabled');
+        var panel = document.getElementById('branch-deploy-base-env');
         if (checkbox && panel) {
           checkbox.addEventListener('change', function () {
             panel.classList.toggle('hidden', !this.checked);
