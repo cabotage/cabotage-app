@@ -4064,6 +4064,7 @@ a.obs-pod-link:hover {
 /* Ingress page */
 .ingress-collapse .collapse-title { padding: 0.35rem 0.75rem; min-height: 0; font-size: 0.75rem; }
 .ingress-collapse .collapse-content { padding: 0 0.75rem 0.5rem; }
+.ingress-collapse[open] { overflow: visible; }
 .ingress-collapse[open] .collapse-content { padding-top: 0.25rem; overflow: visible; }
 .ingress-card .table th, .ingress-card .table td { padding: 0.2rem 0.5rem; }
 .ingress-card .divider { margin: 0.25rem 0; }
