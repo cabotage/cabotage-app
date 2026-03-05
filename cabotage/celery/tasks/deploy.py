@@ -228,13 +228,14 @@ def fetch_cabotage_enrollment(custom_objects_api_instance, release):
 
 def render_service(release, process_name):
     resource_prefix = k8s_resource_prefix(release)
+    role_name = k8s_role_name(release)
     service_name = f"{resource_prefix}-{process_name}"
     service_object = kubernetes.client.V1Service(
         metadata=kubernetes.client.V1ObjectMeta(
             name=service_name,
             labels={
                 "resident-service.cabotage.io": "true",
-                "app": resource_prefix,
+                "app": role_name,
                 "process": process_name,
             },
         ),
@@ -246,7 +247,7 @@ def render_service(release, process_name):
                 )
             ],
             selector={
-                "app": resource_prefix,
+                "app": role_name,
                 "process": process_name,
             },
         ),
@@ -665,7 +666,7 @@ def render_podspec(release, process_name, service_account_name):
         "project": release.application.project.slug,
         "application": release.application.slug,
         "process": process_name,
-        "app": k8s_resource_prefix(release),
+        "app": k8s_role_name(release),
         "release": str(release.version),
     }
     volumes = [
@@ -786,6 +787,7 @@ def render_podspec(release, process_name, service_account_name):
 
 def render_deployment(namespace, release, service_account_name, process_name):
     resource_prefix = k8s_resource_prefix(release)
+    role_name = k8s_role_name(release)
     app_env = release.application_environment
     process_counts = app_env.process_counts or {}
     deployment_object = kubernetes.client.V1Deployment(
@@ -796,7 +798,7 @@ def render_deployment(namespace, release, service_account_name, process_name):
                 "project": release.application.project.slug,
                 "application": release.application.slug,
                 "process": process_name,
-                "app": resource_prefix,
+                "app": role_name,
                 "resident-deployment.cabotage.io": "true",
             },
         ),
@@ -804,7 +806,7 @@ def render_deployment(namespace, release, service_account_name, process_name):
             replicas=process_counts.get(process_name, 0),
             selector=kubernetes.client.V1LabelSelector(
                 match_labels={
-                    "app": resource_prefix,
+                    "app": role_name,
                     "process": process_name,
                 },
             ),
@@ -815,7 +817,7 @@ def render_deployment(namespace, release, service_account_name, process_name):
                         "project": release.application.project.slug,
                         "application": release.application.slug,
                         "process": process_name,
-                        "app": resource_prefix,
+                        "app": role_name,
                         "ca-admission.cabotage.io": "true",
                         "resident-pod.cabotage.io": "true",
                     }
@@ -936,7 +938,7 @@ def scale_deployment(namespace, release, process_name, replicas):
 
 
 def render_job(namespace, release, service_account_name, process_name, job_id):
-    resource_prefix = k8s_resource_prefix(release)
+    role_name = k8s_role_name(release)
     job_object = kubernetes.client.V1Job(
         metadata=kubernetes.client.V1ObjectMeta(
             name=f"deployment-{job_id}",
@@ -945,7 +947,7 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
                 "project": release.application.project.slug,
                 "application": release.application.slug,
                 "process": process_name,
-                "app": resource_prefix,
+                "app": role_name,
                 "release": str(release.version),
                 "deployment": job_id,
                 "resident-job.cabotage.io": "true",
@@ -962,7 +964,7 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
                         "project": release.application.project.slug,
                         "application": release.application.slug,
                         "process": process_name,
-                        "app": resource_prefix,
+                        "app": role_name,
                         "release": str(release.version),
                         "deployment": job_id,
                         "ca-admission.cabotage.io": "true",
