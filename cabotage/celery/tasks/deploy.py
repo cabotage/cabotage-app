@@ -228,14 +228,14 @@ def fetch_cabotage_enrollment(custom_objects_api_instance, release):
 
 def render_service(release, process_name):
     resource_prefix = k8s_resource_prefix(release)
-    role_name = k8s_role_name(release)
     service_name = f"{resource_prefix}-{process_name}"
+    role_name = k8s_role_name(release)
     service_object = kubernetes.client.V1Service(
         metadata=kubernetes.client.V1ObjectMeta(
             name=service_name,
             labels={
                 "resident-service.cabotage.io": "true",
-                "app": role_name,
+                "app": resource_prefix,
                 "process": process_name,
             },
         ),
@@ -786,8 +786,8 @@ def render_podspec(release, process_name, service_account_name):
 
 
 def render_deployment(namespace, release, service_account_name, process_name):
-    resource_prefix = k8s_resource_prefix(release)
     role_name = k8s_role_name(release)
+    resource_prefix = k8s_resource_prefix(release)
     app_env = release.application_environment
     process_counts = app_env.process_counts or {}
     deployment_object = kubernetes.client.V1Deployment(
