@@ -348,9 +348,10 @@ def sync_branch_deploy(project, pr_number, head_sha, installation_id):
         project_id=project.id, slug=env_slug
     ).first()
     if not environment:
-        print(
-            f"no ephemeral environment {env_slug} for project "
-            f"{project.id}, skipping synchronize"
+        logger.info(
+            "no ephemeral environment %s for project %s, skipping synchronize",
+            env_slug,
+            project.id,
         )
         return
     _build_images_for_app_envs(
@@ -371,7 +372,7 @@ def teardown_branch_deploy(project, pr_number):
     _post_teardown_comment(environment, pr_number)
     _teardown_environment(environment)
     db.session.commit()
-    print(f"torn down ephemeral environment {env_slug} " f"for project {project.id}")
+    logger.info("torn down ephemeral environment %s for project %s", env_slug, project.id)
 
 
 def _post_teardown_comment(environment, pr_number):
