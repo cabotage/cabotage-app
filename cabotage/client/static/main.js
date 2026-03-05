@@ -1697,6 +1697,7 @@ document.addEventListener('DOMContentLoaded', function () {
   autoExpandCollapsibleCards();
   syncDetailLogHeight();
   initAnnotationTables();
+  initIngressForms();
   window.addEventListener('resize', function () {
     autoExpandCollapsibleCards();
     syncDetailLogHeight();
@@ -1758,6 +1759,98 @@ function initAnnotationTables() {
       tr.appendChild(valTd);
       tr.appendChild(rmTd);
       tbody.appendChild(tr);
+    });
+  });
+}
+
+/* Ingress: unified form host/path add/remove */
+function initIngressForms() {
+  // Remove host or path row (generic)
+  document.querySelectorAll('.btn-remove-row').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var row = btn.closest('.host-row') || btn.closest('.path-row');
+      if (row) row.remove();
+    });
+  });
+
+  // Add host
+  document.querySelectorAll('[data-add-host]').forEach(function (btn) {
+    var name = btn.getAttribute('data-add-host');
+    var container = document.getElementById('new-hosts-' + name);
+    if (!container) return;
+
+    btn.addEventListener('click', function () {
+      var row = document.createElement('div');
+      row.className = 'host-row flex items-center gap-2 mb-0.5';
+
+      var input = document.createElement('input');
+      input.type = 'text';
+      input.name = '_new_host';
+      input.className = 'input input-bordered input-xs flex-1';
+      input.placeholder = 'app.example.com';
+
+      var rmBtn = document.createElement('button');
+      rmBtn.type = 'button';
+      rmBtn.className = 'btn btn-ghost btn-xs text-error p-0';
+      rmBtn.textContent = '\u00d7';
+      rmBtn.addEventListener('click', function () { row.remove(); });
+
+      row.appendChild(input);
+      row.appendChild(rmBtn);
+      container.appendChild(row);
+      input.focus();
+    });
+  });
+
+  // Add path
+  document.querySelectorAll('[data-add-path]').forEach(function (btn) {
+    var name = btn.getAttribute('data-add-path');
+    var container = document.getElementById('new-paths-' + name);
+    if (!container) return;
+    var choices = JSON.parse(container.getAttribute('data-web-processes') || '[]');
+    var nextIdx = 0;
+
+    btn.addEventListener('click', function () {
+      var idx = nextIdx++;
+      var row = document.createElement('div');
+      row.className = 'path-row flex items-center gap-2 mb-1';
+
+      var pathInput = document.createElement('input');
+      pathInput.type = 'text';
+      pathInput.name = '_new_path_' + idx + '_path';
+      pathInput.className = 'input input-bordered input-xs flex-1';
+      pathInput.placeholder = '/';
+
+      var typeSelect = document.createElement('select');
+      typeSelect.name = '_new_path_' + idx + '_type';
+      typeSelect.className = 'select select-bordered select-xs';
+      ['Prefix', 'Exact', 'ImplementationSpecific'].forEach(function (t) {
+        var opt = document.createElement('option');
+        opt.value = t; opt.textContent = t;
+        typeSelect.appendChild(opt);
+      });
+
+      var targetSelect = document.createElement('select');
+      targetSelect.name = '_new_path_' + idx + '_target';
+      targetSelect.className = 'select select-bordered select-xs';
+      choices.forEach(function (p) {
+        var opt = document.createElement('option');
+        opt.value = p; opt.textContent = p;
+        targetSelect.appendChild(opt);
+      });
+
+      var rmBtn = document.createElement('button');
+      rmBtn.type = 'button';
+      rmBtn.className = 'btn btn-ghost btn-xs text-error p-0';
+      rmBtn.textContent = '\u00d7';
+      rmBtn.addEventListener('click', function () { row.remove(); });
+
+      row.appendChild(pathInput);
+      row.appendChild(typeSelect);
+      row.appendChild(targetSelect);
+      row.appendChild(rmBtn);
+      container.appendChild(row);
+      pathInput.focus();
     });
   });
 }

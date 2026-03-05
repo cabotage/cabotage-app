@@ -99,7 +99,6 @@ from cabotage.server.user.forms import (
     EditProjectSettingsForm,
     IngressSettingsForm,
     IngressHostForm,
-    IngressPathForm,
     ReleaseDeployForm,
     AddOrganizationUserForm,
 )
@@ -1932,88 +1931,164 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
     if request.method == "POST" and app_env:
         action = request.form.get("_action")
 
-        # Toggle ingress enabled (header form)
-        if action == "save_enabled":
-            ingress_name = request.form.get("_ingress_name")
-            if ingress_name:
-                ingress = Ingress.query.filter_by(
-                    application_environment_id=app_env.id,
-                    name=ingress_name,
-                ).first()
-                if ingress:
-                    ingress.enabled = "_enabled" in request.form
-                    db.session.commit()
-                    flash(
-                        f"Ingress {ingress.name} {'enabled' if ingress.enabled else 'disabled'}.",
-                        "success",
-                    )
+        _HOSTNAME_RE = re.compile(
+            r"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*$"
+        )
+
+        # Save ingress (unified: enabled, hosts, paths, settings, annotations)
+        if action == "save_ingress":
+            ingress_id = request.form.get("_ingress_id")
+            ingress = _safe_get(Ingress, ingress_id)
+            if not ingress or ingress.application_environment_id != app_env.id:
                 return _redirect_back()
 
-        # Save ingress settings (advanced form)
-        if action == "save_ingress":
-            ingress_name = request.form.get("_ingress_name")
-            if ingress_name:
-                form = IngressSettingsForm(request.form, prefix=ingress_name)
-                if form.validate():
-                    ingress = Ingress.query.filter_by(
-                        application_environment_id=app_env.id,
-                        name=ingress_name,
-                    ).first()
-                    if not ingress:
+            form = IngressSettingsForm(request.form, prefix=ingress.name)
+            if not form.validate():
+                for field, errors in form.errors.items():
+                    for error in errors:
+                        flash(f"{field}: {error}", "error")
+                return _redirect_back()
+
+            # Enabled
+            ingress.enabled = "_enabled" in request.form
+
+            # Settings
+            ingress.proxy_connect_timeout = form.proxy_connect_timeout.data
+            ingress.proxy_read_timeout = form.proxy_read_timeout.data
+            ingress.proxy_send_timeout = form.proxy_send_timeout.data
+            ingress.proxy_body_size = form.proxy_body_size.data
+            ingress.client_body_buffer_size = form.client_body_buffer_size.data
+            ingress.proxy_request_buffering = form.proxy_request_buffering.data or None
+            ingress.session_affinity = form.session_affinity.data
+            new_use_regex = form.use_regex.data
+
+            # Hosts: diff existing vs form
+            kept_host_ids = set(request.form.getlist("_existing_host"))
+            for host in list(ingress.hosts):
+                if str(host.id) not in kept_host_ids and not host.is_auto_generated:
+                    db.session.delete(host)
+
+            for hostname in request.form.getlist("_new_host"):
+                hostname = hostname.strip()
+                if not hostname:
+                    continue
+                if len(hostname) > 253 or not _HOSTNAME_RE.match(hostname):
+                    flash(f"Invalid hostname: {hostname}", "error")
+                    return _redirect_back()
+                db.session.add(
+                    IngressHost(
+                        ingress_id=ingress.id,
+                        hostname=hostname,
+                        tls_enabled=True,
+                        is_auto_generated=False,
+                    )
+                )
+
+            # Paths: diff existing vs form
+            kept_path_ids = set(request.form.getlist("_existing_path"))
+            for path in list(ingress.paths):
+                if str(path.id) not in kept_path_ids:
+                    db.session.delete(path)
+
+            # Validate use_regex against kept paths
+            kept_paths = [p for p in ingress.paths if str(p.id) in kept_path_ids]
+            if new_use_regex and not ingress.use_regex:
+                for p in kept_paths:
+                    try:
+                        re.compile(p.path)
+                    except re.error as e:
+                        flash(
+                            f"Cannot enable regex: path '{p.path}' is not a valid regex ({e}).",
+                            "error",
+                        )
                         return _redirect_back()
+            elif not new_use_regex and ingress.use_regex:
+                for p in kept_paths:
+                    if _REGEX_META.search(p.path):
+                        flash(
+                            f"Cannot disable regex: path '{p.path}' contains regex characters.",
+                            "error",
+                        )
+                        return _redirect_back()
+            ingress.use_regex = new_use_regex
 
-                    ingress.proxy_connect_timeout = form.proxy_connect_timeout.data
-                    ingress.proxy_read_timeout = form.proxy_read_timeout.data
-                    ingress.proxy_send_timeout = form.proxy_send_timeout.data
-                    ingress.proxy_body_size = form.proxy_body_size.data
-                    ingress.client_body_buffer_size = form.client_body_buffer_size.data
-                    ingress.proxy_request_buffering = (
-                        form.proxy_request_buffering.data or None
-                    )
-                    ingress.session_affinity = form.session_affinity.data
+            # Add new paths
+            new_path_indices = set()
+            for key in request.form:
+                m = re.match(r"_new_path_(\d+)_path", key)
+                if m:
+                    new_path_indices.add(m.group(1))
 
-                    # Validate use_regex toggle against existing paths
-
-                    new_use_regex = form.use_regex.data
-                    if new_use_regex and not ingress.use_regex:
-                        # Turning ON — validate existing paths are valid regexes
-                        for p in ingress.paths:
-                            try:
-                                re.compile(p.path)
-                            except re.error as e:
-                                flash(
-                                    f"Cannot enable regex: path '{p.path}' is not a valid regex ({e}).",
-                                    "error",
-                                )
-                                return _redirect_back()
-                    elif not new_use_regex and ingress.use_regex:
-                        # Turning OFF — validate no existing paths have metacharacters
-                        for p in ingress.paths:
-                            if _REGEX_META.search(p.path):
-                                flash(
-                                    f"Cannot disable regex: path '{p.path}' contains regex characters.",
-                                    "error",
-                                )
-                                return _redirect_back()
-                    ingress.use_regex = new_use_regex
-
-                    activity = Activity(
-                        verb="edit",
-                        object=ingress,
-                        data={
-                            "user_id": str(current_user.id),
-                            "timestamp": datetime.datetime.utcnow().isoformat(),
-                        },
-                    )
-                    db.session.add(activity)
-                    db.session.commit()
-                    flash(f"Ingress '{ingress_name}' saved.", "success")
+            for idx in sorted(new_path_indices):
+                path_value = request.form.get(f"_new_path_{idx}_path", "").strip()
+                path_type = request.form.get(f"_new_path_{idx}_type", "Prefix")
+                target = request.form.get(f"_new_path_{idx}_target", "")
+                if not path_value:
+                    continue
+                if not path_value.startswith("/") or len(path_value) > 256:
+                    flash(f"Invalid path: {path_value}", "error")
                     return _redirect_back()
+                if new_use_regex:
+                    try:
+                        re.compile(path_value)
+                    except re.error as e:
+                        flash(f"Invalid regex path '{path_value}': {e}", "error")
+                        return _redirect_back()
                 else:
-                    for field, errors in form.errors.items():
-                        for error in errors:
-                            flash(f"{field}: {error}", "error")
+                    if _REGEX_META.search(path_value):
+                        flash(
+                            f"Path '{path_value}' contains regex characters but regex is disabled.",
+                            "error",
+                        )
+                        return _redirect_back()
+                if target not in web_processes:
+                    flash(f"Invalid target process: {target}", "error")
                     return _redirect_back()
+                db.session.add(
+                    IngressPath(
+                        ingress_id=ingress.id,
+                        path=path_value,
+                        path_type=path_type,
+                        target_process_name=target,
+                    )
+                )
+
+            # Annotations (admin only)
+            if current_user.admin:
+                allow = request.form.get("_allow_annotations") == "on"
+                ingress.allow_annotations = allow
+                if allow:
+                    annotations = {}
+                    for form_key in request.form:
+                        if form_key.startswith("_annotation_key_"):
+                            idx = form_key[len("_annotation_key_") :]
+                            key = request.form[form_key].strip()
+                            value = request.form.get(f"_annotation_value_{idx}", "")
+                            if key:
+                                annotations[key] = value
+                    ingress.extra_annotations = annotations
+                else:
+                    ingress.extra_annotations = {}
+
+            activity = Activity(
+                verb="edit",
+                object=ingress,
+                data={
+                    "user_id": str(current_user.id),
+                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                },
+            )
+            db.session.add(activity)
+            try:
+                db.session.commit()
+                flash(f"Ingress '{ingress.name}' saved.", "success")
+            except IntegrityError:
+                db.session.rollback()
+                flash(
+                    "Save failed: a hostname or path conflicts with an existing entry.",
+                    "error",
+                )
+            return _redirect_back()
 
         # Create new ingress
         if action == "create_ingress":
@@ -2062,140 +2137,7 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                     flash(f"Ingress '{new_name}' created.", "success")
                 return _redirect_back()
 
-        # Add host
-        if action == "add_host":
-            target_ingress_id = request.form.get("_ingress_id")
-            host_form = IngressHostForm(request.form)
-            if target_ingress_id:
-                if host_form.validate():
-                    ingress = _safe_get(Ingress, target_ingress_id)
-                    if ingress and ingress.application_environment_id == app_env.id:
-                        host = IngressHost(
-                            ingress_id=ingress.id,
-                            hostname=host_form.hostname.data,
-                            tls_enabled=True,
-                            is_auto_generated=False,
-                        )
-                        db.session.add(host)
-                        try:
-                            db.session.commit()
-                        except IntegrityError:
-                            db.session.rollback()
-                            flash(
-                                f"Hostname {host_form.hostname.data} is already in use.",
-                                "error",
-                            )
-                            return _redirect_back()
-                        flash(f"Host {host.hostname} added.", "success")
-                        return _redirect_back()
-                else:
-                    for field, errors in host_form.errors.items():
-                        for error in errors:
-                            flash(f"{field}: {error}", "error")
-                    return _redirect_back()
-
-        # Remove host
-        if action == "remove_host":
-            host_id = request.form.get("_host_id")
-            if host_id:
-                host = _safe_get(IngressHost, host_id)
-                if (
-                    host
-                    and not host.is_auto_generated
-                    and host.ingress.application_environment_id == app_env.id
-                ):
-                    hostname = host.hostname
-                    db.session.delete(host)
-                    db.session.commit()
-                    flash(f"Host {hostname} removed.", "success")
-                    return _redirect_back()
-
-        # Add path
-        if action == "add_path":
-            target_ingress_id = request.form.get("_ingress_id")
-            path_form = IngressPathForm(request.form)
-            path_form.target_process_name.choices = [(p, p) for p in web_processes]
-            if target_ingress_id:
-                if path_form.validate():
-                    ingress = _safe_get(Ingress, target_ingress_id)
-                    if ingress and ingress.application_environment_id == app_env.id:
-                        path_value = path_form.path.data
-
-                        if ingress.use_regex:
-                            try:
-                                re.compile(path_value)
-                            except re.error as e:
-                                flash(f"Invalid regex path: {e}", "error")
-                                return _redirect_back()
-                        else:
-                            if _REGEX_META.search(path_value):
-                                flash(
-                                    "Path contains regex characters but Use Regex is disabled.",
-                                    "error",
-                                )
-                                return _redirect_back()
-                        path = IngressPath(
-                            ingress_id=ingress.id,
-                            path=path_value,
-                            path_type=path_form.path_type.data,
-                            target_process_name=path_form.target_process_name.data,
-                        )
-                        db.session.add(path)
-                        try:
-                            db.session.commit()
-                        except IntegrityError:
-                            db.session.rollback()
-                            flash(
-                                f"Path {path_value} already exists on this ingress.",
-                                "error",
-                            )
-                            return _redirect_back()
-                        flash(f"Path {path.path} added.", "success")
-                        return _redirect_back()
-                else:
-                    for field, errors in path_form.errors.items():
-                        for error in errors:
-                            flash(f"{field}: {error}", "error")
-                    return _redirect_back()
-
-        # Remove path
-        if action == "remove_path":
-            path_id = request.form.get("_path_id")
-            if path_id:
-                path = _safe_get(IngressPath, path_id)
-                if path and path.ingress.application_environment_id == app_env.id:
-                    db.session.delete(path)
-                    db.session.commit()
-                    flash("Path removed.", "success")
-                    return _redirect_back()
-
-        # Save extra annotations (admin only)
-        if action == "save_annotations" and current_user.admin:
-            ingress_id = request.form.get("_ingress_id")
-            if ingress_id:
-                ingress = _safe_get(Ingress, ingress_id)
-                if ingress and ingress.application_environment_id == app_env.id:
-                    allow = request.form.get("_allow_annotations") == "on"
-                    ingress.allow_annotations = allow
-                    if allow:
-                        annotations = {}
-                        for form_key in request.form:
-                            if form_key.startswith("_annotation_key_"):
-                                idx = form_key[len("_annotation_key_") :]
-                                key = request.form[form_key].strip()
-                                value = request.form.get(f"_annotation_value_{idx}", "")
-                                if key:
-                                    annotations[key] = value
-                        ingress.extra_annotations = annotations
-                    else:
-                        ingress.extra_annotations = {}
-                    db.session.commit()
-                    flash("Annotations saved.", "success")
-                    return _redirect_back()
-
-    add_host_form = IngressHostForm()
-    add_path_form = IngressPathForm()
-    add_path_form.target_process_name.choices = [(p, p) for p in web_processes]
+    csrf_form = IngressHostForm()
 
     return render_template(
         "user/project_application_ingress.html",
@@ -2203,8 +2145,7 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
         environment=environment,
         app_env=app_env,
         ingress_forms=ingress_forms,
-        add_host_form=add_host_form,
-        add_path_form=add_path_form,
+        csrf_form=csrf_form,
         web_processes=web_processes,
         ingress_domain=ingress_domain,
         is_admin=current_user.admin,

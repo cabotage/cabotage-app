@@ -43,151 +43,101 @@
         {% set form = ingress_forms[ingress.name] %}
 
         <div class="card bg-base-100 shadow-sm mb-3 ingress-card">
-          <div class="card-body py-2 px-3 gap-0">
+          <form action="{{ url_for('user.project_application_ingress', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
+                method="post" id="ingress-form-{{ ingress.name }}">
+            {{ form.hidden_tag() }}
+            <input type="hidden" name="_action" value="save_ingress">
+            <input type="hidden" name="_ingress_id" value="{{ ingress.id }}">
 
-            {# Header: name + enable toggle #}
-            <div class="flex items-center justify-between">
-              <h2 class="text-sm font-semibold flex items-center gap-1">
-                {{ icon('globe', 'w-3.5 h-3.5') }}
-                {{ ingress.name }}
-              </h2>
-              <form action="{{ url_for('user.project_application_ingress', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
-                    method="post" class="flex items-center gap-2" id="ingress-form-{{ ingress.name }}">
-                {{ form.hidden_tag() }}
-                <input type="hidden" name="_action" value="save_enabled">
-                <input type="hidden" name="_ingress_name" value="{{ ingress.name }}">
+            <div class="card-body py-2 px-3 gap-0">
+
+              {# Header: name + enable toggle #}
+              <div class="flex items-center justify-between">
+                <h2 class="text-sm font-semibold flex items-center gap-1">
+                  {{ icon('globe', 'w-3.5 h-3.5') }}
+                  {{ ingress.name }}
+                </h2>
                 <label class="flex items-center gap-1.5 cursor-pointer">
                   <input type="checkbox" name="_enabled" class="checkbox checkbox-primary checkbox-xs"
                          {% if ingress.enabled %}checked{% endif %}>
                   <span class="text-xs">Enabled</span>
                 </label>
-                <button type="submit" class="btn btn-primary btn-xs gap-1">
-                  {{ icon('check', 'w-3 h-3') }} Save
-                </button>
-              </form>
-            </div>
-
-            {# Hosts #}
-            <div class="divider"></div>
-            <div class="flex items-center justify-between mb-0.5">
-              <span class="text-xs font-semibold text-base-content/70">Hostnames</span>
-            </div>
-
-            {% if ingress.hosts %}
-              <table class="table table-xs">
-                <tbody>
-                  {% for host in ingress.hosts %}
-                    <tr>
-                      <td>
-                        <code class="text-xs">{{ host.hostname }}</code>
-                        {% if host.is_auto_generated %}<span class="badge badge-ghost badge-xs ml-1">auto</span>{% endif %}
-                      </td>
-                      <td class="w-8 text-right">
-                        {% if not host.is_auto_generated %}
-                          <form action="{{ url_for('user.project_application_ingress', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
-                                method="post" class="inline">
-                            {{ add_host_form.hidden_tag() }}
-                            <input type="hidden" name="_action" value="remove_host">
-                            <input type="hidden" name="_host_id" value="{{ host.id }}">
-                            <button type="submit" class="btn btn-ghost btn-xs text-error p-0"
-                                    onclick="return confirm('Remove {{ host.hostname }}?')">
-                              {{ icon('trash-2', 'w-3 h-3') }}
-                            </button>
-                          </form>
-                        {% endif %}
-                      </td>
-                    </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            {% endif %}
-
-            <details class="ingress-collapse collapse collapse-arrow bg-base-200/50 mt-1">
-              <summary class="collapse-title">
-                {{ icon('plus', 'w-3 h-3 inline mr-1') }} Add hostname
-              </summary>
-              <div class="collapse-content">
-                <form action="{{ url_for('user.project_application_ingress', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
-                      method="post" class="flex items-center gap-2">
-                  {{ add_host_form.hidden_tag() }}
-                  <input type="hidden" name="_action" value="add_host">
-                  <input type="hidden" name="_ingress_id" value="{{ ingress.id }}">
-                  {{ add_host_form.hostname(class="input input-bordered input-xs flex-1", placeholder="app.example.com") }}
-                  <input type="hidden" name="tls_enabled" value="y">
-                  <button type="submit" class="btn btn-primary btn-xs gap-1">
-                    {{ icon('plus', 'w-3 h-3') }} Add
-                  </button>
-                </form>
               </div>
-            </details>
 
-            {# Paths — only show when multiple web processes exist #}
-            {% if web_processes | length > 1 %}
-            <div class="divider"></div>
-            <div class="flex items-center justify-between mb-0.5">
-              <span class="text-xs font-semibold text-base-content/70">Path Routing</span>
-            </div>
+              {# Hosts #}
+              <div class="divider"></div>
+              <div class="flex items-center justify-between mb-0.5">
+                <span class="text-xs font-semibold text-base-content/70">Hostnames</span>
+              </div>
 
-            {% if ingress.paths %}
-              <table class="table table-xs">
-                <thead>
-                  <tr><th>Path</th><th>Type</th><th>Process</th><th></th></tr>
-                </thead>
-                <tbody>
-                  {% for p in ingress.paths %}
-                    <tr>
-                      <td><code class="text-xs">{{ p.path }}</code></td>
-                      <td><span class="text-xs">{{ p.path_type }}</span></td>
-                      <td><span class="text-xs font-medium">{{ p.target_process_name }}</span></td>
-                      <td class="w-8 text-right">
-                        <form action="{{ url_for('user.project_application_ingress', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
-                              method="post" class="inline">
-                          {{ add_path_form.hidden_tag() }}
-                          <input type="hidden" name="_action" value="remove_path">
-                          <input type="hidden" name="_path_id" value="{{ p.id }}">
-                          <button type="submit" class="btn btn-ghost btn-xs text-error p-0"
-                                  onclick="return confirm('Remove path {{ p.path }}?')">
-                            {{ icon('x', 'w-3 h-3') }}
-                          </button>
-                        </form>
-                      </td>
-                    </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            {% else %}
-              <p class="text-xs text-base-content/40">No paths configured.</p>
-            {% endif %}
-              <details class="ingress-collapse collapse collapse-arrow bg-base-200/30 mt-1">
-                <summary class="collapse-title">
-                  {{ icon('plus', 'w-3 h-3 inline mr-1') }} Add path
-                </summary>
-                <div class="collapse-content">
-                  <form action="{{ url_for('user.project_application_ingress', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
-                        method="post" class="flex items-center gap-2">
-                    {{ add_path_form.hidden_tag() }}
-                    <input type="hidden" name="_action" value="add_path">
-                    <input type="hidden" name="_ingress_id" value="{{ ingress.id }}">
-                    {{ add_path_form.path(class="input input-bordered input-xs flex-1", placeholder="/") }}
-                    {{ add_path_form.path_type(class="select select-bordered select-xs") }}
-                    {{ add_path_form.target_process_name(class="select select-bordered select-xs") }}
-                    <button type="submit" class="btn btn-primary btn-xs gap-1">
-                      {{ icon('plus', 'w-3 h-3') }} Add
-                    </button>
-                  </form>
-                </div>
-              </details>
-            {% endif %}
-            {# end paths section #}
+              <div id="hosts-{{ ingress.name }}">
+                {% for host in ingress.hosts %}
+                  <div class="host-row flex items-center gap-2 mb-0.5">
+                    <input type="hidden" name="_existing_host" value="{{ host.id }}">
+                    <code class="text-xs flex-1">{{ host.hostname }}</code>
+                    {% if host.is_auto_generated %}
+                      <span class="badge badge-ghost badge-xs">auto</span>
+                    {% else %}
+                      <button type="button" class="btn btn-ghost btn-xs text-error p-0 btn-remove-row"
+                              title="Remove hostname">
+                        {{ icon('trash-2', 'w-3 h-3') }}
+                      </button>
+                    {% endif %}
+                  </div>
+                {% endfor %}
+                <div id="new-hosts-{{ ingress.name }}"></div>
+                <button type="button" class="btn btn-ghost btn-xs gap-1 mt-0.5"
+                        data-add-host="{{ ingress.name }}">
+                  {{ icon('plus', 'w-3 h-3') }} Add hostname
+                </button>
+              </div>
 
-            {# Advanced #}
-            <div class="divider"></div>
-            <form action="{{ url_for('user.project_application_ingress', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
-                  method="post">
-              {{ form.hidden_tag() }}
-              <input type="hidden" name="_action" value="save_ingress">
-              <input type="hidden" name="_ingress_name" value="{{ ingress.name }}">
+              {# Paths — only show when multiple web processes exist #}
+              {% if web_processes | length > 1 %}
+              <div class="divider"></div>
+              <div class="flex items-center justify-between mb-0.5">
+                <span class="text-xs font-semibold text-base-content/70">Path Routing</span>
+              </div>
 
+              <div id="paths-{{ ingress.name }}">
+                {% if ingress.paths %}
+                  <table class="table table-xs">
+                    <thead>
+                      <tr><th>Path</th><th>Type</th><th>Process</th><th></th></tr>
+                    </thead>
+                    <tbody id="paths-tbody-{{ ingress.name }}">
+                      {% for p in ingress.paths %}
+                        <tr class="path-row">
+                          <td>
+                            <input type="hidden" name="_existing_path" value="{{ p.id }}">
+                            <code class="text-xs">{{ p.path }}</code>
+                          </td>
+                          <td><span class="text-xs">{{ p.path_type }}</span></td>
+                          <td><span class="text-xs font-medium">{{ p.target_process_name }}</span></td>
+                          <td class="w-8 text-right">
+                            <button type="button" class="btn btn-ghost btn-xs text-error p-0 btn-remove-row"
+                                    title="Remove path">
+                              {{ icon('x', 'w-3 h-3') }}
+                            </button>
+                          </td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                {% else %}
+                  <p class="text-xs text-base-content/40">No paths configured.</p>
+                {% endif %}
+                <div id="new-paths-{{ ingress.name }}" data-web-processes='{{ web_processes | tojson }}'></div>
+                <button type="button" class="btn btn-ghost btn-xs gap-1 mt-0.5"
+                        data-add-path="{{ ingress.name }}">
+                  {{ icon('plus', 'w-3 h-3') }} Add path
+                </button>
+              </div>
+              {% endif %}
+              {# end paths section #}
+
+              {# Advanced Settings #}
+              <div class="divider"></div>
               <details class="ingress-collapse collapse collapse-arrow bg-base-200/30">
                 <summary class="collapse-title">
                   {{ icon('settings', 'w-3 h-3 inline mr-1') }} Advanced Settings
@@ -207,35 +157,25 @@
                     {{ render_field_compact(form.session_affinity, label='Session Affinity') }}
                     {{ render_field_compact(form.use_regex, label='Regex Paths') }}
                   </div>
-                  <button type="submit" class="btn btn-primary btn-xs gap-1">
-                    {{ icon('check', 'w-3 h-3') }} Save Settings
-                  </button>
                 </div>
               </details>
-            </form>
 
-            {# Extra Annotations — editable by admin, read-only for others #}
-            {% if not is_admin and ingress.allow_annotations and ingress.extra_annotations %}
-              <div class="divider"></div>
-              <span class="text-xs font-semibold text-base-content/70">Custom Annotations</span>
-              <table class="table table-xs">
-                <tbody>
-                  {% for key, value in ingress.extra_annotations.items() %}
-                    <tr>
-                      <td><code class="text-xs">{{ key }}</code></td>
-                      <td><code class="text-xs">{{ value }}</code></td>
-                    </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            {% elif is_admin %}
-              <div class="divider"></div>
-              <form action="{{ url_for('user.project_application_ingress', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
-                    method="post">
-                {{ add_host_form.hidden_tag() }}
-                <input type="hidden" name="_action" value="save_annotations">
-                <input type="hidden" name="_ingress_id" value="{{ ingress.id }}">
-
+              {# Extra Annotations — editable by admin, read-only for others #}
+              {% if not is_admin and ingress.allow_annotations and ingress.extra_annotations %}
+                <div class="divider"></div>
+                <span class="text-xs font-semibold text-base-content/70">Custom Annotations</span>
+                <table class="table table-xs">
+                  <tbody>
+                    {% for key, value in ingress.extra_annotations.items() %}
+                      <tr>
+                        <td><code class="text-xs">{{ key }}</code></td>
+                        <td><code class="text-xs">{{ value }}</code></td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              {% elif is_admin %}
+                <div class="divider"></div>
                 <details class="ingress-collapse collapse collapse-arrow bg-warning/5 border border-warning/20">
                   <summary class="collapse-title">
                     {{ icon('shield', 'w-3 h-3 inline mr-1') }} Admin: Custom Annotations
@@ -278,16 +218,20 @@
                         {{ icon('plus', 'w-3 h-3') }} Add annotation
                       </button>
                     </div>
-
-                    <button type="submit" class="btn btn-warning btn-xs gap-1">
-                      {{ icon('check', 'w-3 h-3') }} Save Annotations
-                    </button>
                   </div>
                 </details>
-              </form>
-            {% endif %}
+              {% endif %}
 
-          </div>
+              {# Single save button #}
+              <div class="divider"></div>
+              <div class="flex justify-end">
+                <button type="submit" class="btn btn-primary btn-sm gap-1">
+                  {{ icon('check', 'w-3.5 h-3.5') }} Save
+                </button>
+              </div>
+
+            </div>
+          </form>
         </div>
       {% endfor %}
 
@@ -296,7 +240,7 @@
         <div class="card-body py-2 px-3">
           <form action="{{ url_for('user.project_application_ingress', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
                 method="post" class="flex items-end gap-2">
-            {{ add_host_form.hidden_tag() }}
+            {{ csrf_form.hidden_tag() }}
             <input type="hidden" name="_action" value="create_ingress">
             <div class="flex-1">
               <label class="label py-0"><span class="label-text text-xs">New Ingress</span></label>
