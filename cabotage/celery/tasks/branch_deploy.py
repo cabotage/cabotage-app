@@ -6,7 +6,6 @@ from flask import current_app
 from kubernetes.client.rest import ApiException
 
 from cabotage.server import (
-    config_writer,
     db,
     github_app,
     kubernetes as kubernetes_ext,
@@ -34,10 +33,11 @@ def _create_app_env_for_branch_deploy(
     project,
     auto_deploy_branch=None,
 ):
-    """Create ApplicationEnvironment + sentinel + shared configs for a branch deploy.
+    """Create ApplicationEnvironment for a branch deploy.
 
-    Configs from the base environment are shared by pointing at the same
-    Vault/Consul key_slugs rather than copying values.
+    Configuration objects are copied from the base environment, sharing the same
+    Consul/Vault key_slugs. The CabotageEnrollment inheritsFrom grants access
+    to the base namespace's secrets.
     """
     base_app_env = ApplicationEnvironment.query.filter_by(
         application_id=application.id,
@@ -55,27 +55,8 @@ def _create_app_env_for_branch_deploy(
     db.session.add(app_env)
     db.session.flush()
 
-    ns = safe_k8s_name(organization.k8s_identifier, environment.k8s_identifier)
-    prefix = safe_k8s_name(project.k8s_identifier, application.k8s_identifier)
-
-    sentinel = Configuration(
-        application_id=application.id,
-        application_environment_id=app_env.id,
-        name="CABOTAGE_SENTINEL",
-        value="at least one environment variable must exist",
-        secret=False,
-        buildtime=False,
-    )
-    key_slugs = config_writer.write_configuration(ns, prefix, sentinel)
-    sentinel.key_slug = key_slugs["config_key_slug"]
-    sentinel.build_key_slug = key_slugs["build_key_slug"]
-    db.session.add(sentinel)
-    db.session.flush()
-
     if base_app_env:
         for config in base_app_env.configurations:
-            if config.name == "CABOTAGE_SENTINEL":
-                continue
             shared_config = Configuration(
                 application_id=application.id,
                 application_environment_id=app_env.id,
