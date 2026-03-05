@@ -328,6 +328,28 @@ def fetch_service(core_api_instance, release, process_name):
     return service
 
 
+def _ingress_hostname_pairs(app_env):
+    """Build (slug, k8s_identifier) pairs for ingress hostname generation.
+
+    Skips the environment pair when environments are not enabled so that
+    non-environment apps don't get "default" baked into their hostnames.
+    """
+    app = app_env.application
+    org = app.project.organization
+    project = app.project
+    pairs = [(org.slug, org.k8s_identifier)]
+    if app.project.environments_enabled:
+        env = app_env.environment
+        pairs.append((env.slug, env.k8s_identifier))
+    pairs.extend(
+        [
+            (project.slug, project.k8s_identifier),
+            (app.slug, app.k8s_identifier),
+        ]
+    )
+    return pairs
+
+
 def render_ingress(release, ingress):
     """Build a V1Ingress from an Ingress model record."""
     if not ingress.enabled:
@@ -393,7 +415,25 @@ def render_ingress(release, ingress):
         )
 
     if not k8s_paths:
-        return None
+        # No explicit paths — default to "/" routing to first web process
+        web_procs = sorted(p for p in release.processes if p.startswith("web"))
+        if not web_procs:
+            return None
+        target_service = f"{resource_prefix}-{web_procs[0]}"
+        k8s_paths.append(
+            kubernetes.client.V1HTTPIngressPath(
+                path="/",
+                path_type="Prefix",
+                backend=kubernetes.client.V1IngressBackend(
+                    service=kubernetes.client.V1IngressServiceBackend(
+                        name=target_service,
+                        port=kubernetes.client.V1ServiceBackendPort(
+                            number=8000,
+                        ),
+                    ),
+                ),
+            )
+        )
 
     tls_hosts = []
     rules = []
@@ -1506,26 +1546,33 @@ def deploy_release(deployment):
         if current_app.config.get("INGRESS_DOMAIN"):
             ingress_domain = current_app.config["INGRESS_DOMAIN"]
             app_env = deployment.application_environment
-            # Fix up auto-generated hostnames to include environment
-            app = deployment.release_object.application
-            org = app.project.organization
-            project = app.project
-            env = app_env.environment
+            hostname_pairs = _ingress_hostname_pairs(app_env)
             changed = False
             for ing in app_env.ingresses:
-                for host in ing.hosts:
-                    if not host.is_auto_generated:
-                        continue
-                    expected = (
-                        f"{readable_k8s_hostname((org.slug, org.k8s_identifier), (env.slug, env.k8s_identifier), (project.slug, project.k8s_identifier), (app.slug, app.k8s_identifier))}"
-                        f"-{ing.name}.{ingress_domain}"
-                    )
-                    if host.hostname != expected:
+                auto_hosts = [h for h in ing.hosts if h.is_auto_generated]
+                existing_hostnames = {h.hostname for h in ing.hosts}
+                expected = (
+                    f"{readable_k8s_hostname(*hostname_pairs)}"
+                    f"-{ing.name}.{ingress_domain}"
+                )
+                has_expected = expected in existing_hostnames
+                if not has_expected:
+                    # Keep old auto-generated hosts as manual so DNS keeps
+                    # working, then add the new canonical auto-generated host.
+                    for host in auto_hosts:
                         log(
-                            f"Updating auto-generated hostname: {host.hostname} -> {expected}"
+                            f"Demoting old auto-generated hostname to manual: {host.hostname}"
                         )
-                        host.hostname = expected
-                        changed = True
+                        host.is_auto_generated = False
+                    db.session.add(
+                        IngressHost(
+                            ingress_id=ing.id,
+                            hostname=expected,
+                            tls_enabled=True,
+                            is_auto_generated=True,
+                        )
+                    )
+                    changed = True
             if changed:
                 db.session.commit()
                 db.session.refresh(app_env)
@@ -1542,7 +1589,7 @@ def deploy_release(deployment):
                         db.session.add(ingress_obj)
                         db.session.flush()
                         auto_hostname = (
-                            f"{readable_k8s_hostname((org.slug, org.k8s_identifier), (env.slug, env.k8s_identifier), (project.slug, project.k8s_identifier), (app.slug, app.k8s_identifier))}"
+                            f"{readable_k8s_hostname(*hostname_pairs)}"
                             f"-{process_name}.{ingress_domain}"
                         )
                         db.session.add(
@@ -1833,26 +1880,31 @@ def fake_deploy_release(deployment):
     if current_app.config.get("INGRESS_DOMAIN"):
         ingress_domain = current_app.config["INGRESS_DOMAIN"]
         app_env = deployment.application_environment
-        # Fix up auto-generated hostnames to include environment
-        app = deployment.release_object.application
-        org = app.project.organization
-        project = app.project
-        env = app_env.environment
+        hostname_pairs = _ingress_hostname_pairs(app_env)
         changed = False
         for ing in app_env.ingresses:
-            for host in ing.hosts:
-                if not host.is_auto_generated:
-                    continue
-                expected = (
-                    f"{readable_k8s_hostname((org.slug, org.k8s_identifier), (env.slug, env.k8s_identifier), (project.slug, project.k8s_identifier), (app.slug, app.k8s_identifier))}"
-                    f"-{ing.name}.{ingress_domain}"
-                )
-                if host.hostname != expected:
+            auto_hosts = [h for h in ing.hosts if h.is_auto_generated]
+            existing_hostnames = {h.hostname for h in ing.hosts}
+            expected = (
+                f"{readable_k8s_hostname(*hostname_pairs)}"
+                f"-{ing.name}.{ingress_domain}"
+            )
+            has_expected = expected in existing_hostnames
+            if not has_expected:
+                for host in auto_hosts:
                     deploy_log.append(
-                        f"Updating auto-generated hostname: {host.hostname} -> {expected}"
+                        f"Demoting old auto-generated hostname to manual: {host.hostname}"
                     )
-                    host.hostname = expected
-                    changed = True
+                    host.is_auto_generated = False
+                db.session.add(
+                    IngressHost(
+                        ingress_id=ing.id,
+                        hostname=expected,
+                        tls_enabled=True,
+                        is_auto_generated=True,
+                    )
+                )
+                changed = True
         if changed:
             db.session.commit()
             db.session.refresh(app_env)
@@ -1869,7 +1921,7 @@ def fake_deploy_release(deployment):
                     db.session.add(ingress_rec)
                     db.session.flush()
                     auto_hostname = (
-                        f"{readable_k8s_hostname((org.slug, org.k8s_identifier), (env.slug, env.k8s_identifier), (project.slug, project.k8s_identifier), (app.slug, app.k8s_identifier))}"
+                        f"{readable_k8s_hostname(*hostname_pairs)}"
                         f"-{process_name}.{ingress_domain}"
                     )
                     db.session.add(

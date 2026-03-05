@@ -80,7 +80,7 @@
                     {% else %}
                       <button type="button" class="btn btn-ghost btn-xs text-error p-0 btn-remove-row"
                               title="Remove hostname">
-                        {{ icon('trash-2', 'w-3 h-3') }}
+                        {{ icon('trash', 'w-3 h-3') }}
                       </button>
                     {% endif %}
                   </div>
@@ -91,6 +91,13 @@
                   {{ icon('plus', 'w-3 h-3') }} Add hostname
                 </button>
               </div>
+
+              {# Preserve existing paths even when UI is hidden #}
+              {% if web_processes | length <= 1 %}
+                {% for p in ingress.paths %}
+                  <input type="hidden" name="_existing_path" value="{{ p.id }}">
+                {% endfor %}
+              {% endif %}
 
               {# Paths — only show when multiple web processes exist #}
               {% if web_processes | length > 1 %}
