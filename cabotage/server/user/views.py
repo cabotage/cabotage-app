@@ -1913,6 +1913,21 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
             )
         )
 
+    def _render_ingress(**extra):
+        csrf_form = IngressHostForm()
+        return render_template(
+            "user/project_application_ingress.html",
+            application=application,
+            environment=environment,
+            app_env=app_env,
+            ingress_forms=ingress_forms,
+            csrf_form=csrf_form,
+            web_processes=web_processes,
+            ingress_domain=ingress_domain,
+            is_admin=current_user.admin,
+            **extra,
+        )
+
     # Build per-ingress forms
     ingress_forms = {}
     if app_env:
@@ -1935,11 +1950,88 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                 return _redirect_back()
 
             form = IngressSettingsForm(request.form, prefix=ingress.name)
+            ingress_forms[ingress.name] = form
+            ingress_errors = {}
+
             if not form.validate():
-                for field, errors in form.errors.items():
-                    for error in errors:
-                        flash(f"{field}: {error}", "error")
-                return _redirect_back()
+                # render_field_compact shows field.errors inline
+                return _render_ingress(ingress_errors=ingress_errors)
+
+            new_use_regex = form.use_regex.data
+
+            # --- Validate everything before touching the session ---
+
+            # Validate new hostnames
+            new_hostnames = []
+            for hostname in request.form.getlist("_new_host"):
+                hostname = hostname.strip()
+                if not hostname:
+                    continue
+                if len(hostname) > 253 or not _HOSTNAME_RE.match(hostname):
+                    ingress_errors.setdefault("hosts", []).append(
+                        f"Invalid hostname: {hostname}"
+                    )
+                else:
+                    new_hostnames.append(hostname)
+
+            # Validate use_regex toggle against kept paths
+            kept_path_ids = set(request.form.getlist("_existing_path"))
+            kept_paths = [p for p in ingress.paths if str(p.id) in kept_path_ids]
+            if new_use_regex and not ingress.use_regex:
+                for p in kept_paths:
+                    try:
+                        re.compile(p.path)
+                    except re.error as e:
+                        ingress_errors.setdefault("paths", []).append(
+                            f"Cannot enable regex: path '{p.path}' is not a valid regex ({e})."
+                        )
+            elif not new_use_regex and ingress.use_regex:
+                for p in kept_paths:
+                    if _REGEX_META.search(p.path):
+                        ingress_errors.setdefault("paths", []).append(
+                            f"Cannot disable regex: path '{p.path}' contains regex characters."
+                        )
+
+            # Validate new paths
+            new_path_indices = set()
+            for key in request.form:
+                m = re.match(r"_new_path_(\d+)_path", key)
+                if m:
+                    new_path_indices.add(m.group(1))
+
+            new_paths = []
+            for idx in sorted(new_path_indices):
+                path_value = request.form.get(f"_new_path_{idx}_path", "").strip()
+                path_type = request.form.get(f"_new_path_{idx}_type", "Prefix")
+                target = request.form.get(f"_new_path_{idx}_target", "")
+                if not path_value:
+                    continue
+                if not path_value.startswith("/") or len(path_value) > 256:
+                    ingress_errors.setdefault("paths", []).append(
+                        f"Invalid path: {path_value}"
+                    )
+                elif new_use_regex:
+                    try:
+                        re.compile(path_value)
+                    except re.error as e:
+                        ingress_errors.setdefault("paths", []).append(
+                            f"Invalid regex path '{path_value}': {e}"
+                        )
+                elif _REGEX_META.search(path_value):
+                    ingress_errors.setdefault("paths", []).append(
+                        f"Path '{path_value}' contains regex characters but regex is disabled."
+                    )
+                if target and target not in web_processes:
+                    ingress_errors.setdefault("paths", []).append(
+                        f"Invalid target process: {target}"
+                    )
+                if not ingress_errors.get("paths"):
+                    new_paths.append((path_value, path_type, target))
+
+            if ingress_errors:
+                return _render_ingress(ingress_errors=ingress_errors)
+
+            # --- All valid: apply changes ---
 
             with db.session.no_autoflush:
                 # Enabled
@@ -1955,7 +2047,7 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                     form.proxy_request_buffering.data or None
                 )
                 ingress.session_affinity = form.session_affinity.data
-                new_use_regex = form.use_regex.data
+                ingress.use_regex = new_use_regex
 
                 # Hosts: diff existing vs form
                 kept_host_ids = set(request.form.getlist("_existing_host"))
@@ -1963,13 +2055,7 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                     if str(host.id) not in kept_host_ids and not host.is_auto_generated:
                         db.session.delete(host)
 
-                for hostname in request.form.getlist("_new_host"):
-                    hostname = hostname.strip()
-                    if not hostname:
-                        continue
-                    if len(hostname) > 253 or not _HOSTNAME_RE.match(hostname):
-                        flash(f"Invalid hostname: {hostname}", "error")
-                        return _redirect_back()
+                for hostname in new_hostnames:
                     db.session.add(
                         IngressHost(
                             ingress_id=ingress.id,
@@ -1980,68 +2066,11 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                     )
 
                 # Paths: diff existing vs form
-                kept_path_ids = set(request.form.getlist("_existing_path"))
                 for path in list(ingress.paths):
                     if str(path.id) not in kept_path_ids:
                         db.session.delete(path)
 
-                # Validate use_regex against kept paths
-                kept_paths = [p for p in ingress.paths if str(p.id) in kept_path_ids]
-                if new_use_regex and not ingress.use_regex:
-                    for p in kept_paths:
-                        try:
-                            re.compile(p.path)
-                        except re.error as e:
-                            flash(
-                                f"Cannot enable regex: path '{p.path}' is not a valid regex ({e}).",
-                                "error",
-                            )
-                            return _redirect_back()
-                elif not new_use_regex and ingress.use_regex:
-                    for p in kept_paths:
-                        if _REGEX_META.search(p.path):
-                            flash(
-                                f"Cannot disable regex: path '{p.path}' contains regex characters.",
-                                "error",
-                            )
-                            return _redirect_back()
-                ingress.use_regex = new_use_regex
-
-                # Add new paths
-                new_path_indices = set()
-                for key in request.form:
-                    m = re.match(r"_new_path_(\d+)_path", key)
-                    if m:
-                        new_path_indices.add(m.group(1))
-
-                for idx in sorted(new_path_indices):
-                    path_value = request.form.get(f"_new_path_{idx}_path", "").strip()
-                    path_type = request.form.get(f"_new_path_{idx}_type", "Prefix")
-                    target = request.form.get(f"_new_path_{idx}_target", "")
-                    if not path_value:
-                        continue
-                    if not path_value.startswith("/") or len(path_value) > 256:
-                        flash(f"Invalid path: {path_value}", "error")
-                        return _redirect_back()
-                    if new_use_regex:
-                        try:
-                            re.compile(path_value)
-                        except re.error as e:
-                            flash(
-                                f"Invalid regex path '{path_value}': {e}",
-                                "error",
-                            )
-                            return _redirect_back()
-                    else:
-                        if _REGEX_META.search(path_value):
-                            flash(
-                                f"Path '{path_value}' contains regex characters but regex is disabled.",
-                                "error",
-                            )
-                            return _redirect_back()
-                    if target not in web_processes:
-                        flash(f"Invalid target process: {target}", "error")
-                        return _redirect_back()
+                for path_value, path_type, target in new_paths:
                     db.session.add(
                         IngressPath(
                             ingress_id=ingress.id,
@@ -2082,10 +2111,10 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                     flash(f"Ingress '{ingress.name}' saved.", "success")
                 except IntegrityError:
                     db.session.rollback()
-                    flash(
-                        "Save failed: a hostname or path conflicts with an existing entry.",
-                        "error",
+                    ingress_errors.setdefault("hosts", []).append(
+                        "A hostname or path conflicts with an existing entry."
                     )
+                    return _render_ingress(ingress_errors=ingress_errors)
             return _redirect_back()
 
         # Create new ingress
@@ -2146,19 +2175,7 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                     flash(f"Ingress '{new_name}' created.", "success")
                 return _redirect_back()
 
-    csrf_form = IngressHostForm()
-
-    return render_template(
-        "user/project_application_ingress.html",
-        application=application,
-        environment=environment,
-        app_env=app_env,
-        ingress_forms=ingress_forms,
-        csrf_form=csrf_form,
-        web_processes=web_processes,
-        ingress_domain=ingress_domain,
-        is_admin=current_user.admin,
-    )
+    return _render_ingress()
 
 
 @user_blueprint.route(
