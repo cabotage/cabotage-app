@@ -1696,8 +1696,68 @@ document.addEventListener('DOMContentLoaded', function () {
   initTimestampsAndDeployForm();
   autoExpandCollapsibleCards();
   syncDetailLogHeight();
+  initAnnotationTables();
   window.addEventListener('resize', function () {
     autoExpandCollapsibleCards();
     syncDetailLogHeight();
   });
 });
+
+/* Ingress: dynamic annotation key/value tables */
+function initAnnotationTables() {
+  document.querySelectorAll('[data-annotations-toggle]').forEach(function (checkbox) {
+    var name = checkbox.getAttribute('data-annotations-toggle');
+    var target = document.getElementById('annotations-table-' + name);
+    if (!target) return;
+    checkbox.addEventListener('change', function () {
+      target.classList.toggle('hidden', !this.checked);
+    });
+  });
+
+  document.querySelectorAll('[data-annotations-add]').forEach(function (addBtn) {
+    var name = addBtn.getAttribute('data-annotations-add');
+    var table = document.getElementById('annotations-list-' + name);
+    if (!table) return;
+
+    table.addEventListener('click', function (e) {
+      if (e.target.closest('.annotation-remove')) {
+        e.target.closest('tr').remove();
+      }
+    });
+
+    var nextIdx = table.querySelectorAll('tbody tr').length;
+    addBtn.addEventListener('click', function () {
+      var tbody = table.querySelector('tbody');
+      var idx = nextIdx++;
+      var tr = document.createElement('tr');
+
+      var keyTd = document.createElement('td');
+      var keyInput = document.createElement('input');
+      keyInput.type = 'text';
+      keyInput.name = '_annotation_key_' + idx;
+      keyInput.className = 'input input-bordered input-xs w-full';
+      keyInput.placeholder = 'nginx.ingress.kubernetes.io/...';
+      keyTd.appendChild(keyInput);
+
+      var valTd = document.createElement('td');
+      var valInput = document.createElement('input');
+      valInput.type = 'text';
+      valInput.name = '_annotation_value_' + idx;
+      valInput.className = 'input input-bordered input-xs w-full';
+      valTd.appendChild(valInput);
+
+      var rmTd = document.createElement('td');
+      var rmBtn = document.createElement('button');
+      rmBtn.type = 'button';
+      rmBtn.className = 'btn btn-ghost btn-xs text-error p-0';
+      rmBtn.textContent = '\u00d7';
+      rmBtn.addEventListener('click', function () { tr.remove(); });
+      rmTd.appendChild(rmBtn);
+
+      tr.appendChild(keyTd);
+      tr.appendChild(valTd);
+      tr.appendChild(rmTd);
+      tbody.appendChild(tr);
+    });
+  });
+}

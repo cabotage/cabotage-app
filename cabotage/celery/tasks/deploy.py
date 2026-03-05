@@ -18,8 +18,19 @@ from cabotage.server import (
     kubernetes as kubernetes_ext,
 )
 
-from cabotage.server.models.projects import Deployment, DEFAULT_POD_CLASS, pod_classes
-from cabotage.server.models.utils import safe_k8s_name
+from cabotage.server.models.projects import (
+    Deployment,
+    Ingress,
+    IngressHost,
+    IngressPath,
+    DEFAULT_POD_CLASS,
+    pod_classes,
+)
+from cabotage.server.models.utils import (
+    safe_k8s_name,
+    compact_k8s_name,
+    readable_k8s_hostname,
+)
 
 from cabotage.utils.build_log_stream import (
     _HEARTBEAT_TTL,
@@ -54,6 +65,26 @@ def k8s_resource_prefix(release):
 
 def k8s_role_name(release):
     return f"{k8s_namespace(release)}-{k8s_resource_prefix(release)}"
+
+
+def k8s_label_value(release):
+    """Build a k8s label value (max 63 chars) for the 'app' label.
+
+    Uses compact_k8s_name with (slug, k8s_identifier) pairs to produce
+    a readable, unique value.  Legacy identifiers (slug == k8s_identifier)
+    pass through unchanged; generated ones get their slugs joined with
+    a combined hash suffix.
+    """
+    org = release.application.project.organization
+    project = release.application.project
+    app = release.application
+    app_env = release.application_environment
+    pairs = [(org.slug, org.k8s_identifier)]
+    if app_env.k8s_identifier is not None:
+        pairs.append((app_env.environment.slug, app_env.environment.k8s_identifier))
+    pairs.append((project.slug, project.k8s_identifier))
+    pairs.append((app.slug, app.k8s_identifier))
+    return compact_k8s_name(*pairs)
 
 
 def render_namespace(release):
@@ -243,7 +274,7 @@ def fetch_cabotage_enrollment(custom_objects_api_instance, release):
 def render_service(release, process_name):
     resource_prefix = k8s_resource_prefix(release)
     service_name = f"{resource_prefix}-{process_name}"
-    role_name = k8s_role_name(release)
+    label_value = k8s_label_value(release)
     service_object = kubernetes.client.V1Service(
         metadata=kubernetes.client.V1ObjectMeta(
             name=service_name,
@@ -261,7 +292,7 @@ def render_service(release, process_name):
                 )
             ],
             selector={
-                "app": role_name,
+                "app": label_value,
                 "process": process_name,
             },
         ),
@@ -295,6 +326,203 @@ def fetch_service(core_api_instance, release, process_name):
                 f"{service_name} in {namespace}: {exc}"
             )
     return service
+
+
+def render_ingress(release, ingress):
+    """Build a V1Ingress from an Ingress model record."""
+    if not ingress.enabled:
+        return None
+
+    resource_prefix = k8s_resource_prefix(release)
+    ingress_name = f"{resource_prefix}-{ingress.name}"
+    label_value = k8s_label_value(release)
+
+    annotations = {
+        "nginx.ingress.kubernetes.io/backend-protocol": ingress.backend_protocol,
+        "nginx.ingress.kubernetes.io/force-ssl-redirect": str(
+            ingress.force_ssl_redirect
+        ).lower(),
+        "nginx.ingress.kubernetes.io/service-upstream": str(
+            ingress.service_upstream
+        ).lower(),
+        "nginx.ingress.kubernetes.io/proxy-next-upstream": "error",
+        "cert-manager.io/cluster-issuer": ingress.cluster_issuer,
+    }
+    annotations["nginx.ingress.kubernetes.io/proxy-connect-timeout"] = (
+        ingress.proxy_connect_timeout or "10s"
+    )
+    annotations["nginx.ingress.kubernetes.io/proxy-read-timeout"] = (
+        ingress.proxy_read_timeout or "10s"
+    )
+    annotations["nginx.ingress.kubernetes.io/proxy-send-timeout"] = (
+        ingress.proxy_send_timeout or "10s"
+    )
+    annotations["nginx.ingress.kubernetes.io/proxy-body-size"] = (
+        ingress.proxy_body_size or "10M"
+    )
+    annotations["nginx.ingress.kubernetes.io/client-body-buffer-size"] = (
+        ingress.client_body_buffer_size or "1M"
+    )
+    annotations["nginx.ingress.kubernetes.io/proxy-request-buffering"] = (
+        ingress.proxy_request_buffering or "on"
+    )
+    if ingress.session_affinity:
+        annotations["nginx.ingress.kubernetes.io/affinity"] = "cookie"
+    if ingress.use_regex:
+        annotations["nginx.ingress.kubernetes.io/use-regex"] = "true"
+    if ingress.allow_annotations and ingress.extra_annotations:
+        annotations.update(ingress.extra_annotations)
+
+    # Build paths once — shared across all hosts
+    k8s_paths = []
+    for path in ingress.paths:
+        target_service = f"{resource_prefix}-{path.target_process_name}"
+        k8s_paths.append(
+            kubernetes.client.V1HTTPIngressPath(
+                path=path.path,
+                path_type=path.path_type,
+                backend=kubernetes.client.V1IngressBackend(
+                    service=kubernetes.client.V1IngressServiceBackend(
+                        name=target_service,
+                        port=kubernetes.client.V1ServiceBackendPort(
+                            number=8000,
+                        ),
+                    ),
+                ),
+            )
+        )
+
+    if not k8s_paths:
+        return None
+
+    tls_hosts = []
+    rules = []
+    for host in ingress.hosts:
+        if host.tls_enabled:
+            tls_hosts.append(host.hostname)
+        rules.append(
+            kubernetes.client.V1IngressRule(
+                host=host.hostname,
+                http=kubernetes.client.V1HTTPIngressRuleValue(paths=k8s_paths),
+            )
+        )
+
+    tls = []
+    if tls_hosts:
+        tls.append(
+            kubernetes.client.V1IngressTLS(
+                hosts=tls_hosts,
+                secret_name=f"{ingress_name}-tls",
+            )
+        )
+
+    ingress_object = kubernetes.client.V1Ingress(
+        metadata=kubernetes.client.V1ObjectMeta(
+            name=ingress_name,
+            labels={
+                "resident-ingress.cabotage.io": "true",
+                "organization": release.application.project.organization.slug,
+                "project": release.application.project.slug,
+                "application": release.application.slug,
+                "app": label_value,
+                "ingress": ingress.name,
+            },
+            annotations=annotations,
+        ),
+        spec=kubernetes.client.V1IngressSpec(
+            ingress_class_name=ingress.ingress_class_name,
+            rules=rules,
+            tls=tls if tls else None,
+        ),
+    )
+    return ingress_object
+
+
+def create_ingress(networking_api, release, ingress):
+    namespace = k8s_namespace(release)
+    ingress_object = render_ingress(release, ingress)
+    if ingress_object is None:
+        return None
+    try:
+        return networking_api.create_namespaced_ingress(namespace, ingress_object)
+    except Exception as exc:
+        raise DeployError(
+            "Unexpected exception creating Ingress/"
+            f"{ingress_object.metadata.name} in {namespace}: {exc}"
+        )
+
+
+def delete_ingress(networking_api, release, ingress_name):
+    namespace = k8s_namespace(release)
+    k8s_name = f"{k8s_resource_prefix(release)}-{ingress_name}"
+    try:
+        networking_api.delete_namespaced_ingress(k8s_name, namespace)
+    except ApiException as exc:
+        if exc.status != 404:
+            raise DeployError(
+                "Unexpected exception deleting Ingress/"
+                f"{k8s_name} in {namespace}: {exc}"
+            )
+
+
+def fetch_ingress(networking_api, release, ingress):
+    namespace = k8s_namespace(release)
+    k8s_name = f"{k8s_resource_prefix(release)}-{ingress.name}"
+
+    if not ingress.enabled:
+        # Ingress disabled — delete if exists
+        delete_ingress(networking_api, release, ingress.name)
+        return None
+
+    ingress_object = render_ingress(release, ingress)
+    if ingress_object is None:
+        # Enabled but no paths/hosts — skip without deleting
+        return None
+
+    try:
+        networking_api.read_namespaced_ingress(k8s_name, namespace)
+        return networking_api.patch_namespaced_ingress(
+            k8s_name, namespace, ingress_object
+        )
+    except ApiException as exc:
+        if exc.status == 404:
+            return create_ingress(networking_api, release, ingress)
+        raise DeployError(
+            "Unexpected exception fetching Ingress/" f"{k8s_name} in {namespace}: {exc}"
+        )
+
+
+def cleanup_orphaned_ingresses(networking_api, release, active_ingress_names, log=None):
+    """Delete cabotage-managed ingresses that are no longer in the app's ingress list."""
+    namespace = k8s_namespace(release)
+    resource_prefix = k8s_resource_prefix(release)
+    label_selector = ",".join(
+        [
+            "resident-ingress.cabotage.io=true",
+            f"organization={release.application.project.organization.slug}",
+            f"project={release.application.project.slug}",
+            f"application={release.application.slug}",
+        ]
+    )
+    try:
+        existing = networking_api.list_namespaced_ingress(
+            namespace, label_selector=label_selector
+        )
+    except ApiException:
+        return
+    expected_names = {f"{resource_prefix}-{name}" for name in active_ingress_names}
+    for item in existing.items:
+        if item.metadata.name not in expected_names:
+            if log:
+                log(f"Deleting orphaned Ingress/{item.metadata.name}")
+            try:
+                networking_api.delete_namespaced_ingress(item.metadata.name, namespace)
+            except ApiException as exc:
+                if exc.status != 404:
+                    if log:
+                        log(
+                            f"Warning: failed to delete orphaned Ingress/{item.metadata.name}: {exc}"
+                        )
 
 
 def render_image_pull_secrets(release):
@@ -680,7 +908,7 @@ def render_podspec(release, process_name, service_account_name):
         "project": release.application.project.slug,
         "application": release.application.slug,
         "process": process_name,
-        "app": k8s_role_name(release),
+        "app": k8s_label_value(release),
         "release": str(release.version),
     }
     volumes = [
@@ -800,7 +1028,7 @@ def render_podspec(release, process_name, service_account_name):
 
 
 def render_deployment(namespace, release, service_account_name, process_name):
-    role_name = k8s_role_name(release)
+    label_value = k8s_label_value(release)
     resource_prefix = k8s_resource_prefix(release)
     app_env = release.application_environment
     process_counts = app_env.process_counts or {}
@@ -812,7 +1040,7 @@ def render_deployment(namespace, release, service_account_name, process_name):
                 "project": release.application.project.slug,
                 "application": release.application.slug,
                 "process": process_name,
-                "app": role_name,
+                "app": label_value,
                 "resident-deployment.cabotage.io": "true",
             },
         ),
@@ -820,7 +1048,7 @@ def render_deployment(namespace, release, service_account_name, process_name):
             replicas=process_counts.get(process_name, 0),
             selector=kubernetes.client.V1LabelSelector(
                 match_labels={
-                    "app": role_name,
+                    "app": label_value,
                     "process": process_name,
                 },
             ),
@@ -831,7 +1059,7 @@ def render_deployment(namespace, release, service_account_name, process_name):
                         "project": release.application.project.slug,
                         "application": release.application.slug,
                         "process": process_name,
-                        "app": role_name,
+                        "app": label_value,
                         "ca-admission.cabotage.io": "true",
                         "resident-pod.cabotage.io": "true",
                     }
@@ -952,7 +1180,7 @@ def scale_deployment(namespace, release, process_name, replicas):
 
 
 def render_job(namespace, release, service_account_name, process_name, job_id):
-    role_name = k8s_role_name(release)
+    label_value = k8s_label_value(release)
     job_object = kubernetes.client.V1Job(
         metadata=kubernetes.client.V1ObjectMeta(
             name=f"deployment-{job_id}",
@@ -961,7 +1189,7 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
                 "project": release.application.project.slug,
                 "application": release.application.slug,
                 "process": process_name,
-                "app": role_name,
+                "app": label_value,
                 "release": str(release.version),
                 "deployment": job_id,
                 "resident-job.cabotage.io": "true",
@@ -978,7 +1206,7 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
                         "project": release.application.project.slug,
                         "application": release.application.slug,
                         "process": process_name,
-                        "app": role_name,
+                        "app": label_value,
                         "release": str(release.version),
                         "deployment": job_id,
                         "ca-admission.cabotage.io": "true",
@@ -1275,6 +1503,80 @@ def deploy_release(deployment):
                     fetch_service(
                         core_api_instance, deployment.release_object, process_name
                     )
+        if current_app.config.get("INGRESS_DOMAIN"):
+            ingress_domain = current_app.config["INGRESS_DOMAIN"]
+            app_env = deployment.application_environment
+            # Fix up auto-generated hostnames to include environment
+            app = deployment.release_object.application
+            org = app.project.organization
+            project = app.project
+            env = app_env.environment
+            changed = False
+            for ing in app_env.ingresses:
+                for host in ing.hosts:
+                    if not host.is_auto_generated:
+                        continue
+                    expected = (
+                        f"{readable_k8s_hostname((org.slug, org.k8s_identifier), (env.slug, env.k8s_identifier), (project.slug, project.k8s_identifier), (app.slug, app.k8s_identifier))}"
+                        f"-{ing.name}.{ingress_domain}"
+                    )
+                    if host.hostname != expected:
+                        log(
+                            f"Updating auto-generated hostname: {host.hostname} -> {expected}"
+                        )
+                        host.hostname = expected
+                        changed = True
+            if changed:
+                db.session.commit()
+                db.session.refresh(app_env)
+            # Only auto-create defaults when no ingresses exist at all;
+            # once a user has any ingress config we leave it alone.
+            if not app_env.ingresses:
+                for process_name in deployment.release_object.processes:
+                    if process_name.startswith("web"):
+                        log(f"Auto-creating default Ingress for {process_name}")
+                        ingress_obj = Ingress(
+                            application_environment_id=app_env.id,
+                            name=process_name,
+                        )
+                        db.session.add(ingress_obj)
+                        db.session.flush()
+                        auto_hostname = (
+                            f"{readable_k8s_hostname((org.slug, org.k8s_identifier), (env.slug, env.k8s_identifier), (project.slug, project.k8s_identifier), (app.slug, app.k8s_identifier))}"
+                            f"-{process_name}.{ingress_domain}"
+                        )
+                        db.session.add(
+                            IngressHost(
+                                ingress_id=ingress_obj.id,
+                                hostname=auto_hostname,
+                                tls_enabled=True,
+                                is_auto_generated=True,
+                            )
+                        )
+                        db.session.add(
+                            IngressPath(
+                                ingress_id=ingress_obj.id,
+                                path="/",
+                                path_type="Prefix",
+                                target_process_name=process_name,
+                            )
+                        )
+                db.session.commit()
+                db.session.refresh(app_env)
+            networking_api_instance = kubernetes.client.NetworkingV1Api(api_client)
+            for ingress in app_env.ingresses:
+                log(f"Fetching Ingress/{ingress.name}")
+                fetch_ingress(
+                    networking_api_instance,
+                    deployment.release_object,
+                    ingress,
+                )
+            cleanup_orphaned_ingresses(
+                networking_api_instance,
+                deployment.release_object,
+                [i.name for i in app_env.ingresses],
+                log=log,
+            )
         log("Fetching ImagePullSecrets")
         image_pull_secrets = fetch_image_pull_secrets(
             core_api_instance, deployment.release_object
@@ -1528,6 +1830,75 @@ def fake_deploy_release(deployment):
                 deploy_log.append(f"Fetching {process_name} Service")
                 service = render_service(deployment.release_object, process_name)
                 deploy_log.append(yaml.dump(remove_none(service.to_dict())))
+    if current_app.config.get("INGRESS_DOMAIN"):
+        ingress_domain = current_app.config["INGRESS_DOMAIN"]
+        app_env = deployment.application_environment
+        # Fix up auto-generated hostnames to include environment
+        app = deployment.release_object.application
+        org = app.project.organization
+        project = app.project
+        env = app_env.environment
+        changed = False
+        for ing in app_env.ingresses:
+            for host in ing.hosts:
+                if not host.is_auto_generated:
+                    continue
+                expected = (
+                    f"{readable_k8s_hostname((org.slug, org.k8s_identifier), (env.slug, env.k8s_identifier), (project.slug, project.k8s_identifier), (app.slug, app.k8s_identifier))}"
+                    f"-{ing.name}.{ingress_domain}"
+                )
+                if host.hostname != expected:
+                    deploy_log.append(
+                        f"Updating auto-generated hostname: {host.hostname} -> {expected}"
+                    )
+                    host.hostname = expected
+                    changed = True
+        if changed:
+            db.session.commit()
+            db.session.refresh(app_env)
+        if not app_env.ingresses:
+            for process_name in deployment.release_object.processes:
+                if process_name.startswith("web"):
+                    deploy_log.append(
+                        f"Auto-creating default Ingress for {process_name}"
+                    )
+                    ingress_rec = Ingress(
+                        application_environment_id=app_env.id,
+                        name=process_name,
+                    )
+                    db.session.add(ingress_rec)
+                    db.session.flush()
+                    auto_hostname = (
+                        f"{readable_k8s_hostname((org.slug, org.k8s_identifier), (env.slug, env.k8s_identifier), (project.slug, project.k8s_identifier), (app.slug, app.k8s_identifier))}"
+                        f"-{process_name}.{ingress_domain}"
+                    )
+                    db.session.add(
+                        IngressHost(
+                            ingress_id=ingress_rec.id,
+                            hostname=auto_hostname,
+                            tls_enabled=True,
+                            is_auto_generated=True,
+                        )
+                    )
+                    db.session.add(
+                        IngressPath(
+                            ingress_id=ingress_rec.id,
+                            path="/",
+                            path_type="Prefix",
+                            target_process_name=process_name,
+                        )
+                    )
+            db.session.commit()
+            db.session.refresh(app_env)
+        for ingress in app_env.ingresses:
+            ingress_obj = render_ingress(deployment.release_object, ingress)
+            if ingress_obj:
+                deploy_log.append(f"Fetching Ingress/{ingress.name}")
+                deploy_log.append(yaml.dump(remove_none(ingress_obj.to_dict())))
+        active_names = [i.name for i in app_env.ingresses]
+        deploy_log.append(
+            f"Cleanup: would delete orphaned ingresses not in {active_names}"
+        )
     image_pull_secrets = render_image_pull_secrets(deployment.release_object)
     deploy_log.append(
         f"Creating ImagePullSecrets/{image_pull_secrets.metadata.name} "

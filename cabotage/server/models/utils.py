@@ -35,6 +35,85 @@ def safe_k8s_name(*parts, max_len=63):
     return name[: max_len - 9].rstrip("-") + "-" + digest
 
 
+def compact_k8s_name(*pairs, max_len=63):
+    """Build a compact, unique k8s name from (slug, k8s_identifier) pairs.
+
+    Uses slugs for readability.  When any k8s_identifier differs from its
+    slug (i.e. has a generated suffix), a hash derived from all
+    k8s_identifiers is appended for uniqueness.  When every identifier
+    equals its slug (legacy), no hash is appended.
+
+    Each argument is a (slug, k8s_identifier) tuple.
+
+    Examples:
+        # Legacy — all identifiers equal their slugs
+        compact_k8s_name(('pypa', 'pypa'), ('pypi', 'pypi'), ('warehouse', 'warehouse'))
+        => 'pypa-pypi-warehouse'
+
+        # Mixed — staging has a generated identifier
+        compact_k8s_name(('ewdurbin', 'ewdurbin'), ('staging', 'staging-701685d3'),
+                         ('httpbin', 'httpbin'), ('httpbin', 'httpbin'))
+        => 'ewdurbin-staging-httpbin-httpbin-<hash>'
+
+        # All new — all have generated identifiers
+        compact_k8s_name(('astral', 'astral-c9864437'), ('prod', 'prod-a8b4f3bc'),
+                         ('registry', 'registry-07f189ea'), ('server', 'server-bf4ba994'))
+        => 'astral-prod-registry-server-<hash>'
+    """
+    slugs = []
+    identifiers = []
+    has_generated = False
+    for slug, k8s_id in pairs:
+        slugs.append(slug)
+        identifiers.append(k8s_id)
+        if slug != k8s_id:
+            has_generated = True
+
+    base = "-".join(slugs)
+    if not has_generated:
+        if len(base) <= max_len:
+            return base
+        digest = hashlib.sha256(base.encode()).hexdigest()[:8]
+        return base[: max_len - 9].rstrip("-") + "-" + digest
+
+    combined = "-".join(identifiers)
+    digest = hashlib.sha256(combined.encode()).hexdigest()[:8]
+    name = base + "-" + digest
+    if len(name) <= max_len:
+        return name
+    truncated = base[: max_len - 9].rstrip("-")
+    return truncated + "-" + digest
+
+
+def readable_k8s_hostname(*pairs):
+    """Build a readable hostname prefix from (slug, k8s_identifier) pairs.
+
+    Uses slugs for readability, and always appends a hash derived from all
+    k8s_identifiers for DNS uniqueness.
+
+    Example:
+        readable_k8s_hostname(('astral', 'astral-c9864437'),
+                              ('prod', 'prod-a8b4f3bc'),
+                              ('registry', 'registry-07f189ea'),
+                              ('server', 'server-bf4ba994'))
+        => 'astral-prod-registry-server-<hash>'
+    """
+    slugs = []
+    identifiers = []
+    for slug, k8s_id in pairs:
+        slugs.append(slug)
+        identifiers.append(k8s_id)
+    combined = "-".join(identifiers)
+    digest = hashlib.sha256(combined.encode()).hexdigest()[:8]
+    base = "-".join(slugs)
+    name = base + "-" + digest
+    # Ensure it fits in a DNS label (63 chars)
+    if len(name) <= 63:
+        return name
+    truncated = base[: 63 - 9].rstrip("-")
+    return truncated + "-" + digest
+
+
 class DictDiffer(object):
     """
     Calculate the difference between two dictionaries as:

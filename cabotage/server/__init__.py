@@ -241,6 +241,9 @@ def create_app():
         Application,
         Configuration,
         Image,
+        Ingress,
+        IngressHost,
+        IngressPath,
         Release,
         Deployment,
         Hook,
@@ -253,6 +256,9 @@ def create_app():
     admin.add_view(AdminModelView(Application, db.session))
     admin.add_view(AdminModelView(Configuration, db.session))
     admin.add_view(AdminModelView(Image, db.session))
+    admin.add_view(AdminModelView(Ingress, db.session))
+    admin.add_view(AdminModelView(IngressHost, db.session))
+    admin.add_view(AdminModelView(IngressPath, db.session))
     admin.add_view(AdminModelView(Release, db.session))
     admin.add_view(AdminModelView(Deployment, db.session))
     admin.add_view(AdminModelView(Hook, db.session))

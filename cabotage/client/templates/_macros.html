@@ -108,6 +108,11 @@
          class="tab-item
                 {% if active == 'releases' %}tab-active{% endif %}">{{ icon('layers', 'w-4 h-4') }} Releases</a>
       <span class="tab-item tab-disabled">{{ icon('bar-chart-2', 'w-4 h-4') }} Pipeline <span class="text-[0.6rem] opacity-50">(Soon)</span></span>
+      {% if config.INGRESS_DOMAIN %}
+      <a href="{{ url_for('user.project_application_ingress', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
+         class="tab-item
+                {% if active == 'ingress' %}tab-active{% endif %}">{{ icon('globe', 'w-4 h-4') }} Ingress</a>
+      {% endif %}
       <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
          class="tab-item
                 {% if active == 'settings' %}tab-active{% endif %}">{{ icon('settings', 'w-4 h-4') }} Settings</a>

@@ -618,6 +618,123 @@ class EditApplicationEnvironmentSettingsForm(FlaskForm):
     )
 
 
+class IngressSettingsForm(FlaskForm):
+    proxy_connect_timeout = StringField(
+        "Connect Timeout",
+        [
+            Optional(),
+            Regexp(
+                r"^\d+s?$",
+                message="Must be a number with optional 's' suffix (e.g. 10s, 60)",
+            ),
+        ],
+        description="Proxy connect timeout (e.g. 10s, 60s)",
+        filters=[(lambda x: x.strip() if x else x), (lambda x: x if x else None)],
+    )
+    proxy_read_timeout = StringField(
+        "Read Timeout",
+        [
+            Optional(),
+            Regexp(
+                r"^\d+s?$",
+                message="Must be a number with optional 's' suffix (e.g. 10s, 60)",
+            ),
+        ],
+        description="Proxy read timeout (e.g. 10s, 60s)",
+        filters=[(lambda x: x.strip() if x else x), (lambda x: x if x else None)],
+    )
+    proxy_send_timeout = StringField(
+        "Send Timeout",
+        [
+            Optional(),
+            Regexp(
+                r"^\d+s?$",
+                message="Must be a number with optional 's' suffix (e.g. 10s, 60)",
+            ),
+        ],
+        description="Proxy send timeout (e.g. 10s, 60s)",
+        filters=[(lambda x: x.strip() if x else x), (lambda x: x if x else None)],
+    )
+    proxy_body_size = StringField(
+        "Max Body Size",
+        [
+            Optional(),
+            Regexp(
+                r"^\d+[kmKMgG]?$",
+                message="Must be a number with optional size unit (e.g. 10M, 1024k, 1G)",
+            ),
+        ],
+        description="Maximum request body size (e.g. 10M, 1024M)",
+        filters=[(lambda x: x.strip() if x else x), (lambda x: x if x else None)],
+    )
+    client_body_buffer_size = StringField(
+        "Client Body Buffer",
+        [
+            Optional(),
+            Regexp(
+                r"^\d+[kmKMgG]?$",
+                message="Must be a number with optional size unit (e.g. 1M, 16k)",
+            ),
+        ],
+        description="Client request body buffer size (e.g. 1M, 16k)",
+        filters=[(lambda x: x.strip() if x else x), (lambda x: x if x else None)],
+    )
+    proxy_request_buffering = SelectField(
+        "Request Buffering",
+        choices=[("on", "On"), ("off", "Off")],
+        description="Enable or disable request buffering",
+    )
+    session_affinity = BooleanField(
+        "Session Affinity",
+        description="Enable cookie-based session affinity",
+    )
+    use_regex = BooleanField(
+        "Use Regex Paths",
+        description="Enable regex path matching (nginx use-regex annotation)",
+    )
+
+
+class IngressHostForm(FlaskForm):
+    hostname = StringField(
+        "Hostname",
+        [
+            DataRequired(),
+            Length(max=253),
+            Regexp(
+                r"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*$",
+                message="Must be a valid DNS hostname (lowercase, alphanumeric, hyphens, dots)",
+            ),
+        ],
+        description="Hostname for this ingress rule",
+    )
+
+
+class IngressPathForm(FlaskForm):
+    path = StringField(
+        "Path",
+        [
+            DataRequired(),
+            Length(max=256),
+            Regexp(r"^/", message="Path must start with /"),
+        ],
+        description="URL path to match",
+    )
+    path_type = SelectField(
+        "Path Type",
+        choices=[
+            ("Prefix", "Prefix"),
+            ("Exact", "Exact"),
+            ("ImplementationSpecific", "ImplementationSpecific"),
+        ],
+        description="How to match the path",
+    )
+    target_process_name = SelectField(
+        "Target Process",
+        [DataRequired()],
+        description="Process to route traffic to",
+    )
+
+
 class AddOrganizationUserForm(FlaskForm):
     email = StringField(
         "User Email",

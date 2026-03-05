@@ -285,6 +285,12 @@ class ApplicationEnvironment(db.Model, Timestamp):
         foreign_keys="Deployment.application_environment_id",
         lazy="dynamic",
     )
+    ingresses = db.relationship(
+        "Ingress",
+        backref="application_environment",
+        foreign_keys="Ingress.application_environment_id",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (UniqueConstraint(application_id, environment_id),)
 
@@ -1188,3 +1194,135 @@ def image_before_insert_listener(mapper, connection, target):
         target.version = 1
     else:
         target.version = most_recent_image.version + 1
+
+
+class Ingress(db.Model, Timestamp):
+    __versioned__: dict = {}
+    __tablename__ = "ingresses"
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True,
+    )
+    application_environment_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("application_environments.id"),
+        nullable=False,
+        index=True,
+    )
+    name = db.Column(db.String(64), nullable=False, default="default")
+    enabled = db.Column(db.Boolean(), default=True, nullable=False)
+    ingress_class_name = db.Column(db.String(64), default="nginx", nullable=False)
+    backend_protocol = db.Column(db.String(16), default="HTTPS", nullable=False)
+    proxy_connect_timeout = db.Column(
+        db.String(16), default="10s", server_default="10s", nullable=True
+    )
+    proxy_read_timeout = db.Column(
+        db.String(16), default="10s", server_default="10s", nullable=True
+    )
+    proxy_send_timeout = db.Column(
+        db.String(16), default="10s", server_default="10s", nullable=True
+    )
+    proxy_body_size = db.Column(
+        db.String(16), default="10M", server_default="10M", nullable=True
+    )
+    client_body_buffer_size = db.Column(
+        db.String(16), default="1M", server_default="1M", nullable=True
+    )
+    proxy_request_buffering = db.Column(
+        db.String(16), default="on", server_default="on", nullable=True
+    )
+    session_affinity = db.Column(db.Boolean(), default=False, nullable=False)
+    use_regex = db.Column(db.Boolean(), default=False, nullable=False)
+    allow_annotations = db.Column(db.Boolean(), default=False, nullable=False)
+    extra_annotations = db.Column(
+        postgresql.JSONB(), server_default=text("'{}'::jsonb"), nullable=False
+    )
+    cluster_issuer = db.Column(db.String(64), default="letsencrypt", nullable=False)
+    force_ssl_redirect = db.Column(db.Boolean(), default=True, nullable=False)
+    service_upstream = db.Column(db.Boolean(), default=True, nullable=False)
+    version_id = db.Column(db.Integer, nullable=False)
+
+    hosts = db.relationship(
+        "IngressHost",
+        backref="ingress",
+        cascade="all, delete-orphan",
+        order_by="IngressHost.hostname",
+    )
+    paths = db.relationship(
+        "IngressPath",
+        backref="ingress",
+        cascade="all, delete-orphan",
+        order_by="IngressPath.path",
+    )
+
+    __table_args__ = (UniqueConstraint(application_environment_id, name),)
+
+    __mapper_args__ = {"version_id_col": version_id}
+
+    def __repr__(self):
+        return f"<Ingress {self.id} {self.name}>"
+
+
+class IngressHost(db.Model, Timestamp):
+    __versioned__: dict = {}
+    __tablename__ = "ingress_hosts"
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True,
+    )
+    ingress_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("ingresses.id"),
+        nullable=False,
+        index=True,
+    )
+    hostname = db.Column(db.String(253), nullable=False)
+    tls_enabled = db.Column(db.Boolean(), default=True, nullable=False)
+    is_auto_generated = db.Column(db.Boolean(), default=False, nullable=False)
+    version_id = db.Column(db.Integer, nullable=False)
+
+    __table_args__ = (
+        db.Index(
+            "ix_ingress_hosts_hostname_unique",
+            hostname,
+            unique=True,
+            postgresql_where=text("NOT is_auto_generated"),
+        ),
+    )
+
+    __mapper_args__ = {"version_id_col": version_id}
+
+    def __repr__(self):
+        return f"<IngressHost {self.id} {self.hostname}>"
+
+
+class IngressPath(db.Model, Timestamp):
+    __versioned__: dict = {}
+    __tablename__ = "ingress_paths"
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True,
+    )
+    ingress_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("ingresses.id"),
+        nullable=False,
+        index=True,
+    )
+    path = db.Column(db.String(256), default="/", nullable=False)
+    path_type = db.Column(db.String(32), default="Prefix", nullable=False)
+    target_process_name = db.Column(db.String(64), nullable=False)
+    version_id = db.Column(db.Integer, nullable=False)
+
+    __table_args__ = (UniqueConstraint(ingress_id, path),)
+
+    __mapper_args__ = {"version_id_col": version_id}
