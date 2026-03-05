@@ -1,7 +1,7 @@
 import datetime
+import logging
 
 import requests
-
 from celery import shared_task
 from sqlalchemy import and_, or_
 from sqlalchemy.orm.exc import MultipleResultsFound, NoResultFound
@@ -31,6 +31,7 @@ from cabotage.celery.tasks.branch_deploy import (
 from cabotage.utils.github import post_deployment_status_update
 
 Activity = activity_plugin.activity_cls
+logger = logging.getLogger(__name__)
 
 
 class HookError(Exception):
@@ -428,6 +429,26 @@ def process_pull_request_hook(hook):
     installation_id = hook.payload["installation"]["id"]
     repository_name = hook.payload["repository"]["full_name"]
     pr = hook.payload["pull_request"]
+
+    # Skip PRs from forks
+    head_repo = (pr.get("head", {}).get("repo") or {}).get("full_name")
+    base_repo = (pr.get("base", {}).get("repo") or {}).get("full_name")
+    if head_repo != base_repo:
+        logger.info(
+            "ignoring pull_request from fork %s (base: %s)",
+            head_repo,
+            base_repo,
+        )
+        return
+
+    # Skip PRs opened by bot accounts
+    pr_author = pr.get("user", {})
+    if pr_author.get("type") == "Bot" or (pr_author.get("login") or "").endswith(
+        "[bot]"
+    ):
+        logger.info("ignoring pull_request from bot %s", pr_author.get("login"))
+        return
+
     pr_number = pr["number"]
     head_sha = pr["head"]["sha"]
     head_ref = pr["head"]["ref"]
