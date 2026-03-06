@@ -1,0 +1,471 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, app_tab_nav, app_resource_path %}
+
+{% set org_slug = application.project.organization.slug %}
+{% set project_slug = application.project.slug %}
+{% set app_slug = application.slug %}
+{% set env_slug = environment.slug if environment else none %}
+
+{% block title %}
+  Observe - {{ app_slug }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ app_resource_path(application, 'Observe', env=environment|default(none)) }}
+{% endblock resource_path %}
+
+{% block tab_bar %}
+  {{ app_tab_nav(application, 'observe', env=environment|default(none)) }}
+{% endblock tab_bar %}
+
+{% block content %}
+  <div class="settings-page">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h1 class="text-lg font-semibold text-base-content">Metrics</h1>
+        <p class="text-xs text-base-content/40">Application resource usage and request metrics</p>
+      </div>
+      {% set base_url = url_for('user.project_application_observe', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) %}
+      <div class="flex gap-1">
+        {% for r in ['1h', '6h', '24h'] %}
+          <a href="{{ base_url }}?range={{ r }}"
+             class="btn btn-sm {% if current_range == r %}btn-primary{% else %}btn-ghost{% endif %}">{{ r }}</a>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% if not mimir_configured %}
+      <div class="alert alert-warning">
+        {{ icon('alert-triangle', 'w-4 h-4') }}
+        <span>Metrics are not configured. Set <code>CABOTAGE_MIMIR_URL</code> to enable observability.</span>
+      </div>
+    {% else %}
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        {# CPU panel with group selector #}
+        <div class="card bg-base-200/50 border border-base-content/5">
+          <div class="card-body p-4">
+            <div class="flex items-center justify-between">
+              <h2 class="card-title text-sm font-medium text-base-content/70">{{ icon('activity', 'w-4 h-4') }} CPU Usage</h2>
+              <div class="flex gap-0.5" data-group-selector="cpu">
+                <button class="btn btn-xs btn-primary" data-group="total">Total</button>
+                <button class="btn btn-xs btn-ghost" data-group="process">Process</button>
+                <button class="btn btn-xs btn-ghost" data-group="pod">Pod</button>
+              </div>
+            </div>
+            <div id="chart-cpu" class="metric-panel" data-metric-panel>
+              <div class="flex items-center justify-center h-full text-base-content/20">
+                {{ icon('loader', 'w-5 h-5 animate-spin') }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {# Memory panel with group selector #}
+        <div class="card bg-base-200/50 border border-base-content/5">
+          <div class="card-body p-4">
+            <div class="flex items-center justify-between">
+              <h2 class="card-title text-sm font-medium text-base-content/70">{{ icon('bar-chart', 'w-4 h-4') }} Memory Usage</h2>
+              <div class="flex gap-0.5" data-group-selector="memory">
+                <button class="btn btn-xs btn-primary" data-group="total">Total</button>
+                <button class="btn btn-xs btn-ghost" data-group="process">Process</button>
+                <button class="btn btn-xs btn-ghost" data-group="pod">Pod</button>
+              </div>
+            </div>
+            <div id="chart-memory" class="metric-panel" data-metric-panel>
+              <div class="flex items-center justify-center h-full text-base-content/20">
+                {{ icon('loader', 'w-5 h-5 animate-spin') }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {# Requests (stacked bars by status code class) #}
+        <div class="card bg-base-200/50 border border-base-content/5">
+          <div class="card-body p-4">
+            <h2 class="card-title text-sm font-medium text-base-content/70">{{ icon('zap', 'w-4 h-4') }} Requests</h2>
+            <div id="chart-requests" class="metric-panel" data-metric-panel>
+              <div class="flex items-center justify-center h-full text-base-content/20">
+                {{ icon('loader', 'w-5 h-5 animate-spin') }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {# Response Time (p50, p95, p99 lines) #}
+        <div class="card bg-base-200/50 border border-base-content/5">
+          <div class="card-body p-4">
+            <h2 class="card-title text-sm font-medium text-base-content/70">{{ icon('clock', 'w-4 h-4') }} Response Time</h2>
+            <div id="chart-latency" class="metric-panel" data-metric-panel>
+              <div class="flex items-center justify-center h-full text-base-content/20">
+                {{ icon('loader', 'w-5 h-5 animate-spin') }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {# Error Rate #}
+        <div class="card bg-base-200/50 border border-base-content/5">
+          <div class="card-body p-4">
+            <div class="flex items-center justify-between">
+              <h2 class="card-title text-sm font-medium text-base-content/70">{{ icon('alert-triangle', 'w-4 h-4') }} Request Error Rate</h2>
+              <div class="flex gap-0.5" data-group-selector="errors">
+                <button class="btn btn-xs btn-primary" data-group="total">Total</button>
+                <button class="btn btn-xs btn-ghost" data-group="status">By Status</button>
+              </div>
+            </div>
+            <div id="chart-errors" class="metric-panel metric-panel--short" data-metric-panel>
+              <div class="flex items-center justify-center h-full text-base-content/20">
+                {{ icon('loader', 'w-5 h-5 animate-spin') }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    {% endif %}
+  </div>
+{% endblock content %}
+
+{% block js %}
+<link rel="stylesheet" href="https://unpkg.com/uplot@1.6.31/dist/uPlot.min.css">
+<script>
+(function() {
+  {% if not mimir_configured %}return;{% endif %}
+
+  // Load uPlot dynamically so it doesn't block page render
+  var script = document.createElement('script');
+  script.src = 'https://unpkg.com/uplot@1.6.31/dist/uPlot.iife.min.js';
+  script.onload = init;
+  document.head.appendChild(script);
+  function init() {
+
+  var METRIC_URL = {{ url_for('user.project_application_observe_metric', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug)|tojson }};
+  var RANGE = {{ current_range|tojson }};
+  var REFRESH_MAP = { '1h': 15000, '6h': 60000, '24h': 60000 };
+  var REFRESH_MS = REFRESH_MAP[RANGE] || 15000;
+  var RANGE_SECS = { '1h': 3600, '6h': 21600, '24h': 86400 };
+  var NOW = Math.floor(Date.now() / 1000);
+  var X_MIN = NOW - (RANGE_SECS[RANGE] || 3600);
+  var X_MAX = NOW;
+
+  // Axis colors
+  var AXIS_STROKE = 'rgba(0,0,0,0.5)';
+  var GRID_STROKE = 'rgba(0,0,0,0.08)';
+
+  var COLORS = [
+    '#8b5cf6', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b',
+    '#ef4444', '#ec4899', '#6366f1', '#14b8a6', '#f97316'
+  ];
+  var CODE_COLORS = { '2xx': '#10b981', '3xx': '#3b82f6', '4xx': '#f59e0b', '5xx': '#ef4444' };
+  var LATENCY_COLORS = { 'p50': '#3b82f6', 'p90': '#8b5cf6', 'p95': '#f59e0b', 'p99': '#ef4444' };
+
+  function shortLabel(full) {
+    var parts = full.split('-');
+    if (parts.length > 2) return parts.slice(-2).join('-');
+    return full;
+  }
+
+  function promToUplot(result, labelKey, shortLabels) {
+    if (!result || !result.length) return null;
+    var tsSet = {};
+    result.forEach(function(s) {
+      s.values.forEach(function(v) { tsSet[v[0]] = true; });
+    });
+    var timestamps = Object.keys(tsSet).map(Number).sort(function(a, b) { return a - b; });
+    var tsIndex = {};
+    timestamps.forEach(function(t, i) { tsIndex[t] = i; });
+
+    var data = [timestamps];
+    var labels = [];
+    result.forEach(function(s) {
+      var vals = new Array(timestamps.length).fill(null);
+      s.values.forEach(function(v) {
+        var idx = tsIndex[v[0]];
+        var num = parseFloat(v[1]);
+        if (!isNaN(num) && isFinite(num)) vals[idx] = num;
+      });
+      data.push(vals);
+      var raw = s.metric[labelKey] || (labelKey === '__total__' ? 'total' : labelKey);
+      labels.push(shortLabels ? shortLabel(raw) : raw);
+    });
+    return { data: data, labels: labels };
+  }
+
+  // Floating tooltip plugin
+  // rawData: optional unstacked data array for showing original values (used by bar charts)
+  // showTotal: if true, show a total row summing all series
+  function tooltipPlugin(valueFmt, rawData, showTotal) {
+    var tip = document.createElement('div');
+    tip.className = 'chart-tip';
+
+    function fmtTime(ts) {
+      var d = new Date(ts * 1000);
+      var mon = d.toLocaleString(undefined, { month: 'short' });
+      var day = d.getDate();
+      var time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+      return mon + ' ' + day + ' \u00b7 ' + time;
+    }
+
+    return {
+      hooks: {
+        init: function(u) {
+          u.over.appendChild(tip);
+        },
+        setCursor: function(u) {
+          var idx = u.cursor.idx;
+          if (idx == null) { tip.style.display = 'none'; return; }
+          var ts = u.data[0][idx];
+          var src = rawData || u.data;
+          var rows = '';
+          var total = 0;
+          var hasAny = false;
+          for (var i = 1; i < u.series.length; i++) {
+            var s = u.series[i];
+            if (!s.show) continue;
+            var v = src[i] ? src[i][idx] : null;
+            if (v == null) continue;
+            hasAny = true;
+            total += v;
+            var color = s._stroke || s.stroke || s._fill || s.fill;
+            if (typeof color === 'function') color = color(u, i);
+            rows += '<div class="chart-tip-row">' +
+              '<span class="chart-tip-dot" style="background:' + color + '"></span>' +
+              '<span class="chart-tip-label">' + (s.label || '') + '</span>' +
+              '<strong class="chart-tip-value">' + valueFmt(v) + '</strong></div>';
+          }
+          if (!hasAny) { tip.style.display = 'none'; return; }
+          if (showTotal) {
+            rows += '<div class="chart-tip-row chart-tip-total">' +
+              '<span class="chart-tip-dot"></span>' +
+              '<span class="chart-tip-label">Total</span>' +
+              '<strong class="chart-tip-value">' + valueFmt(total) + '</strong></div>';
+          }
+          tip.innerHTML = '<div class="chart-tip-time">' + fmtTime(ts) + '</div>' + rows;
+          tip.style.display = 'block';
+
+          var left = u.cursor.left;
+          var top = u.cursor.top;
+          var ow = u.over.clientWidth;
+          var tw = tip.offsetWidth;
+          var x = left + 12;
+          if (x + tw > ow) x = left - tw - 12;
+          var y = top - tip.offsetHeight - 8;
+          if (y < 0) y = top + 12;
+          tip.style.left = x + 'px';
+          tip.style.top = y + 'px';
+        }
+      }
+    };
+  }
+
+  // Standard line chart
+  function makeLineChart(el, result, labelKey, valueFmt, shortLabels, colorMap) {
+    var parsed = promToUplot(result, labelKey, shortLabels);
+    if (!parsed) {
+      el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/30 text-sm">No data</div>';
+      return;
+    }
+    el.innerHTML = '';
+    var width = el.clientWidth || 400;
+    var height = parseInt(getComputedStyle(el).minHeight) || 220;
+    var series = [{ label: '', value: '' }];
+    parsed.labels.forEach(function(label, i) {
+      var color = colorMap ? (colorMap[label] || COLORS[i % COLORS.length]) : COLORS[i % COLORS.length];
+      series.push({
+        label: label,
+        stroke: color,
+        width: 1.5,
+        value: ''
+      });
+    });
+    var opts = {
+      width: width,
+      height: height,
+      series: series,
+      axes: [
+        { stroke: AXIS_STROKE, grid: { stroke: GRID_STROKE } },
+        {
+          stroke: AXIS_STROKE,
+          grid: { stroke: GRID_STROKE },
+          size: 70,
+          values: function(u, vals) { return vals.map(valueFmt); }
+        }
+      ],
+      plugins: [tooltipPlugin(valueFmt)],
+      cursor: { drag: { x: false, y: false } },
+      legend: { show: parsed.labels.length <= 4, live: false },
+      scales: { x: { time: true, min: X_MIN, max: X_MAX }, y: { range: function(u, dmin, dmax) { return [0, (dmax || 1) * 1.1]; } } }
+    };
+    new uPlot(opts, parsed.data, el);
+  }
+
+  // True stacked bar chart using bands
+  function makeBarChart(el, result, labelKey, valueFmt, colorMap) {
+    var parsed = promToUplot(result, labelKey, false);
+    if (!parsed) {
+      el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/30 text-sm">No data</div>';
+      return;
+    }
+    el.innerHTML = '';
+    var width = el.clientWidth || 400;
+    var height = parseInt(getComputedStyle(el).minHeight) || 220;
+    var numSeries = parsed.labels.length;
+
+    // Stack the data: cumulate from first to last
+    var stacked = [parsed.data[0]];
+    for (var i = 1; i < parsed.data.length; i++) {
+      if (i === 1) {
+        stacked.push(parsed.data[i].slice());
+      } else {
+        var row = new Array(parsed.data[i].length);
+        for (var j = 0; j < row.length; j++) {
+          var base = typeof stacked[i - 1][j] === 'number' ? stacked[i - 1][j] : 0;
+          var val = typeof parsed.data[i][j] === 'number' ? parsed.data[i][j] : 0;
+          row[j] = base + val;
+        }
+        stacked.push(row);
+      }
+    }
+
+    var series = [{ label: '', value: '' }];
+    parsed.labels.forEach(function(label, i) {
+      var color = colorMap ? (colorMap[label] || COLORS[i % COLORS.length]) : COLORS[i % COLORS.length];
+      series.push({
+        label: label,
+        fill: color,
+        stroke: color,
+        width: 0,
+        paths: uPlot.paths.bars({ size: [0.8, 100], align: 0 }),
+        value: '',
+        points: { show: false }
+      });
+    });
+
+    // Bands clip each series fill to only show the slice above the one below it
+    var bands = [];
+    for (var i = numSeries; i >= 2; i--) {
+      bands.push({ series: [i, i - 1] });
+    }
+
+    var opts = {
+      width: width,
+      height: height,
+      series: series,
+      bands: bands,
+      axes: [
+        { stroke: AXIS_STROKE, grid: { stroke: GRID_STROKE } },
+        {
+          stroke: AXIS_STROKE,
+          grid: { stroke: GRID_STROKE },
+          size: 70,
+          values: function(u, vals) { return vals.map(valueFmt); }
+        }
+      ],
+      plugins: [tooltipPlugin(valueFmt, parsed.data, true)],
+      cursor: { drag: { x: false, y: false } },
+      legend: { show: true, live: false },
+      scales: {
+        x: { time: true, min: X_MIN, max: X_MAX },
+        y: { range: function(u, dmin, dmax) { return [0, (dmax || 1) * 1.1]; } }
+      }
+    };
+    var chart = new uPlot(opts, stacked, el);
+    // Disable legend toggle — toggling breaks band-based stacking
+    chart.root.querySelectorAll('.u-legend .u-series').forEach(function(s) {
+      s.style.pointerEvents = 'none';
+    });
+  }
+
+  function fmtCpu(v) { return (v * 1000).toFixed(0) + 'm'; }
+  function fmtMem(v) {
+    if (v >= 1073741824) return (v / 1073741824).toFixed(1) + ' GiB';
+    return (v / 1048576).toFixed(0) + ' MiB';
+  }
+  function fmtCount(v) {
+    if (v >= 1000) return (v / 1000).toFixed(1) + 'k';
+    return Math.round(v).toString();
+  }
+  function fmtLatency(v) {
+    var ms = v * 1000;
+    if (ms >= 1000) return (ms / 1000).toFixed(1) + ' s';
+    return ms.toFixed(0) + ' ms';
+  }
+  function fmtPct(v) {
+    if (v == null || isNaN(v)) return '0%';
+    return (v * 100).toFixed(2) + '%';
+  }
+
+  // Panel state tracking
+  var panelGroups = { cpu: 'total', memory: 'total', errors: 'total' };
+
+  // Panels config
+  var panels = {
+    cpu:      { labelKey: 'pod', fmt: fmtCpu,     type: 'line', short: false },
+    memory:   { labelKey: 'pod', fmt: fmtMem,     type: 'line', short: false },
+    requests: { labelKey: 'code', fmt: fmtCount,  type: 'bar',  short: false, colors: CODE_COLORS },
+    latency:  { labelKey: 'quantile', fmt: fmtLatency, type: 'line', short: false, colors: LATENCY_COLORS },
+    errors:   { labelKey: 'label', fmt: fmtPct,   type: 'line', short: false, colors: { 'error rate': '#ef4444', '4xx': '#f59e0b', '5xx': '#ef4444' } }
+  };
+
+  function fetchAndRender(metric) {
+    var panel = panels[metric];
+    var el = document.getElementById('chart-' + metric);
+    var group = panelGroups[metric] || 'total';
+
+    var qs = '?metric=' + metric + '&range=' + RANGE + '&group=' + group;
+    fetch(METRIC_URL + qs, { credentials: 'same-origin' })
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) {
+        if (!data || !data.result) {
+          el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/30 text-sm">No data</div>';
+          return;
+        }
+        // Determine label key based on group
+        var labelKey = panel.labelKey;
+        if (metric === 'cpu' || metric === 'memory') {
+          if (group === 'total') labelKey = '__total__';
+          else if (group === 'process') labelKey = 'process';
+          else labelKey = 'pod';
+        }
+        var short = (group === 'pod');
+        if (panel.type === 'bar') {
+          makeBarChart(el, data.result, labelKey, panel.fmt, panel.colors);
+        } else {
+          makeLineChart(el, data.result, labelKey, panel.fmt, short, panel.colors);
+        }
+      })
+      .catch(function() {
+        el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/30 text-sm">Unavailable</div>';
+      });
+  }
+
+  // Group selector buttons
+  document.querySelectorAll('[data-group-selector]').forEach(function(sel) {
+    var metric = sel.getAttribute('data-group-selector');
+    sel.querySelectorAll('button[data-group]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        sel.querySelectorAll('button').forEach(function(b) {
+          b.className = 'btn btn-xs btn-ghost';
+        });
+        btn.className = 'btn btn-xs btn-primary';
+        panelGroups[metric] = btn.getAttribute('data-group');
+        var el = document.getElementById('chart-' + metric);
+        el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/20"><span class="loading loading-spinner loading-sm"></span></div>';
+        fetchAndRender(metric);
+      });
+    });
+  });
+
+  // Initial load all panels
+  Object.keys(panels).forEach(fetchAndRender);
+
+  // Auto-refresh
+  setInterval(function() {
+    Object.keys(panels).forEach(fetchAndRender);
+  }, REFRESH_MS);
+
+  } // end init()
+})();
+</script>
+{% endblock js %}

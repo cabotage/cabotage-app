@@ -31,7 +31,7 @@
   <div class="app-content-padded !py-0">
     {{ tab_nav([
         {'id': 'overview', 'label': 'Overview', 'icon': 'activity'},
-        {'id': 'observe', 'label': 'Observe (Soon)', 'icon': 'bar-chart', 'disabled': true},
+        {'id': 'observe', 'label': 'Observe', 'icon': 'bar-chart', 'disabled': not config.MIMIR_URL, 'url': url_for('user.project_application_observe', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) if config.MIMIR_URL else none},
         {'id': 'config', 'label': 'Config', 'icon': 'key', 'badge': app_env.configurations|rejectattr('name', 'equalto', 'CABOTAGE_SENTINEL') |list|length},
     {'id': 'images', 'label': 'Images', 'icon': 'image'},
     {'id': 'releases', 'label': 'Releases', 'icon': 'layers'},
@@ -833,10 +833,22 @@
         {% if has_live_status %}
           <div class="ls-card"
                data-live-status
-               data-application-id="{{ application.id }}">
+               data-application-id="{{ application.id }}"
+               {% if config.MIMIR_URL %}data-live-stats-url="{{ url_for('user.project_application_live_stats', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}"{% endif %}>
             <div class="ls-header">
               <span class="ls-title">Live</span>
               <span class="ls-range">1h</span>
+              {% if config.MIMIR_URL %}
+              <a href="{{ url_for('user.project_application_observe', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}"
+                 class="ls-nav-arrow hover:text-accent transition-colors">
+                <svg viewBox="0 0 24 24"
+                     fill="none"
+                     stroke="currentColor"
+                     stroke-width="2.5">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </a>
+              {% else %}
               <span class="ls-nav-arrow" style="opacity:0.3;pointer-events:none">
                 <svg viewBox="0 0 24 24"
                      fill="none"
@@ -845,6 +857,7 @@
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               </span>
+              {% endif %}
             </div>
             <div class="ls-row">
               <div class="ls-left">
@@ -871,7 +884,7 @@
                 <span class="ls-label">Pods</span>
                 <span class="ls-val" data-ls-pod-count>—</span>
               </div>
-              <div class="ls-pods" data-ls-pod-dots></div>
+              <div class="flex-1 flex flex-col gap-1 justify-center min-w-0" data-ls-pod-procs></div>
             </div>
           </div>
         {% endif %}
@@ -2174,5 +2187,106 @@
       }
     });
   });
+
+  // Live stats polling
+  (function() {
+    var card = document.querySelector('[data-live-stats-url]');
+    if (!card) return;
+    var url = card.getAttribute('data-live-stats-url');
+    var cpuEl = card.querySelector('[data-ls-cpu-value]');
+    var memEl = card.querySelector('[data-ls-mem-value]');
+    var podEl = card.querySelector('[data-ls-pod-count]');
+    var cpuSpark = card.querySelector('[data-ls-cpu-spark] svg');
+    var memSpark = card.querySelector('[data-ls-mem-spark] svg');
+    var podProcs = card.querySelector('[data-ls-pod-procs]');
+
+    function fmtCpu(m) {
+      if (m == null) return '\u2014';
+      if (m >= 1000) return (m / 1000).toFixed(1) + ' cores';
+      return Math.round(m) + 'm';
+    }
+    function fmtMem(b) {
+      if (b == null) return '\u2014';
+      if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GiB';
+      return Math.round(b / 1048576) + ' MiB';
+    }
+
+    function drawSparkline(svg, points) {
+      if (!points || points.length < 2) {
+        svg.innerHTML = '';
+        return;
+      }
+      var vals = points.map(function(p) { return p[1]; });
+      var max = Math.max.apply(null, vals) || 1;
+      var min = Math.min.apply(null, vals);
+      var range = max - min || 1;
+      var w = 120, h = 28;
+      // Use timestamps to position within the 1h window
+      var tEnd = points[points.length - 1][0];
+      var tStart = tEnd - 3600;
+      var coords = points.map(function(p) {
+        var x = ((p[0] - tStart) / 3600) * w;
+        var y = h - ((p[1] - min) / range) * (h - 4) - 2;
+        return x.toFixed(1) + ',' + y.toFixed(1);
+      });
+      svg.innerHTML =
+        '<polyline points="' + coords.join(' ') + '" ' +
+        'fill="none" stroke="currentColor" stroke-width="1.5" ' +
+        'stroke-linecap="round" stroke-linejoin="round" ' +
+        'class="text-accent/60" />';
+    }
+
+    function poll() {
+      fetch(url, { credentials: 'same-origin' })
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(data) {
+          if (!data) return;
+          cpuEl.textContent = fmtCpu(data.cpu);
+          memEl.textContent = fmtMem(data.memory);
+
+          drawSparkline(cpuSpark, data.cpu_history);
+          drawSparkline(memSpark, data.memory_history);
+          cpuSpark.parentElement.classList.add('ls-loaded');
+          memSpark.parentElement.classList.add('ls-loaded');
+
+          // Pod process vertical bars
+          if (data.pods != null) {
+            podEl.textContent = data.pods_ready + '/' + data.pods;
+            function escHtml(s) {
+              var d = document.createElement('div');
+              d.textContent = s;
+              return d.innerHTML;
+            }
+            var html = '';
+            var procs = data.processes || {};
+            var names = Object.keys(procs).sort();
+            html += '<div class="proc-bars">';
+            for (var i = 0; i < names.length; i++) {
+              var p = procs[names[i]];
+              var readyPct = p.total > 0 ? (p.ready / p.total) * 100 : 0;
+              var crashedPct = p.total > 0 ? (p.crashed / p.total) * 100 : 0;
+              var pendingPct = p.total > 0 ? (p.pending / p.total) * 100 : 0;
+              html += '<div class="proc-bar">' +
+                '<div class="flex flex-col">' +
+                '<span class="proc-bar-label text-base-content/50">' + escHtml(names[i]) + '</span>' +
+                '<span class="proc-bar-count">' + p.ready + '/' + p.total + '</span>' +
+                '</div>' +
+                '<div class="proc-bar-track">' +
+                '<div class="proc-bar-seg proc-bar-seg--ready" style="height:' + readyPct + '%"></div>' +
+                '<div class="proc-bar-seg proc-bar-seg--pending" style="height:' + pendingPct + '%"></div>' +
+                '<div class="proc-bar-seg proc-bar-seg--crashed" style="height:' + crashedPct + '%"></div>' +
+                '</div>' +
+                '</div>';
+            }
+            html += '</div>';
+            podProcs.innerHTML = html;
+          }
+        })
+        .catch(function() {});
+    }
+
+    poll();
+    setInterval(poll, 15000);
+  })();
   </script>
 {% endblock js %}

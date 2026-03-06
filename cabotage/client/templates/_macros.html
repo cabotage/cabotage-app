@@ -60,6 +60,12 @@
           {% if tab.icon %}{{ icon(tab.icon, 'w-4 h-4') }}{% endif %}
           {{ tab.label }}
         </span>
+      {% elif tab.url is defined and tab.url %}
+        <a href="{{ tab.url }}"
+           class="tab-item">
+          {% if tab.icon %}{{ icon(tab.icon, 'w-4 h-4') }}{% endif %}
+          {{ tab.label }}
+        </a>
       {% else %}
         <a href="#{{ tab.id }}"
            class="tab-item
@@ -87,7 +93,13 @@
       <a href="{{ overview_url }}"
          class="tab-item
                 {% if active == 'overview' %}tab-active{% endif %}">{{ icon('activity', 'w-4 h-4') }} Overview</a>
-      <span class="tab-item tab-disabled">{{ icon('bar-chart', 'w-4 h-4') }} Observe <span class="text-[0.6rem] opacity-50">(Soon)</span></span>
+      {% if config.MIMIR_URL %}
+      <a href="{{ url_for('user.project_application_observe', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
+         class="tab-item
+                {% if active == 'observe' %}tab-active{% endif %}">{{ icon('bar-chart', 'w-4 h-4') }} Observe</a>
+      {% else %}
+      <span class="tab-item tab-disabled">{{ icon('bar-chart', 'w-4 h-4') }} Observe</span>
+      {% endif %}
       <a href="{{ overview_url }}#config"
          class="tab-item
                 {% if active == 'config' %}tab-active{% endif %}">
