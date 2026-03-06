@@ -1,7 +1,6 @@
 import datetime
 import logging
 
-import requests
 from celery import shared_task
 from sqlalchemy import and_, or_
 from sqlalchemy.orm.exc import MultipleResultsFound, NoResultFound
@@ -28,7 +27,7 @@ from cabotage.celery.tasks.branch_deploy import (
     sync_branch_deploy,
     teardown_branch_deploy,
 )
-from cabotage.utils.github import post_deployment_status_update
+from cabotage.utils.github import github_session, post_deployment_status_update
 
 Activity = activity_plugin.activity_cls
 logger = logging.getLogger(__name__)
@@ -172,7 +171,7 @@ def process_deployment_hook(hook):
             return False
         application = app_env.application
 
-        access_token_response = requests.post(
+        access_token_response = github_session.post(
             f"https://api.github.com/app/installations/{installation_id}/access_tokens",
             headers={
                 "Accept": "application/vnd.github.machine-man-preview+json",
@@ -258,7 +257,7 @@ def create_deployment(
     try:
         environment_string = app_env.effective_github_environment_name
 
-        deployment_response = requests.post(
+        deployment_response = github_session.post(
             f"https://api.github.com/repos/{repository_name}/deployments",
             headers={
                 "Accept": "application/vnd.github.machine-man-preview+json",
@@ -368,7 +367,7 @@ def process_check_suite_hook(hook):
             )
             return False
 
-        access_token_response = requests.post(
+        access_token_response = github_session.post(
             f"https://api.github.com/app/installations/{installation_id}/access_tokens",
             headers={
                 "Accept": "application/vnd.github.machine-man-preview+json",

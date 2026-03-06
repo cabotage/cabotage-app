@@ -1,12 +1,17 @@
 import base64
 import hashlib
 import hmac
+import logging
 import time
 
-import requests
 import jwt
+import requests
 
 from flask import request
+
+from cabotage.utils.github import github_session
+
+logger = logging.getLogger(__name__)
 
 
 class GitHubApp(object):
@@ -69,7 +74,7 @@ class GitHubApp(object):
     @property
     def bot_login(self):
         if self._bot_login is None:
-            resp = requests.get(
+            resp = github_session.get(
                 "https://api.github.com/app",
                 headers={
                     "Accept": "application/vnd.github+json",
@@ -82,18 +87,23 @@ class GitHubApp(object):
         return self._bot_login
 
     def fetch_installation_access_token(self, installation_id):
-        access_token_response = requests.post(
-            f"https://api.github.com/app/installations/{installation_id}/access_tokens",
-            headers={
-                "Accept": "application/vnd.github.machine-man-preview+json",
-                "Authorization": f"Bearer {self.bearer_token}",
-            },
-            timeout=10,
-        )
-        if "token" not in access_token_response.json():
-            print(f"Unable to authenticate for {installation_id}")
+        try:
+            resp = github_session.post(
+                f"https://api.github.com/app/installations/{installation_id}/access_tokens",
+                headers={
+                    "Accept": "application/vnd.github.machine-man-preview+json",
+                    "Authorization": f"Bearer {self.bearer_token}",
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json()["token"]
+        except (requests.exceptions.RequestException, KeyError, ValueError):
+            logger.exception(
+                "Unable to fetch access token for installation %s",
+                installation_id,
+            )
             return None
-        return access_token_response.json()["token"]
 
     def teardown(self, exception):
         pass

@@ -1,6 +1,8 @@
 import logging
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
@@ -10,6 +12,17 @@ _GITHUB_HEADERS = {
     "Accept": "application/vnd.github+json",
     "Content-Type": "application/json",
 }
+
+_retry_strategy = Retry(
+    total=3,
+    backoff_factor=1,
+    status_forcelist=[500, 502, 503, 504],
+    allowed_methods=["GET", "POST", "PATCH"],
+)
+_adapter = HTTPAdapter(max_retries=_retry_strategy)
+
+github_session = requests.Session()
+github_session.mount("https://", _adapter)
 
 
 def _github_headers(access_token):
@@ -25,7 +38,7 @@ def post_deployment_status_update(
         payload = {"state": state, "description": description}
         if environment_url:
             payload["environment_url"] = environment_url
-        requests.post(
+        github_session.post(
             status_url,
             headers={
                 "Accept": "application/vnd.github.ant-man-preview+json",
@@ -53,7 +66,7 @@ def find_or_create_pr_comment(access_token, repo, pr_number, body):
     try:
         page = 1
         while True:
-            resp = requests.get(
+            resp = github_session.get(
                 f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments",
                 headers=headers,
                 params={"per_page": 100, "page": page},
@@ -65,7 +78,7 @@ def find_or_create_pr_comment(access_token, repo, pr_number, body):
                 break
             for comment in comments:
                 if COMMENT_MARKER in (comment.get("body") or ""):
-                    requests.patch(
+                    github_session.patch(
                         f"https://api.github.com/repos/{repo}/issues/comments/{comment['id']}",
                         headers=headers,
                         json={"body": body_with_marker},
@@ -74,7 +87,7 @@ def find_or_create_pr_comment(access_token, repo, pr_number, body):
                     return
             page += 1
 
-        requests.post(
+        github_session.post(
             f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments",
             headers=headers,
             json={"body": body_with_marker},
