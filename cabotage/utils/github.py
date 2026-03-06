@@ -85,18 +85,30 @@ class CheckRun:
     error, etc.) so callers never need guard clauses.
     """
 
-    def __init__(self, access_token, repo, application, check_run_id=None):
+    def __init__(
+        self, access_token, repo, application, check_run_id=None, app_env=None
+    ):
         self.access_token = access_token
         self.repo = repo
         self.application = application
         self.check_run_id = check_run_id
+        self.app_env = app_env
 
     # ------------------------------------------------------------------
     # Construction helpers
     # ------------------------------------------------------------------
 
     @classmethod
-    def create(cls, access_token, repo, head_sha, name, application, details_url=None):
+    def create(
+        cls,
+        access_token,
+        repo,
+        head_sha,
+        name,
+        application,
+        details_url=None,
+        app_env=None,
+    ):
         """Create a new check run on GitHub. Returns a CheckRun instance."""
         check_run_id = None
         if access_token:
@@ -118,22 +130,27 @@ class CheckRun:
                 check_run_id = resp.json().get("id")
             except requests.exceptions.RequestException:
                 logger.exception("Failed to create check run on %s", repo)
-        return cls(access_token, repo, application, check_run_id)
+        return cls(access_token, repo, application, check_run_id, app_env=app_env)
 
     @classmethod
-    def from_metadata(cls, metadata, application):
-        """Restore a CheckRun from pipeline metadata (image/release/deploy)."""
+    def from_metadata(cls, metadata, app_env):
+        """Restore a CheckRun from pipeline metadata (image/release/deploy).
+
+        ``app_env`` is an ApplicationEnvironment (or None).  The application
+        and repository are derived from it.
+        """
         from cabotage.server import github_app
 
+        application = app_env.application if app_env else None
         repo = application.github_repository if application else None
         if not metadata or not repo:
-            return cls(None, repo, application)
+            return cls(None, repo, application, app_env=app_env)
         check_run_id = metadata.get("check_run_id")
         installation_id = metadata.get("installation_id")
         if not check_run_id or not installation_id:
-            return cls(None, repo, application)
+            return cls(None, repo, application, app_env=app_env)
         access_token = github_app.fetch_installation_access_token(installation_id)
-        return cls(access_token, repo, application, check_run_id)
+        return cls(access_token, repo, application, check_run_id, app_env=app_env)
 
     @property
     def active(self):
@@ -158,6 +175,20 @@ class CheckRun:
                 parts.append(f"[{label}]({self._url(path)})")
         parts.append(f"[Application]({self._url()})")
         return " · ".join(parts)
+
+    # ------------------------------------------------------------------
+    # Notifications
+    # ------------------------------------------------------------------
+
+    def _notify_pr(self):
+        """Update the PR comment if this check run is for a branch deploy."""
+        if self.app_env is None:
+            return
+        from cabotage.celery.tasks.branch_deploy import (
+            maybe_update_pr_comment_for_app_env,
+        )
+
+        maybe_update_pr_comment_for_app_env(self.app_env)
 
     # ------------------------------------------------------------------
     # API calls
@@ -193,6 +224,7 @@ class CheckRun:
         if details_url:
             payload["details_url"] = details_url
         self._patch(payload)
+        self._notify_pr()
 
     def succeed(
         self,
@@ -216,6 +248,7 @@ class CheckRun:
         if details_url:
             payload["details_url"] = details_url
         self._patch(payload)
+        self._notify_pr()
 
     def fail(self, title, detail="", details_url=None, **link_resources):
         """Complete the check run with failure."""
@@ -233,6 +266,7 @@ class CheckRun:
         if details_url:
             payload["details_url"] = details_url
         self._patch(payload)
+        self._notify_pr()
 
 
 def find_or_create_pr_comment(access_token, repo, pr_number, body):

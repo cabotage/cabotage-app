@@ -60,7 +60,6 @@ from cabotage.utils.github import (
     post_deployment_status_update,
 )
 from cabotage.utils import procfile
-from cabotage.celery.tasks.branch_deploy import maybe_update_pr_comment_for_app_env
 
 Activity = activity_plugin.activity_cls
 
@@ -1118,11 +1117,18 @@ def run_image_build(image_id=None, buildkit=False):
             check_name,
             application,
             details_url=cabotage_url(application, f"images/{image.id}"),
+            app_env=app_env,
         )
         if check.check_run_id:
             metadata = dict(image.image_metadata or {})
             metadata["check_run_id"] = check.check_run_id
             image.image_metadata = metadata
+
+    check.progress(
+        "Building image...",
+        details_url=cabotage_url(application, f"images/{image.id}"),
+        Image=f"images/{image.id}",
+    )
 
     db.session.add(image)
     db.session.commit()
@@ -1171,7 +1177,6 @@ def run_image_build(image_id=None, buildkit=False):
                     "failure",
                     "Image build failed.",
                 )
-            maybe_update_pr_comment_for_app_env(image.application_environment)
             raise
     except Exception:
         try:
@@ -1191,15 +1196,7 @@ def run_image_build(image_id=None, buildkit=False):
             details_url=cabotage_url(application, f"images/{image.id}"),
             Image=f"images/{image.id}",
         )
-        maybe_update_pr_comment_for_app_env(image.application_environment)
         raise
-
-    check.progress(
-        "Building release...",
-        detail="Image built successfully.",
-        details_url=cabotage_url(application, f"images/{image.id}"),
-        Image=f"images/{image.id}",
-    )
 
     db.session.add(image)
     image.image_id = build_metadata["image_id"]
@@ -1216,7 +1213,13 @@ def run_image_build(image_id=None, buildkit=False):
 
     db.session.add(image)
     db.session.commit()
-    maybe_update_pr_comment_for_app_env(image.application_environment)
+
+    check.progress(
+        "Image built",
+        detail="Image built successfully. Awaiting release.",
+        details_url=cabotage_url(application, f"images/{image.id}"),
+        Image=f"images/{image.id}",
+    )
 
     if (
         image.built
@@ -1240,7 +1243,13 @@ def run_image_build(image_id=None, buildkit=False):
         )
         db.session.add(activity)
         db.session.commit()
-        maybe_update_pr_comment_for_app_env(app_env)
+        check.progress(
+            "Building release...",
+            detail="Image built, release build starting.",
+            details_url=cabotage_url(application, f"releases/{release.id}"),
+            Image=f"images/{image.id}",
+            Release=f"releases/{release.id}",
+        )
         run_release_build.delay(release_id=release.id)
 
 
@@ -1308,13 +1317,14 @@ def run_release_build(release_id=None):
                     "failure",
                     "Release build failed.",
                 )
-            CheckRun.from_metadata(release.release_metadata, release.application).fail(
+            CheckRun.from_metadata(
+                release.release_metadata, release.application_environment
+            ).fail(
                 "Release build failed",
                 detail=str(exc),
                 details_url=cabotage_url(release.application, f"releases/{release.id}"),
                 Release=f"releases/{release.id}",
             )
-            maybe_update_pr_comment_for_app_env(release.application_environment)
         except Exception:
             try:
                 log_key = stream_key("release", release.build_job_id)
@@ -1339,37 +1349,37 @@ def run_release_build(release_id=None):
                     "error",
                     "Release build failed.",
                 )
-            CheckRun.from_metadata(release.release_metadata, release.application).fail(
+            CheckRun.from_metadata(
+                release.release_metadata, release.application_environment
+            ).fail(
                 "Release build failed",
                 detail="Internal error",
                 details_url=cabotage_url(release.application, f"releases/{release.id}"),
                 Release=f"releases/{release.id}",
             )
-            maybe_update_pr_comment_for_app_env(release.application_environment)
             raise
 
         db.session.add(release)
         db.session.commit()
-        maybe_update_pr_comment_for_app_env(release.application_environment)
+
+        image_id = release.image.get("id") if release.image else None
+        release_links = {"Release": f"releases/{release.id}"}
+        if image_id:
+            release_links["Image"] = f"images/{image_id}"
+        CheckRun.from_metadata(
+            release.release_metadata, release.application_environment
+        ).progress(
+            "Release built",
+            detail="Release built successfully. Awaiting deployment.",
+            details_url=cabotage_url(release.application, f"releases/{release.id}"),
+            **release_links,
+        )
 
         if (
             release.built
             and release.release_metadata
             and release.release_metadata.get("auto_deploy", False)
         ):
-            image_id = release.image.get("id") if release.image else None
-            link_resources = {"Release": f"releases/{release.id}"}
-            if image_id:
-                link_resources["Image"] = f"images/{image_id}"
-            CheckRun.from_metadata(
-                release.release_metadata, release.application
-            ).progress(
-                "Deploying...",
-                detail="Image and release built successfully.",
-                details_url=cabotage_url(release.application, f"releases/{release.id}"),
-                **link_resources,
-            )
-
             deployment = Deployment(
                 application_id=release.application.id,
                 application_environment_id=release.application_environment_id,
@@ -1390,7 +1400,6 @@ def run_release_build(release_id=None):
             )
             db.session.add(activity)
             db.session.commit()
-            maybe_update_pr_comment_for_app_env(release.application_environment)
             if current_app.config["KUBERNETES_ENABLED"]:
                 deployment_id = deployment.id
                 run_deploy.delay(deployment_id=deployment.id)
@@ -1401,7 +1410,16 @@ def run_release_build(release_id=None):
                 fake_deploy_release(deployment)
                 deployment.complete = True
                 db.session.commit()
-                maybe_update_pr_comment_for_app_env(release.application_environment)
+                CheckRun.from_metadata(
+                    release.release_metadata, release.application_environment
+                ).succeed(
+                    details_url=cabotage_url(
+                        release.application,
+                        f"deployments/{deployment.id}",
+                    ),
+                    Deployment=f"deployments/{deployment.id}",
+                    Release=f"releases/{release.id}",
+                )
     except Exception:
         if release is not None and not release.error:
             release.error = True

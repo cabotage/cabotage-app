@@ -170,9 +170,9 @@ def _app_env_status(app_env):
 
     if new_pipeline:
         if not image.built and not image.error:
-            return ("\u23f3", "Building", f"images/{image.id}", image.updated)
+            return ("\u23f3", "Building Image", f"images/{image.id}", image.updated)
         if image.error:
-            return ("\u274c", "Build Failed", f"images/{image.id}", image.updated)
+            return ("\u274c", "Image Build Failed", f"images/{image.id}", image.updated)
 
         release = app_env.latest_release
         if release and release.created >= image.created:

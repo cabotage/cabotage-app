@@ -45,7 +45,6 @@ from cabotage.utils.github import (
     cabotage_url,
     post_deployment_status_update,
 )
-from cabotage.celery.tasks.branch_deploy import maybe_update_pr_comment_for_app_env
 
 
 class DeployError(RuntimeError):
@@ -1495,7 +1494,7 @@ def deploy_release(deployment):
     # Pick up check run from the build pipeline metadata
     check = CheckRun.from_metadata(
         deployment.deploy_metadata,
-        deployment.application_environment.application,
+        deployment.application_environment,
     )
     deploy_path = f"deployments/{deployment.id}"
     release_id = deployment.release.get("id") if deployment.release else None
@@ -1801,7 +1800,6 @@ def deploy_release(deployment):
             details_url=cabotage_url(check.application, deploy_path),
             Deployment=deploy_path,
         )
-        maybe_update_pr_comment_for_app_env(deployment.application_environment)
         return False
     except Exception as exc:
         deployment.error = True
@@ -1828,12 +1826,11 @@ def deploy_release(deployment):
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
         check.fail(
-            "Deploy failed",
+            "Deployment failed",
             detail=str(exc),
             details_url=cabotage_url(check.application, deploy_path),
             Deployment=deploy_path,
         )
-        maybe_update_pr_comment_for_app_env(deployment.application_environment)
         return False
     if redis_client is not None and log_key is not None:
         try:
@@ -1886,7 +1883,6 @@ def deploy_release(deployment):
         details_url=cabotage_url(check.application, deploy_path),
         **deploy_links,
     )
-    maybe_update_pr_comment_for_app_env(app_env)
 
 
 def fake_deploy_release(deployment):
