@@ -69,7 +69,8 @@
 
   {% set has_image_changes = image_diff.has_changes() if image_diff else false %}
   {% set has_config_changes = config_diff.has_changes() if config_diff else false %}
-  {% set has_pending = has_image_changes or has_config_changes %}
+  {% set has_ingress_changes = ingress_diff.has_changes() if ingress_diff else false %}
+  {% set has_pending = has_image_changes or has_config_changes or has_ingress_changes %}
   {% set has_deployable = latest_release and latest_release.built %}
   {% set latest_release_id = (latest_release.id|string) if latest_release else none %}
   {% set _completed_deploy = (deployments|selectattr('complete')|first) if deployments else none %}
@@ -397,12 +398,18 @@
                   <div class="flex items-center gap-2 mb-1.5">
                     {{ icon('zap', 'w-4 h-4 text-primary') }}
                     <span class="text-sm font-medium text-base-content">
-                      {% if has_config_changes and not has_image_changes %}
-                        Configuration changed since last release
-                      {% elif has_image_changes and not has_config_changes %}
+                      {% set change_types = [] %}
+                      {% if has_image_changes %}{% set _ = change_types.append('image') %}{% endif %}
+                      {% if has_config_changes %}{% set _ = change_types.append('configuration') %}{% endif %}
+                      {% if has_ingress_changes %}{% set _ = change_types.append('ingress') %}{% endif %}
+                      {% if change_types|length == 1 and has_image_changes %}
                         New image available since last release
+                      {% elif change_types|length == 1 %}
+                        {{ change_types[0] | capitalize }} changes since last release
+                      {% elif change_types|length == 2 %}
+                        {{ change_types[0] | capitalize }} and {{ change_types[1] }} changes since last release
                       {% else %}
-                        New image and configuration changes since last release
+                        {{ change_types[:-1]|join(', ') | capitalize }} and {{ change_types[-1] }} changes since last release
                       {% endif %}
                     </span>
                   </div>
@@ -413,8 +420,12 @@
                   {% set cfg_added = config_diff.added()|list if has_config_changes else [] %}
                   {% set cfg_changed = config_diff.changed()|list if has_config_changes else [] %}
                   {% set cfg_removed = config_diff.removed()|list if has_config_changes else [] %}
+                  {% set ing_added = ingress_diff.added()|list if has_ingress_changes else [] %}
+                  {% set ing_changed = ingress_diff.changed()|list if has_ingress_changes else [] %}
+                  {% set ing_removed = ingress_diff.removed()|list if has_ingress_changes else [] %}
                   {% set img_total = img_added|length + img_changed|length + img_removed|length %}
                   {% set cfg_total = cfg_added|length + cfg_changed|length + cfg_removed|length %}
+                  {% set ing_total = ing_added|length + ing_changed|length + ing_removed|length %}
                   {% set diff_id = application.id|string %}
 
                   <div class="changes-summary text-xs mb-2">
@@ -431,7 +442,13 @@
                           {{ cfg_total }} config {{ 'variable' if cfg_total == 1 else 'variables' }}
                         </span>
                       {% endif %}
-                      {% if img_total + cfg_total > 0 %}
+                      {% if has_ingress_changes %}
+                        <span class="change-pill change-pill-config">
+                          {{ icon('globe', 'w-3 h-3') }}
+                          {{ ing_total }} {{ 'ingress' if ing_total == 1 else 'ingresses' }}
+                        </span>
+                      {% endif %}
+                      {% if img_total + cfg_total + ing_total > 0 %}
                         <button class="change-details-toggle"
                                 onclick="var d=this.closest('.changes-summary').querySelector('.change-details'); d.classList.toggle('change-details-open'); this.querySelector('span').textContent = d.classList.contains('change-details-open') ? 'hide details' : 'show details'">
                           {{ icon('chevron-right', 'w-3 h-3 change-details-chevron') }}
@@ -468,12 +485,31 @@
                             {% endfor %}
                           </div>
                         {% endif %}
+                        {% if has_ingress_changes %}
+                          <div class="change-group">
+                            <span class="change-group-label">Ingress</span>
+                            {% for item in ing_added %}
+                              <span class="change-item change-item-added"><code>{{ item }}</code> <em>added</em></span>
+                            {% endfor %}
+                            {% for item in ing_changed %}
+                              <span class="change-item change-item-updated">
+                                <code>{{ item }}</code> <em>updated</em>
+                                {% if ingress_change_details.get(item) %}
+                                  <span class="text-base-content/50"> — {{ ingress_change_details[item]|join('; ') }}</span>
+                                {% endif %}
+                              </span>
+                            {% endfor %}
+                            {% for item in ing_removed %}
+                              <span class="change-item change-item-removed"><code>{{ item }}</code> <em>removed</em></span>
+                            {% endfor %}
+                          </div>
+                        {% endif %}
                       </div>
                     </div>
                   </div>
 
                   <div class="deploy-steps-inline">
-                    {% if has_config_changes and not has_image_changes %}
+                    {% if (has_config_changes or has_ingress_changes) and not has_image_changes %}
                       <span class="deploy-step-inline deploy-step-inline-next">Create Release</span>
                       <span class="deploy-step-inline-arrow">→</span>
                       <span class="deploy-step-inline deploy-step-inline-pending">Deploy</span>
