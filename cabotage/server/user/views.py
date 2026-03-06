@@ -25,6 +25,7 @@ from flask_security import (
 import kubernetes
 
 from dxf import DXF
+import requests as requests_lib
 from requests.exceptions import HTTPError
 from sqlalchemy import desc, func
 from sqlalchemy.exc import DataError, IntegrityError
@@ -3292,3 +3293,406 @@ def organization_demote_user(org_slug):
     else:
         flash("User not found.", "error")
     return redirect(url_for("user.organization", org_slug=org_slug))
+
+
+def _mimir_connection():
+    """Return (mimir_url, verify) tuple, or (None, None) if not configured."""
+    mimir_url = current_app.config.get("MIMIR_URL")
+    if not mimir_url:
+        return None, None
+    verify = current_app.config.get("MIMIR_VERIFY")
+    if verify is not None:
+        if isinstance(verify, str) and verify.lower() == "false":
+            verify = False
+    else:
+        verify = True
+    return mimir_url, verify
+
+
+def _query_mimir_range(query, start, end, step):
+    """Query Mimir's Prometheus-compatible query_range endpoint.
+
+    Returns the parsed ``data.result`` list, or None on any error.
+    """
+    mimir_url, verify = _mimir_connection()
+    if not mimir_url:
+        return None
+    try:
+        resp = requests_lib.get(
+            f"{mimir_url}/prometheus/api/v1/query_range",
+            params={
+                "query": query,
+                "start": start,
+                "end": end,
+                "step": step,
+            },
+            verify=verify,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("status") == "success":
+            return data.get("data", {}).get("result", [])
+        return None
+    except Exception:
+        return None
+
+
+def _compute_observe_namespace(application, app_env):
+    """Compute the k8s namespace for an application's environment."""
+    org_k8s = application.project.organization.k8s_identifier
+    if app_env and app_env.k8s_identifier is not None:
+        return safe_k8s_name(org_k8s, app_env.environment.k8s_identifier)
+    return org_k8s
+
+
+def _compute_observe_prefix(application):
+    """Compute the k8s resource prefix (project-app) for pod matching."""
+    return safe_k8s_name(
+        application.project.k8s_identifier,
+        application.k8s_identifier,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/observe",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/observe",
+    defaults={"env_slug": None},
+)
+@login_required
+def project_application_observe(org_slug, project_slug, app_slug, env_slug=None):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=False
+    )
+    environment = app_env.environment if app_env else None
+
+    mimir_configured = bool(current_app.config.get("MIMIR_URL"))
+
+    return render_template(
+        "user/project_application_observe.html",
+        application=application,
+        environment=environment,
+        app_env=app_env,
+        mimir_configured=mimir_configured,
+        current_range=request.args.get("range", "1h"),
+    )
+
+
+_OBSERVE_METRICS = {"cpu", "memory", "requests", "latency", "errors"}
+_OBSERVE_GROUPS = {"total", "process", "pod", "status"}
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/observe/metric",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/observe/metric",
+    defaults={"env_slug": None},
+)
+@login_required
+def project_application_observe_metric(org_slug, project_slug, app_slug, env_slug=None):
+    metric = request.args.get("metric")
+    if metric not in _OBSERVE_METRICS:
+        return jsonify({"error": "invalid metric"}), 400
+
+    group = request.args.get("group", "total")
+    if group not in _OBSERVE_GROUPS:
+        group = "total"
+
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=False
+    )
+
+    mimir_url = current_app.config.get("MIMIR_URL")
+    if not mimir_url or not app_env:
+        return jsonify({"error": "not configured"}), 404
+
+    namespace = _compute_observe_namespace(application, app_env)
+    prefix = _compute_observe_prefix(application)
+    escaped_prefix = _REGEX_META.sub(r"\\\g<0>", prefix)
+    labels = f'namespace="{namespace}", pod=~"{escaped_prefix}-.*"'
+
+    range_param = request.args.get("range", "1h")
+    range_map = {"1h": 3600, "6h": 21600, "24h": 86400}
+    step_map = {"1h": 15, "6h": 60, "24h": 300}
+    duration = range_map.get(range_param, 3600)
+    step = step_map.get(range_param, 15)
+
+    end = int(time.time())
+    start = end - duration
+
+    result = None
+
+    by_clause = {
+        "pod": "by (pod)",
+        "process": "by (process)",
+        "total": "",
+        "status": "",
+    }[group]
+    # cAdvisor metrics lack a "process" label; extract it from the pod name
+    process_re = f"{escaped_prefix}-(.*)-[a-z0-9]+-[a-z0-9]+"
+
+    # Use step-aligned rate window so CPU isn't a rolling average
+    rate_window = f"{max(step, 30)}s"
+
+    if metric == "cpu":
+        if group == "process":
+            q = (
+                f"sum by (process) (label_replace("
+                f"sum by (pod) (rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}]))"
+                f', "process", "$1", "pod", "{process_re}"))'
+            )
+        else:
+            q = f"sum(rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}])) {by_clause}"
+        result = _query_mimir_range(q, start, end, step)
+    elif metric == "memory":
+        if group == "process":
+            q = (
+                f"sum by (process) (label_replace("
+                f"sum by (pod) (container_memory_working_set_bytes{{{labels}}})"
+                f', "process", "$1", "pod", "{process_re}"))'
+            )
+        else:
+            q = f"sum(container_memory_working_set_bytes{{{labels}}}) {by_clause}"
+        result = _query_mimir_range(q, start, end, step)
+    elif metric == "requests":
+        result = []
+        for code_class in ["2", "3", "4", "5"]:
+            qr = _query_mimir_range(
+                f"sum(increase(traefik_service_requests_total"
+                f'{{service=~".*{escaped_prefix}.*", code=~"{code_class}.."}}[{step}s]))',
+                start,
+                end,
+                step,
+            )
+            if qr:
+                for series in qr:
+                    series["metric"]["code"] = f"{code_class}xx"
+                result.extend(qr)
+        result = result if result else None
+    elif metric == "errors":
+        if group == "status":
+            # Per status code class error rates (4xx and 5xx)
+            result = []
+            for code_class, label in [("4", "4xx"), ("5", "5xx")]:
+                qr = _query_mimir_range(
+                    f"sum(increase(traefik_service_requests_total"
+                    f'{{service=~".*{escaped_prefix}.*", code=~"{code_class}.."}}[{step}s]))'
+                    f" / sum(increase(traefik_service_requests_total"
+                    f'{{service=~".*{escaped_prefix}.*"}}[{step}s]))',
+                    start,
+                    end,
+                    step,
+                )
+                if qr:
+                    for series in qr:
+                        series["metric"]["label"] = label
+                    result.extend(qr)
+            result = result if result else None
+        else:
+            # Total error rate (4xx + 5xx combined)
+            result = _query_mimir_range(
+                f"sum(increase(traefik_service_requests_total"
+                f'{{service=~".*{escaped_prefix}.*", code=~"[45].."}}[{step}s]))'
+                f" / sum(increase(traefik_service_requests_total"
+                f'{{service=~".*{escaped_prefix}.*"}}[{step}s]))',
+                start,
+                end,
+                step,
+            )
+            if result:
+                for series in result:
+                    series["metric"]["label"] = "error rate"
+    elif metric == "latency":
+        latency_results = []
+        for quantile in [0.5, 0.9, 0.95, 0.99]:
+            q = (
+                f"histogram_quantile({quantile}, sum(rate("
+                f"traefik_router_request_duration_seconds_bucket"
+                f'{{service=~".*{escaped_prefix}.*"}}[{rate_window}])) by (le))'
+            )
+            qr = _query_mimir_range(q, start, end, step)
+            if qr:
+                for series in qr:
+                    series["metric"]["quantile"] = f"p{int(quantile * 100)}"
+                latency_results.extend(qr)
+        result = latency_results if latency_results else None
+
+    return jsonify({"result": result})
+
+
+def _query_mimir_instant(query):
+    """Query Mimir's Prometheus-compatible instant query endpoint.
+
+    Returns the parsed ``data.result`` list, or None on any error.
+    """
+    mimir_url, verify = _mimir_connection()
+    if not mimir_url:
+        return None
+    try:
+        resp = requests_lib.get(
+            f"{mimir_url}/prometheus/api/v1/query",
+            params={"query": query},
+            verify=verify,
+            timeout=5,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("status") == "success":
+            return data.get("data", {}).get("result", [])
+        return None
+    except Exception:
+        return None
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/live-stats",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/live-stats",
+    defaults={"env_slug": None},
+)
+@login_required
+def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=None):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=False
+    )
+
+    mimir_url = current_app.config.get("MIMIR_URL")
+    if not mimir_url or not app_env:
+        return jsonify({"error": "not configured"}), 404
+
+    namespace = _compute_observe_namespace(application, app_env)
+    prefix = _compute_observe_prefix(application)
+    escaped_prefix = _REGEX_META.sub(r"\\\g<0>", prefix)
+
+    # Pod status from Kubernetes API (source of truth)
+    pods_total = 0
+    pods_ready = 0
+    pods_by_phase = {}
+    running_pod_names = []
+    processes = (
+        {}
+    )  # {process_name: {"total": N, "ready": N, "pending": N, "crashed": N}}
+    try:
+        api_client = kubernetes_ext.kubernetes_client
+        core_api = kubernetes.client.CoreV1Api(api_client)
+        label_selector = (
+            f"organization={application.project.organization.slug},"
+            f"project={application.project.slug},"
+            f"application={application.slug}"
+        )
+        pod_list = core_api.list_namespaced_pod(
+            namespace=namespace,
+            label_selector=label_selector,
+        )
+        for pod in pod_list.items:
+            # Skip terminating pods (deletionTimestamp is set)
+            if pod.metadata.deletion_timestamp is not None:
+                continue
+            phase = pod.status.phase or "Unknown"
+            pods_by_phase[phase] = pods_by_phase.get(phase, 0) + 1
+            pods_total += 1
+            if phase == "Running":
+                running_pod_names.append(pod.metadata.name)
+            is_ready = False
+            is_crashed = False
+            if pod.status.conditions:
+                for cond in pod.status.conditions:
+                    if cond.type == "Ready" and cond.status == "True":
+                        is_ready = True
+                        pods_ready += 1
+                        break
+            # Detect crash: check container statuses for CrashLoopBackOff/Error
+            if not is_ready and pod.status.container_statuses:
+                for cs in pod.status.container_statuses:
+                    if cs.state and cs.state.waiting:
+                        reason = cs.state.waiting.reason or ""
+                        if reason in ("CrashLoopBackOff", "Error", "ImagePullBackOff"):
+                            is_crashed = True
+                            break
+                    if cs.state and cs.state.terminated:
+                        is_crashed = True
+                        break
+            proc = (pod.metadata.labels or {}).get("process", "unknown")
+            if proc not in processes:
+                processes[proc] = {"total": 0, "ready": 0, "pending": 0, "crashed": 0}
+            processes[proc]["total"] += 1
+            if is_ready:
+                processes[proc]["ready"] += 1
+            elif is_crashed:
+                processes[proc]["crashed"] += 1
+            else:
+                processes[proc]["pending"] += 1
+    except (kubernetes.client.ApiException, Exception):
+        current_app.logger.debug("Failed to list pods for live stats", exc_info=True)
+
+    end = int(time.time())
+    start = end - 3600  # 1 hour
+    step = 60  # 1-minute resolution
+
+    # History: use prefix regex (includes all pods over the hour)
+    cpu_history = []
+    mem_history = []
+
+    cpu_series = _query_mimir_range(
+        f"sum(rate(container_cpu_usage_seconds_total"
+        f'{{namespace="{namespace}", pod=~"{escaped_prefix}-.*"}}[{step}s]))',
+        start,
+        end,
+        step,
+    )
+    if cpu_series and len(cpu_series) > 0:
+        for ts, val in cpu_series[0].get("values", []):
+            cpu_history.append([ts, round(float(val) * 1000, 1)])
+
+    mem_series = _query_mimir_range(
+        f"sum(container_memory_working_set_bytes"
+        f'{{namespace="{namespace}", pod=~"{escaped_prefix}-.*"}})',
+        start,
+        end,
+        step,
+    )
+    if mem_series and len(mem_series) > 0:
+        for ts, val in mem_series[0].get("values", []):
+            mem_history.append([ts, float(val)])
+
+    # Current values: scoped to running pods from k8s
+    cpu_val = None
+    mem_val = None
+
+    if running_pod_names:
+        pod_regex = "|".join(
+            _REGEX_META.sub(r"\\\g<0>", name) for name in running_pod_names
+        )
+        cpu_result = _query_mimir_instant(
+            f"sum(rate(container_cpu_usage_seconds_total"
+            f'{{namespace="{namespace}", pod=~"{pod_regex}"}}[5m]))'
+        )
+        if cpu_result and len(cpu_result) > 0 and cpu_result[0].get("value"):
+            cpu_val = round(float(cpu_result[0]["value"][1]) * 1000, 1)
+
+        mem_result = _query_mimir_instant(
+            f"sum(container_memory_working_set_bytes"
+            f'{{namespace="{namespace}", pod=~"{pod_regex}"}})'
+        )
+        if mem_result and len(mem_result) > 0 and mem_result[0].get("value"):
+            mem_val = float(mem_result[0]["value"][1])
+
+    return jsonify(
+        {
+            "cpu": cpu_val,
+            "cpu_history": cpu_history,
+            "memory": mem_val,
+            "memory_history": mem_history,
+            "pods": pods_total,
+            "pods_ready": pods_ready,
+            "pods_by_phase": pods_by_phase,
+            "processes": processes,
+        }
+    )
