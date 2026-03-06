@@ -40,7 +40,11 @@ from cabotage.utils.build_log_stream import (
     refresh_heartbeat,
     stream_key,
 )
-from cabotage.utils.github import post_deployment_status_update
+from cabotage.utils.github import (
+    CheckRun,
+    cabotage_url,
+    post_deployment_status_update,
+)
 from cabotage.celery.tasks.branch_deploy import maybe_update_pr_comment_for_app_env
 
 
@@ -1488,6 +1492,30 @@ def deploy_release(deployment):
             except Exception:  # nosec B110
                 pass
 
+    # Pick up check run from the build pipeline metadata
+    check = CheckRun.from_metadata(
+        deployment.deploy_metadata,
+        deployment.application_environment.application,
+    )
+    deploy_path = f"deployments/{deployment.id}"
+    release_id = deployment.release.get("id") if deployment.release else None
+    release_obj = deployment.release_object
+    image_id = (
+        release_obj.image.get("id") if release_obj and release_obj.image else None
+    )
+    deploy_links = {"Deployment": deploy_path}
+    if release_id:
+        deploy_links["Release"] = f"releases/{release_id}"
+    if image_id:
+        deploy_links["Image"] = f"images/{image_id}"
+
+    check.progress(
+        "Deploying...",
+        detail="Image and release built successfully.",
+        details_url=cabotage_url(check.application, deploy_path),
+        **deploy_links,
+    )
+
     try:
         log("Constructing API Clients")
         api_client = kubernetes_ext.kubernetes_client
@@ -1767,6 +1795,12 @@ def deploy_release(deployment):
                 pass
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
+        check.fail(
+            "Deployment failed",
+            detail=str(exc),
+            details_url=cabotage_url(check.application, deploy_path),
+            Deployment=deploy_path,
+        )
         maybe_update_pr_comment_for_app_env(deployment.application_environment)
         return False
     except Exception as exc:
@@ -1793,6 +1827,12 @@ def deploy_release(deployment):
                 pass
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
+        check.fail(
+            "Deploy failed",
+            detail=str(exc),
+            details_url=cabotage_url(check.application, deploy_path),
+            Deployment=deploy_path,
+        )
         maybe_update_pr_comment_for_app_env(deployment.application_environment)
         return False
     if redis_client is not None and log_key is not None:
@@ -1840,6 +1880,12 @@ def deploy_release(deployment):
             "Deployment complete!",
             environment_url=env_url,
         )
+    detail = f"Application URL: {env_url}" if env_url else ""
+    check.succeed(
+        detail=detail,
+        details_url=cabotage_url(check.application, deploy_path),
+        **deploy_links,
+    )
     maybe_update_pr_comment_for_app_env(app_env)
 
 

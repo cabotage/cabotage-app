@@ -54,7 +54,11 @@ from cabotage.utils.build_log_stream import (
     stream_key,
 )
 from cabotage.utils.release_build_context import RELEASE_DOCKERFILE_TEMPLATE
-from cabotage.utils.github import post_deployment_status_update
+from cabotage.utils.github import (
+    CheckRun,
+    cabotage_url,
+    post_deployment_status_update,
+)
 from cabotage.utils import procfile
 from cabotage.celery.tasks.branch_deploy import maybe_update_pr_comment_for_app_env
 
@@ -1090,6 +1094,36 @@ def run_image_build(image_id=None, buildkit=False):
         raise KeyError(f"Image with ID {image_id} not found!")
 
     image.build_job_id = secrets.token_hex(4)
+
+    # Create a GitHub check run at the start of the pipeline
+    application = image.application
+    check = CheckRun(None, None, application)
+    if (
+        image.image_metadata
+        and "installation_id" in image.image_metadata
+        and "sha" in image.image_metadata
+        and application.github_repository
+    ):
+        access_token = github_app.fetch_installation_access_token(
+            image.image_metadata["installation_id"]
+        )
+        app_env = image.application_environment
+        env_slug = app_env.environment.slug
+        project_slug = application.project.slug
+        check_name = f"deploy / {project_slug} / {application.slug} ({env_slug})"
+        check = CheckRun.create(
+            access_token,
+            application.github_repository,
+            image.image_metadata["sha"],
+            check_name,
+            application,
+            details_url=cabotage_url(application, f"images/{image.id}"),
+        )
+        if check.check_run_id:
+            metadata = dict(image.image_metadata or {})
+            metadata["check_run_id"] = check.check_run_id
+            image.image_metadata = metadata
+
     db.session.add(image)
     db.session.commit()
 
@@ -1151,8 +1185,21 @@ def run_image_build(image_id=None, buildkit=False):
             image.error = True
             image.error_detail = "Image build failed due to an internal error"
             db.session.commit()
+        check.fail(
+            "Image build failed",
+            detail=image.error_detail or "Image build failed",
+            details_url=cabotage_url(application, f"images/{image.id}"),
+            Image=f"images/{image.id}",
+        )
         maybe_update_pr_comment_for_app_env(image.application_environment)
         raise
+
+    check.progress(
+        "Building release...",
+        detail="Image built successfully.",
+        details_url=cabotage_url(application, f"images/{image.id}"),
+        Image=f"images/{image.id}",
+    )
 
     db.session.add(image)
     image.image_id = build_metadata["image_id"]
@@ -1261,6 +1308,12 @@ def run_release_build(release_id=None):
                     "failure",
                     "Release build failed.",
                 )
+            CheckRun.from_metadata(release.release_metadata, release.application).fail(
+                "Release build failed",
+                detail=str(exc),
+                details_url=cabotage_url(release.application, f"releases/{release.id}"),
+                Release=f"releases/{release.id}",
+            )
             maybe_update_pr_comment_for_app_env(release.application_environment)
         except Exception:
             try:
@@ -1286,6 +1339,12 @@ def run_release_build(release_id=None):
                     "error",
                     "Release build failed.",
                 )
+            CheckRun.from_metadata(release.release_metadata, release.application).fail(
+                "Release build failed",
+                detail="Internal error",
+                details_url=cabotage_url(release.application, f"releases/{release.id}"),
+                Release=f"releases/{release.id}",
+            )
             maybe_update_pr_comment_for_app_env(release.application_environment)
             raise
 
@@ -1298,6 +1357,19 @@ def run_release_build(release_id=None):
             and release.release_metadata
             and release.release_metadata.get("auto_deploy", False)
         ):
+            image_id = release.image.get("id") if release.image else None
+            link_resources = {"Release": f"releases/{release.id}"}
+            if image_id:
+                link_resources["Image"] = f"images/{image_id}"
+            CheckRun.from_metadata(
+                release.release_metadata, release.application
+            ).progress(
+                "Deploying...",
+                detail="Image and release built successfully.",
+                details_url=cabotage_url(release.application, f"releases/{release.id}"),
+                **link_resources,
+            )
+
             deployment = Deployment(
                 application_id=release.application.id,
                 application_environment_id=release.application_environment_id,
