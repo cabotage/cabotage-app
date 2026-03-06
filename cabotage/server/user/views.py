@@ -70,6 +70,7 @@ from cabotage.server.models.projects import (
     IngressPath,
     Project,
     Release,
+    create_default_ingresses,
     pod_classes,
 )
 from cabotage.server.models.projects import activity_plugin
@@ -193,6 +194,7 @@ def _associate_app_with_environment(application, environment, organization, proj
         },
     )
     db.session.add(activity)
+    create_default_ingresses(app_env)
     return app_env
 
 
@@ -266,6 +268,7 @@ def _create_bare_app_env(application, environment):
     )
     db.session.add(app_env)
     db.session.flush()
+    create_default_ingresses(app_env)
     return app_env
 
 
@@ -1159,6 +1162,8 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     has_releases = False
     image_diff = None
     config_diff = None
+    ingress_diff = None
+    ingress_change_details = {}
     releases = []
     images = []
     deployments = []
@@ -1226,6 +1231,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
             application_environment_id=app_env.id,
             image=(latest_image_built.asdict if latest_image_built else {}),
             configuration={c.name: c.asdict for c in app_env.configurations},
+            ingresses={ing.name: ing.asdict for ing in app_env.ingresses},
             platform=application.platform,
         ).asdict
         image_diff = DictDiffer(
@@ -1238,6 +1244,64 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
             current.get("configuration", {}),
             ignored_keys=["id", "version_id"],
         )
+        ingress_diff = DictDiffer(
+            candidate.get("ingresses", {}),
+            current.get("ingresses", {}),
+            ignored_keys=["id", "version_id"],
+        )
+
+        # Build per-ingress change summaries for the template
+        ingress_change_details = {}
+        for name in ingress_diff.changed():
+            old_ing = ingress_diff.past_dict[name]
+            new_ing = ingress_diff.current_dict[name]
+            details = []
+            old_hosts = {h["hostname"] for h in old_ing.get("hosts", [])}
+            new_hosts = {h["hostname"] for h in new_ing.get("hosts", [])}
+            h_added = len(new_hosts - old_hosts)
+            h_removed = len(old_hosts - new_hosts)
+            if h_added or h_removed:
+                parts = []
+                if h_added:
+                    parts.append(f"{h_added} added")
+                if h_removed:
+                    parts.append(f"{h_removed} removed")
+                details.append(f"hosts: {', '.join(parts)}")
+            old_paths = {p["path"] for p in old_ing.get("paths", [])}
+            new_paths = {p["path"] for p in new_ing.get("paths", [])}
+            p_added = len(new_paths - old_paths)
+            p_removed = len(old_paths - new_paths)
+            if p_added or p_removed:
+                parts = []
+                if p_added:
+                    parts.append(f"{p_added} added")
+                if p_removed:
+                    parts.append(f"{p_removed} removed")
+                details.append(f"paths: {', '.join(parts)}")
+            setting_keys = {
+                "enabled",
+                "ingress_class_name",
+                "backend_protocol",
+                "proxy_connect_timeout",
+                "proxy_read_timeout",
+                "proxy_send_timeout",
+                "proxy_body_size",
+                "client_body_buffer_size",
+                "proxy_request_buffering",
+                "session_affinity",
+                "use_regex",
+                "allow_annotations",
+                "extra_annotations",
+                "cluster_issuer",
+                "force_ssl_redirect",
+                "service_upstream",
+            }
+            changed_settings = [
+                k for k in setting_keys if old_ing.get(k) != new_ing.get(k)
+            ]
+            if changed_settings:
+                details.append(f"settings: {', '.join(sorted(changed_settings))}")
+            ingress_change_details[name] = details
 
     return render_template(
         "user/project_application.html",
@@ -1272,6 +1336,8 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         has_releases=has_releases,
         image_diff=image_diff,
         config_diff=config_diff,
+        ingress_diff=ingress_diff,
+        ingress_change_details=ingress_change_details,
         deployed_release=deployed_release,
         deployed_image=deployed_image,
         latest_deploy_release=latest_deploy_release,

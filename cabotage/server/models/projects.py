@@ -13,6 +13,7 @@ from cabotage.server import db
 from cabotage.server.models.plugins import ActivityPlugin
 from cabotage.server.models.utils import (
     generate_k8s_identifier,
+    readable_k8s_hostname,
     slugify,
     DictDiffer,
 )
@@ -573,7 +574,12 @@ class Application(db.Model, Timestamp):
             current.get("image", {}),
             ignored_keys=["id", "version_id"],
         )
-        return image_diff, configuration_diff
+        ingress_diff = DictDiffer(
+            candidate.get("ingresses", {}),
+            current.get("ingresses", {}),
+            ignored_keys=["id", "version_id"],
+        )
+        return image_diff, configuration_diff, ingress_diff
 
     def release_candidate_for_env(self, app_env):
         release = Release(
@@ -583,6 +589,7 @@ class Application(db.Model, Timestamp):
                 app_env.latest_image_built.asdict if app_env.latest_image_built else {}
             ),
             configuration={c.name: c.asdict for c in app_env.configurations},
+            ingresses={ing.name: ing.asdict for ing in app_env.ingresses},
             platform=self.platform,
         )
         return release.asdict
@@ -596,7 +603,9 @@ class Application(db.Model, Timestamp):
         return Image._build_repository_name(org_k8s, project_k8s, app_k8s, env_k8s)
 
     def create_release(self, app_env):
-        image_diff, configuration_diff = self.ready_for_deployment_in_env(app_env)
+        image_diff, configuration_diff, ingress_diff = self.ready_for_deployment_in_env(
+            app_env
+        )
         release = Release(
             application_id=self.id,
             application_environment_id=app_env.id,
@@ -607,6 +616,8 @@ class Application(db.Model, Timestamp):
             configuration={c.name: c.asdict for c in app_env.configurations},
             image_changes=image_diff.asdict,
             configuration_changes=configuration_diff.asdict,
+            ingresses={ing.name: ing.asdict for ing in app_env.ingresses},
+            ingress_changes=ingress_diff.asdict,
             platform=self.platform,
             health_check_path=app_env.effective_health_check_path,
             health_check_host=app_env.effective_health_check_host,
@@ -708,6 +719,16 @@ class Release(db.Model, Timestamp):
     configuration = db.Column(postgresql.JSONB(), nullable=False)
     image_changes = db.Column(postgresql.JSONB(), nullable=False)
     configuration_changes = db.Column(postgresql.JSONB(), nullable=False)
+    ingresses = db.Column(
+        postgresql.JSONB(),
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+    ingress_changes = db.Column(
+        postgresql.JSONB(),
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
     version_id = db.Column(db.Integer, nullable=False)
 
     _repository_name = db.Column(
@@ -796,6 +817,7 @@ class Release(db.Model, Timestamp):
             "platform": self.platform,
             "image": self.image,
             "configuration": self.configuration,
+            "ingresses": self.ingresses,
         }
 
     @property
@@ -1294,6 +1316,31 @@ class Ingress(db.Model, Timestamp):
 
     __mapper_args__ = {"version_id_col": version_id}
 
+    @property
+    def asdict(self):
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "enabled": self.enabled,
+            "ingress_class_name": self.ingress_class_name,
+            "backend_protocol": self.backend_protocol,
+            "proxy_connect_timeout": self.proxy_connect_timeout,
+            "proxy_read_timeout": self.proxy_read_timeout,
+            "proxy_send_timeout": self.proxy_send_timeout,
+            "proxy_body_size": self.proxy_body_size,
+            "client_body_buffer_size": self.client_body_buffer_size,
+            "proxy_request_buffering": self.proxy_request_buffering,
+            "session_affinity": self.session_affinity,
+            "use_regex": self.use_regex,
+            "allow_annotations": self.allow_annotations,
+            "extra_annotations": self.extra_annotations,
+            "cluster_issuer": self.cluster_issuer,
+            "force_ssl_redirect": self.force_ssl_redirect,
+            "service_upstream": self.service_upstream,
+            "hosts": [h.asdict for h in self.hosts],
+            "paths": [p.asdict for p in self.paths],
+        }
+
     def __repr__(self):
         return f"<Ingress {self.id} {self.name}>"
 
@@ -1330,6 +1377,15 @@ class IngressHost(db.Model, Timestamp):
 
     __mapper_args__ = {"version_id_col": version_id}
 
+    @property
+    def asdict(self):
+        return {
+            "id": str(self.id),
+            "hostname": self.hostname,
+            "tls_enabled": self.tls_enabled,
+            "is_auto_generated": self.is_auto_generated,
+        }
+
     def __repr__(self):
         return f"<IngressHost {self.id} {self.hostname}>"
 
@@ -1355,6 +1411,87 @@ class IngressPath(db.Model, Timestamp):
     target_process_name = db.Column(db.String(64), nullable=False)
     version_id = db.Column(db.Integer, nullable=False)
 
+    @property
+    def asdict(self):
+        return {
+            "id": str(self.id),
+            "path": self.path,
+            "path_type": self.path_type,
+            "target_process_name": self.target_process_name,
+        }
+
     __table_args__ = (UniqueConstraint(ingress_id, path),)
 
     __mapper_args__ = {"version_id_col": version_id}
+
+
+def _ingress_hostname_pairs(app_env):
+    """Build (slug, k8s_identifier) pairs for ingress hostname generation.
+
+    Skips the environment pair when environments are not enabled so that
+    non-environment apps don't get "default" baked into their hostnames.
+    """
+    app = app_env.application
+    org = app.project.organization
+    project = app.project
+    pairs = [(org.slug, org.k8s_identifier)]
+    if project.environments_enabled:
+        env = app_env.environment
+        pairs.append((env.slug, env.k8s_identifier))
+    pairs.extend(
+        [
+            (project.slug, project.k8s_identifier),
+            (app.slug, app.k8s_identifier),
+        ]
+    )
+    return pairs
+
+
+def create_default_ingresses(app_env, process_names=None):
+    """Create default Ingress records for web processes on an app_env.
+
+    Called at app_env creation time so ingresses exist before the first release.
+    If process_names is None, uses ["web"] as default.
+    """
+    ingress_domain = current_app.config.get("INGRESS_DOMAIN")
+    if not ingress_domain:
+        return
+
+    if app_env.ingresses:
+        return
+
+    if process_names is None:
+        process_names = ["web"]
+
+    hostname_pairs = _ingress_hostname_pairs(app_env)
+
+    for process_name in process_names:
+        if not process_name.startswith("web"):
+            continue
+        ingress_obj = Ingress(
+            application_environment_id=app_env.id,
+            name=process_name,
+        )
+        db.session.add(ingress_obj)
+        db.session.flush()
+        auto_hostname = (
+            f"{readable_k8s_hostname(*hostname_pairs)}"
+            f"-{process_name}.{ingress_domain}"
+        )
+        db.session.add(
+            IngressHost(
+                ingress_id=ingress_obj.id,
+                hostname=auto_hostname,
+                tls_enabled=True,
+                is_auto_generated=True,
+            )
+        )
+        db.session.add(
+            IngressPath(
+                ingress_id=ingress_obj.id,
+                path="/",
+                path_type="Prefix",
+                target_process_name=process_name,
+            )
+        )
+    db.session.flush()
