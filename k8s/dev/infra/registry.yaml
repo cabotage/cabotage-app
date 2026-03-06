@@ -1,0 +1,104 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry
+  namespace: cabotage-dev
+spec:
+  ports:
+    - port: 5001
+      targetPort: 5001
+  selector:
+    app: registry
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry
+  namespace: cabotage-dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: registry
+  template:
+    metadata:
+      labels:
+        app: registry
+    spec:
+      containers:
+        - name: registry
+          image: registry:2
+          args: ["/etc/docker/registry-local/config.yml"]
+          ports:
+            - containerPort: 5001
+          env:
+            - name: REGISTRY_STORAGE_S3_ACCESSKEY
+              value: MINIOACCESSKEY
+            - name: REGISTRY_STORAGE_S3_SECRETKEY
+              value: MINIOSECRETKEY
+            - name: REGISTRY_STORAGE_S3_REGION
+              value: us-east-1
+            - name: REGISTRY_STORAGE_S3_REGIONENDPOINT
+              value: http://minio:9000
+            - name: REGISTRY_STORAGE_S3_BUCKET
+              value: cabotage-registry
+            - name: REGISTRY_STORAGE_S3_SECURE
+              value: "true"
+            - name: REGISTRY_STORAGE_S3_V4AUTH
+              value: "true"
+            - name: REGISTRY_STORAGE_S3_CHUNKSIZE
+              value: "5242880"
+            - name: REGISTRY_STORAGE_DELETE_ENABLED
+              value: "true"
+          volumeMounts:
+            - name: registry-config
+              mountPath: /etc/docker/registry-local
+      volumes:
+        - name: registry-config
+          configMap:
+            name: registry-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: registry-config
+  namespace: cabotage-dev
+data:
+  config.yml: |
+    version: 0.1
+    auth:
+      token:
+        realm: http://cabotage-app:8000/docker/auth
+        service: cabotage-registry
+        issuer: cabotage-app
+        rootcertbundle: /etc/docker/registry-local/public_key_bundle
+    log:
+      level: debug
+      fields:
+        service: registry
+    storage:
+      cache:
+        blobdescriptor: inmemory
+      s3:
+        accesskey: ${REGISTRY_STORAGE_S3_ACCESSKEY}
+        secretkey: ${REGISTRY_STORAGE_S3_SECRETKEY}
+        region: ${REGISTRY_STORAGE_S3_REGION}
+        regionendpoint: ${REGISTRY_STORAGE_S3_REGIONENDPOINT}
+        bucket: ${REGISTRY_STORAGE_S3_BUCKET}
+        secure: false
+        v4auth: true
+        chunksize: 5242880
+    http:
+      addr: :5001
+      headers:
+        X-Content-Type-Options: [nosniff]
+  public_key_bundle: |
+    -----BEGIN CERTIFICATE-----
+    MIIBLjCB1KADAgECAhQr/gBut0a0WdjfEnbVwuUvN6bMazAKBggqhkjOPQQDAjAX
+    MRUwEwYDVQQDDAxjYWJvdGFnZS1hcHAwHhcNMTgwMTI4MjAyODE1WhcNMTkwMTI5
+    MjAyODE1WjAXMRUwEwYDVQQDDAxjYWJvdGFnZS1hcHAwWTATBgcqhkjOPQIBBggq
+    hkjOPQMBBwNCAASlGiOihy/j6Zl3upJk6jsASJVeDxDcQo3Zenwk4VpZ/rUU1nGm
+    sC/7CNJte8qAXeP/r4rNExZHZhbo2ATm5aTGMAoGCCqGSM49BAMCA0kAMEYCIQCb
+    LPIWZhlsF7q5f0eebu5C9O2qMZg8Y0wME7TpLgMSFAIhAKFZ+ZDPdTCx3HkMzPv5
+    OWV+/WcvNCjTpchQoNR4mJUW
+    -----END CERTIFICATE-----
