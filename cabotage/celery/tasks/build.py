@@ -365,11 +365,11 @@ def build_release_buildkit(release):
                 os.makedirs(os.path.join(tempdir, ".docker"), exist_ok=True)
                 with open(os.path.join(tempdir, ".docker", "config.json"), "w") as f:
                     f.write(dockerconfigjson)
-                with open(os.path.join(tempdir, "buildkitd.toml"), "w") as f:
-                    f.write(buildkitd_toml)
-
                 buildkit_root = f"/tmp/buildkit-{release.application.id}-{release.application_environment_id or 'base'}"  # nosec B108 — deterministic path scoped by app+env ID
                 os.makedirs(buildkit_root, exist_ok=True)
+                local_buildkitd_config = {**buildkitd_config, "otel": {"socketPath": f"{buildkit_root}/otel-grpc.sock"}}
+                with open(os.path.join(tempdir, "buildkitd.toml"), "w") as f:
+                    f.write(toml.dumps(local_buildkitd_config))
                 sock_addr = f"unix://{buildkit_root}/buildkitd.sock"
                 wrapper = os.path.join(tempdir, "buildctl-daemonless.sh")
                 with open(wrapper, "w") as f:
@@ -986,11 +986,11 @@ def build_image_buildkit(image=None):
                         os.path.join(tempdir, ".secret", "github_access_token"), "w"
                     ) as f:
                         f.write(access_token)
-                with open(os.path.join(tempdir, "buildkitd.toml"), "w") as f:
-                    f.write(buildkitd_toml)
-
                 buildkit_root = f"/tmp/buildkit-{image.application.id}-{image.application_environment_id or 'base'}"  # nosec B108 — deterministic path scoped by app+env ID
                 os.makedirs(buildkit_root, exist_ok=True)
+                local_buildkitd_config = {**buildkitd_config, "otel": {"socketPath": f"{buildkit_root}/otel-grpc.sock"}}
+                with open(os.path.join(tempdir, "buildkitd.toml"), "w") as f:
+                    f.write(toml.dumps(local_buildkitd_config))
                 sock_addr = f"unix://{buildkit_root}/buildkitd.sock"
                 wrapper = os.path.join(tempdir, "buildctl-daemonless.sh")
                 with open(wrapper, "w") as f:
