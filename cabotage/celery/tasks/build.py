@@ -517,21 +517,27 @@ def _fetch_commit_sha_for_ref(
     return sha
 
 
-def fetch_image_build_cache_volume_claim(core_api_instance, image):
-    volume_claim_name = (
-        "build-image-cache-"
-        f"{image.application.project.organization.k8s_identifier}-"
-        f"{image.application.project.k8s_identifier}-"
-        f"{image.application.k8s_identifier}"
-    )
-    app_env = image.application_environment
-    if app_env.k8s_identifier is not None:
-        volume_claim_name += f"-{app_env.environment.k8s_identifier}"
-    if len(volume_claim_name) > 63:
-        import hashlib
+def build_cache_pvc_name(app_env):
+    """Compute the PVC name for an application-environment's build cache."""
+    import hashlib
 
-        suffix = hashlib.sha256(volume_claim_name.encode()).hexdigest()[:8]
-        volume_claim_name = volume_claim_name[:54] + "-" + suffix
+    application = app_env.application
+    name = (
+        "build-image-cache-"
+        f"{application.project.organization.k8s_identifier}-"
+        f"{application.project.k8s_identifier}-"
+        f"{application.k8s_identifier}"
+    )
+    if app_env.k8s_identifier is not None:
+        name += f"-{app_env.environment.k8s_identifier}"
+    if len(name) > 63:
+        suffix = hashlib.sha256(name.encode()).hexdigest()[:8]
+        name = name[:54] + "-" + suffix
+    return name
+
+
+def fetch_image_build_cache_volume_claim(core_api_instance, image):
+    volume_claim_name = build_cache_pvc_name(image.application_environment)
     try:
         volume_claim = core_api_instance.read_namespaced_persistent_volume_claim(
             volume_claim_name, "default"

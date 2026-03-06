@@ -81,6 +81,8 @@ def _teardown_environment(environment):
     """Delete k8s namespace and all DB records for an ephemeral environment."""
     import kubernetes
 
+    from cabotage.celery.tasks.build import build_cache_pvc_name
+
     if current_app.config["KUBERNETES_ENABLED"]:
         org = environment.project.organization
         ns_name = safe_k8s_name(org.k8s_identifier, environment.k8s_identifier)
@@ -91,6 +93,20 @@ def _teardown_environment(environment):
         except ApiException as exc:
             if exc.status != 404:
                 raise
+
+        # Clean up build cache PVCs
+        for app_env in environment.application_environments:
+            pvc_name = build_cache_pvc_name(app_env)
+            try:
+                core_api.delete_namespaced_persistent_volume_claim(
+                    pvc_name, "default", propagation_policy="Foreground"
+                )
+                logger.info("Deleted build cache PVC %s", pvc_name)
+            except ApiException as exc:
+                if exc.status != 404:
+                    logger.warning(
+                        "Failed to delete build cache PVC %s: %s", pvc_name, exc
+                    )
 
     for app_env in environment.application_environments:
         for config in list(app_env.configurations):
