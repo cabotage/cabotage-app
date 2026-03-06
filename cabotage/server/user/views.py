@@ -2117,6 +2117,31 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                     return _render_ingress(ingress_errors=ingress_errors)
             return _redirect_back()
 
+        # Delete ingress
+        if action == "delete_ingress":
+            ingress_id = request.form.get("_ingress_id")
+            ingress = _safe_get(Ingress, ingress_id)
+            if not ingress or ingress.application_environment_id != app_env.id:
+                return _redirect_back()
+            confirm_name = request.form.get("_confirm_name", "").strip()
+            if confirm_name != ingress.name:
+                flash("Ingress name does not match. Deletion cancelled.", "error")
+                return _redirect_back()
+            ingress_name = ingress.name
+            activity = Activity(
+                verb="delete",
+                object=ingress,
+                data={
+                    "user_id": str(current_user.id),
+                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                },
+            )
+            db.session.add(activity)
+            db.session.delete(ingress)
+            db.session.commit()
+            flash(f"Ingress '{ingress_name}' deleted.", "success")
+            return _redirect_back()
+
         # Create new ingress
         if action == "create_ingress":
             new_name = request.form.get("_new_ingress_name", "").strip()
