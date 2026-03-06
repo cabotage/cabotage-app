@@ -1,7 +1,7 @@
 volumes:
   consuldata:
   vaultdata:
-  miniodata:
+  rustfsdata:
   postgresdata:
   redisdata:
 
@@ -56,10 +56,10 @@ services:
     restart: always
     command: ["/etc/docker/registry-local/config.yml"]
     environment:
-      REGISTRY_STORAGE_S3_ACCESSKEY: MINIOACCESSKEY
-      REGISTRY_STORAGE_S3_SECRETKEY: MINIOSECRETKEY
+      REGISTRY_STORAGE_S3_ACCESSKEY: RUSTFSACCESSKEY
+      REGISTRY_STORAGE_S3_SECRETKEY: RUSTFSSECRETKEY
       REGISTRY_STORAGE_S3_REGION: us-east-1
-      REGISTRY_STORAGE_S3_REGIONENDPOINT: http://minio:9000
+      REGISTRY_STORAGE_S3_REGIONENDPOINT: http://rustfs:9000
       REGISTRY_STORAGE_S3_BUCKET: cabotage-registry
       REGISTRY_STORAGE_S3_SECURE: "true"
       REGISTRY_STORAGE_S3_V4AUTH: "true"
@@ -78,20 +78,27 @@ services:
     privileged: true
     volumes:
       - ./docker-compose/buildkitd:/home/user/.config/buildkit
-  minio:
-    image: minio/minio
-    entrypoint: sh
-    command: -c 'mkdir -p /export/cabotage-registry && /usr/bin/docker-entrypoint.sh server /export --console-address ":9001"'
-    restart: always
+  rustfs:
+    image: rustfs/rustfs
+    command: --address :9000 --console-enable --server-domains rustfs /data
     environment:
-      MINIO_ROOT_USER: MINIOACCESSKEY
-      MINIO_ROOT_PASSWORD: MINIOSECRETKEY
-      MINIO_REGION: us-east-1
+      RUSTFS_ACCESS_KEY: RUSTFSACCESSKEY
+      RUSTFS_SECRET_KEY: RUSTFSSECRETKEY
+      GLOBAL_REGION: us-east-1
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - miniodata:/export
+      - rustfsdata:/data
+  createbucket:
+    image: minio/mc
+    depends_on:
+      - rustfs
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mc alias set rustfs http://rustfs:9000 RUSTFSACCESSKEY RUSTFSSECRETKEY
+        mc mb --ignore-existing rustfs/cabotage-registry
   static:
     image: oven/bun:1-slim
     working_dir: /app
