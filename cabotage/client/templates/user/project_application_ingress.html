@@ -236,9 +236,13 @@
                 </details>
               {% endif %}
 
-              {# Single save button #}
+              {# Save / Delete buttons #}
               <div class="divider"></div>
-              <div class="flex justify-end">
+              <div class="flex justify-between">
+                <button type="button" class="btn btn-error btn-sm btn-outline gap-1"
+                        onclick="document.getElementById('delete-modal-{{ ingress.name }}').showModal()">
+                  {{ icon('trash-2', 'w-3.5 h-3.5') }} Delete
+                </button>
                 <button type="submit" class="btn btn-primary btn-sm gap-1">
                   {{ icon('check', 'w-3.5 h-3.5') }} Save
                 </button>
@@ -246,6 +250,32 @@
 
             </div>
           </form>
+
+          {# Delete confirmation modal #}
+          <dialog id="delete-modal-{{ ingress.name }}" class="modal">
+            <div class="modal-box">
+              <h3 class="text-lg font-bold text-error">Delete Ingress</h3>
+              <p class="py-2 text-sm">
+                Type <code class="font-semibold">{{ ingress.name }}</code> to confirm deletion.
+                This action cannot be undone.
+              </p>
+              <form action="{{ url_for('user.project_application_ingress', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
+                    method="post">
+                {{ csrf_form.hidden_tag() }}
+                <input type="hidden" name="_action" value="delete_ingress">
+                <input type="hidden" name="_ingress_id" value="{{ ingress.id }}">
+                <input type="text" name="_confirm_name" placeholder="{{ ingress.name }}"
+                       class="input input-bordered input-sm w-full mb-4"
+                       autocomplete="off"
+                       oninput="this.closest('.modal-box').querySelector('.btn-delete-confirm').disabled = (this.value !== '{{ ingress.name }}')">
+                <div class="modal-action">
+                  <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('dialog').close()">Cancel</button>
+                  <button type="submit" class="btn btn-error btn-sm btn-delete-confirm" disabled>Delete</button>
+                </div>
+              </form>
+            </div>
+            <form method="dialog" class="modal-backdrop"><button>close</button></form>
+          </dialog>
         </div>
       {% endfor %}
 
