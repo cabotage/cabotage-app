@@ -213,6 +213,17 @@ def _app_env_status(app_env):
     return ("\u23f3", "Pending", None, None)
 
 
+def _preview_url(app_env):
+    """Return the https:// URL for the first auto-generated ingress host, or None."""
+    for ingress in app_env.ingresses:
+        if not ingress.enabled:
+            continue
+        for host in ingress.hosts:
+            if host.is_auto_generated and host.tls_enabled:
+                return f"https://{host.hostname}"
+    return None
+
+
 def _render_pr_comment_body(environment):
     """Render the markdown body for a branch deploy PR comment."""
     project = environment.project
@@ -226,8 +237,8 @@ def _render_pr_comment_body(environment):
     lines = [
         f"**Branch Deploy** for `{environment.slug}` " f"in **{project.name}**",
         "",
-        "| Service | Status | Updated (UTC) |",
-        "| :--- | :--- | :--- |",
+        "| Service | Status | Preview | Updated (UTC) |",
+        "| :--- | :--- | :--- | :--- |",
     ]
 
     for app_env in environment.application_environments:
@@ -240,12 +251,17 @@ def _render_pr_comment_body(environment):
         else:
             status = f"{emoji} {label}"
 
+        preview = ""
+        url = _preview_url(app_env)
+        if url and label == "Deployed":
+            preview = f"[Open]({url})"
+
         if updated_at:
             ts = updated_at.strftime("%b %-d, %Y at %-I:%M %p")
         else:
             ts = ""
 
-        lines.append(f"| {app.slug} | {status} | {ts} |")
+        lines.append(f"| {app.slug} | {status} | {preview} | {ts} |")
 
     return "\n".join(lines)
 

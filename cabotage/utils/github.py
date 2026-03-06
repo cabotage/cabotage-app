@@ -16,10 +16,15 @@ def _github_headers(access_token):
     return {**_GITHUB_HEADERS, "Authorization": f"token {access_token}"}
 
 
-def post_deployment_status_update(access_token, status_url, state, description):
+def post_deployment_status_update(
+    access_token, status_url, state, description, environment_url=None
+):
     if access_token is None:
         return
     try:
+        payload = {"state": state, "description": description}
+        if environment_url:
+            payload["environment_url"] = environment_url
         requests.post(
             status_url,
             headers={
@@ -27,7 +32,7 @@ def post_deployment_status_update(access_token, status_url, state, description):
                 "Authorization": f"token {access_token}",
                 "Content-Type": "application/json",
             },
-            json={"state": state, "description": description},
+            json=payload,
             timeout=10,
         )
     except requests.exceptions.RequestException:

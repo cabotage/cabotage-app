@@ -48,6 +48,36 @@ class DeployError(RuntimeError):
     pass
 
 
+def _preview_url_for_app_env(app_env):
+    """Return the https:// URL for the first auto-generated ingress host, or None."""
+    for ingress in app_env.ingresses:
+        if not ingress.enabled:
+            continue
+        for host in ingress.hosts:
+            if host.is_auto_generated and host.tls_enabled:
+                return f"https://{host.hostname}"
+    return None
+
+
+def _wait_for_tls_secret(core_api, namespace, secret_name, timeout=120, log=None):
+    """Poll until a TLS secret exists with cert data, or timeout."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            secret = core_api.read_namespaced_secret(secret_name, namespace)
+            if secret.data and "tls.crt" in secret.data:
+                if log:
+                    log(f"TLS secret {secret_name} is ready")
+                return True
+        except ApiException as exc:
+            if exc.status != 404:
+                raise
+        time.sleep(5)
+    if log:
+        log(f"TLS secret {secret_name} not ready after {timeout}s, proceeding anyway")
+    return False
+
+
 def k8s_namespace(release):
     org_k8s = release.application.project.organization.k8s_identifier
     app_env = release.application_environment
@@ -1772,6 +1802,29 @@ def deploy_release(deployment):
             pass
     deployment.deploy_log = "\n".join(deploy_log)
     db.session.commit()
+
+    # Resolve preview URL — only furnish it if TLS cert is ready
+    app_env = deployment.application_environment
+    env_url = _preview_url_for_app_env(app_env)
+    if env_url:
+        tls_ready = False
+        resource_prefix = k8s_resource_prefix(deployment.release_object)
+        for ing in app_env.ingresses:
+            if ing.enabled and any(
+                h.is_auto_generated and h.tls_enabled for h in ing.hosts
+            ):
+                tls_secret = f"{resource_prefix}-{ing.name}-tls"
+                log(f"Waiting for TLS certificate ({tls_secret})")
+                tls_ready = _wait_for_tls_secret(
+                    core_api_instance,
+                    namespace.metadata.name,
+                    tls_secret,
+                    log=log,
+                )
+                break
+        if not tls_ready:
+            env_url = None
+
     if (
         deployment.deploy_metadata
         and "installation_id" in deployment.deploy_metadata
@@ -1785,8 +1838,9 @@ def deploy_release(deployment):
             deployment.deploy_metadata["statuses_url"],
             "success",
             "Deployment complete!",
+            environment_url=env_url,
         )
-    maybe_update_pr_comment_for_app_env(deployment.application_environment)
+    maybe_update_pr_comment_for_app_env(app_env)
 
 
 def fake_deploy_release(deployment):
