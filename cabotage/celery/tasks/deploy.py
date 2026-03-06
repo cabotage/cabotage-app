@@ -40,12 +40,45 @@ from cabotage.utils.build_log_stream import (
     refresh_heartbeat,
     stream_key,
 )
-from cabotage.utils.github import post_deployment_status_update
-from cabotage.celery.tasks.branch_deploy import maybe_update_pr_comment_for_app_env
+from cabotage.utils.github import (
+    CheckRun,
+    cabotage_url,
+    post_deployment_status_update,
+)
 
 
 class DeployError(RuntimeError):
     pass
+
+
+def _preview_url_for_app_env(app_env):
+    """Return the https:// URL for the first auto-generated ingress host, or None."""
+    for ingress in app_env.ingresses:
+        if not ingress.enabled:
+            continue
+        for host in ingress.hosts:
+            if host.is_auto_generated and host.tls_enabled:
+                return f"https://{host.hostname}"
+    return None
+
+
+def _wait_for_tls_secret(core_api, namespace, secret_name, timeout=120, log=None):
+    """Poll until a TLS secret exists with cert data, or timeout."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            secret = core_api.read_namespaced_secret(secret_name, namespace)
+            if secret.data and "tls.crt" in secret.data:
+                if log:
+                    log(f"TLS secret {secret_name} is ready")
+                return True
+        except ApiException as exc:
+            if exc.status != 404:
+                raise
+        time.sleep(5)
+    if log:
+        log(f"TLS secret {secret_name} not ready after {timeout}s, proceeding anyway")
+    return False
 
 
 def k8s_namespace(release):
@@ -1498,6 +1531,30 @@ def deploy_release(deployment):
             except Exception:  # nosec B110
                 pass
 
+    # Pick up check run from the build pipeline metadata
+    check = CheckRun.from_metadata(
+        deployment.deploy_metadata,
+        deployment.application_environment,
+    )
+    deploy_path = f"deployments/{deployment.id}"
+    release_id = deployment.release.get("id") if deployment.release else None
+    release_obj = deployment.release_object
+    image_id = (
+        release_obj.image.get("id") if release_obj and release_obj.image else None
+    )
+    deploy_links = {"Deployment": deploy_path}
+    if release_id:
+        deploy_links["Release"] = f"releases/{release_id}"
+    if image_id:
+        deploy_links["Image"] = f"images/{image_id}"
+
+    check.progress(
+        "Deploying...",
+        detail="Image and release built successfully.",
+        details_url=cabotage_url(check.application, deploy_path),
+        **deploy_links,
+    )
+
     try:
         log("Constructing API Clients")
         api_client = kubernetes_ext.kubernetes_client
@@ -1784,7 +1841,12 @@ def deploy_release(deployment):
                 pass
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
-        maybe_update_pr_comment_for_app_env(deployment.application_environment)
+        check.fail(
+            "Deployment failed",
+            detail=str(exc),
+            details_url=cabotage_url(check.application, deploy_path),
+            Deployment=deploy_path,
+        )
         return False
     except Exception as exc:
         deployment.error = True
@@ -1810,7 +1872,12 @@ def deploy_release(deployment):
                 pass
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
-        maybe_update_pr_comment_for_app_env(deployment.application_environment)
+        check.fail(
+            "Deployment failed",
+            detail=str(exc),
+            details_url=cabotage_url(check.application, deploy_path),
+            Deployment=deploy_path,
+        )
         return False
     if redis_client is not None and log_key is not None:
         try:
@@ -1819,6 +1886,29 @@ def deploy_release(deployment):
             pass
     deployment.deploy_log = "\n".join(deploy_log)
     db.session.commit()
+
+    # Resolve preview URL — only furnish it if TLS cert is ready
+    app_env = deployment.application_environment
+    env_url = _preview_url_for_app_env(app_env)
+    if env_url:
+        tls_ready = False
+        resource_prefix = k8s_resource_prefix(deployment.release_object)
+        for ing in app_env.ingresses:
+            if ing.enabled and any(
+                h.is_auto_generated and h.tls_enabled for h in ing.hosts
+            ):
+                tls_secret = f"{resource_prefix}-{ing.name}-tls"
+                log(f"Waiting for TLS certificate ({tls_secret})")
+                tls_ready = _wait_for_tls_secret(
+                    core_api_instance,
+                    namespace.metadata.name,
+                    tls_secret,
+                    log=log,
+                )
+                break
+        if not tls_ready:
+            env_url = None
+
     if (
         deployment.deploy_metadata
         and "installation_id" in deployment.deploy_metadata
@@ -1832,8 +1922,14 @@ def deploy_release(deployment):
             deployment.deploy_metadata["statuses_url"],
             "success",
             "Deployment complete!",
+            environment_url=env_url,
         )
-    maybe_update_pr_comment_for_app_env(deployment.application_environment)
+    detail = f"Application URL: {env_url}" if env_url else ""
+    check.succeed(
+        detail=detail,
+        details_url=cabotage_url(check.application, deploy_path),
+        **deploy_links,
+    )
 
 
 def fake_deploy_release(deployment):
