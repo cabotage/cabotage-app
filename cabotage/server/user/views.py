@@ -3865,8 +3865,6 @@ def project_application_logs_query(org_slug, project_slug, app_slug, env_slug=No
     hide_probes = request.args.get("hide_probes", "")
     health_check_path = app_env.effective_health_check_path if app_env else "/_health/"
 
-    print(f"Loki query: {logql} (start={start_ns}, end={end_ns}, limit={limit}, direction={direction})")
-
     streams = _query_loki(logql, start_ns, end_ns, limit=limit, direction=direction)
     if streams is None:
         return jsonify({"error": "query failed"}), 502
