@@ -1100,11 +1100,26 @@ def render_podspec(release, process_name, service_account_name):
     )
 
 
-def render_deployment(namespace, release, service_account_name, process_name):
+def render_deployment(
+    namespace, release, service_account_name, process_name, deployment_id
+):
     label_value = k8s_label_value(release)
     resource_prefix = k8s_resource_prefix(release)
     app_env = release.application_environment
+    env_slug = app_env.environment.slug if app_env.environment else ""
     process_counts = app_env.process_counts or {}
+    pod_labels = {
+        "organization": release.application.project.organization.slug,
+        "project": release.application.project.slug,
+        "application": release.application.slug,
+        "process": process_name,
+        "app": label_value,
+        "environment": env_slug,
+        "release": str(release.version),
+        "deployment": str(deployment_id),
+        "ca-admission.cabotage.io": "true",
+        "resident-pod.cabotage.io": "true",
+    }
     deployment_object = kubernetes.client.V1Deployment(
         metadata=kubernetes.client.V1ObjectMeta(
             name=f"{resource_prefix}-{process_name}",
@@ -1126,17 +1141,7 @@ def render_deployment(namespace, release, service_account_name, process_name):
                 },
             ),
             template=kubernetes.client.V1PodTemplateSpec(
-                metadata=kubernetes.client.V1ObjectMeta(
-                    labels={
-                        "organization": release.application.project.organization.slug,
-                        "project": release.application.project.slug,
-                        "application": release.application.slug,
-                        "process": process_name,
-                        "app": label_value,
-                        "ca-admission.cabotage.io": "true",
-                        "resident-pod.cabotage.io": "true",
-                    }
-                ),
+                metadata=kubernetes.client.V1ObjectMeta(labels=pod_labels),
                 spec=render_podspec(release, process_name, service_account_name),
             ),
         ),
@@ -1148,7 +1153,7 @@ def fetch_deployment(
     apps_api_instance, namespace, release, service_account_name, process_name
 ):
     deployment_object = render_deployment(
-        namespace, release, service_account_name, process_name
+        namespace, release, service_account_name, process_name, deployment_id=0
     )
     deployment = None
     try:
@@ -1188,10 +1193,15 @@ def deployment_is_complete(
 
 
 def create_deployment(
-    apps_api_instance, namespace, release, service_account_name, process_name
+    apps_api_instance,
+    namespace,
+    release,
+    service_account_name,
+    process_name,
+    deployment_id,
 ):
     deployment_object = render_deployment(
-        namespace, release, service_account_name, process_name
+        namespace, release, service_account_name, process_name, deployment_id
     )
     deployment = None
     try:
@@ -1735,6 +1745,7 @@ def deploy_release(deployment):
                 deployment.release_object,
                 service_account.metadata.name,
                 process_name,
+                deployment_id=deployment.id,
             )
 
         log("Waiting on deployment to rollout...")
@@ -2077,6 +2088,7 @@ def fake_deploy_release(deployment):
             deployment.release_object,
             service_account.metadata.name,
             process,
+            deployment_id=deployment.id,
         )
         deploy_log.append(
             f"Creating Deployment/{deployment_object.metadata.name} "
