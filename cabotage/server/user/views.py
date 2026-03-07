@@ -3838,9 +3838,12 @@ def project_application_logs_query(org_slug, project_slug, app_slug, env_slug=No
 
     # Build LogQL query — filter to user process containers
     process_names = sorted(app_env.process_counts or {})
+    env_slug = app_env.environment.slug if app_env.environment else ""
     selectors = [
         f'namespace="{namespace}"',
+        f'project="{application.project.slug}"',
         f'application="{application.slug}"',
+        f'environment="{env_slug}"',
     ]
     if process:
         selectors.append(f'pod_container_name="{process}"')
