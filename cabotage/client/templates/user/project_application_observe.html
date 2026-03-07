@@ -83,7 +83,9 @@
         {# Requests (stacked bars by status code class) #}
         <div class="card bg-base-200/50 border border-base-content/5">
           <div class="card-body p-4">
-            <h2 class="card-title text-sm font-medium text-base-content/70">{{ icon('zap', 'w-4 h-4') }} Requests</h2>
+            <div class="flex items-center justify-between">
+              <h2 class="card-title text-sm font-medium text-base-content/70">{{ icon('zap', 'w-4 h-4') }} Requests</h2>
+            </div>
             <div id="chart-requests" class="metric-panel" data-metric-panel>
               <div class="flex items-center justify-center h-full text-base-content/20">
                 {{ icon('loader', 'w-5 h-5 animate-spin') }}
@@ -92,10 +94,12 @@
           </div>
         </div>
 
-        {# Response Time (p50, p95, p99 lines) #}
+        {# Response Time (p50, p90, p95, p99 lines) #}
         <div class="card bg-base-200/50 border border-base-content/5">
           <div class="card-body p-4">
-            <h2 class="card-title text-sm font-medium text-base-content/70">{{ icon('clock', 'w-4 h-4') }} Response Time</h2>
+            <div class="flex items-center justify-between">
+              <h2 class="card-title text-sm font-medium text-base-content/70">{{ icon('clock', 'w-4 h-4') }} Response Time</h2>
+            </div>
             <div id="chart-latency" class="metric-panel" data-metric-panel>
               <div class="flex items-center justify-center h-full text-base-content/20">
                 {{ icon('loader', 'w-5 h-5 animate-spin') }}
@@ -145,9 +149,10 @@
   var REFRESH_MAP = { '1h': 15000, '6h': 60000, '24h': 60000 };
   var REFRESH_MS = REFRESH_MAP[RANGE] || 15000;
   var RANGE_SECS = { '1h': 3600, '6h': 21600, '24h': 86400 };
-  var NOW = Math.floor(Date.now() / 1000);
-  var X_MIN = NOW - (RANGE_SECS[RANGE] || 3600);
-  var X_MAX = NOW;
+  function xBounds() {
+    var now = Math.floor(Date.now() / 1000);
+    return { min: now - (RANGE_SECS[RANGE] || 3600), max: now };
+  }
 
   // Axis colors
   var AXIS_STROKE = 'rgba(0,0,0,0.5)';
@@ -276,6 +281,7 @@
         label: label,
         stroke: color,
         width: 1.5,
+        points: { show: false },
         value: ''
       });
     });
@@ -295,7 +301,7 @@
       plugins: [tooltipPlugin(valueFmt)],
       cursor: { drag: { x: false, y: false } },
       legend: { show: parsed.labels.length <= 4, live: false },
-      scales: { x: { time: true, min: X_MIN, max: X_MAX }, y: { range: function(u, dmin, dmax) { return [0, (dmax || 1) * 1.1]; } } }
+      scales: { x: { time: true, min: xBounds().min, max: xBounds().max }, y: { range: function(u, dmin, dmax) { return [0, (dmax || 1) * 1.1]; } } }
     };
     new uPlot(opts, parsed.data, el);
   }
@@ -366,7 +372,7 @@
       cursor: { drag: { x: false, y: false } },
       legend: { show: true, live: false },
       scales: {
-        x: { time: true, min: X_MIN, max: X_MAX },
+        x: { time: true, min: xBounds().min, max: xBounds().max },
         y: { range: function(u, dmin, dmax) { return [0, (dmax || 1) * 1.1]; } }
       }
     };
@@ -421,15 +427,18 @@
           el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/30 text-sm">No data</div>';
           return;
         }
-        // Determine label key based on group
+        // Determine label key and chart type based on group
         var labelKey = panel.labelKey;
+        var chartType = panel.type;
         if (metric === 'cpu' || metric === 'memory') {
           if (group === 'total') labelKey = '__total__';
           else if (group === 'process') labelKey = 'process';
           else labelKey = 'pod';
+        } else if (metric === 'errors') {
+          if (group === 'status') labelKey = 'label';
         }
         var short = (group === 'pod');
-        if (panel.type === 'bar') {
+        if (chartType === 'bar') {
           makeBarChart(el, data.result, labelKey, panel.fmt, panel.colors);
         } else {
           makeLineChart(el, data.result, labelKey, panel.fmt, short, panel.colors);

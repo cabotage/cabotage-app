@@ -3483,7 +3483,7 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
         err_step = max(step, 60)
         err_start = end - duration
         if group == "status":
-            # Per status code class error rates (4xx and 5xx)
+            # Per status code class error rates (4xx and 5xx separately)
             result = []
             for code_class, label in [("4", "4xx"), ("5", "5xx")]:
                 qr = _query_mimir_range(
@@ -3501,10 +3501,10 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
                     result.extend(qr)
             result = result if result else None
         else:
-            # Total error rate (4xx + 5xx combined)
+            # Total error rate (5xx only)
             result = _query_mimir_range(
                 f"sum(increase(traefik_service_requests_total"
-                f'{{service=~".*{escaped_prefix}.*", code=~"[45].."}}[{err_step}s]))'
+                f'{{service=~".*{escaped_prefix}.*", code=~"5.."}}[{err_step}s]))'
                 f" / sum(increase(traefik_service_requests_total"
                 f'{{service=~".*{escaped_prefix}.*"}}[{err_step}s]))',
                 err_start,
