@@ -3887,16 +3887,27 @@ def project_application_logs_query(org_slug, project_slug, app_slug, env_slug=No
         proc = labels.get("process", "")
         pod = labels.get("pod_name", "")
         for ts_ns, line in stream.get("values", []):
-            # Unwrap container runtime JSON wrapper if present
+            # Unwrap container runtime log wrappers
             message = line
-            try:
-                parsed = json.loads(line)
-                if isinstance(parsed, dict) and "log" in parsed:
-                    message = parsed["log"]
-                    if message.endswith("\n"):
-                        message = message[:-1]
-            except (json.JSONDecodeError, TypeError):
-                pass
+            log_stream = ""
+            # CRI format: "<timestamp> <stream> <flags> <message>"
+            # e.g. "2026-03-07T20:00:57.030Z stdout F actual log line"
+            if len(line) > 36 and line[0] == "2" and line[4] == "-":
+                parts = line.split(" ", 3)
+                if len(parts) == 4 and parts[1] in ("stdout", "stderr"):
+                    log_stream = parts[1]
+                    message = parts[3]
+            else:
+                # Docker JSON format: {"log":"...", "stream":"...", "time":"..."}
+                try:
+                    parsed = json.loads(line)
+                    if isinstance(parsed, dict) and "log" in parsed:
+                        message = parsed["log"]
+                        log_stream = parsed.get("stream", "")
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            if message.endswith("\n"):
+                message = message[:-1]
             # Server-side probe filtering
             if hide_probes and (
                 "kube-probe" in message
@@ -3908,6 +3919,7 @@ def project_application_logs_query(org_slug, project_slug, app_slug, env_slug=No
                     "ts": ts_ns,
                     "process": proc,
                     "pod": pod,
+                    "stream": log_stream,
                     "message": message,
                 }
             )
