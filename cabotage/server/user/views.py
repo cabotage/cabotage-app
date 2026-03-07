@@ -1,5 +1,6 @@
 import collections
 import datetime
+import json
 import re
 import time
 import threading
@@ -3717,3 +3718,204 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
             "processes": processes,
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# Loki log viewer
+# ---------------------------------------------------------------------------
+
+
+def _loki_connection():
+    """Return (loki_url, verify) tuple, or (None, None) if not configured."""
+    loki_url = current_app.config.get("LOKI_URL")
+    if not loki_url:
+        return None, None
+    verify = current_app.config.get("LOKI_VERIFY")
+    if verify is not None:
+        if isinstance(verify, str) and verify.lower() == "false":
+            verify = False
+    else:
+        verify = True
+    return loki_url, verify
+
+
+def _query_loki(query, start, end, limit=500, direction="backward"):
+    """Query Loki's query_range endpoint.
+
+    *start* and *end* are unix epoch **nanoseconds** (int or str).
+    Returns the parsed ``data.result`` list, or None on any error.
+    """
+    loki_url, verify = _loki_connection()
+    if not loki_url:
+        return None
+    try:
+        resp = requests_lib.get(
+            f"{loki_url}/loki/api/v1/query_range",
+            params={
+                "query": query,
+                "start": str(start),
+                "end": str(end),
+                "limit": limit,
+                "direction": direction,
+            },
+            verify=verify,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("status") == "success":
+            return data.get("data", {}).get("result", [])
+        return None
+    except Exception:
+        current_app.logger.debug("Loki query failed", exc_info=True)
+        return None
+
+
+def _escape_logql_line_filter(text):
+    """Escape special characters for a LogQL line-filter string literal."""
+    return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "")
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/logs",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/logs",
+    defaults={"env_slug": None},
+)
+@login_required
+def project_application_logs_view(org_slug, project_slug, app_slug, env_slug=None):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=False
+    )
+    environment = app_env.environment if app_env else None
+
+    loki_configured = bool(current_app.config.get("LOKI_URL"))
+    process_names = sorted(app_env.process_counts or {}) if app_env else []
+
+    return render_template(
+        "user/project_application_logs_view.html",
+        application=application,
+        environment=environment,
+        app_env=app_env,
+        loki_configured=loki_configured,
+        process_names=process_names,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/logs/query",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/logs/query",
+    defaults={"env_slug": None},
+)
+@login_required
+def project_application_logs_query(org_slug, project_slug, app_slug, env_slug=None):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=False
+    )
+
+    loki_url, _ = _loki_connection()
+    if not loki_url or not app_env:
+        return jsonify({"error": "not configured"}), 404
+
+    namespace = _compute_observe_namespace(application, app_env)
+
+    search = request.args.get("search", "").strip()
+    process = request.args.get("process", "").strip()
+    time_range = request.args.get("range", "1h")
+    limit = min(request.args.get("limit", 500, type=int), 5000)
+    end_ns = request.args.get("end", None)
+    start_param = request.args.get("start", None)
+
+    range_seconds = {"1h": 3600, "6h": 21600, "24h": 86400}.get(time_range, 3600)
+
+    if end_ns is not None:
+        try:
+            end_ns = int(end_ns)
+        except (ValueError, TypeError):
+            end_ns = None
+
+    if end_ns is None:
+        end_ns = int(time.time() * 1_000_000_000)
+
+    if start_param is not None:
+        try:
+            start_ns = int(start_param)
+        except (ValueError, TypeError):
+            start_ns = end_ns - (range_seconds * 1_000_000_000)
+    else:
+        start_ns = end_ns - (range_seconds * 1_000_000_000)
+
+    # Build LogQL query — filter to user process containers
+    process_names = sorted(app_env.process_counts or {})
+    selectors = [
+        f'namespace="{namespace}"',
+        f'application="{application.slug}"',
+    ]
+    if process:
+        selectors.append(f'pod_container_name="{process}"')
+    elif process_names:
+        selectors.append(f'pod_container_name=~"{"|".join(process_names)}"')
+    else:
+        selectors.append('pod_container_name!~"cabotage-.*"')
+
+    logql = "{" + ", ".join(selectors) + "}"
+
+    if search:
+        escaped = _escape_logql_line_filter(search)
+        logql += f' |= "{escaped}"'
+
+    direction = request.args.get("direction", "backward")
+    if direction not in ("backward", "forward"):
+        direction = "backward"
+
+    hide_probes = request.args.get("hide_probes", "")
+    health_check_path = app_env.effective_health_check_path if app_env else "/_health/"
+
+    streams = _query_loki(logql, start_ns, end_ns, limit=limit, direction=direction)
+    if streams is None:
+        return jsonify({"error": "query failed"}), 502
+
+    # Flatten streams into a sorted list of log entries
+    entries = []
+    for stream in streams:
+        labels = stream.get("stream", {})
+        proc = labels.get("process", "")
+        pod = labels.get("pod_name", "")
+        for ts_ns, line in stream.get("values", []):
+            # Unwrap container runtime JSON wrapper if present
+            message = line
+            try:
+                parsed = json.loads(line)
+                if isinstance(parsed, dict) and "log" in parsed:
+                    message = parsed["log"]
+                    if message.endswith("\n"):
+                        message = message[:-1]
+            except (json.JSONDecodeError, TypeError):
+                pass
+            # Server-side probe filtering
+            if hide_probes and (
+                "kube-probe" in message
+                or (health_check_path and health_check_path in message)
+            ):
+                continue
+            entries.append(
+                {
+                    "ts": ts_ns,
+                    "process": proc,
+                    "pod": pod,
+                    "message": message,
+                }
+            )
+
+    # Sort oldest first (chronological)
+    entries.sort(key=lambda e: e["ts"])
+
+    # Trim to limit
+    entries = entries[:limit]
+
+    return jsonify({"entries": entries})

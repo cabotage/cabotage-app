@@ -1,0 +1,323 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, app_tab_nav, app_resource_path %}
+
+{% set org_slug = application.project.organization.slug %}
+{% set project_slug = application.project.slug %}
+{% set app_slug = application.slug %}
+{% set env_slug = environment.slug if environment else none %}
+
+{% block title %}
+  Logs - {{ app_slug }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ app_resource_path(application, 'Logs', env=environment|default(none)) }}
+{% endblock resource_path %}
+
+{% block tab_bar %}
+  {{ app_tab_nav(application, 'logs', env=environment|default(none)) }}
+{% endblock tab_bar %}
+
+{% block content %}
+  <div class="settings-page">
+    <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+      <div>
+        <h1 class="text-lg font-semibold text-base-content">Logs</h1>
+        <p class="text-xs text-base-content/40">Application log output from Loki</p>
+      </div>
+    </div>
+
+    {% if not loki_configured %}
+      <div class="alert alert-warning">
+        {{ icon('alert-triangle', 'w-4 h-4') }}
+        <span>Logs are not configured. Set <code>CABOTAGE_LOKI_URL</code> to enable log viewing.</span>
+      </div>
+    {% else %}
+      {# Controls bar #}
+      <div class="flex items-center gap-3 mb-4 flex-wrap">
+        <div class="flex gap-1" id="log-range-pills">
+          {% for r in ['1h', '6h', '24h'] %}
+            <button data-range="{{ r }}"
+                    class="btn btn-sm {% if r == '1h' %}btn-primary{% else %}btn-ghost{% endif %}">{{ r }}</button>
+          {% endfor %}
+        </div>
+
+        <select id="log-process-filter" class="select select-bordered select-sm bg-base-100 text-base-content border-base-content/10">
+          <option value="">All processes</option>
+          {% for proc in process_names %}
+            <option value="{{ proc }}">{{ proc }}</option>
+          {% endfor %}
+        </select>
+
+        <input type="text"
+               id="log-search"
+               class="input input-bordered input-sm bg-base-100 text-base-content border-base-content/10 w-60 font-mono"
+               placeholder="Search logs...">
+
+        <label class="label cursor-pointer gap-2 ml-auto">
+          <span class="text-xs text-base-content/40">Show probes</span>
+          <input type="checkbox" id="log-show-probes" class="checkbox checkbox-xs checkbox-ghost">
+        </label>
+      </div>
+
+      {# Error alert (hidden by default) #}
+      <div id="log-error" class="alert alert-error mb-4 hidden">
+        {{ icon('alert-triangle', 'w-4 h-4') }}
+        <span id="log-error-msg"></span>
+      </div>
+
+      {# Loading spinner #}
+      <div id="log-loading" class="flex items-center justify-center py-8 hidden">
+        <span class="loading loading-spinner loading-md"></span>
+      </div>
+
+      {# Empty state #}
+      <div id="log-empty" class="hidden">
+        <div class="flex flex-col items-center justify-center py-12 text-base-content/40">
+          {{ icon('file-text', 'w-10 h-10') }}
+          <p class="mt-2 text-sm">No logs found</p>
+        </div>
+      </div>
+
+      {# Log table #}
+      <div id="log-table-wrap" class="log-frame hidden">
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th class="log-th-ts">Timestamp</th>
+              <th class="log-th-process">Process</th>
+              <th class="log-th-pod">Pod</th>
+              <th class="log-th-msg">Message</th>
+            </tr>
+          </thead>
+          <tbody id="log-tbody"></tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+
+  {% if loki_configured %}
+  <script>
+  (function() {
+    var queryUrl = {{ url_for('user.project_application_logs_query', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug)|tojson }};
+    var tbody = document.getElementById('log-tbody');
+    var tableWrap = document.getElementById('log-table-wrap');
+    var loading = document.getElementById('log-loading');
+    var empty = document.getElementById('log-empty');
+    var errorEl = document.getElementById('log-error');
+    var errorMsg = document.getElementById('log-error-msg');
+    var searchInput = document.getElementById('log-search');
+    var processFilter = document.getElementById('log-process-filter');
+    var rangePills = document.getElementById('log-range-pills');
+    var showProbes = document.getElementById('log-show-probes');
+
+    var currentRange = '1h';
+    var newestTs = null;
+    var debounceTimer = null;
+    var pollTimer = null;
+    var abortCtrl = null;
+    var userScrolled = false;
+    var MAX_ROWS = 800;
+    var POLL_FAST = 2000;
+    var POLL_SLOW = 10000;
+    var pollInterval = POLL_FAST;
+    var idleCount = 0;
+
+    // — process colors —
+    var COLORS = ['#8b5cf6','#06b6d4','#f59e0b','#3b82f6','#10b981','#ef4444'];
+    var colorMap = {}, colorIdx = 0;
+    function procColor(p) {
+      if (!colorMap[p]) { colorMap[p] = COLORS[colorIdx++ % COLORS.length]; }
+      return colorMap[p];
+    }
+
+    // — pod shortening cache —
+    var podCache = {};
+    function shortPod(pod, proc) {
+      if (podCache[pod]) return podCache[pod];
+      var r = pod;
+      if (proc) {
+        var i = pod.indexOf('-' + proc + '-');
+        if (i !== -1) {
+          var parts = pod.substring(i + 1).split('-');
+          r = parts.length >= 3 ? parts[0] + '-' + parts[parts.length - 1] : pod.substring(i + 1);
+        }
+      }
+      if (r === pod) { var p = pod.split('-'); r = p.length > 2 ? p.slice(-2).join('-') : pod; }
+      podCache[pod] = r;
+      return r;
+    }
+
+    // — timestamp formatting —
+    function formatTs(tsStr) {
+      var ms = tsStr.length > 6 ? Number(tsStr.slice(0, -6)) : 0;
+      var d = new Date(ms);
+      return d.toISOString().replace('T', ' ').replace('Z', '');
+    }
+
+    // — escape HTML —
+    var escEl = document.createElement('span');
+    function esc(s) { escEl.textContent = s; return escEl.innerHTML; }
+
+    // — build HTML string for entries —
+    function buildHTML(entries, cls) {
+      var parts = [];
+      for (var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        var color = e.process ? procColor(e.process) : '';
+        parts.push(
+          '<tr class="', cls, '">',
+          '<td class="log-ts">', formatTs(e.ts), '</td>',
+          '<td class="log-process" style="color:', color, '">', esc(e.process), '</td>',
+          '<td class="log-pod" title="', esc(e.pod), '">', esc(shortPod(e.pod, e.process)), '</td>',
+          '<td class="log-msg">', esc(e.message), '</td>',
+          '</tr>'
+        );
+      }
+      return parts.join('');
+    }
+
+    // — trim old rows from top —
+    function trimRows() {
+      var rows = tbody.children;
+      var excess = rows.length - MAX_ROWS;
+      if (excess <= 0) return;
+      var range = document.createRange();
+      range.setStartBefore(rows[0]);
+      range.setEndAfter(rows[excess - 1]);
+      range.deleteContents();
+    }
+
+    function scrollToBottom() {
+      tableWrap.scrollTop = tableWrap.scrollHeight;
+    }
+
+    tableWrap.addEventListener('scroll', function() {
+      userScrolled = (tableWrap.scrollHeight - tableWrap.scrollTop - tableWrap.clientHeight) > 40;
+    }, { passive: true });
+
+    // — increment nanosecond timestamp string by 1 —
+    function tsIncrement(tsStr) {
+      var digits = tsStr.split('');
+      for (var i = digits.length - 1; i >= 0; i--) {
+        var d = parseInt(digits[i], 10) + 1;
+        if (d < 10) { digits[i] = String(d); return digits.join(''); }
+        digits[i] = '0';
+      }
+      return '1' + digits.join('');
+    }
+
+    function cancelFetch() {
+      if (abortCtrl) { abortCtrl.abort(); abortCtrl = null; }
+    }
+
+    function fetchLogs(mode) {
+      cancelFetch();
+      if (mode === 'reset') {
+        userScrolled = false;
+        tbody.innerHTML = '';
+        newestTs = null;
+        idleCount = 0;
+        pollInterval = POLL_FAST;
+      }
+      if (mode !== 'newer') {
+        loading.classList.remove('hidden');
+        errorEl.classList.add('hidden');
+        empty.classList.add('hidden');
+        if (mode === 'reset') tableWrap.classList.add('hidden');
+      }
+
+      var params = new URLSearchParams();
+      params.set('range', currentRange);
+      params.set('limit', '500');
+      if (searchInput.value.trim()) params.set('search', searchInput.value.trim());
+      if (processFilter.value) params.set('process', processFilter.value);
+      if (!showProbes.checked) params.set('hide_probes', '1');
+
+      if (mode === 'newer' && newestTs) {
+        params.set('start', tsIncrement(newestTs));
+        params.set('direction', 'forward');
+      }
+
+      abortCtrl = new AbortController();
+      fetch(queryUrl + '?' + params.toString(), { signal: abortCtrl.signal })
+        .then(function(r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(function(data) {
+          abortCtrl = null;
+          loading.classList.add('hidden');
+          if (data.error) {
+            if (mode !== 'newer') { errorMsg.textContent = data.error; errorEl.classList.remove('hidden'); }
+            schedulePoll();
+            return;
+          }
+          var entries = data.entries || [];
+
+          if (mode === 'newer') {
+            if (entries.length === 0) {
+              // Back off when idle
+              idleCount++;
+              if (idleCount > 3) pollInterval = Math.min(pollInterval * 2, POLL_SLOW);
+              schedulePoll();
+              return;
+            }
+            // Got data — reset to fast polling
+            idleCount = 0;
+            pollInterval = POLL_FAST;
+            newestTs = entries[entries.length - 1].ts;
+            tbody.insertAdjacentHTML('beforeend', buildHTML(entries, entries.length < 20 ? 'log-row log-row-new' : 'log-row'));
+            tableWrap.classList.remove('hidden');
+            empty.classList.add('hidden');
+            if (!userScrolled) { trimRows(); scrollToBottom(); }
+            schedulePoll();
+            return;
+          }
+
+          if (entries.length === 0 && mode === 'reset') { empty.classList.remove('hidden'); schedulePoll(); return; }
+          tableWrap.classList.remove('hidden');
+          tbody.insertAdjacentHTML('beforeend', buildHTML(entries, 'log-row'));
+          if (entries.length > 0) newestTs = entries[entries.length - 1].ts;
+          scrollToBottom();
+          schedulePoll();
+        })
+        .catch(function(err) {
+          abortCtrl = null;
+          if (err.name === 'AbortError') return;  // cancelled, don't schedule
+          loading.classList.add('hidden');
+          if (mode !== 'newer') { errorMsg.textContent = err.message || 'Failed to fetch logs'; errorEl.classList.remove('hidden'); }
+          schedulePoll();
+        });
+    }
+
+    function schedulePoll() {
+      stopPolling();
+      pollTimer = setTimeout(function() { fetchLogs('newer'); }, pollInterval);
+    }
+    function stopPolling() { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; } }
+    function resetAndPoll() { stopPolling(); cancelFetch(); fetchLogs('reset'); }
+
+    rangePills.addEventListener('click', function(ev) {
+      var btn = ev.target.closest('[data-range]');
+      if (!btn) return;
+      rangePills.querySelectorAll('button').forEach(function(b) { b.classList.remove('btn-primary'); b.classList.add('btn-ghost'); });
+      btn.classList.remove('btn-ghost'); btn.classList.add('btn-primary');
+      currentRange = btn.dataset.range;
+      resetAndPoll();
+    });
+    processFilter.addEventListener('change', function() { resetAndPoll(); });
+    searchInput.addEventListener('input', function() {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(function() { resetAndPoll(); }, 300);
+    });
+    showProbes.addEventListener('change', function() { resetAndPoll(); });
+    document.addEventListener('visibilitychange', function() {
+      if (document.hidden) { stopPolling(); cancelFetch(); } else { idleCount = 0; pollInterval = POLL_FAST; schedulePoll(); }
+    });
+
+    fetchLogs('reset');
+  })();
+  </script>
+  {% endif %}
+{% endblock content %}

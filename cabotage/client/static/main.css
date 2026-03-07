@@ -4167,3 +4167,20 @@ a.obs-pod-link:hover {
 .ingress-collapse .label { padding: 0; }
 .ingress-collapse .label .text-sm { font-size: 0.75rem; }
 .ingress-collapse .checkbox { width: 0.875rem; height: 0.875rem; }
+
+/* Log viewer */
+.log-frame { height: calc(100vh - 280px); min-height: 300px; overflow-y: auto; border: 1px solid oklch(var(--bc) / 0.08); border-radius: 0.5rem; }
+.log-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 0.7rem; line-height: 1.3; }
+.log-table th { position: sticky; top: 0; z-index: 2; background: oklch(var(--b1)); text-align: left; padding: 0.2rem 0.4rem; font-weight: 600; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.05em; color: oklch(var(--bc) / 0.4); border-bottom: 1px solid oklch(var(--bc) / 0.08); }
+.log-row { border-bottom: 1px solid oklch(var(--bc) / 0.03); }
+.log-row:hover { background: oklch(var(--bc) / 0.05); }
+.log-ts { width: 160px; white-space: nowrap; color: oklch(var(--bc) / 0.4); font-family: ui-monospace, monospace; font-size: 0.65rem; padding: 0.15rem 0.4rem; vertical-align: top; }
+.log-process { width: 70px; padding: 0.15rem 0.4rem; vertical-align: top; font-family: ui-monospace, monospace; font-size: 0.65rem; font-weight: 600; }
+.log-pod { width: 100px; color: oklch(var(--bc) / 0.35); font-family: ui-monospace, monospace; font-size: 0.65rem; padding: 0.15rem 0.4rem; vertical-align: top; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100px; }
+.log-msg { font-family: ui-monospace, monospace; font-size: 0.65rem; padding: 0.15rem 0.4rem; white-space: pre-wrap; word-break: break-all; vertical-align: top; }
+.log-th-ts { width: 160px; }
+.log-th-process { width: 70px; }
+.log-th-pod { width: 100px; }
+.log-th-msg { }
+@keyframes log-new-fade { from { background: oklch(var(--p) / 0.08); } to { background: transparent; } }
+.log-row-new { animation: log-new-fade 2s ease-out; }

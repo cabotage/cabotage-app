@@ -100,6 +100,13 @@
       {% else %}
       <span class="tab-item tab-disabled">{{ icon('bar-chart', 'w-4 h-4') }} Observe</span>
       {% endif %}
+      {% if config.LOKI_URL %}
+      <a href="{{ url_for('user.project_application_logs_view', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
+         class="tab-item
+                {% if active == 'logs' %}tab-active{% endif %}">{{ icon('file-text', 'w-4 h-4') }} Logs</a>
+      {% else %}
+      <span class="tab-item tab-disabled">{{ icon('file-text', 'w-4 h-4') }} Logs</span>
+      {% endif %}
       <a href="{{ overview_url }}#config"
          class="tab-item
                 {% if active == 'config' %}tab-active{% endif %}">
