@@ -4180,5 +4180,7 @@ a.obs-pod-link:hover {
 .log-th-process { width: 70px; }
 .log-th-pod { width: 100px; }
 .log-th-msg { }
+.log-row-stderr { background: oklch(var(--er) / 0.06); }
+.log-row-stderr .log-msg { color: oklch(var(--er) / 0.85); }
 @keyframes log-new-fade { from { background: oklch(var(--p) / 0.08); } to { background: transparent; } }
 .log-row-new { animation: log-new-fade 2s ease-out; }
