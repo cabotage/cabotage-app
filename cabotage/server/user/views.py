@@ -3422,7 +3422,8 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
     duration = range_map.get(range_param, 3600)
     step = step_map.get(range_param, 15)
 
-    end = int(time.time())
+    # Align start/end to step boundaries for clean bucket alignment
+    end = int(time.time()) // step * step
     start = end - duration
 
     result = None
@@ -3460,14 +3461,17 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
             q = f"sum(container_memory_working_set_bytes{{{labels}}}) {by_clause}"
         result = _query_mimir_range(q, start, end, step)
     elif metric == "requests":
+        # Use 60s minimum bucket for clean per-minute counts
+        req_step = max(step, 60)
+        req_start = end - duration
         result = []
         for code_class in ["2", "3", "4", "5"]:
             qr = _query_mimir_range(
                 f"sum(increase(traefik_service_requests_total"
-                f'{{service=~".*{escaped_prefix}.*", code=~"{code_class}.."}}[{step}s]))',
-                start,
+                f'{{service=~".*{escaped_prefix}.*", code=~"{code_class}.."}}[{req_step}s]))',
+                req_start,
                 end,
-                step,
+                req_step,
             )
             if qr:
                 for series in qr:
@@ -3475,18 +3479,21 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
                 result.extend(qr)
         result = result if result else None
     elif metric == "errors":
+        # Use 60s minimum bucket for clean per-minute rates
+        err_step = max(step, 60)
+        err_start = end - duration
         if group == "status":
             # Per status code class error rates (4xx and 5xx)
             result = []
             for code_class, label in [("4", "4xx"), ("5", "5xx")]:
                 qr = _query_mimir_range(
                     f"sum(increase(traefik_service_requests_total"
-                    f'{{service=~".*{escaped_prefix}.*", code=~"{code_class}.."}}[{step}s]))'
+                    f'{{service=~".*{escaped_prefix}.*", code=~"{code_class}.."}}[{err_step}s]))'
                     f" / sum(increase(traefik_service_requests_total"
-                    f'{{service=~".*{escaped_prefix}.*"}}[{step}s]))',
-                    start,
+                    f'{{service=~".*{escaped_prefix}.*"}}[{err_step}s]))',
+                    err_start,
                     end,
-                    step,
+                    err_step,
                 )
                 if qr:
                     for series in qr:
@@ -3497,12 +3504,12 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
             # Total error rate (4xx + 5xx combined)
             result = _query_mimir_range(
                 f"sum(increase(traefik_service_requests_total"
-                f'{{service=~".*{escaped_prefix}.*", code=~"[45].."}}[{step}s]))'
+                f'{{service=~".*{escaped_prefix}.*", code=~"[45].."}}[{err_step}s]))'
                 f" / sum(increase(traefik_service_requests_total"
-                f'{{service=~".*{escaped_prefix}.*"}}[{step}s]))',
-                start,
+                f'{{service=~".*{escaped_prefix}.*"}}[{err_step}s]))',
+                err_start,
                 end,
-                step,
+                err_step,
             )
             if result:
                 for series in result:
