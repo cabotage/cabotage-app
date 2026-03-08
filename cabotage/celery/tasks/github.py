@@ -1,7 +1,6 @@
 import datetime
 import logging
 
-import requests
 from celery import shared_task
 from sqlalchemy import and_, or_
 from sqlalchemy.orm.exc import MultipleResultsFound, NoResultFound
@@ -28,7 +27,7 @@ from cabotage.celery.tasks.branch_deploy import (
     sync_branch_deploy,
     teardown_branch_deploy,
 )
-from cabotage.utils.github import post_deployment_status_update
+from cabotage.utils.github import github_session, post_deployment_status_update
 
 Activity = activity_plugin.activity_cls
 logger = logging.getLogger(__name__)
@@ -172,7 +171,7 @@ def process_deployment_hook(hook):
             return False
         application = app_env.application
 
-        access_token_response = requests.post(
+        access_token_response = github_session.post(
             f"https://api.github.com/app/installations/{installation_id}/access_tokens",
             headers={
                 "Accept": "application/vnd.github.machine-man-preview+json",
@@ -258,7 +257,7 @@ def create_deployment(
     try:
         environment_string = app_env.effective_github_environment_name
 
-        deployment_response = requests.post(
+        deployment_response = github_session.post(
             f"https://api.github.com/repos/{repository_name}/deployments",
             headers={
                 "Accept": "application/vnd.github.machine-man-preview+json",
@@ -268,16 +267,21 @@ def create_deployment(
                 "ref": ref,
                 "auto_merge": False,
                 "environment": environment_string,
+                # Skip GitHub's default required-contexts check — we already
+                # know CI passed (we're responding to a successful check_suite).
+                # Without this, our own in-progress check runs from earlier
+                # deployments in the same batch can cause a 409 Conflict.
+                "required_contexts": [],
             },
             timeout=10,
         )
+        deployment_response.raise_for_status()
         post_deployment_status_update(
             access_token["token"],
             deployment_response.json()["statuses_url"],
             "pending",
             "Deployment created.",
         )
-        deployment_response.raise_for_status()
     except Exception:
         return False
     return True
@@ -331,6 +335,12 @@ def process_check_suite_hook(hook):
 
     hook.commit_sha = commit_sha
 
+    # Ignore check suites created by our own app (e.g. from our check runs)
+    # to avoid an infinite deploy loop.
+    suite_app_id = hook.payload["check_suite"].get("app", {}).get("id")
+    if suite_app_id and str(suite_app_id) == str(github_app.app_id):
+        return False
+
     if hook.payload["check_suite"]["conclusion"] == "success":
         pushes = (
             Hook.query.filter(Hook.commit_sha == hook.commit_sha)
@@ -368,7 +378,7 @@ def process_check_suite_hook(hook):
             )
             return False
 
-        access_token_response = requests.post(
+        access_token_response = github_session.post(
             f"https://api.github.com/app/installations/{installation_id}/access_tokens",
             headers={
                 "Accept": "application/vnd.github.machine-man-preview+json",
@@ -393,6 +403,7 @@ def process_check_suite_hook(hook):
             print(
                 f"ignoring check_suite without push for {repository_name}@{commit_sha}"
             )
+            return False
 
         if push_event.deployed:
             print(
@@ -401,24 +412,23 @@ def process_check_suite_hook(hook):
             )
             return False
 
-        results = []
+        # Mark deployed *before* creating deployments to prevent races
+        # between concurrent check_suite webhooks for the same SHA.
+        push_event.deployed = True
+        db.session.commit()
+
         for app_env in env_matches:
             print(
                 f"deploying {repository_name}@{commit_sha} to "
                 f"{app_env.application.id} env {app_env.environment.slug}"
             )
-            deployment_result = create_deployment(
+            create_deployment(
                 access_token=access_token,
                 application=app_env.application,
                 repository_name=repository_name,
                 ref=commit_sha,
                 app_env=app_env,
             )
-            results.append(deployment_result)
-
-        if all(results):
-            push_event.deployed = True
-            db.session.commit()
 
 
 def process_pull_request_hook(hook):
@@ -484,17 +494,24 @@ def process_github_hook(hook_id):
     hook = Hook.query.filter_by(id=hook_id).first()
     event = hook.headers["X-Github-Event"]
     if event == "deployment":
-        if hook.commit_sha is not None:
-            installation_id = hook.payload.get("installation", {}).get("id")
+        commit_sha = hook.payload.get("deployment", {}).get("sha")
+        if commit_sha:
+            installation_id = str(hook.payload.get("installation", {}).get("id", ""))
             environment = hook.payload.get("deployment", {}).get("environment")
-            existing_hooks = (
-                Hook.query.filter(Hook.commit_sha == hook.commit_sha)
+            # Find the earliest hook for this SHA + installation + environment.
+            # Only the first one should proceed; later duplicates are skipped.
+            first_hook = (
+                Hook.query.filter(Hook.headers["X-Github-Event"].astext == "deployment")
+                .filter(Hook.payload["deployment"]["sha"].astext == commit_sha)
                 .filter(Hook.payload["installation"]["id"].astext == installation_id)
                 .filter(Hook.payload["deployment"]["environment"].astext == environment)
-                .count()
+                .order_by(Hook.created)
+                .first()
             )
-            if existing_hooks > 1:
-                return True  # we _should_ mark this deploy as complete
+            if first_hook and first_hook.id != hook.id:
+                hook.processed = True
+                db.session.commit()
+                return True
         hook.processed = process_deployment_hook(hook)
         db.session.commit()
     if event == "push":

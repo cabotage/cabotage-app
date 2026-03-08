@@ -40,12 +40,45 @@ from cabotage.utils.build_log_stream import (
     refresh_heartbeat,
     stream_key,
 )
-from cabotage.utils.github import post_deployment_status_update
-from cabotage.celery.tasks.branch_deploy import maybe_update_pr_comment_for_app_env
+from cabotage.utils.github import (
+    CheckRun,
+    cabotage_url,
+    post_deployment_status_update,
+)
 
 
 class DeployError(RuntimeError):
     pass
+
+
+def _preview_url_for_app_env(app_env):
+    """Return the https:// URL for the first auto-generated ingress host, or None."""
+    for ingress in app_env.ingresses:
+        if not ingress.enabled:
+            continue
+        for host in ingress.hosts:
+            if host.is_auto_generated and host.tls_enabled:
+                return f"https://{host.hostname}"
+    return None
+
+
+def _wait_for_tls_secret(core_api, namespace, secret_name, timeout=120, log=None):
+    """Poll until a TLS secret exists with cert data, or timeout."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            secret = core_api.read_namespaced_secret(secret_name, namespace)
+            if secret.data and "tls.crt" in secret.data:
+                if log:
+                    log(f"TLS secret {secret_name} is ready")
+                return True
+        except ApiException as exc:
+            if exc.status != 404:
+                raise
+        time.sleep(5)
+    if log:
+        log(f"TLS secret {secret_name} not ready after {timeout}s, proceeding anyway")
+    return False
 
 
 def k8s_namespace(release):
@@ -328,6 +361,28 @@ def fetch_service(core_api_instance, release, process_name):
     return service
 
 
+def _ingress_hostname_pairs(app_env):
+    """Build (slug, k8s_identifier) pairs for ingress hostname generation.
+
+    Skips the environment pair when environments are not enabled so that
+    non-environment apps don't get "default" baked into their hostnames.
+    """
+    app = app_env.application
+    org = app.project.organization
+    project = app.project
+    pairs = [(org.slug, org.k8s_identifier)]
+    if app.project.environments_enabled:
+        env = app_env.environment
+        pairs.append((env.slug, env.k8s_identifier))
+    pairs.extend(
+        [
+            (project.slug, project.k8s_identifier),
+            (app.slug, app.k8s_identifier),
+        ]
+    )
+    return pairs
+
+
 def render_ingress(release, ingress):
     """Build a V1Ingress from an Ingress model record."""
     if not ingress.enabled:
@@ -393,7 +448,25 @@ def render_ingress(release, ingress):
         )
 
     if not k8s_paths:
-        return None
+        # No explicit paths — default to "/" routing to first web process
+        web_procs = sorted(p for p in release.processes if p.startswith("web"))
+        if not web_procs:
+            return None
+        target_service = f"{resource_prefix}-{web_procs[0]}"
+        k8s_paths.append(
+            kubernetes.client.V1HTTPIngressPath(
+                path="/",
+                path_type="Prefix",
+                backend=kubernetes.client.V1IngressBackend(
+                    service=kubernetes.client.V1IngressServiceBackend(
+                        name=target_service,
+                        port=kubernetes.client.V1ServiceBackendPort(
+                            number=8000,
+                        ),
+                    ),
+                ),
+            )
+        )
 
     tls_hosts = []
     rules = []
@@ -1027,11 +1100,26 @@ def render_podspec(release, process_name, service_account_name):
     )
 
 
-def render_deployment(namespace, release, service_account_name, process_name):
+def render_deployment(
+    namespace, release, service_account_name, process_name, deployment_id
+):
     label_value = k8s_label_value(release)
     resource_prefix = k8s_resource_prefix(release)
     app_env = release.application_environment
+    env_slug = app_env.environment.slug if app_env.environment else ""
     process_counts = app_env.process_counts or {}
+    pod_labels = {
+        "organization": release.application.project.organization.slug,
+        "project": release.application.project.slug,
+        "application": release.application.slug,
+        "process": process_name,
+        "app": label_value,
+        "environment": env_slug,
+        "release": str(release.version),
+        "deployment": str(deployment_id),
+        "ca-admission.cabotage.io": "true",
+        "resident-pod.cabotage.io": "true",
+    }
     deployment_object = kubernetes.client.V1Deployment(
         metadata=kubernetes.client.V1ObjectMeta(
             name=f"{resource_prefix}-{process_name}",
@@ -1053,17 +1141,7 @@ def render_deployment(namespace, release, service_account_name, process_name):
                 },
             ),
             template=kubernetes.client.V1PodTemplateSpec(
-                metadata=kubernetes.client.V1ObjectMeta(
-                    labels={
-                        "organization": release.application.project.organization.slug,
-                        "project": release.application.project.slug,
-                        "application": release.application.slug,
-                        "process": process_name,
-                        "app": label_value,
-                        "ca-admission.cabotage.io": "true",
-                        "resident-pod.cabotage.io": "true",
-                    }
-                ),
+                metadata=kubernetes.client.V1ObjectMeta(labels=pod_labels),
                 spec=render_podspec(release, process_name, service_account_name),
             ),
         ),
@@ -1075,7 +1153,7 @@ def fetch_deployment(
     apps_api_instance, namespace, release, service_account_name, process_name
 ):
     deployment_object = render_deployment(
-        namespace, release, service_account_name, process_name
+        namespace, release, service_account_name, process_name, deployment_id=0
     )
     deployment = None
     try:
@@ -1115,10 +1193,15 @@ def deployment_is_complete(
 
 
 def create_deployment(
-    apps_api_instance, namespace, release, service_account_name, process_name
+    apps_api_instance,
+    namespace,
+    release,
+    service_account_name,
+    process_name,
+    deployment_id,
 ):
     deployment_object = render_deployment(
-        namespace, release, service_account_name, process_name
+        namespace, release, service_account_name, process_name, deployment_id
     )
     deployment = None
     try:
@@ -1458,6 +1541,30 @@ def deploy_release(deployment):
             except Exception:  # nosec B110
                 pass
 
+    # Pick up check run from the build pipeline metadata
+    check = CheckRun.from_metadata(
+        deployment.deploy_metadata,
+        deployment.application_environment,
+    )
+    deploy_path = f"deployments/{deployment.id}"
+    release_id = deployment.release.get("id") if deployment.release else None
+    release_obj = deployment.release_object
+    image_id = (
+        release_obj.image.get("id") if release_obj and release_obj.image else None
+    )
+    deploy_links = {"Deployment": deploy_path}
+    if release_id:
+        deploy_links["Release"] = f"releases/{release_id}"
+    if image_id:
+        deploy_links["Image"] = f"images/{image_id}"
+
+    check.progress(
+        "Deploying...",
+        detail="Image and release built successfully.",
+        details_url=cabotage_url(check.application, deploy_path),
+        **deploy_links,
+    )
+
     try:
         log("Constructing API Clients")
         api_client = kubernetes_ext.kubernetes_client
@@ -1506,26 +1613,33 @@ def deploy_release(deployment):
         if current_app.config.get("INGRESS_DOMAIN"):
             ingress_domain = current_app.config["INGRESS_DOMAIN"]
             app_env = deployment.application_environment
-            # Fix up auto-generated hostnames to include environment
-            app = deployment.release_object.application
-            org = app.project.organization
-            project = app.project
-            env = app_env.environment
+            hostname_pairs = _ingress_hostname_pairs(app_env)
             changed = False
             for ing in app_env.ingresses:
-                for host in ing.hosts:
-                    if not host.is_auto_generated:
-                        continue
-                    expected = (
-                        f"{readable_k8s_hostname((org.slug, org.k8s_identifier), (env.slug, env.k8s_identifier), (project.slug, project.k8s_identifier), (app.slug, app.k8s_identifier))}"
-                        f"-{ing.name}.{ingress_domain}"
-                    )
-                    if host.hostname != expected:
+                auto_hosts = [h for h in ing.hosts if h.is_auto_generated]
+                existing_hostnames = {h.hostname for h in ing.hosts}
+                expected = (
+                    f"{readable_k8s_hostname(*hostname_pairs)}"
+                    f"-{ing.name}.{ingress_domain}"
+                )
+                has_expected = expected in existing_hostnames
+                if not has_expected:
+                    # Keep old auto-generated hosts as manual so DNS keeps
+                    # working, then add the new canonical auto-generated host.
+                    for host in auto_hosts:
                         log(
-                            f"Updating auto-generated hostname: {host.hostname} -> {expected}"
+                            f"Demoting old auto-generated hostname to manual: {host.hostname}"
                         )
-                        host.hostname = expected
-                        changed = True
+                        host.is_auto_generated = False
+                    db.session.add(
+                        IngressHost(
+                            ingress_id=ing.id,
+                            hostname=expected,
+                            tls_enabled=True,
+                            is_auto_generated=True,
+                        )
+                    )
+                    changed = True
             if changed:
                 db.session.commit()
                 db.session.refresh(app_env)
@@ -1542,7 +1656,7 @@ def deploy_release(deployment):
                         db.session.add(ingress_obj)
                         db.session.flush()
                         auto_hostname = (
-                            f"{readable_k8s_hostname((org.slug, org.k8s_identifier), (env.slug, env.k8s_identifier), (project.slug, project.k8s_identifier), (app.slug, app.k8s_identifier))}"
+                            f"{readable_k8s_hostname(*hostname_pairs)}"
                             f"-{process_name}.{ingress_domain}"
                         )
                         db.session.add(
@@ -1631,6 +1745,7 @@ def deploy_release(deployment):
                 deployment.release_object,
                 service_account.metadata.name,
                 process_name,
+                deployment_id=deployment.id,
             )
 
         log("Waiting on deployment to rollout...")
@@ -1737,7 +1852,12 @@ def deploy_release(deployment):
                 pass
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
-        maybe_update_pr_comment_for_app_env(deployment.application_environment)
+        check.fail(
+            "Deployment failed",
+            detail=str(exc),
+            details_url=cabotage_url(check.application, deploy_path),
+            Deployment=deploy_path,
+        )
         return False
     except Exception as exc:
         deployment.error = True
@@ -1763,7 +1883,12 @@ def deploy_release(deployment):
                 pass
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
-        maybe_update_pr_comment_for_app_env(deployment.application_environment)
+        check.fail(
+            "Deployment failed",
+            detail=str(exc),
+            details_url=cabotage_url(check.application, deploy_path),
+            Deployment=deploy_path,
+        )
         return False
     if redis_client is not None and log_key is not None:
         try:
@@ -1772,6 +1897,29 @@ def deploy_release(deployment):
             pass
     deployment.deploy_log = "\n".join(deploy_log)
     db.session.commit()
+
+    # Resolve preview URL — only furnish it if TLS cert is ready
+    app_env = deployment.application_environment
+    env_url = _preview_url_for_app_env(app_env)
+    if env_url:
+        tls_ready = False
+        resource_prefix = k8s_resource_prefix(deployment.release_object)
+        for ing in app_env.ingresses:
+            if ing.enabled and any(
+                h.is_auto_generated and h.tls_enabled for h in ing.hosts
+            ):
+                tls_secret = f"{resource_prefix}-{ing.name}-tls"
+                log(f"Waiting for TLS certificate ({tls_secret})")
+                tls_ready = _wait_for_tls_secret(
+                    core_api_instance,
+                    namespace.metadata.name,
+                    tls_secret,
+                    log=log,
+                )
+                break
+        if not tls_ready:
+            env_url = None
+
     if (
         deployment.deploy_metadata
         and "installation_id" in deployment.deploy_metadata
@@ -1785,8 +1933,14 @@ def deploy_release(deployment):
             deployment.deploy_metadata["statuses_url"],
             "success",
             "Deployment complete!",
+            environment_url=env_url,
         )
-    maybe_update_pr_comment_for_app_env(deployment.application_environment)
+    detail = f"Application URL: {env_url}" if env_url else ""
+    check.succeed(
+        detail=detail,
+        details_url=cabotage_url(check.application, deploy_path),
+        **deploy_links,
+    )
 
 
 def fake_deploy_release(deployment):
@@ -1833,26 +1987,31 @@ def fake_deploy_release(deployment):
     if current_app.config.get("INGRESS_DOMAIN"):
         ingress_domain = current_app.config["INGRESS_DOMAIN"]
         app_env = deployment.application_environment
-        # Fix up auto-generated hostnames to include environment
-        app = deployment.release_object.application
-        org = app.project.organization
-        project = app.project
-        env = app_env.environment
+        hostname_pairs = _ingress_hostname_pairs(app_env)
         changed = False
         for ing in app_env.ingresses:
-            for host in ing.hosts:
-                if not host.is_auto_generated:
-                    continue
-                expected = (
-                    f"{readable_k8s_hostname((org.slug, org.k8s_identifier), (env.slug, env.k8s_identifier), (project.slug, project.k8s_identifier), (app.slug, app.k8s_identifier))}"
-                    f"-{ing.name}.{ingress_domain}"
-                )
-                if host.hostname != expected:
+            auto_hosts = [h for h in ing.hosts if h.is_auto_generated]
+            existing_hostnames = {h.hostname for h in ing.hosts}
+            expected = (
+                f"{readable_k8s_hostname(*hostname_pairs)}"
+                f"-{ing.name}.{ingress_domain}"
+            )
+            has_expected = expected in existing_hostnames
+            if not has_expected:
+                for host in auto_hosts:
                     deploy_log.append(
-                        f"Updating auto-generated hostname: {host.hostname} -> {expected}"
+                        f"Demoting old auto-generated hostname to manual: {host.hostname}"
                     )
-                    host.hostname = expected
-                    changed = True
+                    host.is_auto_generated = False
+                db.session.add(
+                    IngressHost(
+                        ingress_id=ing.id,
+                        hostname=expected,
+                        tls_enabled=True,
+                        is_auto_generated=True,
+                    )
+                )
+                changed = True
         if changed:
             db.session.commit()
             db.session.refresh(app_env)
@@ -1869,7 +2028,7 @@ def fake_deploy_release(deployment):
                     db.session.add(ingress_rec)
                     db.session.flush()
                     auto_hostname = (
-                        f"{readable_k8s_hostname((org.slug, org.k8s_identifier), (env.slug, env.k8s_identifier), (project.slug, project.k8s_identifier), (app.slug, app.k8s_identifier))}"
+                        f"{readable_k8s_hostname(*hostname_pairs)}"
                         f"-{process_name}.{ingress_domain}"
                     )
                     db.session.add(
@@ -1929,6 +2088,7 @@ def fake_deploy_release(deployment):
             deployment.release_object,
             service_account.metadata.name,
             process,
+            deployment_id=deployment.id,
         )
         deploy_log.append(
             f"Creating Deployment/{deployment_object.metadata.name} "

@@ -81,6 +81,8 @@ def _teardown_environment(environment):
     """Delete k8s namespace and all DB records for an ephemeral environment."""
     import kubernetes
 
+    from cabotage.celery.tasks.build import build_cache_pvc_name
+
     if current_app.config["KUBERNETES_ENABLED"]:
         org = environment.project.organization
         ns_name = safe_k8s_name(org.k8s_identifier, environment.k8s_identifier)
@@ -91,6 +93,20 @@ def _teardown_environment(environment):
         except ApiException as exc:
             if exc.status != 404:
                 raise
+
+        # Clean up build cache PVCs
+        for app_env in environment.application_environments:
+            pvc_name = build_cache_pvc_name(app_env)
+            try:
+                core_api.delete_namespaced_persistent_volume_claim(
+                    pvc_name, "default", propagation_policy="Foreground"
+                )
+                logger.info("Deleted build cache PVC %s", pvc_name)
+            except ApiException as exc:
+                if exc.status != 404:
+                    logger.warning(
+                        "Failed to delete build cache PVC %s: %s", pvc_name, exc
+                    )
 
     for app_env in environment.application_environments:
         for config in list(app_env.configurations):
@@ -154,9 +170,9 @@ def _app_env_status(app_env):
 
     if new_pipeline:
         if not image.built and not image.error:
-            return ("\u23f3", "Building", f"images/{image.id}", image.updated)
+            return ("\u23f3", "Building Image", f"images/{image.id}", image.updated)
         if image.error:
-            return ("\u274c", "Build Failed", f"images/{image.id}", image.updated)
+            return ("\u274c", "Image Build Failed", f"images/{image.id}", image.updated)
 
         release = app_env.latest_release
         if release and release.created >= image.created:
@@ -213,6 +229,17 @@ def _app_env_status(app_env):
     return ("\u23f3", "Pending", None, None)
 
 
+def _preview_url(app_env):
+    """Return the https:// URL for the first auto-generated ingress host, or None."""
+    for ingress in app_env.ingresses:
+        if not ingress.enabled:
+            continue
+        for host in ingress.hosts:
+            if host.is_auto_generated and host.tls_enabled:
+                return f"https://{host.hostname}"
+    return None
+
+
 def _render_pr_comment_body(environment):
     """Render the markdown body for a branch deploy PR comment."""
     project = environment.project
@@ -226,8 +253,8 @@ def _render_pr_comment_body(environment):
     lines = [
         f"**Branch Deploy** for `{environment.slug}` " f"in **{project.name}**",
         "",
-        "| Service | Status | Updated (UTC) |",
-        "| :--- | :--- | :--- |",
+        "| Service | Status | Preview | Updated (UTC) |",
+        "| :--- | :--- | :--- | :--- |",
     ]
 
     for app_env in environment.application_environments:
@@ -240,12 +267,17 @@ def _render_pr_comment_body(environment):
         else:
             status = f"{emoji} {label}"
 
+        preview = ""
+        url = _preview_url(app_env)
+        if url and label == "Deployed":
+            preview = f"[Open]({url})"
+
         if updated_at:
             ts = updated_at.strftime("%b %-d, %Y at %-I:%M %p")
         else:
             ts = ""
 
-        lines.append(f"| {app.slug} | {status} | {ts} |")
+        lines.append(f"| {app.slug} | {status} | {preview} | {ts} |")
 
     return "\n".join(lines)
 

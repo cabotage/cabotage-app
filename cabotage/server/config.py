@@ -86,3 +86,5 @@ class Config(metaclass=MetaFlaskEnv):
     SIDECAR_IMAGE = "cabotage/sidecar:3"
     DATADOG_IMAGE = "datadog/agent:7.55.2"
     INGRESS_DOMAIN = None
+    MIMIR_URL = None
+    MIMIR_VERIFY = None

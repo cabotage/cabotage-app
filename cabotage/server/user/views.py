@@ -25,6 +25,7 @@ from flask_security import (
 import kubernetes
 
 from dxf import DXF
+import requests as requests_lib
 from requests.exceptions import HTTPError
 from sqlalchemy import desc, func
 from sqlalchemy.exc import DataError, IntegrityError
@@ -1884,18 +1885,10 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
         org_slug, project_slug, app_slug, require_admin=True
     )
 
-    if env_slug:
-        environment = Environment.query.filter_by(
-            project_id=project.id, slug=env_slug
-        ).first_or_404()
-    else:
-        environment = _default_environment(project)
-
-    app_env = None
-    if environment:
-        app_env = ApplicationEnvironment.query.filter_by(
-            application_id=application.id, environment_id=environment.id
-        ).first()
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=False
+    )
+    environment = app_env.environment if app_env else None
 
     ingress_domain = current_app.config["INGRESS_DOMAIN"]
 
@@ -1921,6 +1914,21 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
             )
         )
 
+    def _render_ingress(**extra):
+        csrf_form = IngressHostForm()
+        return render_template(
+            "user/project_application_ingress.html",
+            application=application,
+            environment=environment,
+            app_env=app_env,
+            ingress_forms=ingress_forms,
+            csrf_form=csrf_form,
+            web_processes=web_processes,
+            ingress_domain=ingress_domain,
+            is_admin=current_user.admin,
+            **extra,
+        )
+
     # Build per-ingress forms
     ingress_forms = {}
     if app_env:
@@ -1943,82 +1951,56 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                 return _redirect_back()
 
             form = IngressSettingsForm(request.form, prefix=ingress.name)
+            ingress_forms[ingress.name] = form
+            ingress_errors = {}
+
             if not form.validate():
-                for field, errors in form.errors.items():
-                    for error in errors:
-                        flash(f"{field}: {error}", "error")
-                return _redirect_back()
+                # render_field_compact shows field.errors inline
+                return _render_ingress(ingress_errors=ingress_errors)
 
-            # Enabled
-            ingress.enabled = "_enabled" in request.form
-
-            # Settings
-            ingress.proxy_connect_timeout = form.proxy_connect_timeout.data
-            ingress.proxy_read_timeout = form.proxy_read_timeout.data
-            ingress.proxy_send_timeout = form.proxy_send_timeout.data
-            ingress.proxy_body_size = form.proxy_body_size.data
-            ingress.client_body_buffer_size = form.client_body_buffer_size.data
-            ingress.proxy_request_buffering = form.proxy_request_buffering.data or None
-            ingress.session_affinity = form.session_affinity.data
             new_use_regex = form.use_regex.data
 
-            # Hosts: diff existing vs form
-            kept_host_ids = set(request.form.getlist("_existing_host"))
-            for host in list(ingress.hosts):
-                if str(host.id) not in kept_host_ids and not host.is_auto_generated:
-                    db.session.delete(host)
+            # --- Validate everything before touching the session ---
 
+            # Validate new hostnames
+            new_hostnames = []
             for hostname in request.form.getlist("_new_host"):
                 hostname = hostname.strip()
                 if not hostname:
                     continue
                 if len(hostname) > 253 or not _HOSTNAME_RE.match(hostname):
-                    flash(f"Invalid hostname: {hostname}", "error")
-                    return _redirect_back()
-                db.session.add(
-                    IngressHost(
-                        ingress_id=ingress.id,
-                        hostname=hostname,
-                        tls_enabled=True,
-                        is_auto_generated=False,
+                    ingress_errors.setdefault("hosts", []).append(
+                        f"Invalid hostname: {hostname}"
                     )
-                )
+                else:
+                    new_hostnames.append(hostname)
 
-            # Paths: diff existing vs form
+            # Validate use_regex toggle against kept paths
             kept_path_ids = set(request.form.getlist("_existing_path"))
-            for path in list(ingress.paths):
-                if str(path.id) not in kept_path_ids:
-                    db.session.delete(path)
-
-            # Validate use_regex against kept paths
             kept_paths = [p for p in ingress.paths if str(p.id) in kept_path_ids]
             if new_use_regex and not ingress.use_regex:
                 for p in kept_paths:
                     try:
                         re.compile(p.path)
                     except re.error as e:
-                        flash(
-                            f"Cannot enable regex: path '{p.path}' is not a valid regex ({e}).",
-                            "error",
+                        ingress_errors.setdefault("paths", []).append(
+                            f"Cannot enable regex: path '{p.path}' is not a valid regex ({e})."
                         )
-                        return _redirect_back()
             elif not new_use_regex and ingress.use_regex:
                 for p in kept_paths:
                     if _REGEX_META.search(p.path):
-                        flash(
-                            f"Cannot disable regex: path '{p.path}' contains regex characters.",
-                            "error",
+                        ingress_errors.setdefault("paths", []).append(
+                            f"Cannot disable regex: path '{p.path}' contains regex characters."
                         )
-                        return _redirect_back()
-            ingress.use_regex = new_use_regex
 
-            # Add new paths
+            # Validate new paths
             new_path_indices = set()
             for key in request.form:
                 m = re.match(r"_new_path_(\d+)_path", key)
                 if m:
                     new_path_indices.add(m.group(1))
 
+            new_paths = []
             for idx in sorted(new_path_indices):
                 path_value = request.form.get(f"_new_path_{idx}_path", "").strip()
                 path_type = request.form.get(f"_new_path_{idx}_type", "Prefix")
@@ -2026,52 +2008,129 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                 if not path_value:
                     continue
                 if not path_value.startswith("/") or len(path_value) > 256:
-                    flash(f"Invalid path: {path_value}", "error")
-                    return _redirect_back()
-                if new_use_regex:
+                    ingress_errors.setdefault("paths", []).append(
+                        f"Invalid path: {path_value}"
+                    )
+                elif new_use_regex:
                     try:
                         re.compile(path_value)
                     except re.error as e:
-                        flash(f"Invalid regex path '{path_value}': {e}", "error")
-                        return _redirect_back()
-                else:
-                    if _REGEX_META.search(path_value):
-                        flash(
-                            f"Path '{path_value}' contains regex characters but regex is disabled.",
-                            "error",
+                        ingress_errors.setdefault("paths", []).append(
+                            f"Invalid regex path '{path_value}': {e}"
                         )
-                        return _redirect_back()
-                if target not in web_processes:
-                    flash(f"Invalid target process: {target}", "error")
-                    return _redirect_back()
-                db.session.add(
-                    IngressPath(
-                        ingress_id=ingress.id,
-                        path=path_value,
-                        path_type=path_type,
-                        target_process_name=target,
+                elif _REGEX_META.search(path_value):
+                    ingress_errors.setdefault("paths", []).append(
+                        f"Path '{path_value}' contains regex characters but regex is disabled."
                     )
+                if target and target not in web_processes:
+                    ingress_errors.setdefault("paths", []).append(
+                        f"Invalid target process: {target}"
+                    )
+                if not ingress_errors.get("paths"):
+                    new_paths.append((path_value, path_type, target))
+
+            if ingress_errors:
+                return _render_ingress(ingress_errors=ingress_errors)
+
+            # --- All valid: apply changes ---
+
+            with db.session.no_autoflush:
+                # Enabled
+                ingress.enabled = "_enabled" in request.form
+
+                # Settings
+                ingress.proxy_connect_timeout = form.proxy_connect_timeout.data
+                ingress.proxy_read_timeout = form.proxy_read_timeout.data
+                ingress.proxy_send_timeout = form.proxy_send_timeout.data
+                ingress.proxy_body_size = form.proxy_body_size.data
+                ingress.client_body_buffer_size = form.client_body_buffer_size.data
+                ingress.proxy_request_buffering = (
+                    form.proxy_request_buffering.data or None
                 )
+                ingress.session_affinity = form.session_affinity.data
+                ingress.use_regex = new_use_regex
 
-            # Annotations (admin only)
-            if current_user.admin:
-                allow = request.form.get("_allow_annotations") == "on"
-                ingress.allow_annotations = allow
-                if allow:
-                    annotations = {}
-                    for form_key in request.form:
-                        if form_key.startswith("_annotation_key_"):
-                            idx = form_key[len("_annotation_key_") :]
-                            key = request.form[form_key].strip()
-                            value = request.form.get(f"_annotation_value_{idx}", "")
-                            if key:
-                                annotations[key] = value
-                    ingress.extra_annotations = annotations
-                else:
-                    ingress.extra_annotations = {}
+                # Hosts: diff existing vs form
+                kept_host_ids = set(request.form.getlist("_existing_host"))
+                for host in list(ingress.hosts):
+                    if str(host.id) not in kept_host_ids and not host.is_auto_generated:
+                        db.session.delete(host)
 
+                for hostname in new_hostnames:
+                    db.session.add(
+                        IngressHost(
+                            ingress_id=ingress.id,
+                            hostname=hostname,
+                            tls_enabled=True,
+                            is_auto_generated=False,
+                        )
+                    )
+
+                # Paths: diff existing vs form
+                for path in list(ingress.paths):
+                    if str(path.id) not in kept_path_ids:
+                        db.session.delete(path)
+
+                for path_value, path_type, target in new_paths:
+                    db.session.add(
+                        IngressPath(
+                            ingress_id=ingress.id,
+                            path=path_value,
+                            path_type=path_type,
+                            target_process_name=target,
+                        )
+                    )
+
+                # Annotations (admin only)
+                if current_user.admin:
+                    allow = request.form.get("_allow_annotations") == "on"
+                    ingress.allow_annotations = allow
+                    if allow:
+                        annotations = {}
+                        for form_key in request.form:
+                            if form_key.startswith("_annotation_key_"):
+                                idx = form_key[len("_annotation_key_") :]
+                                key = request.form[form_key].strip()
+                                value = request.form.get(f"_annotation_value_{idx}", "")
+                                if key:
+                                    annotations[key] = value
+                        ingress.extra_annotations = annotations
+                    else:
+                        ingress.extra_annotations = {}
+
+                activity = Activity(
+                    verb="edit",
+                    object=ingress,
+                    data={
+                        "user_id": str(current_user.id),
+                        "timestamp": datetime.datetime.utcnow().isoformat(),
+                    },
+                )
+                db.session.add(activity)
+                try:
+                    db.session.commit()
+                    flash(f"Ingress '{ingress.name}' saved.", "success")
+                except IntegrityError:
+                    db.session.rollback()
+                    ingress_errors.setdefault("hosts", []).append(
+                        "A hostname or path conflicts with an existing entry."
+                    )
+                    return _render_ingress(ingress_errors=ingress_errors)
+            return _redirect_back()
+
+        # Delete ingress
+        if action == "delete_ingress":
+            ingress_id = request.form.get("_ingress_id")
+            ingress = _safe_get(Ingress, ingress_id)
+            if not ingress or ingress.application_environment_id != app_env.id:
+                return _redirect_back()
+            confirm_name = request.form.get("_confirm_name", "").strip()
+            if confirm_name != ingress.name:
+                flash("Ingress name does not match. Deletion cancelled.", "error")
+                return _redirect_back()
+            ingress_name = ingress.name
             activity = Activity(
-                verb="edit",
+                verb="delete",
                 object=ingress,
                 data={
                     "user_id": str(current_user.id),
@@ -2079,15 +2138,9 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                 },
             )
             db.session.add(activity)
-            try:
-                db.session.commit()
-                flash(f"Ingress '{ingress.name}' saved.", "success")
-            except IntegrityError:
-                db.session.rollback()
-                flash(
-                    "Save failed: a hostname or path conflicts with an existing entry.",
-                    "error",
-                )
+            db.session.delete(ingress)
+            db.session.commit()
+            flash(f"Ingress '{ingress_name}' deleted.", "success")
             return _redirect_back()
 
         # Create new ingress
@@ -2113,8 +2166,19 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                     )
                     db.session.add(ingress)
                     db.session.flush()
+                    hostname_pairs = [(org.slug, org.k8s_identifier)]
+                    if project.environments_enabled and environment:
+                        hostname_pairs.append(
+                            (environment.slug, environment.k8s_identifier)
+                        )
+                    hostname_pairs.extend(
+                        [
+                            (project.slug, project.k8s_identifier),
+                            (application.slug, application.k8s_identifier),
+                        ]
+                    )
                     auto_hostname = (
-                        f"{readable_k8s_hostname((org.slug, org.k8s_identifier), (environment.slug, environment.k8s_identifier), (project.slug, project.k8s_identifier), (application.slug, application.k8s_identifier))}"
+                        f"{readable_k8s_hostname(*hostname_pairs)}"
                         f"-{new_name}.{ingress_domain}"
                     )
                     host = IngressHost(
@@ -2137,19 +2201,7 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                     flash(f"Ingress '{new_name}' created.", "success")
                 return _redirect_back()
 
-    csrf_form = IngressHostForm()
-
-    return render_template(
-        "user/project_application_ingress.html",
-        application=application,
-        environment=environment,
-        app_env=app_env,
-        ingress_forms=ingress_forms,
-        csrf_form=csrf_form,
-        web_processes=web_processes,
-        ingress_domain=ingress_domain,
-        is_admin=current_user.admin,
-    )
+    return _render_ingress()
 
 
 @user_blueprint.route(
@@ -3241,3 +3293,413 @@ def organization_demote_user(org_slug):
     else:
         flash("User not found.", "error")
     return redirect(url_for("user.organization", org_slug=org_slug))
+
+
+def _mimir_connection():
+    """Return (mimir_url, verify) tuple, or (None, None) if not configured."""
+    mimir_url = current_app.config.get("MIMIR_URL")
+    if not mimir_url:
+        return None, None
+    verify = current_app.config.get("MIMIR_VERIFY")
+    if verify is not None:
+        if isinstance(verify, str) and verify.lower() == "false":
+            verify = False
+    else:
+        verify = True
+    return mimir_url, verify
+
+
+def _query_mimir_range(query, start, end, step):
+    """Query Mimir's Prometheus-compatible query_range endpoint.
+
+    Returns the parsed ``data.result`` list, or None on any error.
+    """
+    mimir_url, verify = _mimir_connection()
+    if not mimir_url:
+        return None
+    try:
+        resp = requests_lib.get(
+            f"{mimir_url}/prometheus/api/v1/query_range",
+            params={
+                "query": query,
+                "start": start,
+                "end": end,
+                "step": step,
+            },
+            verify=verify,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("status") == "success":
+            return data.get("data", {}).get("result", [])
+        return None
+    except Exception:
+        return None
+
+
+def _compute_observe_namespace(application, app_env):
+    """Compute the k8s namespace for an application's environment."""
+    org_k8s = application.project.organization.k8s_identifier
+    if app_env and app_env.k8s_identifier is not None:
+        return safe_k8s_name(org_k8s, app_env.environment.k8s_identifier)
+    return org_k8s
+
+
+def _compute_observe_prefix(application):
+    """Compute the k8s resource prefix (project-app) for pod matching."""
+    return safe_k8s_name(
+        application.project.k8s_identifier,
+        application.k8s_identifier,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/observe",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/observe",
+    defaults={"env_slug": None},
+)
+@login_required
+def project_application_observe(org_slug, project_slug, app_slug, env_slug=None):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=False
+    )
+    environment = app_env.environment if app_env else None
+
+    mimir_configured = bool(current_app.config.get("MIMIR_URL"))
+
+    return render_template(
+        "user/project_application_observe.html",
+        application=application,
+        environment=environment,
+        app_env=app_env,
+        mimir_configured=mimir_configured,
+        current_range=request.args.get("range", "1h"),
+    )
+
+
+_OBSERVE_METRICS = {"cpu", "memory", "requests", "latency", "errors"}
+_OBSERVE_GROUPS = {"total", "process", "pod", "status"}
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/observe/metric",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/observe/metric",
+    defaults={"env_slug": None},
+)
+@login_required
+def project_application_observe_metric(org_slug, project_slug, app_slug, env_slug=None):
+    metric = request.args.get("metric")
+    if metric not in _OBSERVE_METRICS:
+        return jsonify({"error": "invalid metric"}), 400
+
+    group = request.args.get("group", "total")
+    if group not in _OBSERVE_GROUPS:
+        group = "total"
+
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=False
+    )
+
+    mimir_url = current_app.config.get("MIMIR_URL")
+    if not mimir_url or not app_env:
+        return jsonify({"error": "not configured"}), 404
+
+    namespace = _compute_observe_namespace(application, app_env)
+    prefix = _compute_observe_prefix(application)
+    escaped_prefix = _REGEX_META.sub(r"\\\g<0>", prefix)
+    labels = f'namespace="{namespace}", pod=~"{escaped_prefix}-.*"'
+
+    range_param = request.args.get("range", "1h")
+    range_map = {"1h": 3600, "6h": 21600, "24h": 86400}
+    step_map = {"1h": 15, "6h": 60, "24h": 300}
+    duration = range_map.get(range_param, 3600)
+    step = step_map.get(range_param, 15)
+
+    # Align start/end to step boundaries for clean bucket alignment
+    end = int(time.time()) // step * step
+    start = end - duration
+
+    result = None
+
+    by_clause = {
+        "pod": "by (pod)",
+        "process": "by (process)",
+        "total": "",
+        "status": "",
+    }[group]
+    # cAdvisor metrics lack a "process" label; extract it from the pod name
+    process_re = f"{escaped_prefix}-(.*)-[a-z0-9]+-[a-z0-9]+"
+
+    # Use step-aligned rate window so CPU isn't a rolling average
+    rate_window = f"{max(step, 30)}s"
+
+    if metric == "cpu":
+        if group == "process":
+            q = (
+                f"sum by (process) (label_replace("
+                f"sum by (pod) (rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}]))"
+                f', "process", "$1", "pod", "{process_re}"))'
+            )
+        else:
+            q = f"sum(rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}])) {by_clause}"
+        result = _query_mimir_range(q, start, end, step)
+    elif metric == "memory":
+        if group == "process":
+            q = (
+                f"sum by (process) (label_replace("
+                f"sum by (pod) (container_memory_working_set_bytes{{{labels}}})"
+                f', "process", "$1", "pod", "{process_re}"))'
+            )
+        else:
+            q = f"sum(container_memory_working_set_bytes{{{labels}}}) {by_clause}"
+        result = _query_mimir_range(q, start, end, step)
+    elif metric == "requests":
+        # Use 60s minimum bucket for clean per-minute counts
+        req_step = max(step, 60)
+        req_start = end - duration
+        result = []
+        for code_class in ["2", "3", "4", "5"]:
+            qr = _query_mimir_range(
+                f"sum(increase(traefik_service_requests_total"
+                f'{{service=~".*{escaped_prefix}.*", code=~"{code_class}.."}}[{req_step}s]))',
+                req_start,
+                end,
+                req_step,
+            )
+            if qr:
+                for series in qr:
+                    series["metric"]["code"] = f"{code_class}xx"
+                result.extend(qr)
+        result = result if result else None
+    elif metric == "errors":
+        # Use 60s minimum bucket for clean per-minute rates
+        err_step = max(step, 60)
+        err_start = end - duration
+        if group == "status":
+            # Per status code class error rates (4xx and 5xx separately)
+            result = []
+            for code_class, label in [("4", "4xx"), ("5", "5xx")]:
+                qr = _query_mimir_range(
+                    f"sum(increase(traefik_service_requests_total"
+                    f'{{service=~".*{escaped_prefix}.*", code=~"{code_class}.."}}[{err_step}s]))'
+                    f" / sum(increase(traefik_service_requests_total"
+                    f'{{service=~".*{escaped_prefix}.*"}}[{err_step}s]))',
+                    err_start,
+                    end,
+                    err_step,
+                )
+                if qr:
+                    for series in qr:
+                        series["metric"]["label"] = label
+                    result.extend(qr)
+            result = result if result else None
+        else:
+            # Total error rate (5xx only)
+            result = _query_mimir_range(
+                f"sum(increase(traefik_service_requests_total"
+                f'{{service=~".*{escaped_prefix}.*", code=~"5.."}}[{err_step}s]))'
+                f" / sum(increase(traefik_service_requests_total"
+                f'{{service=~".*{escaped_prefix}.*"}}[{err_step}s]))',
+                err_start,
+                end,
+                err_step,
+            )
+            if result:
+                for series in result:
+                    series["metric"]["label"] = "error rate"
+    elif metric == "latency":
+        latency_results = []
+        for quantile in [0.5, 0.9, 0.95, 0.99]:
+            q = (
+                f"histogram_quantile({quantile}, sum(rate("
+                f"traefik_router_request_duration_seconds_bucket"
+                f'{{service=~".*{escaped_prefix}.*"}}[{rate_window}])) by (le))'
+            )
+            qr = _query_mimir_range(q, start, end, step)
+            if qr:
+                for series in qr:
+                    series["metric"]["quantile"] = f"p{int(quantile * 100)}"
+                latency_results.extend(qr)
+        result = latency_results if latency_results else None
+
+    return jsonify({"result": result})
+
+
+def _query_mimir_instant(query):
+    """Query Mimir's Prometheus-compatible instant query endpoint.
+
+    Returns the parsed ``data.result`` list, or None on any error.
+    """
+    mimir_url, verify = _mimir_connection()
+    if not mimir_url:
+        return None
+    try:
+        resp = requests_lib.get(
+            f"{mimir_url}/prometheus/api/v1/query",
+            params={"query": query},
+            verify=verify,
+            timeout=5,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("status") == "success":
+            return data.get("data", {}).get("result", [])
+        return None
+    except Exception:
+        return None
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/live-stats",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/live-stats",
+    defaults={"env_slug": None},
+)
+@login_required
+def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=None):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=False
+    )
+
+    mimir_url = current_app.config.get("MIMIR_URL")
+    if not mimir_url or not app_env:
+        return jsonify({"error": "not configured"}), 404
+
+    namespace = _compute_observe_namespace(application, app_env)
+    prefix = _compute_observe_prefix(application)
+    escaped_prefix = _REGEX_META.sub(r"\\\g<0>", prefix)
+
+    # Pod status from Kubernetes API (source of truth)
+    pods_total = 0
+    pods_ready = 0
+    pods_by_phase = {}
+    running_pod_names = []
+    processes = (
+        {}
+    )  # {process_name: {"total": N, "ready": N, "pending": N, "crashed": N}}
+    try:
+        api_client = kubernetes_ext.kubernetes_client
+        core_api = kubernetes.client.CoreV1Api(api_client)
+        label_selector = (
+            f"organization={application.project.organization.slug},"
+            f"project={application.project.slug},"
+            f"application={application.slug}"
+        )
+        pod_list = core_api.list_namespaced_pod(
+            namespace=namespace,
+            label_selector=label_selector,
+        )
+        for pod in pod_list.items:
+            # Skip terminating pods (deletionTimestamp is set)
+            if pod.metadata.deletion_timestamp is not None:
+                continue
+            phase = pod.status.phase or "Unknown"
+            pods_by_phase[phase] = pods_by_phase.get(phase, 0) + 1
+            pods_total += 1
+            if phase == "Running":
+                running_pod_names.append(pod.metadata.name)
+            is_ready = False
+            is_crashed = False
+            if pod.status.conditions:
+                for cond in pod.status.conditions:
+                    if cond.type == "Ready" and cond.status == "True":
+                        is_ready = True
+                        pods_ready += 1
+                        break
+            # Detect crash: check container statuses for CrashLoopBackOff/Error
+            if not is_ready and pod.status.container_statuses:
+                for cs in pod.status.container_statuses:
+                    if cs.state and cs.state.waiting:
+                        reason = cs.state.waiting.reason or ""
+                        if reason in ("CrashLoopBackOff", "Error", "ImagePullBackOff"):
+                            is_crashed = True
+                            break
+                    if cs.state and cs.state.terminated:
+                        is_crashed = True
+                        break
+            proc = (pod.metadata.labels or {}).get("process", "unknown")
+            if proc not in processes:
+                processes[proc] = {"total": 0, "ready": 0, "pending": 0, "crashed": 0}
+            processes[proc]["total"] += 1
+            if is_ready:
+                processes[proc]["ready"] += 1
+            elif is_crashed:
+                processes[proc]["crashed"] += 1
+            else:
+                processes[proc]["pending"] += 1
+    except (kubernetes.client.ApiException, Exception):
+        current_app.logger.debug("Failed to list pods for live stats", exc_info=True)
+
+    end = int(time.time())
+    start = end - 3600  # 1 hour
+    step = 60  # 1-minute resolution
+
+    # History: use prefix regex (includes all pods over the hour)
+    cpu_history = []
+    mem_history = []
+
+    cpu_series = _query_mimir_range(
+        f"sum(rate(container_cpu_usage_seconds_total"
+        f'{{namespace="{namespace}", pod=~"{escaped_prefix}-.*"}}[{step}s]))',
+        start,
+        end,
+        step,
+    )
+    if cpu_series and len(cpu_series) > 0:
+        for ts, val in cpu_series[0].get("values", []):
+            cpu_history.append([ts, round(float(val) * 1000, 1)])
+
+    mem_series = _query_mimir_range(
+        f"sum(container_memory_working_set_bytes"
+        f'{{namespace="{namespace}", pod=~"{escaped_prefix}-.*"}})',
+        start,
+        end,
+        step,
+    )
+    if mem_series and len(mem_series) > 0:
+        for ts, val in mem_series[0].get("values", []):
+            mem_history.append([ts, float(val)])
+
+    # Current values: scoped to running pods from k8s
+    cpu_val = None
+    mem_val = None
+
+    if running_pod_names:
+        pod_regex = "|".join(
+            _REGEX_META.sub(r"\\\g<0>", name) for name in running_pod_names
+        )
+        cpu_result = _query_mimir_instant(
+            f"sum(rate(container_cpu_usage_seconds_total"
+            f'{{namespace="{namespace}", pod=~"{pod_regex}"}}[5m]))'
+        )
+        if cpu_result and len(cpu_result) > 0 and cpu_result[0].get("value"):
+            cpu_val = round(float(cpu_result[0]["value"][1]) * 1000, 1)
+
+        mem_result = _query_mimir_instant(
+            f"sum(container_memory_working_set_bytes"
+            f'{{namespace="{namespace}", pod=~"{pod_regex}"}})'
+        )
+        if mem_result and len(mem_result) > 0 and mem_result[0].get("value"):
+            mem_val = float(mem_result[0]["value"][1])
+
+    return jsonify(
+        {
+            "cpu": cpu_val,
+            "cpu_history": cpu_history,
+            "memory": mem_val,
+            "memory_history": mem_history,
+            "pods": pods_total,
+            "pods_ready": pods_ready,
+            "pods_by_phase": pods_by_phase,
+            "processes": processes,
+        }
+    )

@@ -69,6 +69,9 @@
               <div class="flex items-center justify-between mb-0.5">
                 <span class="text-xs font-semibold text-base-content/70">Hostnames</span>
               </div>
+              {% for err in (ingress_errors or {}).get("hosts", []) %}
+                <p class="text-xs text-error mt-0.5">{{ err }}</p>
+              {% endfor %}
 
               <div id="hosts-{{ ingress.name }}">
                 {% for host in ingress.hosts %}
@@ -80,7 +83,7 @@
                     {% else %}
                       <button type="button" class="btn btn-ghost btn-xs text-error p-0 btn-remove-row"
                               title="Remove hostname">
-                        {{ icon('trash-2', 'w-3 h-3') }}
+                        {{ icon('trash', 'w-3 h-3') }}
                       </button>
                     {% endif %}
                   </div>
@@ -92,12 +95,22 @@
                 </button>
               </div>
 
+              {# Preserve existing paths even when UI is hidden #}
+              {% if web_processes | length <= 1 %}
+                {% for p in ingress.paths %}
+                  <input type="hidden" name="_existing_path" value="{{ p.id }}">
+                {% endfor %}
+              {% endif %}
+
               {# Paths — only show when multiple web processes exist #}
               {% if web_processes | length > 1 %}
               <div class="divider"></div>
               <div class="flex items-center justify-between mb-0.5">
                 <span class="text-xs font-semibold text-base-content/70">Path Routing</span>
               </div>
+              {% for err in (ingress_errors or {}).get("paths", []) %}
+                <p class="text-xs text-error mt-0.5">{{ err }}</p>
+              {% endfor %}
 
               <div id="paths-{{ ingress.name }}">
                 {% if ingress.paths %}
@@ -138,7 +151,8 @@
 
               {# Advanced Settings #}
               <div class="divider"></div>
-              <details class="ingress-collapse collapse collapse-arrow bg-base-200/30">
+              <details class="ingress-collapse collapse collapse-arrow bg-base-200/30"
+                      {% if form.errors %}open{% endif %}>
                 <summary class="collapse-title">
                   {{ icon('settings', 'w-3 h-3 inline mr-1') }} Advanced Settings
                 </summary>
@@ -222,9 +236,13 @@
                 </details>
               {% endif %}
 
-              {# Single save button #}
+              {# Save / Delete buttons #}
               <div class="divider"></div>
-              <div class="flex justify-end">
+              <div class="flex justify-between">
+                <button type="button" class="btn btn-error btn-sm btn-outline gap-1"
+                        onclick="document.getElementById('delete-modal-{{ ingress.name }}').showModal()">
+                  {{ icon('trash-2', 'w-3.5 h-3.5') }} Delete
+                </button>
                 <button type="submit" class="btn btn-primary btn-sm gap-1">
                   {{ icon('check', 'w-3.5 h-3.5') }} Save
                 </button>
@@ -232,6 +250,32 @@
 
             </div>
           </form>
+
+          {# Delete confirmation modal #}
+          <dialog id="delete-modal-{{ ingress.name }}" class="modal">
+            <div class="modal-box">
+              <h3 class="text-lg font-bold text-error">Delete Ingress</h3>
+              <p class="py-2 text-sm">
+                Type <code class="font-semibold">{{ ingress.name }}</code> to confirm deletion.
+                This action cannot be undone.
+              </p>
+              <form action="{{ url_for('user.project_application_ingress', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
+                    method="post">
+                {{ csrf_form.hidden_tag() }}
+                <input type="hidden" name="_action" value="delete_ingress">
+                <input type="hidden" name="_ingress_id" value="{{ ingress.id }}">
+                <input type="text" name="_confirm_name" placeholder="{{ ingress.name }}"
+                       class="input input-bordered input-sm w-full mb-4"
+                       autocomplete="off"
+                       oninput="this.closest('.modal-box').querySelector('.btn-delete-confirm').disabled = (this.value !== '{{ ingress.name }}')">
+                <div class="modal-action">
+                  <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('dialog').close()">Cancel</button>
+                  <button type="submit" class="btn btn-error btn-sm btn-delete-confirm" disabled>Delete</button>
+                </div>
+              </form>
+            </div>
+            <form method="dialog" class="modal-backdrop"><button>close</button></form>
+          </dialog>
         </div>
       {% endfor %}
 
