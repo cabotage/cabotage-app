@@ -1963,9 +1963,16 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
             # --- Validate everything before touching the session ---
 
             # Validate new hostnames
+            new_host_indices = set()
+            for key in request.form:
+                m = re.match(r"_new_host_(\d+)_name", key)
+                if m:
+                    new_host_indices.add(m.group(1))
+
             new_hostnames = []
-            for hostname in request.form.getlist("_new_host"):
-                hostname = hostname.strip()
+            for idx in sorted(new_host_indices):
+                hostname = request.form.get(f"_new_host_{idx}_name", "").strip()
+                tls_enabled = f"_new_host_{idx}_tls" in request.form
                 if not hostname:
                     continue
                 if len(hostname) > 253 or not _HOSTNAME_RE.match(hostname):
@@ -1973,7 +1980,7 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                         f"Invalid hostname: {hostname}"
                     )
                 else:
-                    new_hostnames.append(hostname)
+                    new_hostnames.append((hostname, tls_enabled))
 
             # Validate use_regex toggle against kept paths
             kept_path_ids = set(request.form.getlist("_existing_path"))
@@ -2055,13 +2062,20 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                 for host in list(ingress.hosts):
                     if str(host.id) not in kept_host_ids and not host.is_auto_generated:
                         db.session.delete(host)
+                    elif str(host.id) in kept_host_ids:
+                        if host.is_auto_generated:
+                            host.tls_enabled = True
+                        else:
+                            host.tls_enabled = (
+                                f"_existing_host_tls_{host.id}" in request.form
+                            )
 
-                for hostname in new_hostnames:
+                for hostname, tls_enabled in new_hostnames:
                     db.session.add(
                         IngressHost(
                             ingress_id=ingress.id,
                             hostname=hostname,
-                            tls_enabled=True,
+                            tls_enabled=tls_enabled,
                             is_auto_generated=False,
                         )
                     )

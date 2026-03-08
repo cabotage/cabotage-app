@@ -77,6 +77,16 @@
                 {% for host in ingress.hosts %}
                   <div class="host-row flex items-center gap-2 mb-0.5">
                     <input type="hidden" name="_existing_host" value="{{ host.id }}">
+                    <label class="flex items-center gap-1 cursor-pointer" title="Fetch certificate for this hostname">
+                      <input type="checkbox" name="_existing_host_tls_{{ host.id }}"
+                             class="checkbox checkbox-xs checkbox-primary"
+                             {% if host.tls_enabled %}checked{% endif %}
+                             {% if host.is_auto_generated %}disabled{% endif %}>
+                      {% if host.is_auto_generated %}
+                        <input type="hidden" name="_existing_host_tls_{{ host.id }}" value="on">
+                      {% endif %}
+                      {{ icon('lock', 'w-3 h-3') }}
+                    </label>
                     <code class="text-xs flex-1">{{ host.hostname }}</code>
                     {% if host.is_auto_generated %}
                       <span class="badge badge-ghost badge-xs">auto</span>

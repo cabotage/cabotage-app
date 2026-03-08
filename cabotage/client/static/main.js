@@ -1778,16 +1778,38 @@ function initIngressForms() {
     var name = btn.getAttribute('data-add-host');
     var container = document.getElementById('new-hosts-' + name);
     if (!container) return;
+    var nextHostIdx = 0;
 
     btn.addEventListener('click', function () {
+      var idx = nextHostIdx++;
       var row = document.createElement('div');
       row.className = 'host-row flex items-center gap-2 mb-0.5';
 
       var input = document.createElement('input');
       input.type = 'text';
-      input.name = '_new_host';
+      input.name = '_new_host_' + idx + '_name';
       input.className = 'input input-bordered input-xs flex-1';
       input.placeholder = 'app.example.com';
+
+      var tlsLabel = document.createElement('label');
+      tlsLabel.className = 'flex items-center gap-1 cursor-pointer';
+      tlsLabel.title = 'Fetch certificate for this hostname';
+      var tlsCheckbox = document.createElement('input');
+      tlsCheckbox.type = 'checkbox';
+      tlsCheckbox.name = '_new_host_' + idx + '_tls';
+      tlsCheckbox.className = 'checkbox checkbox-xs checkbox-primary';
+      tlsCheckbox.checked = true;
+      var tlsIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      tlsIcon.setAttribute('class', 'w-3 h-3');
+      tlsIcon.setAttribute('viewBox', '0 0 24 24');
+      tlsIcon.setAttribute('fill', 'none');
+      tlsIcon.setAttribute('stroke', 'currentColor');
+      tlsIcon.setAttribute('stroke-width', '2');
+      tlsIcon.setAttribute('stroke-linecap', 'round');
+      tlsIcon.setAttribute('stroke-linejoin', 'round');
+      tlsIcon.innerHTML = '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path>';
+      tlsLabel.appendChild(tlsCheckbox);
+      tlsLabel.appendChild(tlsIcon);
 
       var rmBtn = document.createElement('button');
       rmBtn.type = 'button';
@@ -1795,6 +1817,7 @@ function initIngressForms() {
       rmBtn.textContent = '\u00d7';
       rmBtn.addEventListener('click', function () { row.remove(); });
 
+      row.appendChild(tlsLabel);
       row.appendChild(input);
       row.appendChild(rmBtn);
       container.appendChild(row);
