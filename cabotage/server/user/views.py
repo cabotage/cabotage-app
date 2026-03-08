@@ -2668,6 +2668,67 @@ def deployment_detail(org_slug, project_slug, app_slug, deployment_id):
     return render_template("user/deployment_detail.html", deployment=deployment)
 
 
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/deployments/<deployment_id>/logs"
+)
+@login_required
+def deployment_logs_view(org_slug, project_slug, app_slug, deployment_id):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    deployment = Deployment.query.filter_by(
+        id=deployment_id, application_id=application.id
+    ).first_or_404()
+
+    loki_configured = bool(current_app.config.get("LOKI_URL"))
+    app_env = deployment.application_environment
+    process_names = sorted(app_env.process_counts or {}) if app_env else []
+
+    # Determine if this deployment's pods are still live
+    if not deployment.complete and not deployment.error:
+        deployment_is_live = True
+    elif deployment.complete and app_env:
+        latest_completed = (
+            Deployment.query
+            .filter_by(application_environment_id=app_env.id, complete=True)
+            .order_by(Deployment.created.desc())
+            .first()
+        )
+        deployment_is_live = latest_completed and latest_completed.id == deployment.id
+    else:
+        deployment_is_live = False
+
+    return render_template(
+        "user/deployment_logs.html",
+        deployment=deployment,
+        application=application,
+        loki_configured=loki_configured,
+        process_names=process_names,
+        deployment_is_live=deployment_is_live,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/deployments/<deployment_id>/logs/query"
+)
+@login_required
+def deployment_logs_query(org_slug, project_slug, app_slug, deployment_id):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    deployment = Deployment.query.filter_by(
+        id=deployment_id, application_id=application.id
+    ).first_or_404()
+
+    app_env = deployment.application_environment
+    if not app_env:
+        return jsonify({"error": "not configured"}), 404
+
+    namespace = _compute_observe_namespace(application, app_env)
+    process_names = sorted(app_env.process_counts or {})
+    selectors = [
+        f'namespace="{namespace}"',
+        f'deployment="{deployment_id}"',
+    ]
+    return _loki_query_response(selectors, process_names)
+
+
 @user_blueprint.route("/deployment/<deployment_id>")
 @login_required
 def deployment_detail_legacy(deployment_id):
@@ -3776,6 +3837,135 @@ def _escape_logql_line_filter(text):
     return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "")
 
 
+def _build_log_selectors(namespace, project_slug=None, app_slug=None, env_slug=None):
+    """Build LogQL label selectors for a given scope.
+
+    Returns a list of selector strings like ``'namespace="foo"'``.
+    Does NOT perform ACL checks — callers must handle that.
+    """
+    selectors = [
+        f'namespace="{namespace}"',
+    ]
+    if project_slug:
+        selectors.append(f'project="{project_slug}"')
+    if app_slug:
+        selectors.append(f'application="{app_slug}"')
+    if env_slug:
+        selectors.append(f'environment="{env_slug}"')
+    return selectors
+
+
+def _loki_query_response(selectors, process_names):
+    """Shared Loki query logic.  Returns a Flask JSON response.
+
+    *selectors* is a list of LogQL label matchers (strings).
+    *process_names* is used to build a container-name filter.
+    """
+    loki_url, _ = _loki_connection()
+    if not loki_url:
+        return jsonify({"error": "not configured"}), 404
+
+    search = request.args.get("search", "").strip()
+    process = request.args.get("process", "").strip()
+    time_range = request.args.get("range", "1h")
+    limit = min(request.args.get("limit", 500, type=int), 5000)
+    end_ns = request.args.get("end", None)
+    start_param = request.args.get("start", None)
+
+    range_seconds = {"1h": 3600, "6h": 21600, "24h": 86400}.get(time_range, 3600)
+
+    if end_ns is not None:
+        try:
+            end_ns = int(end_ns)
+        except (ValueError, TypeError):
+            end_ns = None
+
+    if end_ns is None:
+        end_ns = int(time.time() * 1_000_000_000)
+
+    if start_param is not None:
+        try:
+            start_ns = int(start_param)
+        except (ValueError, TypeError):
+            start_ns = end_ns - (range_seconds * 1_000_000_000)
+    else:
+        start_ns = end_ns - (range_seconds * 1_000_000_000)
+
+    # Build LogQL query — filter to user process containers
+    all_selectors = list(selectors)
+    if process:
+        all_selectors.append(f'pod_container_name="{process}"')
+    elif process_names:
+        # Loki regex matchers are fully anchored, so exact alternation is safe
+        all_selectors.append(f'pod_container_name=~"{"|".join(process_names)}"')
+    else:
+        all_selectors.append('pod_container_name!~"cabotage-.*"')
+
+    logql = "{" + ", ".join(all_selectors) + "}"
+
+    hide_probes = request.args.get("hide_probes", "")
+    if hide_probes:
+        logql += r' !~ `\bkube-probe/\d+\.\d+\b`'
+
+    if search:
+        escaped = _escape_logql_line_filter(search)
+        logql += f' |= "{escaped}"'
+
+    direction = request.args.get("direction", "backward")
+    if direction not in ("backward", "forward"):
+        direction = "backward"
+
+    streams = _query_loki(logql, start_ns, end_ns, limit=limit, direction=direction)
+    if streams is None:
+        return jsonify({"error": "query failed"}), 502
+
+    # Flatten streams into a sorted list of log entries
+    entries = []
+    for stream in streams:
+        labels = stream.get("stream", {})
+        proc = labels.get("process", "")
+        pod = labels.get("pod_name", "")
+        for ts_ns, line in stream.get("values", []):
+            # Unwrap container runtime log wrappers
+            message = line
+            log_stream = ""
+            # CRI format: "<timestamp> <stream> <flags> <message>"
+            # e.g. "2026-03-07T20:00:57.030Z stdout F actual log line"
+            if len(line) > 36 and line[0] == "2" and line[4] == "-":
+                parts = line.split(" ", 3)
+                if len(parts) == 4 and parts[1] in ("stdout", "stderr"):
+                    log_stream = parts[1]
+                    message = parts[3]
+            else:
+                # Docker JSON format: {"log":"...", "stream":"...", "time":"..."}
+                try:
+                    parsed = json.loads(line)
+                    if isinstance(parsed, dict) and "log" in parsed:
+                        message = parsed["log"]
+                        log_stream = parsed.get("stream", "")
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            if message.endswith("\n"):
+                message = message[:-1]
+            entries.append(
+                {
+                    "ts": ts_ns,
+                    "process": proc,
+                    "pod": pod,
+                    "stream": log_stream,
+                    "message": message,
+                }
+            )
+
+    # Sort oldest first (chronological)
+    entries.sort(key=lambda e: e["ts"])
+
+    # Trim to limit
+    entries = entries[:limit]
+
+    return jsonify({"entries": entries})
+
+
 @user_blueprint.route(
     "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/logs",
 )
@@ -3818,119 +4008,77 @@ def project_application_logs_query(org_slug, project_slug, app_slug, env_slug=No
         application, env_slug=env_slug, project=project, required=False
     )
 
-    loki_url, _ = _loki_connection()
-    if not loki_url or not app_env:
+    if not app_env:
         return jsonify({"error": "not configured"}), 404
 
     namespace = _compute_observe_namespace(application, app_env)
-
-    search = request.args.get("search", "").strip()
-    process = request.args.get("process", "").strip()
-    time_range = request.args.get("range", "1h")
-    limit = min(request.args.get("limit", 500, type=int), 5000)
-    end_ns = request.args.get("end", None)
-    start_param = request.args.get("start", None)
-
-    range_seconds = {"1h": 3600, "6h": 21600, "24h": 86400}.get(time_range, 3600)
-
-    if end_ns is not None:
-        try:
-            end_ns = int(end_ns)
-        except (ValueError, TypeError):
-            end_ns = None
-
-    if end_ns is None:
-        end_ns = int(time.time() * 1_000_000_000)
-
-    if start_param is not None:
-        try:
-            start_ns = int(start_param)
-        except (ValueError, TypeError):
-            start_ns = end_ns - (range_seconds * 1_000_000_000)
-    else:
-        start_ns = end_ns - (range_seconds * 1_000_000_000)
-
-    # Build LogQL query — filter to user process containers
     process_names = sorted(app_env.process_counts or {})
-    env_slug = app_env.environment.slug if app_env.environment else ""
+    env_slug_val = app_env.environment.slug if app_env.environment else ""
+    selectors = _build_log_selectors(
+        namespace,
+        project_slug=application.project.slug,
+        app_slug=application.slug,
+        env_slug=env_slug_val,
+    )
+    return _loki_query_response(selectors, process_names)
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/logs",
+)
+@login_required
+def project_logs_view(org_slug, project_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not ViewProjectPermission(project.id).can():
+        abort(403)
+
+    loki_configured = bool(current_app.config.get("LOKI_URL"))
+
+    # Collect process names from all app_envs in the project
+    process_names_set = set()
+    for app in project.project_applications:
+        for ae in app.application_environments:
+            for proc in (ae.process_counts or {}):
+                process_names_set.add(proc)
+    process_names = sorted(process_names_set)
+
+    return render_template(
+        "user/project_logs.html",
+        organization=organization,
+        project=project,
+        loki_configured=loki_configured,
+        process_names=process_names,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/logs/query",
+)
+@login_required
+def project_logs_query(org_slug, project_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not ViewProjectPermission(project.id).can():
+        abort(403)
+
+    # Project logs may span multiple namespaces (org-level + env-specific),
+    # so use a regex on the org k8s identifier prefix.
     selectors = [
-        f'namespace="{namespace}"',
-        f'project="{application.project.slug}"',
-        f'application="{application.slug}"',
-        f'environment="{env_slug}"',
+        f'namespace=~"{_REGEX_META.sub(lambda m: chr(92) + m.group(), organization.k8s_identifier)}.*"',
+        f'project="{project.slug}"',
     ]
-    if process:
-        selectors.append(f'pod_container_name="{process}"')
-    elif process_names:
-        selectors.append(f'pod_container_name=~"{"|".join(process_names)}"')
-    else:
-        selectors.append('pod_container_name!~"cabotage-.*"')
 
-    logql = "{" + ", ".join(selectors) + "}"
+    # Collect process names from all app_envs
+    process_names_set = set()
+    for app in project.project_applications:
+        for ae in app.application_environments:
+            for proc in (ae.process_counts or {}):
+                process_names_set.add(proc)
+    process_names = sorted(process_names_set)
 
-    if search:
-        escaped = _escape_logql_line_filter(search)
-        logql += f' |= "{escaped}"'
-
-    direction = request.args.get("direction", "backward")
-    if direction not in ("backward", "forward"):
-        direction = "backward"
-
-    hide_probes = request.args.get("hide_probes", "")
-    health_check_path = app_env.effective_health_check_path if app_env else "/_health/"
-
-    streams = _query_loki(logql, start_ns, end_ns, limit=limit, direction=direction)
-    if streams is None:
-        return jsonify({"error": "query failed"}), 502
-
-    # Flatten streams into a sorted list of log entries
-    entries = []
-    for stream in streams:
-        labels = stream.get("stream", {})
-        proc = labels.get("process", "")
-        pod = labels.get("pod_name", "")
-        for ts_ns, line in stream.get("values", []):
-            # Unwrap container runtime log wrappers
-            message = line
-            log_stream = ""
-            # CRI format: "<timestamp> <stream> <flags> <message>"
-            # e.g. "2026-03-07T20:00:57.030Z stdout F actual log line"
-            if len(line) > 36 and line[0] == "2" and line[4] == "-":
-                parts = line.split(" ", 3)
-                if len(parts) == 4 and parts[1] in ("stdout", "stderr"):
-                    log_stream = parts[1]
-                    message = parts[3]
-            else:
-                # Docker JSON format: {"log":"...", "stream":"...", "time":"..."}
-                try:
-                    parsed = json.loads(line)
-                    if isinstance(parsed, dict) and "log" in parsed:
-                        message = parsed["log"]
-                        log_stream = parsed.get("stream", "")
-                except (json.JSONDecodeError, TypeError):
-                    pass
-            if message.endswith("\n"):
-                message = message[:-1]
-            # Server-side probe filtering
-            if hide_probes and (
-                "kube-probe" in message
-                or (health_check_path and health_check_path in message)
-            ):
-                continue
-            entries.append(
-                {
-                    "ts": ts_ns,
-                    "process": proc,
-                    "pod": pod,
-                    "stream": log_stream,
-                    "message": message,
-                }
-            )
-
-    # Sort oldest first (chronological)
-    entries.sort(key=lambda e: e["ts"])
-
-    # Trim to limit
-    entries = entries[:limit]
-
-    return jsonify({"entries": entries})
+    return _loki_query_response(selectors, process_names)

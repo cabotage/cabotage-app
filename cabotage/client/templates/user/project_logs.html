@@ -1,0 +1,27 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, resource_path, page_header, loki_log_viewer %}
+
+{% block title %}
+  Logs - {{ project.name }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': organization.slug, 'url': url_for('user.organization', org_slug=organization.slug)},
+    {'label': project.slug, 'url': url_for('user.project', org_slug=organization.slug, project_slug=project.slug)},
+    {'label': 'Logs'},
+  ]) }}
+{% endblock resource_path %}
+
+{% block content %}
+  <div class="settings-page">
+    {% call page_header('Project Logs', 'Log output from all applications in ' ~ project.name) %}
+    {% endcall %}
+
+    {{ loki_log_viewer(
+        query_url=url_for('user.project_logs_query', org_slug=organization.slug, project_slug=project.slug),
+        process_names=process_names,
+        loki_configured=loki_configured,
+    ) }}
+  </div>
+{% endblock content %}

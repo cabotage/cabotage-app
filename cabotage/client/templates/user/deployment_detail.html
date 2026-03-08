@@ -66,6 +66,13 @@
             </button>
           </form>
         {% endif %}
+        {% if config.LOKI_URL %}
+          <a href="{{ url_for('user.deployment_logs_view', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id=deployment.id) }}"
+             class="btn btn-ghost btn-sm gap-1.5">
+            {{ icon('file-text', 'w-3.5 h-3.5') }}
+            App Logs
+          </a>
+        {% endif %}
         <a href="{{ url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
            class="btn btn-ghost btn-sm gap-1.5">
           {{ icon('arrow-left', 'w-3.5 h-3.5') }}
