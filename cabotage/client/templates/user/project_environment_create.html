@@ -23,7 +23,9 @@
         {{ form.hidden_tag() }}
         {{ render_field(form.name) }}
         {{ render_field(form.slug) }}
-        {{ render_field(form.is_default) }}
+        {% if not has_default %}
+          {{ render_field(form.is_default) }}
+        {% endif %}
         <div class="mt-4">
           <button type="submit" class="btn btn-primary gap-2">
             {{ icon('plus', 'w-4 h-4') }}
@@ -31,6 +33,19 @@
           </button>
         </div>
       </form>
+      <script>
+        (function() {
+          var nameField = document.getElementById('name');
+          var slugField = document.getElementById('slug');
+          var slugEdited = false;
+          if (!nameField || !slugField) return;
+          slugField.addEventListener('input', function() { slugEdited = !!this.value; });
+          nameField.addEventListener('input', function() {
+            if (slugEdited) return;
+            slugField.value = this.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+          });
+        })();
+      </script>
     </div>
   </div>
 {% endblock content %}

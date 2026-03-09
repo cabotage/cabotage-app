@@ -121,13 +121,10 @@
           {{ project_create_form.hidden_tag() }}
           {{ render_field(project_create_form.organization_id) }}
           {{ render_field(project_create_form.name) }}
+          {{ render_field(project_create_form.slug) }}
           {{ render_field(project_create_form.environments_enabled) }}
-          <details class="group">
-            <summary class="text-xs text-base-content/40 font-medium uppercase tracking-wider cursor-pointer select-none hover:text-base-content/60 transition-colors">
-              Advanced Settings
-            </summary>
-            <div class="mt-3">{{ render_field(project_create_form.slug) }}</div>
-          </details>
+          {{ render_field(project_create_form.initial_env_name) }}
+          {{ render_field(project_create_form.initial_env_slug) }}
           <div class="pt-2">
             <button type="submit" class="btn btn-primary w-full">Create Project</button>
           </div>
@@ -150,6 +147,30 @@
   modal.querySelectorAll('[data-modal-close="create-project-modal"]').forEach(function(el) {
     el.addEventListener('click', function() { modal.classList.add('hidden'); });
   });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && !modal.classList.contains('hidden')) modal.classList.add('hidden');
+  });
+  var cb = modal.querySelector('#environments_enabled');
+  var envNameEl = modal.querySelector('#initial_env_name');
+  var envSlugEl = modal.querySelector('#initial_env_slug');
+  var envNameWrap = envNameEl.closest('div');
+  var envSlugWrap = envSlugEl.closest('div');
+  var envSlugEdited = false;
+  function syncEnvSlug() {
+    envSlugEl.value = envNameEl.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  }
+  function toggleEnv() {
+    var show = cb.checked;
+    envNameWrap.style.display = show ? '' : 'none';
+    envSlugWrap.style.display = show ? '' : 'none';
+  }
+  cb.addEventListener('change', toggleEnv);
+  toggleEnv();
+  envSlugEl.addEventListener('input', function() { envSlugEdited = !!this.value; });
+  envNameEl.addEventListener('input', function() {
+    if (!envSlugEdited) syncEnvSlug();
+  });
+  if (envNameEl.value && !envSlugEl.value) syncEnvSlug();
 })();
     </script>
   {% endif %}

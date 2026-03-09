@@ -15,7 +15,7 @@
 <div class="form-card">
   <div class="card bg-base-200 border border-base-300 shadow-xl">
     <div class="card-body">
-      <h1 class="text-xl font-semibold text-white mb-1">Create Application</h1>
+      <h1 class="text-xl font-semibold text-base-content mb-1">Create Application</h1>
       <p class="text-sm text-base-content/50 mb-4">In <span class="font-mono text-accent">{{ org_slug }}/{{ project_slug }}</span></p>
 
       <form action="{{ url_for('user.project_application_create', org_slug=org_slug, project_slug=project_slug) }}" method="POST" name="project_application_create_form" class="flex flex-col gap-4">

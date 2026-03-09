@@ -23,7 +23,6 @@
       <form method="POST" action="{{ url_for('user.project_environment_settings', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}">
         {{ form.hidden_tag() }}
         {{ render_field(form.name) }}
-        {{ render_field(form.is_default) }}
         <div class="mt-4">
           <button type="submit" class="btn btn-primary gap-2">
             {{ icon('check', 'w-4 h-4') }}

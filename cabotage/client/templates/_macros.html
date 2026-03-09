@@ -367,13 +367,8 @@
         {{ form.hidden_tag() }}
         {% for field in extra_fields %}{{ field(type="hidden") }}{% endfor %}
         {{ render_field(name_field) }}
+        {{ render_field(slug_field) }}
         {%- for field in fields %}{{ render_field(field) }}{% endfor %}
-        <details class="group">
-          <summary class="text-xs text-base-content/40 font-medium uppercase tracking-wider cursor-pointer select-none hover:text-base-content/60 transition-colors">
-            Advanced Settings
-          </summary>
-          <div class="mt-3">{{ render_field(slug_field) }}</div>
-        </details>
         <div class="pt-2">
           <button type="submit" class="btn btn-primary w-full">{{ submit_text }}</button>
         </div>
@@ -395,6 +390,11 @@
   }
   modal.querySelectorAll('[data-modal-close="{{ modal_id }}"]').forEach(function(el) {
     el.addEventListener('click', function() { modal.classList.add('hidden'); });
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+      modal.classList.add('hidden');
+    }
   });
 })();
   </script>
