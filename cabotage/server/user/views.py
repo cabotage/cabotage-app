@@ -3447,6 +3447,7 @@ def project_application_observe(org_slug, project_slug, app_slug, env_slug=None)
     environment = app_env.environment if app_env else None
 
     mimir_configured = bool(current_app.config.get("MIMIR_URL"))
+    process_names = sorted(app_env.process_counts or {}) if app_env else []
 
     return render_template(
         "user/project_application_observe.html",
@@ -3455,6 +3456,7 @@ def project_application_observe(org_slug, project_slug, app_slug, env_slug=None)
         app_env=app_env,
         mimir_configured=mimir_configured,
         current_range=request.args.get("range", "1h"),
+        process_names=process_names,
     )
 
 
@@ -3491,7 +3493,46 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
     namespace = _compute_observe_namespace(application, app_env)
     prefix = _compute_observe_prefix(application)
     escaped_prefix = _REGEX_META.sub(r"\\\g<0>", prefix)
-    labels = f'namespace="{namespace}", pod=~"{escaped_prefix}-.*"'
+
+    # Optional process filter
+    process_filter = request.args.get("process", "")
+    if process_filter:
+        escaped_process = _REGEX_META.sub(r"\\\g<0>", process_filter)
+        labels = (
+            f'namespace="{namespace}", pod=~"{escaped_prefix}-{escaped_process}-.*"'
+        )
+    else:
+        labels = f'namespace="{namespace}", pod=~"{escaped_prefix}-.*"'
+
+    # Build exact traefik service labels from ingress config.
+    # nginx-ingress format: {ns}-{prefix}-{ingress.name}-{prefix}-{process}-{port}@kubernetesingressnginx
+    traefik_svc_names = set()
+    for ingress in app_env.ingresses:
+        if not ingress.enabled:
+            continue
+        for path in ingress.paths:
+            if process_filter and path.target_process_name != process_filter:
+                continue
+            traefik_svc_names.add(
+                f"{namespace}-{prefix}-{ingress.name}-{prefix}-{path.target_process_name}-8000@kubernetesingressnginx"
+            )
+        if not ingress.paths:
+            if not process_filter or process_filter == "web":
+                traefik_svc_names.add(
+                    f"{namespace}-{prefix}-{ingress.name}-{prefix}-web-8000@kubernetesingressnginx"
+                )
+    if len(traefik_svc_names) == 1:
+        traefik_svc = f'service="{next(iter(traefik_svc_names))}"'
+    elif traefik_svc_names:
+        joined = "|".join(
+            _REGEX_META.sub(r"\\\g<0>", s) for s in sorted(traefik_svc_names)
+        )
+        traefik_svc = f'service=~"{joined}"'
+    elif process_filter:
+        # Filtered process has no ingresses — no traefik metrics available
+        traefik_svc = None
+    else:
+        traefik_svc = f'service="{namespace}-{prefix}-web-{prefix}-web-8000@kubernetesingressnginx"'
 
     range_param = request.args.get("range", "1h")
     range_map = {"1h": 3600, "6h": 21600, "24h": 86400}
@@ -3504,6 +3545,7 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
     start = end - duration
 
     result = None
+    queries = []
 
     by_clause = {
         "pod": "by (pod)",
@@ -3526,6 +3568,7 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
             )
         else:
             q = f"sum(rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}])) {by_clause}"
+        queries.append(q)
         result = _query_mimir_range(q, start, end, step)
     elif metric == "memory":
         if group == "process":
@@ -3536,20 +3579,23 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
             )
         else:
             q = f"sum(container_memory_working_set_bytes{{{labels}}}) {by_clause}"
+        queries.append(q)
         result = _query_mimir_range(q, start, end, step)
+    elif metric in ("requests", "errors", "latency") and traefik_svc is None:
+        # Process has no ingresses — no HTTP metrics
+        result = None
     elif metric == "requests":
         # Use 60s minimum bucket for clean per-minute counts
         req_step = max(step, 60)
         req_start = end - duration
         result = []
         for code_class in ["2", "3", "4", "5"]:
-            qr = _query_mimir_range(
+            q = (
                 f"sum(increase(traefik_service_requests_total"
-                f'{{service=~".*{escaped_prefix}.*", code=~"{code_class}.."}}[{req_step}s]))',
-                req_start,
-                end,
-                req_step,
+                f'{{{traefik_svc}, code=~"{code_class}.."}}[{req_step}s]))'
             )
+            queries.append(q)
+            qr = _query_mimir_range(q, req_start, end, req_step)
             if qr:
                 for series in qr:
                     series["metric"]["code"] = f"{code_class}xx"
@@ -3563,15 +3609,14 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
             # Per status code class error rates (4xx and 5xx separately)
             result = []
             for code_class, label in [("4", "4xx"), ("5", "5xx")]:
-                qr = _query_mimir_range(
+                q = (
                     f"sum(increase(traefik_service_requests_total"
-                    f'{{service=~".*{escaped_prefix}.*", code=~"{code_class}.."}}[{err_step}s]))'
+                    f'{{{traefik_svc}, code=~"{code_class}.."}}[{err_step}s]))'
                     f" / sum(increase(traefik_service_requests_total"
-                    f'{{service=~".*{escaped_prefix}.*"}}[{err_step}s]))',
-                    err_start,
-                    end,
-                    err_step,
+                    f"{{{traefik_svc}}}[{err_step}s]))"
                 )
+                queries.append(q)
+                qr = _query_mimir_range(q, err_start, end, err_step)
                 if qr:
                     for series in qr:
                         series["metric"]["label"] = label
@@ -3579,34 +3624,34 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
             result = result if result else None
         else:
             # Total error rate (5xx only)
-            result = _query_mimir_range(
+            q = (
                 f"sum(increase(traefik_service_requests_total"
-                f'{{service=~".*{escaped_prefix}.*", code=~"5.."}}[{err_step}s]))'
+                f'{{{traefik_svc}, code=~"5.."}}[{err_step}s]))'
                 f" / sum(increase(traefik_service_requests_total"
-                f'{{service=~".*{escaped_prefix}.*"}}[{err_step}s]))',
-                err_start,
-                end,
-                err_step,
+                f"{{{traefik_svc}}}[{err_step}s]))"
             )
+            queries.append(q)
+            result = _query_mimir_range(q, err_start, end, err_step)
             if result:
                 for series in result:
                     series["metric"]["label"] = "error rate"
     elif metric == "latency":
-        latency_results = []
+        result = []
         for quantile in [0.5, 0.9, 0.95, 0.99]:
             q = (
                 f"histogram_quantile({quantile}, sum(rate("
                 f"traefik_router_request_duration_seconds_bucket"
-                f'{{service=~".*{escaped_prefix}.*"}}[{rate_window}])) by (le))'
+                f"{{{traefik_svc}}}[{rate_window}])) by (le))"
             )
+            queries.append(q)
             qr = _query_mimir_range(q, start, end, step)
             if qr:
                 for series in qr:
                     series["metric"]["quantile"] = f"p{int(quantile * 100)}"
-                latency_results.extend(qr)
-        result = latency_results if latency_results else None
+                result.extend(qr)
+        result = result if result else None
 
-    return jsonify({"result": result})
+    return jsonify({"result": result, "queries": queries})
 
 
 def _query_mimir_instant(query):
