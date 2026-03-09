@@ -671,7 +671,9 @@ def project_settings(org_slug, project_slug):
                 )
                 if default_env:
                     default_env.name = initial_name
-                    default_env.slug = form.initial_env_slug.data or slugify(initial_name)
+                    default_env.slug = form.initial_env_slug.data or slugify(
+                        initial_name
+                    )
             # Existing app_envs keep k8s_identifier=NULL so all their paths
             # (registry, namespace, consul/vault, build cache) remain unchanged.
             # Copy app-level github_environment_name to each app's default app_env
@@ -1582,9 +1584,7 @@ def project_application_create(org_slug, project_slug):
     form.project_id.data = str(project.id)
     if project.environments_enabled and len(project.project_environments) > 1:
         sorted_envs = sorted(project.project_environments, key=lambda e: e.sort_order)
-        form.environment_id.choices = [
-            (str(e.id), e.name) for e in sorted_envs
-        ]
+        form.environment_id.choices = [(str(e.id), e.name) for e in sorted_envs]
         if not form.is_submitted():
             default_env = next((e for e in sorted_envs if e.is_default), sorted_envs[0])
             form.environment_id.data = str(default_env.id)

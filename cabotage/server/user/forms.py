@@ -152,7 +152,7 @@ class EditProjectSettingsForm(FlaskForm):
         "Initial Environment Name",
         [Optional()],
         default="Production",
-        description='Name for the default environment. All existing applications will be migrated into it.',
+        description="Name for the default environment. All existing applications will be migrated into it.",
     )
     initial_env_slug = StringField(
         "Initial Environment Slug",
