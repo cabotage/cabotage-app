@@ -542,6 +542,15 @@ def project(org_slug, project_slug):
     app_create_form.project_id.choices = [(str(project.id), project.name)]
     app_create_form.organization_id.data = str(organization.id)
     app_create_form.project_id.data = str(project.id)
+    if project.environments_enabled and len(project.project_environments) > 1:
+        sorted_envs = sorted(project.project_environments, key=lambda e: e.sort_order)
+        app_create_form.environment_id.choices = [
+            (str(e.id), e.name) for e in sorted_envs
+        ]
+        default_env = next((e for e in sorted_envs if e.is_default), sorted_envs[0])
+        app_create_form.environment_id.data = str(default_env.id)
+    else:
+        app_create_form.environment_id.choices = []
 
     # Build ae_by_env mapping in Python (avoids duplicate eager-load path)
     ae_ids = []
@@ -1571,6 +1580,16 @@ def project_application_create(org_slug, project_slug):
     form.project_id.choices = [(str(project.id), project.name)]
     form.organization_id.data = str(organization.id)
     form.project_id.data = str(project.id)
+    if project.environments_enabled and len(project.project_environments) > 1:
+        sorted_envs = sorted(project.project_environments, key=lambda e: e.sort_order)
+        form.environment_id.choices = [
+            (str(e.id), e.name) for e in sorted_envs
+        ]
+        if not form.is_submitted():
+            default_env = next((e for e in sorted_envs if e.is_default), sorted_envs[0])
+            form.environment_id.data = str(default_env.id)
+    else:
+        form.environment_id.choices = []
 
     if form.validate_on_submit():
         application = Application(
@@ -1580,9 +1599,20 @@ def project_application_create(org_slug, project_slug):
         db.session.flush()
 
         if project.environments_enabled:
-            # Env-enabled: app is a shell until added to environments
-            # via the environment page's "Add Application" form.
-            pass
+            target_env = None
+            if form.environment_id.data:
+                target_env = Environment.query.filter_by(
+                    id=form.environment_id.data, project_id=project.id
+                ).first()
+            if not target_env:
+                target_env = next(
+                    (e for e in project.project_environments if e.is_default),
+                    None,
+                )
+            if target_env:
+                _associate_app_with_environment(
+                    application, target_env, organization, project
+                )
         else:
             # Non-env project: lazily create default environment if needed,
             # then create bare app_env + sentinel config.

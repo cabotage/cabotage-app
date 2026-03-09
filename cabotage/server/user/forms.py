@@ -218,6 +218,11 @@ class CreateApplicationForm(FlaskForm):
             "must be unique within the Project."
         ),
     )
+    environment_id = SelectField(
+        "Environment",
+        [Optional()],
+        description="Environment to add this application to.",
+    )
 
     def validate_slug(form, field):
         project = (
