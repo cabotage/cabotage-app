@@ -1962,7 +1962,11 @@
           </div>
         </div>
         <a href="{{ url_for('user.deployment_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id=active_deploy.id) }}"
-           class="btn btn-ghost btn-sm gap-1.5 dpl-hero-action">{{ icon('file-text', 'w-3.5 h-3.5') }} View logs</a>
+           class="btn btn-ghost btn-sm gap-1.5 dpl-hero-action">{{ icon('terminal', 'w-3.5 h-3.5') }} Deploy log</a>
+        {% if config.LOKI_URL %}
+          <a href="{{ url_for('user.deployment_logs_view', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id=active_deploy.id) }}"
+             class="btn btn-ghost btn-sm gap-1.5 dpl-hero-action">{{ icon('file-text', 'w-3.5 h-3.5') }} App logs</a>
+        {% endif %}
       </div>
     </div>
   {% endif %}
@@ -2072,7 +2076,16 @@
             {% endif %}
           </div>
 
-          <span class="dpl-row-time"><time data-timestamp="{{ deployment.updated|isoformat_utc }}">{{ deployment.updated|humanize }}</time></span>
+          <div class="dpl-row-right">
+            {% if config.LOKI_URL %}
+              <span class="dpl-meta-chip"
+                    data-href="{{ url_for('user.deployment_logs_view', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id=deployment.id) }}">
+                {{ icon('file-text', 'w-3 h-3') }}
+                <span>Logs</span>
+              </span>
+            {% endif %}
+            <span class="dpl-row-time"><time data-timestamp="{{ deployment.updated|isoformat_utc }}">{{ deployment.updated|humanize }}</time></span>
+          </div>
         </a>
       {% endfor %}
     </div>

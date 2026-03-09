@@ -1,5 +1,6 @@
 import collections
 import datetime
+import json
 import re
 import time
 import threading
@@ -2667,6 +2668,68 @@ def deployment_detail(org_slug, project_slug, app_slug, deployment_id):
     return render_template("user/deployment_detail.html", deployment=deployment)
 
 
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/deployments/<deployment_id>/logs"
+)
+@login_required
+def deployment_logs_view(org_slug, project_slug, app_slug, deployment_id):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    deployment = Deployment.query.filter_by(
+        id=deployment_id, application_id=application.id
+    ).first_or_404()
+
+    loki_configured = bool(current_app.config.get("LOKI_URL"))
+    app_env = deployment.application_environment
+    process_names = sorted(app_env.process_counts or {}) if app_env else []
+
+    # Determine if this deployment's pods are still live
+    if not deployment.complete and not deployment.error:
+        deployment_is_live = True
+    elif deployment.complete and app_env:
+        latest_completed = (
+            Deployment.query.filter_by(
+                application_environment_id=app_env.id, complete=True
+            )
+            .order_by(Deployment.created.desc())
+            .first()
+        )
+        deployment_is_live = latest_completed and latest_completed.id == deployment.id
+    else:
+        deployment_is_live = False
+
+    return render_template(
+        "user/deployment_logs.html",
+        deployment=deployment,
+        application=application,
+        loki_configured=loki_configured,
+        process_names=process_names,
+        deployment_is_live=deployment_is_live,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/deployments/<deployment_id>/logs/query"
+)
+@login_required
+def deployment_logs_query(org_slug, project_slug, app_slug, deployment_id):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    deployment = Deployment.query.filter_by(
+        id=deployment_id, application_id=application.id
+    ).first_or_404()
+
+    app_env = deployment.application_environment
+    if not app_env:
+        return jsonify({"error": "not configured"}), 404
+
+    namespace = _compute_observe_namespace(application, app_env)
+    process_names = sorted(app_env.process_counts or {})
+    selectors = [
+        f'namespace="{namespace}"',
+        f'deployment="{deployment_id}"',
+    ]
+    return _loki_query_response(selectors, process_names)
+
+
 @user_blueprint.route("/deployment/<deployment_id>")
 @login_required
 def deployment_detail_legacy(deployment_id):
@@ -3384,6 +3447,7 @@ def project_application_observe(org_slug, project_slug, app_slug, env_slug=None)
     environment = app_env.environment if app_env else None
 
     mimir_configured = bool(current_app.config.get("MIMIR_URL"))
+    process_names = sorted(app_env.process_counts or {}) if app_env else []
 
     return render_template(
         "user/project_application_observe.html",
@@ -3392,6 +3456,7 @@ def project_application_observe(org_slug, project_slug, app_slug, env_slug=None)
         app_env=app_env,
         mimir_configured=mimir_configured,
         current_range=request.args.get("range", "1h"),
+        process_names=process_names,
     )
 
 
@@ -3428,7 +3493,46 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
     namespace = _compute_observe_namespace(application, app_env)
     prefix = _compute_observe_prefix(application)
     escaped_prefix = _REGEX_META.sub(r"\\\g<0>", prefix)
-    labels = f'namespace="{namespace}", pod=~"{escaped_prefix}-.*"'
+
+    # Optional process filter
+    process_filter = request.args.get("process", "")
+    if process_filter:
+        escaped_process = _REGEX_META.sub(r"\\\g<0>", process_filter)
+        labels = (
+            f'namespace="{namespace}", pod=~"{escaped_prefix}-{escaped_process}-.*"'
+        )
+    else:
+        labels = f'namespace="{namespace}", pod=~"{escaped_prefix}-.*"'
+
+    # Build exact traefik service labels from ingress config.
+    # nginx-ingress format: {ns}-{prefix}-{ingress.name}-{prefix}-{process}-{port}@kubernetesingressnginx
+    traefik_svc_names = set()
+    for ingress in app_env.ingresses:
+        if not ingress.enabled:
+            continue
+        for path in ingress.paths:
+            if process_filter and path.target_process_name != process_filter:
+                continue
+            traefik_svc_names.add(
+                f"{namespace}-{prefix}-{ingress.name}-{prefix}-{path.target_process_name}-8000@kubernetesingressnginx"
+            )
+        if not ingress.paths:
+            if not process_filter or process_filter == "web":
+                traefik_svc_names.add(
+                    f"{namespace}-{prefix}-{ingress.name}-{prefix}-web-8000@kubernetesingressnginx"
+                )
+    if len(traefik_svc_names) == 1:
+        traefik_svc = f'service="{next(iter(traefik_svc_names))}"'
+    elif traefik_svc_names:
+        joined = "|".join(
+            _REGEX_META.sub(r"\\\g<0>", s) for s in sorted(traefik_svc_names)
+        )
+        traefik_svc = f'service=~"{joined}"'
+    elif process_filter:
+        # Filtered process has no ingresses — no traefik metrics available
+        traefik_svc = None
+    else:
+        traefik_svc = f'service="{namespace}-{prefix}-web-{prefix}-web-8000@kubernetesingressnginx"'
 
     range_param = request.args.get("range", "1h")
     range_map = {"1h": 3600, "6h": 21600, "24h": 86400}
@@ -3441,6 +3545,7 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
     start = end - duration
 
     result = None
+    queries = []
 
     by_clause = {
         "pod": "by (pod)",
@@ -3463,6 +3568,7 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
             )
         else:
             q = f"sum(rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}])) {by_clause}"
+        queries.append(q)
         result = _query_mimir_range(q, start, end, step)
     elif metric == "memory":
         if group == "process":
@@ -3473,20 +3579,23 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
             )
         else:
             q = f"sum(container_memory_working_set_bytes{{{labels}}}) {by_clause}"
+        queries.append(q)
         result = _query_mimir_range(q, start, end, step)
+    elif metric in ("requests", "errors", "latency") and traefik_svc is None:
+        # Process has no ingresses — no HTTP metrics
+        result = None
     elif metric == "requests":
         # Use 60s minimum bucket for clean per-minute counts
         req_step = max(step, 60)
         req_start = end - duration
         result = []
         for code_class in ["2", "3", "4", "5"]:
-            qr = _query_mimir_range(
+            q = (
                 f"sum(increase(traefik_service_requests_total"
-                f'{{service=~".*{escaped_prefix}.*", code=~"{code_class}.."}}[{req_step}s]))',
-                req_start,
-                end,
-                req_step,
+                f'{{{traefik_svc}, code=~"{code_class}.."}}[{req_step}s]))'
             )
+            queries.append(q)
+            qr = _query_mimir_range(q, req_start, end, req_step)
             if qr:
                 for series in qr:
                     series["metric"]["code"] = f"{code_class}xx"
@@ -3500,15 +3609,14 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
             # Per status code class error rates (4xx and 5xx separately)
             result = []
             for code_class, label in [("4", "4xx"), ("5", "5xx")]:
-                qr = _query_mimir_range(
+                q = (
                     f"sum(increase(traefik_service_requests_total"
-                    f'{{service=~".*{escaped_prefix}.*", code=~"{code_class}.."}}[{err_step}s]))'
+                    f'{{{traefik_svc}, code=~"{code_class}.."}}[{err_step}s]))'
                     f" / sum(increase(traefik_service_requests_total"
-                    f'{{service=~".*{escaped_prefix}.*"}}[{err_step}s]))',
-                    err_start,
-                    end,
-                    err_step,
+                    f"{{{traefik_svc}}}[{err_step}s]))"
                 )
+                queries.append(q)
+                qr = _query_mimir_range(q, err_start, end, err_step)
                 if qr:
                     for series in qr:
                         series["metric"]["label"] = label
@@ -3516,34 +3624,34 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
             result = result if result else None
         else:
             # Total error rate (5xx only)
-            result = _query_mimir_range(
+            q = (
                 f"sum(increase(traefik_service_requests_total"
-                f'{{service=~".*{escaped_prefix}.*", code=~"5.."}}[{err_step}s]))'
+                f'{{{traefik_svc}, code=~"5.."}}[{err_step}s]))'
                 f" / sum(increase(traefik_service_requests_total"
-                f'{{service=~".*{escaped_prefix}.*"}}[{err_step}s]))',
-                err_start,
-                end,
-                err_step,
+                f"{{{traefik_svc}}}[{err_step}s]))"
             )
+            queries.append(q)
+            result = _query_mimir_range(q, err_start, end, err_step)
             if result:
                 for series in result:
                     series["metric"]["label"] = "error rate"
     elif metric == "latency":
-        latency_results = []
+        result = []
         for quantile in [0.5, 0.9, 0.95, 0.99]:
             q = (
                 f"histogram_quantile({quantile}, sum(rate("
                 f"traefik_router_request_duration_seconds_bucket"
-                f'{{service=~".*{escaped_prefix}.*"}}[{rate_window}])) by (le))'
+                f"{{{traefik_svc}}}[{rate_window}])) by (le))"
             )
+            queries.append(q)
             qr = _query_mimir_range(q, start, end, step)
             if qr:
                 for series in qr:
                     series["metric"]["quantile"] = f"p{int(quantile * 100)}"
-                latency_results.extend(qr)
-        result = latency_results if latency_results else None
+                result.extend(qr)
+        result = result if result else None
 
-    return jsonify({"result": result})
+    return jsonify({"result": result, "queries": queries})
 
 
 def _query_mimir_instant(query):
@@ -3717,3 +3825,306 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
             "processes": processes,
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# Loki log viewer
+# ---------------------------------------------------------------------------
+
+
+def _loki_connection():
+    """Return (loki_url, verify) tuple, or (None, None) if not configured."""
+    loki_url = current_app.config.get("LOKI_URL")
+    if not loki_url:
+        return None, None
+    verify = current_app.config.get("LOKI_VERIFY")
+    if verify is not None:
+        if isinstance(verify, str) and verify.lower() == "false":
+            verify = False
+    else:
+        verify = True
+    return loki_url, verify
+
+
+def _query_loki(query, start, end, limit=500, direction="backward"):
+    """Query Loki's query_range endpoint.
+
+    *start* and *end* are unix epoch **nanoseconds** (int or str).
+    Returns the parsed ``data.result`` list, or None on any error.
+    """
+    loki_url, verify = _loki_connection()
+    if not loki_url:
+        return None
+    try:
+        resp = requests_lib.get(
+            f"{loki_url}/loki/api/v1/query_range",
+            params={
+                "query": query,
+                "start": str(start),
+                "end": str(end),
+                "limit": limit,
+                "direction": direction,
+            },
+            verify=verify,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("status") == "success":
+            return data.get("data", {}).get("result", [])
+        return None
+    except Exception:
+        current_app.logger.debug("Loki query failed", exc_info=True)
+        return None
+
+
+def _escape_logql_line_filter(text):
+    """Escape special characters for a LogQL line-filter string literal."""
+    return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "")
+
+
+def _build_log_selectors(namespace, project_slug=None, app_slug=None, env_slug=None):
+    """Build LogQL label selectors for a given scope.
+
+    Returns a list of selector strings like ``'namespace="foo"'``.
+    Does NOT perform ACL checks — callers must handle that.
+    """
+    selectors = [
+        f'namespace="{namespace}"',
+    ]
+    if project_slug:
+        selectors.append(f'project="{project_slug}"')
+    if app_slug:
+        selectors.append(f'application="{app_slug}"')
+    if env_slug:
+        selectors.append(f'environment="{env_slug}"')
+    return selectors
+
+
+def _loki_query_response(selectors, process_names):
+    """Shared Loki query logic.  Returns a Flask JSON response.
+
+    *selectors* is a list of LogQL label matchers (strings).
+    *process_names* is used to build a container-name filter.
+    """
+    loki_url, _ = _loki_connection()
+    if not loki_url:
+        return jsonify({"error": "not configured"}), 404
+
+    search = request.args.get("search", "").strip()
+    process = request.args.get("process", "").strip()
+    time_range = request.args.get("range", "1h")
+    limit = min(request.args.get("limit", 500, type=int), 5000)
+    end_ns = request.args.get("end", None)
+    start_param = request.args.get("start", None)
+
+    range_seconds = {"1h": 3600, "6h": 21600, "24h": 86400}.get(time_range, 3600)
+
+    if end_ns is not None:
+        try:
+            end_ns = int(end_ns)
+        except (ValueError, TypeError):
+            end_ns = None
+
+    if end_ns is None:
+        end_ns = int(time.time() * 1_000_000_000)
+
+    if start_param is not None:
+        try:
+            start_ns = int(start_param)
+        except (ValueError, TypeError):
+            start_ns = end_ns - (range_seconds * 1_000_000_000)
+    else:
+        start_ns = end_ns - (range_seconds * 1_000_000_000)
+
+    # Build LogQL query — filter to user process containers
+    all_selectors = list(selectors)
+    if process:
+        all_selectors.append(f'pod_container_name="{process}"')
+    elif process_names:
+        # Loki regex matchers are fully anchored, so exact alternation is safe
+        all_selectors.append(f'pod_container_name=~"{"|".join(process_names)}"')
+    else:
+        all_selectors.append('pod_container_name!~"cabotage-.*"')
+
+    logql = "{" + ", ".join(all_selectors) + "}"
+
+    hide_probes = request.args.get("hide_probes", "")
+    if hide_probes:
+        logql += r" !~ `\bkube-probe/\d+\.\d+\b`"
+
+    if search:
+        escaped = _escape_logql_line_filter(search)
+        logql += f' |= "{escaped}"'
+
+    direction = request.args.get("direction", "backward")
+    if direction not in ("backward", "forward"):
+        direction = "backward"
+
+    streams = _query_loki(logql, start_ns, end_ns, limit=limit, direction=direction)
+    if streams is None:
+        return jsonify({"error": "query failed"}), 502
+
+    # Flatten streams into a sorted list of log entries
+    entries = []
+    for stream in streams:
+        labels = stream.get("stream", {})
+        proc = labels.get("process", "")
+        pod = labels.get("pod_name", "")
+        for ts_ns, line in stream.get("values", []):
+            # Unwrap container runtime log wrappers
+            message = line
+            log_stream = ""
+            # CRI format: "<timestamp> <stream> <flags> <message>"
+            # e.g. "2026-03-07T20:00:57.030Z stdout F actual log line"
+            if len(line) > 36 and line[0] == "2" and line[4] == "-":
+                parts = line.split(" ", 3)
+                if len(parts) == 4 and parts[1] in ("stdout", "stderr"):
+                    log_stream = parts[1]
+                    message = parts[3]
+            else:
+                # Docker JSON format: {"log":"...", "stream":"...", "time":"..."}
+                try:
+                    parsed = json.loads(line)
+                    if isinstance(parsed, dict) and "log" in parsed:
+                        message = parsed["log"]
+                        log_stream = parsed.get("stream", "")
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            if message.endswith("\n"):
+                message = message[:-1]
+            entries.append(
+                {
+                    "ts": ts_ns,
+                    "process": proc,
+                    "pod": pod,
+                    "stream": log_stream,
+                    "message": message,
+                }
+            )
+
+    # Sort oldest first (chronological)
+    entries.sort(key=lambda e: e["ts"])
+
+    # Trim to limit
+    entries = entries[:limit]
+
+    return jsonify({"entries": entries})
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/logs",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/logs",
+    defaults={"env_slug": None},
+)
+@login_required
+def project_application_logs_view(org_slug, project_slug, app_slug, env_slug=None):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=False
+    )
+    environment = app_env.environment if app_env else None
+
+    loki_configured = bool(current_app.config.get("LOKI_URL"))
+    process_names = sorted(app_env.process_counts or {}) if app_env else []
+
+    return render_template(
+        "user/project_application_logs_view.html",
+        application=application,
+        environment=environment,
+        app_env=app_env,
+        loki_configured=loki_configured,
+        process_names=process_names,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/logs/query",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/logs/query",
+    defaults={"env_slug": None},
+)
+@login_required
+def project_application_logs_query(org_slug, project_slug, app_slug, env_slug=None):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=False
+    )
+
+    if not app_env:
+        return jsonify({"error": "not configured"}), 404
+
+    namespace = _compute_observe_namespace(application, app_env)
+    process_names = sorted(app_env.process_counts or {})
+    env_slug_val = app_env.environment.slug if app_env.environment else ""
+    selectors = _build_log_selectors(
+        namespace,
+        project_slug=application.project.slug,
+        app_slug=application.slug,
+        env_slug=env_slug_val,
+    )
+    return _loki_query_response(selectors, process_names)
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/logs",
+)
+@login_required
+def project_logs_view(org_slug, project_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not ViewProjectPermission(project.id).can():
+        abort(403)
+
+    loki_configured = bool(current_app.config.get("LOKI_URL"))
+
+    # Collect process names from all app_envs in the project
+    process_names_set = set()
+    for app in project.project_applications:
+        for ae in app.application_environments:
+            for proc in ae.process_counts or {}:
+                process_names_set.add(proc)
+    process_names = sorted(process_names_set)
+
+    return render_template(
+        "user/project_logs.html",
+        organization=organization,
+        project=project,
+        loki_configured=loki_configured,
+        process_names=process_names,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/logs/query",
+)
+@login_required
+def project_logs_query(org_slug, project_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not ViewProjectPermission(project.id).can():
+        abort(403)
+
+    # Project logs may span multiple namespaces (org-level + env-specific),
+    # so use a regex on the org k8s identifier prefix.
+    selectors = [
+        f'namespace=~"{_REGEX_META.sub(lambda m: chr(92) + m.group(), organization.k8s_identifier)}.*"',
+        f'project="{project.slug}"',
+    ]
+
+    # Collect process names from all app_envs
+    process_names_set = set()
+    for app in project.project_applications:
+        for ae in app.application_environments:
+            for proc in ae.process_counts or {}:
+                process_names_set.add(proc)
+    process_names = sorted(process_names_set)
+
+    return _loki_query_response(selectors, process_names)

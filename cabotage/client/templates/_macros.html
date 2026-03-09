@@ -100,6 +100,13 @@
       {% else %}
       <span class="tab-item tab-disabled">{{ icon('bar-chart', 'w-4 h-4') }} Observe</span>
       {% endif %}
+      {% if config.LOKI_URL %}
+      <a href="{{ url_for('user.project_application_logs_view', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
+         class="tab-item
+                {% if active == 'logs' %}tab-active{% endif %}">{{ icon('file-text', 'w-4 h-4') }} Logs</a>
+      {% else %}
+      <span class="tab-item tab-disabled">{{ icon('file-text', 'w-4 h-4') }} Logs</span>
+      {% endif %}
       <a href="{{ overview_url }}#config"
          class="tab-item
                 {% if active == 'config' %}tab-active{% endif %}">
@@ -896,5 +903,73 @@
     <svg class="{{ size }}" viewBox="0 0 24 24" fill="currentColor">
       <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
     </svg>
+  {% endif %}
+{% endmacro %}
+
+{% macro loki_log_viewer(query_url, process_names=[], loki_configured=true, no_poll=false) %}
+  {% if not loki_configured %}
+    <div class="alert alert-warning">
+      {{ icon('alert-triangle', 'w-4 h-4') }}
+      <span>Logs are not configured. Set <code>CABOTAGE_LOKI_URL</code> to enable log viewing.</span>
+    </div>
+  {% else %}
+    <div class="loki-log-component"
+         data-query-url="{{ query_url }}"
+         data-processes="{{ process_names|tojson|e }}"
+         {% if no_poll %}data-no-poll="true"{% endif %}>
+      {# Controls bar #}
+      <div class="flex items-center gap-3 mb-4 flex-wrap">
+        <select class="js-process-filter select select-bordered select-sm bg-base-100 text-base-content border-base-content/10">
+          <option value="">All processes</option>
+          {% for proc in process_names %}
+            <option value="{{ proc }}">{{ proc }}</option>
+          {% endfor %}
+        </select>
+
+        <input type="text"
+               class="js-search input input-bordered input-sm bg-base-100 text-base-content border-base-content/10 w-60 font-mono"
+               placeholder="Search logs...">
+
+        <label class="label cursor-pointer gap-2 ml-auto">
+          <span class="text-xs text-base-content/40">Show probes</span>
+          <input type="checkbox" class="js-show-probes checkbox checkbox-xs checkbox-ghost">
+        </label>
+      </div>
+
+      {# Error alert (hidden by default) #}
+      <div class="js-error alert alert-error mb-4 hidden">
+        {{ icon('alert-triangle', 'w-4 h-4') }}
+        <span class="js-error-msg"></span>
+      </div>
+
+      {# Loading spinner #}
+      <div class="js-loading flex items-center justify-center py-8 hidden">
+        <span class="loading loading-spinner loading-md"></span>
+      </div>
+
+      {# Empty state #}
+      <div class="js-empty hidden">
+        <div class="flex flex-col items-center justify-center py-12 text-base-content/40">
+          {{ icon('file-text', 'w-10 h-10') }}
+          <p class="mt-2 text-sm">No logs found</p>
+        </div>
+      </div>
+
+      {# Log viewer #}
+      <div class="log-nav">
+        <div class="js-log-wrap log-frame hidden">
+          <div class="js-log-lines loki-log-lines"></div>
+          <div class="js-scroll-anchor"></div>
+        </div>
+        <div class="log-nav-btns js-log-nav hidden">
+          <button class="log-nav-btn js-scroll-top" title="Jump to top">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+          </button>
+          <button class="log-nav-btn js-scroll-bottom" title="Jump to bottom">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
   {% endif %}
 {% endmacro %}

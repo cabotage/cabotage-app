@@ -1,0 +1,36 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, app_tab_nav, app_resource_path, loki_log_viewer %}
+
+{% set org_slug = application.project.organization.slug %}
+{% set project_slug = application.project.slug %}
+{% set app_slug = application.slug %}
+{% set env_slug = environment.slug if environment else none %}
+
+{% block title %}
+  Logs - {{ app_slug }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ app_resource_path(application, 'Logs', env=environment|default(none)) }}
+{% endblock resource_path %}
+
+{% block tab_bar %}
+  {{ app_tab_nav(application, 'logs', env=environment|default(none)) }}
+{% endblock tab_bar %}
+
+{% block content %}
+  <div class="settings-page">
+    <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+      <div>
+        <h1 class="text-lg font-semibold text-base-content">Logs</h1>
+        <p class="text-xs text-base-content/40">Application log output from Loki</p>
+      </div>
+    </div>
+
+    {{ loki_log_viewer(
+        query_url=url_for('user.project_application_logs_query', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug),
+        process_names=process_names,
+        loki_configured=loki_configured,
+    ) }}
+  </div>
+{% endblock content %}

@@ -1536,7 +1536,289 @@ function initAppShell() {
   socket.addEventListener('open', function() { sendResize(); });
 }
 
-/* Init All */
+/* Loki Log Viewer Component */
+function initLokiLogViewer() {
+  document.querySelectorAll('.loki-log-component').forEach(function(root) {
+    var queryUrl = root.getAttribute('data-query-url');
+    if (!queryUrl) return;
+
+    var logLines = root.querySelector('.js-log-lines');
+    var logWrap = root.querySelector('.js-log-wrap');
+    var loading = root.querySelector('.js-loading');
+    var empty = root.querySelector('.js-empty');
+    var errorEl = root.querySelector('.js-error');
+    var errorMsg = root.querySelector('.js-error-msg');
+    var searchInput = root.querySelector('.js-search');
+    var processFilter = root.querySelector('.js-process-filter');
+    var showProbes = root.querySelector('.js-show-probes');
+    var scrollAnchor = root.querySelector('.js-scroll-anchor');
+    var logNav = root.querySelector('.js-log-nav');
+    var scrollTopBtn = root.querySelector('.js-scroll-top');
+    var scrollBottomBtn = root.querySelector('.js-scroll-bottom');
+    var noPoll = root.getAttribute('data-no-poll') === 'true';
+
+    var newestTs = null;
+    var oldestTs = null;
+    var olderExhausted = false;
+    var fetchingOlder = false;
+    var debounceTimer = null;
+    var pollTimer = null;
+    var abortCtrl = null;
+    var userScrolled = false;
+    var MAX_LINES = 1000;
+    var POLL_FAST = 2000;
+    var POLL_SLOW = 10000;
+    var pollInterval = POLL_FAST;
+    var idleCount = 0;
+
+    // Process colors
+    var COLORS = ['#8b5cf6','#06b6d4','#f59e0b','#3b82f6','#10b981','#ef4444'];
+    var colorMap = {}, colorIdx = 0;
+    function procColor(p) {
+      if (!colorMap[p]) { colorMap[p] = COLORS[colorIdx++ % COLORS.length]; }
+      return colorMap[p];
+    }
+
+    // Timestamp formatting
+    function formatTs(tsStr) {
+      var ms = tsStr.length > 6 ? Number(tsStr.slice(0, -6)) : 0;
+      var d = new Date(ms);
+      return d.toISOString().replace('T', ' ').replace('Z', '');
+    }
+
+    // Escape HTML
+    var escEl = document.createElement('span');
+    function esc(s) { escEl.textContent = s; return escEl.innerHTML; }
+
+    // Increment nanosecond timestamp string by 1
+    function tsIncrement(tsStr) {
+      var digits = tsStr.split('');
+      for (var i = digits.length - 1; i >= 0; i--) {
+        var d = parseInt(digits[i], 10) + 1;
+        if (d < 10) { digits[i] = String(d); return digits.join(''); }
+        digits[i] = '0';
+      }
+      return '1' + digits.join('');
+    }
+
+    // Decrement nanosecond timestamp string by 1
+    function tsDecrement(tsStr) {
+      var digits = tsStr.split('');
+      for (var i = digits.length - 1; i >= 0; i--) {
+        var d = parseInt(digits[i], 10) - 1;
+        if (d >= 0) { digits[i] = String(d); return digits.join(''); }
+        digits[i] = '9';
+      }
+      return digits.join('');
+    }
+
+    // Build a document fragment from entries
+    function buildFragment(entries) {
+      var frag = document.createDocumentFragment();
+      for (var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        var line = document.createElement('div');
+        line.className = e.stream === 'stderr' ? 'log-line log-line-stderr' : 'log-line';
+
+        var ts = document.createElement('span');
+        ts.className = 'log-line-ts';
+        ts.textContent = formatTs(e.ts);
+
+        var proc = document.createElement('span');
+        proc.className = 'log-line-process';
+        if (e.process) proc.style.color = procColor(e.process);
+        proc.textContent = e.process;
+
+        var msg = document.createElement('span');
+        msg.className = 'log-line-msg';
+        msg.textContent = e.message;
+
+        line.appendChild(ts);
+        line.appendChild(proc);
+        line.appendChild(msg);
+        frag.appendChild(line);
+      }
+      return frag;
+    }
+
+    function appendEntries(entries) {
+      logLines.appendChild(buildFragment(entries));
+    }
+
+    function prependEntries(entries) {
+      var prevHeight = logWrap.scrollHeight;
+      var prevTop = logWrap.scrollTop;
+      logLines.insertBefore(buildFragment(entries), logLines.firstChild);
+      // Restore scroll position so the view doesn't jump
+      logWrap.scrollTop = prevTop + (logWrap.scrollHeight - prevHeight);
+    }
+
+    // Trim oldest lines from top (when auto-scrolling with new entries)
+    function trimTop() {
+      while (logLines.children.length > MAX_LINES) {
+        logLines.removeChild(logLines.firstChild);
+      }
+    }
+
+    // Trim newest lines from bottom (when prepending older entries)
+    function trimBottom() {
+      while (logLines.children.length > MAX_LINES) {
+        logLines.removeChild(logLines.lastChild);
+      }
+    }
+
+    function scrollToTop() {
+      logWrap.scrollTop = 0;
+    }
+
+    function scrollToBottom() {
+      if (scrollAnchor) scrollAnchor.scrollIntoView({ block: 'end' });
+    }
+
+    scrollTopBtn.addEventListener('click', scrollToTop);
+    scrollBottomBtn.addEventListener('click', function() {
+      userScrolled = false;
+      scrollToBottom();
+    });
+
+    logWrap.addEventListener('scroll', function() {
+      userScrolled = (logWrap.scrollHeight - logWrap.scrollTop - logWrap.clientHeight) > 40;
+      // Prefetch older entries when approaching the top
+      var prefetchZone = Math.max(logWrap.clientHeight * 0.5, 200);
+      if (logWrap.scrollTop < prefetchZone && oldestTs && !olderExhausted && !fetchingOlder) {
+        fetchLogs('older');
+      }
+    }, { passive: true });
+
+    function cancelFetch() {
+      if (abortCtrl) { abortCtrl.abort(); abortCtrl = null; }
+    }
+
+    function fetchLogs(mode) {
+      if (mode === 'older') {
+        if (fetchingOlder || olderExhausted || !oldestTs) return;
+        fetchingOlder = true;
+      } else {
+        cancelFetch();
+      }
+      if (mode === 'reset') {
+        userScrolled = false;
+        logLines.innerHTML = '';
+        newestTs = null;
+        oldestTs = null;
+        olderExhausted = false;
+        idleCount = 0;
+        pollInterval = POLL_FAST;
+      }
+      if (mode !== 'newer' && mode !== 'older') {
+        loading.classList.remove('hidden');
+        errorEl.classList.add('hidden');
+        empty.classList.add('hidden');
+        if (mode === 'reset') { logWrap.classList.add('hidden'); logNav.classList.add('hidden'); }
+      }
+
+      var params = new URLSearchParams();
+      params.set('limit', '500');
+      if (searchInput.value.trim()) params.set('search', searchInput.value.trim());
+      if (processFilter.value) params.set('process', processFilter.value);
+      if (!showProbes.checked) params.set('hide_probes', '1');
+
+      if (mode === 'newer' && newestTs) {
+        params.set('start', tsIncrement(newestTs));
+        params.set('direction', 'forward');
+      } else if (mode === 'older' && oldestTs) {
+        params.set('end', tsDecrement(oldestTs));
+        params.set('direction', 'backward');
+      }
+
+      var ctrl = new AbortController();
+      if (mode !== 'older') abortCtrl = ctrl;
+      fetch(queryUrl + '?' + params.toString(), { signal: ctrl.signal })
+        .then(function(r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        })
+        .then(function(data) {
+          if (mode !== 'older') abortCtrl = null;
+          loading.classList.add('hidden');
+
+          if (mode === 'older') {
+            fetchingOlder = false;
+            var entries = data.entries || [];
+            if (entries.length === 0) { olderExhausted = true; return; }
+            oldestTs = entries[0].ts;
+            prependEntries(entries);
+            trimBottom();
+            return;
+          }
+
+          if (data.error) {
+            if (mode !== 'newer') { errorMsg.textContent = data.error; errorEl.classList.remove('hidden'); }
+            schedulePoll();
+            return;
+          }
+          var entries = data.entries || [];
+
+          if (mode === 'newer') {
+            if (entries.length === 0) {
+              idleCount++;
+              if (idleCount > 3) pollInterval = Math.min(pollInterval * 2, POLL_SLOW);
+              schedulePoll();
+              return;
+            }
+            idleCount = 0;
+            pollInterval = POLL_FAST;
+            newestTs = entries[entries.length - 1].ts;
+            appendEntries(entries);
+            logWrap.classList.remove('hidden'); logNav.classList.remove('hidden');
+            empty.classList.add('hidden');
+            if (!userScrolled) { trimTop(); scrollToBottom(); }
+            schedulePoll();
+            return;
+          }
+
+          if (entries.length === 0 && mode === 'reset') { empty.classList.remove('hidden'); schedulePoll(); return; }
+          logWrap.classList.remove('hidden');
+          appendEntries(entries);
+          if (entries.length > 0) {
+            newestTs = entries[entries.length - 1].ts;
+            oldestTs = entries[0].ts;
+          }
+          scrollToBottom();
+          schedulePoll();
+        })
+        .catch(function(err) {
+          if (mode === 'older') { fetchingOlder = false; return; }
+          abortCtrl = null;
+          if (err.name === 'AbortError') return;
+          loading.classList.add('hidden');
+          if (mode !== 'newer') { errorMsg.textContent = err.message || 'Failed to fetch logs'; errorEl.classList.remove('hidden'); }
+          schedulePoll();
+        });
+    }
+
+    function schedulePoll() {
+      if (noPoll) return;
+      stopPolling();
+      pollTimer = setTimeout(function() { fetchLogs('newer'); }, pollInterval);
+    }
+    function stopPolling() { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; } }
+    function resetAndPoll() { stopPolling(); cancelFetch(); fetchLogs('reset'); }
+
+    processFilter.addEventListener('change', function() { resetAndPoll(); });
+    searchInput.addEventListener('input', function() {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(function() { resetAndPoll(); }, 300);
+    });
+    showProbes.addEventListener('change', function() { resetAndPoll(); });
+    document.addEventListener('visibilitychange', function() {
+      if (document.hidden) { stopPolling(); cancelFetch(); } else { idleCount = 0; pollInterval = POLL_FAST; schedulePoll(); }
+    });
+
+    fetchLogs('reset');
+  });
+}
+
 /* Compact Topbar (scroll collapse) */
 function initCompactTopbar() {
   var topbar = document.querySelector('[data-topbar]');
@@ -1693,6 +1975,7 @@ document.addEventListener('DOMContentLoaded', function () {
   initAccentPicker();
   initPreferenceToggles();
   initCommitPopup();
+  initLokiLogViewer();
   initTimestampsAndDeployForm();
   autoExpandCollapsibleCards();
   syncDetailLogHeight();

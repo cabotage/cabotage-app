@@ -88,3 +88,5 @@ class Config(metaclass=MetaFlaskEnv):
     INGRESS_DOMAIN = None
     MIMIR_URL = None
     MIMIR_VERIFY = None
+    LOKI_URL = None
+    LOKI_VERIFY = None

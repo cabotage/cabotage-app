@@ -26,11 +26,21 @@
         <p class="text-xs text-base-content/40">Application resource usage and request metrics</p>
       </div>
       {% set base_url = url_for('user.project_application_observe', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) %}
-      <div class="flex gap-1">
-        {% for r in ['1h', '6h', '24h'] %}
-          <a href="{{ base_url }}?range={{ r }}"
-             class="btn btn-sm {% if current_range == r %}btn-primary{% else %}btn-ghost{% endif %}">{{ r }}</a>
-        {% endfor %}
+      <div class="flex items-center gap-2">
+        {% if process_names|length > 1 %}
+          <select id="process-filter" class="select select-sm select-bordered text-xs">
+            <option value="">All processes</option>
+            {% for p in process_names %}
+              <option value="{{ p }}">{{ p }}</option>
+            {% endfor %}
+          </select>
+        {% endif %}
+        <div class="flex gap-1">
+          {% for r in ['1h', '6h', '24h'] %}
+            <a href="{{ base_url }}?range={{ r }}"
+               class="btn btn-sm {% if current_range == r %}btn-primary{% else %}btn-ghost{% endif %}">{{ r }}</a>
+          {% endfor %}
+        </div>
       </div>
     </div>
 
@@ -58,6 +68,7 @@
                 {{ icon('loader', 'w-5 h-5 animate-spin') }}
               </div>
             </div>
+            <p class="text-[0.6rem] text-base-content/20 mt-1 break-all leading-tight hidden" data-query-debug="cpu"></p>
           </div>
         </div>
 
@@ -77,6 +88,7 @@
                 {{ icon('loader', 'w-5 h-5 animate-spin') }}
               </div>
             </div>
+            <p class="text-[0.6rem] text-base-content/20 mt-1 break-all leading-tight hidden" data-query-debug="memory"></p>
           </div>
         </div>
 
@@ -91,6 +103,7 @@
                 {{ icon('loader', 'w-5 h-5 animate-spin') }}
               </div>
             </div>
+            <p class="text-[0.6rem] text-base-content/20 mt-1 break-all leading-tight hidden" data-query-debug="requests"></p>
           </div>
         </div>
 
@@ -105,6 +118,7 @@
                 {{ icon('loader', 'w-5 h-5 animate-spin') }}
               </div>
             </div>
+            <p class="text-[0.6rem] text-base-content/20 mt-1 break-all leading-tight hidden" data-query-debug="latency"></p>
           </div>
         </div>
 
@@ -123,9 +137,16 @@
                 {{ icon('loader', 'w-5 h-5 animate-spin') }}
               </div>
             </div>
+            <p class="text-[0.6rem] text-base-content/20 mt-1 break-all leading-tight hidden" data-query-debug="errors"></p>
           </div>
         </div>
 
+      </div>
+      <div class="flex justify-end mt-2">
+        <label class="label cursor-pointer gap-1.5">
+          <span class="text-[0.6rem] text-base-content/20">Show queries</span>
+          <input type="checkbox" id="show-debug" class="checkbox checkbox-xs checkbox-ghost">
+        </label>
       </div>
     {% endif %}
   </div>
@@ -419,10 +440,17 @@
     var el = document.getElementById('chart-' + metric);
     var group = panelGroups[metric] || 'total';
 
+    var processEl = document.getElementById('process-filter');
+    var proc = processEl ? processEl.value : '';
     var qs = '?metric=' + metric + '&range=' + RANGE + '&group=' + group;
+    if (proc) qs += '&process=' + encodeURIComponent(proc);
+    var debugEl = document.querySelector('[data-query-debug="' + metric + '"]');
     fetch(METRIC_URL + qs, { credentials: 'same-origin' })
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(data) {
+        if (debugEl && data && data.queries) {
+          debugEl.textContent = data.queries.join('\n');
+        }
         if (!data || !data.result) {
           el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/30 text-sm">No data</div>';
           return;
@@ -465,6 +493,28 @@
       });
     });
   });
+
+  // Debug toggle
+  var debugCheckbox = document.getElementById('show-debug');
+  var debugEls = document.querySelectorAll('[data-query-debug]');
+  if (debugCheckbox) {
+    debugCheckbox.addEventListener('change', function() {
+      debugEls.forEach(function(el) {
+        el.classList.toggle('hidden', !debugCheckbox.checked);
+      });
+    });
+  }
+
+  // Process filter
+  var processEl = document.getElementById('process-filter');
+  if (processEl) {
+    processEl.addEventListener('change', function() {
+      document.querySelectorAll('[data-metric-panel]').forEach(function(el) {
+        el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/20"><span class="loading loading-spinner loading-sm"></span></div>';
+      });
+      Object.keys(panels).forEach(fetchAndRender);
+    });
+  }
 
   // Initial load all panels
   Object.keys(panels).forEach(fetchAndRender);
