@@ -2687,8 +2687,9 @@ def deployment_logs_view(org_slug, project_slug, app_slug, deployment_id):
         deployment_is_live = True
     elif deployment.complete and app_env:
         latest_completed = (
-            Deployment.query
-            .filter_by(application_environment_id=app_env.id, complete=True)
+            Deployment.query.filter_by(
+                application_environment_id=app_env.id, complete=True
+            )
             .order_by(Deployment.created.desc())
             .first()
         )
@@ -3905,7 +3906,7 @@ def _loki_query_response(selectors, process_names):
 
     hide_probes = request.args.get("hide_probes", "")
     if hide_probes:
-        logql += r' !~ `\bkube-probe/\d+\.\d+\b`'
+        logql += r" !~ `\bkube-probe/\d+\.\d+\b`"
 
     if search:
         escaped = _escape_logql_line_filter(search)
@@ -4041,7 +4042,7 @@ def project_logs_view(org_slug, project_slug):
     process_names_set = set()
     for app in project.project_applications:
         for ae in app.application_environments:
-            for proc in (ae.process_counts or {}):
+            for proc in ae.process_counts or {}:
                 process_names_set.add(proc)
     process_names = sorted(process_names_set)
 
@@ -4077,7 +4078,7 @@ def project_logs_query(org_slug, project_slug):
     process_names_set = set()
     for app in project.project_applications:
         for ae in app.application_environments:
-            for proc in (ae.process_counts or {}):
+            for proc in ae.process_counts or {}:
                 process_names_set.add(proc)
     process_names = sorted(process_names_set)
 
