@@ -1077,16 +1077,20 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
                 non_auto = [h for h in hosts if not h.is_auto_generated]
                 host = non_auto[0] if non_auto else (hosts[0] if hosts else None)
                 if host:
-                    ingress_list.append({
-                        "name": ing.name,
-                        "hostname": host.hostname,
-                        "tls": host.tls_enabled,
-                    })
+                    ingress_list.append(
+                        {
+                            "name": ing.name,
+                            "hostname": host.hostname,
+                            "tls": host.tls_enabled,
+                        }
+                    )
             if ingress_list:
-                sibling_references.append({
-                    "slug": ae.application.slug,
-                    "ingresses": ingress_list,
-                })
+                sibling_references.append(
+                    {
+                        "slug": ae.application.slug,
+                        "ingresses": ingress_list,
+                    }
+                )
 
     # Pre-fetch all data from dynamic relationships once to avoid
     # repeated per-access queries in the template (~50+ calls to
