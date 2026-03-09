@@ -151,7 +151,7 @@
       <a href="{{ url_for('user.project_application_logs', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
          class="btn btn-ghost btn-sm gap-1.5">{{ icon('file-text', 'w-3.5 h-3.5') }} Logs</a>
       {% if config.SHELLZ_ENABLED %}
-        <a href="{{ url_for('user.project_application_shell', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+        <a href="{{ url_for('user.project_application_shell', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}"
            class="btn btn-ghost btn-sm gap-1.5">{{ icon('terminal', 'w-3.5 h-3.5') }} Shell</a>
       {% endif %}
       {% if application.github_repository %}
