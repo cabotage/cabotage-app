@@ -32,6 +32,12 @@
           </div>
 
           {{ render_field(form.value, placeholder='New value') }}
+          <p class="text-xs text-base-content/40 -mt-2">
+            Use <code class="text-base-content/60">${app.url}</code> or
+            <code class="text-base-content/60">${app.ingress.url}</code>
+            to reference a sibling app's ingress URL, or
+            <code class="text-base-content/60">.host</code> for just the hostname.
+          </p>
 
           <div class="p-3 rounded-lg bg-base-300/30">
             <div class="flex items-center gap-3 text-sm text-base-content/50">

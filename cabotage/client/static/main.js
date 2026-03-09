@@ -393,11 +393,31 @@ function initRawEditor() {
   }
 }
 
+/* Fade-scroll: update fade classes based on scroll position */
+function initFadeScroll(el) {
+  function update() {
+    var atLeft = el.scrollLeft <= 1;
+    var atRight = el.scrollLeft + el.clientWidth >= el.scrollWidth - 1;
+    el.classList.remove('fade-left', 'fade-right', 'fade-both');
+    if (!atLeft && !atRight) el.classList.add('fade-both');
+    else if (!atLeft) el.classList.add('fade-left');
+    else if (!atRight) el.classList.add('fade-right');
+  }
+  el.addEventListener('scroll', update);
+  // Use ResizeObserver to catch content/size changes
+  if (window.ResizeObserver) {
+    new ResizeObserver(update).observe(el);
+  }
+  update();
+  return update;
+}
+
 /* Add Variable Modal */
 function initAddVarModal() {
   var modal = document.getElementById('add-var-modal');
   if (!modal) return;
 
+  var _addVarResetHooks = [];
   function openModal() {
     modal.style.display = 'flex';
     var nameInput = modal.querySelector('input[name="name"]');
@@ -407,6 +427,7 @@ function initAddVarModal() {
     }
     var valueInput = modal.querySelector('input[name="value"]');
     if (valueInput) valueInput.value = '';
+    _addVarResetHooks.forEach(function (fn) { fn(); });
   }
   function closeModal() {
     modal.style.display = 'none';
@@ -432,6 +453,117 @@ function initAddVarModal() {
       var pos = this.selectionStart;
       this.value = this.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
       this.selectionStart = this.selectionEnd = pos;
+    });
+  }
+
+  // Init fade-scroll on all elements in the modal
+  var fadeScrollEls = modal.querySelectorAll('.fade-scroll');
+  fadeScrollEls.forEach(function (el) { initFadeScroll(el); });
+
+  // Template preview — resolve ${...} references client-side for preview
+  var valueInput = modal.querySelector('input[name="value"]');
+  var previewEl = document.getElementById('add-var-preview');
+  var previewFadeUpdate = previewEl ? initFadeScroll(previewEl) : null;
+  var siblingDataEl = document.getElementById('sibling-ref-data');
+  var siblingRefs = null;
+
+  if (siblingDataEl) {
+    try { siblingRefs = JSON.parse(siblingDataEl.textContent); } catch (e) { /* ignore */ }
+  }
+
+  function resolvePreview(val) {
+    if (!siblingRefs || !val || val.indexOf('${') === -1) return null;
+    var pattern = /\$\{([a-zA-Z0-9_-]+)(?:\.([a-zA-Z0-9_-]+))?\.(url|host)\}/g;
+    var hasMatch = false;
+    var resolved = val.replace(pattern, function (match, appSlug, middle, prop) {
+      var sib = null;
+      for (var i = 0; i < siblingRefs.length; i++) {
+        if (siblingRefs[i].slug === appSlug) { sib = siblingRefs[i]; break; }
+      }
+      if (!sib) return match;
+      var ing = null;
+      if (middle) {
+        for (var j = 0; j < sib.ingresses.length; j++) {
+          if (sib.ingresses[j].name === middle) { ing = sib.ingresses[j]; break; }
+        }
+      } else if (sib.ingresses.length === 1) {
+        ing = sib.ingresses[0];
+      }
+      if (!ing) return match;
+      hasMatch = true;
+      if (prop === 'host') return ing.hostname;
+      return (ing.tls ? 'https://' : 'http://') + ing.hostname;
+    });
+    return hasMatch ? resolved : null;
+  }
+
+  var secureCheckbox = modal.querySelector('input[name="secure"]');
+  var templatePattern = /\$\{[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)?\.(url|host)\}/;
+
+  function hasTemplateVars(val) {
+    return val && templatePattern.test(val);
+  }
+
+  function updatePreview() {
+    var val = valueInput ? valueInput.value : '';
+    var isTemplate = hasTemplateVars(val);
+
+    if (previewEl) {
+      var resolved = resolvePreview(val);
+      if (resolved) {
+        previewEl.textContent = resolved;
+        previewEl.title = resolved;
+        previewEl.style.display = '';
+        if (previewFadeUpdate) previewFadeUpdate();
+      } else {
+        previewEl.style.display = 'none';
+      }
+    }
+
+    if (secureCheckbox) {
+      if (isTemplate) {
+        secureCheckbox.checked = false;
+        secureCheckbox.disabled = true;
+      } else {
+        secureCheckbox.disabled = false;
+      }
+    }
+  }
+
+  if (valueInput) {
+    valueInput.addEventListener('input', updatePreview);
+  }
+
+  // Reference picker — inserts template strings into value field at cursor
+  var refCheck = document.getElementById('add-var-ref-check');
+  var refPicker = document.getElementById('add-var-ref-picker');
+
+  if (refCheck && refPicker) {
+    refCheck.addEventListener('change', function () {
+      refPicker.style.display = this.checked ? '' : 'none';
+      if (this.checked && secureCheckbox) {
+        secureCheckbox.checked = false;
+      }
+    });
+
+    modal.querySelectorAll('.add-var-ref-insert').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var ref = btn.getAttribute('data-ref');
+        var pos = valueInput.selectionStart || valueInput.value.length;
+        var before = valueInput.value.slice(0, pos);
+        var after = valueInput.value.slice(pos);
+        valueInput.value = before + ref + after;
+        valueInput.focus();
+        var newPos = pos + ref.length;
+        valueInput.selectionStart = valueInput.selectionEnd = newPos;
+        updatePreview();
+      });
+    });
+
+    _addVarResetHooks.push(function () {
+      refCheck.checked = false;
+      refPicker.style.display = 'none';
+      if (previewEl) previewEl.style.display = 'none';
     });
   }
 }

@@ -806,25 +806,45 @@ class Release(db.Model, Timestamp):
 
     @property
     def envconsul_configurations(self):
-        configurations = {}
-        environment_statements = "\n".join(
-            [
-                c.envconsul_statement
-                for c in self.configuration_objects.values()
-                if c is not None
-            ]
+        from cabotage.utils.config_templates import (
+            has_template_variables,
+            resolve_template_variables,
         )
+
+        configurations = {}
+        config_objects = [
+            c for c in self.configuration_objects.values() if c is not None
+        ]
+
+        # Separate template configs from regular configs
+        statements = []
+        resolved_template_env = []
+        for c in config_objects:
+            if has_template_variables(c.value):
+                resolved = resolve_template_variables(
+                    c.value, self.application_environment
+                )
+                resolved_template_env.append(f"{c.name}={resolved}")
+            else:
+                stmt = c.envconsul_statement
+                if stmt is not None:
+                    statements.append(stmt)
+        environment_statements = "\n".join(statements)
+
         exec_statement = "exec {\n" '  command = "/bin/sh"\n'
         if not self.application.privileged:
+            exec_statement += "  env = {\n"
+            if resolved_template_env:
+                exec_statement += f"    custom = {json.dumps(resolved_template_env)}\n"
             exec_statement += (
-                "  env = {\n"
-                '    denylist = ["CONSUL_*", "VAULT_*", "KUBERNETES_*"]\n'
-                "  }\n"
+                '    denylist = ["CONSUL_*", "VAULT_*", "KUBERNETES_*"]\n' "  }\n"
             )
         exec_statement += "}"
         configurations["shell"] = "\n".join([exec_statement, environment_statements])
         for proc_name, proc in self.image_object.processes.items():
-            custom_env = json.dumps([f"{key}={value}" for key, value in proc["env"]])
+            proc_env = [f"{key}={value}" for key, value in proc["env"]]
+            proc_env.extend(resolved_template_env)
+            custom_env = json.dumps(proc_env)
             exec_statement = "exec {\n" f'  command = {json.dumps(proc["cmd"])}\n'
             if not self.application.privileged:
                 exec_statement += (
@@ -997,11 +1017,20 @@ class Configuration(db.Model, Timestamp):
 
     @property
     def envconsul_statement(self):
+        from cabotage.utils.config_templates import has_template_variables
+
+        if has_template_variables(self.value):
+            return None
         directive = "secret" if self.secret else "prefix"
         path = self.key_slug.split(":", 1)[1]
         return f"{directive} {{\n" "  no_prefix = true\n" f'  path = "{path}"\n' "}"
 
     def read_value(self, reader):
+        from cabotage.utils.config_templates import (
+            has_template_variables,
+            resolve_template_variables,
+        )
+
         if self.secret:
             if self.buildtime:
                 payload = reader.read(
@@ -1009,6 +1038,8 @@ class Configuration(db.Model, Timestamp):
                 )
                 return payload["data"][self.name]
             return "**secret**"
+        if has_template_variables(self.value):
+            return resolve_template_variables(self.value, self.application_environment)
         return self.value
 
 

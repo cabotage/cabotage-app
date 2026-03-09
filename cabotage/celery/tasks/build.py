@@ -1086,6 +1086,8 @@ def build_image_buildkit(image=None):
 
 @shared_task()
 def run_image_build(image_id=None, buildkit=False):
+    from cabotage.utils.config_templates import TemplateResolutionError
+
     current_app.config["REGISTRY_AUTH_SECRET"]
     current_app.config["REGISTRY_BUILD"]
     image = Image.query.filter_by(id=image_id).first()
@@ -1158,7 +1160,7 @@ def run_image_build(image_id=None, buildkit=False):
                     "in_progress",
                     "Image built, Release build commencing.",
                 )
-        except BuildError as exc:
+        except (BuildError, TemplateResolutionError) as exc:
             db.session.add(image)
             image.error = True
             image.error_detail = str(exc)
@@ -1255,6 +1257,8 @@ def run_image_build(image_id=None, buildkit=False):
 
 @shared_task()
 def run_release_build(release_id=None):
+    from cabotage.utils.config_templates import TemplateResolutionError
+
     release = None
     try:
         current_app.config["REGISTRY_AUTH_SECRET"]
@@ -1295,7 +1299,7 @@ def run_release_build(release_id=None):
                     "in_progress",
                     "Release built, Deployment commencing.",
                 )
-        except BuildError as exc:
+        except (BuildError, TemplateResolutionError) as exc:
             release.error = True
             release.error_detail = str(exc)
             try:

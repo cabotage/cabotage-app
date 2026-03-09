@@ -1064,6 +1064,34 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     if environment:
         config_create_form.environment_id.data = str(environment.id)
 
+    sibling_references = []
+    if app_env:
+        for ae in app_env.environment.application_environments:
+            if ae.application_id == application.id:
+                continue
+            ingress_list = []
+            for ing in ae.ingresses:
+                if not ing.enabled:
+                    continue
+                hosts = ing.hosts
+                non_auto = [h for h in hosts if not h.is_auto_generated]
+                host = non_auto[0] if non_auto else (hosts[0] if hosts else None)
+                if host:
+                    ingress_list.append(
+                        {
+                            "name": ing.name,
+                            "hostname": host.hostname,
+                            "tls": host.tls_enabled,
+                        }
+                    )
+            if ingress_list:
+                sibling_references.append(
+                    {
+                        "slug": ae.application.slug,
+                        "ingresses": ingress_list,
+                    }
+                )
+
     # Pre-fetch all data from dynamic relationships once to avoid
     # repeated per-access queries in the template (~50+ calls to
     # src.latest_* each triggering a fresh DB query).
@@ -1172,6 +1200,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         .order_by(desc(version_class(Release).version_id))
         .limit(5),
         config_create_form=config_create_form,
+        sibling_references=sibling_references,
         releases=releases,
         images=images,
         deployments=deployments,
@@ -1634,6 +1663,19 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
     form.environment_id.data = environment_id or ""
 
     if form.validate_on_submit():
+        from cabotage.utils.config_templates import has_template_variables
+
+        is_template = has_template_variables(form.value.data)
+        if is_template and form.secure.data:
+            flash("Template configs cannot be secrets.", "error")
+            return render_template(
+                "user/project_application_configuration_create.html",
+                form=form,
+                org_slug=organization.slug,
+                project_slug=project.slug,
+                app_slug=application.slug,
+            )
+
         configuration = Configuration(
             application_id=form.application_id.data,
             application_environment_id=app_env.id,
@@ -1642,16 +1684,22 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
             secret=form.secure.data,
             buildtime=form.buildtime.data,
         )
-        try:
-            ns = _config_k8s_namespace(organization, app_env)
-            prefix = _config_k8s_resource_prefix(project, application)
-            key_slugs = config_writer.write_configuration(ns, prefix, configuration)
-        except Exception:
-            raise  # No, we should def not do this
-        configuration.key_slug = key_slugs["config_key_slug"]
-        configuration.build_key_slug = key_slugs["build_key_slug"]
-        if configuration.secret:
-            configuration.value = "**secure**"
+        if not is_template:
+            try:
+                ns = _config_k8s_namespace(organization, app_env)
+                prefix = _config_k8s_resource_prefix(project, application)
+                key_slugs = config_writer.write_configuration(ns, prefix, configuration)
+            except Exception:
+                raise  # No, we should def not do this
+            configuration.key_slug = key_slugs["config_key_slug"]
+            configuration.build_key_slug = key_slugs["build_key_slug"]
+            if configuration.secret:
+                configuration.value = "**secure**"
+        else:
+            flash(
+                "Template config saved — will resolve at deploy time.",
+                "info",
+            )
         db.session.add(configuration)
         db.session.flush()
         activity = Activity(
@@ -1710,18 +1758,40 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
     form.secure.data = configuration.secret
 
     if form.validate_on_submit():
+        from cabotage.utils.config_templates import has_template_variables
+
         form.populate_obj(configuration)
-        try:
-            app_env = configuration.application_environment
-            ns = _config_k8s_namespace(organization, app_env)
-            prefix = _config_k8s_resource_prefix(project, application)
-            key_slugs = config_writer.write_configuration(ns, prefix, configuration)
-        except Exception:
-            raise  # No, we should def not do this
-        configuration.key_slug = key_slugs["config_key_slug"]
-        configuration.build_key_slug = key_slugs["build_key_slug"]
-        if configuration.secret:
-            configuration.value = "**secure**"
+        is_template = has_template_variables(configuration.value)
+        if is_template and configuration.secret:
+            flash("Template configs cannot be secrets.", "error")
+            return render_template(
+                "user/project_application_configuration_edit.html",
+                form=form,
+                org_slug=organization.slug,
+                project_slug=project.slug,
+                app_slug=application.slug,
+                configuration=configuration,
+            )
+
+        if not is_template:
+            try:
+                app_env = configuration.application_environment
+                ns = _config_k8s_namespace(organization, app_env)
+                prefix = _config_k8s_resource_prefix(project, application)
+                key_slugs = config_writer.write_configuration(ns, prefix, configuration)
+            except Exception:
+                raise  # No, we should def not do this
+            configuration.key_slug = key_slugs["config_key_slug"]
+            configuration.build_key_slug = key_slugs["build_key_slug"]
+            if configuration.secret:
+                configuration.value = "**secure**"
+        else:
+            configuration.key_slug = None
+            configuration.build_key_slug = None
+            flash(
+                "Template config saved — will resolve at deploy time.",
+                "info",
+            )
         db.session.flush()
         activity = Activity(
             verb="edit",
