@@ -119,7 +119,7 @@ from cabotage.celery.tasks import (
     run_release_build,
 )
 
-from cabotage.celery.tasks.deploy import scale_deployment
+from cabotage.celery.tasks.deploy import resize_deployment, scale_deployment
 from cabotage.utils.build_log_stream import (
     get_redis_client,
     read_log_stream,
@@ -3146,12 +3146,19 @@ def application_scale(org_slug, project_slug, app_slug):
                 if latest:
                     namespace = _k8s_ns(latest)
                     for process_name, change in scaled.items():
-                        if "process_count" in change.keys():
+                        if "process_count" in change:
                             scale_deployment(
                                 namespace,
                                 latest,
                                 process_name,
                                 change["process_count"]["new_value"],
+                            )
+                        if "pod_class" in change:
+                            resize_deployment(
+                                namespace,
+                                latest,
+                                process_name,
+                                change["pod_class"]["new_value"],
                             )
     else:
         return jsonify(form.errors), 400

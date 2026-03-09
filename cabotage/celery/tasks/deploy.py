@@ -1262,6 +1262,44 @@ def scale_deployment(namespace, release, process_name, replicas):
         )
 
 
+def resize_deployment(namespace, release, process_name, pod_class_name):
+    """Patch a deployment's container resources to match a new pod class."""
+    pod_class = pod_classes[pod_class_name]
+    api_client = kubernetes_ext.kubernetes_client
+    apps_api_instance = kubernetes.client.AppsV1Api(api_client)
+    deployment_name = f"{k8s_resource_prefix(release)}-{process_name}"
+    try:
+        apps_api_instance.read_namespaced_deployment(deployment_name, namespace)
+    except ApiException as exc:
+        if exc.status == 404:
+            return
+        raise
+    patch = {
+        "spec": {
+            "template": {
+                "spec": {
+                    "containers": [
+                        {
+                            "name": process_name,
+                            "resources": {
+                                "limits": {
+                                    "cpu": pod_class["cpu"]["limits"],
+                                    "memory": pod_class["memory"]["limits"],
+                                },
+                                "requests": {
+                                    "cpu": pod_class["cpu"]["requests"],
+                                    "memory": pod_class["memory"]["requests"],
+                                },
+                            },
+                        }
+                    ]
+                }
+            }
+        }
+    }
+    apps_api_instance.patch_namespaced_deployment(deployment_name, namespace, patch)
+
+
 def render_job(namespace, release, service_account_name, process_name, job_id):
     label_value = k8s_label_value(release)
     job_object = kubernetes.client.V1Job(
