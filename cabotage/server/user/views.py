@@ -3739,12 +3739,17 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
                 for series in result:
                     series["metric"]["label"] = "error rate"
     elif metric == "latency":
+        # Use pre-aggregated recording rules for latency histograms
+        rate_seconds = max(step, 30)
+        rate_rule_suffix = {30: "rate30s", 60: "rate1m", 300: "rate5m"}.get(
+            rate_seconds, "rate5m"
+        )
         result = []
         for quantile in [0.5, 0.9, 0.95, 0.99]:
             q = (
-                f"histogram_quantile({quantile}, sum(rate("
-                f"traefik_router_request_duration_seconds_bucket"
-                f"{{{traefik_svc}}}[{rate_window}])) by (le))"
+                f"histogram_quantile({quantile}, sum by (le)("
+                f"traefik:router_request_duration_seconds_bucket:{rate_rule_suffix}"
+                f"{{{traefik_svc}}}))"
             )
             queries.append(q)
             qr = _query_mimir_range(q, start, end, step)
