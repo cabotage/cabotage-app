@@ -447,6 +447,18 @@ def organization_project_create(org_slug):
         )
         db.session.add(project)
         db.session.flush()
+        # Create default environment
+        env_name = "default"
+        if form.environments_enabled.data and form.initial_env_name.data:
+            env_name = form.initial_env_name.data
+        default_env = Environment(
+            project_id=project.id,
+            name=env_name,
+            slug=form.initial_env_slug.data or slugify(env_name),
+            is_default=True,
+        )
+        db.session.add(default_env)
+        db.session.flush()
         activity = Activity(
             verb="create",
             object=project,
@@ -755,6 +767,17 @@ def project_create():
             environments_enabled=form.environments_enabled.data,
         )
         db.session.add(project)
+        db.session.flush()
+        env_name = "default"
+        if form.environments_enabled.data and form.initial_env_name.data:
+            env_name = form.initial_env_name.data
+        default_env = Environment(
+            project_id=project.id,
+            name=env_name,
+            slug=form.initial_env_slug.data or slugify(env_name),
+            is_default=True,
+        )
+        db.session.add(default_env)
         db.session.flush()
         activity = Activity(
             verb="create",

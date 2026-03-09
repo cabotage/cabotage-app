@@ -111,6 +111,20 @@ class CreateProjectForm(FlaskForm):
             "Each environment gets its own config variables, releases, and deploy history."
         ),
     )
+    initial_env_name = StringField(
+        "Default Environment Name",
+        [Optional()],
+        default="Production",
+        description="Name for the initial default environment.",
+    )
+    initial_env_slug = StringField(
+        "Default Environment Slug",
+        [
+            Optional(),
+            Regexp("^[-a-z0-9]+$", message="Invalid Slug! Must match ^[-a-z0-9]+$"),
+        ],
+        description="URL-safe identifier for the default environment. Auto-generated from name if left blank.",
+    )
 
     def validate_slug(form, field):
         project = (

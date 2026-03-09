@@ -214,8 +214,34 @@
       submit_text='Create Project',
       name_field=project_create_form.name,
       slug_field=project_create_form.slug,
-      fields=[project_create_form.environments_enabled]
+      fields=[project_create_form.environments_enabled, project_create_form.initial_env_name, project_create_form.initial_env_slug]
     ) }}
+    <script>
+    (function() {
+      var modal = document.getElementById('create-project-modal');
+      var cb = modal.querySelector('#environments_enabled');
+      var envNameEl = modal.querySelector('#initial_env_name');
+      var envSlugEl = modal.querySelector('#initial_env_slug');
+      var envNameWrap = envNameEl.closest('div');
+      var envSlugWrap = envSlugEl.closest('div');
+      var envSlugEdited = false;
+      function syncEnvSlug() {
+        envSlugEl.value = envNameEl.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      }
+      function toggle() {
+        var show = cb.checked;
+        envNameWrap.style.display = show ? '' : 'none';
+        envSlugWrap.style.display = show ? '' : 'none';
+      }
+      cb.addEventListener('change', toggle);
+      toggle();
+      envSlugEl.addEventListener('input', function() { envSlugEdited = !!this.value; });
+      envNameEl.addEventListener('input', function() {
+        if (!envSlugEdited) syncEnvSlug();
+      });
+      if (envNameEl.value && !envSlugEl.value) syncEnvSlug();
+    })();
+    </script>
   {% endif %}
 
   {% if is_admin and add_member_form is defined %}
