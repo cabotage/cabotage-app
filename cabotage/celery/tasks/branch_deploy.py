@@ -16,8 +16,11 @@ from cabotage.server.models.projects import (
     Configuration,
     Environment,
     Image,
+    Ingress,
+    IngressHost,
+    IngressPath,
 )
-from cabotage.server.models.utils import safe_k8s_name
+from cabotage.server.models.utils import readable_k8s_hostname, safe_k8s_name
 from cabotage.utils.github import find_or_create_pr_comment
 
 logger = logging.getLogger(__name__)
@@ -67,6 +70,56 @@ def _create_app_env_for_branch_deploy(
             shared_config.build_key_slug = config.build_key_slug
             db.session.add(shared_config)
         db.session.flush()
+
+        # Copy ingresses with auto-generated hostnames for the new environment
+        ingress_domain = current_app.config.get("INGRESS_DOMAIN")
+        if ingress_domain:
+            from cabotage.celery.tasks.deploy import _ingress_hostname_pairs
+
+            hostname_pairs = _ingress_hostname_pairs(app_env)
+            hostname_prefix = readable_k8s_hostname(*hostname_pairs)
+            for base_ing in base_app_env.ingresses:
+                new_ing = Ingress(
+                    application_environment_id=app_env.id,
+                    name=base_ing.name,
+                    enabled=base_ing.enabled,
+                    ingress_class_name=base_ing.ingress_class_name,
+                    backend_protocol=base_ing.backend_protocol,
+                    proxy_connect_timeout=base_ing.proxy_connect_timeout,
+                    proxy_read_timeout=base_ing.proxy_read_timeout,
+                    proxy_send_timeout=base_ing.proxy_send_timeout,
+                    proxy_body_size=base_ing.proxy_body_size,
+                    client_body_buffer_size=base_ing.client_body_buffer_size,
+                    proxy_request_buffering=base_ing.proxy_request_buffering,
+                    session_affinity=base_ing.session_affinity,
+                    use_regex=base_ing.use_regex,
+                    cluster_issuer=base_ing.cluster_issuer,
+                    force_ssl_redirect=base_ing.force_ssl_redirect,
+                    service_upstream=base_ing.service_upstream,
+                )
+                db.session.add(new_ing)
+                db.session.flush()
+                # Auto-generated hostname for the preview environment
+                auto_hostname = f"{hostname_prefix}-{base_ing.name}.{ingress_domain}"
+                db.session.add(
+                    IngressHost(
+                        ingress_id=new_ing.id,
+                        hostname=auto_hostname,
+                        tls_enabled=True,
+                        is_auto_generated=True,
+                    )
+                )
+                # Copy paths
+                for base_path in base_ing.paths:
+                    db.session.add(
+                        IngressPath(
+                            ingress_id=new_ing.id,
+                            path=base_path.path,
+                            path_type=base_path.path_type,
+                            target_process_name=base_path.target_process_name,
+                        )
+                    )
+            db.session.flush()
 
     activity = Activity(
         verb="create",
