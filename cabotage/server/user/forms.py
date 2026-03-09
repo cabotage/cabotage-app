@@ -137,7 +137,16 @@ class EditProjectSettingsForm(FlaskForm):
     initial_env_name = StringField(
         "Initial Environment Name",
         [Optional()],
-        description='Name for the default environment (e.g., "Production"). All existing applications will be migrated into it.',
+        default="Production",
+        description='Name for the default environment. All existing applications will be migrated into it.',
+    )
+    initial_env_slug = StringField(
+        "Initial Environment Slug",
+        [
+            Optional(),
+            Regexp("^[-a-z0-9]+$", message="Invalid Slug! Must match ^[-a-z0-9]+$"),
+        ],
+        description="URL-safe identifier for the default environment. Auto-generated from name if left blank.",
     )
     branch_deploys_enabled = BooleanField(
         "Enable Branch Deploys",
@@ -506,12 +515,12 @@ class CreateEnvironmentForm(FlaskForm):
     slug = StringField(
         "Environment Slug",
         [
-            InputRequired(),
+            Optional(),
             Regexp("^[-a-z0-9]+$", message="Invalid Slug! Must match ^[-a-z0-9]+$"),
         ],
         description=(
             "URL Safe short name for this Environment, "
-            "must be unique within the Project."
+            "must be unique within the Project. Auto-generated from name if left blank."
         ),
     )
     is_default = BooleanField(
@@ -541,11 +550,6 @@ class EditEnvironmentForm(FlaskForm):
         "Environment Name",
         [InputRequired()],
         description="Friendly name for this Environment.",
-    )
-    is_default = BooleanField(
-        "Default Environment",
-        [],
-        description="Make this the default environment for new applications.",
     )
 
 

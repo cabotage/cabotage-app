@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, service_card, render_field %}
+{% from "_macros.html" import icon, resource_path, page_header, service_card %}
 
 {% block title %}
   {{ environment.name }} - {{ project.name }} - Cabotage
@@ -71,21 +71,31 @@
     </div>
   {% endif %}
 
-  {% if add_app_form.application_id.choices %}
-    <div class="mt-6">
-      <div class="card bg-base-200/50 border border-base-300/50 max-w-md">
-        <div class="card-body">
-          <h3 class="card-title text-sm">Add Application</h3>
-          <form method="POST" action="{{ url_for('user.project_environment_add_application', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}">
-            {{ add_app_form.hidden_tag() }}
-            {{ render_field(add_app_form.application_id) }}
-            <button type="submit" class="btn btn-primary btn-sm gap-2 mt-2">
-              {{ icon('plus', 'w-4 h-4') }}
-              Add Application
+  {% if available_apps %}
+    <hr class="border-base-content/10 my-6">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider">Available to Add</h2>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      {% for app in available_apps %}
+        <form method="POST"
+              action="{{ url_for('user.project_environment_add_application', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}"
+              class="service-card block border-dashed opacity-60 hover:opacity-100 transition-opacity">
+          {{ add_app_form.hidden_tag() }}
+          <input type="hidden" name="environment_id" value="{{ environment.id }}">
+          <input type="hidden" name="application_id" value="{{ app.id }}">
+          <div class="service-card-header">
+            <div class="service-card-icon bg-accent/10 text-accent">{{ icon('box', 'w-5 h-5') }}</div>
+            <div class="flex-1 min-w-0">
+              <span class="text-sm font-medium text-base-content truncate block">{{ app.name }}</span>
+              <span class="text-xs text-base-content/40 font-mono">{{ app.slug }}</span>
+            </div>
+            <button type="submit" class="btn btn-ghost btn-sm btn-circle text-primary hover:bg-primary/10">
+              {{ icon('plus', 'w-5 h-5') }}
             </button>
-          </form>
-        </div>
-      </div>
+          </div>
+        </form>
+      {% endfor %}
     </div>
   {% endif %}
 

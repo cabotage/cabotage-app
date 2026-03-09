@@ -65,8 +65,9 @@
             {{ render_field_compact(form.environments_enabled, label='Enable Environments') }}
           {% endif %}
           {% if not project.environments_enabled %}
-            <div id="initial-env-name" class="hidden">
-              {{ render_field_compact(form.initial_env_name, label='Initial Environment Name', placeholder='e.g. Production') }}
+            <div id="initial-env-panel" class="hidden flex flex-col gap-3">
+              {{ render_field_compact(form.initial_env_name, label='Default Environment Name') }}
+              {{ render_field_compact(form.initial_env_slug, label='Default Environment Slug') }}
               {% if project.project_applications %}
                 <p class="text-xs text-base-content/40 mt-1">
                   {{ project.project_applications|length }} existing application{{ 's' if project.project_applications|length != 1 }} will be migrated into this environment.
@@ -101,9 +102,9 @@
                        class="link link-hover font-medium">{{ env.name }}</a>
                   </td>
                   <td>
-                    {% if env.is_default %}
-                      <span class="badge badge-sm badge-primary">default</span>
-                    {% endif %}
+                    <input type="radio" name="default_environment_id" value="{{ env.id }}"
+                           class="radio radio-primary radio-sm"
+                           {% if env.is_default %}checked{% endif %} />
                   </td>
                   <td class="text-right">
                     <a href="{{ url_for('user.project_environment_settings', org_slug=org_slug, project_slug=project_slug, env_slug=env.slug) }}"
@@ -161,11 +162,25 @@
     <script>
       (function () {
         var checkbox = document.getElementById('environments_enabled');
-        var panel = document.getElementById('initial-env-name');
+        var panel = document.getElementById('initial-env-panel');
         if (checkbox && panel) {
           checkbox.addEventListener('change', function () {
             panel.classList.toggle('hidden', !this.checked);
           });
+        }
+        var nameInput = document.getElementById('initial_env_name');
+        var slugInput = document.getElementById('initial_env_slug');
+        if (nameInput && slugInput) {
+          var slugEdited = false;
+          function syncSlug() {
+            slugInput.value = nameInput.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+          }
+          slugInput.addEventListener('input', function () { slugEdited = !!this.value; });
+          nameInput.addEventListener('input', function () {
+            if (slugEdited) return;
+            syncSlug();
+          });
+          if (nameInput.value && !slugInput.value) syncSlug();
         }
       })();
     </script>

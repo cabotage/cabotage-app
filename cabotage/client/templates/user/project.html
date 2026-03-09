@@ -17,10 +17,11 @@
     <a href="{{ url_for('user.project_settings', org_slug=project.organization.slug, project_slug=project.slug) }}"
        class="btn btn-ghost btn-sm gap-1.5">{{ icon('settings', 'w-4 h-4') }} Settings</a>
     {% if project.environments_enabled %}
-      <a href="{{ url_for('user.project_environment_create', org_slug=project.organization.slug, project_slug=project.slug) }}"
-         class="btn btn-ghost btn-sm gap-1.5">
+      <button type="button"
+              onclick="document.getElementById('create-env-modal').classList.remove('hidden')"
+              class="btn btn-ghost btn-sm gap-1.5">
         {{ icon('plus', 'w-4 h-4') }} New Environment
-      </a>
+      </button>
     {% endif %}
     <button type="button"
             onclick="document.getElementById('create-app-modal').classList.remove('hidden')"
@@ -150,11 +151,12 @@
         <div class="text-base-content/15 mb-4">{{ icon('layers', 'w-12 h-12') }}</div>
         <h3 class="text-base font-medium text-base-content/60 mb-1">No environments yet</h3>
         <p class="text-sm text-base-content/40 max-w-sm">Create your first environment (e.g., staging or production).</p>
-        <a href="{{ url_for('user.project_environment_create', org_slug=project.organization.slug, project_slug=project.slug) }}"
-           class="btn btn-primary btn-sm gap-2 mt-4">
+        <button type="button"
+                onclick="document.getElementById('create-env-modal').classList.remove('hidden')"
+                class="btn btn-primary btn-sm gap-2 mt-4">
           {{ icon('plus', 'w-4 h-4') }}
           Create Environment
-        </a>
+        </button>
       </div>
     {% endif %}
   {% else %}
@@ -203,6 +205,19 @@
         </button>
       </div>
     {% endif %}
+  {% endif %}
+
+  {% if env_create_form %}
+    {{ create_modal(modal_id='create-env-modal',
+      title='Create Environment',
+      subtitle='In ' ~ project.organization.slug ~ '/' ~ project.slug,
+      form=env_create_form,
+      action_url=url_for('user.project_environment_create', org_slug=project.organization.slug, project_slug=project.slug),
+      submit_text='Create Environment',
+      name_field=env_create_form.name,
+      slug_field=env_create_form.slug,
+      fields=[env_create_form.is_default] if not has_default else []
+    ) }}
   {% endif %}
 
   {% if app_create_form is defined %}

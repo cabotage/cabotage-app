@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, service_card %}
+{% from "_macros.html" import icon, resource_path, page_header, service_card, create_modal %}
 
 {% block title %}
   Environments - {{ project.name }} - Cabotage
@@ -15,11 +15,12 @@
 
 {% block content %}
   {% call page_header('Environments', project.organization.slug ~ '/' ~ project.slug) %}
-    <a href="{{ url_for('user.project_environment_create', org_slug=project.organization.slug, project_slug=project.slug) }}"
-       class="btn btn-primary btn-sm gap-2">
+    <button type="button"
+            onclick="document.getElementById('create-env-modal').classList.remove('hidden')"
+            class="btn btn-primary btn-sm gap-2">
       {{ icon('plus', 'w-4 h-4') }}
       New Environment
-    </a>
+    </button>
   {% endcall %}
 
   {% if project.project_environments %}
@@ -42,11 +43,23 @@
       <div class="text-base-content/15 mb-4">{{ icon('layers', 'w-12 h-12') }}</div>
       <h3 class="text-base font-medium text-base-content/60 mb-1">No environments yet</h3>
       <p class="text-sm text-base-content/40 max-w-sm">Create your first environment (e.g., staging or production).</p>
-      <a href="{{ url_for('user.project_environment_create', org_slug=project.organization.slug, project_slug=project.slug) }}"
-         class="btn btn-primary btn-sm gap-2 mt-4">
+      <button type="button"
+              onclick="document.getElementById('create-env-modal').classList.remove('hidden')"
+              class="btn btn-primary btn-sm gap-2 mt-4">
         {{ icon('plus', 'w-4 h-4') }}
         Create Environment
-      </a>
+      </button>
     </div>
   {% endif %}
+
+  {{ create_modal(modal_id='create-env-modal',
+    title='Create Environment',
+    subtitle='In ' ~ project.organization.slug ~ '/' ~ project.slug,
+    form=env_create_form,
+    action_url=url_for('user.project_environment_create', org_slug=project.organization.slug, project_slug=project.slug),
+    submit_text='Create Environment',
+    name_field=env_create_form.name,
+    slug_field=env_create_form.slug,
+    fields=[env_create_form.is_default] if not has_default else []
+  ) }}
 {% endblock content %}
