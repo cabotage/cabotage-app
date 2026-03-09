@@ -1,3 +1,4 @@
+import hashlib
 import os
 from html import escape
 
@@ -13,7 +14,7 @@ except ImportError:
     DockerLexer = None
     TextLexer = None
 
-from flask import Flask, render_template
+from flask import Flask, render_template, url_for
 from flask_admin import Admin
 from flask_babel import Babel
 from flask_bcrypt import Bcrypt
@@ -134,8 +135,31 @@ def create_app():
     app_settings = os.getenv("APP_SETTINGS", "cabotage.server.config.Config")
     app.config.from_object(app_settings)
 
-    if app.debug:
-        app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+    app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 31536000  # 1 year; cache-busted by hash
+
+    # Static file cache-busting: append ?v=<hash> to static URLs
+    _static_hashes = {}
+
+    def _get_static_hash(filename):
+        if filename not in _static_hashes:
+            filepath = os.path.join(app.static_folder, filename)
+            try:
+                with open(filepath, "rb") as f:
+                    _static_hashes[filename] = hashlib.md5(f.read()).hexdigest()[:12]
+            except FileNotFoundError:
+                _static_hashes[filename] = None
+        return _static_hashes.get(filename)
+
+    def _hashed_url_for(endpoint, **values):
+        if endpoint == "static":
+            filename = values.get("filename")
+            if filename:
+                h = _get_static_hash(filename)
+                if h:
+                    values["v"] = h
+        return url_for(endpoint, **values)
+
+    app.jinja_env.globals["url_for"] = _hashed_url_for
 
     # set up extensions
     admin.init_app(app)
@@ -263,5 +287,22 @@ def create_app():
     admin.add_view(AdminModelView(Deployment, db.session))
     admin.add_view(AdminModelView(Hook, db.session))
     admin.add_view(AdminModelView(User, db.session))
+
+    original_wsgi = app.wsgi_app
+
+    def _static_cache_headers_middleware(environ, start_response):
+        path = environ.get("PATH_INFO", "")
+        if not path.startswith("/static/"):
+            return original_wsgi(environ, start_response)
+
+        def _filtered_start_response(status, headers, exc_info=None):
+            headers = [
+                (k, v) for k, v in headers if k.lower() not in ("set-cookie", "vary")
+            ]
+            return start_response(status, headers, exc_info)
+
+        return original_wsgi(environ, _filtered_start_response)
+
+    app.wsgi_app = _static_cache_headers_middleware
 
     return app
