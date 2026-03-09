@@ -1326,8 +1326,11 @@ def project_application_livelogs(ws, org_slug, project_slug, app_slug):
 @user_blueprint.route(
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/shell"
 )
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/shell"
+)
 @login_required
-def project_application_shell(org_slug, project_slug, app_slug):
+def project_application_shell(org_slug, project_slug, app_slug, env_slug=None):
     if not current_app.config.get("SHELLZ_ENABLED", False):
         abort(404)
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
@@ -1340,7 +1343,8 @@ def project_application_shell(org_slug, project_slug, app_slug):
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
 
-    app_env = _resolve_app_env(application)
+    app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
+    environment = app_env.environment if app_env else _default_environment(project)
 
     # =============================================================================== #
     #  this should be removed when we start a shell pod instead of attaching          #
@@ -1360,16 +1364,12 @@ def project_application_shell(org_slug, project_slug, app_slug):
         org_slug=org_slug,
         project_slug=project_slug,
         app_slug=app_slug,
-        environment=_default_environment(project),
+        env_slug=env_slug,
+        environment=environment,
     )
 
 
-@sock.route(
-    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/shell/socket",
-    bp=user_blueprint,
-)
-@login_required
-def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
+def _shell_socket(ws, org_slug, project_slug, app_slug, env_slug=None):
     if not current_app.config.get("SHELLZ_ENABLED", False):
         abort(404)
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
@@ -1382,7 +1382,8 @@ def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
 
-    app_env = _resolve_app_env(application)
+    app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
+    namespace = _config_k8s_namespace(organization, app_env)
     process_counts = dict(app_env.process_counts)
     db.session.remove()
 
@@ -1406,10 +1407,15 @@ def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
         "application": app_slug,
         "process": process_name,
     }
+    if env_slug:
+        labels["environment"] = env_slug
     label_selector = ",".join([f"{k}={v}" for k, v in labels.items()])
-    pod = core_api_instance.list_namespaced_pod(
-        namespace=org_slug, label_selector=label_selector
-    ).items[0]
+    pods = core_api_instance.list_namespaced_pod(
+        namespace=namespace, label_selector=label_selector
+    ).items
+    if not pods:
+        abort(404)
+    pod = pods[0]
 
     # =============================================================================== #
 
@@ -1423,7 +1429,7 @@ def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
             (
                 "export CONSUL_TOKEN=$(cat /var/run/secrets/vault/consul-token) && "
                 "export VAULT_TOKEN=$(cat /var/run/secrets/vault/vault-token) && "
-                "envconsul -config /etc/cabotage/envconsul-shell.hcl /bin/bash"
+                "envconsul -config /etc/cabotage/envconsul-shell.hcl /bin/sh"
             ),
         ],
         container=process_name,
@@ -1456,6 +1462,26 @@ def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
 
     resp.close()
     ws.close()
+
+
+@sock.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/shell/socket",
+    bp=user_blueprint,
+)
+@login_required
+def project_application_shell_socket_env(
+    ws, org_slug, project_slug, app_slug, env_slug
+):
+    return _shell_socket(ws, org_slug, project_slug, app_slug, env_slug=env_slug)
+
+
+@sock.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/shell/socket",
+    bp=user_blueprint,
+)
+@login_required
+def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
+    return _shell_socket(ws, org_slug, project_slug, app_slug)
 
 
 @user_blueprint.route(
