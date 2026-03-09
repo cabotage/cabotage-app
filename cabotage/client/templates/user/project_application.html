@@ -1,6 +1,30 @@
 {% extends "_base.html" %}
 {% from "_macros.html" import icon, resource_path, tab_nav %}
 
+{% block css %}
+<style>
+  .fade-scroll {
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, black, black);
+  }
+  .fade-scroll::-webkit-scrollbar { display: none; }
+  .fade-scroll.fade-right {
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 2rem), transparent);
+    mask-image: linear-gradient(to right, black calc(100% - 2rem), transparent);
+  }
+  .fade-scroll.fade-left {
+    -webkit-mask-image: linear-gradient(to right, transparent, black 2rem);
+    mask-image: linear-gradient(to right, transparent, black 2rem);
+  }
+  .fade-scroll.fade-both {
+    -webkit-mask-image: linear-gradient(to right, transparent, black 2rem, black calc(100% - 2rem), transparent);
+    mask-image: linear-gradient(to right, transparent, black 2rem, black calc(100% - 2rem), transparent);
+  }
+</style>
+{% endblock css %}
+
 {% set org_slug = application.project.organization.slug %}
 {% set project_slug = application.project.slug %}
 {% set app_slug = application.slug %}
@@ -1533,7 +1557,7 @@
 
   <div id="add-var-modal" class="raw-editor-modal" style="display:none;">
     <div class="raw-editor-backdrop" data-add-var-close></div>
-    <div class="raw-editor-dialog" style="max-width: 28rem;">
+    <div class="raw-editor-dialog" style="max-width: 36rem;">
       <div class="flex items-center justify-between mb-5">
         <h3 class="text-base font-semibold text-base-content">Add Environment Variable</h3>
         <button type="button"
@@ -1563,9 +1587,50 @@
 
         <fieldset class="fieldset w-full">
           <legend class="fieldset-legend text-xs text-base-content/50 font-medium uppercase tracking-wider">Value</legend>
-          {{ config_create_form.value(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono", placeholder="value") }}
+          {{ config_create_form.value(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono", placeholder="value", id="add-var-value") }}
           <p class="text-xs text-base-content/40 mt-1">Value for the environment variable</p>
+          <p id="add-var-preview" class="text-xs font-mono text-primary/70 mt-1 fade-scroll" style="display:none;"></p>
         </fieldset>
+
+        {% if sibling_references %}
+        <div id="add-var-ref-toggle">
+          <label class="label cursor-pointer justify-start gap-2">
+            <input type="checkbox" id="add-var-ref-check" class="checkbox checkbox-primary checkbox-sm" />
+            <span class="text-sm text-base-content/70">Reference another service</span>
+          </label>
+        </div>
+
+        <div id="add-var-ref-picker" style="display:none;" class="flex flex-col gap-2">
+          <div class="text-xs text-base-content/50">Click to insert at cursor</div>
+          <div class="flex flex-col gap-1 max-h-48 overflow-y-auto">
+            {% for sib in sibling_references %}
+              {% for ing in sib.ingresses %}
+                {% if sib.ingresses|length == 1 %}
+                  {% set ref_url = '${' ~ sib.slug ~ '.url}' %}
+                  {% set ref_host = '${' ~ sib.slug ~ '.host}' %}
+                {% else %}
+                  {% set ref_url = '${' ~ sib.slug ~ '.' ~ ing.name ~ '.url}' %}
+                  {% set ref_host = '${' ~ sib.slug ~ '.' ~ ing.name ~ '.host}' %}
+                {% endif %}
+                <div class="flex items-center gap-2 p-2 rounded-lg border border-base-content/10">
+                  <div class="flex-1 min-w-0">
+                    <div class="text-sm font-mono text-base-content truncate">{{ sib.slug }}{% if sib.ingresses|length > 1 %} / {{ ing.name }}{% endif %}</div>
+                    <div class="text-xs text-base-content/40 font-mono fade-scroll">{{ ing.hostname }}</div>
+                  </div>
+                  <div class="flex gap-1 shrink-0">
+                    <button type="button"
+                            class="add-var-ref-insert btn btn-ghost btn-xs font-mono"
+                            data-ref="{{ ref_url }}">.url</button>
+                    <button type="button"
+                            class="add-var-ref-insert btn btn-ghost btn-xs font-mono"
+                            data-ref="{{ ref_host }}">.host</button>
+                  </div>
+                </div>
+              {% endfor %}
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
 
         <div class="flex flex-col gap-2 p-3 rounded-lg bg-base-300/30">
           <label class="label cursor-pointer justify-start gap-3">
@@ -1598,6 +1663,9 @@
   <script id="env-export-data" type="application/json">
     [{% for c in configs %}{"name": {{ c.name|tojson }}, "value": {{ c.value|tojson }}, "secret": {{ c.secret|tojson }}}{% if not loop.last %}, {% endif %}{% endfor %}]
   </script>
+  {% if sibling_references %}
+  <script id="sibling-ref-data" type="application/json">{{ sibling_references|tojson }}</script>
+  {% endif %}
 </div>
 
 <div data-tab-panel="images" class="tab-panel">

@@ -1064,6 +1064,30 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     if environment:
         config_create_form.environment_id.data = str(environment.id)
 
+    sibling_references = []
+    if app_env:
+        for ae in app_env.environment.application_environments:
+            if ae.application_id == application.id:
+                continue
+            ingress_list = []
+            for ing in ae.ingresses:
+                if not ing.enabled:
+                    continue
+                hosts = ing.hosts
+                non_auto = [h for h in hosts if not h.is_auto_generated]
+                host = non_auto[0] if non_auto else (hosts[0] if hosts else None)
+                if host:
+                    ingress_list.append({
+                        "name": ing.name,
+                        "hostname": host.hostname,
+                        "tls": host.tls_enabled,
+                    })
+            if ingress_list:
+                sibling_references.append({
+                    "slug": ae.application.slug,
+                    "ingresses": ingress_list,
+                })
+
     # Pre-fetch all data from dynamic relationships once to avoid
     # repeated per-access queries in the template (~50+ calls to
     # src.latest_* each triggering a fresh DB query).
@@ -1172,6 +1196,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         .order_by(desc(version_class(Release).version_id))
         .limit(5),
         config_create_form=config_create_form,
+        sibling_references=sibling_references,
         releases=releases,
         images=images,
         deployments=deployments,
