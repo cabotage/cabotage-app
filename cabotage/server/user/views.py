@@ -315,10 +315,12 @@ def organizations():
         )
         last_deploy_by_org = {row[0]: row[1] for row in rows}
 
+    org_create_form = CreateOrganizationForm()
     return render_template(
         "user/organizations.html",
         organizations=memberships,
         last_deploy_by_org=last_deploy_by_org,
+        org_create_form=org_create_form,
     )
 
 
