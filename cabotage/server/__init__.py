@@ -145,7 +145,9 @@ def create_app():
             filepath = os.path.join(app.static_folder, filename)
             try:
                 with open(filepath, "rb") as f:
-                    _static_hashes[filename] = hashlib.md5(f.read()).hexdigest()[:12]
+                    _static_hashes[filename] = hashlib.md5(
+                        f.read(), usedforsecurity=False
+                    ).hexdigest()[:12]
             except FileNotFoundError:
                 _static_hashes[filename] = None
         return _static_hashes.get(filename)
