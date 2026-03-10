@@ -1962,8 +1962,12 @@ function initCompactTopbar() {
 
   var sourceTabs = tabBar.querySelectorAll('[data-tab]');
   sourceTabs.forEach(function (tab) {
-    var clone = document.createElement('button');
+    var isDisabled = tab.classList.contains('tab-disabled');
+    var href = tab.tagName === 'A' ? tab.getAttribute('href') : null;
+    var clone = document.createElement(href && !isDisabled ? 'a' : 'button');
     clone.className = 'topbar-inline-tab';
+    if (href && !isDisabled) clone.setAttribute('href', href);
+    if (isDisabled) clone.classList.add('tab-disabled');
     clone.setAttribute('data-inline-tab', tab.getAttribute('data-tab'));
     if (tab.classList.contains('tab-active')) {
       clone.classList.add('tab-active');
@@ -1973,7 +1977,20 @@ function initCompactTopbar() {
     var label = tab.childNodes;
     for (var i = 0; i < label.length; i++) {
       if (label[i].nodeType === 3 && label[i].textContent.trim()) {
-        clone.appendChild(document.createTextNode(label[i].textContent.trim()));
+        var text = label[i].textContent.trim();
+        var soonMatch = text.match(/^(.+?)\s*\(([^)]+)\)$/);
+        if (soonMatch) {
+          var labelWrap = document.createElement('span');
+          labelWrap.className = 'topbar-inline-tab-label';
+          labelWrap.appendChild(document.createTextNode(soonMatch[1]));
+          var sub = document.createElement('span');
+          sub.className = 'topbar-inline-tab-sub';
+          sub.textContent = soonMatch[2];
+          labelWrap.appendChild(sub);
+          clone.appendChild(labelWrap);
+        } else {
+          clone.appendChild(document.createTextNode(text));
+        }
         break;
       }
     }
@@ -1985,6 +2002,10 @@ function initCompactTopbar() {
   inlineTabs.addEventListener('click', function (e) {
     var btn = e.target.closest('[data-inline-tab]');
     if (!btn) return;
+    if (btn.classList.contains('tab-disabled')) {
+      e.preventDefault();
+      return;
+    }
     var tabId = btn.getAttribute('data-inline-tab');
     var realTab = tabBar.querySelector('[data-tab="' + tabId + '"]');
     if (realTab) realTab.click();
