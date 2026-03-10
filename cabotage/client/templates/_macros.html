@@ -56,7 +56,8 @@
   <div class="tab-bar {{ tab_bar_class }}" data-tabs>
     {% for tab in tabs %}
       {% if tab.disabled is defined and tab.disabled %}
-        <span class="tab-item tab-disabled">
+        <span class="tab-item tab-disabled"
+              {% if tab.tooltip is defined and tab.tooltip %}data-tab-tip="{{ tab.tooltip }}"{% endif %}>
           {% if tab.icon %}{{ icon(tab.icon, 'w-4 h-4') }}{% endif %}
           {{ tab.label }}
         </span>
@@ -98,14 +99,14 @@
          class="tab-item
                 {% if active == 'observe' %}tab-active{% endif %}">{{ icon('bar-chart', 'w-4 h-4') }} Observe</a>
       {% else %}
-      <span class="tab-item tab-disabled">{{ icon('bar-chart', 'w-4 h-4') }} Observe</span>
+      <span class="tab-item tab-disabled" data-tab-tip="Observability requires `MIMIR_URL` to be configured by a Cabotage platform administrator.">{{ icon('bar-chart', 'w-4 h-4') }} Observe</span>
       {% endif %}
       {% if config.LOKI_URL %}
       <a href="{{ url_for('user.project_application_logs_view', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
          class="tab-item
                 {% if active == 'logs' %}tab-active{% endif %}">{{ icon('file-text', 'w-4 h-4') }} Logs</a>
       {% else %}
-      <span class="tab-item tab-disabled">{{ icon('file-text', 'w-4 h-4') }} Logs</span>
+      <span class="tab-item tab-disabled" data-tab-tip="Log viewing requires `LOKI_URL` to be configured by a Cabotage platform administrator.">{{ icon('file-text', 'w-4 h-4') }} Logs</span>
       {% endif %}
       <a href="{{ overview_url }}#config"
          class="tab-item
@@ -126,7 +127,7 @@
       <a href="{{ url_for('user.application_releases', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
          class="tab-item
                 {% if active == 'releases' %}tab-active{% endif %}">{{ icon('layers', 'w-4 h-4') }} Releases</a>
-      <span class="tab-item tab-disabled">{{ icon('bar-chart-2', 'w-4 h-4') }} Pipeline <span class="text-[0.6rem] opacity-50">(Soon)</span></span>
+      <span class="tab-item tab-disabled" data-tab-tip="Pipeline is coming soon and is not yet available.">{{ icon('bar-chart-2', 'w-4 h-4') }} Pipeline <span class="text-[0.6rem] opacity-50">(Soon)</span></span>
       {% if config.INGRESS_DOMAIN %}
       <a href="{{ url_for('user.project_application_ingress', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
          class="tab-item

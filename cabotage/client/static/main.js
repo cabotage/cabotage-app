@@ -2084,6 +2084,134 @@ function initPreferenceToggles() {
   });
 }
 
+/* Disabled Tab Tips — hover tooltip card + click info modal */
+function initTabTips() {
+  var tipEl = document.createElement('div');
+  tipEl.className = 'tab-tip';
+  tipEl.innerHTML =
+    '<div class="tab-tip-header">' +
+      '<svg class="tab-tip-header-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+        '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>' +
+      '</svg>' +
+      '<span class="tab-tip-header-text">Not Available</span>' +
+    '</div>' +
+    '<div class="tab-tip-body"><p></p></div>' +
+    '<div class="tab-tip-footer"><span class="tab-tip-footer-hint js-tab-tip-detail">Click for details</span></div>';
+  document.body.appendChild(tipEl);
+
+  var currentTipSource = null;
+
+  var tipBody = tipEl.querySelector('.tab-tip-body p');
+  var hideTimer = null;
+
+  function formatMsg(raw) {
+    // Escape HTML, then convert `backtick` spans to <code>
+    var safe = raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return safe.replace(/`([^`]+)`/g, '<code>$1</code>');
+  }
+
+  function show(el) {
+    clearTimeout(hideTimer);
+    var msg = el.getAttribute('data-tab-tip');
+    if (!msg) return;
+    currentTipSource = el;
+    tipBody.innerHTML = formatMsg(msg);
+    tipEl.classList.add('tab-tip-visible');
+
+    var rect = el.getBoundingClientRect();
+    var tipRect = tipEl.getBoundingClientRect();
+    var left = rect.left + (rect.width / 2) - (tipRect.width / 2);
+    // Clamp to viewport
+    left = Math.max(8, Math.min(left, window.innerWidth - tipRect.width - 8));
+    tipEl.style.top = (rect.bottom + 8) + 'px';
+    tipEl.style.left = left + 'px';
+  }
+  function cancelHide() {
+    clearTimeout(hideTimer);
+  }
+  function hide() {
+    hideTimer = setTimeout(function () {
+      tipEl.classList.remove('tab-tip-visible');
+    }, 200);
+  }
+
+  // Allow hovering the tooltip itself without it disappearing
+  tipEl.addEventListener('mouseenter', cancelHide);
+  tipEl.addEventListener('mouseleave', hide);
+
+  // "Click for details" in the tooltip footer opens the modal
+  tipEl.querySelector('.js-tab-tip-detail').addEventListener('click', function () {
+    tipEl.classList.remove('tab-tip-visible');
+    if (currentTipSource) openTabInfoModal(currentTipSource);
+  });
+
+  document.querySelectorAll('[data-tab-tip]').forEach(function (el) {
+    el.addEventListener('mouseenter', function () { show(el); });
+    el.addEventListener('mouseleave', hide);
+    el.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      tipEl.classList.remove('tab-tip-visible');
+      openTabInfoModal(el);
+    });
+  });
+
+  // Info modal
+  var modal = document.getElementById('tab-info-modal');
+  if (!modal) return;
+
+  var titleEl = modal.querySelector('.tab-info-modal-title');
+  var textEl = modal.querySelector('.tab-info-modal-text');
+  var actionsEl = modal.querySelector('.tab-info-modal-actions');
+
+  function closeModal() { modal.style.display = 'none'; }
+
+  modal.querySelectorAll('[data-tab-info-close]').forEach(function (el) {
+    el.addEventListener('click', closeModal);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && modal.style.display !== 'none') closeModal();
+  });
+
+  function openTabInfoModal(el) {
+    var label = el.textContent.replace(/\(Soon\)/i, '').trim();
+    var msg = el.getAttribute('data-tab-tip') || '';
+    var isPipeline = label.toLowerCase() === 'pipeline';
+
+    titleEl.textContent = label + ' is not available';
+    textEl.innerHTML = formatMsg(msg);
+    actionsEl.innerHTML = '';
+
+    if (!isPipeline) {
+      var goBtn = document.createElement('a');
+      goBtn.href = '#config';
+      goBtn.className = 'btn btn-primary btn-sm';
+      goBtn.textContent = 'Go to Config';
+      goBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        closeModal();
+        // Activate config tab if it exists, or scroll to #config
+        var configTab = document.querySelector('[data-tab="config"]');
+        if (configTab) {
+          configTab.click();
+        } else {
+          window.location.hash = 'config';
+        }
+      });
+      actionsEl.appendChild(goBtn);
+    }
+
+    var dismissBtn = document.createElement('button');
+    dismissBtn.type = 'button';
+    dismissBtn.className = isPipeline ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm';
+    dismissBtn.textContent = 'Got it';
+    dismissBtn.addEventListener('click', closeModal);
+    actionsEl.appendChild(dismissBtn);
+
+    modal.style.display = 'flex';
+  }
+}
+
 document.addEventListener('click', function (e) {
   var el = e.target.closest('[data-href]');
   if (el) {
@@ -2113,6 +2241,7 @@ document.addEventListener('DOMContentLoaded', function () {
   syncDetailLogHeight();
   initAnnotationTables();
   initIngressForms();
+  initTabTips();
   window.addEventListener('resize', function () {
     autoExpandCollapsibleCards();
     syncDetailLogHeight();

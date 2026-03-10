@@ -661,6 +661,30 @@
     {% endif %}
     {% block js %}
     {% endblock js %}
+    <div id="tab-info-modal" class="raw-editor-modal" style="display:none;">
+      <div class="raw-editor-backdrop" data-tab-info-close></div>
+      <div class="raw-editor-dialog" style="max-width: 28rem;">
+        <div class="flex items-center justify-between mb-5">
+          <div class="flex items-center gap-2.5">
+            <div class="tab-info-modal-icon">
+              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+              </svg>
+            </div>
+            <h3 class="tab-info-modal-title text-base font-semibold text-base-content"></h3>
+          </div>
+          <button type="button"
+                  data-tab-info-close
+                  class="btn btn-ghost btn-sm btn-circle">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <p class="tab-info-modal-text"></p>
+        <div class="tab-info-modal-actions flex gap-2"></div>
+      </div>
+    </div>
     <div id="expand-modal" class="raw-editor-modal hidden">
       <div class="raw-editor-backdrop"></div>
       <div class="raw-editor-dialog"

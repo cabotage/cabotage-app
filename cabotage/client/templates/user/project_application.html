@@ -55,12 +55,12 @@
   <div class="app-content-padded !py-0">
     {{ tab_nav([
         {'id': 'overview', 'label': 'Overview', 'icon': 'activity'},
-        {'id': 'observe', 'label': 'Observe', 'icon': 'bar-chart', 'disabled': not config.MIMIR_URL, 'url': url_for('user.project_application_observe', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) if config.MIMIR_URL else none},
+        {'id': 'observe', 'label': 'Observe', 'icon': 'bar-chart', 'disabled': not config.MIMIR_URL, 'tooltip': 'Observability requires `MIMIR_URL` to be configured by a Cabotage platform administrator.', 'url': url_for('user.project_application_observe', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) if config.MIMIR_URL else none},
         {'id': 'config', 'label': 'Config', 'icon': 'key', 'badge': app_env.configurations|rejectattr('name', 'equalto', 'CABOTAGE_SENTINEL') |list|length},
     {'id': 'images', 'label': 'Images', 'icon': 'image'},
     {'id': 'releases', 'label': 'Releases', 'icon': 'layers'},
     {'id': 'deployments', 'label': 'Deploys', 'icon': 'deploy'},
-    {'id': 'pipeline', 'label': 'Pipeline (Soon)', 'icon': 'bar-chart-2', 'disabled': true}
+    {'id': 'pipeline', 'label': 'Pipeline (Soon)', 'icon': 'bar-chart-2', 'disabled': true, 'tooltip': 'Pipeline is coming soon and is not yet available.'}
     ]) }}
   </div>
   {% endif %}
