@@ -57,6 +57,12 @@ function initTabs(containerSelector) {
   }
 
   tabs.forEach(function (tab) {
+    // URL tabs (href not starting with #) navigate normally — don't intercept
+    var href = tab.getAttribute('href');
+    if (href && href.charAt(0) !== '#') return;
+    // Disabled tabs don't participate in SPA navigation
+    if (tab.classList.contains('tab-disabled')) return;
+
     tab.addEventListener('click', function (e) {
       e.preventDefault();
       activateTab(tab.getAttribute('data-tab'), true);
