@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, service_card %}
+{% from "_macros.html" import icon, resource_path, page_header, service_card, danger_zone_delete %}
 
 {% block title %}
   {{ environment.name }} - {{ project.name }} - Cabotage
@@ -35,9 +35,10 @@
     <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider">Applications</h2>
   </div>
 
-  {% if environment.application_environments %}
+  {% set active_app_envs = environment.active_application_environments %}
+  {% if active_app_envs %}
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-      {% for app_env in environment.application_environments %}
+      {% for app_env in active_app_envs %}
         {% set app = app_env.application %}
         {% set config_count = app_env.configurations|length %}
         {% set meta = [config_count ~ ' config' ~ ('s' if config_count != 1 else '')] %}
@@ -52,17 +53,54 @@
         {% else %}
           {% set status = '' %}
         {% endif %}
-        {{ service_card(name=app.name,
-                slug=app.slug,
-                url=url_for('user.project_application', org_slug=project.organization.slug, project_slug=project.slug, app_slug=app.slug, env_slug=environment.slug),
-        status=status,
-        meta_items=meta,
-        color='accent',
-        github_repo=app.github_repository or '',
-        github_branch=app_env.effective_auto_deploy_branch or ''
-        ) }}
+        <div class="relative group">
+          {{ service_card(name=app.name,
+                  slug=app.slug,
+                  url=url_for('user.project_application', org_slug=project.organization.slug, project_slug=project.slug, app_slug=app.slug, env_slug=environment.slug),
+          status=status,
+          meta_items=meta,
+          color='accent',
+          github_repo=app.github_repository or '',
+          github_branch=app_env.effective_auto_deploy_branch or ''
+          ) }}
+          <button type="button"
+                  onclick="document.getElementById('unenroll-modal-{{ app.slug }}').showModal()"
+                  class="absolute top-1 right-1 btn btn-ghost btn-xs btn-circle opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:text-error transition-opacity"
+                  title="Unenroll {{ app.name }}">
+            {{ icon('x', 'w-3 h-3') }}
+          </button>
+        </div>
       {% endfor %}
     </div>
+
+    {# Unenroll modals #}
+    {% for app_env in active_app_envs %}
+      {% set app = app_env.application %}
+      <dialog id="unenroll-modal-{{ app.slug }}" class="modal">
+        <div class="modal-box">
+          <h3 class="text-lg font-bold text-error">Unenroll Application</h3>
+          <p class="py-2 text-sm">
+            Type <code class="font-semibold">{{ app.slug }}</code> to confirm removing
+            <strong>{{ app.name }}</strong> from <strong>{{ environment.name }}</strong>.
+          </p>
+          <form action="{{ url_for('user.project_environment_unenroll_application', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug, app_slug=app.slug) }}"
+                method="post">
+            {{ unenroll_form.hidden_tag() }}
+            <input type="hidden" name="app_env_id" value="{{ app_env.id }}">
+            <input type="hidden" name="name" value="{{ app.slug }}">
+            <input type="text" name="confirm" placeholder="{{ app.slug }}"
+                   class="input input-bordered input-sm w-full mb-4"
+                   autocomplete="off"
+                   oninput="this.closest('.modal-box').querySelector('.btn-delete-confirm').disabled = (this.value !== '{{ app.slug }}')">
+            <div class="modal-action">
+              <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('dialog').close()">Cancel</button>
+              <button type="submit" class="btn btn-error btn-sm btn-delete-confirm" disabled>Unenroll</button>
+            </div>
+          </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+      </dialog>
+    {% endfor %}
   {% else %}
     <div class="empty-state">
       <div class="text-base-content/15 mb-4">{{ icon('box', 'w-12 h-12') }}</div>

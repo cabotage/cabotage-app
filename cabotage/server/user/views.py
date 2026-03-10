@@ -1,6 +1,7 @@
 import collections
 import datetime
 import json
+import logging
 import re
 import time
 
@@ -91,8 +92,12 @@ from cabotage.server.user.forms import (
     CreateEnvironmentForm,
     CreateOrganizationForm,
     CreateProjectForm,
+    DeleteApplicationForm,
+    DeleteApplicationEnvironmentForm,
     DeleteConfigurationForm,
     DeleteEnvironmentForm,
+    DeleteOrganizationForm,
+    DeleteProjectForm,
     EditApplicationEnvironmentSettingsForm,
     EditApplicationSettingsForm,
     EditConfigurationForm,
@@ -156,6 +161,140 @@ def _config_k8s_resource_prefix(project, application):
     return safe_k8s_name(project.k8s_identifier, application.k8s_identifier)
 
 
+def _cleanup_app_env_k8s(organization, app_env):
+    """Best-effort delete of all k8s resources for one ApplicationEnvironment."""
+    log = logging.getLogger(__name__)
+
+    try:
+        api_client = kubernetes_ext.kubernetes_client
+        if api_client is None:
+            log.warning("k8s cleanup: no kubernetes client available")
+            return
+    except Exception:
+        log.exception("k8s cleanup: failed to get kubernetes client")
+        return
+
+    apps_api = kubernetes.client.AppsV1Api(api_client)
+    core_api = kubernetes.client.CoreV1Api(api_client)
+    networking_api = kubernetes.client.NetworkingV1Api(api_client)
+
+    namespace = _config_k8s_namespace(organization, app_env)
+    app = app_env.application
+    project = app.project
+    label_selector = ",".join(
+        [
+            f"organization={organization.slug}",
+            f"project={project.slug}",
+            f"application={app.slug}",
+        ]
+    )
+    log.info(
+        "k8s cleanup: namespace=%s labels=%s",
+        namespace,
+        label_selector,
+    )
+
+    # Delete Deployments
+    try:
+        deps = apps_api.list_namespaced_deployment(
+            namespace, label_selector=label_selector
+        )
+        for d in deps.items:
+            log.info(
+                "k8s cleanup: deleting deployment %s/%s", namespace, d.metadata.name
+            )
+            apps_api.delete_namespaced_deployment(d.metadata.name, namespace)
+    except Exception:
+        log.exception("k8s cleanup: failed to delete deployments")
+
+    # Delete Services (services use app=<resource_prefix> label, not org/project/application)
+    resource_prefix = _config_k8s_resource_prefix(project, app)
+    svc_label_selector = f"resident-service.cabotage.io=true,app={resource_prefix}"
+    try:
+        svcs = core_api.list_namespaced_service(
+            namespace, label_selector=svc_label_selector
+        )
+        for s in svcs.items:
+            log.info("k8s cleanup: deleting service %s/%s", namespace, s.metadata.name)
+            core_api.delete_namespaced_service(s.metadata.name, namespace)
+    except Exception:
+        log.exception("k8s cleanup: failed to delete services")
+
+    # Delete Ingresses
+    try:
+        ings = networking_api.list_namespaced_ingress(
+            namespace, label_selector=label_selector
+        )
+        for i in ings.items:
+            log.info("k8s cleanup: deleting ingress %s/%s", namespace, i.metadata.name)
+            networking_api.delete_namespaced_ingress(i.metadata.name, namespace)
+    except Exception:
+        log.exception("k8s cleanup: failed to delete ingresses")
+
+    # Delete CabotageEnrollment
+    try:
+        custom_api = kubernetes.client.CustomObjectsApi(api_client)
+        custom_api.delete_namespaced_custom_object(
+            "cabotage.io", "v1", namespace, "cabotageenrollments", resource_prefix
+        )
+        log.info(
+            "k8s cleanup: deleted CabotageEnrollment %s/%s", namespace, resource_prefix
+        )
+    except Exception:
+        log.exception(
+            "k8s cleanup: failed to delete CabotageEnrollment %s", resource_prefix
+        )
+
+    # Delete ServiceAccount and ImagePullSecret
+    try:
+        core_api.delete_namespaced_service_account(resource_prefix, namespace)
+    except Exception:
+        log.exception(
+            "k8s cleanup: failed to delete service account %s", resource_prefix
+        )
+    try:
+        core_api.delete_namespaced_secret(resource_prefix, namespace)
+    except Exception:
+        log.exception("k8s cleanup: failed to delete secret %s", resource_prefix)
+
+
+def _soft_delete_app_env(app_env, organization):
+    """Soft-delete an ApplicationEnvironment and clean up k8s resources."""
+    _cleanup_app_env_k8s(organization, app_env)
+    app_env.deleted_at = datetime.datetime.utcnow()
+
+
+def _soft_delete_application(application, organization):
+    """Soft-delete an Application and all its ApplicationEnvironments."""
+    for app_env in application.application_environments:
+        if app_env.deleted_at is None:
+            _soft_delete_app_env(app_env, organization)
+    application.deleted_at = datetime.datetime.utcnow()
+    application.slug = f"{application.slug}--deleted-{int(time.time())}"
+
+
+def _soft_delete_environment(environment, organization):
+    """Soft-delete an Environment and all its ApplicationEnvironments."""
+    for app_env in environment.application_environments:
+        if app_env.deleted_at is None:
+            _cleanup_app_env_k8s(organization, app_env)
+            app_env.deleted_at = datetime.datetime.utcnow()
+    environment.deleted_at = datetime.datetime.utcnow()
+    environment.slug = f"{environment.slug}--deleted-{int(time.time())}"
+
+
+def _soft_delete_project(project, organization):
+    """Soft-delete a Project and all its children."""
+    for app in project.project_applications:
+        if app.deleted_at is None:
+            _soft_delete_application(app, organization)
+    for env in project.project_environments:
+        if env.deleted_at is None:
+            _soft_delete_environment(env, organization)
+    project.deleted_at = datetime.datetime.utcnow()
+    project.slug = f"{project.slug}--deleted-{int(time.time())}"
+
+
 def _associate_app_with_environment(application, environment, organization, project):
     """Create ApplicationEnvironment + sentinel config + activity log."""
     app_env = ApplicationEnvironment(
@@ -198,13 +337,21 @@ def _associate_app_with_environment(application, environment, organization, proj
 
 def _lookup_app_context(org_slug, project_slug, app_slug, require_admin=False):
     """Resolve org/project/app from slugs and check permissions."""
-    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
-    project = Project.query.filter_by(
-        organization_id=organization.id, slug=project_slug
-    ).first_or_404()
-    application = Application.query.filter_by(
-        project_id=project.id, slug=app_slug
-    ).first_or_404()
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .first_or_404()
+    )
+    project = (
+        Project.query.filter_by(organization_id=organization.id, slug=project_slug)
+        .filter(Project.deleted_at.is_(None))
+        .first_or_404()
+    )
+    application = (
+        Application.query.filter_by(project_id=project.id, slug=app_slug)
+        .filter(Application.deleted_at.is_(None))
+        .first_or_404()
+    )
     perm = (
         AdministerApplicationPermission if require_admin else ViewApplicationPermission
     )
@@ -217,9 +364,10 @@ def _default_environment(project):
     """Return the default environment for breadcrumbs, or None."""
     if not project.environments_enabled:
         return None
+    active_envs = project.active_environments
     return next(
-        (e for e in project.project_environments if e.is_default),
-        project.project_environments[0] if project.project_environments else None,
+        (e for e in active_envs if e.is_default),
+        active_envs[0] if active_envs else None,
     )
 
 
@@ -235,19 +383,31 @@ def _resolve_app_env(
     If required=False, returns None instead.
     """
     if environment_id:
-        return ApplicationEnvironment.query.filter_by(
-            application_id=application.id,
-            environment_id=environment_id,
-        ).first_or_404()
+        return (
+            ApplicationEnvironment.query.filter_by(
+                application_id=application.id,
+                environment_id=environment_id,
+            )
+            .filter(ApplicationEnvironment.deleted_at.is_(None))
+            .first_or_404()
+        )
     if env_slug and project:
-        environment = Environment.query.filter_by(
-            project_id=project.id,
-            slug=env_slug,
-        ).first_or_404()
-        return ApplicationEnvironment.query.filter_by(
-            application_id=application.id,
-            environment_id=environment.id,
-        ).first_or_404()
+        environment = (
+            Environment.query.filter_by(
+                project_id=project.id,
+                slug=env_slug,
+            )
+            .filter(Environment.deleted_at.is_(None))
+            .first_or_404()
+        )
+        return (
+            ApplicationEnvironment.query.filter_by(
+                application_id=application.id,
+                environment_id=environment.id,
+            )
+            .filter(ApplicationEnvironment.deleted_at.is_(None))
+            .first_or_404()
+        )
     app_env = application.default_app_env
     if app_env is None and required:
         abort(404)
@@ -277,6 +437,8 @@ def organizations():
 
     memberships = (
         OrganizationMember.query.filter(OrganizationMember.user_id == current_user.id)
+        .join(Organization)
+        .filter(Organization.deleted_at.is_(None))
         .options(
             joinedload(OrganizationMember.organization)
             .joinedload(Organization.projects)
@@ -332,6 +494,7 @@ def organization(org_slug):
 
     organization = (
         Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
         .options(
             joinedload(Organization.projects).joinedload(Project.project_applications),
             joinedload(Organization.members).joinedload(OrganizationMember.user),
@@ -346,7 +509,8 @@ def organization(org_slug):
     ]
     project_create_form.organization_id.data = str(organization.id)
 
-    app_ids = [app.id for p in organization.projects for app in p.project_applications]
+    active_projects = organization.active_projects
+    app_ids = [app.id for p in active_projects for app in p.active_applications]
     org_app_count = len(app_ids)
     org_deploy_count = 0
     last_deploy_ts = None
@@ -377,6 +541,13 @@ def organization(org_slug):
         errored_app_ids = status["errored_app_ids"]
         building_app_ids = status["building_app_ids"]
 
+    is_admin = AdministerOrganizationPermission(organization.id).can()
+    delete_form = None
+    if is_admin:
+        delete_form = DeleteOrganizationForm()
+        delete_form.organization_id.data = str(organization.id)
+        delete_form.name.data = organization.slug
+
     return render_template(
         "user/organization.html",
         organization=organization,
@@ -387,6 +558,7 @@ def organization(org_slug):
         errored_app_ids=errored_app_ids,
         building_app_ids=building_app_ids,
         last_deploy_ts=last_deploy_ts,
+        delete_form=delete_form,
     )
 
 
@@ -493,6 +665,8 @@ def projects():
         Project.query.join(Organization)
         .join(Organization.members)
         .filter(OrganizationMember.user_id == current_user.id)
+        .filter(Project.deleted_at.is_(None))
+        .filter(Organization.deleted_at.is_(None))
         .options(
             joinedload(Project.organization),
             joinedload(Project.project_applications),
@@ -501,7 +675,7 @@ def projects():
     )
 
     # Pre-compute app status to avoid per-app queries in the template
-    app_ids = [app.id for p in user_projects for app in p.project_applications]
+    app_ids = [app.id for p in user_projects for app in p.active_applications]
     deployed_app_ids = set()
     errored_app_ids = set()
 
@@ -543,8 +717,9 @@ def project(org_slug, project_slug):
     app_create_form.project_id.choices = [(str(project.id), project.name)]
     app_create_form.organization_id.data = str(organization.id)
     app_create_form.project_id.data = str(project.id)
-    if project.environments_enabled and len(project.project_environments) > 1:
-        sorted_envs = sorted(project.project_environments, key=lambda e: e.sort_order)
+    active_envs = project.active_environments
+    if project.environments_enabled and len(active_envs) > 1:
+        sorted_envs = sorted(active_envs, key=lambda e: e.sort_order)
         app_create_form.environment_id.choices = [
             (str(e.id), e.name) for e in sorted_envs
         ]
@@ -556,8 +731,8 @@ def project(org_slug, project_slug):
     # Build ae_by_env mapping in Python (avoids duplicate eager-load path)
     ae_ids = []
     ae_by_env = {}
-    for app in project.project_applications:
-        for ae in app.application_environments:
+    for app in project.active_applications:
+        for ae in app.active_application_environments:
             ae_ids.append(ae.id)
             ae_by_env.setdefault(ae.environment_id, []).append(ae)
 
@@ -579,11 +754,11 @@ def project(org_slug, project_slug):
             for ae in env_ae_list:
                 assigned_app_ids.add(ae.application_id)
         unassigned_apps = [
-            a for a in project.project_applications if a.id not in assigned_app_ids
+            a for a in project.active_applications if a.id not in assigned_app_ids
         ]
         env_create_form = CreateEnvironmentForm()
         env_create_form.project_id.data = str(project.id)
-        has_default = any(e.is_default for e in project.project_environments)
+        has_default = any(e.is_default for e in active_envs)
     return render_template(
         "user/project.html",
         project=project,
@@ -617,10 +792,10 @@ def project_settings(org_slug, project_slug):
     form = EditProjectSettingsForm(obj=project)
     form.project_id.data = str(project.id)
     form.branch_deploy_base_environment_id.choices = [("", "— select —")] + [
-        (str(e.id), e.name) for e in project.project_environments
+        (str(e.id), e.name) for e in project.active_environments
     ]
 
-    envs = project.project_environments
+    envs = project.active_environments
     non_default_envs = [e for e in envs if not e.is_default]
     can_disable_environments = (
         project.environments_enabled and len(non_default_envs) == 0
@@ -638,20 +813,10 @@ def project_settings(org_slug, project_slug):
             and can_disable_environments
         )
         if disabling_environments:
-            # Delete non-default environments and their enrollments/records.
+            # Soft-delete non-default environments and their enrollments.
             # The default env + its app_envs remain (they're implicit).
             for env in non_default_envs:
-                for app_env in env.application_environments:
-                    for config in list(app_env.configurations):
-                        db.session.delete(config)
-                    for image in app_env.images.all():
-                        db.session.delete(image)
-                    for release in app_env.releases.all():
-                        db.session.delete(release)
-                    for deployment in app_env.deployments.all():
-                        db.session.delete(deployment)
-                db.session.flush()
-                db.session.delete(env)
+                _soft_delete_environment(env, organization)
             db.session.flush()
             # Reset k8s_identifier on default app_envs to NULL (legacy mode)
             default_env = next((e for e in envs if e.is_default), None)
@@ -667,7 +832,7 @@ def project_settings(org_slug, project_slug):
             initial_name = form.initial_env_name.data
             if initial_name:
                 default_env = next(
-                    (e for e in project.project_environments if e.is_default),
+                    (e for e in project.active_environments if e.is_default),
                     None,
                 )
                 if default_env:
@@ -678,7 +843,7 @@ def project_settings(org_slug, project_slug):
             # Existing app_envs keep k8s_identifier=NULL so all their paths
             # (registry, namespace, consul/vault, build cache) remain unchanged.
             # Copy app-level github_environment_name to each app's default app_env
-            for app in project.project_applications:
+            for app in project.active_applications:
                 if app.github_environment_name is not None:
                     default_ae = app.default_app_env
                     if default_ae and default_ae.github_environment_name is None:
@@ -722,13 +887,13 @@ def project_settings(org_slug, project_slug):
         form.populate_obj(project)
         env_order = request.form.getlist("env_order")
         if env_order:
-            env_map = {str(e.id): e for e in project.project_environments}
+            env_map = {str(e.id): e for e in project.active_environments}
             for i, eid in enumerate(env_order):
                 if eid in env_map:
                     env_map[eid].sort_order = i
         default_env_id = request.form.get("default_environment_id")
         if default_env_id:
-            for env in project.project_environments:
+            for env in project.active_environments:
                 env.is_default = str(env.id) == default_env_id
         db.session.flush()
         activity = Activity(
@@ -749,11 +914,15 @@ def project_settings(org_slug, project_slug):
             )
         )
 
+    delete_form = DeleteProjectForm()
+    delete_form.project_id.data = str(project.id)
+    delete_form.name.data = project.slug
     return render_template(
         "user/project_settings.html",
         project=project,
         form=form,
         can_disable_environments=can_disable_environments,
+        delete_form=delete_form,
     )
 
 
@@ -822,7 +991,7 @@ def project_environments(org_slug, project_slug):
         abort(403)
     env_create_form = CreateEnvironmentForm()
     env_create_form.project_id.data = str(project.id)
-    has_default = any(e.is_default for e in project.project_environments)
+    has_default = any(e.is_default for e in project.active_environments)
     return render_template(
         "user/project_environments.html",
         project=project,
@@ -845,11 +1014,11 @@ def project_environment_create(org_slug, project_slug):
         abort(403)
     form = CreateEnvironmentForm()
     form.project_id.data = str(project.id)
-    has_default = any(e.is_default for e in project.project_environments)
+    has_default = any(e.is_default for e in project.active_environments)
     if form.validate_on_submit():
         slug = form.slug.data or slugify(form.name.data)
         if form.is_default.data:
-            for env in project.project_environments:
+            for env in project.active_environments:
                 env.is_default = False
         environment = Environment(
             project_id=project.id,
@@ -899,12 +1068,12 @@ def project_environment(org_slug, project_slug, env_slug):
     ).first_or_404()
     add_app_form = AddApplicationToEnvironmentForm()
     add_app_form.environment_id.data = str(environment.id)
+    unenroll_form = DeleteApplicationEnvironmentForm()
     # Only show applications not already in this environment
-    existing_app_ids = {
-        ae.application_id for ae in environment.application_environments
-    }
+    active_app_envs = environment.active_application_environments
+    existing_app_ids = {ae.application_id for ae in active_app_envs}
     available_apps = [
-        a for a in project.project_applications if a.id not in existing_app_ids
+        a for a in project.active_applications if a.id not in existing_app_ids
     ]
     add_app_form.application_id.choices = [(str(a.id), a.name) for a in available_apps]
     return render_template(
@@ -912,6 +1081,7 @@ def project_environment(org_slug, project_slug, env_slug):
         project=project,
         environment=environment,
         add_app_form=add_app_form,
+        unenroll_form=unenroll_form,
         available_apps=available_apps,
     )
 
@@ -947,7 +1117,7 @@ def project_environment_settings(org_slug, project_slug, env_slug):
         )
     delete_form = DeleteEnvironmentForm()
     delete_form.environment_id.data = str(environment.id)
-    delete_form.name.data = environment.name
+    delete_form.name.data = environment.slug
     return render_template(
         "user/project_environment_edit.html",
         project=project,
@@ -963,15 +1133,23 @@ def project_environment_settings(org_slug, project_slug, env_slug):
 )
 @login_required
 def project_environment_delete(org_slug, project_slug, env_slug):
-    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
-    project = Project.query.filter_by(
-        organization_id=organization.id, slug=project_slug
-    ).first_or_404()
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .first_or_404()
+    )
+    project = (
+        Project.query.filter_by(organization_id=organization.id, slug=project_slug)
+        .filter(Project.deleted_at.is_(None))
+        .first_or_404()
+    )
     if not AdministerProjectPermission(project.id).can():
         abort(403)
-    environment = Environment.query.filter_by(
-        project_id=project.id, slug=env_slug
-    ).first_or_404()
+    environment = (
+        Environment.query.filter_by(project_id=project.id, slug=env_slug)
+        .filter(Environment.deleted_at.is_(None))
+        .first_or_404()
+    )
     form = DeleteEnvironmentForm()
     if environment.is_default:
         flash("The default environment cannot be deleted.", "error")
@@ -984,17 +1162,7 @@ def project_environment_delete(org_slug, project_slug, env_slug):
             )
         )
     if form.validate_on_submit():
-        for app_env in environment.application_environments:
-            for config in list(app_env.configurations):
-                db.session.delete(config)
-            for image in app_env.images.all():
-                db.session.delete(image)
-            for release in app_env.releases.all():
-                db.session.delete(release)
-            for deployment in app_env.deployments.all():
-                db.session.delete(deployment)
-        db.session.flush()
-        db.session.delete(environment)
+        _soft_delete_environment(environment, organization)
         db.session.commit()
         flash(f"Environment {environment.name} deleted.", "success")
         return redirect(
@@ -1024,7 +1192,7 @@ def project_environment_add_application(org_slug, project_slug, env_slug):
     ).first_or_404()
     form = AddApplicationToEnvironmentForm()
     form.application_id.choices = [
-        (str(a.id), a.name) for a in project.project_applications
+        (str(a.id), a.name) for a in project.active_applications
     ]
     if form.validate_on_submit():
         application = Application.query.filter_by(
@@ -1040,6 +1208,154 @@ def project_environment_add_application(org_slug, project_slug, env_slug):
                 env_slug=env_slug,
             )
         )
+    abort(400)
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/applications/<app_slug>/unenroll",
+    methods=["POST"],
+)
+@login_required
+def project_environment_unenroll_application(
+    org_slug, project_slug, env_slug, app_slug
+):
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .first_or_404()
+    )
+    project = (
+        Project.query.filter_by(organization_id=organization.id, slug=project_slug)
+        .filter(Project.deleted_at.is_(None))
+        .first_or_404()
+    )
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    environment = (
+        Environment.query.filter_by(project_id=project.id, slug=env_slug)
+        .filter(Environment.deleted_at.is_(None))
+        .first_or_404()
+    )
+    application = (
+        Application.query.filter_by(project_id=project.id, slug=app_slug)
+        .filter(Application.deleted_at.is_(None))
+        .first_or_404()
+    )
+    form = DeleteApplicationEnvironmentForm()
+    if form.validate_on_submit():
+        app_env = (
+            ApplicationEnvironment.query.filter_by(
+                application_id=application.id,
+                environment_id=environment.id,
+            )
+            .filter(ApplicationEnvironment.deleted_at.is_(None))
+            .first_or_404()
+        )
+        _soft_delete_app_env(app_env, organization)
+        db.session.commit()
+        flash(
+            f"Application {application.name} unenrolled from {environment.name}.",
+            "success",
+        )
+        return redirect(
+            url_for(
+                "user.project_environment",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                env_slug=env_slug,
+            )
+        )
+    abort(400)
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/delete",
+    methods=["POST"],
+)
+@login_required
+def project_application_delete(org_slug, project_slug, app_slug):
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .first_or_404()
+    )
+    project = (
+        Project.query.filter_by(organization_id=organization.id, slug=project_slug)
+        .filter(Project.deleted_at.is_(None))
+        .first_or_404()
+    )
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    application = (
+        Application.query.filter_by(project_id=project.id, slug=app_slug)
+        .filter(Application.deleted_at.is_(None))
+        .first_or_404()
+    )
+    form = DeleteApplicationForm()
+    if form.validate_on_submit():
+        _soft_delete_application(application, organization)
+        db.session.commit()
+        flash(f"Application {application.name} deleted.", "success")
+        return redirect(
+            url_for(
+                "user.project",
+                org_slug=org_slug,
+                project_slug=project_slug,
+            )
+        )
+    abort(400)
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/delete",
+    methods=["POST"],
+)
+@login_required
+def project_delete(org_slug, project_slug):
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .first_or_404()
+    )
+    project = (
+        Project.query.filter_by(organization_id=organization.id, slug=project_slug)
+        .filter(Project.deleted_at.is_(None))
+        .first_or_404()
+    )
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    form = DeleteProjectForm()
+    if form.validate_on_submit():
+        _soft_delete_project(project, organization)
+        db.session.commit()
+        flash(f"Project {project.name} deleted.", "success")
+        return redirect(url_for("user.organization", org_slug=org_slug))
+    abort(400)
+
+
+@user_blueprint.route(
+    "/organizations/<org_slug>/delete",
+    methods=["POST"],
+)
+@login_required
+def organization_delete(org_slug):
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .first_or_404()
+    )
+    if not AdministerOrganizationPermission(organization.id).can():
+        abort(403)
+    form = DeleteOrganizationForm()
+    if form.validate_on_submit():
+        for project in list(organization.projects):
+            if project.deleted_at is None:
+                _soft_delete_project(project, organization)
+        organization.deleted_at = datetime.datetime.utcnow()
+        organization.slug = f"{organization.slug}--deleted-{int(time.time())}"
+        db.session.commit()
+        flash(f"Organization {organization.name} deleted.", "success")
+        return redirect(url_for("user.organizations"))
     abort(400)
 
 
@@ -1063,12 +1379,16 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     environments = []
     if project.environments_enabled:
         # Only show environments this application is enrolled in
-        all_app_envs = ApplicationEnvironment.query.filter_by(
-            application_id=application.id,
-        ).all()
+        all_app_envs = (
+            ApplicationEnvironment.query.filter_by(
+                application_id=application.id,
+            )
+            .filter(ApplicationEnvironment.deleted_at.is_(None))
+            .all()
+        )
         enrolled_env_ids = {ae.environment_id for ae in all_app_envs}
         environments = sorted(
-            [e for e in project.project_environments if e.id in enrolled_env_ids],
+            [e for e in project.active_environments if e.id in enrolled_env_ids],
             key=lambda e: e.sort_order,
         )
         if env_slug:
@@ -1119,7 +1439,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
 
     sibling_references = []
     if app_env:
-        for ae in app_env.environment.application_environments:
+        for ae in app_env.environment.active_application_environments:
             if ae.application_id == application.id:
                 continue
             ingress_list = []
@@ -1528,8 +1848,9 @@ def project_application_create(org_slug, project_slug):
     form.project_id.choices = [(str(project.id), project.name)]
     form.organization_id.data = str(organization.id)
     form.project_id.data = str(project.id)
-    if project.environments_enabled and len(project.project_environments) > 1:
-        sorted_envs = sorted(project.project_environments, key=lambda e: e.sort_order)
+    active_envs = project.active_environments
+    if project.environments_enabled and len(active_envs) > 1:
+        sorted_envs = sorted(active_envs, key=lambda e: e.sort_order)
         form.environment_id.choices = [(str(e.id), e.name) for e in sorted_envs]
         if not form.is_submitted():
             default_env = next((e for e in sorted_envs if e.is_default), sorted_envs[0])
@@ -1552,7 +1873,7 @@ def project_application_create(org_slug, project_slug):
                 ).first()
             if not target_env:
                 target_env = next(
-                    (e for e in project.project_environments if e.is_default),
+                    (e for e in active_envs if e.is_default),
                     None,
                 )
             if target_env:
@@ -1563,7 +1884,7 @@ def project_application_create(org_slug, project_slug):
             # Non-env project: lazily create default environment if needed,
             # then create bare app_env + sentinel config.
             default_env = next(
-                (e for e in project.project_environments if e.is_default),
+                (e for e in active_envs if e.is_default),
                 None,
             )
             if default_env is None:
@@ -1895,12 +2216,16 @@ def project_application_settings(org_slug, project_slug, app_slug):
             )
         )
 
+    delete_form = DeleteApplicationForm()
+    delete_form.application_id.data = str(application.id)
+    delete_form.name.data = application.slug
     return render_template(
         "user/project_application_settings.html",
         application=application,
         form=form,
         app_url=current_app.config.get("GITHUB_APP_URL", "https://github.com"),
         environment=_default_environment(project),
+        delete_form=delete_form,
     )
 
 
@@ -4246,8 +4571,8 @@ def project_logs_view(org_slug, project_slug):
 
     # Collect process names from all app_envs in the project
     process_names_set = set()
-    for app in project.project_applications:
-        for ae in app.application_environments:
+    for app in project.active_applications:
+        for ae in app.active_application_environments:
             for proc in ae.process_counts or {}:
                 process_names_set.add(proc)
     process_names = sorted(process_names_set)
@@ -4282,8 +4607,8 @@ def project_logs_query(org_slug, project_slug):
 
     # Collect process names from all app_envs
     process_names_set = set()
-    for app in project.project_applications:
-        for ae in app.application_environments:
+    for app in project.active_applications:
+        for ae in app.active_application_environments:
             for proc in ae.process_counts or {}:
                 process_names_set.add(proc)
     process_names = sorted(process_names_set)

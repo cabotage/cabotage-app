@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import render_field_compact, icon, resource_path %}
+{% from "_macros.html" import render_field_compact, icon, resource_path, danger_zone_delete %}
 
 {% set org_slug = project.organization.slug %}
 {% set project_slug = project.slug %}
@@ -68,9 +68,9 @@
             <div id="initial-env-panel" class="hidden flex flex-col gap-3">
               {{ render_field_compact(form.initial_env_name, label='Default Environment Name') }}
               {{ render_field_compact(form.initial_env_slug, label='Default Environment Slug') }}
-              {% if project.project_applications %}
+              {% if project.active_applications %}
                 <p class="text-xs text-base-content/40 mt-1">
-                  {{ project.project_applications|length }} existing application{{ 's' if project.project_applications|length != 1 }} will be migrated into this environment.
+                  {{ project.active_applications|length }} existing application{{ 's' if project.active_applications|length != 1 }} will be migrated into this environment.
                 </p>
               {% endif %}
             </div>
@@ -78,8 +78,8 @@
         </div>
       </div>
 
-      {% if project.environments_enabled and project.project_environments %}
-        {% set envs_sorted = project.project_environments|sort(attribute='sort_order') %}
+      {% if project.environments_enabled and project.active_environments %}
+        {% set envs_sorted = project.active_environments|sort(attribute='sort_order') %}
 
         <div class="overflow-x-auto -mx-1">
           <table class="table table-sm">
@@ -154,6 +154,17 @@
         </button>
       </div>
     </form>
+
+    {% if delete_form %}
+      {{ danger_zone_delete(
+        modal_id='delete-project-modal',
+        title='Delete Project',
+        confirm_slug=project_slug,
+        form=delete_form,
+        action_url=url_for('user.project_delete', org_slug=org_slug, project_slug=project_slug),
+        description='Deleting this project will remove all applications, environments, and deployments. This cannot be undone.'
+      ) }}
+    {% endif %}
   </div>
 {% endblock content %}
 
@@ -198,7 +209,7 @@
       })();
     </script>
   {% endif %}
-  {% if project.environments_enabled and project.project_environments %}
+  {% if project.environments_enabled and project.active_environments %}
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
     <script>
       (function () {

@@ -31,12 +31,12 @@
     </button>
   {% endcall %}
 
-  {% set app_count = project.project_applications|length %}
+  {% set app_count = project.active_applications|length %}
   {% set total_pods = namespace(n=0) %}
   {% set running_count = namespace(n=0) %}
   {% set errored_count = namespace(n=0) %}
   {% set building_count = namespace(n=0) %}
-  {% for app in project.project_applications %}
+  {% for app in project.active_applications %}
     {% set dae = app.default_app_env %}
     {% if dae %}
       {% set total_pods.n = total_pods.n + (dae.process_counts.values()|sum if dae.process_counts else 0) %}
@@ -98,7 +98,7 @@
 
   {% if project.environments_enabled %}
     {# ── Environment-centric layout ── #}
-    {% set sorted_envs = project.project_environments|sort(attribute='sort_order') %}
+    {% set sorted_envs = project.active_environments|sort(attribute='sort_order') %}
     {% if sorted_envs %}
       {% for env in sorted_envs %}
         <div class="mb-6">
@@ -137,12 +137,12 @@
       {% endif %}
     {% else %}
       {# environments enabled but none created yet #}
-      {% if project.project_applications %}
+      {% if project.active_applications %}
         <div class="flex items-center gap-3 mb-3">
           <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider">Services</h2>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
-          {% for application in project.project_applications %}
+          {% for application in project.active_applications %}
             {{ app_card(application) }}
           {% endfor %}
         </div>
@@ -161,7 +161,7 @@
     {% endif %}
   {% else %}
     {# ── Flat app list (environments not enabled) ── #}
-    {% if project.project_applications %}
+    {% if project.active_applications %}
       <div class="flex items-center gap-3 mb-3">
         <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider">Services</h2>
         {% if app_count > 0 %}
@@ -188,7 +188,7 @@
         {% endif %}
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {% for application in project.project_applications %}
+        {% for application in project.active_applications %}
           {{ app_card(application) }}
         {% endfor %}
       </div>

@@ -123,11 +123,16 @@ class Organization(db.Model):
     name = db.Column(db.Text(), nullable=False)
     slug = db.Column(CIText(), nullable=False, unique=True)
     k8s_identifier = db.Column(db.String(64), unique=True, nullable=False)
+    deleted_at = db.Column(db.DateTime, nullable=True, index=True)
 
     members = db.relationship("OrganizationMember", back_populates="organization")
     teams = db.relationship("OrganizationTeam", back_populates="organization")
 
     projects = db.relationship("Project", backref="organization")
+
+    @property
+    def active_projects(self):
+        return [p for p in self.projects if p.deleted_at is None]
 
     def add_user(self, user, admin=False):
         association = OrganizationMember(admin=admin)

@@ -175,7 +175,7 @@ class EditProjectSettingsForm(FlaskForm):
 
 
 class DeleteProjectForm(FlaskForm):
-    application_id = HiddenField(
+    project_id = HiddenField(
         "Project ID",
         [DataRequired()],
         description="ID of the Project to delete.",
@@ -589,6 +589,50 @@ class DeleteEnvironmentForm(FlaskForm):
             EqualTo(
                 "name",
                 message="Must confirm the *exact* name of the Environment!",
+            )
+        ],
+    )
+
+
+class DeleteOrganizationForm(FlaskForm):
+    organization_id = HiddenField(
+        "Organization ID",
+        [DataRequired()],
+        description="ID of the Organization to delete.",
+    )
+    name = StringField(
+        "Name",
+        [InputRequired()],
+        description="Name for the Organization being deleted.",
+    )
+    confirm = StringField(
+        "Type the name of the Organization.",
+        [
+            EqualTo(
+                "name",
+                message="Must confirm the *exact* name of the Organization!",
+            )
+        ],
+    )
+
+
+class DeleteApplicationEnvironmentForm(FlaskForm):
+    app_env_id = HiddenField(
+        "Application Environment ID",
+        [DataRequired()],
+        description="ID of the Application Environment to delete.",
+    )
+    name = StringField(
+        "Name",
+        [InputRequired()],
+        description="Name for the Application being unenrolled.",
+    )
+    confirm = StringField(
+        "Type the name of the Application.",
+        [
+            EqualTo(
+                "name",
+                message="Must confirm the *exact* name of the Application!",
             )
         ],
     )

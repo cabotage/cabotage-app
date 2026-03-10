@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, empty_state, service_card, stat_card, tab_nav, render_field %}
+{% from "_macros.html" import icon, resource_path, page_header, empty_state, service_card, stat_card, tab_nav, render_field, danger_zone_delete %}
 
 {% block title %}
   {{ organization.name }} - Cabotage
@@ -14,7 +14,7 @@
 
 {% block tab_bar %}
   <div class="app-content-padded !py-0">
-    {% set proj_count = organization.projects|length %}
+    {% set proj_count = organization.active_projects|length %}
     {% set member_count = organization.members|length %}
     {{ tab_nav([
         {'id': 'projects', 'label': 'Projects', 'icon': 'folder', 'badge': proj_count},
@@ -24,7 +24,7 @@
 {% endblock tab_bar %}
 
 {% block content %}
-  {% set proj_count = organization.projects|length %}
+  {% set proj_count = organization.active_projects|length %}
   {% set member_count = organization.members|length %}
 
   {% set latest_deploy = namespace(ts=last_deploy_ts) %}
@@ -54,15 +54,15 @@
       {% endif %}
     </div>
 
-    {% if organization.projects %}
+    {% if organization.active_projects %}
       <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Projects</h2>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {% for project in organization.projects %}
-          {% set app_count = project.project_applications|length %}
+        {% for project in organization.active_projects %}
+          {% set app_count = project.active_applications|length %}
           {% set running = namespace(n=0) %}
           {% set errored = namespace(n=0) %}
           {% set building = namespace(n=0) %}
-          {% for app in project.project_applications %}
+          {% for app in project.active_applications %}
             {% if app.id in deployed_app_ids %}
               {% set running.n = running.n + 1 %}
             {% endif %}
@@ -277,5 +277,16 @@
   });
 })();
     </script>
+  {% endif %}
+
+  {% if delete_form %}
+    {{ danger_zone_delete(
+      modal_id='delete-org-modal',
+      title='Delete Organization',
+      confirm_slug=organization.slug,
+      form=delete_form,
+      action_url=url_for('user.organization_delete', org_slug=organization.slug),
+      description='Deleting this organization will remove all projects, applications, and deployments. This cannot be undone.'
+    ) }}
   {% endif %}
 {% endblock content %}
