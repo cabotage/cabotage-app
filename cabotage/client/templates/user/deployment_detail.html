@@ -59,6 +59,7 @@
         {% if deployment.error and deployment.release_object %}
           <form action="{{ url_for('user.release_deploy', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id=deployment.release_object.id) }}"
                 method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
             <button type="submit"
                     class="btn btn-ghost btn-sm gap-1.5 text-error hover:bg-error/10">
               {{ icon('refresh-cw', 'w-3.5 h-3.5') }}

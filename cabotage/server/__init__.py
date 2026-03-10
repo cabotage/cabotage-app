@@ -28,6 +28,7 @@ from flask_security import Security, SQLAlchemyUserDatastore
 from flask_principal import Principal, identity_loaded
 from flask_sqlalchemy import SQLAlchemy
 from flask_sock import Sock
+from flask_wtf.csrf import CSRFProtect
 
 from celery import Celery
 from celery import Task
@@ -73,6 +74,7 @@ kubernetes = Kubernetes()
 config_writer = ConfigWriter(consul=consul, vault=vault)
 github_app = GitHubApp()
 sock = Sock()
+csrf = CSRFProtect()
 babel = Babel()
 sentry_sdk.init(
     dsn=os.getenv("SENTRY_DSN"),
@@ -229,6 +231,7 @@ def create_app():
     config_writer.init_app(app, consul, vault)
     github_app.init_app(app)
     celery_init_app(app)
+    csrf.init_app(app)
     sock.init_app(app)
     babel.init_app(app)
 
@@ -242,6 +245,9 @@ def create_app():
 
     app.register_blueprint(user_blueprint)
     app.register_blueprint(main_blueprint)
+
+    # GitHub webhook uses HMAC validation, not CSRF tokens
+    csrf.exempt("cabotage.server.user.views.github_hooks")
 
     # error handlers
     @app.errorhandler(401)

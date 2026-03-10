@@ -171,6 +171,7 @@
       <form action="{{ url_for('user.application_clear_cache', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
             method="post"
             class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
         <button class="btn btn-ghost btn-sm gap-1.5 text-base-content/40 hover:text-error"
                 type="submit">{{ icon('trash', 'w-3.5 h-3.5') }} Clear Cache</button>
       </form>
@@ -309,6 +310,7 @@
                       <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
                             method="post"
                             class="mt-2">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                         {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
                         <button class="btn btn-primary btn-sm gap-1.5" type="submit">{{ icon('play', 'w-3.5 h-3.5') }} Build Image</button>
                       </form>
@@ -324,6 +326,7 @@
                     <p class="text-xs text-base-content/40">Bundle your image + config into a deployable release</p>
                     <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
                           method="post" class="mt-2">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                       {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
                       <button type="submit" class="btn btn-primary btn-sm gap-1.5">{{ icon('scissors', 'w-3.5 h-3.5') }} Create Release</button>
                     </form>
@@ -547,6 +550,7 @@
                 </div>
                 <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
                       method="post" class="flex-shrink-0">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                   {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
                   <button type="submit" class="btn btn-primary btn-sm gap-1.5">
                     {{ icon('scissors', 'w-3.5 h-3.5') }}
@@ -1104,6 +1108,7 @@
           <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
                 method="post"
                 class="flex-1">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
             {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
             <button class="btn btn-ghost btn-xs w-full gap-1" type="submit">{{ icon('play', 'w-3 h-3') }} Build</button>
           </form>
@@ -1159,6 +1164,7 @@
            data-switch-tab="releases">{{ icon('layers', 'w-3 h-3') }} All</a>
         <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
               method="post" class="flex-1">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
           {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
           <button type="submit" class="btn btn-ghost btn-xs w-full gap-1">{{ icon('scissors', 'w-3 h-3') }} Create</button>
         </form>
@@ -1548,6 +1554,7 @@
       </div>
 
       <form action="#" method="post" data-requires-backend="configuration_bulk">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
         <input type="hidden" name="format" id="raw-editor-format" value="env" />
 
         <div data-editor-panel="env" class="raw-editor-panel">
@@ -1708,6 +1715,7 @@
     <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
           method="post"
           class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
       {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
       <button class="btn btn-primary btn-sm gap-1.5" type="submit">
         {{ icon('play', 'w-3.5 h-3.5') }} Build from Source
@@ -1823,6 +1831,7 @@
           <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
                 method="post"
                 class="inline mt-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
             {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
             <button class="btn btn-primary btn-sm gap-2" type="submit">{{ icon('play', 'w-4 h-4') }} Build from Source</button>
           </form>
@@ -1838,6 +1847,7 @@
     <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
           method="post"
           class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
       {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
       <button class="btn btn-primary btn-sm gap-1.5" type="submit">
         {{ icon('scissors', 'w-3.5 h-3.5') }} Create Release
