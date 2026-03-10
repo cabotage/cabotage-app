@@ -56,13 +56,15 @@
   <div class="tab-bar {{ tab_bar_class }}" data-tabs>
     {% for tab in tabs %}
       {% if tab.disabled is defined and tab.disabled %}
-        <span class="tab-item tab-disabled">
+        <span class="tab-item tab-disabled"
+              data-tab="{{ tab.id }}">
           {% if tab.icon %}{{ icon(tab.icon, 'w-4 h-4') }}{% endif %}
           {{ tab.label }}
         </span>
       {% elif tab.url is defined and tab.url %}
         <a href="{{ tab.url }}"
-           class="tab-item">
+           class="tab-item"
+           data-tab="{{ tab.id }}">
           {% if tab.icon %}{{ icon(tab.icon, 'w-4 h-4') }}{% endif %}
           {{ tab.label }}
         </a>
