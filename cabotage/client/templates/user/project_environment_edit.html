@@ -34,14 +34,15 @@
   </div>
 
   <div class="max-w-2xl">
-    {% if not environment.is_default %}
+    {% if not environment.is_default or can_delete_default %}
       {{ danger_zone_delete(
         modal_id='delete-env-modal',
         title='Delete Environment',
         confirm_slug=environment.slug,
         form=delete_form,
         action_url=url_for('user.project_environment_delete', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug),
-        description='Deleting this environment will remove all application enrollments, configurations, and deployments within it.'
+        description='Deleting this environment will remove all application enrollments, configurations, and deployments within it.',
+        impact_items=delete_impact
       ) }}
     {% endif %}
   </div>

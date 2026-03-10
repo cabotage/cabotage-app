@@ -162,7 +162,8 @@
         confirm_slug=project_slug,
         form=delete_form,
         action_url=url_for('user.project_delete', org_slug=org_slug, project_slug=project_slug),
-        description='Deleting this project will remove all applications, environments, and deployments. This cannot be undone.'
+        description='Deleting this project will remove all applications, environments, and deployments. This cannot be undone.',
+        impact_items=delete_impact
       ) }}
     {% endif %}
   </div>

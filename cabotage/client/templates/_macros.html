@@ -410,7 +410,7 @@
   </script>
 {% endmacro %}
 
-{% macro danger_zone_delete(modal_id, title, confirm_slug, form, action_url, description='') %}
+{% macro danger_zone_delete(modal_id, title, confirm_slug, form, action_url, description='', impact_items=[]) %}
   <div class="collapse collapse-arrow bg-error/5 border border-error/20 rounded-lg mt-6">
     <input type="checkbox" />
     <div class="collapse-title text-sm font-medium text-error">
@@ -433,6 +433,13 @@
         Type <code class="font-semibold">{{ confirm_slug }}</code> to confirm.
         This action cannot be undone.
       </p>
+      {% if impact_items %}
+        <ul class="text-sm text-base-content/60 mb-2 list-disc list-inside">
+          {% for item in impact_items %}
+            <li>{{ item|safe }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
       <form action="{{ action_url }}" method="post">
         {{ form.hidden_tag() }}
         <div style="display:none">{{ form.name() }}</div>
@@ -448,6 +455,17 @@
     </div>
     <form method="dialog" class="modal-backdrop"><button>close</button></form>
   </dialog>
+  <script>
+    (function(){
+      var d=document.getElementById('{{ modal_id }}');
+      d.addEventListener('close',function(){
+        var i=d.querySelector('input[name="confirm"]');
+        if(i)i.value='';
+        var b=d.querySelector('.btn-delete-confirm');
+        if(b)b.disabled=true;
+      });
+    })();
+  </script>
 {% endmacro %}
 
 {% macro icon(name, size='w-4 h-4') %}
