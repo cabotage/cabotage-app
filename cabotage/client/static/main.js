@@ -2147,6 +2147,7 @@ document.addEventListener('DOMContentLoaded', function () {
   syncDetailLogHeight();
   initAnnotationTables();
   initIngressForms();
+  initConfirmDialogs();
   window.addEventListener('resize', function () {
     autoExpandCollapsibleCards();
     syncDetailLogHeight();
@@ -2323,6 +2324,23 @@ function initIngressForms() {
       row.appendChild(rmBtn);
       container.appendChild(row);
       pathInput.focus();
+    });
+  });
+}
+
+/* Confirm-to-act dialogs (type username/slug to enable action button) */
+function initConfirmDialogs() {
+  document.querySelectorAll('.confirm-modal').forEach(function (dialog) {
+    var expected = dialog.getAttribute('data-confirm-value');
+    var input = dialog.querySelector('.confirm-input');
+    var btn = dialog.querySelector('.confirm-btn');
+    if (!input || !btn) return;
+    input.addEventListener('input', function () {
+      btn.disabled = input.value !== expected;
+    });
+    dialog.addEventListener('close', function () {
+      input.value = '';
+      btn.disabled = true;
     });
   });
 }

@@ -594,6 +594,19 @@ class DeleteEnvironmentForm(FlaskForm):
     )
 
 
+class EditOrganizationForm(FlaskForm):
+    organization_id = HiddenField(
+        "Organization ID",
+        [DataRequired()],
+        description="ID of the Organization to edit.",
+    )
+    name = StringField(
+        "Organization Name",
+        [InputRequired()],
+        description="Friendly name for this Organization.",
+    )
+
+
 class DeleteOrganizationForm(FlaskForm):
     organization_id = HiddenField(
         "Organization ID",

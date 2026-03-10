@@ -21,6 +21,7 @@ from flask_security import (
     current_user,
     login_required,
 )
+from flask_wtf import FlaskForm
 
 import kubernetes
 
@@ -102,6 +103,7 @@ from cabotage.server.user.forms import (
     EditApplicationSettingsForm,
     EditConfigurationForm,
     EditEnvironmentForm,
+    EditOrganizationForm,
     EditProjectSettingsForm,
     IngressSettingsForm,
     IngressHostForm,
@@ -256,6 +258,48 @@ def _cleanup_app_env_k8s(organization, app_env):
         core_api.delete_namespaced_secret(resource_prefix, namespace)
     except Exception:
         log.exception("k8s cleanup: failed to delete secret %s", resource_prefix)
+
+
+def _deletion_impact_items(entity_type, entity_name, children):
+    """Build impact list: first item is 'This <type> <bold name>', rest are child counts.
+
+    children is a list of (label, names) pairs. Returns HTML strings (use |safe).
+    """
+    from markupsafe import Markup, escape
+
+    items = [
+        Markup("This %s <strong>%s</strong>")
+        % (escape(entity_type), escape(entity_name))
+    ]
+    for label, names in children:
+        if not names:
+            continue
+        count = len(names)
+        bold_names = Markup(", ").join(
+            Markup("<strong>%s</strong>") % escape(n) for n in names
+        )
+        items.append(Markup("%d %s: %s") % (count, escape(label), bold_names))
+    return items
+
+
+def _ingress_hostnames(app_envs):
+    """Collect all ingress hostnames across a list of ApplicationEnvironments."""
+    hostnames = []
+    for ae in app_envs:
+        for ing in ae.ingresses:
+            for host in ing.hosts:
+                hostnames.append(host.hostname)
+    return hostnames
+
+
+def _config_names(app_envs):
+    """Collect unique configuration names (excluding sentinel) across app_envs."""
+    names = set()
+    for ae in app_envs:
+        for cfg in ae.configurations:
+            if cfg.name != "CABOTAGE_SENTINEL":
+                names.add(cfg.name)
+    return sorted(names)
 
 
 def _soft_delete_app_env(app_env, organization):
@@ -542,11 +586,12 @@ def organization(org_slug):
         building_app_ids = status["building_app_ids"]
 
     is_admin = AdministerOrganizationPermission(organization.id).can()
-    delete_form = None
+
+    add_member_form = None
+    remove_member_form = None
     if is_admin:
-        delete_form = DeleteOrganizationForm()
-        delete_form.organization_id.data = str(organization.id)
-        delete_form.name.data = organization.slug
+        add_member_form = AddOrganizationUserForm()
+        remove_member_form = FlaskForm()
 
     return render_template(
         "user/organization.html",
@@ -558,7 +603,63 @@ def organization(org_slug):
         errored_app_ids=errored_app_ids,
         building_app_ids=building_app_ids,
         last_deploy_ts=last_deploy_ts,
+        is_admin=is_admin,
+        add_member_form=add_member_form,
+        remove_member_form=remove_member_form,
+    )
+
+
+@user_blueprint.route("/organizations/<org_slug>/settings", methods=["GET", "POST"])
+@login_required
+def organization_settings(org_slug):
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .first_or_404()
+    )
+    if not AdministerOrganizationPermission(organization.id).can():
+        abort(403)
+
+    form = EditOrganizationForm()
+
+    if form.validate_on_submit():
+        organization.name = form.name.data
+        db.session.commit()
+        flash("Organization settings saved.", "success")
+        return redirect(
+            url_for("user.organization_settings", org_slug=organization.slug)
+        )
+
+    form.organization_id.data = str(organization.id)
+    if not form.name.data or request.method == "GET":
+        form.name.data = organization.name
+
+    delete_form = DeleteOrganizationForm()
+    delete_form.organization_id.data = str(organization.id)
+    delete_form.name.data = organization.slug
+
+    active_projects = organization.active_projects
+    active_envs = [e for p in active_projects for e in p.active_environments]
+    active_apps = [a for p in active_projects for a in p.active_applications]
+    all_app_envs = [ae for e in active_envs for ae in e.active_application_environments]
+    delete_impact = _deletion_impact_items(
+        "organization",
+        organization.name,
+        [
+            ("projects", [p.name for p in active_projects]),
+            ("environments", [e.name for e in active_envs]),
+            ("applications", [a.name for a in active_apps]),
+            ("configurations", _config_names(all_app_envs)),
+            ("ingress domains", _ingress_hostnames(all_app_envs)),
+        ],
+    )
+
+    return render_template(
+        "user/organization_settings.html",
+        organization=organization,
+        form=form,
         delete_form=delete_form,
+        delete_impact=delete_impact,
     )
 
 
@@ -917,12 +1018,26 @@ def project_settings(org_slug, project_slug):
     delete_form = DeleteProjectForm()
     delete_form.project_id.data = str(project.id)
     delete_form.name.data = project.slug
+    active_envs = project.active_environments
+    active_apps = project.active_applications
+    all_app_envs = [ae for e in active_envs for ae in e.active_application_environments]
+    delete_impact = _deletion_impact_items(
+        "project",
+        project.name,
+        [
+            ("environments", [e.name for e in active_envs]),
+            ("applications", [a.name for a in active_apps]),
+            ("configurations", _config_names(all_app_envs)),
+            ("ingress domains", _ingress_hostnames(all_app_envs)),
+        ],
+    )
     return render_template(
         "user/project_settings.html",
         project=project,
         form=form,
         can_disable_environments=can_disable_environments,
         delete_form=delete_form,
+        delete_impact=delete_impact,
     )
 
 
@@ -1068,7 +1183,6 @@ def project_environment(org_slug, project_slug, env_slug):
     ).first_or_404()
     add_app_form = AddApplicationToEnvironmentForm()
     add_app_form.environment_id.data = str(environment.id)
-    unenroll_form = DeleteApplicationEnvironmentForm()
     # Only show applications not already in this environment
     active_app_envs = environment.active_application_environments
     existing_app_ids = {ae.application_id for ae in active_app_envs}
@@ -1081,7 +1195,6 @@ def project_environment(org_slug, project_slug, env_slug):
         project=project,
         environment=environment,
         add_app_form=add_app_form,
-        unenroll_form=unenroll_form,
         available_apps=available_apps,
     )
 
@@ -1118,12 +1231,25 @@ def project_environment_settings(org_slug, project_slug, env_slug):
     delete_form = DeleteEnvironmentForm()
     delete_form.environment_id.data = str(environment.id)
     delete_form.name.data = environment.slug
+    active_app_envs = environment.active_application_environments
+    delete_impact = _deletion_impact_items(
+        "environment",
+        environment.name,
+        [
+            ("enrolled applications", [ae.application.name for ae in active_app_envs]),
+            ("configurations", _config_names(active_app_envs)),
+            ("ingress domains", _ingress_hostnames(active_app_envs)),
+        ],
+    )
+    other_envs = [e for e in project.active_environments if e.id != environment.id]
     return render_template(
         "user/project_environment_edit.html",
         project=project,
         environment=environment,
         form=form,
         delete_form=delete_form,
+        delete_impact=delete_impact,
+        can_delete_default=environment.is_default and not other_envs,
     )
 
 
@@ -1151,8 +1277,12 @@ def project_environment_delete(org_slug, project_slug, env_slug):
         .first_or_404()
     )
     form = DeleteEnvironmentForm()
-    if environment.is_default:
-        flash("The default environment cannot be deleted.", "error")
+    other_envs = [e for e in project.active_environments if e.id != environment.id]
+    if environment.is_default and other_envs:
+        flash(
+            "The default environment cannot be deleted while other environments exist.",
+            "error",
+        )
         return redirect(
             url_for(
                 "user.project_environment_settings",
@@ -2219,6 +2349,19 @@ def project_application_settings(org_slug, project_slug, app_slug):
     delete_form = DeleteApplicationForm()
     delete_form.application_id.data = str(application.id)
     delete_form.name.data = application.slug
+    active_app_envs = application.active_application_environments
+    delete_impact = _deletion_impact_items(
+        "application",
+        application.name,
+        [
+            (
+                "enrolled in",
+                [ae.environment.name for ae in active_app_envs if ae.environment],
+            ),
+            ("configurations", _config_names(active_app_envs)),
+            ("ingress domains", _ingress_hostnames(active_app_envs)),
+        ],
+    )
     return render_template(
         "user/project_application_settings.html",
         application=application,
@@ -2226,6 +2369,7 @@ def project_application_settings(org_slug, project_slug, app_slug):
         app_url=current_app.config.get("GITHUB_APP_URL", "https://github.com"),
         environment=_default_environment(project),
         delete_form=delete_form,
+        delete_impact=delete_impact,
     )
 
 
@@ -2297,12 +2441,25 @@ def project_application_environment_settings(
             )
         )
 
+    unenroll_form = DeleteApplicationEnvironmentForm()
+    unenroll_form.app_env_id.data = str(app_env.id)
+    unenroll_form.name.data = application.slug
+    unenroll_impact = _deletion_impact_items(
+        "application",
+        f"{application.name} from {environment.name}",
+        [
+            ("configurations", _config_names([app_env])),
+            ("ingress domains", _ingress_hostnames([app_env])),
+        ],
+    )
     return render_template(
         "user/project_application_environment_settings.html",
         application=application,
         app_env=app_env,
         environment=environment,
         form=form,
+        unenroll_form=unenroll_form,
+        unenroll_impact=unenroll_impact,
     )
 
 
@@ -3733,9 +3890,9 @@ def organization_add_user(org_slug):
             organization.add_user(user)
             db.session.commit()
             flash("User has been added to the organization.", "success")
-            return redirect(url_for("user.organization", org_slug=org_slug))
         else:
             flash("User with this email address does not exist.", "error")
+        return redirect(url_for("user.organization", org_slug=org_slug) + "#members")
     return render_template(
         "user/organization_add_user.html",
         organization=organization,
@@ -3768,7 +3925,7 @@ def organization_remove_user(org_slug):
             )
     else:
         flash("User not found.", "error")
-    return redirect(url_for("user.organization", org_slug=org_slug))
+    return redirect(url_for("user.organization", org_slug=org_slug) + "#members")
 
 
 @user_blueprint.route("/organizations/<org_slug>/users/promote", methods=["POST"])
@@ -3791,7 +3948,7 @@ def organization_promote_user(org_slug):
             )
     else:
         flash("User not found.", "error")
-    return redirect(url_for("user.organization", org_slug=org_slug))
+    return redirect(url_for("user.organization", org_slug=org_slug) + "#members")
 
 
 @user_blueprint.route("/organizations/<org_slug>/users/demote", methods=["POST"])
@@ -3814,7 +3971,7 @@ def organization_demote_user(org_slug):
             )
     else:
         flash("User not found.", "error")
-    return redirect(url_for("user.organization", org_slug=org_slug))
+    return redirect(url_for("user.organization", org_slug=org_slug) + "#members")
 
 
 def _mimir_connection():
