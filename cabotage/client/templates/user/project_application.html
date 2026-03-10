@@ -56,6 +56,7 @@
     {{ tab_nav([
         {'id': 'overview', 'label': 'Overview', 'icon': 'activity'},
         {'id': 'observe', 'label': 'Observe', 'icon': 'bar-chart', 'disabled': not config.MIMIR_URL, 'url': url_for('user.project_application_observe', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) if config.MIMIR_URL else none},
+        {'id': 'logs', 'label': 'Logs', 'icon': 'file-text', 'disabled': not config.LOKI_URL, 'url': url_for('user.project_application_logs_view', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) if config.LOKI_URL else none},
         {'id': 'config', 'label': 'Config', 'icon': 'key', 'badge': app_env.configurations|rejectattr('name', 'equalto', 'CABOTAGE_SENTINEL') |list|length},
     {'id': 'images', 'label': 'Images', 'icon': 'image'},
     {'id': 'releases', 'label': 'Releases', 'icon': 'layers'},
