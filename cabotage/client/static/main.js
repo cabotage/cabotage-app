@@ -56,12 +56,12 @@ function initTabs(containerSelector) {
     }
   }
 
-  // Only bind SPA click handlers on tabs that have a corresponding panel
-  var panelIds = {};
-  panels.forEach(function (p) { panelIds[p.getAttribute('data-tab-panel')] = true; });
-
   tabs.forEach(function (tab) {
-    if (!panelIds[tab.getAttribute('data-tab')]) return;
+    // URL tabs (href not starting with #) navigate normally — don't intercept
+    var href = tab.getAttribute('href');
+    if (href && href.charAt(0) !== '#') return;
+    // Disabled tabs don't participate in SPA navigation
+    if (tab.classList.contains('tab-disabled')) return;
 
     tab.addEventListener('click', function (e) {
       e.preventDefault();
