@@ -56,11 +56,12 @@ function initTabs(containerSelector) {
     }
   }
 
+  // Only bind SPA click handlers on tabs that have a corresponding panel
+  var panelIds = {};
+  panels.forEach(function (p) { panelIds[p.getAttribute('data-tab-panel')] = true; });
+
   tabs.forEach(function (tab) {
-    // Skip tabs that navigate to a real URL (not #hash) or are disabled
-    var href = tab.getAttribute('href');
-    if (tab.classList.contains('tab-disabled')) return;
-    if (href && href.charAt(0) !== '#') return;
+    if (!panelIds[tab.getAttribute('data-tab')]) return;
 
     tab.addEventListener('click', function (e) {
       e.preventDefault();
