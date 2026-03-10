@@ -57,6 +57,11 @@ function initTabs(containerSelector) {
   }
 
   tabs.forEach(function (tab) {
+    // Skip tabs that navigate to a real URL (not #hash) or are disabled
+    var href = tab.getAttribute('href');
+    if (tab.classList.contains('tab-disabled')) return;
+    if (href && href.charAt(0) !== '#') return;
+
     tab.addEventListener('click', function (e) {
       e.preventDefault();
       activateTab(tab.getAttribute('data-tab'), true);
