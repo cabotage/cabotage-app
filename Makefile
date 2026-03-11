@@ -1,7 +1,7 @@
 .PHONY: default \
 	lint reformat type-check security-check \
 	start stop rebuild destroy \
-	migrate create-admin \
+	migrate create-admin seed \
 	routes migrations
 
 default:
@@ -16,6 +16,7 @@ default:
 
 start:
 	docker-compose up --build --detach
+	@$(MAKE) seed
 
 rebuild: start
 
@@ -33,6 +34,9 @@ migrate:
 
 create-admin:
 	docker-compose exec cabotage-app python3 -m cabotage.scripts.create_admin
+
+seed: migrate
+	docker-compose exec cabotage-app python3 -m cabotage.scripts.seed_localdev
 
 routes:
 	docker-compose exec cabotage-app python3 -m flask routes
