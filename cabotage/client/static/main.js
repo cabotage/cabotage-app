@@ -1984,6 +1984,7 @@ function initCompactTopbar() {
     for (var i = 0; i < label.length; i++) {
       if (label[i].nodeType === 3 && label[i].textContent.trim()) {
         var text = label[i].textContent.trim();
+        clone.setAttribute('title', text);
         var soonMatch = text.match(/^(.+?)\s*\(([^)]+)\)$/);
         if (soonMatch) {
           var labelWrap = document.createElement('span');
