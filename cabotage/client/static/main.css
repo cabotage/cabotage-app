@@ -868,9 +868,14 @@ a.live-commit-sha:hover {
 
 /* Dashboard Resource Tree */
 .dash-tree {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
+  position: relative;
+}
+.dash-tree > .dash-org {
+  margin-bottom: 0.75rem;
+}
+.dash-tree[data-masonry] > .dash-org {
+  position: absolute;
+  margin-bottom: 0;
 }
 .dash-org {
   border-radius: 0.75rem;

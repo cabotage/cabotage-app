@@ -58,6 +58,14 @@ def home():
             .order_by(Organization.name)
             .all()
         )
+        # Sort by total app count descending so tallest cards render first
+        # (CSS columns flow top-down, so this keeps tall cards on the left)
+        user_organizations.sort(
+            key=lambda o: sum(
+                len(p.project_applications) for p in o.projects
+            ),
+            reverse=True,
+        )
         # Per-app status: find apps with in-flight deploys, builds, or errors
         user_app_ids = user_apps.with_entities(Application.id)
         for (app_id,) in (

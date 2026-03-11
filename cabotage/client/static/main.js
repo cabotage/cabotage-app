@@ -2120,9 +2120,61 @@ document.addEventListener('click', function (e) {
   }
 });
 
+/* Dashboard masonry layout */
+function initMasonry() {
+  var grid = document.querySelector('.dash-tree');
+  if (!grid) return;
+  var gap = 12; // 0.75rem
+  var colMinWidth = 352; // 22rem
+
+  function layout() {
+    var items = Array.prototype.slice.call(grid.querySelectorAll(':scope > .dash-org'));
+    if (!items.length) return;
+    // Reset for measurement
+    grid.removeAttribute('data-masonry');
+    grid.style.height = '';
+    items.forEach(function (el) {
+      el.style.position = '';
+      el.style.top = '';
+      el.style.left = '';
+      el.style.width = '';
+    });
+    var gridWidth = grid.offsetWidth;
+    var cols = Math.max(1, Math.floor((gridWidth + gap) / (colMinWidth + gap)));
+    if (cols === 1) return; // single column needs no masonry
+    var colWidth = (gridWidth - gap * (cols - 1)) / cols;
+    var colHeights = [];
+    for (var c = 0; c < cols; c++) colHeights.push(0);
+    grid.setAttribute('data-masonry', '');
+    items.forEach(function (el) {
+      // Find shortest column
+      var minH = colHeights[0], minC = 0;
+      for (var c = 1; c < cols; c++) {
+        if (colHeights[c] < minH) { minH = colHeights[c]; minC = c; }
+      }
+      el.style.position = 'absolute';
+      el.style.top = colHeights[minC] + 'px';
+      el.style.left = (minC * (colWidth + gap)) + 'px';
+      el.style.width = colWidth + 'px';
+      colHeights[minC] += el.offsetHeight + gap;
+    });
+    var maxH = 0;
+    for (var c = 0; c < cols; c++) { if (colHeights[c] > maxH) maxH = colHeights[c]; }
+    grid.style.height = (maxH - gap) + 'px';
+  }
+
+  layout();
+  var resizeTimer;
+  window.addEventListener('resize', function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(layout, 100);
+  });
+}
+
 document.addEventListener('DOMContentLoaded', function () {
   initTabs();
   initCompactTopbar();
+  initMasonry();
   initCountInputs();
   initEnvReveal();
   initDropdowns();
