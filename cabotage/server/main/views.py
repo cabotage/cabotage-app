@@ -1,6 +1,6 @@
 from flask import render_template, Blueprint
 from flask_login import current_user
-from sqlalchemy import case, func
+from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
 from cabotage.server import db
