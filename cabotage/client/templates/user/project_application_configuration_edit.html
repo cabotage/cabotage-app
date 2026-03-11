@@ -10,7 +10,7 @@
     <div class="card bg-base-200 border border-base-300 shadow-xl">
       <div class="card-body">
         <h1 class="text-xl font-semibold text-base-content mb-1">Edit Environment Variable</h1>
-        <p class="text-sm text-base-content/50 mb-4 font-mono">{{ configuration.name }}</p>
+        <p class="text-sm text-base-content/50 mb-4 font-mono break-all">{{ configuration.name }}</p>
 
         <form action="{{ url_for('user.project_application_configuration_edit', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, config_id=configuration.id) }}"
               method="post"
@@ -19,7 +19,7 @@
           {{ form.hidden_tag() }}
           {{ form.name(type='hidden') }}
 
-          <div class="p-3 rounded-lg bg-base-300/50">
+          <div class="p-3 rounded-lg bg-base-300/50 overflow-hidden">
             <p class="text-xs text-base-content/50 mb-1">Current Value</p>
             {% if configuration.secret %}
               <span class="inline-flex items-center gap-1 text-base-content/40 text-sm">
@@ -27,7 +27,7 @@
                 Secret
               </span>
             {% else %}
-              <code class="text-sm text-base-content/70">{{ configuration.value }}</code>
+              <code class="text-sm text-base-content/70 break-all">{{ configuration.value }}</code>
             {% endif %}
           </div>
 

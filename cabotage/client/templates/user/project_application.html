@@ -1383,7 +1383,7 @@
         {% for configuration in user_configs %}
           <div class="env-row">
             <div class="flex items-center gap-2 min-w-0 flex-1">
-              <code class="env-key truncate">{{ configuration.name }}</code>
+              <code class="env-key">{{ configuration.name }}</code>
               {% if configuration.buildtime %}
                 <div class="info-popup-anchor">
                   <span class="env-badge env-badge-build">{{ icon('box', 'w-3 h-3') }} Build</span>
@@ -1457,7 +1457,7 @@
             {% for configuration in system_configs %}
               <div class="env-row">
                 <div class="flex items-center gap-2 min-w-0 flex-1">
-                  <code class="env-key truncate">{{ configuration.name }}</code>
+                  <code class="env-key">{{ configuration.name }}</code>
                 </div>
                 <div class="flex-1 min-w-0">
                   <code class="env-value">{{ configuration.value }}</code>
