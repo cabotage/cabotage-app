@@ -147,6 +147,13 @@ def build_release_buildkit(release):
                 "--local",
                 "context=/context",
             ]
+            api_client = kubernetes_ext.kubernetes_client
+            core_api_instance = kubernetes.client.CoreV1Api(api_client)
+            batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+            # Create PersistentVolumeClaim
+            volume_claim = fetch_image_build_cache_volume_claim(
+                core_api_instance, release
+            )
             docker_secret_object = kubernetes.client.V1Secret(
                 type="kubernetes.io/dockerconfigjson",
                 metadata=kubernetes.client.V1ObjectMeta(
@@ -199,6 +206,11 @@ def build_release_buildkit(release):
                         ),
                         spec=kubernetes.client.V1PodSpec(
                             restart_policy="Never",
+                            termination_grace_period_seconds=0,
+                            security_context=kubernetes.client.V1PodSecurityContext(
+                                fs_group=1000,
+                                fs_group_change_policy="OnRootMismatch",
+                            ),
                             containers=[
                                 kubernetes.client.V1Container(
                                     name="build",
@@ -221,7 +233,7 @@ def build_release_buildkit(release):
                                     volume_mounts=[
                                         kubernetes.client.V1VolumeMount(
                                             mount_path="/home/user/.local/share/buildkit",
-                                            name="buildkitd",
+                                            name="build-cache",
                                         ),
                                         kubernetes.client.V1VolumeMount(
                                             mount_path="/home/user/.config/buildkit",
@@ -254,8 +266,10 @@ def build_release_buildkit(release):
                             ],
                             volumes=[
                                 kubernetes.client.V1Volume(
-                                    name="buildkitd",
-                                    empty_dir=kubernetes.client.V1EmptyDirVolumeSource(),
+                                    name="build-cache",
+                                    persistent_volume_claim=kubernetes.client.V1PersistentVolumeClaimVolumeSource(
+                                        claim_name=volume_claim.metadata.name
+                                    ),
                                 ),
                                 kubernetes.client.V1Volume(
                                     name="buildkitd-toml",
@@ -293,9 +307,6 @@ def build_release_buildkit(release):
                 ),
             )
 
-            api_client = kubernetes_ext.kubernetes_client
-            core_api_instance = kubernetes.client.CoreV1Api(api_client)
-            batch_api_instance = kubernetes.client.BatchV1Api(api_client)
             core_api_instance.create_namespaced_config_map(
                 "default", context_configmap_object
             )
@@ -539,8 +550,8 @@ def build_cache_pvc_name(app_env):
     return name
 
 
-def fetch_image_build_cache_volume_claim(core_api_instance, image):
-    volume_claim_name = build_cache_pvc_name(image.application_environment)
+def fetch_image_build_cache_volume_claim(core_api_instance, buildable):
+    volume_claim_name = build_cache_pvc_name(buildable.application_environment)
     try:
         volume_claim = core_api_instance.read_namespaced_persistent_volume_claim(
             volume_claim_name, "default"
@@ -824,6 +835,7 @@ def build_image_buildkit(image=None):
                         ),
                         spec=kubernetes.client.V1PodSpec(
                             restart_policy="Never",
+                            termination_grace_period_seconds=0,
                             security_context=kubernetes.client.V1PodSecurityContext(
                                 fs_group=1000,
                                 fs_group_change_policy="OnRootMismatch",
