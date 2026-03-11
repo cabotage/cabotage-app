@@ -1,6 +1,11 @@
 from cabotage.server import create_app, db
 from cabotage.server.models import Organization, User
-from cabotage.server.models.projects import Application, ApplicationEnvironment, Environment, Project
+from cabotage.server.models.projects import (
+    Application,
+    ApplicationEnvironment,
+    Environment,
+    Project,
+)
 
 
 app = create_app()
@@ -27,12 +32,16 @@ with app.app_context():
     db.session.flush()
     db.session.refresh(org)
 
-    proj = Project(name="My API", slug="my-api", organization_id=org.id, environments_enabled=True)
+    proj = Project(
+        name="My API", slug="my-api", organization_id=org.id, environments_enabled=True
+    )
     db.session.add(proj)
     db.session.flush()
     db.session.refresh(proj)
 
-    env = Environment(name="Production", slug="production", project_id=proj.id, is_default=True)
+    env = Environment(
+        name="Production", slug="production", project_id=proj.id, is_default=True
+    )
     db.session.add(env)
     db.session.flush()
     db.session.refresh(env)
