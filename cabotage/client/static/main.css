@@ -384,10 +384,25 @@ html:not([data-theme-pref]) .theme-icon-system {
   pointer-events: none;
 }
 
-@media (max-width: 479px) {
+@media (max-width: 767px) {
   .tab-item {
-    padding: 0.5rem 0.625rem;
-    font-size: 0.75rem;
+    font-size: 0;
+    gap: 0;
+    padding: 0.625rem 0.75rem;
+  }
+  .tab-item svg {
+    width: 1.125rem;
+    height: 1.125rem;
+    font-size: 1rem;
+  }
+  .tab-item .tab-label {
+    display: none;
+  }
+  .tab-item .badge {
+    font-size: 0.625rem;
+    height: 0.875rem;
+    min-width: 0.875rem;
+    margin-left: 0.125rem;
   }
 }
 
