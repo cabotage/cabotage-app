@@ -14,9 +14,9 @@
     <div class="flex items-center gap-3 mb-6">
       <a href="{{ url_for('user.project_application', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug) }}"
          class="btn btn-ghost btn-sm">{{ icon("arrow-left") }}</a>
-      <div>
-        <h1 class="text-xl font-semibold text-base-content break-all">{{ configuration.name }}</h1>
-        <p class="text-sm text-base-content/50">Environment variable history</p>
+      <div class="min-w-0">
+        <h1 class="text-base font-semibold text-base-content">Environment Variable</h1>
+        <code class="text-sm font-mono text-accent block truncate" title="{{ configuration.name }}">{{ configuration.name }}</code>
       </div>
     </div>
 
@@ -39,17 +39,22 @@
             </a>
           </div>
         </div>
-        <div class="p-3 rounded-lg bg-base-300/50 overflow-hidden">
-          <code class="text-sm text-accent break-all">{{ configuration.name }}</code>
-          <span class="text-base-content/30 mx-2">=</span>
-          {% if configuration.secret %}
-            <span class="inline-flex items-center gap-1 text-base-content/40 text-sm">
-              {{ icon('lock', 'w-3 h-3') }}
-              Secret
-            </span>
-          {% else %}
-            <code class="text-sm text-base-content/70 break-all">{{ configuration.value }}</code>
-          {% endif %}
+        <div class="p-3 rounded-lg bg-base-300/50 overflow-hidden space-y-1.5">
+          <div>
+            <p class="text-xs text-base-content/40 mb-0.5">Name</p>
+            <code class="text-sm font-mono text-accent block truncate" title="{{ configuration.name }}">{{ configuration.name }}</code>
+          </div>
+          <div>
+            <p class="text-xs text-base-content/40 mb-0.5">Value</p>
+            {% if configuration.secret %}
+              <span class="inline-flex items-center gap-1 text-base-content/40 text-sm">
+                {{ icon('lock', 'w-3 h-3') }}
+                Secret
+              </span>
+            {% else %}
+              <code class="text-sm font-mono text-base-content/70 break-words">{{ configuration.value }}</code>
+            {% endif %}
+          </div>
         </div>
       </div>
     </div>
@@ -70,17 +75,17 @@
               <tbody>
                 {% for version in (configuration.versions|reverse)[1:] %}
                   <tr>
-                    <td>
-                      <code class="text-sm text-accent break-all">{{ version.name }}</code>
+                    <td class="max-w-[12rem]">
+                      <code class="text-sm font-mono text-accent block truncate" title="{{ version.name }}">{{ version.name }}</code>
                     </td>
                     <td>
                       {% if version.secret %}
                         <span class="inline-flex items-center gap-1 text-base-content/40 text-sm">{{ icon('lock', 'w-3 h-3') }} Secret</span>
                       {% else %}
-                        <code class="text-sm text-base-content/70 break-all">{{ version.value }}</code>
+                        <code class="text-sm font-mono text-base-content/70 break-words">{{ version.value }}</code>
                       {% endif %}
                     </td>
-                    <td class="text-sm text-base-content/50">{{ version.updated|humanize }}</td>
+                    <td class="text-sm text-base-content/50 whitespace-nowrap">{{ version.updated|humanize }}</td>
                   </tr>
                 {% endfor %}
               </tbody>
