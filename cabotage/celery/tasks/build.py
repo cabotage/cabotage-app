@@ -206,6 +206,7 @@ def build_release_buildkit(release):
                         ),
                         spec=kubernetes.client.V1PodSpec(
                             restart_policy="Never",
+                            termination_grace_period_seconds=0,
                             security_context=kubernetes.client.V1PodSecurityContext(
                                 fs_group=1000,
                                 fs_group_change_policy="OnRootMismatch",
@@ -834,6 +835,7 @@ def build_image_buildkit(image=None):
                         ),
                         spec=kubernetes.client.V1PodSpec(
                             restart_policy="Never",
+                            termination_grace_period_seconds=0,
                             security_context=kubernetes.client.V1PodSecurityContext(
                                 fs_group=1000,
                                 fs_group_change_policy="OnRootMismatch",
