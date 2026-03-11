@@ -31,14 +31,13 @@ def home():
         user_orgs = db.session.query(OrganizationMember.organization_id).filter(
             OrganizationMember.user_id == current_user.id
         )
+        user_apps = Application.query.join(Project).filter(
+            Project.organization_id.in_(user_orgs)
+        )
         project_count = Project.query.filter(
             Project.organization_id.in_(user_orgs)
         ).count()
-        app_count = (
-            Application.query.join(Project)
-            .filter(Project.organization_id.in_(user_orgs))
-            .count()
-        )
+        app_count = user_apps.count()
         deploy_count = (
             db.session.query(func.count(Deployment.id))
             .join(Application)
@@ -58,8 +57,46 @@ def home():
             .order_by(Organization.name)
             .all()
         )
-        if app_count:
-            app_statuses = _app_statuses(user_orgs)
+        # Per-app status: find apps with in-flight deploys, builds, or errors
+        user_app_ids = user_apps.with_entities(Application.id)
+        for app_id, in (
+            db.session.query(Deployment.application_id)
+            .filter(
+                Deployment.application_id.in_(user_app_ids),
+                Deployment.complete == False,  # noqa: E712
+                Deployment.error == False,  # noqa: E712
+            )
+            .distinct()
+        ):
+            app_statuses[str(app_id)] = "deploying"
+        for app_id, in (
+            db.session.query(Deployment.application_id)
+            .filter(
+                Deployment.application_id.in_(user_app_ids),
+                Deployment.error == True,  # noqa: E712
+            )
+            .distinct()
+        ):
+            app_statuses.setdefault(str(app_id), "deploy-error")
+        for app_id, in (
+            db.session.query(Image.application_id)
+            .filter(
+                Image.application_id.in_(user_app_ids),
+                Image.built == False,  # noqa: E712
+                Image.error == False,  # noqa: E712
+            )
+            .distinct()
+        ):
+            app_statuses.setdefault(str(app_id), "building")
+        for app_id, in (
+            db.session.query(Image.application_id)
+            .filter(
+                Image.application_id.in_(user_app_ids),
+                Image.error == True,  # noqa: E712
+            )
+            .distinct()
+        ):
+            app_statuses.setdefault(str(app_id), "build-error")
     return render_template(
         "main/home.html",
         project_count=project_count,
