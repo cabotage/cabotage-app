@@ -3623,6 +3623,20 @@ def project_application_observe(org_slug, project_slug, app_slug, env_slug=None)
     mimir_configured = bool(current_app.config.get("MIMIR_URL"))
     process_names = sorted(app_env.process_counts or {}) if app_env else []
 
+    current_process = request.args.get("process", "")
+    if current_process not in process_names:
+        current_process = ""
+
+    group_choices = {"total", "process", "pod", "status"}
+    current_groups = {
+        "cpu": request.args.get("cpu", "total"),
+        "memory": request.args.get("memory", "total"),
+        "errors": request.args.get("errors", "total"),
+    }
+    for k in current_groups:
+        if current_groups[k] not in group_choices:
+            current_groups[k] = "total"
+
     return render_template(
         "user/project_application_observe.html",
         application=application,
@@ -3631,6 +3645,8 @@ def project_application_observe(org_slug, project_slug, app_slug, env_slug=None)
         mimir_configured=mimir_configured,
         current_range=request.args.get("range", "1h"),
         process_names=process_names,
+        current_process=current_process,
+        current_groups=current_groups,
     )
 
 
@@ -3672,9 +3688,7 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
     process_filter = request.args.get("process", "")
     if process_filter:
         escaped_process = _REGEX_META.sub(r"\\\g<0>", process_filter)
-        labels = (
-            f'namespace="{namespace}", pod=~"{escaped_prefix}-{escaped_process}-[a-z0-9]+-[a-z0-9]+"'
-        )
+        labels = f'namespace="{namespace}", pod=~"{escaped_prefix}-{escaped_process}-[a-z0-9]+-[a-z0-9]+"'
     else:
         labels = f'namespace="{namespace}", pod=~"{escaped_prefix}-.*"'
 

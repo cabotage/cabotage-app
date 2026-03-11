@@ -31,14 +31,14 @@
           <select id="process-filter" class="select select-sm select-bordered text-xs">
             <option value="">All processes</option>
             {% for p in process_names %}
-              <option value="{{ p }}">{{ p }}</option>
+              <option value="{{ p }}" {% if current_process == p %}selected{% endif %}>{{ p }}</option>
             {% endfor %}
           </select>
         {% endif %}
-        <div class="flex gap-1">
+        <div class="flex gap-1" id="range-selector">
           {% for r in ['1h', '6h', '24h'] %}
-            <a href="{{ base_url }}?range={{ r }}"
-               class="btn btn-sm {% if current_range == r %}btn-primary{% else %}btn-ghost{% endif %}">{{ r }}</a>
+            <button data-range="{{ r }}"
+               class="btn btn-sm {% if current_range == r %}btn-primary{% else %}btn-ghost{% endif %}">{{ r }}</button>
           {% endfor %}
         </div>
       </div>
@@ -58,9 +58,9 @@
             <div class="flex items-center justify-between">
               <h2 class="card-title text-sm font-medium text-base-content/70">{{ icon('activity', 'w-4 h-4') }} CPU Usage</h2>
               <div class="flex gap-0.5" data-group-selector="cpu">
-                <button class="btn btn-xs btn-primary" data-group="total">Total</button>
-                <button class="btn btn-xs btn-ghost" data-group="process">Process</button>
-                <button class="btn btn-xs btn-ghost" data-group="pod">Pod</button>
+                <button class="btn btn-xs {% if current_groups.cpu == 'total' %}btn-primary{% else %}btn-ghost{% endif %}" data-group="total">Total</button>
+                <button class="btn btn-xs {% if current_groups.cpu == 'process' %}btn-primary{% else %}btn-ghost{% endif %}" data-group="process">Process</button>
+                <button class="btn btn-xs {% if current_groups.cpu == 'pod' %}btn-primary{% else %}btn-ghost{% endif %}" data-group="pod">Pod</button>
               </div>
             </div>
             <div id="chart-cpu" class="metric-panel" data-metric-panel>
@@ -78,9 +78,9 @@
             <div class="flex items-center justify-between">
               <h2 class="card-title text-sm font-medium text-base-content/70">{{ icon('bar-chart', 'w-4 h-4') }} Memory Usage</h2>
               <div class="flex gap-0.5" data-group-selector="memory">
-                <button class="btn btn-xs btn-primary" data-group="total">Total</button>
-                <button class="btn btn-xs btn-ghost" data-group="process">Process</button>
-                <button class="btn btn-xs btn-ghost" data-group="pod">Pod</button>
+                <button class="btn btn-xs {% if current_groups.memory == 'total' %}btn-primary{% else %}btn-ghost{% endif %}" data-group="total">Total</button>
+                <button class="btn btn-xs {% if current_groups.memory == 'process' %}btn-primary{% else %}btn-ghost{% endif %}" data-group="process">Process</button>
+                <button class="btn btn-xs {% if current_groups.memory == 'pod' %}btn-primary{% else %}btn-ghost{% endif %}" data-group="pod">Pod</button>
               </div>
             </div>
             <div id="chart-memory" class="metric-panel" data-metric-panel>
@@ -128,8 +128,8 @@
             <div class="flex items-center justify-between">
               <h2 class="card-title text-sm font-medium text-base-content/70">{{ icon('alert-triangle', 'w-4 h-4') }} Request Error Rate</h2>
               <div class="flex gap-0.5" data-group-selector="errors">
-                <button class="btn btn-xs btn-primary" data-group="total">Total</button>
-                <button class="btn btn-xs btn-ghost" data-group="status">By Status</button>
+                <button class="btn btn-xs {% if current_groups.errors == 'total' %}btn-primary{% else %}btn-ghost{% endif %}" data-group="total">Total</button>
+                <button class="btn btn-xs {% if current_groups.errors == 'status' %}btn-primary{% else %}btn-ghost{% endif %}" data-group="status">By Status</button>
               </div>
             </div>
             <div id="chart-errors" class="metric-panel metric-panel--short" data-metric-panel>
@@ -423,8 +423,28 @@
     return (v * 100).toFixed(2) + '%';
   }
 
-  // Panel state tracking
-  var panelGroups = { cpu: 'total', memory: 'total', errors: 'total' };
+  // Sync all selections to the URL
+  function updateURL() {
+    var url = new URL(window.location);
+    url.searchParams.set('range', RANGE);
+    var processEl = document.getElementById('process-filter');
+    var proc = processEl ? processEl.value : '';
+    if (proc) url.searchParams.set('process', proc);
+    else url.searchParams.delete('process');
+    ['cpu', 'memory', 'errors'].forEach(function(m) {
+      var g = panelGroups[m];
+      if (g && g !== 'total') url.searchParams.set(m, g);
+      else url.searchParams.delete(m);
+    });
+    history.replaceState(null, '', url);
+  }
+
+  // Panel state tracking (initialized from server-rendered values)
+  var panelGroups = {
+    cpu: {{ current_groups.cpu|tojson }},
+    memory: {{ current_groups.memory|tojson }},
+    errors: {{ current_groups.errors|tojson }}
+  };
 
   // Panels config
   var panels = {
@@ -487,6 +507,7 @@
         });
         btn.className = 'btn btn-xs btn-primary';
         panelGroups[metric] = btn.getAttribute('data-group');
+        updateURL();
         var el = document.getElementById('chart-' + metric);
         el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/20"><span class="loading loading-spinner loading-sm"></span></div>';
         fetchAndRender(metric);
@@ -509,6 +530,7 @@
   var processEl = document.getElementById('process-filter');
   if (processEl) {
     processEl.addEventListener('change', function() {
+      updateURL();
       document.querySelectorAll('[data-metric-panel]').forEach(function(el) {
         el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/20"><span class="loading loading-spinner loading-sm"></span></div>';
       });
@@ -516,13 +538,41 @@
     });
   }
 
+  // Range selector — switch time range without full page reload
+  document.querySelectorAll('#range-selector button[data-range]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var newRange = btn.getAttribute('data-range');
+      if (newRange === RANGE) return;
+      RANGE = newRange;
+      REFRESH_MS = REFRESH_MAP[RANGE] || 15000;
+      // Update button styles
+      document.querySelectorAll('#range-selector button').forEach(function(b) {
+        b.className = 'btn btn-sm btn-ghost';
+      });
+      btn.className = 'btn btn-sm btn-primary';
+      updateURL();
+      // Re-fetch all panels and reset auto-refresh interval
+      document.querySelectorAll('[data-metric-panel]').forEach(function(el) {
+        el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/20"><span class="loading loading-spinner loading-sm"></span></div>';
+      });
+      Object.keys(panels).forEach(fetchAndRender);
+      if (typeof resetRefreshTimer === 'function') resetRefreshTimer();
+    });
+  });
+
   // Initial load all panels
   Object.keys(panels).forEach(fetchAndRender);
 
-  // Auto-refresh
-  setInterval(function() {
+  // Auto-refresh (restarts when range changes)
+  var refreshTimer = setInterval(function() {
     Object.keys(panels).forEach(fetchAndRender);
   }, REFRESH_MS);
+  function resetRefreshTimer() {
+    clearInterval(refreshTimer);
+    refreshTimer = setInterval(function() {
+      Object.keys(panels).forEach(fetchAndRender);
+    }, REFRESH_MS);
+  }
 
   } // end init()
 })();
