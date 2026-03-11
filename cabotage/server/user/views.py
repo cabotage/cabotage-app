@@ -3637,6 +3637,8 @@ def project_application_observe(org_slug, project_slug, app_slug, env_slug=None)
         if current_groups[k] not in group_choices:
             current_groups[k] = "total"
 
+    has_time_window = bool(request.args.get("start") and request.args.get("end"))
+
     return render_template(
         "user/project_application_observe.html",
         application=application,
@@ -3647,6 +3649,7 @@ def project_application_observe(org_slug, project_slug, app_slug, env_slug=None)
         process_names=process_names,
         current_process=current_process,
         current_groups=current_groups,
+        has_time_window=has_time_window,
     )
 
 
@@ -3740,9 +3743,15 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
     duration = range_map.get(range_param, 3600)
     step = step_map.get(range_param, 15)
 
-    # Align start/end to step boundaries for clean bucket alignment
-    end = int(time.time()) // step * step
-    start = end - duration
+    # Accept explicit start/end for time navigation, otherwise use now
+    req_end = request.args.get("end", type=int)
+    req_start = request.args.get("start", type=int)
+    if req_end and req_start and req_end > req_start:
+        end = req_end // step * step
+        start = req_start // step * step
+    else:
+        end = int(time.time()) // step * step
+        start = end - duration
 
     result = None
     queries = []

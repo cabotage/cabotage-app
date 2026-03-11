@@ -3669,6 +3669,14 @@ a.obs-pod-link:hover {
 .proc-bar-seg--crashed { background: #ef4444; }
 
 /* Observe chart panels */
+.animate-pulse-gentle {
+  animation: pulse-gentle 3s ease-in-out infinite;
+}
+@keyframes pulse-gentle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .metric-panel {
   width: 100%;
   min-height: 220px;
