@@ -369,8 +369,15 @@
         {{ form.hidden_tag() }}
         {% for field in extra_fields %}{{ field(type="hidden") }}{% endfor %}
         {{ render_field(name_field) }}
-        {{ render_field(slug_field) }}
         {%- for field in fields %}{{ render_field(field) }}{% endfor %}
+        <details class="group">
+          <summary class="text-xs text-base-content/40 cursor-pointer hover:text-base-content/60 transition-colors select-none inline-flex items-center gap-1">
+            Advanced
+          </summary>
+          <div class="mt-2">
+            {{ render_field(slug_field) }}
+          </div>
+        </details>
         <div class="pt-2">
           <button type="submit" class="btn btn-primary w-full">{{ submit_text }}</button>
         </div>
