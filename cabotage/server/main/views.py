@@ -51,15 +51,16 @@ def home():
         user_organizations = (
             Organization.query.filter(Organization.id.in_(user_orgs))
             .options(
-                joinedload(Organization.projects)
-                .joinedload(Project.project_applications)
+                joinedload(Organization.projects).joinedload(
+                    Project.project_applications
+                )
             )
             .order_by(Organization.name)
             .all()
         )
         # Per-app status: find apps with in-flight deploys, builds, or errors
         user_app_ids = user_apps.with_entities(Application.id)
-        for app_id, in (
+        for (app_id,) in (
             db.session.query(Deployment.application_id)
             .filter(
                 Deployment.application_id.in_(user_app_ids),
@@ -69,7 +70,7 @@ def home():
             .distinct()
         ):
             app_statuses[str(app_id)] = "deploying"
-        for app_id, in (
+        for (app_id,) in (
             db.session.query(Deployment.application_id)
             .filter(
                 Deployment.application_id.in_(user_app_ids),
@@ -78,7 +79,7 @@ def home():
             .distinct()
         ):
             app_statuses.setdefault(str(app_id), "deploy-error")
-        for app_id, in (
+        for (app_id,) in (
             db.session.query(Image.application_id)
             .filter(
                 Image.application_id.in_(user_app_ids),
@@ -88,7 +89,7 @@ def home():
             .distinct()
         ):
             app_statuses.setdefault(str(app_id), "building")
-        for app_id, in (
+        for (app_id,) in (
             db.session.query(Image.application_id)
             .filter(
                 Image.application_id.in_(user_app_ids),
