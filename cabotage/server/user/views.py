@@ -3673,7 +3673,7 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
     if process_filter:
         escaped_process = _REGEX_META.sub(r"\\\g<0>", process_filter)
         labels = (
-            f'namespace="{namespace}", pod=~"{escaped_prefix}-{escaped_process}-.*"'
+            f'namespace="{namespace}", pod=~"{escaped_prefix}-{escaped_process}-[a-z0-9]+-[a-z0-9]+"'
         )
     else:
         labels = f'namespace="{namespace}", pod=~"{escaped_prefix}-.*"'
