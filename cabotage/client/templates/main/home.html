@@ -21,7 +21,7 @@
         </a>
       </div>
 
-      {% set org_count = current_user.organizations|length if current_user.organizations else 0 %}
+      {% set org_count = user_organizations|length %}
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
         {{ stat_card(org_count, 'Organizations', 'building', 'primary') }}
         {{ stat_card(project_count, 'Projects', 'folder', 'secondary') }}
@@ -29,62 +29,85 @@
         {{ stat_card(deploy_count, 'Deployments', 'deploy', 'success') }}
       </div>
 
-      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Quick Actions</h2>
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <a href="{{ url_for('user.organizations') }}"
-           class="service-card card-interactive block no-underline">
-          <div class="service-card-header">
-            <div class="service-card-icon bg-primary/10 text-primary">{{ icon('building', 'w-5 h-5') }}</div>
-            <div class="flex-1">
-              <span class="text-sm font-medium text-base-content">Organizations</span>
-              <p class="text-xs text-base-content/40">Manage teams and access</p>
-            </div>
-            <svg class="w-4 h-4 text-base-content/20"
-                 viewBox="0 0 24 24"
-                 fill="none"
-                 stroke="currentColor"
-                 stroke-width="2">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
-          </div>
-        </a>
+      {% if user_organizations %}
+        <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-4">Your Resources</h2>
 
-        <a href="{{ url_for('user.projects') }}"
-           class="service-card card-interactive block no-underline">
-          <div class="service-card-header">
-            <div class="service-card-icon bg-secondary/10 text-secondary">{{ icon('folder', 'w-5 h-5') }}</div>
-            <div class="flex-1">
-              <span class="text-sm font-medium text-base-content">Projects</span>
-              <p class="text-xs text-base-content/40">View all projects</p>
-            </div>
-            <svg class="w-4 h-4 text-base-content/20"
-                 viewBox="0 0 24 24"
-                 fill="none"
-                 stroke="currentColor"
-                 stroke-width="2">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
-          </div>
-        </a>
+        <div class="dash-tree">
+          {% for org in user_organizations %}
+            <div class="dash-org">
+              <a href="{{ url_for('user.organization', org_slug=org.slug) }}"
+                 class="dash-org-header group">
+                <div class="dash-org-icon">{{ icon('building', 'w-4 h-4') }}</div>
+                <div class="flex-1 min-w-0">
+                  <span class="dash-org-name">{{ org.name }}</span>
+                  <span class="dash-org-slug">{{ org.slug }}</span>
+                </div>
+                <span class="dash-org-meta">{{ org.projects|length }} project{{ 's' if org.projects|length != 1 }}</span>
+                <svg class="w-4 h-4 text-base-content/20 group-hover:text-base-content/40 transition-colors flex-shrink-0"
+                     viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </a>
 
-        <a href="{{ url_for('user.organization_create') }}"
-           class="service-card card-interactive block no-underline border-dashed">
-          <div class="service-card-header">
-            <div class="service-card-icon bg-accent/10 text-accent">{{ icon('plus', 'w-5 h-5') }}</div>
-            <div class="flex-1">
-              <span class="text-sm font-medium text-base-content">New Organization</span>
-              <p class="text-xs text-base-content/40">Get started deploying</p>
+              {% if org.projects %}
+                <div class="dash-projects">
+                  {% for project in org.projects|sort(attribute='name') %}
+                    <div class="dash-project">
+                      <div class="dash-project-header">
+                        <a href="{{ url_for('user.project', org_slug=org.slug, project_slug=project.slug) }}"
+                           class="dash-project-link group">
+                          <span class="dash-project-icon">{{ icon('folder', 'w-3.5 h-3.5') }}</span>
+                          <span class="dash-project-name">{{ project.name }}</span>
+                          <span class="dash-project-slug">{{ project.slug }}</span>
+                          {% if project.project_applications %}
+                            <span class="dash-count-pill">{{ project.project_applications|length }}</span>
+                          {% endif %}
+                        </a>
+                      </div>
+
+                      {% if project.project_applications %}
+                        <div class="dash-apps">
+                          {% for app in project.project_applications|sort(attribute='name') %}
+                            {% set status = app_statuses.get(app.id|string, 'ok') %}
+                            <a href="{{ url_for('user.project_application', org_slug=org.slug, project_slug=project.slug, app_slug=app.slug) }}"
+                               class="dash-app group">
+                              <span class="dash-app-dot {% if status == 'deploying' %}dash-dot-deploying{% elif status == 'building' %}dash-dot-building{% elif status in ('deploy-error', 'build-error') %}dash-dot-error{% endif %}"></span>
+                              <span class="dash-app-name">{{ app.name }}</span>
+                              <span class="dash-app-slug">{{ app.slug }}</span>
+                              {% if status == 'deploying' %}
+                                <span class="dash-status-badge dash-badge-deploying">deploying</span>
+                              {% elif status == 'building' %}
+                                <span class="dash-status-badge dash-badge-building">building</span>
+                              {% elif status == 'deploy-error' %}
+                                <span class="dash-status-badge dash-badge-error">deploy failed</span>
+                              {% elif status == 'build-error' %}
+                                <span class="dash-status-badge dash-badge-error">build failed</span>
+                              {% endif %}
+                            </a>
+                          {% endfor %}
+                        </div>
+                      {% endif %}
+                    </div>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <div class="dash-empty-branch">
+                  <span class="text-base-content/25 text-xs">No projects yet</span>
+                </div>
+              {% endif %}
             </div>
-            <svg class="w-4 h-4 text-base-content/20"
-                 viewBox="0 0 24 24"
-                 fill="none"
-                 stroke="currentColor"
-                 stroke-width="2">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
-          </div>
-        </a>
-      </div>
+          {% endfor %}
+        </div>
+
+      {% else %}
+        {{ empty_state(
+          'No organizations',
+          'Create an organization to start deploying applications.',
+          url_for('user.organization_create'),
+          'Create Organization',
+          'building'
+        ) }}
+      {% endif %}
     </div>
 
   {% else %}
