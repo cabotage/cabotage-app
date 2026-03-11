@@ -36,7 +36,7 @@
           </select>
         {% endif %}
         <div class="flex gap-1" id="range-selector">
-          {% for r in ['1h', '6h', '24h'] %}
+          {% for r in ['1h', '6h', '24h', '7d', '30d'] %}
             <button data-range="{{ r }}"
                class="btn btn-sm {% if current_range == r %}btn-primary{% else %}btn-ghost{% endif %}">{{ r }}</button>
           {% endfor %}
@@ -167,9 +167,9 @@
 
   var METRIC_URL = {{ url_for('user.project_application_observe_metric', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug)|tojson }};
   var RANGE = {{ current_range|tojson }};
-  var REFRESH_MAP = { '1h': 15000, '6h': 60000, '24h': 60000 };
+  var REFRESH_MAP = { '1h': 15000, '6h': 60000, '24h': 60000, '7d': 60000, '30d': 60000 };
   var REFRESH_MS = REFRESH_MAP[RANGE] || 15000;
-  var RANGE_SECS = { '1h': 3600, '6h': 21600, '24h': 86400 };
+  var RANGE_SECS = { '1h': 3600, '6h': 21600, '24h': 86400, '7d': 604800, '30d': 2592000 };
   function xBounds() {
     var now = Math.floor(Date.now() / 1000);
     return { min: now - (RANGE_SECS[RANGE] || 3600), max: now };

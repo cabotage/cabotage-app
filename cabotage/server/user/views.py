@@ -3723,8 +3723,20 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
         traefik_svc = f'service="{namespace}-{prefix}-web-{prefix}-web-8000@kubernetesingressnginx"'
 
     range_param = request.args.get("range", "1h")
-    range_map = {"1h": 3600, "6h": 21600, "24h": 86400}
-    step_map = {"1h": 15, "6h": 60, "24h": 300}
+    range_map = {
+        "1h": 3600,
+        "6h": 21600,
+        "24h": 86400,
+        "7d": 604800,
+        "30d": 2592000,
+    }
+    step_map = {
+        "1h": 15,
+        "6h": 60,
+        "24h": 300,
+        "7d": 1800,
+        "30d": 7200,
+    }
     duration = range_map.get(range_param, 3600)
     step = step_map.get(range_param, 15)
 
