@@ -1285,126 +1285,6 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
 
 
 @user_blueprint.route(
-    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/logs"
-)
-@login_required
-def project_application_logs(org_slug, project_slug, app_slug):
-    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
-    project = Project.query.filter_by(
-        organization_id=organization.id, slug=project_slug
-    ).first_or_404()
-    application = Application.query.filter_by(
-        project_id=project.id, slug=app_slug
-    ).first_or_404()
-    if not ViewApplicationPermission(application.id).can():
-        abort(403)
-
-    return render_template(
-        "user/project_application_logs.html",
-        application=application,
-        org_slug=org_slug,
-        project_slug=project_slug,
-        app_slug=app_slug,
-        environment=_default_environment(project),
-    )
-
-
-@sock.route(
-    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/logs/live",
-    bp=user_blueprint,
-)
-@login_required
-def project_application_livelogs(ws, org_slug, project_slug, app_slug):
-    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
-    project = Project.query.filter_by(
-        organization_id=organization.id, slug=project_slug
-    ).first_or_404()
-    application = Application.query.filter_by(
-        project_id=project.id, slug=app_slug
-    ).first_or_404()
-    if not ViewApplicationPermission(application.id).can():
-        abort(403)
-
-    org_slug = organization.slug
-    project_slug = project.slug
-    app_slug = application.slug
-
-    api_client = kubernetes_ext.kubernetes_client
-    core_api_instance = kubernetes.client.CoreV1Api(api_client)
-
-    labels = {
-        "organization": org_slug,
-        "project": project_slug,
-        "application": app_slug,
-    }
-    label_selector = ",".join([f"{k}={v}" for k, v in labels.items()])
-
-    db.session.remove()
-
-    q = queue.Queue()
-    pod_name_prefix = f"{project_slug}-{app_slug}-"
-
-    def worker(pod_name, stream_handler):
-        for line in stream_handler:
-            q.put(f"{pod_name}: {line}")
-
-    def update_pods():
-        worker_threads = {}
-        pod_watch = kubernetes.watch.Watch()
-        for response in pod_watch.stream(
-            core_api_instance.list_namespaced_pod,
-            namespace=org_slug,
-            label_selector=label_selector,
-        ):
-            pod = response["object"]
-            create = (
-                response["type"] == "ADDED" and pod.status.phase == "Running"
-            ) or (
-                response["type"] == "MODIFIED"
-                and pod.status.phase == "Running"
-                and pod.metadata.name not in worker_threads.keys()
-            )
-            if create:
-                w = kubernetes.watch.Watch()
-                stream_handler = w.stream(
-                    core_api_instance.read_namespaced_pod_log,
-                    name=pod.metadata.name,
-                    namespace=pod.metadata.namespace,
-                    container=pod.metadata.labels["process"],
-                    follow=True,
-                    _preload_content=False,
-                    pretty="true",
-                    timestamps=True,
-                    tail_lines=10,
-                )
-                thread = threading.Thread(
-                    target=worker,
-                    args=(
-                        pod.metadata.name.removeprefix(pod_name_prefix),
-                        stream_handler,
-                    ),
-                    daemon=True,
-                )
-                worker_threads[pod.metadata.name] = thread
-                q.put(f"started following {pod.metadata.name}...")
-                thread.start()
-            if response["type"] == "DELETED":
-                if (
-                    pod.metadata.name in worker_threads.keys()
-                    and not worker_threads[pod.metadata.name].is_alive()
-                ):
-                    worker_threads[pod.metadata.name].join()
-                    q.put(f"{pod.metadata.name} terminated...")
-                    del worker_threads[pod.metadata.name]
-
-    update_thread = threading.Thread(target=update_pods, daemon=True)
-    update_thread.start()
-
-    while True:
-        ws.send(q.get())
-
-
-@user_blueprint.route(
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/shell"
 )
 @user_blueprint.route(
@@ -4216,6 +4096,7 @@ def project_application_logs_view(org_slug, project_slug, app_slug, env_slug=Non
         app_env=app_env,
         loki_configured=loki_configured,
         process_names=process_names,
+        project=project,
     )
 
 
