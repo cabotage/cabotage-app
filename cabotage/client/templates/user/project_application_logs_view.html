@@ -40,6 +40,7 @@
         query_url=url_for('user.project_application_logs_query', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug),
         process_names=process_names,
         loki_configured=loki_configured,
+        active_process=request.args.get('process', ''),
     ) }}
   </div>
 {% endblock content %}
