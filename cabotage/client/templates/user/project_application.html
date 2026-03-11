@@ -173,8 +173,6 @@
         <button class="btn btn-ghost btn-sm gap-1.5 text-base-content/40 hover:text-error"
                 type="submit">{{ icon('trash', 'w-3.5 h-3.5') }} Clear Cache</button>
       </form>
-      <a href="{{ url_for('user.project_application_logs', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
-         class="btn btn-ghost btn-sm gap-1.5">{{ icon('file-text', 'w-3.5 h-3.5') }} Logs</a>
       {% if config.SHELLZ_ENABLED %}
         <a href="{{ url_for('user.project_application_shell', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}"
            class="btn btn-ghost btn-sm gap-1.5">{{ icon('terminal', 'w-3.5 h-3.5') }} Shell</a>
@@ -776,7 +774,7 @@
                     <option value="{{ pod_class }}" selected hidden>{{ pod_class }}</option>
                     {% for class in pod_classes.keys() %}<option value="{{ class }}">{{ class }}</option>{% endfor %}
                   </select>
-                  <a href="{{ url_for('user.project_application_logs', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}?process={{ process_name }}"
+                  <a href="{{ url_for('user.project_application_logs_view', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug, env_slug=environment.slug if environment else none) }}?process={{ process_name }}"
                      class="btn btn-ghost btn-xs process-log-btn gap-1"
                      title="View {{ process_name }} logs">{{ icon('terminal', 'w-3 h-3') }} Logs</a>
                 </div>
@@ -1277,8 +1275,7 @@
 
 <div data-tab-panel="observe" class="tab-panel">
   <div data-observability-panel
-       data-application-id="{{ application.id }}"
-       data-logs-url="{{ url_for('user.project_application_logs', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}">
+       data-application-id="{{ application.id }}">
 
     <div class="flex items-center justify-between mb-4">
       <h2 class="text-base font-medium text-base-content">Observability</h2>

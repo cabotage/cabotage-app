@@ -25,6 +25,15 @@
         <h1 class="text-lg font-semibold text-base-content">Logs</h1>
         <p class="text-xs text-base-content/40">Application log output from Loki</p>
       </div>
+      {% if project.project_environments | length > 1 %}
+        <select class="select select-sm select-bordered"
+                onchange="if(this.value) window.location.href=this.value">
+          {% for env in project.project_environments %}
+            <option value="{{ url_for('user.project_application_logs_view', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env.slug) }}"
+                    {{ 'selected' if environment and env.slug == environment.slug }}>{{ env.slug }}</option>
+          {% endfor %}
+        </select>
+      {% endif %}
     </div>
 
     {{ loki_log_viewer(
