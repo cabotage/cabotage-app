@@ -22,7 +22,14 @@
       <form method="POST" action="{{ url_for('user.project_environment_create', org_slug=project.organization.slug, project_slug=project.slug) }}">
         {{ form.hidden_tag() }}
         {{ render_field(form.name) }}
-        {{ render_field(form.slug) }}
+        <details class="group">
+          <summary class="text-xs text-base-content/40 cursor-pointer hover:text-base-content/60 transition-colors select-none inline-flex items-center gap-1">
+            Advanced
+          </summary>
+          <div class="mt-2">
+            {{ render_field(form.slug) }}
+          </div>
+        </details>
         {% if not has_default %}
           {{ render_field(form.is_default) }}
         {% endif %}
