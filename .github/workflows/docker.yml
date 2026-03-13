@@ -3,13 +3,15 @@ on:
   push:
     branches:
       - 'main'
+    tags:
+      - '*'
 permissions:
   contents: write
   packages: write
 jobs:
   release-to-ghcr:
     concurrency:
-      group: release-to-ghcr-${{ matrix.config.arch }}
+      group: release-to-ghcr-${{ matrix.config.arch }}-${{ github.ref }}
       cancel-in-progress: false
     runs-on: ${{ matrix.config.os }}
     strategy:
@@ -29,14 +31,23 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Determine tags
+        id: tags
+        run: |
+          TAGS="ghcr.io/cabotage/cabotage-app:${{ github.sha }}-${{ matrix.config.arch }}"
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAGS="${TAGS},ghcr.io/cabotage/cabotage-app:${{ github.ref_name }}-${{ matrix.config.arch }}"
+          fi
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            TAGS="${TAGS},ghcr.io/cabotage/cabotage-app:latest-${{ matrix.config.arch }}"
+          fi
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: |
-            ghcr.io/cabotage/cabotage-app:${{ github.sha }}-${{ matrix.config.arch }}
-            ghcr.io/cabotage/cabotage-app:latest-${{ matrix.config.arch }}
+          tags: ${{ steps.tags.outputs.tags }}
 
   create-manifests:
     runs-on: ubuntu-24.04-arm
@@ -53,14 +64,23 @@ jobs:
         registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-    - name: Create SHA image and push
+    - name: Create SHA manifest and push
       run: |
         docker buildx imagetools create \
           --tag ghcr.io/cabotage/cabotage-app:${{ github.sha }} \
           ghcr.io/cabotage/cabotage-app:${{ github.sha }}-amd64 \
           ghcr.io/cabotage/cabotage-app:${{ github.sha }}-arm64
 
+    - name: Create tag manifest and push
+      if: github.ref_type == 'tag'
+      run: |
+        docker buildx imagetools create \
+          --tag ghcr.io/cabotage/cabotage-app:${{ github.ref_name }} \
+          ghcr.io/cabotage/cabotage-app:${{ github.ref_name }}-amd64 \
+          ghcr.io/cabotage/cabotage-app:${{ github.ref_name }}-arm64
+
     - name: Create latest manifest and push
+      if: github.ref == 'refs/heads/main'
       run: |
         docker buildx imagetools create \
           --tag ghcr.io/cabotage/cabotage-app:latest \
