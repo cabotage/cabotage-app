@@ -160,11 +160,23 @@
       </span>
     </div>
     <div class="app-header-actions">
-      <div class="tooltip"
-           data-tip="Configure a deploy branch in Settings to enable">
-        <button class="btn btn-ghost btn-sm gap-1.5 btn-disabled text-base-content/20"
-                disabled>{{ icon('deploy', 'w-3.5 h-3.5') }} Deploy</button>
-      </div>
+      {% if app_env and application.github_repository and app_env.effective_auto_deploy_branch %}
+        <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+              method="post"
+              class="inline"
+              data-full-deploy-form>
+          <input type="hidden" name="auto_deploy" value="true">
+          {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}">{% endif %}
+          <button class="btn btn-ghost btn-sm gap-1.5"
+                  type="submit">{{ icon('deploy', 'w-3.5 h-3.5') }} Deploy</button>
+        </form>
+      {% else %}
+        <div class="tooltip"
+             data-tip="Configure a deploy branch in Settings to enable">
+          <button class="btn btn-ghost btn-sm gap-1.5 btn-disabled text-base-content/20"
+                  disabled>{{ icon('deploy', 'w-3.5 h-3.5') }} Deploy</button>
+        </div>
+      {% endif %}
 
       <form action="{{ url_for('user.application_clear_cache', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
             method="post"

@@ -3009,13 +3009,33 @@ def application_images_build_fromsource(org_slug, project_slug, app_slug):
     )
 
     environment_id = request.form.get("environment_id")
+    auto_deploy = request.form.get("auto_deploy") == "true"
     app_env = _resolve_app_env(application, environment_id=environment_id)
+
+    env_slug = (
+        app_env.environment.slug
+        if app_env.environment_id and project.environments_enabled
+        else None
+    )
+
+    if not app_env.effective_auto_deploy_branch:
+        flash("No deploy branch configured for this environment.", "error")
+        return redirect(
+            url_for(
+                "user.project_application",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                app_slug=app_slug,
+                env_slug=env_slug,
+            )
+        )
 
     image = Image(
         application_id=application.id,
         application_environment_id=app_env.id,
         _repository_name=application.registry_repository_name(app_env),
         build_ref=app_env.effective_auto_deploy_branch,
+        image_metadata={"auto_deploy": True} if auto_deploy else None,
     )
     db.session.add(image)
     db.session.flush()
@@ -3030,6 +3050,16 @@ def application_images_build_fromsource(org_slug, project_slug, app_slug):
     db.session.add(activity)
     db.session.commit()
     run_image_build.delay(image_id=image.id, buildkit=True)
+    if auto_deploy:
+        return redirect(
+            url_for(
+                "user.project_application",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                app_slug=app_slug,
+                env_slug=env_slug,
+            )
+        )
     return redirect(
         url_for(
             "user.image_detail",
