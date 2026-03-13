@@ -3018,23 +3018,13 @@ def application_images_build_fromsource(org_slug, project_slug, app_slug):
         else None
     )
 
-    if not app_env.effective_auto_deploy_branch:
-        flash("No deploy branch configured for this environment.", "error")
-        return redirect(
-            url_for(
-                "user.project_application",
-                org_slug=org_slug,
-                project_slug=project_slug,
-                app_slug=app_slug,
-                env_slug=env_slug,
-            )
-        )
+    build_ref = app_env.effective_auto_deploy_branch or "main"
 
     image = Image(
         application_id=application.id,
         application_environment_id=app_env.id,
         _repository_name=application.registry_repository_name(app_env),
-        build_ref=app_env.effective_auto_deploy_branch,
+        build_ref=build_ref,
         image_metadata={"auto_deploy": True} if auto_deploy else None,
     )
     db.session.add(image)

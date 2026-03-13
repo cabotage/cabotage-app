@@ -160,7 +160,7 @@
       </span>
     </div>
     <div class="app-header-actions">
-      {% if app_env and application.github_repository and app_env.effective_auto_deploy_branch %}
+      {% if app_env and application.github_repository %}
         <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
               method="post"
               class="inline"
