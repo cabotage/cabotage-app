@@ -120,6 +120,18 @@
 .pipe-section-title { font-size: 0.75rem; font-weight: 600; color: var(--text-faint);
   text-transform: uppercase; letter-spacing: 0.04em; }
 
+/* ── Pagination ── */
+.pipe-pager { display: flex; align-items: center; justify-content: space-between;
+  padding: 0.625rem 0.75rem; border-top: 1px solid var(--border-color); }
+.pipe-pager-info { font-size: 0.6875rem; color: var(--text-faintest);
+  font-family: 'JetBrains Mono', ui-monospace, monospace; }
+.pipe-pager-btns { display: flex; gap: 0.25rem; }
+.pipe-pager-btn { padding: 0.25rem 0.625rem; border-radius: 0.375rem; font-size: 0.6875rem;
+  font-weight: 600; cursor: pointer; border: 1px solid var(--border-color);
+  background: var(--surface-card); color: var(--text-faint); transition: all 0.15s; }
+.pipe-pager-btn:hover:not(:disabled) { background: var(--hover-overlay); color: var(--text-bright); }
+.pipe-pager-btn:disabled { opacity: 0.3; cursor: default; }
+
 /* ── uPlot overrides ── */
 .pipe-chart-card .u-legend { display: none !important; }
 </style>
@@ -235,6 +247,13 @@
     </div>
     <div id="runs-container">
       <div class="pipe-run"><span class="pipe-time" style="grid-column:1/-1;text-align:center;color:var(--text-faintest)">Loading...</span></div>
+    </div>
+    <div class="pipe-pager" id="runs-pager" style="display:none">
+      <span class="pipe-pager-info" id="runs-pager-info"></span>
+      <div class="pipe-pager-btns">
+        <button class="pipe-pager-btn" id="runs-prev" disabled>&larr; Prev</button>
+        <button class="pipe-pager-btn" id="runs-next" disabled>Next &rarr;</button>
+      </div>
     </div>
   </div>
 
@@ -484,14 +503,21 @@
       });
   }
 
-  // ── Load runs ──
+  // ── Load runs (paginated) ──
+  var RUNS_PER_PAGE = 15;
+  var runsOffset = 0;
+
   function loadRuns() {
-    fetch(baseUrl + '/runs?limit=50')
+    fetch(baseUrl + '/runs?limit=' + RUNS_PER_PAGE + '&offset=' + runsOffset)
       .then(function(r) { return r.json(); })
       .then(function(d) {
         var container = document.getElementById('runs-container');
+        var pager = document.getElementById('runs-pager');
+        var total = d.total || 0;
+
         if (!d.runs.length) {
           container.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-faintest);font-size:0.75rem">No pipeline runs</div>';
+          pager.style.display = 'none';
           return;
         }
         // Find max duration for bar scaling
@@ -539,8 +565,25 @@
             trigger + stages +
             '<span class="pipe-total">' + fmtDur(r.total_duration) + '</span></div>';
         }).join('');
+
+        // Pagination controls
+        var from = runsOffset + 1;
+        var to = Math.min(runsOffset + d.runs.length, total);
+        document.getElementById('runs-pager-info').textContent = from + '–' + to + ' of ' + total;
+        document.getElementById('runs-prev').disabled = runsOffset === 0;
+        document.getElementById('runs-next').disabled = runsOffset + RUNS_PER_PAGE >= total;
+        pager.style.display = total > RUNS_PER_PAGE ? 'flex' : 'none';
       });
   }
+
+  document.getElementById('runs-prev').addEventListener('click', function() {
+    runsOffset = Math.max(0, runsOffset - RUNS_PER_PAGE);
+    loadRuns();
+  });
+  document.getElementById('runs-next').addEventListener('click', function() {
+    runsOffset += RUNS_PER_PAGE;
+    loadRuns();
+  });
 
   // ── Load slowest ──
   var currentStage = 'image';
