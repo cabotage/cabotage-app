@@ -2899,7 +2899,7 @@ def application_images_build_fromsource(org_slug, project_slug, app_slug):
 
     build_ref = app_env.effective_auto_deploy_branch or "main"
 
-    image = Image(
+    build_ref = app_env.effective_auto_deploy_branch or "main"
         application_id=application.id,
         application_environment_id=app_env.id,
         _repository_name=application.registry_repository_name(app_env),
