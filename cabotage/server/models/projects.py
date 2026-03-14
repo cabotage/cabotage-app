@@ -686,8 +686,23 @@ class Deployment(db.Model, Timestamp):
         db.String(64),
         nullable=True,
     )
+    started_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
 
     __mapper_args__ = {"version_id_col": version_id}
+
+    @property
+    def duration_seconds(self):
+        if self.started_at and self.completed_at:
+            return (self.completed_at - self.started_at).total_seconds()
+        return None
+
+    @property
+    def trigger_type(self):
+        meta = self.deploy_metadata or {}
+        if meta.get("auto_deploy"):
+            return "auto"
+        return "manual"
 
     @property
     def release_object(self):
@@ -785,8 +800,23 @@ class Release(db.Model, Timestamp):
         nullable=True,
         server_default=None,
     )
+    started_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
 
     __mapper_args__ = {"version_id_col": version_id}
+
+    @property
+    def duration_seconds(self):
+        if self.started_at and self.completed_at:
+            return (self.completed_at - self.started_at).total_seconds()
+        return None
+
+    @property
+    def trigger_type(self):
+        meta = self.release_metadata or {}
+        if meta.get("auto_deploy"):
+            return "auto"
+        return "manual"
 
     @property
     def valid(self):
@@ -1216,6 +1246,8 @@ class Image(db.Model, Timestamp):
         db.String(64),
         nullable=True,
     )
+    started_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
 
     __mapper_args__ = {"version_id_col": version_id}
     __table_args__ = (
@@ -1224,6 +1256,19 @@ class Image(db.Model, Timestamp):
             name="image_has_build_target",
         ),
     )
+
+    @property
+    def duration_seconds(self):
+        if self.started_at and self.completed_at:
+            return (self.completed_at - self.started_at).total_seconds()
+        return None
+
+    @property
+    def trigger_type(self):
+        meta = self.image_metadata or {}
+        if meta.get("auto_deploy"):
+            return "auto"
+        return "manual"
 
     @property
     def repository_name(self):

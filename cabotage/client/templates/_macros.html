@@ -91,31 +91,35 @@
   {% set env_slug = env.slug if env else none %}
   {% set overview_url = url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) %}
   <div class="app-content-padded !py-0">
-    <div class="tab-bar">
+    <div class="tab-bar" data-tabs>
       <a href="{{ overview_url }}"
          title="Overview"
          class="tab-item
-                {% if active == 'overview' %}tab-active{% endif %}">{{ icon('activity', 'w-4 h-4') }} <span class="tab-label">Overview</span></a>
+                {% if active == 'overview' %}tab-active{% endif %}"
+         data-tab="overview">{{ icon('activity', 'w-4 h-4') }} <span class="tab-label">Overview</span></a>
       {% if config.MIMIR_URL %}
       <a href="{{ url_for('user.project_application_observe', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
          title="Observe"
          class="tab-item
-                {% if active == 'observe' %}tab-active{% endif %}">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></a>
+                {% if active == 'observe' %}tab-active{% endif %}"
+         data-tab="observe">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></a>
       {% else %}
-      <span class="tab-item tab-disabled" title="Observe">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></span>
+      <span class="tab-item tab-disabled" title="Observe" data-tab="observe">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></span>
       {% endif %}
       {% if config.LOKI_URL %}
       <a href="{{ url_for('user.project_application_logs_view', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
          title="Logs"
          class="tab-item
-                {% if active == 'logs' %}tab-active{% endif %}">{{ icon('file-text', 'w-4 h-4') }} <span class="tab-label">Logs</span></a>
+                {% if active == 'logs' %}tab-active{% endif %}"
+         data-tab="logs">{{ icon('file-text', 'w-4 h-4') }} <span class="tab-label">Logs</span></a>
       {% else %}
-      <span class="tab-item tab-disabled" title="Logs">{{ icon('file-text', 'w-4 h-4') }} <span class="tab-label">Logs</span></span>
+      <span class="tab-item tab-disabled" title="Logs" data-tab="logs">{{ icon('file-text', 'w-4 h-4') }} <span class="tab-label">Logs</span></span>
       {% endif %}
       <a href="{{ overview_url }}#config"
          title="Config"
          class="tab-item
-                {% if active == 'config' %}tab-active{% endif %}">
+                {% if active == 'config' %}tab-active{% endif %}"
+         data-tab="config">
         {{ icon('key', 'w-4 h-4') }} <span class="tab-label">Config</span>
         {% if env %}
           {% set app_env = application.application_environments|selectattr('environment_id', 'equalto', env.id)|first %}
@@ -129,22 +133,30 @@
       <a href="{{ url_for('user.application_images', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
          title="Images"
          class="tab-item
-                {% if active == 'images' %}tab-active{% endif %}">{{ icon('image', 'w-4 h-4') }} <span class="tab-label">Images</span></a>
+                {% if active == 'images' %}tab-active{% endif %}"
+         data-tab="images">{{ icon('image', 'w-4 h-4') }} <span class="tab-label">Images</span></a>
       <a href="{{ url_for('user.application_releases', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
          title="Releases"
          class="tab-item
-                {% if active == 'releases' %}tab-active{% endif %}">{{ icon('layers', 'w-4 h-4') }} <span class="tab-label">Releases</span></a>
-      <span class="tab-item tab-disabled" title="Pipeline">{{ icon('bar-chart-2', 'w-4 h-4') }} <span class="tab-label">Pipeline <span class="text-[0.6rem] opacity-50">(Soon)</span></span></span>
+                {% if active == 'releases' %}tab-active{% endif %}"
+         data-tab="releases">{{ icon('layers', 'w-4 h-4') }} <span class="tab-label">Releases</span></a>
+      <a href="{{ url_for('user.project_application_pipeline', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
+         title="Pipeline"
+         class="tab-item
+                {% if active == 'pipeline' %}tab-active{% endif %}"
+         data-tab="pipeline">{{ icon('bar-chart-2', 'w-4 h-4') }} <span class="tab-label">Pipeline</span></a>
       {% if config.INGRESS_DOMAIN %}
       <a href="{{ url_for('user.project_application_ingress', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
          title="Ingress"
          class="tab-item
-                {% if active == 'ingress' %}tab-active{% endif %}">{{ icon('globe', 'w-4 h-4') }} <span class="tab-label">Ingress</span></a>
+                {% if active == 'ingress' %}tab-active{% endif %}"
+         data-tab="ingress">{{ icon('globe', 'w-4 h-4') }} <span class="tab-label">Ingress</span></a>
       {% endif %}
       <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
          title="Settings"
          class="tab-item
-                {% if active == 'settings' %}tab-active{% endif %}">{{ icon('settings', 'w-4 h-4') }} <span class="tab-label">Settings</span></a>
+                {% if active == 'settings' %}tab-active{% endif %}"
+         data-tab="settings">{{ icon('settings', 'w-4 h-4') }} <span class="tab-label">Settings</span></a>
     </div>
   </div>
 {% endmacro %}
