@@ -20,10 +20,10 @@ from cabotage.server import (
 
 from cabotage.server.models.projects import (
     Deployment,
-    Ingress,
     IngressHost,
-    IngressPath,
+    IngressSnapshot,
     DEFAULT_POD_CLASS,
+    _ingress_hostname_pairs,
     pod_classes,
 )
 from cabotage.server.models.utils import (
@@ -359,28 +359,6 @@ def fetch_service(core_api_instance, release, process_name):
                 f"{service_name} in {namespace}: {exc}"
             )
     return service
-
-
-def _ingress_hostname_pairs(app_env):
-    """Build (slug, k8s_identifier) pairs for ingress hostname generation.
-
-    Skips the environment pair when environments are not enabled so that
-    non-environment apps don't get "default" baked into their hostnames.
-    """
-    app = app_env.application
-    org = app.project.organization
-    project = app.project
-    pairs = [(org.slug, org.k8s_identifier)]
-    if app.project.environments_enabled:
-        env = app_env.environment
-        pairs.append((env.slug, env.k8s_identifier))
-    pairs.extend(
-        [
-            (project.slug, project.k8s_identifier),
-            (app.slug, app.k8s_identifier),
-        ]
-    )
-    return pairs
 
 
 def render_ingress(release, ingress):
@@ -1588,7 +1566,9 @@ def deploy_release(deployment):
     release_id = deployment.release.get("id") if deployment.release else None
     release_obj = deployment.release_object
     image_id = (
-        release_obj.image.get("id") if release_obj and release_obj.image else None
+        release_obj.image_snapshot.id
+        if release_obj and release_obj.image_snapshot
+        else None
     )
     deploy_links = {"Deployment": deploy_path}
     if release_id:
@@ -1681,52 +1661,28 @@ def deploy_release(deployment):
             if changed:
                 db.session.commit()
                 db.session.refresh(app_env)
-            # Only auto-create defaults when no ingresses exist at all;
-            # once a user has any ingress config we leave it alone.
-            if not app_env.ingresses:
-                for process_name in deployment.release_object.processes:
-                    if process_name.startswith("web"):
-                        log(f"Auto-creating default Ingress for {process_name}")
-                        ingress_obj = Ingress(
-                            application_environment_id=app_env.id,
-                            name=process_name,
-                        )
-                        db.session.add(ingress_obj)
-                        db.session.flush()
-                        auto_hostname = (
-                            f"{readable_k8s_hostname(*hostname_pairs)}"
-                            f"-{process_name}.{ingress_domain}"
-                        )
-                        db.session.add(
-                            IngressHost(
-                                ingress_id=ingress_obj.id,
-                                hostname=auto_hostname,
-                                tls_enabled=True,
-                                is_auto_generated=True,
-                            )
-                        )
-                        db.session.add(
-                            IngressPath(
-                                ingress_id=ingress_obj.id,
-                                path="/",
-                                path_type="Prefix",
-                                target_process_name=process_name,
-                            )
-                        )
-                db.session.commit()
-                db.session.refresh(app_env)
             networking_api_instance = kubernetes.client.NetworkingV1Api(api_client)
-            for ingress in app_env.ingresses:
+            if changed or not release_obj.ingresses:
+                # Re-snapshot from live DB after hostname reconciliation,
+                # or for old releases without serialized ingresses.
+                ingress_snapshots = [
+                    IngressSnapshot(ing.asdict) for ing in app_env.ingresses
+                ]
+            else:
+                ingress_snapshots = [
+                    IngressSnapshot(data) for data in release_obj.ingresses.values()
+                ]
+            for ingress in ingress_snapshots:
                 log(f"Fetching Ingress/{ingress.name}")
                 fetch_ingress(
                     networking_api_instance,
-                    deployment.release_object,
+                    release_obj,
                     ingress,
                 )
             cleanup_orphaned_ingresses(
                 networking_api_instance,
-                deployment.release_object,
-                [i.name for i in app_env.ingresses],
+                release_obj,
+                [i.name for i in ingress_snapshots],
                 log=log,
             )
         log("Fetching ImagePullSecrets")
@@ -2053,46 +2009,21 @@ def fake_deploy_release(deployment):
         if changed:
             db.session.commit()
             db.session.refresh(app_env)
-        if not app_env.ingresses:
-            for process_name in deployment.release_object.processes:
-                if process_name.startswith("web"):
-                    deploy_log.append(
-                        f"Auto-creating default Ingress for {process_name}"
-                    )
-                    ingress_rec = Ingress(
-                        application_environment_id=app_env.id,
-                        name=process_name,
-                    )
-                    db.session.add(ingress_rec)
-                    db.session.flush()
-                    auto_hostname = (
-                        f"{readable_k8s_hostname(*hostname_pairs)}"
-                        f"-{process_name}.{ingress_domain}"
-                    )
-                    db.session.add(
-                        IngressHost(
-                            ingress_id=ingress_rec.id,
-                            hostname=auto_hostname,
-                            tls_enabled=True,
-                            is_auto_generated=True,
-                        )
-                    )
-                    db.session.add(
-                        IngressPath(
-                            ingress_id=ingress_rec.id,
-                            path="/",
-                            path_type="Prefix",
-                            target_process_name=process_name,
-                        )
-                    )
-            db.session.commit()
-            db.session.refresh(app_env)
-        for ingress in app_env.ingresses:
-            ingress_obj = render_ingress(deployment.release_object, ingress)
+        release_obj = deployment.release_object
+        if changed or not release_obj.ingresses:
+            ingress_snapshots = [
+                IngressSnapshot(ing.asdict) for ing in app_env.ingresses
+            ]
+        else:
+            ingress_snapshots = [
+                IngressSnapshot(data) for data in release_obj.ingresses.values()
+            ]
+        for ingress in ingress_snapshots:
+            ingress_obj = render_ingress(release_obj, ingress)
             if ingress_obj:
                 deploy_log.append(f"Fetching Ingress/{ingress.name}")
                 deploy_log.append(yaml.dump(remove_none(ingress_obj.to_dict())))
-        active_names = [i.name for i in app_env.ingresses]
+        active_names = [i.name for i in ingress_snapshots]
         deploy_log.append(
             f"Cleanup: would delete orphaned ingresses not in {active_names}"
         )
