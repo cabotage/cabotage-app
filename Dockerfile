@@ -28,13 +28,18 @@ COPY --from=moby/buildkit:v0.18.2-rootless /usr/bin/newuidmap /usr/bin/newuidmap
 COPY --from=moby/buildkit:v0.18.2-rootless /usr/bin/newgidmap /usr/bin/newgidmap
 
 ENV PYTHONUNBUFFERED 1
-ENV UV_PROJECT_ENVIRONMENT=/opt/cabotage-app
+ENV UV_PROJECT_ENVIRONMENT=/opt/cabotage-app \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
 ENV PATH="/opt/cabotage-app/bin:${PATH}"
 
 COPY --from=ghcr.io/astral-sh/uv:0.7 /uv /usr/local/bin/uv
 
-COPY pyproject.toml uv.lock /opt/cabotage-app/src/
+RUN uv venv /opt/cabotage-app
 
+# Synchronize dependencies without the application itself.
+# This layer is cached until uv.lock or pyproject.toml change.
+COPY pyproject.toml uv.lock /opt/cabotage-app/src/
 WORKDIR /opt/cabotage-app/src
 
 RUN --mount=type=cache,target=/root/.cache/uv \
