@@ -112,6 +112,30 @@ services:
     volumes:
       - ./docker-compose/loki:/etc/loki
       - lokidata:/loki
+  alloy:
+    image: grafana/alloy:v1.6.1
+    command: ["run", "/etc/alloy/config.alloy", "--server.http.listen-addr=0.0.0.0:12345"]
+    restart: always
+    ports:
+      - "12345:12345"
+    volumes:
+      - ./docker-compose/alloy:/etc/alloy
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+      - mimir
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.51.0
+    restart: always
+    ports:
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    privileged: true
+
   static:
     image: oven/bun:1-slim
     working_dir: /app

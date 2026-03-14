@@ -1,0 +1,132 @@
+// ============================================================================
+// Grafana Alloy config for local Cabotage dev
+// Collects: Docker container logs → Loki, cAdvisor metrics → Mimir,
+//           Flask app metrics → Mimir
+// ============================================================================
+
+// ---------------------------------------------------------------------------
+// Pipeline 1: Docker container logs → Loki
+// ---------------------------------------------------------------------------
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "docker_logs" {
+  targets = discovery.docker.containers.targets
+
+  // Static namespace label matching cabotage convention
+  rule {
+    target_label = "namespace"
+    replacement   = "cabotage-local"
+  }
+
+  // Map compose service name → project / application / pod_container_name
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "project"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "application"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "pod_container_name"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "process"
+  }
+
+  // Static environment label
+  rule {
+    target_label = "environment"
+    replacement   = "local"
+  }
+
+  // Synthesize a pod_name: {service}-{short_container_id}
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service", "__meta_docker_container_id"]
+    separator     = "-"
+    regex         = "(.+)-(.{12}).*"
+    target_label  = "pod_name"
+    replacement   = "${1}-${2}"
+  }
+}
+
+loki.source.docker "default" {
+  host    = "unix:///var/run/docker.sock"
+  targets = discovery.relabel.docker_logs.output
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline 2: cAdvisor container metrics → Mimir
+// ---------------------------------------------------------------------------
+
+prometheus.scrape "cadvisor" {
+  targets = [{
+    __address__ = "cadvisor:8080",
+  }]
+  metrics_path = "/metrics"
+  scrape_interval = "15s"
+  forward_to = [prometheus.relabel.cadvisor.receiver]
+}
+
+prometheus.relabel "cadvisor" {
+  rule {
+    target_label = "namespace"
+    replacement  = "cabotage-local"
+  }
+
+  // Map container name → pod label (cAdvisor uses "name" label for container)
+  rule {
+    source_labels = ["name"]
+    target_label  = "pod"
+  }
+
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline 3: Flask app /metrics → Mimir
+// ---------------------------------------------------------------------------
+
+prometheus.scrape "app" {
+  targets = [{
+    __address__ = "cabotage-app:8000",
+  }]
+  metrics_path = "/metrics"
+  scrape_interval = "15s"
+  forward_to = [prometheus.relabel.app.receiver]
+}
+
+prometheus.relabel "app" {
+  rule {
+    target_label = "namespace"
+    replacement  = "cabotage-local"
+  }
+  rule {
+    target_label = "pod"
+    replacement  = "cabotage-app"
+  }
+
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+// ---------------------------------------------------------------------------
+// Shared remote write destination: Mimir
+// ---------------------------------------------------------------------------
+
+prometheus.remote_write "mimir" {
+  endpoint {
+    url = "http://mimir:9009/api/v1/push"
+  }
+}

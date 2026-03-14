@@ -1,4 +1,5 @@
-from flask import render_template, Blueprint
+from flask import render_template, Blueprint, Response
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from flask_login import current_user
 from sqlalchemy import func
 
@@ -51,3 +52,8 @@ def home():
 @main_blueprint.route("/about/")
 def about():
     return render_template("main/about.html")
+
+
+@main_blueprint.route("/metrics")
+def metrics():
+    return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
