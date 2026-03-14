@@ -4,6 +4,9 @@
 {% set org_slug = application.project.organization.slug %}
 {% set project_slug = application.project.slug %}
 {% set app_slug = application.slug %}
+{% set valid_tabs = ['general'] %}
+{% for k in env_forms %}{% if valid_tabs.append('env-' + k) %}{% endif %}{% endfor %}
+{% set effective_tab = active_tab if active_tab in valid_tabs else 'general' %}
 
 {% block title %}
   Settings - {{ app_slug }} - Cabotage
@@ -30,88 +33,172 @@
           <p class="text-sm text-base-content/40">Configure how your application builds, deploys, and stays healthy</p>
         </div>
       </div>
-      <button type="submit"
-              form="settings-form"
-              class="btn btn-primary btn-sm gap-1.5">
-        {{ icon('check', 'w-3.5 h-3.5') }}
-        Save Settings
-      </button>
     </div>
 
-    <form action="{{ url_for('user.project_application_settings', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}"
-          method="post"
-          id="settings-form"
-          name="project_application_settings_form">
-      {{ form.hidden_tag() }}
-      <div style="display:none">{{ form.application_id() }}</div>
+    {# --- Sub-tab bar (only when environments exist) --- #}
+    {% if env_forms %}
+      <div class="settings-subtabs" data-settings-tabs>
+        <button type="button"
+                class="settings-subtab{% if effective_tab == 'general' %} tab-active{% endif %}"
+                data-settings-tab="general">
+          {{ icon('settings', 'w-3.5 h-3.5') }}
+          General
+        </button>
+        {% for env_slug_key, (env, app_env, env_form) in env_forms.items() %}
+          {% set has_overrides = app_env.auto_deploy_branch or app_env.github_environment_name or app_env.deployment_timeout is not none or app_env.health_check_path or app_env.health_check_host %}
+          <button type="button"
+                  class="settings-subtab{% if effective_tab == 'env-' + env_slug_key %} tab-active{% endif %}"
+                  data-settings-tab="env-{{ env_slug_key }}">
+            {{ env.name }}
+            {% if has_overrides %}<span class="settings-override-dot" title="Has overrides"></span>{% endif %}
+          </button>
+        {% endfor %}
+      </div>
+    {% endif %}
 
-      <div class="settings-row">
-        <div class="settings-row-label">
-          <div class="settings-row-icon bg-warning/10 text-warning">{{ icon('zap', 'w-4 h-4') }}</div>
-          <div>
-            <h2 class="text-sm font-semibold text-base-content">Source & Automation</h2>
-            <p class="text-xs text-base-content/40 mt-0.5">Connect a GitHub repository for automatic builds and deploys</p>
-            <div class="settings-row-hint">
-              {% if application.github_app_installation_id %}
-                {{ icon('check-circle', 'w-3 h-3 text-success/60 flex-shrink-0') }}
-                <span class="text-success/70">GitHub App connected (installation {{ application.github_app_installation_id }})</span>
-              {% else %}
-                {{ icon('external-link', 'w-3 h-3 text-info/60 flex-shrink-0') }}
-                <span>To enable, <a href="{{ app_url }}"
-    class="text-accent hover:underline"
-    target="_blank">install the GitHub App</a> and grant access.</span>
-              {% endif %}
+    {# ========== General panel ========== #}
+    <div data-settings-panel="general"{% if env_forms and effective_tab != 'general' %} style="display:none"{% endif %}>
+      <form action="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+            method="post"
+            id="settings-form-general"
+            name="project_application_settings_form">
+        {{ form.hidden_tag() }}
+        <input type="hidden" name="_form_id" value="general">
+        <div style="display:none">{{ form.application_id() }}</div>
+
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <div class="settings-row-icon bg-warning/10 text-warning">{{ icon('zap', 'w-4 h-4') }}</div>
+            <div>
+              <h2 class="text-sm font-semibold text-base-content">Source & Automation</h2>
+              <p class="text-xs text-base-content/40 mt-0.5">Connect a GitHub repository for automatic builds and deploys</p>
+              <div class="settings-row-hint">
+                {% if application.github_app_installation_id %}
+                  {{ icon('check-circle', 'w-3 h-3 text-success/60 flex-shrink-0') }}
+                  <span class="text-success/70">GitHub App connected (installation {{ application.github_app_installation_id }})</span>
+                {% else %}
+                  {{ icon('external-link', 'w-3 h-3 text-info/60 flex-shrink-0') }}
+                  <span>To enable, <a href="{{ app_url }}"
+      class="text-accent hover:underline"
+      target="_blank">install the GitHub App</a> and grant access.</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          <div class="settings-row-fields">
+            <div class="settings-field-grid-3">
+              {{ render_field_compact(form.github_repository, placeholder='owner/repo', label='Repository') }}
+              {{ render_field_compact(form.auto_deploy_branch, placeholder='main', label='Branch') }}
+              {{ render_field_compact(form.subdirectory, placeholder='/', label='Subdirectory') }}
+              {{ render_field_compact(form.dockerfile_path, placeholder='Dockerfile.cabotage', label='Dockerfile Path') }}
+            </div>
+            {% if not application.project.environments_enabled %}
+            <div class="settings-field-grid-2">
+              {{ render_field_compact(form.github_app_installation_id, label='Installation ID') }}
+              {{ render_field_compact(form.github_environment_name, placeholder=project_slug + '/' + app_slug, label='Environment') }}
+            </div>
+            {% else %}
+            <div class="settings-field-grid-1">
+              {{ render_field_compact(form.github_app_installation_id, label='Installation ID') }}
+            </div>
+            {% endif %}
+            {{ render_field_compact(form.github_repository_is_private, label='Private Repository') }}
+          </div>
+        </div>
+
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <div class="settings-row-icon bg-success/10 text-success">{{ icon('activity', 'w-4 h-4') }}</div>
+            <div>
+              <h2 class="text-sm font-semibold text-base-content">Health & Deployment</h2>
+              <p class="text-xs text-base-content/40 mt-0.5">Health probes and rollout behavior</p>
+            </div>
+          </div>
+          <div class="settings-row-fields">
+            <div class="settings-field-grid-3">
+              {{ render_field_compact(form.health_check_path, placeholder='/healthz', label='Health Path') }}
+              {{ render_field_compact(form.health_check_host, label='Health Host') }}
+              {{ render_field_compact(form.deployment_timeout, label='Deploy Timeout') }}
             </div>
           </div>
         </div>
-        <div class="settings-row-fields">
-          <div class="settings-field-grid-3">
-            {{ render_field_compact(form.github_repository, placeholder='owner/repo', label='Repository') }}
-            {{ render_field_compact(form.auto_deploy_branch, placeholder='main', label='Branch') }}
-            {{ render_field_compact(form.subdirectory, placeholder='/', label='Subdirectory') }}
-            {{ render_field_compact(form.dockerfile_path, placeholder='Dockerfile.cabotage', label='Dockerfile Path') }}
-          </div>
-          {% if not application.project.environments_enabled %}
-          <div class="settings-field-grid-2">
-            {{ render_field_compact(form.github_app_installation_id, label='Installation ID') }}
-            {{ render_field_compact(form.github_environment_name, placeholder=project_slug + '/' + app_slug, label='Environment') }}
-          </div>
-          {% else %}
-          <div class="settings-field-grid-1">
-            {{ render_field_compact(form.github_app_installation_id, label='Installation ID') }}
-          </div>
-          {% endif %}
-          {{ render_field_compact(form.github_repository_is_private, label='Private Repository') }}
-        </div>
-      </div>
 
-      <div class="settings-row">
-        <div class="settings-row-label">
-          <div class="settings-row-icon bg-success/10 text-success">{{ icon('activity', 'w-4 h-4') }}</div>
-          <div>
-            <h2 class="text-sm font-semibold text-base-content">Health & Deployment</h2>
-            <p class="text-xs text-base-content/40 mt-0.5">Health probes and rollout behavior</p>
-          </div>
+        <div class="settings-row-actions">
+          <a href="#"
+             onclick="history.back();return false"
+             class="btn btn-ghost btn-sm">Cancel</a>
+          <button type="submit" class="btn btn-primary btn-sm gap-1.5">
+            {{ icon('check', 'w-3.5 h-3.5') }}
+            Save General Settings
+          </button>
         </div>
-        <div class="settings-row-fields">
-          <div class="settings-field-grid-3">
-            {{ render_field_compact(form.health_check_path, placeholder='/healthz', label='Health Path') }}
-            {{ render_field_compact(form.health_check_host, label='Health Host') }}
-            {{ render_field_compact(form.deployment_timeout, label='Deploy Timeout') }}
-          </div>
-        </div>
-      </div>
+      </form>
+    </div>
 
-      <div class="settings-row-actions">
-        <a href="#"
-           onclick="history.back();return false"
-           class="btn btn-ghost btn-sm">Cancel</a>
-        <button type="submit" class="btn btn-primary btn-sm gap-1.5">
-          {{ icon('check', 'w-3.5 h-3.5') }}
-          Save Settings
-        </button>
+    {# ========== Per-environment panels ========== #}
+    {% for env_slug_key, (env, app_env, env_form) in env_forms.items() %}
+      <div data-settings-panel="env-{{ env_slug_key }}"{% if effective_tab != 'env-' + env_slug_key %} style="display:none"{% endif %}>
+        <form action="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+              method="post"
+              id="settings-form-env-{{ env_slug_key }}"
+              name="env_settings_form_{{ env_slug_key }}">
+          {{ env_form.hidden_tag() }}
+          <input type="hidden" name="_form_id" value="env_{{ env_slug_key }}">
+          <div style="display:none">{{ env_form.app_env_id() }}</div>
+
+          <div class="settings-inherit-notice">
+            {{ icon('info', 'w-3.5 h-3.5') }}
+            <span>
+              Blank fields inherit from <strong>General</strong> application defaults.
+              Override only what differs for <strong>{{ env.name }}</strong>.
+            </span>
+          </div>
+
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <div class="settings-row-icon bg-warning/10 text-warning">{{ icon('git-branch', 'w-4 h-4') }}</div>
+              <div>
+                <h2 class="text-sm font-semibold text-base-content">Branch & Deployment Source</h2>
+                <p class="text-xs text-base-content/40 mt-0.5">Override the branch and GitHub environment for this environment</p>
+              </div>
+            </div>
+            <div class="settings-row-fields">
+              <div class="settings-field-grid-2">
+                {{ render_field_compact(env_form.auto_deploy_branch, placeholder=application.auto_deploy_branch or 'inherited from app', label='Branch') }}
+                {{ render_field_compact(env_form.github_environment_name, placeholder=app_env.effective_github_environment_name, label='GitHub Environment') }}
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <div class="settings-row-icon bg-success/10 text-success">{{ icon('activity', 'w-4 h-4') }}</div>
+              <div>
+                <h2 class="text-sm font-semibold text-base-content">Health & Deployment</h2>
+                <p class="text-xs text-base-content/40 mt-0.5">Health probes and rollout behavior for this environment</p>
+              </div>
+            </div>
+            <div class="settings-row-fields">
+              <div class="settings-field-grid-3">
+                {{ render_field_compact(env_form.health_check_path, placeholder=application.health_check_path or '/healthz', label='Health Path') }}
+                {{ render_field_compact(env_form.health_check_host, placeholder=application.health_check_host or 'none', label='Health Host') }}
+                {{ render_field_compact(env_form.deployment_timeout, placeholder=application.deployment_timeout, label='Deploy Timeout') }}
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-row-actions">
+            <a href="#"
+               onclick="history.back();return false"
+               class="btn btn-ghost btn-sm">Cancel</a>
+            <button type="submit" class="btn btn-primary btn-sm gap-1.5">
+              {{ icon('check', 'w-3.5 h-3.5') }}
+              Save {{ env.name }} Settings
+            </button>
+          </div>
+        </form>
       </div>
-    </form>
+    {% endfor %}
 
     {% if delete_form %}
       {{ danger_zone_delete(
@@ -126,3 +213,42 @@
     {% endif %}
   </div>
 {% endblock content %}
+
+{% block js %}
+  {{ super() }}
+  <script>
+  (function() {
+    var tabBar = document.querySelector('[data-settings-tabs]');
+    if (!tabBar) return;
+
+    var tabs = tabBar.querySelectorAll('[data-settings-tab]');
+    var panels = document.querySelectorAll('[data-settings-panel]');
+    var validIds = [];
+    tabs.forEach(function(t) { validIds.push(t.getAttribute('data-settings-tab')); });
+
+    function activate(tabId) {
+      if (validIds.indexOf(tabId) === -1) tabId = 'general';
+      tabs.forEach(function(t) {
+        t.classList.toggle('tab-active', t.getAttribute('data-settings-tab') === tabId);
+      });
+      panels.forEach(function(p) {
+        p.style.display = p.getAttribute('data-settings-panel') === tabId ? '' : 'none';
+      });
+    }
+
+    tabs.forEach(function(t) {
+      t.addEventListener('click', function() {
+        var id = t.getAttribute('data-settings-tab');
+        activate(id);
+        var url = new URL(window.location);
+        url.searchParams.set('settings_tab', id);
+        history.replaceState(null, '', url);
+      });
+    });
+
+    var params = new URLSearchParams(window.location.search);
+    var initial = params.get('settings_tab');
+    if (initial) activate(initial);
+  })();
+  </script>
+{% endblock js %}

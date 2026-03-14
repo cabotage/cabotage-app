@@ -188,10 +188,6 @@
       {% endif %}
       <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
          class="btn btn-ghost btn-sm gap-1.5">{{ icon('settings', 'w-3.5 h-3.5') }} Settings</a>
-      {% if environment %}
-        <a href="{{ url_for('user.project_application_environment_settings', org_slug=org_slug, project_slug=project_slug, env_slug=environment.slug, app_slug=app_slug) }}"
-           class="btn btn-ghost btn-sm gap-1.5">{{ icon('sliders', 'w-3.5 h-3.5') }} Env Settings</a>
-      {% endif %}
       {% if config.INGRESS_DOMAIN %}
         <a href="{{ url_for('user.project_application_ingress', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}"
            class="btn btn-ghost btn-sm gap-1.5">{{ icon('globe', 'w-3.5 h-3.5') }} Ingress</a>

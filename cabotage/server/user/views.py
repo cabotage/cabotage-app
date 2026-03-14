@@ -2737,29 +2737,101 @@ def project_application_settings(org_slug, project_slug, app_slug):
     ]
     form.application_id.data = str(application.id)
 
-    if form.validate_on_submit():
-        form.populate_obj(application)
-        db.session.flush()
-        activity = Activity(
-            verb="edit",
-            object=application,
-            data={
-                "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
-            },
-        )
-        db.session.add(activity)
-        db.session.commit()
-        environment = _default_environment(project)
-        return redirect(
-            url_for(
-                "user.project_application",
-                org_slug=application.project.organization.slug,
-                project_slug=application.project.slug,
-                app_slug=application.slug,
-                env_slug=environment.slug if environment else None,
+    # Build env forms for each environment (sorted by sort_order via relationship)
+    env_forms = {}
+    if project.environments_enabled:
+        for env in project.active_environments:
+            app_env = (
+                ApplicationEnvironment.query.filter_by(
+                    application_id=application.id, environment_id=env.id
+                )
+                .filter(ApplicationEnvironment.deleted_at.is_(None))
+                .first()
             )
-        )
+            if app_env is None:
+                continue
+            prefix = f"env_{env.slug}"
+            env_form = EditApplicationEnvironmentSettingsForm(
+                prefix=prefix, obj=app_env
+            )
+            env_form.app_env_id.data = str(app_env.id)
+            env_forms[env.slug] = (env, app_env, env_form)
+
+    active_tab = request.args.get("settings_tab", "general")
+    # Validate active_tab — fall back to general if unknown
+    valid_tabs = {"general"} | {f"env-{k}" for k in env_forms}
+    if active_tab not in valid_tabs:
+        active_tab = "general"
+
+    if request.method == "POST":
+        form_id = request.form.get("_form_id", "general")
+
+        if form_id == "general":
+            if form.validate_on_submit():
+                form.populate_obj(application)
+                db.session.flush()
+                activity = Activity(
+                    verb="edit",
+                    object=application,
+                    data={
+                        "user_id": str(current_user.id),
+                        "timestamp": datetime.datetime.utcnow().isoformat(),
+                    },
+                )
+                db.session.add(activity)
+                db.session.commit()
+                flash("Application settings saved.", "success")
+                return redirect(
+                    url_for(
+                        "user.project_application_settings",
+                        org_slug=org_slug,
+                        project_slug=project_slug,
+                        app_slug=app_slug,
+                        settings_tab="general",
+                    )
+                )
+            active_tab = "general"
+
+        elif form_id.startswith("env_") and form_id[4:] in env_forms:
+            env_slug = form_id[4:]
+            env, app_env, _ = env_forms[env_slug]
+            prefix = f"env_{env_slug}"
+            env_form = EditApplicationEnvironmentSettingsForm(
+                request.form, prefix=prefix, obj=app_env
+            )
+            env_form.app_env_id.data = str(app_env.id)
+            if env_form.validate_on_submit():
+                app_env.auto_deploy_branch = env_form.auto_deploy_branch.data or None
+                app_env.github_environment_name = (
+                    env_form.github_environment_name.data or None
+                )
+                app_env.deployment_timeout = env_form.deployment_timeout.data
+                app_env.health_check_path = env_form.health_check_path.data or None
+                app_env.health_check_host = env_form.health_check_host.data or None
+                db.session.flush()
+                activity = Activity(
+                    verb="edit",
+                    object=app_env,
+                    data={
+                        "user_id": str(current_user.id),
+                        "timestamp": datetime.datetime.utcnow().isoformat(),
+                    },
+                )
+                db.session.add(activity)
+                db.session.commit()
+                flash(f"Settings for {env_slug} saved.", "success")
+                return redirect(
+                    url_for(
+                        "user.project_application_settings",
+                        org_slug=org_slug,
+                        project_slug=project_slug,
+                        app_slug=app_slug,
+                        settings_tab=f"env-{env_slug}",
+                    )
+                )
+            # Validation failed — replace form in env_forms so errors render
+            env_forms[env_slug] = (env, app_env, env_form)
+            active_tab = f"env-{env_slug}"
 
     delete_form = DeleteApplicationForm()
     delete_form.application_id.data = str(application.id)
@@ -2781,6 +2853,8 @@ def project_application_settings(org_slug, project_slug, app_slug):
         "user/project_application_settings.html",
         application=application,
         form=form,
+        env_forms=env_forms,
+        active_tab=active_tab,
         app_url=current_app.config.get("GITHUB_APP_URL", "https://github.com"),
         environment=_default_environment(project),
         delete_form=delete_form,
@@ -2809,72 +2883,27 @@ def project_application_settings_legacy(application_id):
 
 @user_blueprint.route(
     "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/settings",
-    methods=["GET", "POST"],
+    methods=["GET"],
 )
 @login_required
 def project_application_environment_settings(
     org_slug, project_slug, env_slug, app_slug
 ):
+    """Redirect to unified settings page with env tab active."""
     org, project, application = _lookup_app_context(
         org_slug, project_slug, app_slug, require_admin=True
     )
-
-    environment = Environment.query.filter_by(
-        project_id=project.id, slug=env_slug
-    ).first_or_404()
-    app_env = ApplicationEnvironment.query.filter_by(
-        application_id=application.id, environment_id=environment.id
-    ).first_or_404()
-
-    form = EditApplicationEnvironmentSettingsForm(obj=app_env)
-    form.app_env_id.data = str(app_env.id)
-
-    if form.validate_on_submit():
-        app_env.auto_deploy_branch = form.auto_deploy_branch.data or None
-        app_env.github_environment_name = form.github_environment_name.data or None
-        app_env.deployment_timeout = form.deployment_timeout.data
-        app_env.health_check_path = form.health_check_path.data or None
-        app_env.health_check_host = form.health_check_host.data or None
-        db.session.flush()
-        activity = Activity(
-            verb="edit",
-            object=app_env,
-            data={
-                "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
-            },
-        )
-        db.session.add(activity)
-        db.session.commit()
-        return redirect(
-            url_for(
-                "user.project_application",
-                org_slug=org_slug,
-                project_slug=project_slug,
-                app_slug=app_slug,
-                env_slug=env_slug,
-            )
-        )
-
-    unenroll_form = DeleteApplicationEnvironmentForm()
-    unenroll_form.app_env_id.data = str(app_env.id)
-    unenroll_form.name.data = application.slug
-    unenroll_impact = _deletion_impact_items(
-        "application",
-        f"{application.name} from {environment.name}",
-        [
-            ("configurations", _config_names([app_env])),
-            ("ingress domains", _ingress_hostnames([app_env])),
-        ],
-    )
-    return render_template(
-        "user/project_application_environment_settings.html",
-        application=application,
-        app_env=app_env,
-        environment=environment,
-        form=form,
-        unenroll_form=unenroll_form,
-        unenroll_impact=unenroll_impact,
+    # Validate env exists — 404 if not
+    Environment.query.filter_by(project_id=project.id, slug=env_slug).first_or_404()
+    return redirect(
+        url_for(
+            "user.project_application_settings",
+            org_slug=org_slug,
+            project_slug=project_slug,
+            app_slug=app_slug,
+            settings_tab=f"env-{env_slug}",
+        ),
+        code=301,
     )
 
 
