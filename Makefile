@@ -2,7 +2,7 @@
 	lint reformat type-check security-check \
 	start stop rebuild destroy \
 	migrate create-admin seed \
-	routes migrations
+	routes migrations lock
 
 default:
 	@echo "Call a specific subcommand:"
@@ -41,8 +41,8 @@ seed: migrate
 routes:
 	docker-compose exec cabotage-app python3 -m flask routes
 
-requirements/%.txt: requirements/%.in
-	docker compose run --build --rm base pip-compile --allow-unsafe --generate-hashes --output-file=$@ $(F) $<
+lock:
+	uv lock
 
 reformat:
 	docker compose run --build --rm base black .
