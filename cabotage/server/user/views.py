@@ -6817,21 +6817,21 @@ def project_application_pipeline_stats(
     for row in image_perc:
         key = row[0].isoformat() if row[0] else None
         trend_map.setdefault(key, {})
-        trend_map[key]["p50_image"] = round(row[1], 2) if row[1] else None
-        trend_map[key]["p95_image"] = round(row[2], 2) if row[2] else None
-        trend_map[key]["avg_image"] = round(row[3], 2) if row[3] else None
+        trend_map[key]["p50_image"] = float(round(row[1], 2)) if row[1] is not None else None
+        trend_map[key]["p95_image"] = float(round(row[2], 2)) if row[2] is not None else None
+        trend_map[key]["avg_image"] = float(round(row[3], 2)) if row[3] is not None else None
     for row in release_perc:
         key = row[0].isoformat() if row[0] else None
         trend_map.setdefault(key, {})
-        trend_map[key]["p50_release"] = round(row[1], 2) if row[1] else None
-        trend_map[key]["p95_release"] = round(row[2], 2) if row[2] else None
-        trend_map[key]["avg_release"] = round(row[3], 2) if row[3] else None
+        trend_map[key]["p50_release"] = float(round(row[1], 2)) if row[1] is not None else None
+        trend_map[key]["p95_release"] = float(round(row[2], 2)) if row[2] is not None else None
+        trend_map[key]["avg_release"] = float(round(row[3], 2)) if row[3] is not None else None
     for row in deploy_perc:
         key = row[0].isoformat() if row[0] else None
         trend_map.setdefault(key, {})
-        trend_map[key]["p50_deploy"] = round(row[1], 2) if row[1] else None
-        trend_map[key]["p95_deploy"] = round(row[2], 2) if row[2] else None
-        trend_map[key]["avg_deploy"] = round(row[3], 2) if row[3] else None
+        trend_map[key]["p50_deploy"] = float(round(row[1], 2)) if row[1] is not None else None
+        trend_map[key]["p95_deploy"] = float(round(row[2], 2)) if row[2] is not None else None
+        trend_map[key]["avg_deploy"] = float(round(row[3], 2)) if row[3] is not None else None
 
     duration_trend = [{"date": k, **v} for k, v in sorted(trend_map.items())]
 
@@ -6877,9 +6877,9 @@ def project_application_pipeline_stats(
     summary = {
         "total": total_deploys,
         "success_rate": overall_rate,
-        "avg_duration": round(summary_row[0], 2) if summary_row and summary_row[0] else None,
-        "p50": round(summary_row[1], 2) if summary_row and summary_row[1] else None,
-        "p95": round(summary_row[2], 2) if summary_row and summary_row[2] else None,
+        "avg_duration": float(round(summary_row[0], 2)) if summary_row and summary_row[0] is not None else None,
+        "p50": float(round(summary_row[1], 2)) if summary_row and summary_row[1] is not None else None,
+        "p95": float(round(summary_row[2], 2)) if summary_row and summary_row[2] is not None else None,
     }
 
     return jsonify(
