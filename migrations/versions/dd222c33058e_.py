@@ -1,8 +1,8 @@
 """
 
-Revision ID: db9d51e1234b
-Revises: 97ead80e7ae6
-Create Date: 2026-03-09 23:46:24.086631
+Revision ID: dd222c33058e
+Revises: e5f9a2c7d834
+Create Date: 2026-03-14 13:52:25.623710
 
 """
 
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = "db9d51e1234b"
-down_revision = "97ead80e7ae6"
+revision = "dd222c33058e"
+down_revision = "e5f9a2c7d834"
 branch_labels = None
 depends_on = None
 
@@ -23,11 +23,23 @@ def upgrade():
         "application_environments",
         sa.Column("deleted_at", sa.DateTime(), nullable=True),
     )
+    op.drop_constraint(
+        "uq_application_environments_application_id",
+        "application_environments",
+        type_="unique",
+    )
     op.create_index(
         op.f("ix_application_environments_deleted_at"),
         "application_environments",
         ["deleted_at"],
         unique=False,
+    )
+    op.create_index(
+        "uq_app_env_active",
+        "application_environments",
+        ["application_id", "environment_id"],
+        unique=True,
+        postgresql_where=sa.text("deleted_at IS NULL"),
     )
     op.add_column(
         "application_environments_version",
@@ -149,8 +161,18 @@ def downgrade():
     )
     op.drop_column("application_environments_version", "deleted_at")
     op.drop_index(
+        "uq_app_env_active",
+        table_name="application_environments",
+        postgresql_where=sa.text("deleted_at IS NULL"),
+    )
+    op.drop_index(
         op.f("ix_application_environments_deleted_at"),
         table_name="application_environments",
+    )
+    op.create_unique_constraint(
+        "uq_application_environments_application_id",
+        "application_environments",
+        ["application_id", "environment_id"],
     )
     op.drop_column("application_environments", "deleted_at")
     # ### end Alembic commands ###
