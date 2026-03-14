@@ -1,7 +1,7 @@
 """add ingresses columns to releases
 
 Revision ID: c3d8e1f2a4b5
-Revises: a95f942c7d60
+Revises: 97ead80e7ae6
 Create Date: 2026-03-06 12:00:00.000000
 
 """
@@ -12,7 +12,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = "c3d8e1f2a4b5"
-down_revision = "a95f942c7d60"
+down_revision = "97ead80e7ae6"
 branch_labels = None
 depends_on = None
 

@@ -21,6 +21,7 @@ from cabotage.server import (
 from cabotage.server.models.projects import (
     Deployment,
     IngressHost,
+    IngressSnapshot,
     DEFAULT_POD_CLASS,
     _ingress_hostname_pairs,
     pod_classes,
@@ -48,49 +49,6 @@ from cabotage.utils.github import (
 
 class DeployError(RuntimeError):
     pass
-
-
-class IngressHostSnapshot:
-    """Read-only wrapper over serialized IngressHost JSONB data."""
-
-    def __init__(self, data):
-        self.hostname = data["hostname"]
-        self.tls_enabled = data["tls_enabled"]
-        self.is_auto_generated = data["is_auto_generated"]
-
-
-class IngressPathSnapshot:
-    """Read-only wrapper over serialized IngressPath JSONB data."""
-
-    def __init__(self, data):
-        self.path = data["path"]
-        self.path_type = data["path_type"]
-        self.target_process_name = data["target_process_name"]
-
-
-class IngressSnapshot:
-    """Read-only wrapper over serialized Ingress JSONB data."""
-
-    def __init__(self, data):
-        self.name = data["name"]
-        self.enabled = data["enabled"]
-        self.ingress_class_name = data["ingress_class_name"]
-        self.backend_protocol = data["backend_protocol"]
-        self.proxy_connect_timeout = data.get("proxy_connect_timeout")
-        self.proxy_read_timeout = data.get("proxy_read_timeout")
-        self.proxy_send_timeout = data.get("proxy_send_timeout")
-        self.proxy_body_size = data.get("proxy_body_size")
-        self.client_body_buffer_size = data.get("client_body_buffer_size")
-        self.proxy_request_buffering = data.get("proxy_request_buffering")
-        self.session_affinity = data["session_affinity"]
-        self.use_regex = data["use_regex"]
-        self.allow_annotations = data["allow_annotations"]
-        self.extra_annotations = data.get("extra_annotations", {})
-        self.cluster_issuer = data["cluster_issuer"]
-        self.force_ssl_redirect = data["force_ssl_redirect"]
-        self.service_upstream = data["service_upstream"]
-        self.hosts = [IngressHostSnapshot(h) for h in data.get("hosts", [])]
-        self.paths = [IngressPathSnapshot(p) for p in data.get("paths", [])]
 
 
 def _preview_url_for_app_env(app_env):
@@ -1608,7 +1566,9 @@ def deploy_release(deployment):
     release_id = deployment.release.get("id") if deployment.release else None
     release_obj = deployment.release_object
     image_id = (
-        release_obj.image.get("id") if release_obj and release_obj.image else None
+        release_obj.image_snapshot.id
+        if release_obj and release_obj.image_snapshot
+        else None
     )
     deploy_links = {"Deployment": deploy_path}
     if release_id:

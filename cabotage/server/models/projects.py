@@ -692,6 +692,12 @@ class Deployment(db.Model, Timestamp):
     def release_object(self):
         return Release.query.filter_by(id=self.release.get("id", None)).first()
 
+    @property
+    def release_snapshot(self):
+        if self.release:
+            return ReleaseSnapshot(self.release)
+        return None
+
 
 class Release(db.Model, Timestamp):
     __versioned__: dict = {}
@@ -864,7 +870,7 @@ class Release(db.Model, Timestamp):
             )
         exec_statement += "}"
         configurations["shell"] = "\n".join([exec_statement, environment_statements])
-        for proc_name, proc in self.image_object.processes.items():
+        for proc_name, proc in self.image_snapshot.processes.items():
             proc_env = [f"{key}={value}" for key, value in proc["env"]]
             proc_env.extend(resolved_template_env)
             custom_env = json.dumps(proc_env)
@@ -887,10 +893,20 @@ class Release(db.Model, Timestamp):
         return Image.query.filter_by(id=self.image.get("id", None)).first()
 
     @property
+    def image_snapshot(self):
+        if self.image:
+            return ImageSnapshot(self.image)
+        return None
+
+    @property
+    def configuration_snapshots(self):
+        return {k: ConfigurationSnapshot(v) for k, v in self.configuration.items()}
+
+    @property
     def processes(self):
         return {
             k: v
-            for k, v in self.image_object.processes.items()
+            for k, v in self.image_snapshot.processes.items()
             if not (k.startswith("release") or k.startswith("postdeploy"))
         }
 
@@ -898,7 +914,7 @@ class Release(db.Model, Timestamp):
     def release_commands(self):
         return {
             k: v
-            for k, v in self.image_object.processes.items()
+            for k, v in self.image_snapshot.processes.items()
             if k.startswith("release")
         }
 
@@ -906,7 +922,7 @@ class Release(db.Model, Timestamp):
     def postdeploy_commands(self):
         return {
             k: v
-            for k, v in self.image_object.processes.items()
+            for k, v in self.image_snapshot.processes.items()
             if k.startswith("postdeploy")
         }
 
@@ -933,9 +949,9 @@ class Release(db.Model, Timestamp):
 
     @property
     def commit_sha(self):
-        if self.release_metadata is None or self.release_metadata.get("sha") is None:
-            return self.image_object.commit_sha
-        return self.release_metadata.get("sha")
+        if self.release_metadata and self.release_metadata.get("sha"):
+            return self.release_metadata.get("sha")
+        return self.image_snapshot.commit_sha
 
     @property
     def release_build_context_configmap(self):
@@ -950,7 +966,7 @@ class Release(db.Model, Timestamp):
         )
         dockerfile = RELEASE_DOCKERFILE_TEMPLATE.format(
             registry=current_app.config["REGISTRY_BUILD"],
-            image=self.image_object,
+            image=self.image_snapshot,
             process_commands=process_commands,
         )
         if self.dockerfile:
@@ -1064,6 +1080,16 @@ class Configuration(db.Model, Timestamp):
         if has_template_variables(self.value):
             return resolve_template_variables(self.value, self.application_environment)
         return self.value
+
+
+class ConfigurationSnapshot:
+    """Read-only wrapper over serialized Configuration JSONB data."""
+
+    def __init__(self, data):
+        self.id = data["id"]
+        self.name = data["name"]
+        self.version_id = data["version_id"]
+        self.secret = data["secret"]
 
 
 class Hook(db.Model, Timestamp):
@@ -1203,6 +1229,7 @@ class Image(db.Model, Timestamp):
             "repository": self.repository_name,
             "tag": str(self.version),
             "processes": self.processes,
+            "commit_sha": self.commit_sha,
         }
 
     def docker_pull_credentials(self, secret):
@@ -1248,6 +1275,27 @@ def image_before_insert_listener(mapper, connection, target):
         target.version = 1
     else:
         target.version = most_recent_image.version + 1
+
+
+class ImageSnapshot:
+    """Read-only wrapper over serialized Image JSONB data."""
+
+    def __init__(self, data):
+        self.id = data["id"]
+        self.repository = data["repository"]
+        self.tag = data["tag"]
+        self.processes = data.get("processes", {})
+        self.commit_sha = data.get("commit_sha", "null")
+
+    # Aliases matching Image model attribute names so this can be
+    # used as a drop-in replacement (e.g. in RELEASE_DOCKERFILE_TEMPLATE).
+    @property
+    def repository_name(self):
+        return self.repository
+
+    @property
+    def version(self):
+        return self.tag
 
 
 class Ingress(db.Model, Timestamp):
@@ -1423,6 +1471,98 @@ class IngressPath(db.Model, Timestamp):
     __table_args__ = (UniqueConstraint(ingress_id, path),)
 
     __mapper_args__ = {"version_id_col": version_id}
+
+
+class IngressHostSnapshot:
+    """Read-only wrapper over serialized IngressHost JSONB data."""
+
+    def __init__(self, data):
+        self.hostname = data["hostname"]
+        self.tls_enabled = data["tls_enabled"]
+        self.is_auto_generated = data["is_auto_generated"]
+
+
+class IngressPathSnapshot:
+    """Read-only wrapper over serialized IngressPath JSONB data."""
+
+    def __init__(self, data):
+        self.path = data["path"]
+        self.path_type = data["path_type"]
+        self.target_process_name = data["target_process_name"]
+
+
+class IngressSnapshot:
+    """Read-only wrapper over serialized Ingress JSONB data."""
+
+    def __init__(self, data):
+        self.name = data["name"]
+        self.enabled = data["enabled"]
+        self.ingress_class_name = data["ingress_class_name"]
+        self.backend_protocol = data["backend_protocol"]
+        self.proxy_connect_timeout = data.get("proxy_connect_timeout")
+        self.proxy_read_timeout = data.get("proxy_read_timeout")
+        self.proxy_send_timeout = data.get("proxy_send_timeout")
+        self.proxy_body_size = data.get("proxy_body_size")
+        self.client_body_buffer_size = data.get("client_body_buffer_size")
+        self.proxy_request_buffering = data.get("proxy_request_buffering")
+        self.session_affinity = data["session_affinity"]
+        self.use_regex = data["use_regex"]
+        self.allow_annotations = data["allow_annotations"]
+        self.extra_annotations = data.get("extra_annotations", {})
+        self.cluster_issuer = data["cluster_issuer"]
+        self.force_ssl_redirect = data["force_ssl_redirect"]
+        self.service_upstream = data["service_upstream"]
+        self.hosts = [IngressHostSnapshot(h) for h in data.get("hosts", [])]
+        self.paths = [IngressPathSnapshot(p) for p in data.get("paths", [])]
+
+
+class ReleaseSnapshot:
+    """Read-only wrapper over serialized Release JSONB data."""
+
+    def __init__(self, data):
+        self.id = data["id"]
+        self.application_id = data["application_id"]
+        self.platform = data["platform"]
+        self.image_snapshot = (
+            ImageSnapshot(data["image"]) if data.get("image") else None
+        )
+        self.configuration_snapshots = {
+            k: ConfigurationSnapshot(v)
+            for k, v in data.get("configuration", {}).items()
+        }
+        self.ingress_snapshots = [
+            IngressSnapshot(v) for v in data.get("ingresses", {}).values()
+        ]
+
+    @property
+    def processes(self):
+        return {
+            k: v
+            for k, v in self.image_snapshot.processes.items()
+            if not (k.startswith("release") or k.startswith("postdeploy"))
+        }
+
+    @property
+    def release_commands(self):
+        return {
+            k: v
+            for k, v in self.image_snapshot.processes.items()
+            if k.startswith("release")
+        }
+
+    @property
+    def postdeploy_commands(self):
+        return {
+            k: v
+            for k, v in self.image_snapshot.processes.items()
+            if k.startswith("postdeploy")
+        }
+
+    @property
+    def commit_sha(self):
+        if self.image_snapshot:
+            return self.image_snapshot.commit_sha
+        return "null"
 
 
 def _ingress_hostname_pairs(app_env):
