@@ -1229,7 +1229,10 @@ def render_image_pull_secrets(release):
             ".dockerconfigjson": b64encode(
                 release.image_pull_secrets(
                     registry_auth_secret,
-                    registry_urls=[current_app.config.get("REGISTRY_PULL_K8S") or current_app.config["REGISTRY_PULL"]],
+                    registry_urls=[
+                        current_app.config.get("REGISTRY_PULL_K8S")
+                        or current_app.config["REGISTRY_PULL"]
+                    ],
                 ).encode()
             ).decode(),
         },
@@ -1488,7 +1491,10 @@ def render_process_container(
     )
     pod_class = pod_classes[process_pod_cls]
 
-    registry = current_app.config.get("REGISTRY_PULL_K8S") or current_app.config["REGISTRY_PULL"]
+    registry = (
+        current_app.config.get("REGISTRY_PULL_K8S")
+        or current_app.config["REGISTRY_PULL"]
+    )
 
     if testing:
         # TESTING mode: use default CMD, no envconsul, no vault/consul env
@@ -1529,7 +1535,7 @@ def render_process_container(
 
     return kubernetes.client.V1Container(
         name=process_name,
-        image=f'{registry}/{release.repository_name}:release-{release.version}',
+        image=f"{registry}/{release.repository_name}:release-{release.version}",
         image_pull_policy="Always",
         env=env,
         args=args,
@@ -1699,7 +1705,9 @@ def render_podspec(release, process_name, service_account_name):
             )
         elif process_name.startswith("worker"):
             init_containers.append(
-                render_cabotage_enroller_container(release, process_name, with_tls=False)
+                render_cabotage_enroller_container(
+                    release, process_name, with_tls=False
+                )
             )
             init_containers.append(
                 render_cabotage_sidecar_container(release, with_tls=False)
@@ -1711,7 +1719,9 @@ def render_podspec(release, process_name, service_account_name):
             )
         elif process_name.startswith("release"):
             init_containers.append(
-                render_cabotage_enroller_container(release, process_name, with_tls=False)
+                render_cabotage_enroller_container(
+                    release, process_name, with_tls=False
+                )
             )
             containers.append(
                 render_process_container(
@@ -1721,7 +1731,9 @@ def render_podspec(release, process_name, service_account_name):
             restart_policy = "Never"
         elif process_name.startswith("postdeploy"):
             init_containers.append(
-                render_cabotage_enroller_container(release, process_name, with_tls=False)
+                render_cabotage_enroller_container(
+                    release, process_name, with_tls=False
+                )
             )
             containers.append(
                 render_process_container(
@@ -1731,7 +1743,9 @@ def render_podspec(release, process_name, service_account_name):
             restart_policy = "Never"
         else:
             init_containers.append(
-                render_cabotage_enroller_container(release, process_name, with_tls=False)
+                render_cabotage_enroller_container(
+                    release, process_name, with_tls=False
+                )
             )
             containers.append(
                 render_process_container(
@@ -1741,7 +1755,8 @@ def render_podspec(release, process_name, service_account_name):
 
         if (
             not (
-                process_name.startswith("release") or process_name.startswith("postdeploy")
+                process_name.startswith("release")
+                or process_name.startswith("postdeploy")
             )
             and "DD_API_KEY" in release.configuration_objects
         ):
@@ -1752,7 +1767,9 @@ def render_podspec(release, process_name, service_account_name):
             except KeyError:
                 print("unable to read DD_API_KEY")
             if dd_api_key:
-                init_containers.append(render_datadog_container(dd_api_key, datadog_tags))
+                init_containers.append(
+                    render_datadog_container(dd_api_key, datadog_tags)
+                )
 
     app_env = release.application_environment
     env = app_env.environment if app_env.k8s_identifier is not None else None
