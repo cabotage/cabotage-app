@@ -99,7 +99,7 @@ def upgrade():
         FROM ingress_data id
         WHERE id.application_environment_id = r.application_environment_id
           AND r.ingresses = '{{}}'::jsonb
-    """
+    """  # nosec B608 - _INGRESS_DATA_CTE is a hardcoded constant, not user input
     )
 
     # 3. Backfill ingresses onto the latest completed deployment per app_env.
@@ -122,7 +122,7 @@ def upgrade():
           AND id.application_environment_id = d.application_environment_id
           AND (d.release->'ingresses' IS NULL
                OR d.release->'ingresses' = '{{}}'::jsonb)
-    """
+    """  # nosec B608 - _INGRESS_DATA_CTE is a hardcoded constant, not user input
     )
 
     # 4. Backfill commit_sha onto the latest completed deployment per app_env
