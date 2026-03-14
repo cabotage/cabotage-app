@@ -1223,7 +1223,9 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         # latest_release and latest_image_built inside the model method)
         from cabotage.server.models.projects import DictDiffer
 
-        current = latest_release_built.asdict if latest_release_built else {}
+        current = (
+            latest_deployment_completed.release if latest_deployment_completed else {}
+        )
         candidate = Release(
             application_id=application.id,
             application_environment_id=app_env.id,
@@ -1235,7 +1237,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         image_diff = DictDiffer(
             candidate.get("image", {}),
             current.get("image", {}),
-            ignored_keys=["id", "version_id"],
+            ignored_keys=["id", "version_id", "commit_sha"],
         )
         config_diff = DictDiffer(
             candidate.get("configuration", {}),

@@ -561,8 +561,9 @@ class Application(db.Model, Timestamp):
 
     def ready_for_deployment_in_env(self, app_env):
         current = {}
-        if app_env.latest_release_built:
-            current = app_env.latest_release_built.asdict
+        latest_deployed = app_env.latest_deployment_completed
+        if latest_deployed:
+            current = latest_deployed.release
         candidate = self.release_candidate_for_env(app_env)
         configuration_diff = DictDiffer(
             candidate.get("configuration", {}),
@@ -572,7 +573,7 @@ class Application(db.Model, Timestamp):
         image_diff = DictDiffer(
             candidate.get("image", {}),
             current.get("image", {}),
-            ignored_keys=["id", "version_id"],
+            ignored_keys=["id", "version_id", "commit_sha"],
         )
         ingress_diff = DictDiffer(
             candidate.get("ingresses", {}),
@@ -1385,8 +1386,10 @@ class Ingress(db.Model, Timestamp):
             "cluster_issuer": self.cluster_issuer,
             "force_ssl_redirect": self.force_ssl_redirect,
             "service_upstream": self.service_upstream,
-            "hosts": [h.asdict for h in self.hosts],
-            "paths": [p.asdict for p in self.paths],
+            "hosts": sorted(
+                [h.asdict for h in self.hosts], key=lambda h: h["hostname"]
+            ),
+            "paths": sorted([p.asdict for p in self.paths], key=lambda p: p["path"]),
         }
 
     def __repr__(self):
