@@ -4508,14 +4508,16 @@ def project_application_pipeline_runs(
         application, env_slug=env_slug, project=project, required=True
     )
 
-    limit = min(int(request.args.get("limit", 50)), 200)
+    limit = min(int(request.args.get("limit", 20)), 200)
+    offset = max(int(request.args.get("offset", 0)), 0)
 
-    deployments = (
-        Deployment.query.filter_by(application_environment_id=app_env.id)
-        .order_by(desc(Deployment.created))
-        .limit(limit)
-        .all()
-    )
+    query = Deployment.query.filter_by(
+        application_environment_id=app_env.id
+    ).order_by(desc(Deployment.created))
+
+    total_count = query.count()
+
+    deployments = query.offset(offset).limit(limit).all()
 
     # Batch-fetch releases and images to avoid N+1 queries
     release_ids = {d.release.get("id") for d in deployments if d.release}
@@ -4571,7 +4573,12 @@ def project_application_pipeline_runs(
             }
         )
 
-    return jsonify({"runs": runs})
+    return jsonify({
+        "runs": runs,
+        "total": total_count,
+        "offset": offset,
+        "limit": limit,
+    })
 
 
 @user_blueprint.route(
