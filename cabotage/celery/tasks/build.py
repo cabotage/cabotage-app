@@ -1201,14 +1201,10 @@ def run_image_build(image_id=None, buildkit=False):
     image.image_id = build_metadata["image_id"]
     image.processes = build_metadata["processes"]
     image.built = True
-    if image.image_metadata is None:
-        image.image_metadata = {
-            "dockerfile_env_vars": build_metadata["dockerfile_env_vars"]
-        }
-    else:
-        image.image_metadata["dockerfile_env_vars"] = build_metadata[
-            "dockerfile_env_vars"
-        ]
+    image.image_metadata = {
+        **(image.image_metadata or {}),
+        "dockerfile_env_vars": build_metadata["dockerfile_env_vars"],
+    }
 
     db.session.add(image)
     db.session.commit()
