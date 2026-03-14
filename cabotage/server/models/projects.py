@@ -561,8 +561,8 @@ class Application(db.Model, Timestamp):
 
     def ready_for_deployment_in_env(self, app_env):
         current = {}
-        if app_env.latest_release:
-            current = app_env.latest_release.asdict
+        if app_env.latest_release_built:
+            current = app_env.latest_release_built.asdict
         candidate = self.release_candidate_for_env(app_env)
         configuration_diff = DictDiffer(
             candidate.get("configuration", {}),

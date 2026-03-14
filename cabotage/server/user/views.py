@@ -1223,7 +1223,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         # latest_release and latest_image_built inside the model method)
         from cabotage.server.models.projects import DictDiffer
 
-        current = latest_release.asdict if latest_release else {}
+        current = latest_release_built.asdict if latest_release_built else {}
         candidate = Release(
             application_id=application.id,
             application_environment_id=app_env.id,
