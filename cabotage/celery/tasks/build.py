@@ -85,7 +85,9 @@ def build_release_buildkit(release):
         ]
     )
     release.dockerfile = RELEASE_DOCKERFILE_TEMPLATE.format(
-        registry=registry, image=release.image_object, process_commands=process_commands
+        registry=registry,
+        image=release.image_snapshot,
+        process_commands=process_commands,
     )
     db.session.add(release)
     db.session.commit()
