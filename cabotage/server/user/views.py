@@ -439,6 +439,9 @@ def organizations():
             )
             .filter(
                 Project.organization_id.in_(org_ids),
+                Project.deleted_at.is_(None),
+                Application.deleted_at.is_(None),
+                ApplicationEnvironment.deleted_at.is_(None),
                 ApplicationEnvironment.k8s_identifier.is_(None),
                 Deployment.complete == True,  # noqa: E712
             )
@@ -497,6 +500,7 @@ def organization(org_slug):
             .join(ApplicationEnvironment)
             .filter(
                 Deployment.application_id.in_(app_ids),
+                ApplicationEnvironment.deleted_at.is_(None),
                 ApplicationEnvironment.k8s_identifier.is_(None),
                 Deployment.complete == True,  # noqa: E712
             )
