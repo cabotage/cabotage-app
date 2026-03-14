@@ -4,6 +4,8 @@ volumes:
   miniodata:
   postgresdata:
   redisdata:
+  mimirdata:
+  lokidata:
 
 services:
   db:
@@ -97,6 +99,24 @@ services:
       - "9001:9001"
     volumes:
       - miniodata:/export
+  mimir:
+    image: grafana/mimir:2.14.1
+    command: ["-config.file=/etc/mimir/config.yaml", "-target=all"]
+    restart: always
+    ports:
+      - "9009:9009"
+    volumes:
+      - ./docker-compose/mimir:/etc/mimir
+      - mimirdata:/data
+  loki:
+    image: grafana/loki:3.4.2
+    command: ["-config.file=/etc/loki/config.yaml"]
+    restart: always
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./docker-compose/loki:/etc/loki
+      - lokidata:/loki
   static:
     image: oven/bun:1-slim
     working_dir: /app
@@ -126,6 +146,8 @@ services:
       - CABOTAGE_VAULT_TOKEN=deadbeef-dead-beef-dead-beefdeadbeef
       - CABOTAGE_WTF_CSRF_ENABLED=False
       - C_FORCE_ROOT=1
+      - CABOTAGE_MIMIR_URL=http://mimir:9009
+      - CABOTAGE_LOKI_URL=http://loki:3100
       - FLASK_APP=cabotage.server.wsgi
       - KUBECONFIG=/var/run/kube/config
     volumes:
