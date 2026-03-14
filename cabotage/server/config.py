@@ -90,3 +90,6 @@ class Config(metaclass=MetaFlaskEnv):
     MIMIR_VERIFY = None
     LOKI_URL = None
     LOKI_VERIFY = None
+    PUSHGATEWAY_URL = None
+    REGISTRY_PULL_K8S = None
+    TESTING = False
