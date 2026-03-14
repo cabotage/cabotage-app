@@ -4,6 +4,7 @@ from .build import (
 )
 
 from .deploy import (
+    cleanup_app_env_k8s,  # noqa: F401
     run_deploy,  # noqa: F401
 )
 

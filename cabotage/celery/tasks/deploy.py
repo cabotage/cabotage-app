@@ -1,3 +1,4 @@
+import logging
 import secrets
 import time
 
@@ -50,6 +51,93 @@ from cabotage.utils.github import (
 
 class DeployError(RuntimeError):
     pass
+
+
+@shared_task()
+def cleanup_app_env_k8s(app_env_id, namespace, resource_prefix, label_selector):
+    """Best-effort delete of all k8s resources for one ApplicationEnvironment.
+
+    All k8s addressing values are passed explicitly because the originating
+    slugs may be renamed (``--deleted-…``) by the time the worker picks up
+    the task, while the k8s resources still carry the original labels.
+    """
+    log = logging.getLogger(__name__)
+
+    try:
+        api_client = kubernetes_ext.kubernetes_client
+        if api_client is None:
+            log.warning("k8s cleanup: no kubernetes client available")
+            return
+    except Exception:
+        log.exception("k8s cleanup: failed to get kubernetes client")
+        return
+
+    apps_api = kubernetes.client.AppsV1Api(api_client)
+    core_api = kubernetes.client.CoreV1Api(api_client)
+    networking_api = kubernetes.client.NetworkingV1Api(api_client)
+    log.info("k8s cleanup: namespace=%s labels=%s", namespace, label_selector)
+
+    # Delete Deployments
+    try:
+        deps = apps_api.list_namespaced_deployment(
+            namespace, label_selector=label_selector
+        )
+        for d in deps.items:
+            log.info(
+                "k8s cleanup: deleting deployment %s/%s", namespace, d.metadata.name
+            )
+            apps_api.delete_namespaced_deployment(d.metadata.name, namespace)
+    except Exception:
+        log.exception("k8s cleanup: failed to delete deployments")
+
+    # Delete Services
+    svc_label_selector = f"resident-service.cabotage.io=true,app={resource_prefix}"
+    try:
+        svcs = core_api.list_namespaced_service(
+            namespace, label_selector=svc_label_selector
+        )
+        for s in svcs.items:
+            log.info("k8s cleanup: deleting service %s/%s", namespace, s.metadata.name)
+            core_api.delete_namespaced_service(s.metadata.name, namespace)
+    except Exception:
+        log.exception("k8s cleanup: failed to delete services")
+
+    # Delete Ingresses
+    try:
+        ings = networking_api.list_namespaced_ingress(
+            namespace, label_selector=label_selector
+        )
+        for i in ings.items:
+            log.info("k8s cleanup: deleting ingress %s/%s", namespace, i.metadata.name)
+            networking_api.delete_namespaced_ingress(i.metadata.name, namespace)
+    except Exception:
+        log.exception("k8s cleanup: failed to delete ingresses")
+
+    # Delete CabotageEnrollment
+    try:
+        custom_api = kubernetes.client.CustomObjectsApi(api_client)
+        custom_api.delete_namespaced_custom_object(
+            "cabotage.io", "v1", namespace, "cabotageenrollments", resource_prefix
+        )
+        log.info(
+            "k8s cleanup: deleted CabotageEnrollment %s/%s", namespace, resource_prefix
+        )
+    except Exception:
+        log.exception(
+            "k8s cleanup: failed to delete CabotageEnrollment %s", resource_prefix
+        )
+
+    # Delete ServiceAccount and ImagePullSecret
+    try:
+        core_api.delete_namespaced_service_account(resource_prefix, namespace)
+    except Exception:
+        log.exception(
+            "k8s cleanup: failed to delete service account %s", resource_prefix
+        )
+    try:
+        core_api.delete_namespaced_secret(resource_prefix, namespace)
+    except Exception:
+        log.exception("k8s cleanup: failed to delete secret %s", resource_prefix)
 
 
 def _preview_url_for_app_env(app_env):
