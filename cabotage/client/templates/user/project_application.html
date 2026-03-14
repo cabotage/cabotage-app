@@ -60,7 +60,7 @@
     {'id': 'images', 'label': 'Images', 'icon': 'image'},
     {'id': 'releases', 'label': 'Releases', 'icon': 'layers'},
     {'id': 'deployments', 'label': 'Deploys', 'icon': 'deploy'},
-    {'id': 'pipeline', 'label': 'Pipeline (Soon)', 'icon': 'bar-chart-2', 'disabled': true}
+    {'id': 'pipeline', 'label': 'Pipeline', 'icon': 'bar-chart-2', 'url': url_for('user.project_application_pipeline', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none)}
     ]) }}
   </div>
   {% endif %}
@@ -2176,70 +2176,31 @@
 
 <div data-tab-panel="pipeline" class="tab-panel">
   <div data-pipeline-metrics-panel
-       data-application-id="{{ application.id }}">
+       data-stats-url="{{ url_for('user.project_application_pipeline_stats', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}">
 
     <div class="flex items-center justify-between mb-4">
       <h2 class="text-base font-medium text-base-content">Pipeline Metrics</h2>
-      <div class="obs-range-selector">
-        <button class="obs-range-btn" data-pm-range="25">25</button>
-        <button class="obs-range-btn obs-range-active" data-pm-range="50">50</button>
-        <button class="obs-range-btn" data-pm-range="100">100</button>
-      </div>
+      <a href="{{ url_for('user.project_application_pipeline', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}"
+         class="btn btn-xs btn-ghost">View full dashboard {{ icon('arrow-right', 'w-3 h-3') }}</a>
     </div>
 
     <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
       <div class="obs-metric-card">
-        <div class="obs-metric-label">Build Success</div>
-        <div class="obs-metric-value" data-pm-build-rate>—</div>
+        <div class="obs-metric-label">Total Deploys</div>
+        <div class="obs-metric-value" data-pm-total>--</div>
+        <div class="obs-metric-sublabel">last 30 days</div>
+      </div>
+      <div class="obs-metric-card">
+        <div class="obs-metric-label">Success Rate</div>
+        <div class="obs-metric-value" data-pm-rate>--</div>
         <div class="obs-metric-sublabel" data-pm-build-counts></div>
       </div>
       <div class="obs-metric-card">
-        <div class="obs-metric-label">Avg Build</div>
-        <div class="obs-metric-value" data-pm-build-avg>—</div>
-        <div class="obs-metric-sublabel">p50 / p95</div>
-      </div>
-      <div class="obs-metric-card">
-        <div class="obs-metric-label">Avg Deploy</div>
-        <div class="obs-metric-value" data-pm-deploy-avg>—</div>
+        <div class="obs-metric-label">Avg Duration</div>
+        <div class="obs-metric-value" data-pm-avg>--</div>
         <div class="obs-metric-sublabel">p50 / p95</div>
       </div>
     </div>
-
-    <div class="pm-stage-section">
-      <div class="pm-stage-header">
-        <span class="pm-stage-label">Build</span>
-        <div class="pm-stat-chips" data-pm-build-chips></div>
-      </div>
-      <div class="pm-bar-chart">
-        <svg data-pm-build-chart viewBox="0 0 600 120" preserveAspectRatio="none">
-        </svg>
-      </div>
-    </div>
-
-    <div class="pm-stage-section">
-      <div class="pm-stage-header">
-        <span class="pm-stage-label">Release</span>
-        <div class="pm-stat-chips" data-pm-release-chips></div>
-      </div>
-      <div class="pm-bar-chart">
-        <svg data-pm-release-chart
-             viewBox="0 0 600 120"
-             preserveAspectRatio="none">
-        </svg>
-      </div>
-    </div>
-
-    <div class="pm-stage-section">
-      <div class="pm-stage-header">
-        <span class="pm-stage-label">Deploy</span>
-        <div class="pm-stat-chips" data-pm-deploy-chips></div>
-      </div>
-      <div class="pm-bar-chart">
-        <svg data-pm-deploy-chart viewBox="0 0 600 120" preserveAspectRatio="none">
-        </svg>
-      </div>
-    </div>
-
   </div>
 </div>
 
@@ -2368,6 +2329,38 @@
 
     poll();
     setInterval(poll, 15000);
+  })();
+
+  // Pipeline inline summary
+  (function() {
+    var panel = document.querySelector('[data-pipeline-metrics-panel]');
+    if (!panel) return;
+    var url = panel.getAttribute('data-stats-url');
+    if (!url) return;
+    function fmtDur(v) {
+      if (v == null) return '--';
+      if (v < 60) return v.toFixed(1) + 's';
+      return (v / 60).toFixed(1) + 'm';
+    }
+    function load() {
+      fetch(url + '?range=30d')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          var s = d.summary;
+          var el;
+          el = panel.querySelector('[data-pm-total]');
+          if (el) el.textContent = s.total;
+          el = panel.querySelector('[data-pm-rate]');
+          if (el) el.textContent = s.success_rate != null ? s.success_rate + '%' : '--';
+          el = panel.querySelector('[data-pm-avg]');
+          if (el) el.textContent = fmtDur(s.avg_duration);
+          el = panel.querySelector('[data-pm-build-counts]');
+          if (el) el.textContent = 'p50: ' + fmtDur(s.p50) + ' / p95: ' + fmtDur(s.p95);
+        })
+        .catch(function() {});
+    }
+    load();
+    setInterval(load, 60000);
   })();
   </script>
 {% endblock js %}

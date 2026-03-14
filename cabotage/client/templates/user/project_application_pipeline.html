@@ -1,0 +1,323 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, app_tab_nav, app_resource_path %}
+
+{% set org_slug = application.project.organization.slug %}
+{% set project_slug = application.project.slug %}
+{% set app_slug = application.slug %}
+{% set env_slug = environment.slug if environment else none %}
+
+{% block title %}
+  Pipeline - {{ app_slug }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ app_resource_path(application, 'Pipeline', env=environment|default(none)) }}
+{% endblock resource_path %}
+
+{% block tab_bar %}
+  {{ app_tab_nav(application, 'pipeline', env=environment|default(none)) }}
+{% endblock tab_bar %}
+
+{% block content %}
+  <div class="settings-page">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h1 class="text-lg font-semibold text-base-content">Pipeline Stats</h1>
+        <p class="text-xs text-base-content/40">Build, release, and deploy performance metrics</p>
+      </div>
+      <div class="flex gap-1.5" id="range-selector">
+        {% for r in ['7d', '30d', '90d'] %}
+          <button data-range="{{ r }}"
+             class="btn btn-xs {% if current_range == r %}btn-primary{% else %}btn-ghost{% endif %}">{{ r }}</button>
+        {% endfor %}
+      </div>
+    </div>
+
+    {# Summary cards #}
+    <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
+      <div class="obs-metric-card">
+        <div class="obs-metric-label">Total Deploys</div>
+        <div class="obs-metric-value" id="pm-total">--</div>
+      </div>
+      <div class="obs-metric-card">
+        <div class="obs-metric-label">Success Rate</div>
+        <div class="obs-metric-value" id="pm-success-rate">--</div>
+      </div>
+      <div class="obs-metric-card">
+        <div class="obs-metric-label">Avg Duration</div>
+        <div class="obs-metric-value" id="pm-avg-dur">--</div>
+      </div>
+      <div class="obs-metric-card">
+        <div class="obs-metric-label">P50</div>
+        <div class="obs-metric-value" id="pm-p50">--</div>
+      </div>
+      <div class="obs-metric-card">
+        <div class="obs-metric-label">P95</div>
+        <div class="obs-metric-value" id="pm-p95">--</div>
+      </div>
+    </div>
+
+    {# Charts grid #}
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+      <div class="card bg-base-200/40 p-4">
+        <h3 class="text-sm font-medium text-base-content/60 mb-2">Throughput</h3>
+        <div id="chart-throughput" class="w-full" style="min-height:220px"></div>
+      </div>
+      <div class="card bg-base-200/40 p-4">
+        <h3 class="text-sm font-medium text-base-content/60 mb-2">Duration Trend</h3>
+        <div id="chart-duration" class="w-full" style="min-height:220px"></div>
+      </div>
+      <div class="card bg-base-200/40 p-4">
+        <h3 class="text-sm font-medium text-base-content/60 mb-2">Success Rate</h3>
+        <div id="chart-success" class="w-full" style="min-height:220px"></div>
+      </div>
+      <div class="card bg-base-200/40 p-4">
+        <h3 class="text-sm font-medium text-base-content/60 mb-2">Duration by Stage</h3>
+        <div id="chart-stage" class="w-full" style="min-height:220px"></div>
+      </div>
+    </div>
+
+    {# Recent runs table #}
+    <div class="card bg-base-200/40 p-4 mb-6">
+      <h3 class="text-sm font-medium text-base-content/60 mb-3">Recent Pipeline Runs</h3>
+      <div class="overflow-x-auto">
+        <table class="table table-xs table-zebra w-full">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>SHA</th>
+              <th>Trigger</th>
+              <th>Image</th>
+              <th>Release</th>
+              <th>Deploy</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody id="runs-tbody">
+            <tr><td colspan="7" class="text-center text-base-content/30">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {# Slowest builds #}
+    <div class="card bg-base-200/40 p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-medium text-base-content/60">Slowest Builds</h3>
+        <select id="slowest-stage" class="select select-xs select-bordered">
+          <option value="image">Image</option>
+          <option value="release">Release</option>
+          <option value="deploy">Deploy</option>
+        </select>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="table table-xs table-zebra w-full">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>ID</th>
+              <th>Duration</th>
+              <th>SHA</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody id="slowest-tbody">
+            <tr><td colspan="5" class="text-center text-base-content/30">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+<script src="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.iife.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.min.css">
+
+<script>
+(function() {
+  var baseUrl = {{ url_for('user.project_application_pipeline', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug)|tojson }};
+  var currentRange = {{ current_range|tojson }};
+
+  var COLORS = ['#22d3ee','#a78bfa','#f472b6','#34d399','#fbbf24','#fb923c'];
+  var SUCCESS_COLOR = '#34d399';
+  var FAILURE_COLOR = '#f87171';
+  var isDark = document.documentElement.getAttribute('data-theme') === 'dark' ||
+               window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var AXIS_STROKE = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)';
+  var GRID_STROKE = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+
+  function fmtDur(v) {
+    if (v == null) return '--';
+    if (v < 60) return v.toFixed(1) + 's';
+    return (v / 60).toFixed(1) + 'm';
+  }
+
+  function fmtPct(v) {
+    if (v == null) return '--';
+    return v.toFixed(1) + '%';
+  }
+
+  // -- Range selector --
+  document.getElementById('range-selector').addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-range]');
+    if (!btn) return;
+    currentRange = btn.dataset.range;
+    document.querySelectorAll('#range-selector button').forEach(function(b) {
+      b.className = b.dataset.range === currentRange ? 'btn btn-xs btn-primary' : 'btn btn-xs btn-ghost';
+    });
+    loadAll();
+  });
+
+  function makeSimpleChart(el, timestamps, seriesData, seriesDefs) {
+    el.innerHTML = '';
+    if (!timestamps || !timestamps.length) {
+      el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/30 text-sm">No data</div>';
+      return;
+    }
+    var width = el.clientWidth || 400;
+    var height = 220;
+    var data = [timestamps].concat(seriesData);
+    var series = [{}].concat(seriesDefs);
+    var opts = {
+      width: width,
+      height: height,
+      series: series,
+      axes: [
+        { stroke: AXIS_STROKE, grid: { stroke: GRID_STROKE } },
+        { stroke: AXIS_STROKE, grid: { stroke: GRID_STROKE }, size: 55 }
+      ],
+      cursor: { drag: { x: false, y: false } },
+      legend: { show: seriesDefs.length <= 6, live: false },
+      scales: { x: { time: true }, y: { range: function(u, dmin, dmax) { return [0, (dmax || 1) * 1.1]; } } }
+    };
+    new uPlot(opts, data, el);
+  }
+
+  function parseDate(s) { return Math.floor(new Date(s).getTime() / 1000); }
+
+  // -- Load stats --
+  function loadStats() {
+    fetch(baseUrl + '/stats?range=' + currentRange)
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var s = d.summary;
+        document.getElementById('pm-total').textContent = s.total;
+        document.getElementById('pm-success-rate').textContent = fmtPct(s.success_rate);
+        document.getElementById('pm-avg-dur').textContent = fmtDur(s.avg_duration);
+        document.getElementById('pm-p50').textContent = fmtDur(s.p50);
+        document.getElementById('pm-p95').textContent = fmtDur(s.p95);
+
+        // Throughput chart (stacked bar via filled lines)
+        if (d.throughput.length) {
+          var ts = d.throughput.map(function(r) { return parseDate(r.date); });
+          var success = d.throughput.map(function(r) { return r.success; });
+          var failure = d.throughput.map(function(r) { return r.failure; });
+          makeSimpleChart(document.getElementById('chart-throughput'), ts,
+            [success, failure],
+            [
+              { label: 'Success', stroke: SUCCESS_COLOR, fill: SUCCESS_COLOR + '40', width: 1, points: { show: false } },
+              { label: 'Failure', stroke: FAILURE_COLOR, fill: FAILURE_COLOR + '40', width: 1, points: { show: false } }
+            ]);
+        }
+
+        // Duration trend chart
+        if (d.duration_trend.length) {
+          var ts2 = d.duration_trend.map(function(r) { return parseDate(r.date); });
+          var keys = ['p50_image','p95_image','p50_deploy','p95_deploy'];
+          var labels = ['P50 Image','P95 Image','P50 Deploy','P95 Deploy'];
+          var cols = [COLORS[0], COLORS[0], COLORS[2], COLORS[2]];
+          var dashes = [[], [4,4], [], [4,4]];
+          var sData = keys.map(function(k) { return d.duration_trend.map(function(r) { return r[k] || null; }); });
+          var sDefs = keys.map(function(k, i) {
+            return { label: labels[i], stroke: cols[i], width: 1.5, dash: dashes[i], points: { show: false } };
+          });
+          makeSimpleChart(document.getElementById('chart-duration'), ts2, sData, sDefs);
+        }
+
+        // Success rate chart
+        if (d.success_rate.length) {
+          var ts3 = d.success_rate.map(function(r) { return parseDate(r.date); });
+          var rates = d.success_rate.map(function(r) { return r.rate; });
+          makeSimpleChart(document.getElementById('chart-success'), ts3, [rates],
+            [{ label: 'Success %', stroke: SUCCESS_COLOR, fill: SUCCESS_COLOR + '18', width: 1.5, points: { show: false } }]);
+        }
+
+        // Stage duration chart
+        if (d.stage_duration.length) {
+          var ts4 = d.stage_duration.map(function(r) { return parseDate(r.date); });
+          var img = d.stage_duration.map(function(r) { return r.avg_image || null; });
+          var rel = d.stage_duration.map(function(r) { return r.avg_release || null; });
+          var dep = d.stage_duration.map(function(r) { return r.avg_deploy || null; });
+          makeSimpleChart(document.getElementById('chart-stage'), ts4, [img, rel, dep],
+            [
+              { label: 'Image', stroke: COLORS[0], fill: COLORS[0] + '30', width: 1, points: { show: false } },
+              { label: 'Release', stroke: COLORS[1], fill: COLORS[1] + '30', width: 1, points: { show: false } },
+              { label: 'Deploy', stroke: COLORS[2], fill: COLORS[2] + '30', width: 1, points: { show: false } }
+            ]);
+        }
+      });
+  }
+
+  // -- Load runs --
+  function loadRuns() {
+    fetch(baseUrl + '/runs?limit=50')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var tbody = document.getElementById('runs-tbody');
+        if (!d.runs.length) {
+          tbody.innerHTML = '<tr><td colspan="7" class="text-center text-base-content/30">No pipeline runs yet</td></tr>';
+          return;
+        }
+        tbody.innerHTML = d.runs.map(function(r) {
+          function badge(status) {
+            var cls = status === 'success' ? 'badge-success' : status === 'error' ? 'badge-error' : 'badge-warning';
+            return '<span class="badge badge-xs ' + cls + '">' + status + '</span>';
+          }
+          var sha = r.sha ? r.sha.substring(0, 7) : '--';
+          var triggerBadge = r.trigger_type === 'auto'
+            ? '<span class="badge badge-xs badge-info">auto</span>'
+            : '<span class="badge badge-xs badge-ghost">manual</span>';
+          return '<tr>' +
+            '<td class="text-xs">' + (r.created ? new Date(r.created).toLocaleString() : '--') + '</td>' +
+            '<td class="font-mono text-xs">' + sha + '</td>' +
+            '<td>' + triggerBadge + '</td>' +
+            '<td>' + badge(r.image_status) + ' ' + (r.image_duration != null ? fmtDur(r.image_duration) : '--') + '</td>' +
+            '<td>' + badge(r.release_status) + ' ' + (r.release_duration != null ? fmtDur(r.release_duration) : '--') + '</td>' +
+            '<td>' + badge(r.deploy_status) + ' ' + (r.deploy_duration != null ? fmtDur(r.deploy_duration) : '--') + '</td>' +
+            '<td class="font-medium">' + (r.total_duration != null ? fmtDur(r.total_duration) : '--') + '</td>' +
+            '</tr>';
+        }).join('');
+      });
+  }
+
+  // -- Load slowest --
+  function loadSlowest() {
+    var stage = document.getElementById('slowest-stage').value;
+    fetch(baseUrl + '/slowest?range=' + currentRange + '&stage=' + stage)
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var tbody = document.getElementById('slowest-tbody');
+        if (!d.items.length) {
+          tbody.innerHTML = '<tr><td colspan="5" class="text-center text-base-content/30">No data</td></tr>';
+          return;
+        }
+        tbody.innerHTML = d.items.map(function(item, i) {
+          var sha = item.sha ? item.sha.substring(0, 7) : '--';
+          return '<tr>' +
+            '<td>' + (i + 1) + '</td>' +
+            '<td class="font-mono text-xs">' + item.id.substring(0, 8) + '</td>' +
+            '<td class="font-medium">' + fmtDur(item.duration) + '</td>' +
+            '<td class="font-mono text-xs">' + sha + '</td>' +
+            '<td class="text-xs">' + (item.created ? new Date(item.created).toLocaleString() : '--') + '</td>' +
+            '</tr>';
+        }).join('');
+      });
+  }
+
+  document.getElementById('slowest-stage').addEventListener('change', loadSlowest);
+
+  function loadAll() { loadStats(); loadRuns(); loadSlowest(); }
+  loadAll();
+  setInterval(loadAll, 60000);
+})();
+</script>
+{% endblock content %}

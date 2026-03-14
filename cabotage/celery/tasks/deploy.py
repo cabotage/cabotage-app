@@ -1549,8 +1549,11 @@ def _run_job_streaming(
 
 
 def deploy_release(deployment):
+    import datetime
+
     job_id = secrets.token_hex(4)
     deployment.job_id = job_id
+    deployment.started_at = datetime.datetime.utcnow()
     db.session.add(deployment)
     db.session.commit()
     deploy_log = []
@@ -1865,10 +1868,12 @@ def deploy_release(deployment):
             else:
                 log(f"Release command {postdeploy_command} complete!")
         deployment.complete = True
+        deployment.completed_at = datetime.datetime.utcnow()
         log(f"Deployment {deployment.id} complete")
     except DeployError as exc:
         deployment.error = True
         deployment.error_detail = str(exc)
+        deployment.completed_at = datetime.datetime.utcnow()
         if (
             deployment.deploy_metadata
             and "installation_id" in deployment.deploy_metadata
@@ -1890,6 +1895,9 @@ def deploy_release(deployment):
                 pass
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
+        from cabotage.celery.metrics import record_deploy_metrics
+
+        record_deploy_metrics(deployment)
         check.fail(
             "Deployment failed",
             detail=str(exc),
@@ -1900,6 +1908,7 @@ def deploy_release(deployment):
     except Exception as exc:
         deployment.error = True
         deployment.error_detail = "Deploy failed due to an internal error"
+        deployment.completed_at = datetime.datetime.utcnow()
         if (
             deployment.deploy_metadata
             and "installation_id" in deployment.deploy_metadata
@@ -1921,6 +1930,9 @@ def deploy_release(deployment):
                 pass
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
+        from cabotage.celery.metrics import record_deploy_metrics
+
+        record_deploy_metrics(deployment)
         check.fail(
             "Deployment failed",
             detail=str(exc),
@@ -1935,6 +1947,10 @@ def deploy_release(deployment):
             pass
     deployment.deploy_log = "\n".join(deploy_log)
     db.session.commit()
+
+    from cabotage.celery.metrics import record_deploy_metrics
+
+    record_deploy_metrics(deployment)
 
     # Resolve preview URL — only furnish it if TLS cert is ready
     app_env = deployment.application_environment
@@ -1982,6 +1998,9 @@ def deploy_release(deployment):
 
 
 def fake_deploy_release(deployment):
+    import datetime as _dt
+
+    deployment.started_at = _dt.datetime.utcnow()
     deploy_log = []
     namespace = render_namespace(deployment.release_object)
     deploy_log.append(f"Creating Namespace/{namespace.metadata.name}")
@@ -2134,7 +2153,13 @@ def fake_deploy_release(deployment):
         )
         deploy_log.append(yaml.dump(remove_none(deployment_object.to_dict())))
     deployment.deploy_log = "\n".join(deploy_log)
+    deployment.completed_at = _dt.datetime.utcnow()
     db.session.commit()
+
+    from cabotage.celery.metrics import record_deploy_metrics
+
+    record_deploy_metrics(deployment)
+
     if (
         deployment.deploy_metadata
         and "installation_id" in deployment.deploy_metadata

@@ -128,7 +128,9 @@
       <a href="{{ url_for('user.application_releases', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
          class="tab-item
                 {% if active == 'releases' %}tab-active{% endif %}">{{ icon('layers', 'w-4 h-4') }} Releases</a>
-      <span class="tab-item tab-disabled">{{ icon('bar-chart-2', 'w-4 h-4') }} Pipeline <span class="text-[0.6rem] opacity-50">(Soon)</span></span>
+      <a href="{{ url_for('user.project_application_pipeline', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
+         class="tab-item
+                {% if active == 'pipeline' %}tab-active{% endif %}">{{ icon('bar-chart-2', 'w-4 h-4') }} Pipeline</a>
       {% if config.INGRESS_DOMAIN %}
       <a href="{{ url_for('user.project_application_ingress', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
          class="tab-item
