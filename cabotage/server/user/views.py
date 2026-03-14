@@ -4336,9 +4336,7 @@ def project_application_pipeline(org_slug, project_slug, app_slug, env_slug=None
     defaults={"env_slug": None},
 )
 @login_required
-def project_application_pipeline_stats(
-    org_slug, project_slug, app_slug, env_slug=None
-):
+def project_application_pipeline_stats(org_slug, project_slug, app_slug, env_slug=None):
     org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=True
@@ -4398,21 +4396,39 @@ def project_application_pipeline_stats(
     for row in image_perc:
         key = row[0].isoformat() if row[0] else None
         trend_map.setdefault(key, {})
-        trend_map[key]["p50_image"] = float(round(row[1], 2)) if row[1] is not None else None
-        trend_map[key]["p95_image"] = float(round(row[2], 2)) if row[2] is not None else None
-        trend_map[key]["avg_image"] = float(round(row[3], 2)) if row[3] is not None else None
+        trend_map[key]["p50_image"] = (
+            float(round(row[1], 2)) if row[1] is not None else None
+        )
+        trend_map[key]["p95_image"] = (
+            float(round(row[2], 2)) if row[2] is not None else None
+        )
+        trend_map[key]["avg_image"] = (
+            float(round(row[3], 2)) if row[3] is not None else None
+        )
     for row in release_perc:
         key = row[0].isoformat() if row[0] else None
         trend_map.setdefault(key, {})
-        trend_map[key]["p50_release"] = float(round(row[1], 2)) if row[1] is not None else None
-        trend_map[key]["p95_release"] = float(round(row[2], 2)) if row[2] is not None else None
-        trend_map[key]["avg_release"] = float(round(row[3], 2)) if row[3] is not None else None
+        trend_map[key]["p50_release"] = (
+            float(round(row[1], 2)) if row[1] is not None else None
+        )
+        trend_map[key]["p95_release"] = (
+            float(round(row[2], 2)) if row[2] is not None else None
+        )
+        trend_map[key]["avg_release"] = (
+            float(round(row[3], 2)) if row[3] is not None else None
+        )
     for row in deploy_perc:
         key = row[0].isoformat() if row[0] else None
         trend_map.setdefault(key, {})
-        trend_map[key]["p50_deploy"] = float(round(row[1], 2)) if row[1] is not None else None
-        trend_map[key]["p95_deploy"] = float(round(row[2], 2)) if row[2] is not None else None
-        trend_map[key]["avg_deploy"] = float(round(row[3], 2)) if row[3] is not None else None
+        trend_map[key]["p50_deploy"] = (
+            float(round(row[1], 2)) if row[1] is not None else None
+        )
+        trend_map[key]["p95_deploy"] = (
+            float(round(row[2], 2)) if row[2] is not None else None
+        )
+        trend_map[key]["avg_deploy"] = (
+            float(round(row[3], 2)) if row[3] is not None else None
+        )
 
     duration_trend = [{"date": k, **v} for k, v in sorted(trend_map.items())]
 
@@ -4458,9 +4474,21 @@ def project_application_pipeline_stats(
     summary = {
         "total": total_deploys,
         "success_rate": overall_rate,
-        "avg_duration": float(round(summary_row[0], 2)) if summary_row and summary_row[0] is not None else None,
-        "p50": float(round(summary_row[1], 2)) if summary_row and summary_row[1] is not None else None,
-        "p95": float(round(summary_row[2], 2)) if summary_row and summary_row[2] is not None else None,
+        "avg_duration": (
+            float(round(summary_row[0], 2))
+            if summary_row and summary_row[0] is not None
+            else None
+        ),
+        "p50": (
+            float(round(summary_row[1], 2))
+            if summary_row and summary_row[1] is not None
+            else None
+        ),
+        "p95": (
+            float(round(summary_row[2], 2))
+            if summary_row and summary_row[2] is not None
+            else None
+        ),
     }
 
     return jsonify(
@@ -4482,9 +4510,7 @@ def project_application_pipeline_stats(
     defaults={"env_slug": None},
 )
 @login_required
-def project_application_pipeline_runs(
-    org_slug, project_slug, app_slug, env_slug=None
-):
+def project_application_pipeline_runs(org_slug, project_slug, app_slug, env_slug=None):
     org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=True
@@ -4493,9 +4519,9 @@ def project_application_pipeline_runs(
     limit = min(int(request.args.get("limit", 20)), 200)
     offset = max(int(request.args.get("offset", 0)), 0)
 
-    query = Deployment.query.filter_by(
-        application_environment_id=app_env.id
-    ).order_by(desc(Deployment.created))
+    query = Deployment.query.filter_by(application_environment_id=app_env.id).order_by(
+        desc(Deployment.created)
+    )
 
     total_count = query.count()
 
@@ -4504,7 +4530,9 @@ def project_application_pipeline_runs(
     # Batch-fetch releases and images to avoid N+1 queries
     release_ids = {d.release.get("id") for d in deployments if d.release}
     release_ids.discard(None)
-    releases = Release.query.filter(Release.id.in_(release_ids)).all() if release_ids else []
+    releases = (
+        Release.query.filter(Release.id.in_(release_ids)).all() if release_ids else []
+    )
 
     image_ids = {r.image.get("id") for r in releases if r.image}
     image_ids.discard(None)
@@ -4528,26 +4556,34 @@ def project_application_pipeline_runs(
         runs.append(
             {
                 "image_id": img_id,
-                "image_duration": round(img.duration_seconds, 2)
-                if img and img.duration_seconds
-                else None,
-                "image_status": "error"
-                if img and img.error
-                else ("success" if img and img.built else "pending"),
+                "image_duration": (
+                    round(img.duration_seconds, 2)
+                    if img and img.duration_seconds
+                    else None
+                ),
+                "image_status": (
+                    "error"
+                    if img and img.error
+                    else ("success" if img and img.built else "pending")
+                ),
                 "release_id": rel_id,
-                "release_duration": round(rel.duration_seconds, 2)
-                if rel and rel.duration_seconds
-                else None,
-                "release_status": "error"
-                if rel and rel.error
-                else ("success" if rel and rel.built else "pending"),
+                "release_duration": (
+                    round(rel.duration_seconds, 2)
+                    if rel and rel.duration_seconds
+                    else None
+                ),
+                "release_status": (
+                    "error"
+                    if rel and rel.error
+                    else ("success" if rel and rel.built else "pending")
+                ),
                 "deploy_id": str(d.id),
-                "deploy_duration": round(d.duration_seconds, 2)
-                if d.duration_seconds
-                else None,
-                "deploy_status": "error"
-                if d.error
-                else ("success" if d.complete else "pending"),
+                "deploy_duration": (
+                    round(d.duration_seconds, 2) if d.duration_seconds else None
+                ),
+                "deploy_status": (
+                    "error" if d.error else ("success" if d.complete else "pending")
+                ),
                 "total_duration": total,
                 "trigger_type": d.trigger_type,
                 "sha": img.commit_sha if img else None,
@@ -4555,12 +4591,14 @@ def project_application_pipeline_runs(
             }
         )
 
-    return jsonify({
-        "runs": runs,
-        "total": total_count,
-        "offset": offset,
-        "limit": limit,
-    })
+    return jsonify(
+        {
+            "runs": runs,
+            "total": total_count,
+            "offset": offset,
+            "limit": limit,
+        }
+    )
 
 
 @user_blueprint.route(
