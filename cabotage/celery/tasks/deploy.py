@@ -1662,7 +1662,6 @@ def deploy_release(deployment):
                 db.session.commit()
                 db.session.refresh(app_env)
             networking_api_instance = kubernetes.client.NetworkingV1Api(api_client)
-            release_obj = deployment.release_object
             if changed or not release_obj.ingresses:
                 # Re-snapshot from live DB after hostname reconciliation,
                 # or for old releases without serialized ingresses.
