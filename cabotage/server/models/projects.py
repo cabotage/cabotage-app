@@ -905,6 +905,8 @@ class Release(db.Model, Timestamp):
 
     @property
     def processes(self):
+        if not self.image_snapshot:
+            return {}
         return {
             k: v
             for k, v in self.image_snapshot.processes.items()
@@ -913,6 +915,8 @@ class Release(db.Model, Timestamp):
 
     @property
     def release_commands(self):
+        if not self.image_snapshot:
+            return {}
         return {
             k: v
             for k, v in self.image_snapshot.processes.items()
@@ -921,6 +925,8 @@ class Release(db.Model, Timestamp):
 
     @property
     def postdeploy_commands(self):
+        if not self.image_snapshot:
+            return {}
         return {
             k: v
             for k, v in self.image_snapshot.processes.items()
@@ -1539,6 +1545,8 @@ class ReleaseSnapshot:
 
     @property
     def processes(self):
+        if not self.image_snapshot:
+            return {}
         return {
             k: v
             for k, v in self.image_snapshot.processes.items()
@@ -1547,6 +1555,8 @@ class ReleaseSnapshot:
 
     @property
     def release_commands(self):
+        if not self.image_snapshot:
+            return {}
         return {
             k: v
             for k, v in self.image_snapshot.processes.items()
@@ -1555,6 +1565,8 @@ class ReleaseSnapshot:
 
     @property
     def postdeploy_commands(self):
+        if not self.image_snapshot:
+            return {}
         return {
             k: v
             for k, v in self.image_snapshot.processes.items()
