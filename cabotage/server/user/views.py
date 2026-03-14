@@ -4371,14 +4371,14 @@ def project_application_pipeline_stats(org_slug, project_slug, app_slug, env_slu
     # -- Duration percentiles per stage --
     def _duration_percentiles(table):
         return db.session.execute(
-            sa_text(  # nosec B608 - table name from hardcoded list, not user input
+            sa_text(
                 f"SELECT date_trunc('day', completed_at) AS day,"
                 f" percentile_cont(0.5) WITHIN GROUP"
                 f"   (ORDER BY extract(epoch FROM completed_at - started_at)) AS p50,"
                 f" percentile_cont(0.95) WITHIN GROUP"
                 f"   (ORDER BY extract(epoch FROM completed_at - started_at)) AS p95,"
                 f" avg(extract(epoch FROM completed_at - started_at)) AS avg_dur"
-                f" FROM {table}"
+                f" FROM {table}"  # nosec B608 — table from hardcoded list
                 f" WHERE application_environment_id = :ae_id"
                 f"   AND started_at IS NOT NULL AND completed_at IS NOT NULL"
                 f"   AND completed_at >= :start"
