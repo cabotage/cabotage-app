@@ -3184,6 +3184,58 @@ a.pipeline-stage-body:hover {
   padding: 1.25rem 0 0.5rem;
 }
 
+/* Settings Sub-tabs */
+.settings-subtabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 1.5rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.settings-subtabs::-webkit-scrollbar { display: none; }
+.settings-subtab {
+  padding: 0.5rem 1rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.settings-subtab:hover {
+  color: var(--text-primary);
+}
+.settings-subtab.tab-active {
+  color: var(--color-primary, oklch(0.65 0.24 265));
+  border-bottom-color: var(--color-primary, oklch(0.65 0.24 265));
+}
+.settings-override-dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  background: var(--color-warning, oklch(0.75 0.18 85));
+  flex-shrink: 0;
+}
+.settings-inherit-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  background: oklch(0.55 0.05 230 / 0.06);
+  border: 1px solid oklch(0.55 0.05 230 / 0.12);
+  border-radius: 0.5rem;
+}
+.settings-inherit-notice svg { flex-shrink: 0; opacity: 0.6; }
+
 /* Observability Panel */
 .obs-range-selector {
   display: flex;
