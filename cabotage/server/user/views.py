@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import time
+import uuid
 
 from flask import (
     Blueprint,
@@ -305,7 +306,7 @@ def _config_names(app_envs):
 def _soft_delete_app_env(app_env, organization):
     """Soft-delete an ApplicationEnvironment and clean up k8s resources."""
     _cleanup_app_env_k8s(organization, app_env)
-    app_env.deleted_at = datetime.datetime.utcnow()
+    app_env.deleted_at = datetime.datetime.now(datetime.timezone.utc)
 
 
 def _soft_delete_application(application, organization):
@@ -313,8 +314,8 @@ def _soft_delete_application(application, organization):
     for app_env in application.application_environments:
         if app_env.deleted_at is None:
             _soft_delete_app_env(app_env, organization)
-    application.deleted_at = datetime.datetime.utcnow()
-    application.slug = f"{application.slug}--deleted-{int(time.time())}"
+    application.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+    application.slug = f"{application.slug}--deleted-{uuid.uuid4().hex[:12]}"
 
 
 def _soft_delete_environment(environment, organization):
@@ -322,9 +323,9 @@ def _soft_delete_environment(environment, organization):
     for app_env in environment.application_environments:
         if app_env.deleted_at is None:
             _cleanup_app_env_k8s(organization, app_env)
-            app_env.deleted_at = datetime.datetime.utcnow()
-    environment.deleted_at = datetime.datetime.utcnow()
-    environment.slug = f"{environment.slug}--deleted-{int(time.time())}"
+            app_env.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+    environment.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+    environment.slug = f"{environment.slug}--deleted-{uuid.uuid4().hex[:12]}"
 
 
 def _soft_delete_project(project, organization):
@@ -335,8 +336,8 @@ def _soft_delete_project(project, organization):
     for env in project.project_environments:
         if env.deleted_at is None:
             _soft_delete_environment(env, organization)
-    project.deleted_at = datetime.datetime.utcnow()
-    project.slug = f"{project.slug}--deleted-{int(time.time())}"
+    project.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+    project.slug = f"{project.slug}--deleted-{uuid.uuid4().hex[:12]}"
 
 
 def _associate_app_with_environment(application, environment, organization, project):
@@ -1481,8 +1482,8 @@ def organization_delete(org_slug):
         for project in list(organization.projects):
             if project.deleted_at is None:
                 _soft_delete_project(project, organization)
-        organization.deleted_at = datetime.datetime.utcnow()
-        organization.slug = f"{organization.slug}--deleted-{int(time.time())}"
+        organization.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        organization.slug = f"{organization.slug}--deleted-{uuid.uuid4().hex[:12]}"
         db.session.commit()
         flash(f"Organization {organization.name} deleted.", "success")
         return redirect(url_for("user.organizations"))
