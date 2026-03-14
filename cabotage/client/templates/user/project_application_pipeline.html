@@ -330,7 +330,7 @@
     document.querySelectorAll('#range-selector button').forEach(function(b) {
       b.className = b.dataset.range === currentRange ? 'btn btn-xs btn-primary' : 'btn btn-xs btn-ghost';
     });
-    loadAll();
+    loadAll(true);
   });
 
   // ── Tooltip plugin (cursor-following) ──
@@ -626,7 +626,7 @@
       });
   }
 
-  function loadAll() { loadStats(); loadRuns(); loadSlowest(); }
+  function loadAll(resetPaging) { if (resetPaging) runsOffset = 0; loadStats(); loadRuns(); loadSlowest(); }
   loadAll();
   setInterval(loadAll, 60000);
 
