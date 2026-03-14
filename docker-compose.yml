@@ -111,9 +111,6 @@ services:
         DEVEL: yes
     image: cabotage-app:docker-compose
     environment: &base_environment
-      # Runs as `nobody`, override the home directory
-      - PIP_CACHE_DIR=/opt/cabotage-app/src/dev/.pip-cache
-      - PIP_TOOLS_CACHE_DIR=/opt/cabotage-app/src/dev/.pip-tools-cache
       # Application configuration
       - CABOTAGE_BCRYPT_LOG_ROUNDS=4
       - CABOTAGE_DEBUG=True

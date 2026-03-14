@@ -28,22 +28,20 @@ COPY --from=moby/buildkit:v0.18.2-rootless /usr/bin/newuidmap /usr/bin/newuidmap
 COPY --from=moby/buildkit:v0.18.2-rootless /usr/bin/newgidmap /usr/bin/newgidmap
 
 ENV PYTHONUNBUFFERED 1
-
-RUN set -x \
-    && python3 -m venv /opt/cabotage-app
-
+ENV UV_PROJECT_ENVIRONMENT=/opt/cabotage-app
 ENV PATH="/opt/cabotage-app/bin:${PATH}"
 
-RUN pip --no-cache-dir --disable-pip-version-check install --upgrade pip setuptools wheel
+COPY --from=ghcr.io/astral-sh/uv:0.7 /uv /usr/local/bin/uv
 
-COPY requirements /tmp/requirements
+COPY pyproject.toml uv.lock /opt/cabotage-app/src/
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install -r /tmp/requirements/base.txt \
-    $(if [ "$DEVEL" = "yes" ]; then echo '-r /tmp/requirements/dev.txt'; fi)
+WORKDIR /opt/cabotage-app/src
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-install-project --no-editable \
+    $(if [ "$DEVEL" != "yes" ]; then echo '--no-dev'; fi)
 
 COPY . /opt/cabotage-app/src/
-WORKDIR /opt/cabotage-app/src/
 
 # Build and minify static assets for production
 COPY --from=oven/bun:1-slim /usr/local/bin/bun /usr/local/bin/bun
