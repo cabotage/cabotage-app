@@ -2927,7 +2927,7 @@ def application_release_create(org_slug, project_slug, app_slug):
     app_env = _resolve_app_env(application, environment_id=environment_id)
 
     release = application.create_release(app_env=app_env)
-    release.release_metadata = {"trigger": "manual_release"}
+    release.release_metadata = {"trigger": "manual_release", "triggered_by": current_user.username}
     db.session.add(release)
     db.session.flush()
     activity = Activity(
@@ -3026,7 +3026,7 @@ def application_images_build_fromsource(org_slug, project_slug, app_slug):
         application_environment_id=app_env.id,
         _repository_name=application.registry_repository_name(app_env),
         build_ref=build_ref,
-        image_metadata={"auto_deploy": True, "trigger": "manual_deploy"} if auto_deploy else {"trigger": "manual_build"},
+        image_metadata={"auto_deploy": True, "trigger": "manual_deploy", "triggered_by": current_user.username} if auto_deploy else {"trigger": "manual_build", "triggered_by": current_user.username},
     )
     db.session.add(image)
     db.session.flush()
@@ -3394,7 +3394,7 @@ def release_deploy(org_slug, project_slug, app_slug, release_id):
         application_id=release.application.id,
         application_environment_id=release.application_environment_id,
         release=release.asdict,
-        deploy_metadata={"trigger": "manual_deploy"},
+        deploy_metadata={"trigger": "manual_deploy", "triggered_by": current_user.username},
     )
     db.session.add(deployment)
     db.session.flush()
