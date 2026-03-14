@@ -91,3 +91,5 @@ class Config(metaclass=MetaFlaskEnv):
     LOKI_URL = None
     LOKI_VERIFY = None
     PUSHGATEWAY_URL = None
+    REGISTRY_PULL_K8S = None
+    TESTING = False

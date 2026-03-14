@@ -19,115 +19,240 @@
 {% endblock tab_bar %}
 
 {% block content %}
-  <div class="settings-page">
-    <div class="flex items-center justify-between mb-4">
-      <div>
-        <h1 class="text-lg font-semibold text-base-content">Pipeline Stats</h1>
-        <p class="text-xs text-base-content/40">Build, release, and deploy performance metrics</p>
-      </div>
-      <div class="flex gap-1.5" id="range-selector">
-        {% for r in ['7d', '30d', '90d'] %}
-          <button data-range="{{ r }}"
-             class="btn btn-xs {% if current_range == r %}btn-primary{% else %}btn-ghost{% endif %}">{{ r }}</button>
-        {% endfor %}
-      </div>
-    </div>
+<style>
+/* ── Pipeline page tokens ── */
+.pipe-page { --c-image: #06b6d4; --c-release: #a78bfa; --c-deploy: #f472b6;
+  --c-ok: #34d399; --c-fail: #f87171; --c-warn: #fbbf24; }
 
-    {# Summary cards #}
-    <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
-      <div class="obs-metric-card">
-        <div class="obs-metric-label">Total Deploys</div>
-        <div class="obs-metric-value" id="pm-total">--</div>
-      </div>
-      <div class="obs-metric-card">
-        <div class="obs-metric-label">Success Rate</div>
-        <div class="obs-metric-value" id="pm-success-rate">--</div>
-      </div>
-      <div class="obs-metric-card">
-        <div class="obs-metric-label">Avg Duration</div>
-        <div class="obs-metric-value" id="pm-avg-dur">--</div>
-      </div>
-      <div class="obs-metric-card">
-        <div class="obs-metric-label">P50</div>
-        <div class="obs-metric-value" id="pm-p50">--</div>
-      </div>
-      <div class="obs-metric-card">
-        <div class="obs-metric-label">P95</div>
-        <div class="obs-metric-value" id="pm-p95">--</div>
-      </div>
-    </div>
+/* ── Summary strip ── */
+.pipe-summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.5rem; }
+@media (max-width: 640px) { .pipe-summary { grid-template-columns: repeat(2, 1fr); } }
+.pipe-kpi { padding: 0.75rem 1rem; border-radius: 0.75rem; background: var(--surface-card);
+  border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 0.15rem; }
+.pipe-kpi-label { font-size: 0.625rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-faint); }
+.pipe-kpi-val { font-size: 1.375rem; font-weight: 700; color: var(--text-bright);
+  font-family: 'JetBrains Mono', ui-monospace, monospace; line-height: 1.1; }
+.pipe-kpi-sub { font-size: 0.625rem; color: var(--text-faintest);
+  font-family: 'JetBrains Mono', ui-monospace, monospace; }
 
-    {# Charts grid #}
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-      <div class="card bg-base-200/40 p-4">
-        <h3 class="text-sm font-medium text-base-content/60 mb-2">Throughput</h3>
-        <div id="chart-throughput" class="w-full" style="min-height:220px"></div>
-      </div>
-      <div class="card bg-base-200/40 p-4">
-        <h3 class="text-sm font-medium text-base-content/60 mb-2">Duration Trend</h3>
-        <div id="chart-duration" class="w-full" style="min-height:220px"></div>
-      </div>
-      <div class="card bg-base-200/40 p-4">
-        <h3 class="text-sm font-medium text-base-content/60 mb-2">Success Rate</h3>
-        <div id="chart-success" class="w-full" style="min-height:220px"></div>
-      </div>
-      <div class="card bg-base-200/40 p-4">
-        <h3 class="text-sm font-medium text-base-content/60 mb-2">Duration by Stage</h3>
-        <div id="chart-stage" class="w-full" style="min-height:220px"></div>
-      </div>
-    </div>
+/* ── Chart cards ── */
+.pipe-chart-card { background: var(--surface-card); border: 1px solid var(--border-color);
+  border-radius: 0.75rem; padding: 1rem; position: relative; overflow: hidden; }
+.pipe-chart-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
+.pipe-chart-title { font-size: 0.75rem; font-weight: 600; color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: 0.04em; }
+.pipe-chart-legend { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+.pipe-legend-item { display: flex; align-items: center; gap: 4px; font-size: 0.625rem;
+  color: var(--text-faintest); }
+.pipe-legend-dot { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
 
-    {# Recent runs table #}
-    <div class="card bg-base-200/40 p-4 mb-6">
-      <h3 class="text-sm font-medium text-base-content/60 mb-3">Recent Pipeline Runs</h3>
-      <div class="overflow-x-auto">
-        <table class="table table-xs table-zebra w-full">
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>SHA</th>
-              <th>Trigger</th>
-              <th>Image</th>
-              <th>Release</th>
-              <th>Deploy</th>
-              <th>Total</th>
-            </tr>
-          </thead>
-          <tbody id="runs-tbody">
-            <tr><td colspan="7" class="text-center text-base-content/30">Loading...</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+/* ── Tooltip (follows cursor) ── */
+.pipe-tip { display: none; position: absolute; pointer-events: none; z-index: 20;
+  background: var(--surface-card); border: 1px solid var(--border-color);
+  border-radius: 0.5rem; padding: 8px 10px; font-size: 0.6875rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 120px; }
+.pipe-tip-time { font-weight: 600; color: var(--text-faint); margin-bottom: 4px;
+  font-size: 0.625rem; }
+.pipe-tip-row { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
+.pipe-tip-dot { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
+.pipe-tip-label { color: var(--text-faint); min-width: 50px; }
+.pipe-tip-val { margin-left: auto; font-weight: 700; color: var(--text-bright);
+  font-family: 'JetBrains Mono', ui-monospace, monospace; }
 
-    {# Slowest builds #}
-    <div class="card bg-base-200/40 p-4">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-sm font-medium text-base-content/60">Slowest Builds</h3>
-        <select id="slowest-stage" class="select select-xs select-bordered">
-          <option value="image">Image</option>
-          <option value="release">Release</option>
-          <option value="deploy">Deploy</option>
-        </select>
-      </div>
-      <div class="overflow-x-auto">
-        <table class="table table-xs table-zebra w-full">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>ID</th>
-              <th>Duration</th>
-              <th>SHA</th>
-              <th>Created</th>
-            </tr>
-          </thead>
-          <tbody id="slowest-tbody">
-            <tr><td colspan="5" class="text-center text-base-content/30">Loading...</td></tr>
-          </tbody>
-        </table>
-      </div>
+/* ── Stage breakdown row (3 mini-charts) ── */
+.pipe-stage-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+@media (max-width: 768px) { .pipe-stage-grid { grid-template-columns: 1fr; } }
+.pipe-stage-card { background: var(--surface-card); border: 1px solid var(--border-color);
+  border-radius: 0.75rem; padding: 0.875rem; }
+.pipe-stage-header { display: flex; align-items: center; gap: 6px; margin-bottom: 0.375rem; }
+.pipe-stage-dot { width: 8px; height: 8px; border-radius: 3px; }
+.pipe-stage-name { font-size: 0.6875rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--text-faint); }
+.pipe-stage-val { font-size: 1rem; font-weight: 700; color: var(--text-bright);
+  font-family: 'JetBrains Mono', ui-monospace, monospace; margin-left: auto; }
+
+/* ── Runs timeline ── */
+.pipe-run { display: grid; grid-template-columns: 140px 70px 56px 1fr 64px;
+  align-items: center; gap: 0; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border-color);
+  font-size: 0.75rem; transition: background 0.1s; }
+.pipe-run:hover { background: var(--hover-overlay); }
+.pipe-run-head { display: grid; grid-template-columns: 140px 70px 56px 1fr 64px;
+  padding: 0.5rem 0.75rem; font-size: 0.625rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--text-faintest); border-bottom: 1px solid var(--border-color); }
+
+/* Pipeline stage cells */
+.pipe-stages { display: flex; gap: 2px; align-items: center; }
+.pipe-stage-seg { display: flex; align-items: center; gap: 4px; padding: 3px 0; flex: 1; }
+.pipe-seg-bar { height: 20px; border-radius: 3px; min-width: 3px; opacity: 0.85; }
+.pipe-seg-dur { font-size: 0.6875rem; color: var(--text-faint);
+  font-family: 'JetBrains Mono', ui-monospace, monospace; white-space: nowrap; }
+.pipe-seg-arrow { color: var(--text-faintest); font-size: 0.5rem; flex-shrink: 0; padding: 0 1px; }
+
+/* Status dots */
+.pipe-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.pipe-dot-ok { background: var(--c-ok); }
+.pipe-dot-err { background: var(--c-fail); }
+.pipe-dot-pend { background: var(--c-warn); }
+
+.pipe-total { font-weight: 700; font-family: 'JetBrains Mono', ui-monospace, monospace;
+  text-align: right; color: var(--text-bright); }
+.pipe-sha { font-family: 'JetBrains Mono', ui-monospace, monospace; color: var(--text-faint); }
+.pipe-trigger { font-size: 0.625rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.04em; padding: 2px 6px; border-radius: 3px; text-align: center; }
+.pipe-trigger-auto { background: rgba(6,182,212,0.12); color: var(--c-image); }
+.pipe-trigger-manual { background: var(--surface-inset); color: var(--text-faint); }
+.pipe-time { color: var(--text-faintest); font-size: 0.6875rem; }
+
+/* ── Slowest table ── */
+.pipe-slowest-row { display: grid; grid-template-columns: 28px 80px 1fr 72px 140px;
+  align-items: center; padding: 0.375rem 0.75rem; border-bottom: 1px solid var(--border-color);
+  font-size: 0.75rem; }
+.pipe-slowest-row:hover { background: var(--hover-overlay); }
+.pipe-slowest-rank { font-weight: 700; color: var(--text-faintest); font-size: 0.6875rem; }
+.pipe-slowest-bar { height: 16px; border-radius: 3px; opacity: 0.7; }
+
+/* ── Section ── */
+.pipe-section { background: var(--surface-card); border: 1px solid var(--border-color);
+  border-radius: 0.75rem; overflow: hidden; }
+.pipe-section-head { display: flex; align-items: center; justify-content: space-between;
+  padding: 0.75rem 0.75rem 0; }
+.pipe-section-title { font-size: 0.75rem; font-weight: 600; color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* ── uPlot overrides ── */
+.pipe-chart-card .u-legend { display: none !important; }
+</style>
+
+<div class="settings-page pipe-page">
+  {# Header #}
+  <div class="flex items-center justify-between mb-5">
+    <div>
+      <h1 class="text-lg font-semibold text-base-content">Pipeline</h1>
+      <p class="text-xs" style="color:var(--text-faintest)">Build &middot; Release &middot; Deploy</p>
+    </div>
+    <div class="flex gap-1" id="range-selector">
+      {% for r in ['7d', '30d', '90d'] %}
+        <button data-range="{{ r }}"
+           class="btn btn-xs {% if current_range == r %}btn-primary{% else %}btn-ghost{% endif %}">{{ r }}</button>
+      {% endfor %}
     </div>
   </div>
+
+  {# KPI strip #}
+  <div class="pipe-summary mb-5">
+    <div class="pipe-kpi">
+      <span class="pipe-kpi-label">Deploys</span>
+      <span class="pipe-kpi-val" id="pm-total">--</span>
+    </div>
+    <div class="pipe-kpi">
+      <span class="pipe-kpi-label">Success</span>
+      <span class="pipe-kpi-val" id="pm-success-rate">--</span>
+    </div>
+    <div class="pipe-kpi">
+      <span class="pipe-kpi-label">Avg</span>
+      <span class="pipe-kpi-val" id="pm-avg-dur">--</span>
+    </div>
+    <div class="pipe-kpi">
+      <span class="pipe-kpi-label">P50</span>
+      <span class="pipe-kpi-val" id="pm-p50">--</span>
+    </div>
+    <div class="pipe-kpi">
+      <span class="pipe-kpi-label">P95</span>
+      <span class="pipe-kpi-val" id="pm-p95">--</span>
+    </div>
+  </div>
+
+  {# Charts: row 1 — throughput + success rate #}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
+    <div class="pipe-chart-card">
+      <div class="pipe-chart-head">
+        <span class="pipe-chart-title">Throughput</span>
+        <div class="pipe-chart-legend">
+          <span class="pipe-legend-item"><span class="pipe-legend-dot" style="background:var(--c-ok)"></span>Success</span>
+          <span class="pipe-legend-item"><span class="pipe-legend-dot" style="background:var(--c-fail)"></span>Failure</span>
+        </div>
+      </div>
+      <div id="chart-throughput" style="min-height:180px"></div>
+    </div>
+    <div class="pipe-chart-card">
+      <div class="pipe-chart-head">
+        <span class="pipe-chart-title">Success Rate</span>
+      </div>
+      <div id="chart-success" style="min-height:180px"></div>
+    </div>
+  </div>
+
+  {# Stage breakdown — 3 individual mini-charts with own Y axis #}
+  <div class="pipe-stage-grid mb-3">
+    <div class="pipe-stage-card">
+      <div class="pipe-stage-header">
+        <span class="pipe-stage-dot" style="background:var(--c-image)"></span>
+        <span class="pipe-stage-name">Image Build</span>
+        <span class="pipe-stage-val" id="stage-image-avg">--</span>
+      </div>
+      <div id="chart-stage-image" style="min-height:120px"></div>
+    </div>
+    <div class="pipe-stage-card">
+      <div class="pipe-stage-header">
+        <span class="pipe-stage-dot" style="background:var(--c-release)"></span>
+        <span class="pipe-stage-name">Release Build</span>
+        <span class="pipe-stage-val" id="stage-release-avg">--</span>
+      </div>
+      <div id="chart-stage-release" style="min-height:120px"></div>
+    </div>
+    <div class="pipe-stage-card">
+      <div class="pipe-stage-header">
+        <span class="pipe-stage-dot" style="background:var(--c-deploy)"></span>
+        <span class="pipe-stage-name">Deploy</span>
+        <span class="pipe-stage-val" id="stage-deploy-avg">--</span>
+      </div>
+      <div id="chart-stage-deploy" style="min-height:120px"></div>
+    </div>
+  </div>
+
+  {# Duration trend — all stages overlaid #}
+  <div class="pipe-chart-card mb-5">
+    <div class="pipe-chart-head">
+      <span class="pipe-chart-title">Duration Trend (P50 / P95)</span>
+      <div class="pipe-chart-legend">
+        <span class="pipe-legend-item"><span class="pipe-legend-dot" style="background:var(--c-image)"></span>Image</span>
+        <span class="pipe-legend-item"><span class="pipe-legend-dot" style="background:var(--c-release)"></span>Release</span>
+        <span class="pipe-legend-item"><span class="pipe-legend-dot" style="background:var(--c-deploy)"></span>Deploy</span>
+        <span class="pipe-legend-item" style="opacity:0.5">── P50 &ensp; ┈┈ P95</span>
+      </div>
+    </div>
+    <div id="chart-duration" style="min-height:200px"></div>
+  </div>
+
+  {# Recent runs #}
+  <div class="pipe-section mb-5">
+    <div class="pipe-section-head">
+      <span class="pipe-section-title">Recent Runs</span>
+    </div>
+    <div class="pipe-run-head">
+      <span>Time</span><span>SHA</span><span>Trigger</span><span>Stages</span><span style="text-align:right">Total</span>
+    </div>
+    <div id="runs-container">
+      <div class="pipe-run"><span class="pipe-time" style="grid-column:1/-1;text-align:center;color:var(--text-faintest)">Loading...</span></div>
+    </div>
+  </div>
+
+  {# Slowest #}
+  <div class="pipe-section">
+    <div class="pipe-section-head mb-0" style="padding-bottom:0.5rem">
+      <span class="pipe-section-title">Slowest</span>
+      <div class="flex gap-1" id="slowest-selector">
+        <button data-stage="image" class="btn btn-xs btn-primary">Image</button>
+        <button data-stage="release" class="btn btn-xs btn-ghost">Release</button>
+        <button data-stage="deploy" class="btn btn-xs btn-ghost">Deploy</button>
+      </div>
+    </div>
+    <div id="slowest-container">
+      <div class="pipe-slowest-row"><span style="grid-column:1/-1;text-align:center;color:var(--text-faintest)">Loading...</span></div>
+    </div>
+  </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.iife.min.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.min.css">
@@ -137,26 +262,48 @@
   var baseUrl = {{ url_for('user.project_application_pipeline', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug)|tojson }};
   var currentRange = {{ current_range|tojson }};
 
-  var COLORS = ['#22d3ee','#a78bfa','#f472b6','#34d399','#fbbf24','#fb923c'];
-  var SUCCESS_COLOR = '#34d399';
-  var FAILURE_COLOR = '#f87171';
-  var isDark = document.documentElement.getAttribute('data-theme') === 'dark' ||
-               window.matchMedia('(prefers-color-scheme: dark)').matches;
-  var AXIS_STROKE = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)';
-  var GRID_STROKE = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+  // ── Colors ──
+  var C = {
+    image: '#06b6d4', release: '#a78bfa', deploy: '#f472b6',
+    ok: '#34d399', fail: '#f87171', warn: '#fbbf24'
+  };
+  var cs = getComputedStyle(document.documentElement);
+  var AXIS_STROKE = cs.getPropertyValue('--text-faintest').trim() || 'rgba(255,255,255,0.12)';
+  var GRID_STROKE = cs.getPropertyValue('--border-color').trim() || 'rgba(255,255,255,0.05)';
 
+  // ── Formatting ──
   function fmtDur(v) {
-    if (v == null) return '--';
+    if (v == null || isNaN(v)) return '--';
+    v = +v;
     if (v < 60) return v.toFixed(1) + 's';
-    return (v / 60).toFixed(1) + 'm';
+    if (v < 3600) return (v / 60).toFixed(1) + 'm';
+    return (v / 3600).toFixed(1) + 'h';
   }
-
   function fmtPct(v) {
-    if (v == null) return '--';
-    return v.toFixed(1) + '%';
+    if (v == null || isNaN(v)) return '--';
+    return (+v).toFixed(1) + '%';
+  }
+  function fmtTime(ts) {
+    var d = new Date(ts * 1000);
+    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+  function parseDate(s) {
+    if (!s) return null;
+    var t = new Date(s).getTime();
+    return isNaN(t) ? null : Math.floor(t / 1000);
+  }
+  function relTime(iso) {
+    if (!iso) return '--';
+    var d = new Date(iso);
+    var now = Date.now();
+    var diff = (now - d.getTime()) / 1000;
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
 
-  // -- Range selector --
+  // ── Range selector ──
   document.getElementById('range-selector').addEventListener('click', function(e) {
     var btn = e.target.closest('[data-range]');
     if (!btn) return;
@@ -167,187 +314,285 @@
     loadAll();
   });
 
-  function showEmpty(el) {
-    el.innerHTML = '<div class="flex items-center justify-center text-base-content/30 text-sm" style="height:220px">No data available</div>';
-  }
-
-  function makeSimpleChart(el, timestamps, seriesData, seriesDefs) {
-    // Filter out null/NaN timestamps
-    var validIdx = [];
-    for (var i = 0; i < timestamps.length; i++) {
-      if (timestamps[i] != null && !isNaN(timestamps[i])) validIdx.push(i);
-    }
-    if (validIdx.length < 2) {
-      showEmpty(el);
-      return;
-    }
-    var ts = validIdx.map(function(i) { return timestamps[i]; });
-    var sd = seriesData.map(function(s) { return validIdx.map(function(i) { return s[i]; }); });
-    timestamps = ts;
-    seriesData = sd;
-    el.innerHTML = '';
-    var width = el.clientWidth || 400;
-    var height = 220;
-    var data = [timestamps].concat(seriesData);
-    var series = [{}].concat(seriesDefs);
-    var opts = {
-      width: width,
-      height: height,
-      series: series,
-      axes: [
-        { stroke: AXIS_STROKE, grid: { stroke: GRID_STROKE } },
-        { stroke: AXIS_STROKE, grid: { stroke: GRID_STROKE }, size: 55 }
-      ],
-      cursor: { drag: { x: false, y: false } },
-      legend: { show: seriesDefs.length <= 6, live: false },
-      scales: { x: { time: true }, y: { range: function(u, dmin, dmax) { return [0, (dmax || 1) * 1.1]; } } }
+  // ── Tooltip plugin (cursor-following) ──
+  function tooltipPlugin(valueFmt) {
+    var tip = document.createElement('div');
+    tip.className = 'pipe-tip';
+    return {
+      hooks: {
+        init: function(u) { u.over.appendChild(tip); },
+        setCursor: function(u) {
+          var idx = u.cursor.idx;
+          if (idx == null) { tip.style.display = 'none'; return; }
+          var ts = u.data[0][idx];
+          var html = '<div class="pipe-tip-time">' + fmtTime(ts) + '</div>';
+          var hasAny = false;
+          for (var i = 1; i < u.series.length; i++) {
+            var s = u.series[i];
+            if (!s.show) continue;
+            var v = u.data[i] ? u.data[i][idx] : null;
+            if (v == null) continue;
+            hasAny = true;
+            var color = s._stroke || s.stroke;
+            if (typeof color === 'function') color = color(u, i);
+            html += '<div class="pipe-tip-row">' +
+              '<span class="pipe-tip-dot" style="background:' + color + '"></span>' +
+              '<span class="pipe-tip-label">' + (s.label || '') + '</span>' +
+              '<span class="pipe-tip-val">' + (valueFmt || fmtDur)(v) + '</span></div>';
+          }
+          if (!hasAny) { tip.style.display = 'none'; return; }
+          tip.innerHTML = html;
+          tip.style.display = 'block';
+          var left = u.cursor.left, ow = u.over.clientWidth, tw = tip.offsetWidth;
+          var x = left + 14; if (x + tw > ow) x = left - tw - 14;
+          var y = u.cursor.top - tip.offsetHeight - 10; if (y < 0) y = u.cursor.top + 14;
+          tip.style.left = x + 'px'; tip.style.top = y + 'px';
+        }
+      }
     };
-    new uPlot(opts, data, el);
   }
 
-  function parseDate(s) {
-    if (!s) return null;
-    var t = new Date(s).getTime();
-    return isNaN(t) ? null : Math.floor(t / 1000);
+  // ── Chart builder ──
+  function showEmpty(el) {
+    el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-faintest);font-size:0.75rem">No data</div>';
   }
 
-  // -- Load stats --
+  function buildChart(el, timestamps, seriesData, seriesDefs, opts) {
+    opts = opts || {};
+    // filter valid
+    var valid = [];
+    for (var i = 0; i < timestamps.length; i++) {
+      if (timestamps[i] != null && !isNaN(timestamps[i])) valid.push(i);
+    }
+    if (!valid.length) { showEmpty(el); return; }
+    var ts = valid.map(function(i) { return timestamps[i]; });
+    var sd = seriesData.map(function(s) { return valid.map(function(i) { return s[i]; }); });
+    // single-point: show as centered dot
+    if (ts.length === 1) {
+      ts = [ts[0] - 43200, ts[0], ts[0] + 43200];
+      sd = sd.map(function(s) { return [null, s[0], null]; });
+      // override to show points for single data
+      seriesDefs = seriesDefs.map(function(d) {
+        return Object.assign({}, d, { points: { show: true, size: 6, fill: d.stroke } });
+      });
+    }
+    el.innerHTML = '';
+    var w = el.clientWidth || 400;
+    var h = parseInt(getComputedStyle(el).minHeight) || 180;
+    var data = [ts].concat(sd);
+    var series = [{}].concat(seriesDefs);
+    var valueFmt = opts.valueFmt || fmtDur;
+    var chartOpts = {
+      width: w, height: h, series: series,
+      axes: [
+        { stroke: AXIS_STROKE, grid: { stroke: GRID_STROKE }, ticks: { stroke: GRID_STROKE } },
+        { stroke: AXIS_STROKE, grid: { stroke: GRID_STROKE }, ticks: { stroke: GRID_STROKE },
+          size: 50, values: function(u, vals) { return vals.map(valueFmt); } }
+      ],
+      plugins: [tooltipPlugin(valueFmt)],
+      cursor: { points: { size: 6, fill: function(u, i) { return u.series[i].stroke; }, stroke: 'transparent' } },
+      legend: { show: false },
+      scales: { x: { time: true }, y: { range: function(u, dmin, dmax) {
+        var pad = (dmax - dmin) * 0.15 || 1;
+        return [Math.max(0, dmin - pad * 0.5), dmax + pad];
+      } } }
+    };
+    if (opts.bars) {
+      chartOpts.scales.y.range = function(u, dmin, dmax) { return [0, (dmax || 1) * 1.2]; };
+    }
+    new uPlot(chartOpts, data, el);
+  }
+
+  // ── Load stats ──
   function loadStats() {
     fetch(baseUrl + '/stats?range=' + currentRange)
       .then(function(r) { return r.json(); })
       .then(function(d) {
         var s = d.summary;
-        document.getElementById('pm-total').textContent = s.total;
+        document.getElementById('pm-total').textContent = s.total || 0;
         document.getElementById('pm-success-rate').textContent = fmtPct(s.success_rate);
         document.getElementById('pm-avg-dur').textContent = fmtDur(s.avg_duration);
         document.getElementById('pm-p50').textContent = fmtDur(s.p50);
         document.getElementById('pm-p95').textContent = fmtDur(s.p95);
 
-        // Throughput chart (stacked bar via filled lines)
+        // Throughput
         if (d.throughput.length) {
           var ts = d.throughput.map(function(r) { return parseDate(r.date); });
-          var success = d.throughput.map(function(r) { return r.success; });
-          var failure = d.throughput.map(function(r) { return r.failure; });
-          makeSimpleChart(document.getElementById('chart-throughput'), ts,
-            [success, failure],
+          buildChart(document.getElementById('chart-throughput'), ts,
+            [d.throughput.map(function(r) { return r.success; }),
+             d.throughput.map(function(r) { return r.failure; })],
             [
-              { label: 'Success', stroke: SUCCESS_COLOR, fill: SUCCESS_COLOR + '40', width: 1, points: { show: false } },
-              { label: 'Failure', stroke: FAILURE_COLOR, fill: FAILURE_COLOR + '40', width: 1, points: { show: false } }
-            ]);
-        } else {
-          showEmpty(document.getElementById('chart-throughput'));
-        }
+              { label: 'Success', stroke: C.ok, fill: C.ok + '50', width: 0,
+                paths: uPlot.paths.bars ? uPlot.paths.bars({ size: [0.6, 100], align: 0 }) : undefined,
+                points: { show: false } },
+              { label: 'Failure', stroke: C.fail, fill: C.fail + '50', width: 0,
+                paths: uPlot.paths.bars ? uPlot.paths.bars({ size: [0.6, 100], align: 0 }) : undefined,
+                points: { show: false } }
+            ], { bars: true, valueFmt: function(v) { return Math.round(v).toString(); } });
+        } else { showEmpty(document.getElementById('chart-throughput')); }
 
-        // Duration trend chart
-        if (d.duration_trend.length) {
-          var ts2 = d.duration_trend.map(function(r) { return parseDate(r.date); });
-          var keys = ['p50_image','p95_image','p50_deploy','p95_deploy'];
-          var labels = ['P50 Image','P95 Image','P50 Deploy','P95 Deploy'];
-          var cols = [COLORS[0], COLORS[0], COLORS[2], COLORS[2]];
-          var dashes = [[], [4,4], [], [4,4]];
-          var sData = keys.map(function(k) { return d.duration_trend.map(function(r) { return r[k] || null; }); });
-          var sDefs = keys.map(function(k, i) {
-            return { label: labels[i], stroke: cols[i], width: 1.5, dash: dashes[i], points: { show: false } };
-          });
-          makeSimpleChart(document.getElementById('chart-duration'), ts2, sData, sDefs);
-        } else {
-          showEmpty(document.getElementById('chart-duration'));
-        }
-
-        // Success rate chart
+        // Success rate
         if (d.success_rate.length) {
           var ts3 = d.success_rate.map(function(r) { return parseDate(r.date); });
-          var rates = d.success_rate.map(function(r) { return r.rate; });
-          makeSimpleChart(document.getElementById('chart-success'), ts3, [rates],
-            [{ label: 'Success %', stroke: SUCCESS_COLOR, fill: SUCCESS_COLOR + '18', width: 1.5, points: { show: false } }]);
-        } else {
-          showEmpty(document.getElementById('chart-success'));
-        }
+          buildChart(document.getElementById('chart-success'), ts3,
+            [d.success_rate.map(function(r) { return r.rate; })],
+            [{ label: 'Success %', stroke: C.ok, fill: C.ok + '15', width: 2, points: { show: false } }],
+            { valueFmt: function(v) { return fmtPct(v); } });
+        } else { showEmpty(document.getElementById('chart-success')); }
 
-        // Stage duration chart
-        if (d.stage_duration.length) {
-          var ts4 = d.stage_duration.map(function(r) { return parseDate(r.date); });
-          var img = d.stage_duration.map(function(r) { return r.avg_image || null; });
-          var rel = d.stage_duration.map(function(r) { return r.avg_release || null; });
-          var dep = d.stage_duration.map(function(r) { return r.avg_deploy || null; });
-          makeSimpleChart(document.getElementById('chart-stage'), ts4, [img, rel, dep],
-            [
-              { label: 'Image', stroke: COLORS[0], fill: COLORS[0] + '30', width: 1, points: { show: false } },
-              { label: 'Release', stroke: COLORS[1], fill: COLORS[1] + '30', width: 1, points: { show: false } },
-              { label: 'Deploy', stroke: COLORS[2], fill: COLORS[2] + '30', width: 1, points: { show: false } }
-            ]);
-        } else {
-          showEmpty(document.getElementById('chart-stage'));
-        }
+        // Duration trend (all stages overlaid)
+        if (d.duration_trend.length) {
+          var ts2 = d.duration_trend.map(function(r) { return parseDate(r.date); });
+          var keys = ['p50_image','p95_image','p50_release','p95_release','p50_deploy','p95_deploy'];
+          var labels = ['Image P50','Image P95','Release P50','Release P95','Deploy P50','Deploy P95'];
+          var cols = [C.image, C.image, C.release, C.release, C.deploy, C.deploy];
+          var dashes = [[], [5,3], [], [5,3], [], [5,3]];
+          var sData = keys.map(function(k) { return d.duration_trend.map(function(r) { return r[k] != null ? +r[k] : null; }); });
+          var sDefs = keys.map(function(k, i) {
+            return { label: labels[i], stroke: cols[i], width: i % 2 === 0 ? 2 : 1.5, dash: dashes[i], points: { show: false } };
+          });
+          buildChart(document.getElementById('chart-duration'), ts2, sData, sDefs);
+        } else { showEmpty(document.getElementById('chart-duration')); }
+
+        // Stage breakdown — 3 independent mini-charts
+        var stageMap = { image: { el: 'chart-stage-image', avg: 'stage-image-avg', color: C.image, key: 'avg_image', p50: 'p50_image', p95: 'p95_image' },
+          release: { el: 'chart-stage-release', avg: 'stage-release-avg', color: C.release, key: 'avg_release', p50: 'p50_release', p95: 'p95_release' },
+          deploy: { el: 'chart-stage-deploy', avg: 'stage-deploy-avg', color: C.deploy, key: 'avg_deploy', p50: 'p50_deploy', p95: 'p95_deploy' } };
+        Object.keys(stageMap).forEach(function(stage) {
+          var cfg = stageMap[stage];
+          // Compute overall average from stage_duration data
+          var vals = d.stage_duration.map(function(r) { return r[cfg.key]; }).filter(function(v) { return v != null; });
+          var avg = vals.length ? vals.reduce(function(a, b) { return a + b; }, 0) / vals.length : null;
+          document.getElementById(cfg.avg).textContent = avg != null ? fmtDur(avg) : '--';
+
+          if (d.duration_trend.length) {
+            var ts = d.duration_trend.map(function(r) { return parseDate(r.date); });
+            var p50 = d.duration_trend.map(function(r) { return r[cfg.p50] != null ? +r[cfg.p50] : null; });
+            var p95 = d.duration_trend.map(function(r) { return r[cfg.p95] != null ? +r[cfg.p95] : null; });
+            buildChart(document.getElementById(cfg.el), ts, [p50, p95],
+              [{ label: 'P50', stroke: cfg.color, fill: cfg.color + '18', width: 2, points: { show: false } },
+               { label: 'P95', stroke: cfg.color, width: 1.5, dash: [4,3], points: { show: false } }]);
+          } else {
+            showEmpty(document.getElementById(cfg.el));
+          }
+        });
       })
       .catch(function() {
-        ['chart-throughput','chart-duration','chart-success','chart-stage'].forEach(function(id) {
+        ['chart-throughput','chart-success','chart-duration','chart-stage-image','chart-stage-release','chart-stage-deploy'].forEach(function(id) {
           showEmpty(document.getElementById(id));
         });
       });
   }
 
-  // -- Load runs --
+  // ── Load runs ──
   function loadRuns() {
     fetch(baseUrl + '/runs?limit=50')
       .then(function(r) { return r.json(); })
       .then(function(d) {
-        var tbody = document.getElementById('runs-tbody');
+        var container = document.getElementById('runs-container');
         if (!d.runs.length) {
-          tbody.innerHTML = '<tr><td colspan="7" class="text-center text-base-content/30">No pipeline runs yet</td></tr>';
+          container.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-faintest);font-size:0.75rem">No pipeline runs</div>';
           return;
         }
-        tbody.innerHTML = d.runs.map(function(r) {
-          function badge(status) {
-            var cls = status === 'success' ? 'badge-success' : status === 'error' ? 'badge-error' : 'badge-warning';
-            return '<span class="badge badge-xs ' + cls + '">' + status + '</span>';
-          }
+        // Find max duration for bar scaling
+        var maxDur = 1;
+        d.runs.forEach(function(r) {
+          var t = (r.image_duration || 0) + (r.release_duration || 0) + (r.deploy_duration || 0);
+          if (t > maxDur) maxDur = t;
+        });
+
+        container.innerHTML = d.runs.map(function(r) {
           var sha = r.sha ? r.sha.substring(0, 7) : '--';
-          var triggerBadge = r.trigger_type === 'auto'
-            ? '<span class="badge badge-xs badge-info">auto</span>'
-            : '<span class="badge badge-xs badge-ghost">manual</span>';
-          return '<tr>' +
-            '<td class="text-xs">' + (r.created ? new Date(r.created).toLocaleString() : '--') + '</td>' +
-            '<td class="font-mono text-xs">' + sha + '</td>' +
-            '<td>' + triggerBadge + '</td>' +
-            '<td>' + badge(r.image_status) + ' ' + (r.image_duration != null ? fmtDur(r.image_duration) : '--') + '</td>' +
-            '<td>' + badge(r.release_status) + ' ' + (r.release_duration != null ? fmtDur(r.release_duration) : '--') + '</td>' +
-            '<td>' + badge(r.deploy_status) + ' ' + (r.deploy_duration != null ? fmtDur(r.deploy_duration) : '--') + '</td>' +
-            '<td class="font-medium">' + (r.total_duration != null ? fmtDur(r.total_duration) : '--') + '</td>' +
-            '</tr>';
+          var trigger = r.trigger_type === 'auto'
+            ? '<span class="pipe-trigger pipe-trigger-auto">auto</span>'
+            : '<span class="pipe-trigger pipe-trigger-manual">manual</span>';
+
+          function dot(status) {
+            return '<span class="pipe-dot pipe-dot-' + (status === 'success' ? 'ok' : status === 'error' ? 'err' : 'pend') + '"></span>';
+          }
+          function segColor(status, stageColor) {
+            return status === 'error' ? C.fail : status === 'pending' ? C.warn : stageColor;
+          }
+          function barW(dur) {
+            if (!dur || !maxDur) return 3;
+            return Math.max(3, Math.round(dur / maxDur * 120));
+          }
+
+          var stages =
+            '<div class="pipe-stages">' +
+              '<div class="pipe-stage-seg">' + dot(r.image_status) +
+                '<div class="pipe-seg-bar" style="width:' + barW(r.image_duration) + 'px;background:' + segColor(r.image_status, C.image) + '"></div>' +
+                '<span class="pipe-seg-dur">' + fmtDur(r.image_duration) + '</span></div>' +
+              '<span class="pipe-seg-arrow">\u25B8</span>' +
+              '<div class="pipe-stage-seg">' + dot(r.release_status) +
+                '<div class="pipe-seg-bar" style="width:' + barW(r.release_duration) + 'px;background:' + segColor(r.release_status, C.release) + '"></div>' +
+                '<span class="pipe-seg-dur">' + fmtDur(r.release_duration) + '</span></div>' +
+              '<span class="pipe-seg-arrow">\u25B8</span>' +
+              '<div class="pipe-stage-seg">' + dot(r.deploy_status) +
+                '<div class="pipe-seg-bar" style="width:' + barW(r.deploy_duration) + 'px;background:' + segColor(r.deploy_status, C.deploy) + '"></div>' +
+                '<span class="pipe-seg-dur">' + fmtDur(r.deploy_duration) + '</span></div>' +
+            '</div>';
+
+          return '<div class="pipe-run">' +
+            '<span class="pipe-time">' + relTime(r.created) + '</span>' +
+            '<span class="pipe-sha">' + sha + '</span>' +
+            trigger + stages +
+            '<span class="pipe-total">' + fmtDur(r.total_duration) + '</span></div>';
         }).join('');
       });
   }
 
-  // -- Load slowest --
+  // ── Load slowest ──
+  var currentStage = 'image';
+  function stageColor(s) { return s === 'image' ? C.image : s === 'release' ? C.release : C.deploy; }
+
+  document.getElementById('slowest-selector').addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-stage]');
+    if (!btn) return;
+    currentStage = btn.dataset.stage;
+    document.querySelectorAll('#slowest-selector button').forEach(function(b) {
+      b.className = b.dataset.stage === currentStage ? 'btn btn-xs btn-primary' : 'btn btn-xs btn-ghost';
+    });
+    loadSlowest();
+  });
+
   function loadSlowest() {
-    var stage = document.getElementById('slowest-stage').value;
-    fetch(baseUrl + '/slowest?range=' + currentRange + '&stage=' + stage)
+    fetch(baseUrl + '/slowest?range=' + currentRange + '&stage=' + currentStage)
       .then(function(r) { return r.json(); })
       .then(function(d) {
-        var tbody = document.getElementById('slowest-tbody');
+        var container = document.getElementById('slowest-container');
         if (!d.items.length) {
-          tbody.innerHTML = '<tr><td colspan="5" class="text-center text-base-content/30">No data</td></tr>';
+          container.innerHTML = '<div style="padding:1.5rem;text-align:center;color:var(--text-faintest);font-size:0.75rem">No data</div>';
           return;
         }
-        tbody.innerHTML = d.items.map(function(item, i) {
-          var sha = item.sha ? item.sha.substring(0, 7) : '--';
-          return '<tr>' +
-            '<td>' + (i + 1) + '</td>' +
-            '<td class="font-mono text-xs">' + item.id.substring(0, 8) + '</td>' +
-            '<td class="font-medium">' + fmtDur(item.duration) + '</td>' +
-            '<td class="font-mono text-xs">' + sha + '</td>' +
-            '<td class="text-xs">' + (item.created ? new Date(item.created).toLocaleString() : '--') + '</td>' +
-            '</tr>';
+        var maxDur = d.items[0].duration || 1;
+        var color = stageColor(currentStage);
+        container.innerHTML = d.items.map(function(item, i) {
+          var sha = item.sha && item.sha !== 'null' ? item.sha.substring(0, 7) : '--';
+          var barW = Math.max(8, Math.round((item.duration / maxDur) * 100));
+          return '<div class="pipe-slowest-row">' +
+            '<span class="pipe-slowest-rank">#' + (i + 1) + '</span>' +
+            '<span style="font-family:JetBrains Mono,monospace;font-size:0.6875rem;color:var(--text-faint)">' + item.id.substring(0, 8) + '</span>' +
+            '<div style="display:flex;align-items:center;gap:6px">' +
+              '<div class="pipe-slowest-bar" style="width:' + barW + '%;background:' + color + '"></div>' +
+              '<span style="font-weight:700;font-family:JetBrains Mono,monospace;font-size:0.75rem;color:var(--text-bright);white-space:nowrap">' + fmtDur(item.duration) + '</span>' +
+            '</div>' +
+            '<span style="font-family:JetBrains Mono,monospace;font-size:0.6875rem;color:var(--text-faint)">' + sha + '</span>' +
+            '<span style="font-size:0.6875rem;color:var(--text-faintest)">' + relTime(item.created) + '</span></div>';
         }).join('');
       });
   }
-
-  document.getElementById('slowest-stage').addEventListener('change', loadSlowest);
 
   function loadAll() { loadStats(); loadRuns(); loadSlowest(); }
   loadAll();
   setInterval(loadAll, 60000);
+
+  // Resize charts on window resize
+  var resizeTimer;
+  window.addEventListener('resize', function() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(loadAll, 200);
+  });
 })();
 </script>
 {% endblock content %}
