@@ -12,6 +12,11 @@ services:
     environment:
       POSTGRES_DB: cabotage_dev
       POSTGRES_HOST_AUTH_METHOD: trust
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
     ports:
       - "5432:5432"
     volumes:
@@ -138,6 +143,9 @@ services:
       - $HOME/.kube:/var/run/kube
     ports:
       - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
     links:
       - db
       - redis

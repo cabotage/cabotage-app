@@ -1943,7 +1943,13 @@ function initLokiLogViewer() {
     function stopPolling() { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; } }
     function resetAndPoll() { stopPolling(); cancelFetch(); fetchLogs('reset'); }
 
-    processFilter.addEventListener('change', function() { resetAndPoll(); });
+    processFilter.addEventListener('change', function() {
+      var url = new URL(window.location);
+      if (processFilter.value) { url.searchParams.set('process', processFilter.value); }
+      else { url.searchParams.delete('process'); }
+      history.replaceState(null, '', url);
+      resetAndPoll();
+    });
     searchInput.addEventListener('input', function() {
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(function() { resetAndPoll(); }, 300);
@@ -1984,6 +1990,7 @@ function initCompactTopbar() {
     for (var i = 0; i < label.length; i++) {
       if (label[i].nodeType === 3 && label[i].textContent.trim()) {
         var text = label[i].textContent.trim();
+        clone.setAttribute('title', text);
         var soonMatch = text.match(/^(.+?)\s*\(([^)]+)\)$/);
         if (soonMatch) {
           var labelWrap = document.createElement('span');

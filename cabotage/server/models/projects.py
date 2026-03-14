@@ -266,6 +266,7 @@ class ApplicationEnvironment(db.Model, Timestamp):
         "Configuration",
         backref="application_environment",
         foreign_keys="Configuration.application_environment_id",
+        order_by="Configuration.name",
     )
     images = db.relationship(
         "Image",

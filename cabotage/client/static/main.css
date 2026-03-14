@@ -301,6 +301,29 @@ html:not([data-theme-pref]) .theme-icon-system {
   animation: none;
 }
 
+/* Icon-only compact tabs on smaller screens */
+@media (max-width: 1279px) {
+  .topbar-inline-tab {
+    font-size: 0;
+    gap: 0;
+    padding: 0.25rem 0.375rem;
+  }
+  .topbar-inline-tab svg {
+    width: 1rem;
+    height: 1rem;
+    font-size: 1rem;
+  }
+  .topbar-inline-tab .badge {
+    font-size: 0.625rem;
+    height: 0.875rem;
+    min-width: 0.875rem;
+    margin-left: 0.125rem;
+  }
+  .topbar-inline-tab .topbar-inline-tab-label {
+    display: none;
+  }
+}
+
 .app-content {
   flex: 1;
   width: 100%;
@@ -361,10 +384,25 @@ html:not([data-theme-pref]) .theme-icon-system {
   pointer-events: none;
 }
 
-@media (max-width: 479px) {
+@media (max-width: 767px) {
   .tab-item {
-    padding: 0.5rem 0.625rem;
-    font-size: 0.75rem;
+    font-size: 0;
+    gap: 0;
+    padding: 0.625rem 0.75rem;
+  }
+  .tab-item svg {
+    width: 1.125rem;
+    height: 1.125rem;
+    font-size: 1rem;
+  }
+  .tab-item .tab-label {
+    display: none;
+  }
+  .tab-item .badge {
+    font-size: 0.625rem;
+    height: 0.875rem;
+    min-width: 0.875rem;
+    margin-left: 0.125rem;
   }
 }
 
@@ -3669,6 +3707,14 @@ a.obs-pod-link:hover {
 .proc-bar-seg--crashed { background: #ef4444; }
 
 /* Observe chart panels */
+.animate-pulse-gentle {
+  animation: pulse-gentle 3s ease-in-out infinite;
+}
+@keyframes pulse-gentle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .metric-panel {
   width: 100%;
   min-height: 220px;
