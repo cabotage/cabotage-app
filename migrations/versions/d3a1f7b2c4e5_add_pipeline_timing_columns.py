@@ -12,14 +12,22 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = "d3a1f7b2c4e5"
-down_revision = "97ead80e7ae6"
+down_revision = "e5f9a2c7d834"
 branch_labels = None
 depends_on = None
 
 # (live_table, version_table, terminal_condition)
 _TABLES = [
-    ("project_app_images", "project_app_images_version", "built = true OR error = true"),
-    ("project_app_releases", "project_app_releases_version", "built = true OR error = true"),
+    (
+        "project_app_images",
+        "project_app_images_version",
+        "built = true OR error = true",
+    ),
+    (
+        "project_app_releases",
+        "project_app_releases_version",
+        "built = true OR error = true",
+    ),
     ("deployments", "deployments_version", "complete = true OR error = true"),
 ]
 
