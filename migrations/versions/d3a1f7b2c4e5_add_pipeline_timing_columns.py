@@ -41,7 +41,7 @@ def upgrade():
 
     # -- 2. Backfill from created/updated for terminal rows --
     for live, _, condition in _TABLES:
-        op.execute(
+        op.execute(  # nosec B608 - table/condition from hardcoded _TABLES list
             f"UPDATE {live} SET started_at = created, completed_at = updated "
             f"WHERE {condition}"
         )
