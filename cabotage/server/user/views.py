@@ -3026,7 +3026,7 @@ def application_images_build_fromsource(org_slug, project_slug, app_slug):
         application_environment_id=app_env.id,
         _repository_name=application.registry_repository_name(app_env),
         build_ref=build_ref,
-        image_metadata={"auto_deploy": True, "trigger": "auto_deploy"} if auto_deploy else {"trigger": "manual_build"},
+        image_metadata={"auto_deploy": True, "trigger": "manual_deploy"} if auto_deploy else {"trigger": "manual_build"},
     )
     db.session.add(image)
     db.session.flush()
