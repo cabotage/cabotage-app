@@ -53,7 +53,7 @@ _INGRESS_DATA_CTE = """
                     'hostname', ih.hostname,
                     'tls_enabled', ih.tls_enabled,
                     'is_auto_generated', ih.is_auto_generated
-                ) ORDER BY ih.hostname
+                ) ORDER BY ih.hostname COLLATE "C"
             ) AS hosts
             FROM ingress_hosts ih
             WHERE ih.ingress_id = i.id
@@ -65,7 +65,7 @@ _INGRESS_DATA_CTE = """
                     'path', ip.path,
                     'path_type', ip.path_type,
                     'target_process_name', ip.target_process_name
-                ) ORDER BY ip.path
+                ) ORDER BY ip.path COLLATE "C"
             ) AS paths
             FROM ingress_paths ip
             WHERE ip.ingress_id = i.id
@@ -102,30 +102,47 @@ def upgrade():
     """
     )
 
-    # 3. Backfill ingresses onto deployment release JSONB
+    # 3. Backfill ingresses onto the latest completed deployment per app_env.
+    #    Only backfill the one we actually diff against; older deployments
+    #    keep their original (empty) data since we can't reconstruct what
+    #    was live at the time.
     op.execute(
         f"""
-        WITH {_INGRESS_DATA_CTE}
+        WITH {_INGRESS_DATA_CTE},
+        latest_completed AS (
+            SELECT DISTINCT ON (application_environment_id) id
+            FROM deployments
+            WHERE complete = true
+            ORDER BY application_environment_id, created DESC
+        )
         UPDATE deployments d
         SET release = d.release || jsonb_build_object('ingresses', id.data)
-        FROM ingress_data id
-        WHERE id.application_environment_id = d.application_environment_id
+        FROM ingress_data id, latest_completed lc
+        WHERE d.id = lc.id
+          AND id.application_environment_id = d.application_environment_id
           AND (d.release->'ingresses' IS NULL
                OR d.release->'ingresses' = '{{}}'::jsonb)
     """
     )
 
-    # 4. Backfill commit_sha onto deployment release JSONB image
+    # 4. Backfill commit_sha onto the latest completed deployment per app_env
     op.execute(
         """
+        WITH latest_completed AS (
+            SELECT DISTINCT ON (application_environment_id) id
+            FROM deployments
+            WHERE complete = true
+            ORDER BY application_environment_id, created DESC
+        )
         UPDATE deployments d
         SET release = jsonb_set(
             d.release,
             '{image,commit_sha}',
             to_jsonb(COALESCE(i.image_metadata->>'sha', 'null'))
         )
-        FROM project_app_images i
-        WHERE i.id = (d.release->'image'->>'id')::uuid
+        FROM project_app_images i, latest_completed lc
+        WHERE d.id = lc.id
+          AND i.id = (d.release->'image'->>'id')::uuid
           AND d.release->'image'->>'commit_sha' IS NULL
           AND d.release->'image' IS NOT NULL
     """
