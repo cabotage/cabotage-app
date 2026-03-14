@@ -101,6 +101,9 @@ def _push_metrics(stage: str, duration_seconds: float | None, labels: dict):
     if _STAGE_TOTAL is not None:
         _STAGE_TOTAL.labels(**labels, stage=stage).inc()
 
+    if _REGISTRY is None:
+        return
+
     try:
         push_to_gateway(
             pushgateway_url,
