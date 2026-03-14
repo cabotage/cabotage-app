@@ -2873,6 +2873,10 @@ def application_release_create(org_slug, project_slug, app_slug):
     app_env = _resolve_app_env(application, environment_id=environment_id)
 
     release = application.create_release(app_env=app_env)
+    release.release_metadata = {
+        "trigger": "manual_release",
+        "triggered_by": current_user.username,
+    }
     db.session.add(release)
     db.session.flush()
     activity = Activity(
@@ -2955,13 +2959,30 @@ def application_images_build_fromsource(org_slug, project_slug, app_slug):
     )
 
     environment_id = request.form.get("environment_id")
+    auto_deploy = request.form.get("auto_deploy") == "true"
     app_env = _resolve_app_env(application, environment_id=environment_id)
 
+    env_slug = (
+        app_env.environment.slug
+        if app_env.environment_id and project.environments_enabled
+        else None
+    )
+
+    build_ref = app_env.effective_auto_deploy_branch or "main"
     image = Image(
         application_id=application.id,
         application_environment_id=app_env.id,
         _repository_name=application.registry_repository_name(app_env),
-        build_ref=app_env.effective_auto_deploy_branch,
+        build_ref=build_ref,
+        image_metadata=(
+            {
+                "auto_deploy": True,
+                "trigger": "manual_deploy",
+                "triggered_by": current_user.username,
+            }
+            if auto_deploy
+            else {"trigger": "manual_build", "triggered_by": current_user.username}
+        ),
     )
     db.session.add(image)
     db.session.flush()
@@ -2976,6 +2997,16 @@ def application_images_build_fromsource(org_slug, project_slug, app_slug):
     db.session.add(activity)
     db.session.commit()
     run_image_build.delay(image_id=image.id, buildkit=True)
+    if auto_deploy:
+        return redirect(
+            url_for(
+                "user.project_application",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                app_slug=app_slug,
+                env_slug=env_slug,
+            )
+        )
     return redirect(
         url_for(
             "user.image_detail",
@@ -3319,6 +3350,10 @@ def release_deploy(org_slug, project_slug, app_slug, release_id):
         application_id=release.application.id,
         application_environment_id=release.application_environment_id,
         release=release.asdict,
+        deploy_metadata={
+            "trigger": "manual_deploy",
+            "triggered_by": current_user.username,
+        },
     )
     db.session.add(deployment)
     db.session.flush()

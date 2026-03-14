@@ -3924,6 +3924,11 @@ a.obs-pod-link:hover {
   color: var(--color-accent, oklch(var(--a)));
   border: 1px solid color-mix(in srgb, var(--color-accent, oklch(var(--a))) 12%, transparent);
 }
+.dpl-badge-manual {
+  background: color-mix(in srgb, var(--color-info, oklch(var(--in))) 6%, transparent);
+  color: var(--color-info, oklch(var(--in)));
+  border: 1px solid color-mix(in srgb, var(--color-info, oklch(var(--in))) 12%, transparent);
+}
 .dpl-badge-latest {
   background: color-mix(in srgb, oklch(var(--bc)) 5%, transparent);
   color: var(--text-muted);

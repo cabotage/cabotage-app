@@ -162,11 +162,23 @@
       </span>
     </div>
     <div class="app-header-actions">
-      <div class="tooltip"
-           data-tip="Configure a deploy branch in Settings to enable">
-        <button class="btn btn-ghost btn-sm gap-1.5 btn-disabled text-base-content/20"
-                disabled>{{ icon('deploy', 'w-3.5 h-3.5') }} Deploy</button>
-      </div>
+      {% if app_env and application.github_repository %}
+        <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+              method="post"
+              class="inline"
+              data-full-deploy-form>
+          <input type="hidden" name="auto_deploy" value="true">
+          {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}">{% endif %}
+          <button class="btn btn-ghost btn-sm gap-1.5"
+                  type="submit">{{ icon('deploy', 'w-3.5 h-3.5') }} Deploy</button>
+        </form>
+      {% else %}
+        <div class="tooltip"
+             data-tip="Configure a deploy branch in Settings to enable">
+          <button class="btn btn-ghost btn-sm gap-1.5 btn-disabled text-base-content/20"
+                  disabled>{{ icon('deploy', 'w-3.5 h-3.5') }} Deploy</button>
+        </div>
+      {% endif %}
 
       <form action="{{ url_for('user.application_clear_cache', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
             method="post"
@@ -974,6 +986,9 @@
                                      height:5px"></span>
                       {% endif %}
                       <code class="text-xs text-accent/70">#{{ img.version }}</code>
+                      {% if img.image_metadata and img.image_metadata.get('trigger', '').startswith('manual') %}
+                        <span class="dpl-badge dpl-badge-manual tooltip tooltip-top" data-tip="by {{ img.image_metadata.get('triggered_by', '?') }}">{{ icon('user', 'w-2 h-2') }} manual</span>
+                      {% endif %}
                     <span class="text-xs text-base-content/25 ml-auto"><time data-timestamp="{{ img.updated|isoformat_utc }}">{{ img.updated|humanize }}</time>
                     {% if img.built %}<span class="text-base-content/15">({{ img|duration }})</span>{% endif %}
                   </span>
@@ -1004,6 +1019,9 @@
                                  height:5px"></span>
                   {% endif %}
                   <code class="text-xs text-accent/70">v{{ rel.version }}</code>
+                  {% if rel.release_metadata and rel.release_metadata.get('trigger', '').startswith('manual') %}
+                    <span class="dpl-badge dpl-badge-manual tooltip tooltip-top" data-tip="by {{ rel.release_metadata.get('triggered_by', '?') }}">{{ icon('user', 'w-2 h-2') }} manual</span>
+                  {% endif %}
                 <span class="text-xs text-base-content/25 ml-auto"><time data-timestamp="{{ rel.updated|isoformat_utc }}">{{ rel.updated|humanize }}</time>
                 {% if rel.built %}<span class="text-base-content/15">({{ rel|duration }})</span>{% endif %}
               </span>
@@ -1034,6 +1052,9 @@
                              height:5px"></span>
               {% endif %}
               <code class="text-xs text-accent/70">v{{ release_by_id.get(dep.release.get('id', '')|string).version if release_by_id.get(dep.release.get('id', '')|string) else '?' }}</code>
+              {% if dep.deploy_metadata and dep.deploy_metadata.get('trigger', '').startswith('manual') %}
+                <span class="dpl-badge dpl-badge-manual tooltip tooltip-top" data-tip="by {{ dep.deploy_metadata.get('triggered_by', '?') }}">{{ icon('user', 'w-2 h-2') }} manual</span>
+              {% endif %}
             <span class="text-xs text-base-content/25 ml-auto"><time data-timestamp="{{ dep.updated|isoformat_utc }}">{{ dep.updated|humanize }}</time>
             {% if dep.complete %}<span class="text-base-content/15">({{ dep|duration }})</span>{% endif %}
           </span>
@@ -1729,7 +1750,8 @@
       {% for image in images %}
         {% set img_sha = image.commit_sha if image.commit_sha and image.commit_sha != 'null' else none %}
         {% set img_ref = (image.image_metadata or {}).get('ref', '') %}
-        {% set img_auto = image.image_metadata and image.image_metadata.get('auto_deploy') %}
+        {% set img_trigger = image.image_metadata.get('trigger', '') if image.image_metadata else '' %}
+        {% set img_auto = img_trigger == '' and image.image_metadata and image.image_metadata.get('auto_deploy') %}
         {% set img_creator = ((image.image_metadata or {}).get('creator', {}) or {}).get('login', '') %}
         {% set is_latest = latest_built_image and image.id == latest_built_image.id %}
 
@@ -1764,7 +1786,10 @@
               {% endif %}
               {% if image.built %}<span class="dpl-row-dur">{{ image|duration }}</span>{% endif %}
               {% if is_latest %}<span class="dpl-badge dpl-badge-latest">Latest</span>{% endif %}
-              {% if img_auto %}
+              {% if img_trigger.startswith('manual') %}
+                <span class="dpl-badge dpl-badge-manual tooltip tooltip-top"
+                      data-tip="by {{ (image.image_metadata or {}).get('triggered_by', '?') }}">{{ icon('user', 'w-2.5 h-2.5') }} Manual</span>
+              {% elif img_auto %}
                 <span class="dpl-badge dpl-badge-auto tooltip tooltip-top"
                       data-tip="Triggered by CI or a deploy-all action">{{ icon('zap', 'w-2.5 h-2.5') }} Auto</span>
               {% endif %}
@@ -1864,7 +1889,8 @@
         {% if not rel_ref and rel_img %}
           {% set rel_ref = (rel_img.image_metadata or {}).get('ref', '') %}
         {% endif %}
-        {% set rel_auto = release.release_metadata and release.release_metadata.get('auto_deploy') %}
+        {% set rel_trigger = release.release_metadata.get('trigger', '') if release.release_metadata else '' %}
+        {% set rel_auto = rel_trigger == '' and release.release_metadata and release.release_metadata.get('auto_deploy') %}
         {% set is_latest = latest_built_release and release.id == latest_built_release.id %}
         {% set cfg_count = release.configuration|length if release.configuration else 0 %}
         {% set proc_count = release_proc_counts.get(release.id|string, 0) %}
@@ -1900,7 +1926,10 @@
               {% endif %}
               {% if release.built %}<span class="dpl-row-dur">{{ release|duration }}</span>{% endif %}
               {% if is_latest %}<span class="dpl-badge dpl-badge-latest">Latest</span>{% endif %}
-              {% if rel_auto %}
+              {% if rel_trigger.startswith('manual') %}
+                <span class="dpl-badge dpl-badge-manual tooltip tooltip-top"
+                      data-tip="by {{ (release.release_metadata or {}).get('triggered_by', '?') }}">{{ icon('user', 'w-2.5 h-2.5') }} Manual</span>
+              {% elif rel_auto %}
                 <span class="dpl-badge dpl-badge-auto tooltip tooltip-top"
                       data-tip="Triggered by CI or a deploy-all action">{{ icon('zap', 'w-2.5 h-2.5') }} Auto</span>
               {% endif %}
@@ -2099,7 +2128,8 @@
             {% set dep_ref = (dep_img.image_metadata or {}).get('ref', '') %}
           {% endif %}
         {% endif %}
-        {% set dep_auto = dep_rel and dep_rel.release_metadata and dep_rel.release_metadata.get('auto_deploy') %}
+        {% set dep_trigger = deployment.deploy_metadata.get('trigger', '') if deployment.deploy_metadata else '' %}
+        {% set dep_auto = dep_trigger == '' and dep_rel and dep_rel.release_metadata and dep_rel.release_metadata.get('auto_deploy') %}
         {% set is_active = active_deploy and deployment.id == active_deploy.id %}
 
         <a href="{{ url_for('user.deployment_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id=deployment.id) }}"
@@ -2137,7 +2167,10 @@
               {% endif %}
               {% if deployment.complete or deployment.error %}<span class="dpl-row-dur">{{ deployment|duration }}</span>{% endif %}
               {% if is_active %}<span class="dpl-badge dpl-badge-active">Active</span>{% endif %}
-              {% if dep_auto %}
+              {% if dep_trigger.startswith('manual') %}
+                <span class="dpl-badge dpl-badge-manual tooltip tooltip-top"
+                      data-tip="by {{ (deployment.deploy_metadata or {}).get('triggered_by', '?') }}">{{ icon('user', 'w-2.5 h-2.5') }} Manual</span>
+              {% elif dep_auto %}
                 <span class="dpl-badge dpl-badge-auto tooltip tooltip-top"
                       data-tip="Triggered by CI or a deploy-all action">{{ icon('zap', 'w-2.5 h-2.5') }} Auto</span>
               {% endif %}
