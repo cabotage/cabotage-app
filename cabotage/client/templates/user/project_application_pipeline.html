@@ -167,12 +167,25 @@
     loadAll();
   });
 
+  function showEmpty(el) {
+    el.innerHTML = '<div class="flex items-center justify-center text-base-content/30 text-sm" style="height:220px">No data available</div>';
+  }
+
   function makeSimpleChart(el, timestamps, seriesData, seriesDefs) {
-    el.innerHTML = '';
-    if (!timestamps || !timestamps.length) {
-      el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/30 text-sm">No data</div>';
+    // Filter out null/NaN timestamps
+    var validIdx = [];
+    for (var i = 0; i < timestamps.length; i++) {
+      if (timestamps[i] != null && !isNaN(timestamps[i])) validIdx.push(i);
+    }
+    if (validIdx.length < 2) {
+      showEmpty(el);
       return;
     }
+    var ts = validIdx.map(function(i) { return timestamps[i]; });
+    var sd = seriesData.map(function(s) { return validIdx.map(function(i) { return s[i]; }); });
+    timestamps = ts;
+    seriesData = sd;
+    el.innerHTML = '';
     var width = el.clientWidth || 400;
     var height = 220;
     var data = [timestamps].concat(seriesData);
@@ -192,7 +205,11 @@
     new uPlot(opts, data, el);
   }
 
-  function parseDate(s) { return Math.floor(new Date(s).getTime() / 1000); }
+  function parseDate(s) {
+    if (!s) return null;
+    var t = new Date(s).getTime();
+    return isNaN(t) ? null : Math.floor(t / 1000);
+  }
 
   // -- Load stats --
   function loadStats() {
@@ -217,6 +234,8 @@
               { label: 'Success', stroke: SUCCESS_COLOR, fill: SUCCESS_COLOR + '40', width: 1, points: { show: false } },
               { label: 'Failure', stroke: FAILURE_COLOR, fill: FAILURE_COLOR + '40', width: 1, points: { show: false } }
             ]);
+        } else {
+          showEmpty(document.getElementById('chart-throughput'));
         }
 
         // Duration trend chart
@@ -231,6 +250,8 @@
             return { label: labels[i], stroke: cols[i], width: 1.5, dash: dashes[i], points: { show: false } };
           });
           makeSimpleChart(document.getElementById('chart-duration'), ts2, sData, sDefs);
+        } else {
+          showEmpty(document.getElementById('chart-duration'));
         }
 
         // Success rate chart
@@ -239,6 +260,8 @@
           var rates = d.success_rate.map(function(r) { return r.rate; });
           makeSimpleChart(document.getElementById('chart-success'), ts3, [rates],
             [{ label: 'Success %', stroke: SUCCESS_COLOR, fill: SUCCESS_COLOR + '18', width: 1.5, points: { show: false } }]);
+        } else {
+          showEmpty(document.getElementById('chart-success'));
         }
 
         // Stage duration chart
@@ -253,7 +276,14 @@
               { label: 'Release', stroke: COLORS[1], fill: COLORS[1] + '30', width: 1, points: { show: false } },
               { label: 'Deploy', stroke: COLORS[2], fill: COLORS[2] + '30', width: 1, points: { show: false } }
             ]);
+        } else {
+          showEmpty(document.getElementById('chart-stage'));
         }
+      })
+      .catch(function() {
+        ['chart-throughput','chart-duration','chart-success','chart-stage'].forEach(function(id) {
+          showEmpty(document.getElementById(id));
+        });
       });
   }
 
