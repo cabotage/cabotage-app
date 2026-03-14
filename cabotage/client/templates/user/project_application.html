@@ -951,6 +951,11 @@
                                      height:5px"></span>
                       {% endif %}
                       <code class="text-xs text-accent/70">#{{ img.version }}</code>
+                      {% if img.image_metadata and img.image_metadata.get('trigger') == 'auto_deploy' %}
+                        <span class="badge badge-xs badge-primary leading-none" style="font-size:9px">auto</span>
+                      {% elif img.image_metadata and img.image_metadata.get('trigger') == 'manual_build' %}
+                        <span class="badge badge-xs badge-ghost leading-none" style="font-size:9px">manual</span>
+                      {% endif %}
                     <span class="text-xs text-base-content/25 ml-auto"><time data-timestamp="{{ img.updated|isoformat_utc }}">{{ img.updated|humanize }}</time>
                     {% if img.built %}<span class="text-base-content/15">({{ img|duration }})</span>{% endif %}
                   </span>
@@ -981,6 +986,11 @@
                                  height:5px"></span>
                   {% endif %}
                   <code class="text-xs text-accent/70">v{{ rel.version }}</code>
+                  {% if rel.release_metadata and rel.release_metadata.get('trigger') == 'auto_deploy' %}
+                    <span class="badge badge-xs badge-primary leading-none" style="font-size:9px">auto</span>
+                  {% elif rel.release_metadata and rel.release_metadata.get('trigger') == 'manual_release' %}
+                    <span class="badge badge-xs badge-ghost leading-none" style="font-size:9px">manual</span>
+                  {% endif %}
                 <span class="text-xs text-base-content/25 ml-auto"><time data-timestamp="{{ rel.updated|isoformat_utc }}">{{ rel.updated|humanize }}</time>
                 {% if rel.built %}<span class="text-base-content/15">({{ rel|duration }})</span>{% endif %}
               </span>
@@ -1011,6 +1021,11 @@
                              height:5px"></span>
               {% endif %}
               <code class="text-xs text-accent/70">v{{ release_by_id.get(dep.release.get('id', '')|string).version if release_by_id.get(dep.release.get('id', '')|string) else '?' }}</code>
+              {% if dep.deploy_metadata and dep.deploy_metadata.get('trigger') == 'auto_deploy' %}
+                <span class="badge badge-xs badge-primary leading-none" style="font-size:9px">auto</span>
+              {% elif dep.deploy_metadata and dep.deploy_metadata.get('trigger') == 'manual_deploy' %}
+                <span class="badge badge-xs badge-ghost leading-none" style="font-size:9px">manual</span>
+              {% endif %}
             <span class="text-xs text-base-content/25 ml-auto"><time data-timestamp="{{ dep.updated|isoformat_utc }}">{{ dep.updated|humanize }}</time>
             {% if dep.complete %}<span class="text-base-content/15">({{ dep|duration }})</span>{% endif %}
           </span>
