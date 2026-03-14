@@ -181,13 +181,13 @@ class DeleteProjectForm(FlaskForm):
         description="ID of the Project to delete.",
     )
     name = StringField(
-        "Name",
+        "Slug",
         [InputRequired()],
-        description="Name for the Project being deleted.",
+        description="Slug of the Project being deleted.",
     )
     confirm = StringField(
-        "Type the name of the Project.",
-        [EqualTo("name", message="Must confirm the *exact* name of the Project!")],
+        "Type the slug of the Project.",
+        [EqualTo("name", message="Must confirm the *exact* slug of the Project!")],
     )
 
 
@@ -242,13 +242,13 @@ class DeleteApplicationForm(FlaskForm):
         description="ID of the Application to delete.",
     )
     name = StringField(
-        "Name",
+        "Slug",
         [InputRequired()],
-        description="Name for the Application being deleted.",
+        description="Slug of the Application being deleted.",
     )
     confirm = StringField(
-        "Type the name of the Application.",
-        [EqualTo("name", message="Must confirm the *exact* name of the Application!")],
+        "Type the slug of the Application.",
+        [EqualTo("name", message="Must confirm the *exact* slug of the Application!")],
     )
 
 
@@ -579,16 +579,16 @@ class DeleteEnvironmentForm(FlaskForm):
         description="ID of the Environment to delete.",
     )
     name = StringField(
-        "Name",
+        "Slug",
         [InputRequired()],
-        description="Name for the Environment being deleted.",
+        description="Slug of the Environment being deleted.",
     )
     confirm = StringField(
-        "Type the name of the Environment.",
+        "Type the slug of the Environment.",
         [
             EqualTo(
                 "name",
-                message="Must confirm the *exact* name of the Environment!",
+                message="Must confirm the *exact* slug of the Environment!",
             )
         ],
     )
@@ -614,16 +614,16 @@ class DeleteOrganizationForm(FlaskForm):
         description="ID of the Organization to delete.",
     )
     name = StringField(
-        "Name",
+        "Slug",
         [InputRequired()],
-        description="Name for the Organization being deleted.",
+        description="Slug of the Organization being deleted.",
     )
     confirm = StringField(
-        "Type the name of the Organization.",
+        "Type the slug of the Organization.",
         [
             EqualTo(
                 "name",
-                message="Must confirm the *exact* name of the Organization!",
+                message="Must confirm the *exact* slug of the Organization!",
             )
         ],
     )
@@ -636,16 +636,16 @@ class DeleteApplicationEnvironmentForm(FlaskForm):
         description="ID of the Application Environment to delete.",
     )
     name = StringField(
-        "Name",
+        "Slug",
         [InputRequired()],
-        description="Name for the Application being unenrolled.",
+        description="Slug of the Application being unenrolled.",
     )
     confirm = StringField(
-        "Type the name of the Application.",
+        "Type the slug of the Application.",
         [
             EqualTo(
                 "name",
-                message="Must confirm the *exact* name of the Application!",
+                message="Must confirm the *exact* slug of the Application!",
             )
         ],
     )
