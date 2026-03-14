@@ -1543,6 +1543,7 @@ def run_image_build(image_id=None, buildkit=False):
         raise KeyError(f"Image with ID {image_id} not found!")
 
     image.build_job_id = secrets.token_hex(4)
+    image.started_at = datetime.datetime.utcnow()
 
     # Create a GitHub check run at the start of the pipeline
     application = image.application
@@ -1615,7 +1616,11 @@ def run_image_build(image_id=None, buildkit=False):
             db.session.add(image)
             image.error = True
             image.error_detail = str(exc)
+            image.completed_at = datetime.datetime.utcnow()
             db.session.commit()
+            from cabotage.celery.metrics import record_image_metrics
+
+            record_image_metrics(image)
             if (
                 image.image_metadata
                 and "installation_id" in image.image_metadata
@@ -1641,10 +1646,15 @@ def run_image_build(image_id=None, buildkit=False):
             pass
         db.session.rollback()
         db.session.add(image)
+        if not image.completed_at:
+            image.completed_at = datetime.datetime.utcnow()
         if not image.error:
             image.error = True
             image.error_detail = "Image build failed due to an internal error"
             db.session.commit()
+        from cabotage.celery.metrics import record_image_metrics
+
+        record_image_metrics(image)
         check.fail(
             "Image build failed",
             detail=image.error_detail or "Image build failed",
@@ -1657,6 +1667,7 @@ def run_image_build(image_id=None, buildkit=False):
     image.image_id = build_metadata["image_id"]
     image.processes = build_metadata["processes"]
     image.built = True
+    image.completed_at = datetime.datetime.utcnow()
     image.image_metadata = {
         **(image.image_metadata or {}),
         "dockerfile_env_vars": build_metadata["dockerfile_env_vars"],
@@ -1664,6 +1675,10 @@ def run_image_build(image_id=None, buildkit=False):
 
     db.session.add(image)
     db.session.commit()
+
+    from cabotage.celery.metrics import record_image_metrics
+
+    record_image_metrics(image)
 
     check.progress(
         "Image built",
@@ -1720,6 +1735,7 @@ def run_release_build(release_id=None):
             release.release_metadata = {}
 
         release.build_job_id = secrets.token_hex(4)
+        release.started_at = datetime.datetime.utcnow()
         db.session.add(release)
         db.session.commit()
 
@@ -1735,6 +1751,7 @@ def run_release_build(release_id=None):
             build_metadata = build_release_buildkit(release)
             release.release_id = build_metadata["release_id"]
             release.built = True
+            release.completed_at = datetime.datetime.utcnow()
             if (
                 "installation_id" in release.release_metadata
                 and "statuses_url" in release.release_metadata
@@ -1753,6 +1770,7 @@ def run_release_build(release_id=None):
             db.session.rollback()
             release.error = True
             release.error_detail = str(exc)
+            release.completed_at = datetime.datetime.utcnow()
             try:
                 log_key = stream_key("release", release.build_job_id)
                 redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
@@ -1773,6 +1791,9 @@ def run_release_build(release_id=None):
                     "failure",
                     "Release build failed.",
                 )
+            from cabotage.celery.metrics import record_release_metrics
+
+            record_release_metrics(release)
             CheckRun.from_metadata(
                 release.release_metadata, release.application_environment
             ).fail(
@@ -1791,6 +1812,7 @@ def run_release_build(release_id=None):
                 pass
             release.error = True
             release.error_detail = "Release build failed due to an internal error"
+            release.completed_at = datetime.datetime.utcnow()
             db.session.add(release)
             db.session.commit()
             if (
@@ -1807,6 +1829,9 @@ def run_release_build(release_id=None):
                     "error",
                     "Release build failed.",
                 )
+            from cabotage.celery.metrics import record_release_metrics
+
+            record_release_metrics(release)
             CheckRun.from_metadata(
                 release.release_metadata, release.application_environment
             ).fail(
@@ -1819,6 +1844,11 @@ def run_release_build(release_id=None):
 
         db.session.add(release)
         db.session.commit()
+
+        if not release.error:
+            from cabotage.celery.metrics import record_release_metrics
+
+            record_release_metrics(release)
 
         image_id = release.image.get("id") if release.image else None
         release_links = {"Release": f"releases/{release.id}"}
