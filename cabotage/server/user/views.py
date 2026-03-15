@@ -6723,6 +6723,13 @@ def _pipeline_range_start(range_param):
     return datetime.datetime.utcnow() - datetime.timedelta(days=days)
 
 
+def _terminal_condition(table):
+    """SQL condition for rows in a terminal state (built/complete or error)."""
+    if table == "deployments":
+        return "(complete = true OR error = true)"
+    return "(built = true OR error = true)"
+
+
 @user_blueprint.route(
     "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/pipeline",
 )
@@ -6767,12 +6774,13 @@ def project_application_pipeline_stats(org_slug, project_slug, app_slug, env_slu
     # -- Throughput by day --
     throughput_rows = db.session.execute(
         sa_text(
-            "SELECT date_trunc('day', completed_at) AS day,"
+            "SELECT date_trunc('day', updated) AS day,"
             " count(*) FILTER (WHERE complete = true) AS success,"
             " count(*) FILTER (WHERE error = true) AS failure"
             " FROM deployments"
             " WHERE application_environment_id = :ae_id"
-            "   AND completed_at >= :start AND completed_at IS NOT NULL"
+            "   AND (complete = true OR error = true)"
+            "   AND updated >= :start"
             " GROUP BY day ORDER BY day"
         ),
         {"ae_id": ae_id, "start": start},
@@ -6791,16 +6799,16 @@ def project_application_pipeline_stats(org_slug, project_slug, app_slug, env_slu
     def _duration_percentiles(table):
         return db.session.execute(
             sa_text(
-                f"SELECT date_trunc('day', completed_at) AS day,"
+                f"SELECT date_trunc('day', updated) AS day,"
                 f" percentile_cont(0.5) WITHIN GROUP"
-                f"   (ORDER BY extract(epoch FROM completed_at - started_at)) AS p50,"
+                f"   (ORDER BY extract(epoch FROM updated - created)) AS p50,"
                 f" percentile_cont(0.95) WITHIN GROUP"
-                f"   (ORDER BY extract(epoch FROM completed_at - started_at)) AS p95,"
-                f" avg(extract(epoch FROM completed_at - started_at)) AS avg_dur"
+                f"   (ORDER BY extract(epoch FROM updated - created)) AS p95,"
+                f" avg(extract(epoch FROM updated - created)) AS avg_dur"
                 f" FROM {table}"  # nosec B608 — table from hardcoded list
                 f" WHERE application_environment_id = :ae_id"
-                f"   AND started_at IS NOT NULL AND completed_at IS NOT NULL"
-                f"   AND completed_at >= :start"
+                f"   AND {_terminal_condition(table)}"
+                f"   AND updated >= :start"
                 f" GROUP BY day ORDER BY day"
             ),
             {"ae_id": ae_id, "start": start},
@@ -6877,15 +6885,15 @@ def project_application_pipeline_stats(org_slug, project_slug, app_slug, env_slu
     summary_row = db.session.execute(
         sa_text(
             "SELECT"
-            " avg(extract(epoch FROM completed_at - started_at)) AS avg_dur,"
+            " avg(extract(epoch FROM updated - created)) AS avg_dur,"
             " percentile_cont(0.5) WITHIN GROUP"
-            "   (ORDER BY extract(epoch FROM completed_at - started_at)) AS p50,"
+            "   (ORDER BY extract(epoch FROM updated - created)) AS p50,"
             " percentile_cont(0.95) WITHIN GROUP"
-            "   (ORDER BY extract(epoch FROM completed_at - started_at)) AS p95"
+            "   (ORDER BY extract(epoch FROM updated - created)) AS p95"
             " FROM deployments"
             " WHERE application_environment_id = :ae_id"
-            "   AND started_at IS NOT NULL AND completed_at IS NOT NULL"
-            "   AND completed_at >= :start"
+            "   AND (complete = true OR error = true)"
+            "   AND updated >= :start"
         ),
         {"ae_id": ae_id, "start": start},
     ).fetchone()
@@ -6969,8 +6977,8 @@ def project_application_pipeline_runs(org_slug, project_slug, app_slug, env_slug
         img = image_by_id.get(img_id) if img_id else None
 
         total = None
-        if img and img.started_at and d.completed_at:
-            total = round((d.completed_at - img.started_at).total_seconds(), 2)
+        if img and img.created and d.updated and (d.complete or d.error):
+            total = round((d.updated - img.created).total_seconds(), 2)
 
         runs.append(
             {
@@ -7046,14 +7054,18 @@ def project_application_pipeline_slowest(
     }
     model = model_map.get(stage, Image)
 
+    terminal = (
+        (model.complete == True) | (model.error == True)  # noqa: E712
+        if model is Deployment
+        else (model.built == True) | (model.error == True)  # noqa: E712
+    )
     rows = (
         model.query.filter(
             model.application_environment_id == app_env.id,
-            model.started_at.isnot(None),
-            model.completed_at.isnot(None),
-            model.completed_at >= start,
+            terminal,
+            model.updated >= start,
         )
-        .order_by(desc(model.completed_at - model.started_at))
+        .order_by(desc(model.updated - model.created))
         .limit(10)
         .all()
     )
