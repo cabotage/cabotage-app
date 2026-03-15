@@ -24,4 +24,4 @@
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
-@source "../../templates/**/*.html";
+@source "../templates/**/*.html";
