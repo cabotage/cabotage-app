@@ -118,7 +118,7 @@
                 {% if active == 'config' %}tab-active{% endif %}">
         {{ icon('key', 'w-4 h-4') }} <span class="tab-label">Config</span>
         {% if env %}
-          {% set app_env = application.application_environments|selectattr('environment_id', 'equalto', env.id)|first %}
+          {% set app_env = application.active_application_environments|selectattr('environment_id', 'equalto', env.id)|first %}
           {% set configs = app_env.configurations if app_env else [] %}
         {% else %}
           {% set configs = application.configurations %}
@@ -407,6 +407,64 @@
     }
   });
 })();
+  </script>
+{% endmacro %}
+
+{% macro danger_zone_delete(modal_id, title, confirm_slug, form, action_url, description='', impact_items=[]) %}
+  <div class="collapse collapse-arrow bg-error/5 border border-error/20 rounded-lg mt-6">
+    <input type="checkbox" />
+    <div class="collapse-title text-sm font-medium text-error">
+      Danger Zone
+    </div>
+    <div class="collapse-content">
+      <p class="text-sm text-base-content/60 mb-3">{{ description or 'This action cannot be undone.' }}</p>
+      <button type="button" class="btn btn-error btn-sm gap-1.5"
+              onclick="document.getElementById('{{ modal_id }}').showModal()">
+        {{ icon('trash-2', 'w-3.5 h-3.5') }}
+        {{ title }}
+      </button>
+    </div>
+  </div>
+
+  <dialog id="{{ modal_id }}" class="modal">
+    <div class="modal-box">
+      <h3 class="text-lg font-bold text-error">{{ title }}</h3>
+      <p class="py-2 text-sm">
+        Type <code class="font-semibold">{{ confirm_slug }}</code> to confirm.
+        This action cannot be undone.
+      </p>
+      {% if impact_items %}
+        <ul class="text-sm text-base-content/60 mb-2 list-disc list-inside">
+          {% for item in impact_items %}
+            <li>{{ item|safe }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      <form action="{{ action_url }}" method="post">
+        {{ form.hidden_tag() }}
+        <div style="display:none">{{ form.name() }}</div>
+        <input type="text" name="confirm" placeholder="{{ confirm_slug }}"
+               class="input input-bordered input-sm w-full mb-4"
+               autocomplete="off"
+               oninput="this.closest('.modal-box').querySelector('.btn-delete-confirm').disabled = (this.value !== '{{ confirm_slug }}')">
+        <div class="modal-action">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('dialog').close()">Cancel</button>
+          <button type="submit" class="btn btn-error btn-sm btn-delete-confirm" disabled>Delete</button>
+        </div>
+      </form>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
+  <script>
+    (function(){
+      var d=document.getElementById('{{ modal_id }}');
+      d.addEventListener('close',function(){
+        var i=d.querySelector('input[name="confirm"]');
+        if(i)i.value='';
+        var b=d.querySelector('.btn-delete-confirm');
+        if(b)b.disabled=true;
+      });
+    })();
   </script>
 {% endmacro %}
 

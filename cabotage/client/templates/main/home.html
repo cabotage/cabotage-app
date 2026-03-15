@@ -21,7 +21,6 @@
         </a>
       </div>
 
-      {% set org_count = current_user.organizations|length if current_user.organizations else 0 %}
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
         {{ stat_card(org_count, 'Organizations', 'building', 'primary') }}
         {{ stat_card(project_count, 'Projects', 'folder', 'secondary') }}

@@ -1,0 +1,45 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, resource_path, page_header, render_field, danger_zone_delete %}
+
+{% block title %}
+  Settings - {{ organization.name }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': organization.slug, 'url': url_for('user.organization', org_slug=organization.slug) },
+    {'label': 'settings'}
+  ]) }}
+{% endblock resource_path %}
+
+{% block content %}
+  {{ page_header('Organization Settings', organization.name) }}
+
+  <div class="card bg-base-200/50 border border-base-300/50 max-w-2xl">
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('user.organization_settings', org_slug=organization.slug) }}">
+        {{ form.hidden_tag() }}
+        <div style="display:none">{{ form.organization_id() }}</div>
+        {{ render_field(form.name) }}
+        <div class="mt-4">
+          <button type="submit" class="btn btn-primary gap-2">
+            {{ icon('check', 'w-4 h-4') }}
+            Save Changes
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="max-w-2xl">
+    {{ danger_zone_delete(
+      modal_id='delete-org-modal',
+      title='Delete Organization',
+      confirm_slug=organization.slug,
+      form=delete_form,
+      action_url=url_for('user.organization_delete', org_slug=organization.slug),
+      description='Deleting this organization will remove all projects, applications, and deployments. This cannot be undone.',
+      impact_items=delete_impact
+    ) }}
+  </div>
+{% endblock content %}

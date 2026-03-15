@@ -124,6 +124,7 @@ class Project(db.Model, Timestamp):
         db.ForeignKey("project_environments.id"),
         nullable=True,
     )
+    deleted_at = db.Column(db.DateTime, nullable=True, index=True)
 
     branch_deploy_base_environment = db.relationship(
         "Environment", foreign_keys=[branch_deploy_base_environment_id]
@@ -140,6 +141,14 @@ class Project(db.Model, Timestamp):
         order_by="Environment.sort_order",
         foreign_keys="Environment.project_id",
     )
+
+    @property
+    def active_applications(self):
+        return [a for a in self.project_applications if a.deleted_at is None]
+
+    @property
+    def active_environments(self):
+        return [e for e in self.project_environments if e.deleted_at is None]
 
     __table_args__ = (
         UniqueConstraint(organization_id, slug),
@@ -179,6 +188,7 @@ class Environment(db.Model, Timestamp):
     ephemeral = db.Column(db.Boolean, nullable=False, default=False)
     ttl_hours = db.Column(db.Integer, nullable=True)
     is_default = db.Column(db.Boolean, nullable=False, default=False)
+    deleted_at = db.Column(db.DateTime, nullable=True, index=True)
     forked_from_environment_id = db.Column(
         postgresql.UUID(as_uuid=True),
         db.ForeignKey("project_environments.id"),
@@ -196,6 +206,10 @@ class Environment(db.Model, Timestamp):
         backref="environment",
         cascade="all, delete-orphan",
     )
+
+    @property
+    def active_application_environments(self):
+        return [ae for ae in self.application_environments if ae.deleted_at is None]
 
     __table_args__ = (
         UniqueConstraint(project_id, slug),
@@ -261,6 +275,7 @@ class ApplicationEnvironment(db.Model, Timestamp):
         db.String(64),
         nullable=True,
     )
+    deleted_at = db.Column(db.DateTime, nullable=True, index=True)
     version_id = db.Column(db.Integer, nullable=False)
 
     configurations = db.relationship(
@@ -294,7 +309,15 @@ class ApplicationEnvironment(db.Model, Timestamp):
         cascade="all, delete-orphan",
     )
 
-    __table_args__ = (UniqueConstraint(application_id, environment_id),)
+    __table_args__ = (
+        db.Index(
+            "uq_app_env_active",
+            application_id,
+            environment_id,
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+    )
 
     __mapper_args__ = {"version_id_col": version_id}
 
@@ -432,6 +455,7 @@ class Application(db.Model, Timestamp):
     process_pod_classes = db.Column(
         postgresql.JSONB(), server_default=text("json_object('{}')")
     )
+    deleted_at = db.Column(db.DateTime, nullable=True, index=True)
 
     images = db.relationship(
         "Image",
@@ -462,6 +486,11 @@ class Application(db.Model, Timestamp):
         backref="application",
         cascade="all, delete-orphan",
     )
+
+    @property
+    def active_application_environments(self):
+        return [ae for ae in self.application_environments if ae.deleted_at is None]
+
     version_id = db.Column(db.Integer, nullable=False)
 
     github_app_installation_id = db.Column(
@@ -522,9 +551,10 @@ class Application(db.Model, Timestamp):
     @property
     def default_app_env(self):
         """Return the implicit/default ApplicationEnvironment for this app."""
+        active = self.active_application_environments
         return next(
-            (ae for ae in self.application_environments if ae.k8s_identifier is None),
-            self.application_environments[0] if self.application_environments else None,
+            (ae for ae in active if ae.k8s_identifier is None),
+            active[0] if active else None,
         )
 
     # Proxy properties that delegate to default_app_env so listing-page

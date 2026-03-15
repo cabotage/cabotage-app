@@ -124,7 +124,6 @@ services:
       - CABOTAGE_SQLALCHEMY_DATABASE_URI=postgresql://postgres@db/cabotage_dev
       - CABOTAGE_TESTING=True
       - CABOTAGE_VAULT_TOKEN=deadbeef-dead-beef-dead-beefdeadbeef
-      - CABOTAGE_WTF_CSRF_ENABLED=False
       - C_FORCE_ROOT=1
       - FLASK_APP=cabotage.server.wsgi
       - KUBECONFIG=/var/run/kube/config

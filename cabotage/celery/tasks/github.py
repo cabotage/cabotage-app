@@ -53,6 +53,8 @@ def _resolve_app_env_for_hook(installation_id, repository_name, environment):
                 ApplicationEnvironment.github_environment_name == environment,
                 Application.github_app_installation_id == installation_id,
                 Application.github_repository == repository_name,
+                Application.deleted_at.is_(None),
+                ApplicationEnvironment.deleted_at.is_(None),
             )
         )
         .first()
@@ -67,6 +69,7 @@ def _resolve_app_env_for_hook(installation_id, repository_name, environment):
                 Application.github_app_installation_id == installation_id,
                 Application.github_repository == repository_name,
                 Application.github_environment_name == environment,
+                Application.deleted_at.is_(None),
             )
         ).one()
         return application.default_app_env
@@ -91,6 +94,7 @@ def _resolve_app_env_for_hook(installation_id, repository_name, environment):
                     Application.slug == app_slug,
                     Application.github_app_installation_id == installation_id,
                     Application.github_repository == repository_name,
+                    Application.deleted_at.is_(None),
                 )
             )
             .first()
@@ -110,6 +114,8 @@ def _resolve_app_env_for_hook(installation_id, repository_name, environment):
                     Application.slug == app_slug,
                     Application.github_app_installation_id == installation_id,
                     Application.github_repository == repository_name,
+                    Application.deleted_at.is_(None),
+                    ApplicationEnvironment.deleted_at.is_(None),
                 )
             )
             .first()
@@ -131,6 +137,8 @@ def _resolve_app_env_for_hook(installation_id, repository_name, environment):
                     Application.slug == app_slug,
                     Application.github_app_installation_id == installation_id,
                     Application.github_repository == repository_name,
+                    Application.deleted_at.is_(None),
+                    ApplicationEnvironment.deleted_at.is_(None),
                 )
             )
             .first()
@@ -302,6 +310,8 @@ def process_push_hook(hook):
         .filter(
             and_(
                 Environment.ephemeral.is_(False),
+                Application.deleted_at.is_(None),
+                ApplicationEnvironment.deleted_at.is_(None),
                 or_(
                     ApplicationEnvironment.auto_deploy_branch.in_(branch_names),
                     and_(
@@ -356,6 +366,8 @@ def process_check_suite_hook(hook):
             .filter(
                 and_(
                     Environment.ephemeral.is_(False),
+                    Application.deleted_at.is_(None),
+                    ApplicationEnvironment.deleted_at.is_(None),
                     or_(
                         ApplicationEnvironment.auto_deploy_branch.in_(branch_names),
                         and_(
@@ -469,6 +481,7 @@ def process_pull_request_hook(hook):
         .filter(
             Application.github_app_installation_id == installation_id,
             Application.github_repository == repository_name,
+            Application.deleted_at.is_(None),
             Project.branch_deploys_enabled.is_(True),
             Project.branch_deploy_base_environment_id.isnot(None),
         )

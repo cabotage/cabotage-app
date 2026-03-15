@@ -26,7 +26,7 @@
   {% if projects %}
     {% set total_apps = namespace(n=0) %}
     {% for project in projects %}
-      {% set total_apps.n = total_apps.n + project.project_applications|length %}
+      {% set total_apps.n = total_apps.n + project.active_applications|length %}
     {% endfor %}
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
       {{ stat_card(projects|length, 'Projects', 'folder', 'secondary') }}
@@ -55,10 +55,10 @@
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {% for project in group.projects %}
-              {% set app_count = project.project_applications|length %}
+              {% set app_count = project.active_applications|length %}
               {% set running = namespace(n=0) %}
               {% set errored = namespace(n=0) %}
-              {% for app in project.project_applications %}
+              {% for app in project.active_applications %}
                 {% if app.id in deployed_app_ids %}
                   {% set running.n = running.n + 1 %}
                 {% endif %}

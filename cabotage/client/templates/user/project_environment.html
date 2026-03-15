@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, service_card %}
+{% from "_macros.html" import icon, resource_path, page_header, service_card, danger_zone_delete %}
 
 {% block title %}
   {{ environment.name }} - {{ project.name }} - Cabotage
@@ -35,9 +35,10 @@
     <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider">Applications</h2>
   </div>
 
-  {% if environment.application_environments %}
+  {% set active_app_envs = environment.active_application_environments %}
+  {% if active_app_envs %}
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-      {% for app_env in environment.application_environments %}
+      {% for app_env in active_app_envs %}
         {% set app = app_env.application %}
         {% set config_count = app_env.configurations|length %}
         {% set meta = [config_count ~ ' config' ~ ('s' if config_count != 1 else '')] %}
@@ -63,6 +64,9 @@
         ) }}
       {% endfor %}
     </div>
+
+
+
   {% else %}
     <div class="empty-state">
       <div class="text-base-content/15 mb-4">{{ icon('box', 'w-12 h-12') }}</div>

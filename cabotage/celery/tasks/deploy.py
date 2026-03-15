@@ -1,3 +1,4 @@
+import logging
 import secrets
 import time
 
@@ -8,6 +9,7 @@ import yaml
 
 from celery import shared_task
 from kubernetes.client.rest import ApiException
+from sqlalchemy.orm.attributes import flag_modified
 
 from flask import current_app
 
@@ -49,6 +51,93 @@ from cabotage.utils.github import (
 
 class DeployError(RuntimeError):
     pass
+
+
+@shared_task()
+def cleanup_app_env_k8s(app_env_id, namespace, resource_prefix, label_selector):
+    """Best-effort delete of all k8s resources for one ApplicationEnvironment.
+
+    All k8s addressing values are passed explicitly because the originating
+    slugs may be renamed (``--deleted-…``) by the time the worker picks up
+    the task, while the k8s resources still carry the original labels.
+    """
+    log = logging.getLogger(__name__)
+
+    try:
+        api_client = kubernetes_ext.kubernetes_client
+        if api_client is None:
+            log.warning("k8s cleanup: no kubernetes client available")
+            return
+    except Exception:
+        log.exception("k8s cleanup: failed to get kubernetes client")
+        return
+
+    apps_api = kubernetes.client.AppsV1Api(api_client)
+    core_api = kubernetes.client.CoreV1Api(api_client)
+    networking_api = kubernetes.client.NetworkingV1Api(api_client)
+    log.info("k8s cleanup: namespace=%s labels=%s", namespace, label_selector)
+
+    # Delete Deployments
+    try:
+        deps = apps_api.list_namespaced_deployment(
+            namespace, label_selector=label_selector
+        )
+        for d in deps.items:
+            log.info(
+                "k8s cleanup: deleting deployment %s/%s", namespace, d.metadata.name
+            )
+            apps_api.delete_namespaced_deployment(d.metadata.name, namespace)
+    except Exception:
+        log.exception("k8s cleanup: failed to delete deployments")
+
+    # Delete Services
+    svc_label_selector = f"resident-service.cabotage.io=true,app={resource_prefix}"
+    try:
+        svcs = core_api.list_namespaced_service(
+            namespace, label_selector=svc_label_selector
+        )
+        for s in svcs.items:
+            log.info("k8s cleanup: deleting service %s/%s", namespace, s.metadata.name)
+            core_api.delete_namespaced_service(s.metadata.name, namespace)
+    except Exception:
+        log.exception("k8s cleanup: failed to delete services")
+
+    # Delete Ingresses
+    try:
+        ings = networking_api.list_namespaced_ingress(
+            namespace, label_selector=label_selector
+        )
+        for i in ings.items:
+            log.info("k8s cleanup: deleting ingress %s/%s", namespace, i.metadata.name)
+            networking_api.delete_namespaced_ingress(i.metadata.name, namespace)
+    except Exception:
+        log.exception("k8s cleanup: failed to delete ingresses")
+
+    # Delete CabotageEnrollment
+    try:
+        custom_api = kubernetes.client.CustomObjectsApi(api_client)
+        custom_api.delete_namespaced_custom_object(
+            "cabotage.io", "v1", namespace, "cabotageenrollments", resource_prefix
+        )
+        log.info(
+            "k8s cleanup: deleted CabotageEnrollment %s/%s", namespace, resource_prefix
+        )
+    except Exception:
+        log.exception(
+            "k8s cleanup: failed to delete CabotageEnrollment %s", resource_prefix
+        )
+
+    # Delete ServiceAccount and ImagePullSecret
+    try:
+        core_api.delete_namespaced_service_account(resource_prefix, namespace)
+    except Exception:
+        log.exception(
+            "k8s cleanup: failed to delete service account %s", resource_prefix
+        )
+    try:
+        core_api.delete_namespaced_secret(resource_prefix, namespace)
+    except Exception:
+        log.exception("k8s cleanup: failed to delete secret %s", resource_prefix)
 
 
 def _preview_url_for_app_env(app_env):
@@ -573,6 +662,65 @@ def cleanup_orphaned_ingresses(networking_api, release, active_ingress_names, lo
                     if log:
                         log(
                             f"Warning: failed to delete orphaned Ingress/{item.metadata.name}: {exc}"
+                        )
+
+
+def cleanup_orphaned_deployments_and_services(
+    apps_api, core_api, release, active_process_names, log=None
+):
+    """Delete k8s Deployments and Services for processes no longer in the Procfile."""
+    namespace = k8s_namespace(release)
+    resource_prefix = k8s_resource_prefix(release)
+    label_selector = ",".join(
+        [
+            "resident-deployment.cabotage.io=true",
+            f"organization={release.application.project.organization.slug}",
+            f"project={release.application.project.slug}",
+            f"application={release.application.slug}",
+        ]
+    )
+    expected_names = {f"{resource_prefix}-{name}" for name in active_process_names}
+
+    # Clean up Deployments
+    try:
+        existing = apps_api.list_namespaced_deployment(
+            namespace, label_selector=label_selector
+        )
+    except ApiException:
+        existing = None
+    for item in existing.items if existing else []:
+        if item.metadata.name not in expected_names:
+            if log:
+                log(f"Deleting orphaned Deployment/{item.metadata.name}")
+            try:
+                apps_api.delete_namespaced_deployment(item.metadata.name, namespace)
+            except ApiException as exc:
+                if exc.status != 404:
+                    if log:
+                        log(
+                            f"Warning: failed to delete orphaned Deployment/{item.metadata.name}: {exc}"
+                        )
+
+    # Clean up Services (services use app=<resource_prefix> label, not org/project/application)
+    svc_label_selector = f"resident-service.cabotage.io=true,app={resource_prefix}"
+    expected_svc_names = expected_names  # same naming convention
+    try:
+        existing_svcs = core_api.list_namespaced_service(
+            namespace, label_selector=svc_label_selector
+        )
+    except ApiException:
+        return
+    for item in existing_svcs.items:
+        if item.metadata.name not in expected_svc_names:
+            if log:
+                log(f"Deleting orphaned Service/{item.metadata.name}")
+            try:
+                core_api.delete_namespaced_service(item.metadata.name, namespace)
+            except ApiException as exc:
+                if exc.status != 404:
+                    if log:
+                        log(
+                            f"Warning: failed to delete orphaned Service/{item.metadata.name}: {exc}"
                         )
 
 
@@ -1794,6 +1942,37 @@ def deploy_release(deployment):
             log("Unable to launch replicas in time")
             log(str(_go))
             raise DeployError("Unable to launch replicas in time")
+
+        # Clean up k8s Deployments and Services for processes no longer in
+        # the Procfile (e.g., a "worker" process that was removed).
+        active_process_names = list(deployment.release_object.processes.keys())
+        cleanup_orphaned_deployments_and_services(
+            apps_api_instance,
+            core_api_instance,
+            deployment.release_object,
+            active_process_names,
+            log=log,
+        )
+
+        # Prune stale keys from process_counts and process_pod_classes
+        app_env = deployment.application_environment
+        active_set = set(active_process_names)
+        pc = dict(app_env.process_counts or {})
+        ppc = dict(app_env.process_pod_classes or {})
+        stale_pc = set(pc.keys()) - active_set
+        stale_ppc = set(ppc.keys()) - active_set
+        if stale_pc or stale_ppc:
+            for k in stale_pc:
+                del pc[k]
+            for k in stale_ppc:
+                del ppc[k]
+            app_env.process_counts = pc
+            app_env.process_pod_classes = ppc
+            flag_modified(app_env, "process_counts")
+            flag_modified(app_env, "process_pod_classes")
+            db.session.commit()
+            if log is not None:
+                log(f"Pruned stale process keys: {stale_pc | stale_ppc}")
 
         for postdeploy_command in deployment.release_object.postdeploy_commands:
             log(f"Running postdeploy command {postdeploy_command}")

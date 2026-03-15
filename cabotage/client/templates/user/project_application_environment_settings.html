@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import render_field_compact, icon, resource_path %}
+{% from "_macros.html" import render_field_compact, icon, resource_path, danger_zone_delete %}
 
 {% set org_slug = application.project.organization.slug %}
 {% set project_slug = application.project.slug %}
@@ -94,5 +94,17 @@
         </button>
       </div>
     </form>
+
+    {% if unenroll_form %}
+      {{ danger_zone_delete(
+        modal_id='unenroll-app-env-modal',
+        title='Unenroll from Environment',
+        confirm_slug=app_slug,
+        form=unenroll_form,
+        action_url=url_for('user.project_environment_unenroll_application', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug, app_slug=app_slug),
+        description='This will remove the application from this environment, deleting all environment-specific configurations and ingresses.',
+        impact_items=unenroll_impact
+      ) }}
+    {% endif %}
   </div>
 {% endblock content %}

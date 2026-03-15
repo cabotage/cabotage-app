@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import render_field_compact, icon, resource_path, app_tab_nav, app_resource_path %}
+{% from "_macros.html" import render_field_compact, icon, resource_path, app_tab_nav, app_resource_path, danger_zone_delete %}
 
 {% set org_slug = application.project.organization.slug %}
 {% set project_slug = application.project.slug %}
@@ -112,5 +112,17 @@
         </button>
       </div>
     </form>
+
+    {% if delete_form %}
+      {{ danger_zone_delete(
+        modal_id='delete-app-modal',
+        title='Delete Application',
+        confirm_slug=app_slug,
+        form=delete_form,
+        action_url=url_for('user.project_application_delete', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug),
+        description='Deleting this application will remove all configurations, images, releases, and deployments across all environments.',
+        impact_items=delete_impact
+      ) }}
+    {% endif %}
   </div>
 {% endblock content %}
