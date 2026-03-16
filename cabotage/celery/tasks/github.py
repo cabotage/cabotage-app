@@ -474,6 +474,7 @@ def process_pull_request_hook(hook):
     pr_number = pr["number"]
     head_sha = pr["head"]["sha"]
     head_ref = pr["head"]["ref"]
+    base_ref = pr["base"]["ref"]
     hook.commit_sha = head_sha
 
     projects = (
@@ -492,6 +493,30 @@ def process_pull_request_hook(hook):
         return
 
     for project in projects:
+        # Only process PRs that target the same branch as an app in the
+        # preview base environment is configured to auto-deploy from.
+        base_env = project.branch_deploy_base_environment
+        base_app_envs = (
+            ApplicationEnvironment.query.filter_by(
+                environment_id=base_env.id,
+            )
+            .join(Application)
+            .filter(
+                Application.github_app_installation_id == installation_id,
+                Application.github_repository == repository_name,
+                Application.deleted_at.is_(None),
+            )
+            .all()
+        )
+        if not any(ae.effective_auto_deploy_branch == base_ref for ae in base_app_envs):
+            logger.info(
+                "skipping project %s: PR base branch %s does not match any "
+                "auto_deploy_branch in base environment %s",
+                project.slug,
+                base_ref,
+                base_env.slug,
+            )
+            continue
         if action in ("opened", "reopened"):
             create_branch_deploy(
                 project, pr_number, head_sha, installation_id, head_ref
