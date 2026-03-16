@@ -24,4 +24,11 @@
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
-@source "../templates";
+/* @source "**" globs don't recurse — https://github.com/tailwindlabs/tailwindcss/issues/17601 */
+@source "../templates/*.html";
+@source "../templates/errors/*.html";
+@source "../templates/main/*.html";
+@source "../templates/security/*.html";
+@source "../templates/security/email/*.html";
+@source "../templates/user/*.html";
+@source "../static/main.js";
