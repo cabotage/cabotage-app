@@ -3989,6 +3989,7 @@ def project_application_observe(org_slug, project_slug, app_slug, env_slug=None)
         "cpu": request.args.get("cpu", "total"),
         "memory": request.args.get("memory", "total"),
         "errors": request.args.get("errors", "total"),
+        "network": request.args.get("network", "total"),
     }
     for k in current_groups:
         if current_groups[k] not in group_choices:
@@ -4010,7 +4011,7 @@ def project_application_observe(org_slug, project_slug, app_slug, env_slug=None)
     )
 
 
-_OBSERVE_METRICS = {"cpu", "memory", "requests", "latency", "errors"}
+_OBSERVE_METRICS = {"cpu", "memory", "requests", "latency", "errors", "network"}
 _OBSERVE_GROUPS = {"total", "process", "pod", "status"}
 
 
@@ -4219,6 +4220,28 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
             if qr:
                 for series in qr:
                     series["metric"]["quantile"] = f"p{int(quantile * 100)}"
+                result.extend(qr)
+        result = result if result else None
+
+    elif metric == "network":
+        result = []
+        for direction, counter in [
+            ("tx", "container_network_transmit_bytes_total"),
+            ("rx", "container_network_receive_bytes_total"),
+        ]:
+            if group == "process":
+                q = (
+                    f"sum by (process) (label_replace("
+                    f"sum by (pod) (rate({counter}{{{labels}}}[{rate_window}]))"
+                    f', "process", "$1", "pod", "{process_re}"))'
+                )
+            else:
+                q = f"sum(rate({counter}{{{labels}}}[{rate_window}])) {by_clause}"
+            queries.append(q)
+            qr = _query_mimir_range(q, start, end, step)
+            if qr:
+                for series in qr:
+                    series["metric"]["direction"] = direction
                 result.extend(qr)
         result = result if result else None
 
