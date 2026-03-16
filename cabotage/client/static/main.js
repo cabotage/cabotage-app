@@ -472,16 +472,40 @@ function initAddVarModal() {
   var previewFadeUpdate = previewEl ? initFadeScroll(previewEl) : null;
   var siblingDataEl = document.getElementById('sibling-ref-data');
   var siblingRefs = null;
+  var siblingTcpDataEl = document.getElementById('sibling-tcp-ref-data');
+  var siblingTcpRefs = null;
 
   if (siblingDataEl) {
     try { siblingRefs = JSON.parse(siblingDataEl.textContent); } catch (e) { /* ignore */ }
   }
+  if (siblingTcpDataEl) {
+    try { siblingTcpRefs = JSON.parse(siblingTcpDataEl.textContent); } catch (e) { /* ignore */ }
+  }
 
   function resolvePreview(val) {
-    if (!siblingRefs || !val || val.indexOf('${') === -1) return null;
-    var pattern = /\$\{([a-zA-Z0-9_-]+)(?:\.([a-zA-Z0-9_-]+))?\.(url|host)\}/g;
+    if ((!siblingRefs && !siblingTcpRefs) || !val || val.indexOf('${') === -1) return null;
+    var pattern = /\$\{([a-zA-Z0-9_-]+)(?:\.([a-zA-Z0-9_-]+))?\.(url|host|svc|hostname|port)\}/g;
     var hasMatch = false;
     var resolved = val.replace(pattern, function (match, appSlug, middle, prop) {
+      if (prop === 'svc' || prop === 'hostname' || prop === 'port') {
+        if (!siblingTcpRefs || !middle) return match;
+        var tcpSib = null;
+        for (var i = 0; i < siblingTcpRefs.length; i++) {
+          if (siblingTcpRefs[i].slug === appSlug) { tcpSib = siblingTcpRefs[i]; break; }
+        }
+        if (!tcpSib) return match;
+        var found = false;
+        for (var j = 0; j < tcpSib.processes.length; j++) {
+          if (tcpSib.processes[j] === middle) { found = true; break; }
+        }
+        if (!found) return match;
+        hasMatch = true;
+        if (prop === 'port') return '8000';
+        var fqdn = appSlug + '-' + middle + '.<namespace>.svc.cluster.local';
+        if (prop === 'hostname') return fqdn;
+        return fqdn + ':8000';
+      }
+      if (!siblingRefs) return match;
       var sib = null;
       for (var i = 0; i < siblingRefs.length; i++) {
         if (siblingRefs[i].slug === appSlug) { sib = siblingRefs[i]; break; }
@@ -504,7 +528,7 @@ function initAddVarModal() {
   }
 
   var secureCheckbox = modal.querySelector('input[name="secure"]');
-  var templatePattern = /\$\{[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)?\.(url|host)\}/;
+  var templatePattern = /\$\{[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)?\.(url|host|svc|hostname|port)\}/;
 
   function hasTemplateVars(val) {
     return val && templatePattern.test(val);

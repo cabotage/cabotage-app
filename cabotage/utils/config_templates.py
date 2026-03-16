@@ -2,7 +2,7 @@ import re
 
 
 TEMPLATE_PATTERN = re.compile(
-    r"\$\{([a-zA-Z0-9_-]+)(?:\.([a-zA-Z0-9_-]+))?\.(url|host)\}"
+    r"\$\{([a-zA-Z0-9_-]+)(?:\.([a-zA-Z0-9_-]+))?\.(url|host|svc|hostname|port)\}"
 )
 
 
@@ -18,12 +18,19 @@ def has_template_variables(value):
 
 
 def resolve_template_variables(value, application_environment):
-    """Replace all ${app_slug.ingress_name.url} references in value
-    with the resolved ingress URL from sibling apps in the same
-    project + environment.
+    """Replace all template variable references in value.
 
-    Raises TemplateResolutionError if a referenced app or ingress
-    does not exist or has no hosts.
+    Supported forms:
+      ${app_slug.url}                  - ingress URL (single ingress)
+      ${app_slug.host}                 - ingress hostname (single ingress)
+      ${app_slug.ingress_name.url}     - ingress URL (named)
+      ${app_slug.ingress_name.host}    - ingress hostname (named)
+      ${app_slug.process_name.hostname} - k8s service FQDN for a tcp* process
+      ${app_slug.process_name.svc}     - k8s service FQDN:port for a tcp* process
+      ${app_slug.process_name.port}    - service port for a tcp* process
+
+    Raises TemplateResolutionError if a referenced app, ingress, or
+    process does not exist.
     """
     if "${" not in value:
         return value
@@ -32,7 +39,7 @@ def resolve_template_variables(value, application_environment):
 
     def _replace(match):
         app_slug = match.group(1)
-        ingress_name = match.group(2)
+        name = match.group(2)
         prop = match.group(3)
 
         sibling_app_env = siblings.get(app_slug)
@@ -43,7 +50,9 @@ def resolve_template_variables(value, application_environment):
                 f"environment '{application_environment.environment.slug}'"
             )
 
-        return _resolve_ingress(sibling_app_env, ingress_name, app_slug, prop)
+        if prop in ("svc", "hostname", "port"):
+            return _resolve_tcp_service(sibling_app_env, name, app_slug, prop)
+        return _resolve_ingress(sibling_app_env, name, app_slug, prop)
 
     return TEMPLATE_PATTERN.sub(_replace, value)
 
@@ -104,3 +113,46 @@ def _resolve_ingress(app_env, ingress_name, app_slug, prop="url"):
 
     scheme = "https" if host.tls_enabled else "http"
     return f"{scheme}://{host.hostname}"
+
+
+def _resolve_tcp_service(app_env, process_name, app_slug, prop="svc"):
+    """Resolve a TCP service reference to its cluster-internal address.
+
+    Returns:
+      hostname - k8s service FQDN
+      svc      - FQDN:port
+      port     - port number
+    """
+    from cabotage.server.models.utils import safe_k8s_name
+
+    if process_name is None:
+        raise TemplateResolutionError(
+            f"TCP service reference for '{app_slug}' requires a process name; "
+            f"use ${{{app_slug}.<process_name>.{prop}}} syntax"
+        )
+
+    if prop == "port":
+        return "8000"
+
+    # Build the k8s service FQDN:
+    #   {resource_prefix}-{process_name}.{namespace}.svc.cluster.local
+    app = app_env.application
+    project = app.project
+    org = project.organization
+
+    resource_prefix = safe_k8s_name(project.k8s_identifier, app.k8s_identifier)
+    service_name = f"{resource_prefix}-{process_name}"
+
+    if app_env.k8s_identifier is not None:
+        namespace = safe_k8s_name(
+            org.k8s_identifier, app_env.environment.k8s_identifier
+        )
+    else:
+        namespace = org.k8s_identifier
+
+    fqdn = f"{service_name}.{namespace}.svc.cluster.local"
+
+    if prop == "hostname":
+        return fqdn
+
+    return f"{fqdn}:8000"
