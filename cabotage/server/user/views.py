@@ -63,6 +63,8 @@ from cabotage.server.models.projects import (
     Configuration,
     Deployment,
     Environment,
+    EnvironmentConfigSubscription,
+    EnvironmentConfiguration,
     Hook,
     Image,
     Ingress,
@@ -90,18 +92,21 @@ from cabotage.server.user.forms import (
     ApplicationScaleForm,
     CreateApplicationForm,
     CreateConfigurationForm,
+    CreateEnvironmentConfigurationForm,
     CreateEnvironmentForm,
     CreateOrganizationForm,
     CreateProjectForm,
     DeleteApplicationForm,
     DeleteApplicationEnvironmentForm,
     DeleteConfigurationForm,
+    DeleteEnvironmentConfigurationForm,
     DeleteEnvironmentForm,
     DeleteOrganizationForm,
     DeleteProjectForm,
     EditApplicationEnvironmentSettingsForm,
     EditApplicationSettingsForm,
     EditConfigurationForm,
+    EditEnvironmentConfigurationForm,
     EditEnvironmentForm,
     EditOrganizationForm,
     EditProjectSettingsForm,
@@ -162,6 +167,10 @@ def _config_k8s_namespace(organization, app_env):
 
 def _config_k8s_resource_prefix(project, application):
     return safe_k8s_name(project.k8s_identifier, application.k8s_identifier)
+
+
+def _env_config_k8s_resource_prefix(project):
+    return project.k8s_identifier
 
 
 def _deletion_impact_items(entity_type, entity_name, children):
@@ -1327,6 +1336,400 @@ def project_environment_unenroll_application(
     abort(400)
 
 
+# --- Environment-level Configuration CRUD ---
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/config/<config_id>",
+)
+@login_required
+def project_environment_configuration(org_slug, project_slug, env_slug, config_id):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    environment = Environment.query.filter_by(
+        project_id=project.id, slug=env_slug
+    ).first_or_404()
+    configuration = EnvironmentConfiguration.query.filter_by(
+        project_id=project.id, environment_id=environment.id, id=config_id
+    ).first_or_404()
+    return render_template(
+        "user/project_environment_configuration.html",
+        configuration=configuration,
+        environment=environment,
+        project=project,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/config/create",
+    methods=["GET", "POST"],
+)
+@login_required
+def project_environment_configuration_create(org_slug, project_slug, env_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    environment = Environment.query.filter_by(
+        project_id=project.id, slug=env_slug
+    ).first_or_404()
+
+    form = CreateEnvironmentConfigurationForm()
+    form.project_id.data = str(project.id)
+    form.environment_id.data = str(environment.id)
+
+    if form.validate_on_submit():
+        from cabotage.utils.config_templates import has_template_variables
+
+        is_template = has_template_variables(form.value.data)
+        if is_template and form.secure.data:
+            flash("Template configs cannot be secrets.", "error")
+            return render_template(
+                "user/project_environment_configuration_create.html",
+                form=form,
+                project=project,
+                environment=environment,
+            )
+
+        configuration = EnvironmentConfiguration(
+            project_id=project.id,
+            environment_id=environment.id,
+            name=form.name.data,
+            value=form.value.data,
+            secret=form.secure.data,
+            buildtime=form.buildtime.data,
+        )
+        if not is_template:
+            try:
+                # Use any active app_env to derive the k8s namespace
+                app_env = (
+                    environment.active_application_environments[0]
+                    if environment.active_application_environments
+                    else None
+                )
+                if app_env:
+                    ns = _config_k8s_namespace(organization, app_env)
+                else:
+                    ns = safe_k8s_name(
+                        organization.k8s_identifier, environment.k8s_identifier
+                    )
+                prefix = _env_config_k8s_resource_prefix(project)
+                key_slugs = config_writer.write_configuration(ns, prefix, configuration)
+            except Exception:
+                raise
+            configuration.key_slug = key_slugs["config_key_slug"]
+            configuration.build_key_slug = key_slugs["build_key_slug"]
+            if configuration.secret:
+                configuration.value = "**secure**"
+        else:
+            flash(
+                "Template config saved — will resolve at deploy time.",
+                "info",
+            )
+        db.session.add(configuration)
+        db.session.flush()
+        activity = Activity(
+            verb="create",
+            object=configuration,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            },
+        )
+        db.session.add(activity)
+        db.session.commit()
+        return redirect(
+            url_for(
+                "user.project_environment",
+                org_slug=organization.slug,
+                project_slug=project.slug,
+                env_slug=environment.slug,
+                _anchor="config",
+            )
+        )
+    return render_template(
+        "user/project_environment_configuration_create.html",
+        form=form,
+        project=project,
+        environment=environment,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/config/<config_id>/edit",
+    methods=["GET", "POST"],
+)
+@login_required
+def project_environment_configuration_edit(org_slug, project_slug, env_slug, config_id):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    environment = Environment.query.filter_by(
+        project_id=project.id, slug=env_slug
+    ).first_or_404()
+    configuration = EnvironmentConfiguration.query.filter_by(
+        project_id=project.id, environment_id=environment.id, id=config_id
+    ).first_or_404()
+
+    form = EditEnvironmentConfigurationForm(obj=configuration)
+    form.environment_configuration_id.data = str(configuration.id)
+    form.name.data = str(configuration.name)
+    form.secure.data = configuration.secret
+
+    if form.validate_on_submit():
+        from cabotage.utils.config_templates import has_template_variables
+
+        form.populate_obj(configuration)
+        is_template = has_template_variables(configuration.value)
+        if is_template and configuration.secret:
+            flash("Template configs cannot be secrets.", "error")
+            return render_template(
+                "user/project_environment_configuration_edit.html",
+                form=form,
+                project=project,
+                environment=environment,
+                configuration=configuration,
+            )
+
+        if not is_template:
+            try:
+                app_env = (
+                    environment.active_application_environments[0]
+                    if environment.active_application_environments
+                    else None
+                )
+                if app_env:
+                    ns = _config_k8s_namespace(organization, app_env)
+                else:
+                    ns = safe_k8s_name(
+                        organization.k8s_identifier, environment.k8s_identifier
+                    )
+                prefix = _env_config_k8s_resource_prefix(project)
+                key_slugs = config_writer.write_configuration(ns, prefix, configuration)
+            except Exception:
+                raise
+            configuration.key_slug = key_slugs["config_key_slug"]
+            configuration.build_key_slug = key_slugs["build_key_slug"]
+            if configuration.secret:
+                configuration.value = "**secure**"
+        else:
+            configuration.key_slug = None
+            configuration.build_key_slug = None
+            flash(
+                "Template config saved — will resolve at deploy time.",
+                "info",
+            )
+        db.session.flush()
+        activity = Activity(
+            verb="edit",
+            object=configuration,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            },
+        )
+        db.session.add(activity)
+        db.session.commit()
+        return redirect(
+            url_for(
+                "user.project_environment",
+                org_slug=organization.slug,
+                project_slug=project.slug,
+                env_slug=environment.slug,
+                _anchor="config",
+            )
+        )
+
+    if configuration.secret:
+        form.value.data = None
+
+    return render_template(
+        "user/project_environment_configuration_edit.html",
+        form=form,
+        project=project,
+        environment=environment,
+        configuration=configuration,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/config/<config_id>/delete",
+    methods=["GET", "POST"],
+)
+@login_required
+def project_environment_configuration_delete(
+    org_slug, project_slug, env_slug, config_id
+):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    environment = Environment.query.filter_by(
+        project_id=project.id, slug=env_slug
+    ).first_or_404()
+    configuration = EnvironmentConfiguration.query.filter_by(
+        project_id=project.id, environment_id=environment.id, id=config_id
+    ).first_or_404()
+
+    if request.method == "GET":
+        form = DeleteEnvironmentConfigurationForm(obj=configuration)
+    else:
+        form = DeleteEnvironmentConfigurationForm()
+    form.configuration_id.data = str(configuration.id)
+    form.name.data = str(configuration.name)
+    form.value.data = str(configuration.value)
+    form.secure.data = str(configuration.secret)
+
+    if form.validate_on_submit():
+        db.session.delete(configuration)
+        db.session.flush()
+        activity = Activity(
+            verb="delete",
+            object=configuration,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            },
+        )
+        db.session.add(activity)
+        db.session.commit()
+        return redirect(
+            url_for(
+                "user.project_environment",
+                org_slug=organization.slug,
+                project_slug=project.slug,
+                env_slug=environment.slug,
+                _anchor="config",
+            )
+        )
+    return render_template(
+        "user/project_environment_configuration_delete.html",
+        form=form,
+        project=project,
+        environment=environment,
+        configuration=configuration,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/env-config/<config_id>/subscribe",
+    methods=["POST"],
+)
+@login_required
+def project_application_env_config_subscribe(
+    org_slug, project_slug, app_slug, config_id
+):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    application = Application.query.filter_by(
+        project_id=project.id, slug=app_slug
+    ).first_or_404()
+    if not AdministerApplicationPermission(application.id).can():
+        abort(403)
+
+    env_config = EnvironmentConfiguration.query.filter_by(
+        project_id=project.id, id=config_id
+    ).first_or_404()
+
+    env_slug = request.form.get("env_slug")
+    app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
+    if app_env is None:
+        abort(404)
+
+    # Check that this env config belongs to the same environment
+    if env_config.environment_id != app_env.environment_id:
+        abort(400)
+
+    existing = EnvironmentConfigSubscription.query.filter_by(
+        application_environment_id=app_env.id,
+        environment_configuration_id=env_config.id,
+    ).first()
+
+    if existing is None:
+        sub = EnvironmentConfigSubscription(
+            application_environment_id=app_env.id,
+            environment_configuration_id=env_config.id,
+        )
+        db.session.add(sub)
+        db.session.commit()
+        flash(f"Subscribed to {env_config.name}.", "success")
+    else:
+        flash(f"Already subscribed to {env_config.name}.", "info")
+
+    return redirect(
+        url_for(
+            "user.project_application",
+            org_slug=organization.slug,
+            project_slug=project.slug,
+            app_slug=application.slug,
+            env_slug=env_slug,
+            _anchor="config",
+        )
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/env-config/<config_id>/unsubscribe",
+    methods=["POST"],
+)
+@login_required
+def project_application_env_config_unsubscribe(
+    org_slug, project_slug, app_slug, config_id
+):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    application = Application.query.filter_by(
+        project_id=project.id, slug=app_slug
+    ).first_or_404()
+    if not AdministerApplicationPermission(application.id).can():
+        abort(403)
+
+    env_config = EnvironmentConfiguration.query.filter_by(
+        project_id=project.id, id=config_id
+    ).first_or_404()
+
+    env_slug = request.form.get("env_slug")
+    app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
+    if app_env is None:
+        abort(404)
+
+    existing = EnvironmentConfigSubscription.query.filter_by(
+        application_environment_id=app_env.id,
+        environment_configuration_id=env_config.id,
+    ).first()
+
+    if existing is not None:
+        db.session.delete(existing)
+        db.session.commit()
+        flash(f"Unsubscribed from {env_config.name}.", "success")
+
+    return redirect(
+        url_for(
+            "user.project_application",
+            org_slug=organization.slug,
+            project_slug=project.slug,
+            app_slug=application.slug,
+            env_slug=env_slug,
+            _anchor="config",
+        )
+    )
+
+
 @user_blueprint.route(
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/delete",
     methods=["POST"],
@@ -1618,7 +2021,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
             application_id=application.id,
             application_environment_id=app_env.id,
             image=(latest_image_built.asdict if latest_image_built else {}),
-            configuration={c.name: c.asdict for c in app_env.configurations},
+            configuration=Application._resolved_configuration(app_env),
             ingresses={ing.name: ing.asdict for ing in app_env.ingresses},
             platform=application.platform,
         ).asdict
@@ -1736,6 +2139,17 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         release_by_id=release_by_id,
         image_by_id=image_by_id,
         release_proc_counts=release_proc_counts,
+        env_configs=(
+            environment.active_environment_configurations if environment else []
+        ),
+        subscribed_env_config_ids=(
+            {
+                sub.environment_configuration_id
+                for sub in app_env.environment_config_subscriptions
+            }
+            if app_env
+            else set()
+        ),
     )
 
 

@@ -1,0 +1,48 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import render_field, icon, resource_path %}
+
+{% block title %}
+  Add Environment Variable - {{ environment.name }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': project.organization.slug, 'url': url_for('user.organization', org_slug=project.organization.slug) },
+    {'label': project.slug, 'url': url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug)},
+    {'label': 'environments', 'url': url_for('user.project_environments', org_slug=project.organization.slug, project_slug=project.slug)},
+    {'label': environment.slug, 'url': url_for('user.project_environment', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug)},
+    {'label': 'new config'}
+  ]) }}
+{% endblock resource_path %}
+
+{% block content %}
+  <div class="form-card">
+    <div class="card bg-base-200 border border-base-300 shadow-xl">
+      <div class="card-body">
+        <h1 class="text-xl font-semibold text-base-content mb-1">Add Environment Variable</h1>
+        <p class="text-sm text-base-content/50 mb-4">Shared across all subscribed applications in <strong>{{ environment.name }}</strong>.</p>
+
+        <form action="{{ url_for('user.project_environment_configuration_create', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}"
+              method="post"
+              name="project_environment_configuration_create_form"
+              class="flex flex-col gap-4">
+          {{ form.hidden_tag() }}
+          {{ render_field(form.name, placeholder='MY_VARIABLE') }}
+          {{ render_field(form.value, placeholder='value') }}
+          <p class="text-xs text-base-content/40 -mt-2">
+            Use <code class="text-base-content/60">${app.url}</code> or
+            <code class="text-base-content/60">${app.ingress.url}</code>
+            to reference a sibling app's ingress URL, or
+            <code class="text-base-content/60">.host</code> for just the hostname.
+          </p>
+          {{ render_field(form.secure) }}
+          {{ render_field(form.buildtime) }}
+          <div class="flex items-center gap-3 pt-2">
+            <button type="submit" class="btn btn-primary">Create Variable</button>
+            <a href="#" onclick="history.back();return false" class="btn btn-ghost">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endblock content %}

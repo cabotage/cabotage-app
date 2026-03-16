@@ -103,4 +103,66 @@
     </div>
   {% endif %}
 
+  <hr class="border-base-content/10 my-6" id="config">
+
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider">Environment Variables</h2>
+    <a href="{{ url_for('user.project_environment_configuration_create', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}"
+       class="btn btn-sm btn-primary gap-1">
+      {{ icon('plus', 'w-4 h-4') }} Add Variable
+    </a>
+  </div>
+
+  {% set env_configs = environment.active_environment_configurations %}
+  {% if env_configs %}
+    <div class="overflow-x-auto">
+      <table class="table table-sm">
+        <thead>
+          <tr class="text-base-content/50 text-xs uppercase tracking-wider">
+            <th>Name</th>
+            <th>Value</th>
+            <th>Subscriptions</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for config in env_configs %}
+            <tr>
+              <td class="max-w-[12rem]">
+                <a href="{{ url_for('user.project_environment_configuration', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug, config_id=config.id) }}"
+                   class="link link-hover">
+                  <code class="text-sm font-mono text-accent block truncate" title="{{ config.name }}">{{ config.name }}</code>
+                </a>
+              </td>
+              <td>
+                {% if config.secret %}
+                  <span class="inline-flex items-center gap-1 text-base-content/40 text-sm">
+                    {{ icon('lock', 'w-3 h-3') }} Secret
+                  </span>
+                {% else %}
+                  <code class="text-sm font-mono text-base-content/70 break-words max-w-[20rem] block truncate" title="{{ config.value }}">{{ config.value }}</code>
+                {% endif %}
+              </td>
+              <td>
+                <span class="text-sm text-base-content/50">{{ config.subscriptions|length }} app{{ 's' if config.subscriptions|length != 1 else '' }}</span>
+              </td>
+              <td class="text-right">
+                <a href="{{ url_for('user.project_environment_configuration_edit', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug, config_id=config.id) }}"
+                   class="btn btn-ghost btn-xs" title="Edit">{{ icon('edit', 'w-3.5 h-3.5') }}</a>
+                <a href="{{ url_for('user.project_environment_configuration_delete', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug, config_id=config.id) }}"
+                   class="btn btn-ghost btn-xs text-error" title="Delete">{{ icon('trash', 'w-3.5 h-3.5') }}</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <div class="text-base-content/15 mb-4">{{ icon('settings', 'w-12 h-12') }}</div>
+      <h3 class="text-base font-medium text-base-content/60 mb-1">No shared environment variables</h3>
+      <p class="text-sm text-base-content/40 max-w-sm">Add variables here to share them across applications in this environment.</p>
+    </div>
+  {% endif %}
+
 {% endblock content %}
