@@ -452,15 +452,31 @@
     });
   }
 
-  // Mirror chart: TX series plotted positive, RX series negated
+  // Mirror chart: TX series plotted positive, RX series negated.
+  // When grouped by process/pod, each entity gets a unique color shared
+  // by its TX (solid) and RX (dashed) lines.  For "total" mode the two
+  // directions simply get distinct colors.
   function makeMirrorChart(el, result, labelKey, valueFmt, shortLabels, colorMap) {
     if (!result || !result.length) {
       el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/30 text-sm">No data</div>';
       return;
     }
-    // Split result into tx and rx groups
     var txSeries = result.filter(function(s) { return s.metric.direction === 'tx'; });
     var rxSeries = result.filter(function(s) { return s.metric.direction === 'rx'; });
+
+    // Build a stable entity→color map so TX and RX of the same pod/process share a color
+    var entityKey = txSeries.length > 1 ? (txSeries[0].metric.pod ? 'pod' : 'process') : null;
+    var entityColorMap = {};
+    if (entityKey) {
+      txSeries.forEach(function(s, i) {
+        var key = s.metric[entityKey] || '';
+        if (!(key in entityColorMap)) entityColorMap[key] = COLORS[Object.keys(entityColorMap).length % COLORS.length];
+      });
+      rxSeries.forEach(function(s, i) {
+        var key = s.metric[entityKey] || '';
+        if (!(key in entityColorMap)) entityColorMap[key] = COLORS[Object.keys(entityColorMap).length % COLORS.length];
+      });
+    }
 
     // Build unified timestamp set
     var tsSet = {};
@@ -472,10 +488,9 @@
     timestamps.forEach(function(t, i) { tsIndex[t] = i; });
 
     var data = [timestamps];
-    var labels = [];
-    var seriesColors = [];
+    var seriesDefs = []; // {label, color, dashed}
 
-    // TX series (positive)
+    // TX series (positive, solid)
     txSeries.forEach(function(s) {
       var vals = new Array(timestamps.length).fill(null);
       s.values.forEach(function(v) {
@@ -484,12 +499,13 @@
         if (!isNaN(num) && isFinite(num)) vals[idx] = num;
       });
       data.push(vals);
-      var extra = txSeries.length > 1 ? (s.metric.pod ? ' (' + shortLabel(s.metric.pod) + ')' : (s.metric.process ? ' (' + s.metric.process + ')' : '')) : '';
-      labels.push('TX' + extra);
-      seriesColors.push(colorMap ? (colorMap['tx'] || '#8b5cf6') : '#8b5cf6');
+      var entity = entityKey ? (s.metric[entityKey] || '') : null;
+      var extra = entity ? ' (' + (shortLabels ? shortLabel(entity) : entity) + ')' : '';
+      var color = entity ? entityColorMap[entity] : (colorMap && colorMap['tx'] || '#8b5cf6');
+      seriesDefs.push({ label: 'TX' + extra, color: color, dashed: false });
     });
 
-    // RX series (negated)
+    // RX series (negated, dashed)
     rxSeries.forEach(function(s) {
       var vals = new Array(timestamps.length).fill(null);
       s.values.forEach(function(v) {
@@ -498,22 +514,25 @@
         if (!isNaN(num) && isFinite(num)) vals[idx] = -num;
       });
       data.push(vals);
-      var extra = rxSeries.length > 1 ? (s.metric.pod ? ' (' + shortLabel(s.metric.pod) + ')' : (s.metric.process ? ' (' + s.metric.process + ')' : '')) : '';
-      labels.push('RX' + extra);
-      seriesColors.push(colorMap ? (colorMap['rx'] || '#3b82f6') : '#3b82f6');
+      var entity = entityKey ? (s.metric[entityKey] || '') : null;
+      var extra = entity ? ' (' + (shortLabels ? shortLabel(entity) : entity) + ')' : '';
+      var color = entity ? entityColorMap[entity] : (colorMap && colorMap['rx'] || '#3b82f6');
+      seriesDefs.push({ label: 'RX' + extra, color: color, dashed: true });
     });
 
     el.innerHTML = '';
     var width = el.clientWidth || 400;
     var height = parseInt(getComputedStyle(el).minHeight) || 220;
+    var totalSeries = seriesDefs.length;
 
     var series = [{ label: '', value: '' }];
-    labels.forEach(function(label, i) {
+    seriesDefs.forEach(function(def) {
       series.push({
-        label: label,
-        stroke: seriesColors[i],
-        fill: seriesColors[i] + '20',
+        label: def.label,
+        stroke: def.color,
+        fill: def.color + '20',
         width: 1.5,
+        dash: def.dashed ? [6, 4] : undefined,
         points: { show: false },
         value: ''
       });
@@ -535,7 +554,7 @@
       ],
       plugins: [tooltipPlugin(absFmt)],
       cursor: { drag: { x: false, y: false } },
-      legend: { show: true, live: false },
+      legend: { show: totalSeries <= 8, live: false },
       scales: {
         x: { time: true, min: xBounds().min, max: xBounds().max },
         y: { range: function(u, dmin, dmax) {
