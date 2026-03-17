@@ -21,7 +21,9 @@ from cabotage.server import (
 )
 
 from cabotage.server.models.projects import (
+    Configuration,
     Deployment,
+    EnvironmentConfiguration,
     IngressHost,
     IngressSnapshot,
     DEFAULT_POD_CLASS,
@@ -391,6 +393,86 @@ def fetch_cabotage_enrollment(custom_objects_api_instance, release):
                 f"{name} in {namespace}: {exc}"
             )
     return cabotage_enrollment
+
+
+def _env_config_read_keys_for_release(release):
+    """Extract env config Consul/Vault paths from a release's configuration."""
+    consul_keys = set()
+    vault_keys = set()
+    for name, config_data in release.configuration.items():
+        obj = Configuration.query.get(config_data["id"])
+        if obj is None:
+            obj = EnvironmentConfiguration.query.get(config_data["id"])
+        if not isinstance(obj, EnvironmentConfiguration):
+            continue
+        if obj.key_slug:
+            store, path = obj.key_slug.split(":", 1)
+            # Strip version to get the config name prefix
+            # consul path: .../configuration/{name}/{version}
+            # vault path:  .../configuration/{name}/{version}
+            prefix = "/".join(path.split("/")[:-1])
+            if store == "consul":
+                consul_keys.add(f"{prefix}/")
+            elif store == "vault":
+                vault_keys.add(f"{prefix}/*")
+        if obj.secret and obj.buildtime and obj.build_key_slug:
+            _, build_path = obj.build_key_slug.split(":", 1)
+            build_prefix = "/".join(build_path.split("/")[:-1])
+            vault_keys.add(f"{build_prefix}/*")
+    return consul_keys, vault_keys
+
+
+def _compute_enrollment_read_keys(release):
+    """Compute the desired readKeys for a release's CabotageEnrollment.
+
+    Returns the union of env config paths from the deploying release
+    and the currently running release.
+    """
+    app_env = release.application_environment
+
+    consul_keys = set()
+    vault_keys = set()
+
+    # Union: new release + currently deployed release
+    c, v = _env_config_read_keys_for_release(release)
+    consul_keys |= c
+    vault_keys |= v
+
+    current_deployment = app_env.latest_deployment_completed
+    if current_deployment and current_deployment.release_object:
+        c, v = _env_config_read_keys_for_release(current_deployment.release_object)
+        consul_keys |= c
+        vault_keys |= v
+
+    desired = {}
+    if consul_keys:
+        desired["consul"] = sorted(consul_keys)
+    if vault_keys:
+        desired["vault"] = sorted(vault_keys)
+    return desired
+
+
+def reconcile_enrollment_read_keys(
+    custom_objects_api_instance, enrollment, release, log=None
+):
+    """Patch the CabotageEnrollment's readKeys if they differ from what
+    the deploying + current releases need."""
+    desired = _compute_enrollment_read_keys(release)
+    current = enrollment.get("spec", {}).get("readKeys", {})
+
+    if desired == current:
+        if log:
+            log("CabotageEnrollment readKeys already current")
+        return
+
+    ns = k8s_namespace(release)
+    name = k8s_resource_prefix(release)
+    if log:
+        log("Patching CabotageEnrollment readKeys")
+    patch = {"spec": {"readKeys": desired}}
+    custom_objects_api_instance.patch_namespaced_custom_object(
+        "cabotage.io", "v1", ns, "cabotageenrollments", name, patch
+    )
 
 
 def render_service(release, process_name):
@@ -1747,8 +1829,11 @@ def deploy_release(deployment):
             core_api_instance, deployment.release_object
         )
         log("Fetching CabotageEnrollment")
-        fetch_cabotage_enrollment(
+        enrollment = fetch_cabotage_enrollment(
             custom_objects_api_instance, deployment.release_object
+        )
+        reconcile_enrollment_read_keys(
+            custom_objects_api_instance, enrollment, deployment.release_object, log=log
         )
         if any(
             [
@@ -2128,6 +2213,9 @@ def fake_deploy_release(deployment):
     )
     deploy_log.append(yaml.dump(remove_none(service_account.to_dict())))
     cabotage_enrollment = render_cabotage_enrollment(deployment.release_object)
+    read_keys = _compute_enrollment_read_keys(deployment.release_object)
+    if read_keys:
+        cabotage_enrollment.setdefault("spec", {})["readKeys"] = read_keys
     deploy_log.append(
         f"Creating CabotageEnrollment/{cabotage_enrollment['metadata']['name']} "
         f"in Namespace/{namespace.metadata.name}"
