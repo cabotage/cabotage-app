@@ -1,6 +1,5 @@
 import re
 
-
 TEMPLATE_PATTERN = re.compile(
     r"\$\{([a-zA-Z0-9_-]+)(?:\.([a-zA-Z0-9_-]+))?\.(url|host|svc|hostname|port)\}"
 )

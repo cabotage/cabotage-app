@@ -3,7 +3,6 @@ import subprocess  # nosec
 
 import redis
 
-
 _LOG_STREAM_TTL = 3600  # 1 hour
 _HEARTBEAT_TTL = 90  # seconds
 
