@@ -154,6 +154,26 @@
           </div>
         </div>
 
+        {# Network I/O (TX positive, RX negative) #}
+        <div class="card bg-base-200/50 border border-base-content/5">
+          <div class="card-body p-4">
+            <div class="flex items-center justify-between">
+              <h2 class="card-title text-sm font-medium text-base-content/70">{{ icon('globe', 'w-4 h-4') }} Network I/O</h2>
+              <div class="flex gap-0.5" data-group-selector="network">
+                <button class="btn btn-xs {% if current_groups.network == 'total' %}btn-primary{% else %}btn-ghost{% endif %}" data-group="total">Total</button>
+                <button class="btn btn-xs {% if current_groups.network == 'process' %}btn-primary{% else %}btn-ghost{% endif %}" data-group="process">Process</button>
+                <button class="btn btn-xs {% if current_groups.network == 'pod' %}btn-primary{% else %}btn-ghost{% endif %}" data-group="pod">Pod</button>
+              </div>
+            </div>
+            <div id="chart-network" class="metric-panel" data-metric-panel>
+              <div class="flex items-center justify-center h-full text-base-content/20">
+                {{ icon('loader', 'w-5 h-5 animate-spin') }}
+              </div>
+            </div>
+            <p class="text-[0.6rem] text-base-content/20 mt-1 break-all leading-tight hidden" data-query-debug="network"></p>
+          </div>
+        </div>
+
       </div>
       <div class="flex justify-end mt-2">
         <label class="label cursor-pointer gap-1.5">
@@ -432,6 +452,109 @@
     });
   }
 
+  // Mirror chart: TX series plotted positive, RX series negated.
+  // When grouped by process/pod, each entity gets a unique color shared
+  // by its TX (solid) and RX (dashed) lines.  For "total" mode the two
+  // directions simply get distinct colors.
+  function makeMirrorChart(el, result, labelKey, valueFmt, shortLabels, colorMap) {
+    if (!result || !result.length) {
+      el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/30 text-sm">No data</div>';
+      return;
+    }
+    var txSeries = result.filter(function(s) { return s.metric.direction === 'tx'; });
+    var rxSeries = result.filter(function(s) { return s.metric.direction === 'rx'; });
+
+    // TX gets warm-toned colors, RX gets cool-toned — direction is always visually distinct
+    var TX_COLORS = ['#8b5cf6', '#f59e0b', '#ef4444', '#ec4899', '#f97316'];
+    var RX_COLORS = ['#3b82f6', '#10b981', '#06b6d4', '#14b8a6', '#6366f1'];
+
+    var entityKey = txSeries.length > 1 ? (txSeries[0].metric.pod ? 'pod' : 'process') : null;
+
+    // Build unified timestamp set
+    var tsSet = {};
+    result.forEach(function(s) {
+      s.values.forEach(function(v) { tsSet[v[0]] = true; });
+    });
+    var timestamps = Object.keys(tsSet).map(Number).sort(function(a, b) { return a - b; });
+    var tsIndex = {};
+    timestamps.forEach(function(t, i) { tsIndex[t] = i; });
+
+    var data = [timestamps];
+    var seriesDefs = []; // {label, color, dashed}
+
+    // TX series (positive) — warm palette
+    txSeries.forEach(function(s, i) {
+      var vals = new Array(timestamps.length).fill(null);
+      s.values.forEach(function(v) {
+        var idx = tsIndex[v[0]];
+        var num = parseFloat(v[1]);
+        if (!isNaN(num) && isFinite(num)) vals[idx] = num;
+      });
+      data.push(vals);
+      var entity = entityKey ? (s.metric[entityKey] || '') : null;
+      var extra = entity ? ' (' + (shortLabels ? shortLabel(entity) : entity) + ')' : '';
+      seriesDefs.push({ label: 'TX' + extra, color: TX_COLORS[i % TX_COLORS.length] });
+    });
+
+    // RX series (negated) — cool palette
+    rxSeries.forEach(function(s, i) {
+      var vals = new Array(timestamps.length).fill(null);
+      s.values.forEach(function(v) {
+        var idx = tsIndex[v[0]];
+        var num = parseFloat(v[1]);
+        if (!isNaN(num) && isFinite(num)) vals[idx] = -num;
+      });
+      data.push(vals);
+      var entity = entityKey ? (s.metric[entityKey] || '') : null;
+      var extra = entity ? ' (' + (shortLabels ? shortLabel(entity) : entity) + ')' : '';
+      seriesDefs.push({ label: 'RX' + extra, color: RX_COLORS[i % RX_COLORS.length] });
+    });
+
+    el.innerHTML = '';
+    var width = el.clientWidth || 400;
+    var height = parseInt(getComputedStyle(el).minHeight) || 220;
+    var totalSeries = seriesDefs.length;
+
+    var series = [{ label: '', value: '' }];
+    seriesDefs.forEach(function(def) {
+      series.push({
+        label: def.label,
+        stroke: def.color,
+        fill: def.color + '20',
+        width: 1.5,
+        points: { show: false },
+        value: ''
+      });
+    });
+
+    var absFmt = function(v) { return valueFmt(Math.abs(v)); };
+    var opts = {
+      width: width,
+      height: height,
+      series: series,
+      axes: [
+        { stroke: AXIS_STROKE, grid: { stroke: GRID_STROKE } },
+        {
+          stroke: AXIS_STROKE,
+          grid: { stroke: GRID_STROKE },
+          size: 70,
+          values: function(u, vals) { return vals.map(absFmt); }
+        }
+      ],
+      plugins: [tooltipPlugin(absFmt)],
+      cursor: { drag: { x: false, y: false } },
+      legend: { show: totalSeries <= 8, live: false },
+      scales: {
+        x: { time: true, min: xBounds().min, max: xBounds().max },
+        y: { range: function(u, dmin, dmax) {
+          var absMax = Math.max(Math.abs(dmin || 0), Math.abs(dmax || 0)) * 1.1 || 1;
+          return [-absMax, absMax];
+        }}
+      }
+    };
+    new uPlot(opts, data, el);
+  }
+
   function fmtCpu(v) { return (v * 1000).toFixed(0) + 'm'; }
   function fmtMem(v) {
     if (v >= 1073741824) return (v / 1073741824).toFixed(1) + ' GiB';
@@ -450,6 +573,12 @@
     if (v == null || isNaN(v)) return '0%';
     return (v * 100).toFixed(2) + '%';
   }
+  function fmtBytes(v) {
+    if (v >= 1073741824) return (v / 1073741824).toFixed(1) + ' GB/s';
+    if (v >= 1048576) return (v / 1048576).toFixed(1) + ' MB/s';
+    if (v >= 1024) return (v / 1024).toFixed(1) + ' KB/s';
+    return Math.round(v) + ' B/s';
+  }
 
   // Sync all selections to the URL
   function updateURL() {
@@ -466,7 +595,7 @@
       url.searchParams.delete('start');
       url.searchParams.delete('end');
     }
-    ['cpu', 'memory', 'errors'].forEach(function(m) {
+    ['cpu', 'memory', 'errors', 'network'].forEach(function(m) {
       var g = panelGroups[m];
       if (g && g !== 'total') url.searchParams.set(m, g);
       else url.searchParams.delete(m);
@@ -478,7 +607,8 @@
   var panelGroups = {
     cpu: {{ current_groups.cpu|tojson }},
     memory: {{ current_groups.memory|tojson }},
-    errors: {{ current_groups.errors|tojson }}
+    errors: {{ current_groups.errors|tojson }},
+    network: {{ current_groups.network|tojson }}
   };
 
   // Panels config
@@ -487,7 +617,8 @@
     memory:   { labelKey: 'pod', fmt: fmtMem,     type: 'line', short: false },
     requests: { labelKey: 'code', fmt: fmtCount,  type: 'bar',  short: false, colors: CODE_COLORS },
     latency:  { labelKey: 'quantile', fmt: fmtLatency, type: 'line', short: false, colors: LATENCY_COLORS },
-    errors:   { labelKey: 'label', fmt: fmtPct,   type: 'line', short: false, colors: { 'error rate': '#ef4444', '4xx': '#f59e0b', '5xx': '#ef4444' } }
+    errors:   { labelKey: 'label', fmt: fmtPct,   type: 'line', short: false, colors: { 'error rate': '#ef4444', '4xx': '#f59e0b', '5xx': '#ef4444' } },
+    network:  { labelKey: 'direction', fmt: fmtBytes, type: 'mirror', short: false, colors: { 'tx': '#8b5cf6', 'rx': '#3b82f6' } }
   };
 
   function fetchAndRender(metric) {
@@ -516,7 +647,7 @@
         // Determine label key and chart type based on group
         var labelKey = panel.labelKey;
         var chartType = panel.type;
-        if (metric === 'cpu' || metric === 'memory') {
+        if (metric === 'cpu' || metric === 'memory' || metric === 'network') {
           if (group === 'total') labelKey = '__total__';
           else if (group === 'process') labelKey = 'process';
           else labelKey = 'pod';
@@ -526,6 +657,8 @@
         var short = (group === 'pod');
         if (chartType === 'bar') {
           makeBarChart(el, data.result, labelKey, panel.fmt, panel.colors);
+        } else if (chartType === 'mirror') {
+          makeMirrorChart(el, data.result, labelKey, panel.fmt, short, panel.colors);
         } else {
           makeLineChart(el, data.result, labelKey, panel.fmt, short, panel.colors);
         }
