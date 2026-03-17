@@ -10,7 +10,6 @@ from base64 import (
 )
 
 
-from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
     PublicFormat,
@@ -31,7 +30,7 @@ def number_to_bytes(num, num_bytes):
 
 
 def generate_libcrypt_key_id(public_key_pem):
-    pub_key = load_pem_public_key(public_key_pem, backend=default_backend())
+    pub_key = load_pem_public_key(public_key_pem)
 
     der_bytes = pub_key.public_bytes(
         encoding=Encoding.DER,
