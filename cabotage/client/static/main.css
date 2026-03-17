@@ -1100,9 +1100,10 @@ a.live-commit-sha:hover {
   border: 1px solid color-mix(in oklch, var(--color-info, oklch(0.7 0.15 230)) 30%, transparent);
 }
 .env-badge-neutral {
-  background: color-mix(in oklch, oklch(0.75 0.1 70) 10%, transparent);
-  color: oklch(0.65 0.1 70);
-  border: 1px solid color-mix(in oklch, oklch(0.75 0.1 70) 30%, transparent);
+  background: color-mix(in oklch, currentColor 5%, transparent);
+  color: oklch(var(--bc) / 0.35);
+  border: 1px solid color-mix(in oklch, currentColor 15%, transparent);
+  padding-left: 0.5rem;
 }
 /* Flash messages */
 .flash-message {

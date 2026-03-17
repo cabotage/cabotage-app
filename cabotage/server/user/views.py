@@ -30,6 +30,7 @@ import requests as requests_lib
 from requests.exceptions import HTTPError
 from sqlalchemy import desc, func
 from sqlalchemy.exc import DataError, IntegrityError
+from sqlalchemy.orm import joinedload, subqueryload
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy_continuum import version_class
 
@@ -388,6 +389,27 @@ def _default_environment(project):
     )
 
 
+def _eager_env_configs(project, environment):
+    """Load env configs with subscriptions eagerly to avoid N+1 in templates."""
+    if not environment:
+        return []
+
+    return (
+        EnvironmentConfiguration.query.filter_by(
+            project_id=project.id,
+            environment_id=environment.id,
+            deleted=False,
+        )
+        .options(
+            joinedload(EnvironmentConfiguration.subscriptions)
+            .joinedload(EnvironmentConfigSubscription.application_environment)
+            .joinedload(ApplicationEnvironment.application)
+        )
+        .order_by(EnvironmentConfiguration.name)
+        .all()
+    )
+
+
 def _resolve_app_env(
     application, environment_id=None, env_slug=None, project=None, required=True
 ):
@@ -450,7 +472,6 @@ def _create_bare_app_env(application, environment):
 @user_blueprint.route("/organizations")
 @login_required
 def organizations():
-    from sqlalchemy.orm import joinedload
 
     memberships = (
         OrganizationMember.query.filter(OrganizationMember.user_id == current_user.id)
@@ -510,7 +531,6 @@ def organizations():
 @user_blueprint.route("/organizations/<org_slug>")
 @login_required
 def organization(org_slug):
-    from sqlalchemy.orm import joinedload
 
     organization = (
         Organization.query.filter_by(slug=org_slug)
@@ -737,7 +757,6 @@ def organization_project_create(org_slug):
 @user_blueprint.route("/projects")
 @login_required
 def projects():
-    from sqlalchemy.orm import joinedload
 
     user_projects = (
         Project.query.join(Organization)
@@ -1172,23 +1191,7 @@ def project_environment(org_slug, project_slug, env_slug):
     env_config_form.environment_id.data = str(environment.id)
     env_edit_form = EditEnvironmentConfigurationForm()
     env_delete_form = DeleteEnvironmentConfigurationForm()
-    # Eagerly load configs with subscriptions to avoid N+1 in the template
-    from sqlalchemy.orm import joinedload
-
-    env_configs = (
-        EnvironmentConfiguration.query.filter_by(
-            project_id=project.id,
-            environment_id=environment.id,
-            deleted=False,
-        )
-        .options(
-            joinedload(EnvironmentConfiguration.subscriptions)
-            .joinedload(EnvironmentConfigSubscription.application_environment)
-            .joinedload(ApplicationEnvironment.application)
-        )
-        .order_by(EnvironmentConfiguration.name)
-        .all()
-    )
+    env_configs = _eager_env_configs(project, environment)
     _app_refs, _tcp_refs = _environment_app_references(environment)
     return render_template(
         "user/project_environment.html",
@@ -1580,7 +1583,7 @@ def project_environment_configuration_edit(org_slug, project_slug, env_slug, con
                 "build-time exposure.",
                 "error",
             )
-            configuration.buildtime = was_buildtime
+            db.session.rollback()
             _app_refs, _tcp_refs = _environment_app_references(environment)
             return render_template(
                 "user/project_environment_configuration_edit.html",
@@ -1990,6 +1993,16 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         required=False,
     )
 
+    # Eagerly load subscriptions + env configs to avoid N+1 in
+    # _resolved_configuration and template rendering
+    if app_env:
+
+        db.session.query(ApplicationEnvironment).filter_by(id=app_env.id).options(
+            subqueryload(
+                ApplicationEnvironment.environment_config_subscriptions
+            ).joinedload(EnvironmentConfigSubscription.environment_configuration)
+        ).first()
+
     pod_class_info = (
         '<table class="table"><tr><th>Class</th><th>CPU</th><th>Mem</th></tr>'
     )
@@ -2250,9 +2263,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         release_by_id=release_by_id,
         image_by_id=image_by_id,
         release_proc_counts=release_proc_counts,
-        env_configs=(
-            environment.active_environment_configurations if environment else []
-        ),
+        env_configs=_eager_env_configs(project, environment),
         subscribed_env_config_ids=(
             {
                 sub.environment_configuration_id
@@ -2708,7 +2719,7 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
                 "build-time exposure.",
                 "error",
             )
-            configuration.buildtime = was_buildtime
+            db.session.rollback()
             return render_template(
                 "user/project_application_configuration_edit.html",
                 form=form,
