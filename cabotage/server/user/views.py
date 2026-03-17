@@ -119,6 +119,7 @@ from cabotage.server.user.forms import (
 from cabotage.utils.docker_auth import (
     check_docker_credentials,
     generate_docker_registry_jwt,
+    generate_signing_jwks,
     parse_docker_scope,
     docker_access_intersection,
 )
@@ -4276,6 +4277,15 @@ def signing_cert():
         response.mimetype = "text/plain"
         return response
     return render_template("user/signing_cert.html", signing_certificate=cert)
+
+
+@user_blueprint.route("/signing-jwks", methods=["GET"])
+def signing_jwks():
+    public_key_pem = vault.signing_public_key
+    jwks_json = generate_signing_jwks(public_key_pem)
+    response = make_response(jwks_json, 200)
+    response.mimetype = "application/json"
+    return response
 
 
 @user_blueprint.route("/github/hooks", methods=["POST"])
