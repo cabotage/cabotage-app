@@ -598,6 +598,98 @@ function initAddVarModal() {
   }
 }
 
+/* Environment Add Variable Modal */
+function initEnvAddVarModal() {
+  var modal = document.getElementById('env-add-var-modal');
+  if (!modal) return;
+
+  function openModal() {
+    modal.style.display = 'flex';
+    var nameInput = modal.querySelector('input[name="name"]');
+    if (nameInput) {
+      nameInput.value = '';
+      nameInput.focus();
+    }
+    var valueInput = modal.querySelector('input[name="value"]');
+    if (valueInput) valueInput.value = '';
+    var refCheck = document.getElementById('env-add-var-ref-check');
+    var refPicker = document.getElementById('env-add-var-ref-picker');
+    if (refCheck) refCheck.checked = false;
+    if (refPicker) refPicker.style.display = 'none';
+  }
+  function closeModal() {
+    modal.style.display = 'none';
+  }
+
+  document.querySelectorAll('#env-add-var-open, #env-add-var-open-empty').forEach(function (btn) {
+    btn.addEventListener('click', openModal);
+  });
+  modal.querySelectorAll('[data-env-add-var-close]').forEach(function (el) {
+    el.addEventListener('click', closeModal);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && modal.style.display !== 'none') closeModal();
+  });
+
+  var nameField = modal.querySelector('input[name="name"]');
+  if (nameField) {
+    nameField.addEventListener('input', function () {
+      var pos = this.selectionStart;
+      this.value = this.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+      this.selectionStart = this.selectionEnd = pos;
+    });
+  }
+
+  var valueInput = document.getElementById('env-add-var-value');
+  var refCheck = document.getElementById('env-add-var-ref-check');
+  var refPicker = document.getElementById('env-add-var-ref-picker');
+  var secureCheckbox = modal.querySelector('input[name="secure"]');
+
+  if (refCheck && refPicker) {
+    refCheck.addEventListener('change', function () {
+      refPicker.style.display = this.checked ? '' : 'none';
+      if (this.checked && secureCheckbox) {
+        secureCheckbox.checked = false;
+      }
+    });
+
+    modal.querySelectorAll('.env-add-var-ref-insert').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (!valueInput) return;
+        var ref = btn.getAttribute('data-ref');
+        var pos = valueInput.selectionStart || valueInput.value.length;
+        var before = valueInput.value.slice(0, pos);
+        var after = valueInput.value.slice(pos);
+        valueInput.value = before + ref + after;
+        valueInput.focus();
+        var newPos = pos + ref.length;
+        valueInput.selectionStart = valueInput.selectionEnd = newPos;
+      });
+    });
+  }
+}
+
+/* Environment Config Reference Insert (edit page) */
+function initEnvConfigRefInsert() {
+  var buttons = document.querySelectorAll('.env-config-ref-insert');
+  if (!buttons.length) return;
+  var valueInput = document.querySelector('input[name="value"]');
+  if (!valueInput) return;
+
+  buttons.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var ref = btn.getAttribute('data-ref');
+      var pos = valueInput.selectionStart || valueInput.value.length;
+      var before = valueInput.value.slice(0, pos);
+      var after = valueInput.value.slice(pos);
+      valueInput.value = before + ref + after;
+      valueInput.focus();
+      var newPos = pos + ref.length;
+      valueInput.selectionStart = valueInput.selectionEnd = newPos;
+    });
+  });
+}
+
 /* Expand Modal */
 function initExpandModal() {
   var modal = document.getElementById('expand-modal');
@@ -2161,6 +2253,8 @@ document.addEventListener('DOMContentLoaded', function () {
   initThemeToggle();
   initRawEditor();
   initAddVarModal();
+  initEnvAddVarModal();
+  initEnvConfigRefInsert();
   initExpandModal();
   initAccentPicker();
   initPreferenceToggles();

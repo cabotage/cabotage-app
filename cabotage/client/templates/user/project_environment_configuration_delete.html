@@ -1,0 +1,55 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import render_field, icon, resource_path %}
+
+{% block title %}
+  Delete {{ configuration.name }} - {{ environment.name }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': project.organization.slug, 'url': url_for('user.organization', org_slug=project.organization.slug) },
+    {'label': project.slug, 'url': url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug)},
+    {'label': 'environments', 'url': url_for('user.project_environments', org_slug=project.organization.slug, project_slug=project.slug)},
+    {'label': environment.slug, 'url': url_for('user.project_environment', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug)},
+    {'label': configuration.name}
+  ]) }}
+{% endblock resource_path %}
+
+{% block content %}
+  <div class="form-card">
+    <div class="card bg-base-200 border border-error/30 shadow-xl">
+      <div class="card-body">
+        <h1 class="text-xl font-semibold text-error mb-1">Delete Environment Variable</h1>
+        <p class="text-sm text-base-content/50 mb-4">This action cannot be undone. All application subscriptions to this variable will be removed.</p>
+
+        <div class="p-3 rounded-lg bg-base-300/50 mb-4">
+          <code class="text-sm text-accent">{{ configuration.name }}</code>
+          <span class="text-base-content/30 mx-2">=</span>
+          {% if configuration.secret %}
+            <span class="inline-flex items-center gap-1 text-base-content/40 text-sm">
+              {{ icon('lock', 'w-3 h-3') }}
+              Secret
+            </span>
+          {% else %}
+            <code class="text-sm text-base-content/70">{{ configuration.value }}</code>
+          {% endif %}
+        </div>
+
+        <form action="{{ url_for('user.project_environment_configuration_delete', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug, config_id=configuration.id) }}"
+              method="post"
+              name="project_environment_configuration_delete_form"
+              class="flex flex-col gap-4">
+          {{ form.hidden_tag() }}
+          {{ form.configuration_id(type='hidden') }}
+          {{ form.name(type='hidden') }}
+          {% if form.value %}{{ form.value(type='hidden') }}{% endif %}
+          {{ render_field(form.confirm) }}
+          <div class="flex items-center gap-3 pt-2">
+            <button type="submit" class="btn btn-error">Delete Variable</button>
+            <a href="#" onclick="history.back();return false" class="btn btn-ghost">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endblock content %}

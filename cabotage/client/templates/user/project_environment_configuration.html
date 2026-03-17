@@ -1,0 +1,118 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, resource_path %}
+
+{% block title %}
+  {{ configuration.name }} - {{ environment.name }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': project.organization.slug, 'url': url_for('user.organization', org_slug=project.organization.slug) },
+    {'label': project.slug, 'url': url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug)},
+    {'label': 'environments', 'url': url_for('user.project_environments', org_slug=project.organization.slug, project_slug=project.slug)},
+    {'label': environment.slug, 'url': url_for('user.project_environment', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug)},
+    {'label': configuration.name}
+  ]) }}
+{% endblock resource_path %}
+
+{% block content %}
+  <div class="max-w-3xl">
+    <div class="flex items-center gap-3 mb-6">
+      <a href="{{ url_for('user.project_environment', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug, _anchor='config') }}"
+         class="btn btn-ghost btn-sm">{{ icon("arrow-left") }}</a>
+      <div class="min-w-0">
+        <h1 class="text-base font-semibold text-base-content">Environment Variable</h1>
+        <code class="text-sm font-mono text-accent block truncate" title="{{ configuration.name }}">{{ configuration.name }}</code>
+        <span class="text-xs text-base-content/40">Shared across {{ environment.name }}</span>
+      </div>
+    </div>
+
+    <div class="card bg-base-200 border border-base-300 mb-6">
+      <div class="card-body">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-base font-medium text-base-content">Current Value</h2>
+          <div class="flex items-center gap-1">
+            <a href="{{ url_for('user.project_environment_configuration_edit', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug, config_id=configuration.id) }}"
+               class="btn btn-ghost btn-xs gap-1"
+               title="Edit">
+              {{ icon('edit', 'w-3.5 h-3.5') }}
+              Edit
+            </a>
+            <a href="{{ url_for('user.project_environment_configuration_delete', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug, config_id=configuration.id) }}"
+               class="btn btn-ghost btn-xs text-error gap-1"
+               title="Delete">
+              {{ icon('trash', 'w-3.5 h-3.5') }}
+              Delete
+            </a>
+          </div>
+        </div>
+        <div class="p-3 rounded-lg bg-base-300/50 overflow-hidden space-y-1.5">
+          <div>
+            <p class="text-xs text-base-content/40 mb-0.5">Name</p>
+            <code class="text-sm font-mono text-accent block truncate" title="{{ configuration.name }}">{{ configuration.name }}</code>
+          </div>
+          <div>
+            <p class="text-xs text-base-content/40 mb-0.5">Value</p>
+            {% if configuration.secret %}
+              <span class="inline-flex items-center gap-1 text-base-content/40 text-sm">
+                {{ icon('lock', 'w-3 h-3') }}
+                Secret
+              </span>
+            {% else %}
+              <code class="text-sm font-mono text-base-content/70 break-words">{{ configuration.value }}</code>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {% if configuration.subscriptions %}
+      <div class="card bg-base-200 border border-base-300 mb-6">
+        <div class="card-body">
+          <h2 class="text-base font-medium text-base-content mb-3">Subscribed Applications</h2>
+          <div class="flex flex-wrap gap-2">
+            {% for sub in configuration.subscriptions %}
+              <span class="badge badge-sm badge-ghost">{{ sub.application_environment.application.name }}</span>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    {% endif %}
+
+    {% if (configuration.versions|list)|length > 1 %}
+      <div class="card bg-base-200 border border-base-300">
+        <div class="card-body">
+          <h2 class="text-base font-medium text-base-content mb-4">History</h2>
+          <div class="overflow-x-auto">
+            <table class="table table-sm">
+              <thead>
+                <tr class="text-base-content/50 text-xs uppercase tracking-wider">
+                  <th>Name</th>
+                  <th>Value</th>
+                  <th>Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for version in (configuration.versions|reverse)[1:] %}
+                  <tr>
+                    <td class="max-w-[12rem]">
+                      <code class="text-sm font-mono text-accent block truncate" title="{{ version.name }}">{{ version.name }}</code>
+                    </td>
+                    <td>
+                      {% if version.secret %}
+                        <span class="inline-flex items-center gap-1 text-base-content/40 text-sm">{{ icon('lock', 'w-3 h-3') }} Secret</span>
+                      {% else %}
+                        <code class="text-sm font-mono text-base-content/70 break-words">{{ version.value }}</code>
+                      {% endif %}
+                    </td>
+                    <td class="text-sm text-base-content/50 whitespace-nowrap">{{ version.updated|humanize }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+{% endblock content %}
