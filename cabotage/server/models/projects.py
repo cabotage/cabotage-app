@@ -903,6 +903,7 @@ class Release(db.Model, Timestamp):
     def envconsul_configurations(self):
         from cabotage.utils.config_templates import (
             has_template_variables,
+            resolve_shared_secret_refs,
             resolve_template_variables,
         )
 
@@ -916,6 +917,27 @@ class Release(db.Model, Timestamp):
         resolved_template_env = []
         for c in config_objects:
             if has_template_variables(c.value):
+                # Check for whole-value shared secret ref: MY_VAR=${shared.SECRET}
+                # These get a vault directive with key format renaming
+                secret_refs = resolve_shared_secret_refs(
+                    c.value, self.application_environment
+                )
+                if secret_refs:
+                    for _orig_name, env_cfg in secret_refs:
+                        if env_cfg.key_slug:
+                            path = env_cfg.key_slug.split(":", 1)[1]
+                            stmt = (
+                                "secret {\n"
+                                "  no_prefix = true\n"
+                                f'  path = "{path}"\n'
+                                "  key {\n"
+                                f'    name   = "{env_cfg.name}"\n'
+                                f'    format = "{c.name}"\n'
+                                "  }\n"
+                                "}"
+                            )
+                            statements.append(stmt)
+                    continue
                 resolved = resolve_template_variables(
                     c.value, self.application_environment
                 )
@@ -1152,7 +1174,9 @@ class Configuration(db.Model, Timestamp):
                 return payload["data"][self.name]
             return "**secret**"
         if has_template_variables(self.value):
-            return resolve_template_variables(self.value, self.application_environment)
+            return resolve_template_variables(
+                self.value, self.application_environment, reader=reader
+            )
         return self.value
 
 
