@@ -1670,20 +1670,20 @@
             method="post"
             name="add_var_form"
             class="flex flex-col gap-4">
-        {{ config_create_form.hidden_tag() }}
+        <div class="hidden">{{ config_create_form.hidden_tag() }}</div>
 
-        <fieldset class="fieldset w-full">
-          <legend class="fieldset-legend text-xs text-base-content/50 font-medium uppercase tracking-wider">Name</legend>
-          {{ config_create_form.name(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono", placeholder="MY_VARIABLE") }}
+        <div>
+          <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Name</label>
+          {{ config_create_form.name(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono", placeholder="MY_VARIABLE", autocomplete="off", **{"data-1p-ignore": ""}) }}
           <p class="text-xs text-base-content/40 mt-1">Name for the environment variable</p>
-        </fieldset>
+        </div>
 
-        <fieldset class="fieldset w-full">
-          <legend class="fieldset-legend text-xs text-base-content/50 font-medium uppercase tracking-wider">Value</legend>
-          {{ config_create_form.value(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono", placeholder="value", id="add-var-value") }}
+        <div>
+          <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Value</label>
+          {{ config_create_form.value(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono", placeholder="value", id="add-var-value", autocomplete="off", **{"data-1p-ignore": ""}) }}
           <p class="text-xs text-base-content/40 mt-1">Value for the environment variable</p>
           <p id="add-var-preview" class="text-xs font-mono text-primary/70 mt-1 fade-scroll" style="display:none;"></p>
-        </fieldset>
+        </div>
 
         {% if sibling_references or sibling_tcp_references %}
         <div id="add-var-ref-toggle">

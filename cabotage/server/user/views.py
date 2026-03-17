@@ -173,6 +173,35 @@ def _env_config_k8s_resource_prefix(project):
     return project.k8s_identifier
 
 
+def _environment_app_references(environment):
+    """Build template variable references for all apps with ingresses in an environment."""
+    references = []
+    for ae in environment.active_application_environments:
+        ingress_list = []
+        for ing in ae.ingresses:
+            if not ing.enabled:
+                continue
+            hosts = ing.hosts
+            non_auto = [h for h in hosts if not h.is_auto_generated]
+            host = non_auto[0] if non_auto else (hosts[0] if hosts else None)
+            if host:
+                ingress_list.append(
+                    {
+                        "name": ing.name,
+                        "hostname": host.hostname,
+                        "tls": host.tls_enabled,
+                    }
+                )
+        if ingress_list:
+            references.append(
+                {
+                    "slug": ae.application.slug,
+                    "ingresses": ingress_list,
+                }
+            )
+    return references
+
+
 def _deletion_impact_items(entity_type, entity_name, children):
     """Build impact list: first item is 'This <type> <bold name>', rest are child counts.
 
@@ -1128,12 +1157,17 @@ def project_environment(org_slug, project_slug, env_slug):
         a for a in project.active_applications if a.id not in existing_app_ids
     ]
     add_app_form.application_id.choices = [(str(a.id), a.name) for a in available_apps]
+    env_config_form = CreateEnvironmentConfigurationForm()
+    env_config_form.project_id.data = str(project.id)
+    env_config_form.environment_id.data = str(environment.id)
     return render_template(
         "user/project_environment.html",
         project=project,
         environment=environment,
         add_app_form=add_app_form,
         available_apps=available_apps,
+        env_config_form=env_config_form,
+        app_references=_environment_app_references(environment),
     )
 
 
@@ -1366,7 +1400,7 @@ def project_environment_configuration(org_slug, project_slug, env_slug, config_i
 
 @user_blueprint.route(
     "/projects/<org_slug>/<project_slug>/environments/<env_slug>/config/create",
-    methods=["GET", "POST"],
+    methods=["POST"],
 )
 @login_required
 def project_environment_configuration_create(org_slug, project_slug, env_slug):
@@ -1390,11 +1424,14 @@ def project_environment_configuration_create(org_slug, project_slug, env_slug):
         is_template = has_template_variables(form.value.data)
         if is_template and form.secure.data:
             flash("Template configs cannot be secrets.", "error")
-            return render_template(
-                "user/project_environment_configuration_create.html",
-                form=form,
-                project=project,
-                environment=environment,
+            return redirect(
+                url_for(
+                    "user.project_environment",
+                    org_slug=organization.slug,
+                    project_slug=project.slug,
+                    env_slug=environment.slug,
+                    _anchor="config",
+                )
             )
 
         configuration = EnvironmentConfiguration(
@@ -1453,11 +1490,18 @@ def project_environment_configuration_create(org_slug, project_slug, env_slug):
                 _anchor="config",
             )
         )
-    return render_template(
-        "user/project_environment_configuration_create.html",
-        form=form,
-        project=project,
-        environment=environment,
+    # Form validation failed — redirect back with errors flashed
+    for field, errors in form.errors.items():
+        for error in errors:
+            flash(f"{field}: {error}", "error")
+    return redirect(
+        url_for(
+            "user.project_environment",
+            org_slug=organization.slug,
+            project_slug=project.slug,
+            env_slug=environment.slug,
+            _anchor="config",
+        )
     )
 
 
@@ -1498,6 +1542,7 @@ def project_environment_configuration_edit(org_slug, project_slug, env_slug, con
                 project=project,
                 environment=environment,
                 configuration=configuration,
+                app_references=_environment_app_references(environment),
             )
 
         if not is_template:
@@ -1558,6 +1603,7 @@ def project_environment_configuration_edit(org_slug, project_slug, env_slug, con
         project=project,
         environment=environment,
         configuration=configuration,
+        app_references=_environment_app_references(environment),
     )
 
 

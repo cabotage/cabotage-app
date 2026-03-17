@@ -41,13 +41,48 @@
             {% endif %}
           </div>
 
-          {{ render_field(form.value, placeholder='New value') }}
+          {{ render_field(form.value, placeholder='New value', autocomplete='off') }}
           <p class="text-xs text-base-content/40 -mt-2">
             Use <code class="text-base-content/60">${app.url}</code> or
             <code class="text-base-content/60">${app.ingress.url}</code>
-            to reference a sibling app's ingress URL, or
+            to reference an app's ingress URL, or
             <code class="text-base-content/60">.host</code> for just the hostname.
           </p>
+
+          {% if app_references %}
+            <details class="mt-0">
+              <summary class="text-sm text-base-content/70 cursor-pointer hover:text-base-content transition-colors select-none">
+                Reference an application
+              </summary>
+              <div class="flex flex-col gap-1 max-h-48 overflow-y-auto mt-2">
+                {% for ref in app_references %}
+                  {% for ing in ref.ingresses %}
+                    {% if ref.ingresses|length == 1 %}
+                      {% set ref_url = '${' ~ ref.slug ~ '.url}' %}
+                      {% set ref_host = '${' ~ ref.slug ~ '.host}' %}
+                    {% else %}
+                      {% set ref_url = '${' ~ ref.slug ~ '.' ~ ing.name ~ '.url}' %}
+                      {% set ref_host = '${' ~ ref.slug ~ '.' ~ ing.name ~ '.host}' %}
+                    {% endif %}
+                    <div class="flex items-center gap-2 p-2 rounded-lg border border-base-content/10">
+                      <div class="flex-1 min-w-0">
+                        <div class="text-sm font-mono text-base-content truncate">{{ ref.slug }}{% if ref.ingresses|length > 1 %} / {{ ing.name }}{% endif %}</div>
+                        <div class="text-xs text-base-content/40 font-mono fade-scroll">{{ ing.hostname }}</div>
+                      </div>
+                      <div class="flex gap-1 shrink-0">
+                        <button type="button"
+                                class="env-config-ref-insert btn btn-ghost btn-xs font-mono"
+                                data-ref="{{ ref_url }}">.url</button>
+                        <button type="button"
+                                class="env-config-ref-insert btn btn-ghost btn-xs font-mono"
+                                data-ref="{{ ref_host }}">.host</button>
+                      </div>
+                    </div>
+                  {% endfor %}
+                {% endfor %}
+              </div>
+            </details>
+          {% endif %}
 
           <div class="p-3 rounded-lg bg-base-300/30">
             <div class="flex items-center gap-3 text-sm text-base-content/50">
@@ -74,4 +109,5 @@
       </div>
     </div>
   </div>
+
 {% endblock content %}

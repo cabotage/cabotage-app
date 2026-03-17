@@ -107,10 +107,11 @@
 
   <div class="flex items-center justify-between mb-3">
     <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider">Environment Variables</h2>
-    <a href="{{ url_for('user.project_environment_configuration_create', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}"
-       class="btn btn-sm btn-primary gap-1">
+    <button type="button"
+            id="env-add-var-open"
+            class="btn btn-sm btn-primary gap-1">
       {{ icon('plus', 'w-4 h-4') }} Add Variable
-    </a>
+    </button>
   </div>
 
   {% set env_configs = environment.active_environment_configurations %}
@@ -162,7 +163,115 @@
       <div class="text-base-content/15 mb-4">{{ icon('settings', 'w-12 h-12') }}</div>
       <h3 class="text-base font-medium text-base-content/60 mb-1">No shared environment variables</h3>
       <p class="text-sm text-base-content/40 max-w-sm">Add variables here to share them across applications in this environment.</p>
+      <button type="button"
+              id="env-add-var-open-empty"
+              class="btn btn-primary btn-sm gap-2 mt-4">{{ icon('plus', 'w-4 h-4') }} Add Variable</button>
     </div>
   {% endif %}
+
+  {# Add Variable Modal #}
+  <div id="env-add-var-modal" class="raw-editor-modal" style="display:none;">
+    <div class="raw-editor-backdrop" data-env-add-var-close></div>
+    <div class="raw-editor-dialog" style="max-width: 36rem;">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-base font-semibold text-base-content">Add Environment Variable</h3>
+        <button type="button"
+                data-env-add-var-close
+                class="btn btn-ghost btn-sm btn-circle">
+          <svg class="w-4 h-4"
+               viewBox="0 0 24 24"
+               fill="none"
+               stroke="currentColor"
+               stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+
+      <form action="{{ url_for('user.project_environment_configuration_create', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}"
+            method="post"
+            name="env_add_var_form"
+            class="flex flex-col gap-4">
+        <div class="hidden">{{ env_config_form.hidden_tag() }}</div>
+
+        <div>
+          <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Name</label>
+          {{ env_config_form.name(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono", placeholder="MY_VARIABLE", autocomplete="off", **{"data-1p-ignore": ""}) }}
+          <p class="text-xs text-base-content/40 mt-1">Name for the environment variable</p>
+        </div>
+
+        <div>
+          <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Value</label>
+          {{ env_config_form.value(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono", placeholder="value", id="env-add-var-value", autocomplete="off", **{"data-1p-ignore": ""}) }}
+          <p class="text-xs text-base-content/40 mt-1">Value for the environment variable</p>
+        </div>
+
+        {% if app_references %}
+        <div>
+          <label class="label cursor-pointer justify-start gap-2">
+            <input type="checkbox" id="env-add-var-ref-check" class="checkbox checkbox-primary checkbox-sm" />
+            <span class="text-sm text-base-content/70">Reference an application</span>
+          </label>
+        </div>
+
+        <div id="env-add-var-ref-picker" style="display:none;" class="flex flex-col gap-2">
+          <div class="text-xs text-base-content/50">Click to insert at cursor</div>
+          <div class="flex flex-col gap-1 max-h-48 overflow-y-auto">
+            {% for ref in app_references %}
+              {% for ing in ref.ingresses %}
+                {% if ref.ingresses|length == 1 %}
+                  {% set ref_url = '${' ~ ref.slug ~ '.url}' %}
+                  {% set ref_host = '${' ~ ref.slug ~ '.host}' %}
+                {% else %}
+                  {% set ref_url = '${' ~ ref.slug ~ '.' ~ ing.name ~ '.url}' %}
+                  {% set ref_host = '${' ~ ref.slug ~ '.' ~ ing.name ~ '.host}' %}
+                {% endif %}
+                <div class="flex items-center gap-2 p-2 rounded-lg border border-base-content/10">
+                  <div class="flex-1 min-w-0">
+                    <div class="text-sm font-mono text-base-content truncate">{{ ref.slug }}{% if ref.ingresses|length > 1 %} / {{ ing.name }}{% endif %}</div>
+                    <div class="text-xs text-base-content/40 font-mono fade-scroll">{{ ing.hostname }}</div>
+                  </div>
+                  <div class="flex gap-1 shrink-0">
+                    <button type="button"
+                            class="env-add-var-ref-insert btn btn-ghost btn-xs font-mono"
+                            data-ref="{{ ref_url }}">.url</button>
+                    <button type="button"
+                            class="env-add-var-ref-insert btn btn-ghost btn-xs font-mono"
+                            data-ref="{{ ref_host }}">.host</button>
+                  </div>
+                </div>
+              {% endfor %}
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        <div class="flex flex-col gap-2 p-3 rounded-lg bg-base-300/30">
+          <label class="label cursor-pointer justify-start gap-3">
+            {{ env_config_form.secure(class="checkbox checkbox-primary checkbox-sm") }}
+            <div>
+              <span class="text-sm text-base-content">Secure</span>
+              <p class="text-xs text-base-content/40">Encrypted at rest. Value won't be visible in the UI.</p>
+            </div>
+          </label>
+          <label class="label cursor-pointer justify-start gap-3">
+            {{ env_config_form.buildtime(class="checkbox checkbox-primary checkbox-sm") }}
+            <div>
+              <span class="text-sm text-base-content">Expose during build</span>
+              <p class="text-xs text-base-content/40">Available as an env var during image builds.</p>
+            </div>
+          </label>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-1">
+          <button type="button" data-env-add-var-close class="btn btn-ghost btn-sm">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm gap-1.5">
+            {{ icon('plus', 'w-3.5 h-3.5') }}
+            Create Variable
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
 
 {% endblock content %}

@@ -1132,6 +1132,8 @@ class Configuration(db.Model, Timestamp):
 
         if has_template_variables(self.value):
             return None
+        if not self.key_slug:
+            return None
         directive = "secret" if self.secret else "prefix"
         path = self.key_slug.split(":", 1)[1]
         return f"{directive} {{\n" "  no_prefix = true\n" f'  path = "{path}"\n' "}"
@@ -1239,15 +1241,14 @@ class EnvironmentConfiguration(db.Model, Timestamp):
 
         if has_template_variables(self.value):
             return None
+        if not self.key_slug:
+            return None
         directive = "secret" if self.secret else "prefix"
         path = self.key_slug.split(":", 1)[1]
         return f"{directive} {{\n" "  no_prefix = true\n" f'  path = "{path}"\n' "}"
 
     def read_value(self, reader):
-        from cabotage.utils.config_templates import (
-            has_template_variables,
-            resolve_template_variables,
-        )
+        from cabotage.utils.config_templates import has_template_variables
 
         if self.secret:
             if self.buildtime:
@@ -1257,7 +1258,7 @@ class EnvironmentConfiguration(db.Model, Timestamp):
                 return payload["data"][self.name]
             return "**secret**"
         if has_template_variables(self.value):
-            return resolve_template_variables(self.value, None)
+            return self.value
         return self.value
 
 
