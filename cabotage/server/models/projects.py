@@ -613,17 +613,17 @@ class Application(db.Model, Timestamp):
         configuration_diff = DictDiffer(
             candidate.get("configuration", {}),
             current.get("configuration", {}),
-            ignored_keys=["id", "version_id"],
+            ignored_keys=["id"],
         )
         image_diff = DictDiffer(
             candidate.get("image", {}),
             current.get("image", {}),
-            ignored_keys=["id", "version_id", "commit_sha"],
+            ignored_keys=["id", "commit_sha"],
         )
         ingress_diff = DictDiffer(
             candidate.get("ingresses", {}),
             current.get("ingresses", {}),
-            ignored_keys=["id", "version_id"],
+            ignored_keys=["id"],
         )
         return image_diff, configuration_diff, ingress_diff
 

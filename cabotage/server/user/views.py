@@ -2153,12 +2153,12 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         config_diff = DictDiffer(
             candidate.get("configuration", {}),
             current.get("configuration", {}),
-            ignored_keys=["id", "version_id"],
+            ignored_keys=["id"],
         )
         ingress_diff = DictDiffer(
             candidate.get("ingresses", {}),
             current.get("ingresses", {}),
-            ignored_keys=["id", "version_id"],
+            ignored_keys=["id"],
         )
 
         # Build per-ingress change summaries for the template
