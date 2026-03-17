@@ -18,14 +18,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && apt-get install --no-install-recommends -y \
         git build-essential libffi-dev libpq-dev
 
-COPY --from=moby/buildkit:v0.18.2-rootless /usr/bin/buildctl /usr/bin/buildctl
-COPY --from=moby/buildkit:v0.18.2-rootless /usr/bin/buildkitd /usr/bin/buildkitd
-COPY --from=moby/buildkit:v0.18.2-rootless /usr/bin/buildctl-daemonless.sh /usr/bin/buildctl-daemonless.sh
-COPY --from=moby/buildkit:v0.18.2-rootless /usr/bin/buildkit-runc /usr/bin/buildkit-runc
-COPY --from=moby/buildkit:v0.18.2-rootless /usr/bin/rootlesskit /usr/bin/rootlesskit
-COPY --from=moby/buildkit:v0.18.2-rootless /usr/bin/fuse-overlayfs /usr/bin/fuse-overlayfs
-COPY --from=moby/buildkit:v0.18.2-rootless /usr/bin/newuidmap /usr/bin/newuidmap
-COPY --from=moby/buildkit:v0.18.2-rootless /usr/bin/newgidmap /usr/bin/newgidmap
+COPY --from=moby/buildkit:v0.28.0-rootless /usr/bin/buildctl /usr/bin/buildctl
+COPY --from=moby/buildkit:v0.28.0-rootless /usr/bin/buildkitd /usr/bin/buildkitd
+COPY --from=moby/buildkit:v0.28.0-rootless /usr/bin/buildctl-daemonless.sh /usr/bin/buildctl-daemonless.sh
+COPY --from=moby/buildkit:v0.28.0-rootless /usr/bin/buildkit-runc /usr/bin/buildkit-runc
+COPY --from=moby/buildkit:v0.28.0-rootless /usr/bin/rootlesskit /usr/bin/rootlesskit
+COPY --from=moby/buildkit:v0.28.0-rootless /usr/bin/fuse-overlayfs /usr/bin/fuse-overlayfs
+COPY --from=moby/buildkit:v0.28.0-rootless /usr/bin/newuidmap /usr/bin/newuidmap
+COPY --from=moby/buildkit:v0.28.0-rootless /usr/bin/newgidmap /usr/bin/newgidmap
 
 ENV PYTHONUNBUFFERED 1
 ENV UV_PROJECT_ENVIRONMENT=/opt/cabotage-app \
