@@ -7,7 +7,6 @@ from cabotage.server.models.auth import Organization
 from cabotage.server.models.auth_associations import OrganizationMember
 from cabotage.server.models.projects import Application, Deployment, Project
 
-
 main_blueprint = Blueprint(
     "main",
     __name__,

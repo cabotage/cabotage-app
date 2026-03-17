@@ -7,7 +7,6 @@ from cabotage.server.models.projects import (
     Project,
 )
 
-
 app = create_app()
 
 if not app.config["DEBUG"]:
