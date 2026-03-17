@@ -2025,8 +2025,6 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     sibling_tcp_references = []
     if app_env:
         for ae in app_env.environment.active_application_environments:
-            if ae.application_id == application.id:
-                continue
             ingress_list = []
             for ing in ae.ingresses:
                 if not ing.enabled:
