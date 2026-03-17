@@ -1513,6 +1513,7 @@
         </div>
       </details>
     {% endif %}
+
   {% else %}
     <div class="card bg-base-200 border border-base-300">
       <div class="card-body">
@@ -1523,6 +1524,57 @@
           <button type="button"
                   data-add-var-open
                   class="btn btn-primary btn-sm gap-2 mt-4">{{ icon('plus', 'w-4 h-4') }} Add Variable</button>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if env_configs %}
+    <div class="mt-6">
+      <h3 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Shared Environment Variables</h3>
+      <div class="card bg-base-200 border border-base-300">
+        <div class="env-grid">
+          {% for ec in env_configs %}
+            {% set is_subscribed = ec.id in subscribed_env_config_ids %}
+            <div class="env-row {{ 'opacity-40' if not is_subscribed }}">
+              <div class="env-row-header">
+                <code class="env-key">{{ ec.name }}</code>
+                {% if ec.secret %}
+                  <span class="env-badge env-badge-secret">{{ icon('lock', 'w-3 h-3') }} Secret</span>
+                {% endif %}
+                {% if ec.buildtime %}
+                  <span class="env-badge env-badge-build">{{ icon('box', 'w-3 h-3') }} Build</span>
+                {% endif %}
+                <span class="badge badge-xs badge-ghost">shared</span>
+                <div class="env-row-actions">
+                  {% if is_subscribed %}
+                    <form method="POST"
+                          action="{{ url_for('user.project_application_env_config_unsubscribe', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug, config_id=ec.id) }}"
+                          class="inline">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <input type="hidden" name="env_slug" value="{{ environment.slug }}">
+                      <button type="submit" class="btn btn-ghost btn-xs text-warning gap-1" title="Unsubscribe">{{ icon('x', 'w-3.5 h-3.5') }} Unsubscribe</button>
+                    </form>
+                  {% else %}
+                    <form method="POST"
+                          action="{{ url_for('user.project_application_env_config_subscribe', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug, config_id=ec.id) }}"
+                          class="inline">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <input type="hidden" name="env_slug" value="{{ environment.slug }}">
+                      <button type="submit" class="btn btn-ghost btn-xs text-success gap-1" title="Subscribe">{{ icon('plus', 'w-3.5 h-3.5') }} Subscribe</button>
+                    </form>
+                  {% endif %}
+                </div>
+              </div>
+              <div class="min-w-0">
+                {% if ec.secret %}
+                  <span class="env-secret-dots" aria-label="Hidden value">{{ '••••••••' }}</span>
+                {% else %}
+                  <code class="env-value">{{ ec.value }}</code>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
         </div>
       </div>
     </div>
@@ -1618,20 +1670,20 @@
             method="post"
             name="add_var_form"
             class="flex flex-col gap-4">
-        {{ config_create_form.hidden_tag() }}
+        <div class="hidden">{{ config_create_form.hidden_tag() }}</div>
 
-        <fieldset class="fieldset w-full">
-          <legend class="fieldset-legend text-xs text-base-content/50 font-medium uppercase tracking-wider">Name</legend>
-          {{ config_create_form.name(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono", placeholder="MY_VARIABLE") }}
+        <div>
+          <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Name</label>
+          {{ config_create_form.name(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono", placeholder="MY_VARIABLE", autocomplete="off", **{"data-1p-ignore": ""}) }}
           <p class="text-xs text-base-content/40 mt-1">Name for the environment variable</p>
-        </fieldset>
+        </div>
 
-        <fieldset class="fieldset w-full">
-          <legend class="fieldset-legend text-xs text-base-content/50 font-medium uppercase tracking-wider">Value</legend>
-          {{ config_create_form.value(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono", placeholder="value", id="add-var-value") }}
+        <div>
+          <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Value</label>
+          {{ config_create_form.value(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono", placeholder="value", id="add-var-value", autocomplete="off", **{"data-1p-ignore": ""}) }}
           <p class="text-xs text-base-content/40 mt-1">Value for the environment variable</p>
           <p id="add-var-preview" class="text-xs font-mono text-primary/70 mt-1 fade-scroll" style="display:none;"></p>
-        </fieldset>
+        </div>
 
         {% if sibling_references or sibling_tcp_references %}
         <div id="add-var-ref-toggle">

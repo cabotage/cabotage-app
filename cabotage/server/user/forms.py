@@ -27,6 +27,7 @@ from cabotage.server.models.projects import (
     ApplicationEnvironment,
     Configuration,
     Environment,
+    EnvironmentConfiguration,
     Project,
 )
 
@@ -812,6 +813,150 @@ class IngressPathForm(FlaskForm):
         "Target Process",
         [DataRequired()],
         description="Process to route traffic to",
+    )
+
+
+class CreateEnvironmentConfigurationForm(FlaskForm):
+    project_id = HiddenField(
+        "Project",
+        [DataRequired()],
+        description="Project this Configuration belongs to.",
+    )
+    environment_id = HiddenField(
+        "Environment",
+        [DataRequired()],
+        description="Environment this Configuration belongs to.",
+    )
+    name = StringField(
+        "Name",
+        [
+            InputRequired(),
+            Regexp(
+                "^[a-zA-Z_]+[a-zA-Z0-9_]*$",
+                message=(
+                    "Invalid Environment Variable Name! "
+                    "Must match ^[a-zA-Z_]+[a-zA-Z0-9_]*$"
+                ),
+            ),
+        ],
+        description="Name for the Environment Variable.",
+    )
+    value = StringField(
+        "Value",
+        [InputRequired()],
+        description="Value for the Environment Variable.",
+    )
+    secure = BooleanField(
+        "Secure",
+        [],
+        description=(
+            "Store this Environment Variable Securely. "
+            "It will not be recoverable again via the UI."
+        ),
+    )
+    buildtime = BooleanField(
+        "Expose during Build",
+        [],
+        description="Set this Environment Variable during Image builds.",
+    )
+
+    def validate_name(form, field):
+        configuration = EnvironmentConfiguration.query.filter_by(
+            project_id=form.project_id.data,
+            environment_id=form.environment_id.data,
+            name=field.data,
+        ).first()
+        if configuration is not None:
+            raise ValidationError(
+                "Configuration names must be unique (case insensitive) "
+                "within an environment"
+            )
+        return True
+
+
+class EditEnvironmentConfigurationForm(FlaskForm):
+    environment_configuration_id = HiddenField(
+        "Environment Configuration ID",
+        [DataRequired()],
+    )
+    name = StringField(
+        "Name",
+        [
+            DataRequired(),
+            Regexp(
+                "^[a-zA-Z_]+[a-zA-Z0-9_]*$",
+                message=(
+                    "Invalid Environment Variable Name! "
+                    "Must match ^[a-zA-Z_]+[a-zA-Z0-9_]*$"
+                ),
+            ),
+        ],
+        description="Name for the Environment Variable.",
+    )
+    value = StringField(
+        "Value",
+        [InputRequired()],
+        description="Value for the Environment Variable.",
+    )
+    secure = BooleanField(
+        "Secure",
+        [],
+        description=(
+            "Store this Environment Variable Securely. "
+            "It will not be recoverable again via the UI."
+        ),
+    )
+    buildtime = BooleanField(
+        "Expose during Build",
+        [],
+        description="Set this Environment Variable during Image builds.",
+    )
+
+    def validate_name(form, field):
+        configuration = EnvironmentConfiguration.query.filter_by(
+            id=form.environment_configuration_id.data,
+        ).first()
+        if configuration is not None:
+            if form.name.data == configuration.name:
+                return True
+            raise ValidationError(
+                "Configuration names cannot be changed! Delete and re-create"
+            )
+        raise ValidationError("Configuration not found")
+
+
+class DeleteEnvironmentConfigurationForm(FlaskForm):
+    configuration_id = HiddenField(
+        "Configuration ID",
+        [DataRequired()],
+        description="ID of the Environment Variable to delete.",
+    )
+    name = StringField(
+        "Name",
+        [DataRequired()],
+        description="Name for the Environment Variable.",
+    )
+    value = StringField(
+        "Value",
+        [DataRequired()],
+        description="Value for the Environment Variable.",
+    )
+    secure = BooleanField(
+        "Secure",
+        [],
+        description=(
+            "Store this Environment Variable Securely. "
+            "It will not be recoverable again via the UI."
+        ),
+    )
+    confirm = StringField(
+        "Type the name of the Environment Variable.",
+        [
+            EqualTo(
+                "name",
+                message="Must confirm the *exact* name of the Environment Variable!",
+            )
+        ],
     )
 
 
