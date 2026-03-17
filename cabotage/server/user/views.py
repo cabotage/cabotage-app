@@ -1497,6 +1497,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         config_create_form.environment_id.data = str(environment.id)
 
     sibling_references = []
+    sibling_tcp_references = []
     if app_env:
         for ae in app_env.environment.active_application_environments:
             if ae.application_id == application.id:
@@ -1521,6 +1522,14 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
                     {
                         "slug": ae.application.slug,
                         "ingresses": ingress_list,
+                    }
+                )
+            tcp_processes = sorted(p for p in ae.process_counts if p.startswith("tcp"))
+            if tcp_processes:
+                sibling_tcp_references.append(
+                    {
+                        "slug": ae.application.slug,
+                        "processes": tcp_processes,
                     }
                 )
 
@@ -1696,6 +1705,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         .limit(5),
         config_create_form=config_create_form,
         sibling_references=sibling_references,
+        sibling_tcp_references=sibling_tcp_references,
         releases=releases,
         images=images,
         deployments=deployments,

@@ -1633,7 +1633,7 @@
           <p id="add-var-preview" class="text-xs font-mono text-primary/70 mt-1 fade-scroll" style="display:none;"></p>
         </fieldset>
 
-        {% if sibling_references %}
+        {% if sibling_references or sibling_tcp_references %}
         <div id="add-var-ref-toggle">
           <label class="label cursor-pointer justify-start gap-2">
             <input type="checkbox" id="add-var-ref-check" class="checkbox checkbox-primary checkbox-sm" />
@@ -1665,6 +1665,30 @@
                     <button type="button"
                             class="add-var-ref-insert btn btn-ghost btn-xs font-mono"
                             data-ref="{{ ref_host }}">.host</button>
+                  </div>
+                </div>
+              {% endfor %}
+            {% endfor %}
+            {% for sib in sibling_tcp_references %}
+              {% for proc in sib.processes %}
+                {% set ref_svc = '${' ~ sib.slug ~ '.' ~ proc ~ '.svc}' %}
+                {% set ref_hostname = '${' ~ sib.slug ~ '.' ~ proc ~ '.hostname}' %}
+                {% set ref_port = '${' ~ sib.slug ~ '.' ~ proc ~ '.port}' %}
+                <div class="flex items-center gap-2 p-2 rounded-lg border border-base-content/10">
+                  <div class="flex-1 min-w-0">
+                    <div class="text-sm font-mono text-base-content truncate">{{ sib.slug }} / {{ proc }}</div>
+                    <div class="text-xs text-base-content/40">TCP service</div>
+                  </div>
+                  <div class="flex gap-1 shrink-0">
+                    <button type="button"
+                            class="add-var-ref-insert btn btn-ghost btn-xs font-mono"
+                            data-ref="{{ ref_svc }}">.svc</button>
+                    <button type="button"
+                            class="add-var-ref-insert btn btn-ghost btn-xs font-mono"
+                            data-ref="{{ ref_hostname }}">.hostname</button>
+                    <button type="button"
+                            class="add-var-ref-insert btn btn-ghost btn-xs font-mono"
+                            data-ref="{{ ref_port }}">.port</button>
                   </div>
                 </div>
               {% endfor %}
@@ -1704,8 +1728,9 @@
   <script id="env-export-data" type="application/json">
     [{% for c in configs %}{"name": {{ c.name|tojson }}, "value": {{ c.value|tojson }}, "secret": {{ c.secret|tojson }}}{% if not loop.last %}, {% endif %}{% endfor %}]
   </script>
-  {% if sibling_references %}
+  {% if sibling_references or sibling_tcp_references %}
   <script id="sibling-ref-data" type="application/json">{{ sibling_references|tojson }}</script>
+  <script id="sibling-tcp-ref-data" type="application/json">{{ sibling_tcp_references|tojson }}</script>
   {% endif %}
 </div>
 
