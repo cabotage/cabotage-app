@@ -174,8 +174,9 @@ def _env_config_k8s_resource_prefix(project):
 
 
 def _environment_app_references(environment):
-    """Build template variable references for all apps with ingresses in an environment."""
+    """Build template variable references for all apps in an environment."""
     references = []
+    tcp_references = []
     for ae in environment.active_application_environments:
         ingress_list = []
         for ing in ae.ingresses:
@@ -199,7 +200,15 @@ def _environment_app_references(environment):
                     "ingresses": ingress_list,
                 }
             )
-    return references
+        tcp_processes = sorted(p for p in ae.process_counts if p.startswith("tcp"))
+        if tcp_processes:
+            tcp_references.append(
+                {
+                    "slug": ae.application.slug,
+                    "processes": tcp_processes,
+                }
+            )
+    return references, tcp_references
 
 
 def _deletion_impact_items(entity_type, entity_name, children):
@@ -1160,6 +1169,7 @@ def project_environment(org_slug, project_slug, env_slug):
     env_config_form = CreateEnvironmentConfigurationForm()
     env_config_form.project_id.data = str(project.id)
     env_config_form.environment_id.data = str(environment.id)
+    _app_refs, _tcp_refs = _environment_app_references(environment)
     return render_template(
         "user/project_environment.html",
         project=project,
@@ -1167,7 +1177,8 @@ def project_environment(org_slug, project_slug, env_slug):
         add_app_form=add_app_form,
         available_apps=available_apps,
         env_config_form=env_config_form,
-        app_references=_environment_app_references(environment),
+        app_references=_app_refs,
+        tcp_references=_tcp_refs,
     )
 
 
@@ -1536,13 +1547,15 @@ def project_environment_configuration_edit(org_slug, project_slug, env_slug, con
         is_template = has_template_variables(configuration.value)
         if is_template and configuration.secret:
             flash("Template configs cannot be secrets.", "error")
+            _app_refs, _tcp_refs = _environment_app_references(environment)
             return render_template(
                 "user/project_environment_configuration_edit.html",
                 form=form,
                 project=project,
                 environment=environment,
                 configuration=configuration,
-                app_references=_environment_app_references(environment),
+                app_references=_app_refs,
+                tcp_references=_tcp_refs,
             )
 
         if not is_template:
@@ -1597,13 +1610,15 @@ def project_environment_configuration_edit(org_slug, project_slug, env_slug, con
     if configuration.secret:
         form.value.data = None
 
+    _app_refs, _tcp_refs = _environment_app_references(environment)
     return render_template(
         "user/project_environment_configuration_edit.html",
         form=form,
         project=project,
         environment=environment,
         configuration=configuration,
-        app_references=_environment_app_references(environment),
+        app_references=_app_refs,
+        tcp_references=_tcp_refs,
     )
 
 

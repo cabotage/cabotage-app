@@ -206,7 +206,7 @@
           <p class="text-xs text-base-content/40 mt-1">Value for the environment variable</p>
         </div>
 
-        {% if app_references %}
+        {% if app_references or tcp_references %}
         <div>
           <label class="label cursor-pointer justify-start gap-2">
             <input type="checkbox" id="env-add-var-ref-check" class="checkbox checkbox-primary checkbox-sm" />
@@ -238,6 +238,30 @@
                     <button type="button"
                             class="env-add-var-ref-insert btn btn-ghost btn-xs font-mono"
                             data-ref="{{ ref_host }}">.host</button>
+                  </div>
+                </div>
+              {% endfor %}
+            {% endfor %}
+            {% for sib in tcp_references %}
+              {% for proc in sib.processes %}
+                {% set ref_svc = '${' ~ sib.slug ~ '.' ~ proc ~ '.svc}' %}
+                {% set ref_hostname = '${' ~ sib.slug ~ '.' ~ proc ~ '.hostname}' %}
+                {% set ref_port = '${' ~ sib.slug ~ '.' ~ proc ~ '.port}' %}
+                <div class="flex items-center gap-2 p-2 rounded-lg border border-base-content/10">
+                  <div class="flex-1 min-w-0">
+                    <div class="text-sm font-mono text-base-content truncate">{{ sib.slug }} / {{ proc }}</div>
+                    <div class="text-xs text-base-content/40">TCP service</div>
+                  </div>
+                  <div class="flex gap-1 shrink-0">
+                    <button type="button"
+                            class="env-add-var-ref-insert btn btn-ghost btn-xs font-mono"
+                            data-ref="{{ ref_svc }}">.svc</button>
+                    <button type="button"
+                            class="env-add-var-ref-insert btn btn-ghost btn-xs font-mono"
+                            data-ref="{{ ref_hostname }}">.hostname</button>
+                    <button type="button"
+                            class="env-add-var-ref-insert btn btn-ghost btn-xs font-mono"
+                            data-ref="{{ ref_port }}">.port</button>
                   </div>
                 </div>
               {% endfor %}
