@@ -91,6 +91,23 @@
   {% set system_var_names = ["CABOTAGE_SENTINEL"] %}
   {% set user_configs = configs|rejectattr('name', 'in', system_var_names)|list %}
   {% set system_configs = configs|selectattr('name', 'in', system_var_names)|list %}
+  {% set app_config_names = user_configs|map(attribute='name')|map('upper')|list %}
+  {% set subscribed_configs = [] %}
+  {% for ec in env_configs if ec.id in subscribed_env_config_ids %}
+    {% if ec.name|upper not in app_config_names %}
+      {% if subscribed_configs.append(ec) %}{% endif %}
+    {% endif %}
+  {% endfor %}
+  {% set subscribed_config_ids = subscribed_configs|map(attribute='id')|list %}
+  {% set overridden_shared_names = [] %}
+  {% for ec in env_configs if ec.id in subscribed_env_config_ids and ec.name|upper in app_config_names %}
+    {% if overridden_shared_names.append(ec.name|upper) %}{% endif %}
+  {% endfor %}
+  {% set shared_config_lookup = {} %}
+  {% for ec in env_configs %}
+    {% if shared_config_lookup.update({ec.name: ec}) %}{% endif %}
+  {% endfor %}
+  {% set all_configs = (user_configs + subscribed_configs)|sort(attribute='name') %}
 
   {% set has_image_changes = image_diff.has_changes() if image_diff else false %}
   {% set has_config_changes = config_diff.has_changes() if config_diff else false %}
@@ -883,7 +900,7 @@
           <div class="flex items-center gap-2 text-xs text-base-content/30">
             <span class="inline-flex items-center gap-1">
               {{ icon('key', 'w-2.5 h-2.5') }}
-              {{ user_configs|length }} var{{ 's' if user_configs|length != 1 }}
+              {{ user_configs|length + subscribed_configs|length }} var{{ 's' if user_configs|length + subscribed_configs|length != 1 }}
               {% if system_configs|length > 0 %}+ {{ system_configs|length }} system{% endif %}
             </span>
             <button class="hover:text-accent transition-colors inline-flex items-center gap-1"
@@ -1398,7 +1415,7 @@
     <div>
       <h2 class="text-base font-medium text-base-content">Environment Variables</h2>
       <p class="text-xs text-base-content/40 mt-0.5">
-        {{ user_configs|length }} variable{{ 's' if user_configs|length != 1 }}
+        {{ user_configs|length + subscribed_configs|length }} variable{{ 's' if user_configs|length + subscribed_configs|length != 1 }}
       </p>
     </div>
     <div class="flex items-center gap-2">
@@ -1416,15 +1433,24 @@
       </button>
     </div>
   </div>
+  <button type="button"
+          id="add-var-fab"
+          data-add-var-open
+          class="btn btn-primary btn-sm gap-1.5 add-var-fab"
+          style="display:none;">
+    {{ icon('plus', 'w-4 h-4') }}
+    Add Variable
+  </button>
 
-  {% if user_configs|length > 0 %}
+  {% if all_configs|length > 0 %}
     <div class="card bg-base-200 border border-base-300">
       <div class="env-grid">
-        {% for configuration in user_configs %}
+        {% for cfg in all_configs %}
+          {% set is_shared = cfg.id in subscribed_config_ids %}
           <div class="env-row">
             <div class="env-row-header">
-              <code class="env-key">{{ configuration.name }}</code>
-              {% if configuration.buildtime %}
+              <code class="env-key">{{ cfg.name }}</code>
+              {% if cfg.buildtime %}
                 <div class="info-popup-anchor">
                   <span class="env-badge env-badge-build">{{ icon('box', 'w-3 h-3') }} Build</span>
                   <div class="info-popup">
@@ -1436,14 +1462,11 @@
                       <div class="info-popup-row">
                         <span class="info-popup-desc">Injected during <strong>docker build</strong> as a build arg. Available only at image build time — not at runtime.</span>
                       </div>
-                      <div class="info-popup-row">
-                        <span class="info-popup-desc">Use for compile flags, asset URLs, or build-stage configuration that gets baked into the image.</span>
-                      </div>
                     </div>
                   </div>
                 </div>
               {% endif %}
-              {% if configuration.secret %}
+              {% if cfg.secret %}
                 <div class="info-popup-anchor">
                   <span class="env-badge env-badge-secret">{{ icon('lock', 'w-3 h-3') }} Secret</span>
                   <div class="info-popup">
@@ -1455,30 +1478,110 @@
                       <div class="info-popup-row">
                         <span class="info-popup-desc">Stored encrypted and delivered via <strong>Vault</strong> at runtime. The value is never displayed after being set.</span>
                       </div>
+                    </div>
+                  </div>
+                </div>
+              {% endif %}
+              {% if is_shared %}
+                <div class="info-popup-anchor">
+                  <span class="env-badge env-badge-shared">{{ icon('globe', 'w-3 h-3') }} shared</span>
+                  <div class="info-popup">
+                    <div class="info-popup-header">
+                      {{ icon('globe', 'w-3 h-3 info-popup-header-icon') }}
+                      <span class="info-popup-header-text">Shared Variable</span>
+                    </div>
+                    <div class="info-popup-body">
                       <div class="info-popup-row">
-                        <span class="info-popup-desc">To change a secret, replace it with a new value — you cannot view the current one.</span>
+                        <span class="info-popup-desc">Defined at the environment level and shared across applications.</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              {% elif '${shared.' in cfg.value %}
+                {% set _ref_name = cfg.value.strip().replace('${shared.', '').replace('}', '') %}
+                <div class="info-popup-anchor">
+                  <span class="env-badge env-badge-shared">{{ icon('link', 'w-3 h-3') }} shared ref</span>
+                  <div class="info-popup">
+                    <div class="info-popup-header">
+                      {{ icon('link', 'w-3 h-3 info-popup-header-icon') }}
+                      <span class="info-popup-header-text">Shared Reference</span>
+                    </div>
+                    <div class="info-popup-body">
+                      <div class="info-popup-row">
+                        <span class="info-popup-desc">References a shared environment variable via <code>{{ '${shared.VAR_NAME}' }}</code> syntax. Resolved at deploy time.</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <span class="text-xs text-base-content/30">via {{ _ref_name }}</span>
+              {% endif %}
+              {% if not is_shared and cfg.name|upper in overridden_shared_names %}
+                <div class="info-popup-anchor">
+                  <span class="env-badge env-badge-neutral">{{ icon('alert-triangle', 'w-3 h-3') }} overrides shared</span>
+                  <div class="info-popup">
+                    <div class="info-popup-header">
+                      {{ icon('alert-triangle', 'w-3 h-3 info-popup-header-icon') }}
+                      <span class="info-popup-header-text">Overrides Shared Variable</span>
+                    </div>
+                    <div class="info-popup-body">
+                      <div class="info-popup-row">
+                        <span class="info-popup-desc">A shared environment variable with the same name is subscribed, but this app-level value takes precedence.</span>
                       </div>
                     </div>
                   </div>
                 </div>
               {% endif %}
               <div class="env-row-actions">
-                <a href="{{ url_for('user.project_application_configuration_edit', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}"
-                   class="btn btn-ghost btn-xs"
-                   title="Edit">{{ icon('edit', 'w-3.5 h-3.5') }}</a>
-                <a href="{{ url_for('user.project_application_configuration', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}"
-                   class="btn btn-ghost btn-xs"
-                   title="History">{{ icon('clock', 'w-3.5 h-3.5') }}</a>
-                <a href="{{ url_for('user.project_application_configuration_delete', org_slug=configuration.application.project.organization.slug, project_slug=configuration.application.project.slug, app_slug=configuration.application.slug, config_id=configuration.id) }}"
-                   class="btn btn-ghost btn-xs text-error"
-                   title="Delete">{{ icon('trash', 'w-3.5 h-3.5') }}</a>
+                {% if is_shared %}
+                  <form method="POST"
+                        action="{{ url_for('user.project_application_env_config_unsubscribe', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug, config_id=cfg.id) }}"
+                        class="inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="env_slug" value="{{ environment.slug }}">
+                    <button type="submit" class="btn btn-ghost btn-xs text-warning" title="Unsubscribe">{{ icon('x', 'w-3.5 h-3.5') }}</button>
+                  </form>
+                {% else %}
+                  <button type="button"
+                          class="btn btn-ghost btn-xs app-config-edit-btn"
+                          title="Edit"
+                          data-config-id="{{ cfg.id }}"
+                          data-config-name="{{ cfg.name }}"
+                          data-config-value="{{ '' if cfg.secret else cfg.value }}"
+                          data-config-secret="{{ 'true' if cfg.secret else 'false' }}"
+                          data-config-buildtime="{{ 'true' if cfg.buildtime else 'false' }}"
+                          data-edit-url="{{ url_for('user.project_application_configuration_edit', org_slug=cfg.application.project.organization.slug, project_slug=cfg.application.project.slug, app_slug=cfg.application.slug, config_id=cfg.id) }}"
+                  >{{ icon('edit', 'w-3.5 h-3.5') }}</button>
+                  <button type="button"
+                          class="btn btn-ghost btn-xs app-history-btn"
+                          title="History"
+                          data-history-url="{{ url_for('user.project_application_configuration', org_slug=cfg.application.project.organization.slug, project_slug=cfg.application.project.slug, app_slug=cfg.application.slug, config_id=cfg.id) }}"
+                  >{{ icon('clock', 'w-3.5 h-3.5') }}</button>
+                  <button type="button"
+                          class="btn btn-ghost btn-xs text-error app-delete-btn"
+                          title="Delete"
+                          data-config-id="{{ cfg.id }}"
+                          data-config-name="{{ cfg.name }}"
+                          data-config-value="{{ '**secure**' if cfg.secret else cfg.value }}"
+                          data-delete-url="{{ url_for('user.project_application_configuration_delete', org_slug=cfg.application.project.organization.slug, project_slug=cfg.application.project.slug, app_slug=cfg.application.slug, config_id=cfg.id) }}"
+                  >{{ icon('trash', 'w-3.5 h-3.5') }}</button>
+                {% endif %}
               </div>
             </div>
             <div class="min-w-0">
-              {% if configuration.secret %}
+              {% if cfg.secret %}
                 <span class="env-secret-dots" aria-label="Hidden value">••••••••</span>
+              {% elif not is_shared and '${shared.' in cfg.value %}
+                {% set _ref_match = cfg.value.strip().replace('${shared.', '').replace('}', '') %}
+                {% set _ref_ec = shared_config_lookup.get(_ref_match) %}
+                {% if _ref_ec and _ref_ec.secret %}
+                  <span class="env-secret-dots" aria-label="Hidden value">••••••••</span>
+                {% elif _ref_ec %}
+                  <code class="env-value">{{ _ref_ec.value }}</code>
+                {% else %}
+                  <code class="env-value">{{ cfg.value }}</code>
+                {% endif %}
               {% else %}
-                <code class="env-value">{{ configuration.value }}</code>
+                <code class="env-value">{{ cfg.value }}</code>
               {% endif %}
             </div>
           </div>
@@ -1529,14 +1632,17 @@
     </div>
   {% endif %}
 
-  {% if env_configs %}
+  {% set unsubscribed_configs = [] %}
+  {% for ec in env_configs if ec.id not in subscribed_env_config_ids %}
+    {% if unsubscribed_configs.append(ec) %}{% endif %}
+  {% endfor %}
+  {% if unsubscribed_configs %}
     <div class="mt-6">
-      <h3 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Shared Environment Variables</h3>
+      <h3 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Available Shared Variables</h3>
       <div class="card bg-base-200 border border-base-300">
         <div class="env-grid">
-          {% for ec in env_configs %}
-            {% set is_subscribed = ec.id in subscribed_env_config_ids %}
-            <div class="env-row {{ 'opacity-40' if not is_subscribed }}">
+          {% for ec in unsubscribed_configs %}
+            <div class="env-row opacity-40">
               <div class="env-row-header">
                 <code class="env-key">{{ ec.name }}</code>
                 {% if ec.secret %}
@@ -1545,25 +1651,14 @@
                 {% if ec.buildtime %}
                   <span class="env-badge env-badge-build">{{ icon('box', 'w-3 h-3') }} Build</span>
                 {% endif %}
-                <span class="badge badge-xs badge-ghost">shared</span>
                 <div class="env-row-actions">
-                  {% if is_subscribed %}
-                    <form method="POST"
-                          action="{{ url_for('user.project_application_env_config_unsubscribe', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug, config_id=ec.id) }}"
-                          class="inline">
-                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <input type="hidden" name="env_slug" value="{{ environment.slug }}">
-                      <button type="submit" class="btn btn-ghost btn-xs text-warning gap-1" title="Unsubscribe">{{ icon('x', 'w-3.5 h-3.5') }} Unsubscribe</button>
-                    </form>
-                  {% else %}
-                    <form method="POST"
-                          action="{{ url_for('user.project_application_env_config_subscribe', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug, config_id=ec.id) }}"
-                          class="inline">
-                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <input type="hidden" name="env_slug" value="{{ environment.slug }}">
-                      <button type="submit" class="btn btn-ghost btn-xs text-success gap-1" title="Subscribe">{{ icon('plus', 'w-3.5 h-3.5') }} Subscribe</button>
-                    </form>
-                  {% endif %}
+                  <form method="POST"
+                        action="{{ url_for('user.project_application_env_config_subscribe', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug, config_id=ec.id) }}"
+                        class="inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="env_slug" value="{{ environment.slug }}">
+                    <button type="submit" class="btn btn-ghost btn-xs text-success gap-1" title="Subscribe">{{ icon('plus', 'w-3.5 h-3.5') }} Subscribe</button>
+                  </form>
                 </div>
               </div>
               <div class="min-w-0">
@@ -1749,6 +1844,42 @@
         </div>
         {% endif %}
 
+        {% if env_configs %}
+        <div id="add-var-shared-toggle">
+          <label class="label cursor-pointer justify-start gap-2">
+            <input type="checkbox" id="add-var-shared-check" class="checkbox checkbox-primary checkbox-sm" />
+            <span class="text-sm text-base-content/70">Reference a shared variable</span>
+          </label>
+        </div>
+
+        <div id="add-var-shared-picker" style="display:none;" class="flex flex-col gap-2">
+          <div class="text-xs text-base-content/50">Click to insert at cursor</div>
+          <div class="flex flex-col gap-1 max-h-48 overflow-y-auto">
+            {% for ec in env_configs %}
+              {% set ref = '${shared.' ~ ec.name ~ '}' %}
+              <div class="flex items-center gap-2 p-2 rounded-lg border border-base-content/10">
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-mono text-base-content truncate">
+                    {{ ec.name }}
+                    {% if ec.secret %}
+                      <span class="env-badge env-badge-secret ml-1" style="font-size:0.6rem">{{ icon('lock', 'w-2 h-2') }}</span>
+                    {% endif %}
+                  </div>
+                  <div class="text-xs text-base-content/40 font-mono fade-scroll">
+                    {% if ec.secret %}••••••••{% else %}{{ ec.value }}{% endif %}
+                  </div>
+                </div>
+                <div class="flex gap-1 shrink-0">
+                  <button type="button"
+                          class="add-var-ref-insert btn btn-ghost btn-xs font-mono"
+                          data-ref="{{ ref }}">insert</button>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
         <div class="flex flex-col gap-2 p-3 rounded-lg bg-base-300/30">
           <label class="label cursor-pointer justify-start gap-3">
             {{ config_create_form.secure(class="checkbox checkbox-primary checkbox-sm") }}
@@ -1784,6 +1915,140 @@
   <script id="sibling-ref-data" type="application/json">{{ sibling_references|tojson }}</script>
   <script id="sibling-tcp-ref-data" type="application/json">{{ sibling_tcp_references|tojson }}</script>
   {% endif %}
+  {% set _shared = {} %}
+  {% for ec in env_configs if not ec.secret %}
+    {% if _shared.update({ec.name: ec.value}) %}{% endif %}
+  {% endfor %}
+  {% if _shared %}
+  <script id="shared-ref-data" type="application/json">{{ _shared|tojson }}</script>
+  {% endif %}
+
+  {# Edit Variable Modal #}
+  <div id="app-edit-var-modal" class="raw-editor-modal" style="display:none;">
+    <div class="raw-editor-backdrop" data-app-edit-var-close></div>
+    <div class="raw-editor-dialog" style="max-width: 36rem;">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-base font-semibold text-base-content">Edit Environment Variable</h3>
+        <button type="button"
+                data-app-edit-var-close
+                class="btn btn-ghost btn-sm btn-circle">
+          <svg class="w-4 h-4"
+               viewBox="0 0 24 24"
+               fill="none"
+               stroke="currentColor"
+               stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+
+      <form id="app-edit-var-form"
+            action=""
+            method="post"
+            class="flex flex-col gap-4">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="application_id" value="{{ application.id }}">
+        <input type="hidden" name="name" id="app-edit-config-name">
+        <input type="hidden" name="secure" id="app-edit-secure" value="">
+
+        <div>
+          <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Name</label>
+          <code id="app-edit-name-display" class="text-sm text-accent font-mono block mt-1"></code>
+        </div>
+
+        <div id="app-edit-current-value" class="p-3 rounded-lg bg-base-300/50 overflow-hidden">
+          <p class="text-xs text-base-content/50 mb-1">Current Value</p>
+          <code id="app-edit-current-value-text" class="text-sm font-mono text-base-content/70 break-words"></code>
+          <span id="app-edit-current-value-secret" class="inline-flex items-center gap-1 text-base-content/40 text-sm" style="display:none;">
+            {{ icon('lock', 'w-3 h-3') }} Secret
+          </span>
+        </div>
+
+        <div>
+          <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">New Value</label>
+          <input type="text" name="value" id="app-edit-value"
+                 class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono"
+                 placeholder="New value" autocomplete="off" data-1p-ignore>
+        </div>
+
+        <div class="flex flex-col gap-2 p-3 rounded-lg bg-base-300/30">
+          <div id="app-edit-secret-status" class="flex items-center gap-3 text-sm text-base-content/50">
+          </div>
+          <label class="label cursor-pointer justify-start gap-3">
+            <input type="checkbox" name="buildtime" id="app-edit-buildtime" class="checkbox checkbox-primary checkbox-sm">
+            <div>
+              <span class="text-sm text-base-content">Expose during build</span>
+              <p class="text-xs text-base-content/40">Available as a build arg during image builds.</p>
+            </div>
+          </label>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-1">
+          <button type="button" data-app-edit-var-close class="btn btn-ghost btn-sm">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm gap-1.5">
+            {{ icon('check', 'w-3.5 h-3.5') }}
+            Update Variable
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# History Modal #}
+  <div id="app-history-modal" class="raw-editor-modal" style="display:none;">
+    <div class="raw-editor-backdrop" data-app-history-close></div>
+    <div class="raw-editor-dialog" style="max-width: 40rem;">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-base font-semibold text-base-content">Variable History</h3>
+        <button type="button" data-app-history-close class="btn btn-ghost btn-sm btn-circle">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+      <div id="app-history-content" class="text-sm text-base-content/50">Loading…</div>
+    </div>
+  </div>
+
+  {# Delete Variable Modal #}
+  <div id="app-delete-var-modal" class="raw-editor-modal" style="display:none;">
+    <div class="raw-editor-backdrop" data-app-delete-var-close></div>
+    <div class="raw-editor-dialog" style="max-width: 32rem;">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-base font-semibold text-error">Delete Environment Variable</h3>
+        <button type="button" data-app-delete-var-close class="btn btn-ghost btn-sm btn-circle">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+
+      <p class="text-sm text-base-content/50 mb-3">This action cannot be undone.</p>
+      <div class="p-3 rounded-lg bg-base-300/50 mb-4">
+        <code id="app-delete-name-display" class="text-sm text-accent"></code>
+      </div>
+
+      <form id="app-delete-var-form" action="" method="post" class="flex flex-col gap-4">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="configuration_id" id="app-delete-config-id">
+        <input type="hidden" name="name" id="app-delete-config-name">
+        <input type="hidden" name="value" id="app-delete-config-value">
+        <div>
+          <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Type the variable name to confirm</label>
+          <input type="text" name="confirm" id="app-delete-confirm"
+                 class="input input-bordered input-error w-full bg-base-100 text-base-content border-error/30 focus:border-error font-mono"
+                 placeholder="" autocomplete="off" data-1p-ignore>
+        </div>
+        <div class="flex items-center justify-end gap-2 pt-1">
+          <button type="button" data-app-delete-var-close class="btn btn-ghost btn-sm">Cancel</button>
+          <button type="submit" class="btn btn-error btn-sm gap-1.5">
+            {{ icon('trash', 'w-3.5 h-3.5') }}
+            Delete Variable
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
 </div>
 
 <div data-tab-panel="images" class="tab-panel">

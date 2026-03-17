@@ -1170,6 +1170,25 @@ def project_environment(org_slug, project_slug, env_slug):
     env_config_form = CreateEnvironmentConfigurationForm()
     env_config_form.project_id.data = str(project.id)
     env_config_form.environment_id.data = str(environment.id)
+    env_edit_form = EditEnvironmentConfigurationForm()
+    env_delete_form = DeleteEnvironmentConfigurationForm()
+    # Eagerly load configs with subscriptions to avoid N+1 in the template
+    from sqlalchemy.orm import joinedload
+
+    env_configs = (
+        EnvironmentConfiguration.query.filter_by(
+            project_id=project.id,
+            environment_id=environment.id,
+            deleted=False,
+        )
+        .options(
+            joinedload(EnvironmentConfiguration.subscriptions)
+            .joinedload(EnvironmentConfigSubscription.application_environment)
+            .joinedload(ApplicationEnvironment.application)
+        )
+        .order_by(EnvironmentConfiguration.name)
+        .all()
+    )
     _app_refs, _tcp_refs = _environment_app_references(environment)
     return render_template(
         "user/project_environment.html",
@@ -1178,6 +1197,9 @@ def project_environment(org_slug, project_slug, env_slug):
         add_app_form=add_app_form,
         available_apps=available_apps,
         env_config_form=env_config_form,
+        env_edit_form=env_edit_form,
+        env_delete_form=env_delete_form,
+        env_configs=env_configs,
         app_references=_app_refs,
         tcp_references=_tcp_refs,
     )
@@ -1544,7 +1566,32 @@ def project_environment_configuration_edit(org_slug, project_slug, env_slug, con
     if form.validate_on_submit():
         from cabotage.utils.config_templates import has_template_variables
 
+        was_buildtime = configuration.buildtime
         form.populate_obj(configuration)
+
+        if (
+            configuration.secret
+            and configuration.buildtime
+            and not was_buildtime
+            and form.value.data == "**secure**"
+        ):
+            flash(
+                "You must re-supply the secret value when enabling "
+                "build-time exposure.",
+                "error",
+            )
+            configuration.buildtime = was_buildtime
+            _app_refs, _tcp_refs = _environment_app_references(environment)
+            return render_template(
+                "user/project_environment_configuration_edit.html",
+                form=form,
+                project=project,
+                environment=environment,
+                configuration=configuration,
+                app_references=_app_refs,
+                tcp_references=_tcp_refs,
+            )
+
         is_template = has_template_variables(configuration.value)
         if is_template and configuration.secret:
             flash("Template configs cannot be secrets.", "error")
@@ -2167,6 +2214,8 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         .order_by(desc(version_class(Release).version_id))
         .limit(5),
         config_create_form=config_create_form,
+        config_edit_form=EditConfigurationForm(),
+        config_delete_form=DeleteConfigurationForm(),
         sibling_references=sibling_references,
         sibling_tcp_references=sibling_tcp_references,
         releases=releases,
@@ -2641,7 +2690,32 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
     if form.validate_on_submit():
         from cabotage.utils.config_templates import has_template_variables
 
+        was_buildtime = configuration.buildtime
         form.populate_obj(configuration)
+
+        # Enabling buildtime on a secret requires the value to be re-supplied
+        # so it can be written to the buildtime vault path.
+        if (
+            configuration.secret
+            and configuration.buildtime
+            and not was_buildtime
+            and form.value.data == "**secure**"
+        ):
+            flash(
+                "You must re-supply the secret value when enabling "
+                "build-time exposure.",
+                "error",
+            )
+            configuration.buildtime = was_buildtime
+            return render_template(
+                "user/project_application_configuration_edit.html",
+                form=form,
+                org_slug=organization.slug,
+                project_slug=project.slug,
+                app_slug=application.slug,
+                configuration=configuration,
+            )
+
         is_template = has_template_variables(configuration.value)
         if is_template and configuration.secret:
             flash("Template configs cannot be secrets.", "error")
