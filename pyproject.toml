@@ -56,7 +56,7 @@ dev = [
     "types-requests>=2.32.0.20240712",
     "types-toml>=0.10.8.20240310",
     "typing-extensions==4.7.1",
-    "urllib3==2.2.2",
+    "urllib3==2.6.3",
 ]
 
 [tool.bandit]
