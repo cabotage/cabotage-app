@@ -41,7 +41,7 @@
             {% endif %}
           </div>
 
-          {{ render_field(form.value, placeholder='New value', autocomplete='off') }}
+          {{ render_field(form.value, placeholder='New value') }}
           <p class="text-xs text-base-content/40 -mt-2">
             Use <code class="text-base-content/60">${app.url}</code> or
             <code class="text-base-content/60">${app.ingress.url}</code>
@@ -108,7 +108,7 @@
             </details>
           {% endif %}
 
-          <div class="p-3 rounded-lg bg-base-300/30">
+          <div class="flex flex-col gap-2 p-3 rounded-lg bg-base-300/30">
             <div class="flex items-center gap-3 text-sm text-base-content/50">
               {% if form.secure.data %}
                 {{ icon('lock', 'w-3.5 h-3.5') }}
@@ -117,12 +117,14 @@
                 {{ icon('unlock', 'w-3.5 h-3.5') }}
                 <span>Not secret</span>
               {% endif %}
-              {% if form.buildtime.data %}
-                <span class="text-base-content/20">|</span>
-                {{ icon('settings', 'w-3.5 h-3.5') }}
-                <span>Build-time</span>
-              {% endif %}
             </div>
+            <label class="label cursor-pointer justify-start gap-3">
+              {{ form.buildtime(class="checkbox checkbox-primary checkbox-sm") }}
+              <div>
+                <span class="text-sm text-base-content">Expose during build</span>
+                <p class="text-xs text-base-content/40">Available as a build arg during image builds.</p>
+              </div>
+            </label>
           </div>
 
           <div class="flex items-center gap-3 pt-2">
