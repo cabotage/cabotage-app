@@ -754,6 +754,9 @@ def build_image_buildkit(image=None):
         ),
     ]
 
+    buildctl_args.append("--opt")
+    buildctl_args.append(shlex.quote(f"build-arg:SOURCE_COMMIT={image.commit_sha}"))
+
     for k, v in image.buildargs(config_writer).items():
         buildctl_args.append("--opt")
         buildctl_args.append(shlex.quote(f"build-arg:{k}={v}"))
