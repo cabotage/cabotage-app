@@ -1472,11 +1472,16 @@ class Image(db.Model, Timestamp):
         return f"cabotage/{org_k8s}/{project_k8s}/{app_k8s}"
 
     def buildargs(self, reader):
-        return {
-            c.name: c.read_value(reader)
-            for c in self.application_environment.configurations
-            if c.buildtime
-        }
+        args = {}
+        # Subscribed env configs first (base), then app configs (override)
+        for sub in self.application_environment.environment_config_subscriptions:
+            ec = sub.environment_configuration
+            if ec.buildtime and not ec.deleted:
+                args[ec.name] = ec.read_value(reader)
+        for c in self.application_environment.configurations:
+            if c.buildtime:
+                args[c.name] = c.read_value(reader)
+        return args
 
     @property
     def commit_sha(self):
