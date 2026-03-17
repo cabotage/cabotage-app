@@ -1965,8 +1965,6 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     sibling_tcp_references = []
     if app_env:
         for ae in app_env.environment.active_application_environments:
-            if ae.application_id == application.id:
-                continue
             ingress_list = []
             for ing in ae.ingresses:
                 if not ing.enabled:
@@ -2095,12 +2093,12 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         config_diff = DictDiffer(
             candidate.get("configuration", {}),
             current.get("configuration", {}),
-            ignored_keys=["id", "version_id"],
+            ignored_keys=["id"],
         )
         ingress_diff = DictDiffer(
             candidate.get("ingresses", {}),
             current.get("ingresses", {}),
-            ignored_keys=["id", "version_id"],
+            ignored_keys=["id"],
         )
 
         # Build per-ingress change summaries for the template
