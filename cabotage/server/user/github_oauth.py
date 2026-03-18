@@ -41,9 +41,11 @@ def callback():
     github_user = resp.json()
 
     primary_email = None
+    verified_emails = []
     emails_resp = oauth.github.get("user/emails", token=token)
     emails_data = emails_resp.json()
     if isinstance(emails_data, list):
+        verified_emails = [e["email"] for e in emails_data if e.get("verified")]
         primary_email = next(
             (e["email"] for e in emails_data if e.get("primary") and e.get("verified")),
             None,
@@ -53,6 +55,8 @@ def callback():
     if not primary_email:
         flash("No verified email found on your GitHub account.", "error")
         return redirect(url_for("security.login"))
+    if primary_email not in verified_emails:
+        verified_emails.append(primary_email)
 
     allowed_orgs = current_app.config.get("GITHUB_OAUTH_ALLOWED_ORGS")
     if allowed_orgs:
@@ -85,7 +89,7 @@ def callback():
         login_user(identity.user)
     else:
         existing_user = User.query.filter(
-            db.func.lower(User.email) == primary_email.lower()
+            db.func.lower(User.email).in_([e.lower() for e in verified_emails])
         ).first()
 
         if existing_user:
