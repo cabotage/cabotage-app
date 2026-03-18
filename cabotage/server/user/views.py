@@ -4339,7 +4339,9 @@ def organization_add_user(org_slug):
                             user = gh_identity.user
             except requests_lib.exceptions.RequestException:
                 flash("Could not reach GitHub to verify username.", "error")
-                return redirect(url_for("user.organization", org_slug=org_slug) + "#members")
+                return redirect(
+                    url_for("user.organization", org_slug=org_slug) + "#members"
+                )
         if user:
             existing = OrganizationMember.query.filter_by(
                 user_id=user.id, organization_id=organization.id
