@@ -61,6 +61,10 @@ def callback():
             is_member = False
             for org in org_list:
                 resp = oauth.github.get(f"user/memberships/orgs/{org}", token=token)
+                current_app.logger.info(
+                    "GitHub org membership check for %s: status=%s body=%s",
+                    org, resp.status_code, resp.text,
+                )
                 if resp.status_code == 200:
                     data = resp.json()
                     if data.get("state") == "active":
