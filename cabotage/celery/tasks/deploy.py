@@ -396,29 +396,45 @@ def fetch_cabotage_enrollment(custom_objects_api_instance, release):
 
 
 def _env_config_read_keys_for_release(release):
-    """Extract env config Consul/Vault paths from a release's configuration."""
+    """Extract env config Consul/Vault paths from a release's configuration.
+
+    Includes paths from:
+    - Directly subscribed EnvironmentConfiguration objects
+    - Shared secret refs (${shared.SECRET}) in app-level template configs
+    """
+    from cabotage.utils.config_templates import resolve_shared_secret_refs
+
     consul_keys = set()
     vault_keys = set()
     for name, config_data in release.configuration.items():
         obj = Configuration.query.get(config_data["id"])
         if obj is None:
             obj = EnvironmentConfiguration.query.get(config_data["id"])
-        if not isinstance(obj, EnvironmentConfiguration):
-            continue
-        if obj.key_slug:
-            store, path = obj.key_slug.split(":", 1)
-            # Strip version to get the config name prefix
-            # consul path: .../configuration/{name}/{version}
-            # vault path:  .../configuration/{name}/{version}
-            prefix = "/".join(path.split("/")[:-1])
-            if store == "consul":
-                consul_keys.add(f"{prefix}/")
-            elif store == "vault":
-                vault_keys.add(f"{prefix}/*")
-        if obj.secret and obj.buildtime and obj.build_key_slug:
-            _, build_path = obj.build_key_slug.split(":", 1)
-            build_prefix = "/".join(build_path.split("/")[:-1])
-            vault_keys.add(f"{build_prefix}/*")
+        if isinstance(obj, EnvironmentConfiguration):
+            if obj.key_slug:
+                store, path = obj.key_slug.split(":", 1)
+                prefix = "/".join(path.split("/")[:-1])
+                if store == "consul":
+                    consul_keys.add(f"{prefix}/")
+                elif store == "vault":
+                    vault_keys.add(f"{prefix}/*")
+            if obj.secret and obj.buildtime and obj.build_key_slug:
+                _, build_path = obj.build_key_slug.split(":", 1)
+                build_prefix = "/".join(build_path.split("/")[:-1])
+                vault_keys.add(f"{build_prefix}/*")
+        elif isinstance(obj, Configuration) and obj.value:
+            # Check for ${shared.*} refs that reference env-level configs
+            secret_refs = resolve_shared_secret_refs(
+                obj.value, release.application_environment
+            )
+            for _orig_name, env_cfg in secret_refs:
+                if env_cfg.key_slug:
+                    store, path = env_cfg.key_slug.split(":", 1)
+                    prefix = "/".join(path.split("/")[:-1])
+                    if store == "consul":
+                        consul_keys.add(f"{prefix}/")
+                    elif store == "vault":
+                        vault_keys.add(f"{prefix}/*")
     return consul_keys, vault_keys
 
 

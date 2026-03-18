@@ -482,10 +482,28 @@ function initAddVarModal() {
     try { siblingTcpRefs = JSON.parse(siblingTcpDataEl.textContent); } catch (e) { /* ignore */ }
   }
 
+  var sharedDataEl = document.getElementById('shared-ref-data');
+  var sharedRefs = null;
+  if (sharedDataEl) {
+    try { sharedRefs = JSON.parse(sharedDataEl.textContent); } catch (e) { /* ignore */ }
+  }
+
   function resolvePreview(val) {
-    if ((!siblingRefs && !siblingTcpRefs) || !val || val.indexOf('${') === -1) return null;
+    if (!val || val.indexOf('${') === -1) return null;
+    if (!siblingRefs && !siblingTcpRefs && !sharedRefs) return null;
     var pattern = /\$\{([a-zA-Z0-9_-]+)(?:\.([a-zA-Z0-9_-]+))?\.(url|host|svc|hostname|port)\}/g;
+    var sharedRefPattern = /\$\{shared\.([a-zA-Z_][a-zA-Z0-9_]*)\}/g;
     var hasMatch = false;
+
+    // Resolve shared references first
+    if (sharedRefs) {
+      val = val.replace(sharedRefPattern, function (match, varName) {
+        var ref = sharedRefs[varName];
+        if (ref) { hasMatch = true; return ref; }
+        return match;
+      });
+    }
+
     var resolved = val.replace(pattern, function (match, appSlug, middle, prop) {
       if (prop === 'svc' || prop === 'hostname' || prop === 'port') {
         if (!siblingTcpRefs || !middle) return match;
@@ -529,9 +547,10 @@ function initAddVarModal() {
 
   var secureCheckbox = modal.querySelector('input[name="secure"]');
   var templatePattern = /\$\{[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)?\.(url|host|svc|hostname|port)\}/;
+  var sharedPattern = /\$\{shared\.[a-zA-Z_][a-zA-Z0-9_]*\}/;
 
   function hasTemplateVars(val) {
-    return val && templatePattern.test(val);
+    return val && (templatePattern.test(val) || sharedPattern.test(val));
   }
 
   function updatePreview() {
@@ -565,6 +584,20 @@ function initAddVarModal() {
   }
 
   // Reference picker — inserts template strings into value field at cursor
+  modal.querySelectorAll('.add-var-ref-insert').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var ref = btn.getAttribute('data-ref');
+      var pos = valueInput.selectionStart || valueInput.value.length;
+      var before = valueInput.value.slice(0, pos);
+      var after = valueInput.value.slice(pos);
+      valueInput.value = before + ref + after;
+      valueInput.focus();
+      var newPos = pos + ref.length;
+      valueInput.selectionStart = valueInput.selectionEnd = newPos;
+      updatePreview();
+    });
+  });
+
   var refCheck = document.getElementById('add-var-ref-check');
   var refPicker = document.getElementById('add-var-ref-picker');
 
@@ -576,24 +609,51 @@ function initAddVarModal() {
       }
     });
 
-    modal.querySelectorAll('.add-var-ref-insert').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var ref = btn.getAttribute('data-ref');
-        var pos = valueInput.selectionStart || valueInput.value.length;
-        var before = valueInput.value.slice(0, pos);
-        var after = valueInput.value.slice(pos);
-        valueInput.value = before + ref + after;
-        valueInput.focus();
-        var newPos = pos + ref.length;
-        valueInput.selectionStart = valueInput.selectionEnd = newPos;
-        updatePreview();
-      });
-    });
-
     _addVarResetHooks.push(function () {
       refCheck.checked = false;
       refPicker.style.display = 'none';
       if (previewEl) previewEl.style.display = 'none';
+    });
+  }
+
+  var sharedCheck = document.getElementById('add-var-shared-check');
+  var sharedPicker = document.getElementById('add-var-shared-picker');
+
+  if (sharedCheck && sharedPicker) {
+    sharedCheck.addEventListener('change', function () {
+      sharedPicker.style.display = this.checked ? '' : 'none';
+      if (this.checked && secureCheckbox) {
+        secureCheckbox.checked = false;
+      }
+    });
+
+    _addVarResetHooks.push(function () {
+      sharedCheck.checked = false;
+      sharedPicker.style.display = 'none';
+    });
+  }
+
+  // Floating Add Variable button — appears when the original scrolls out of view
+  var addVarBtn = document.getElementById('add-var-open');
+  var addVarFab = document.getElementById('add-var-fab');
+  if (addVarBtn && addVarFab && typeof IntersectionObserver !== 'undefined') {
+    var configPanel = addVarBtn.closest('[data-tab-panel="config"]');
+    var btnOutOfView = false;
+    var observer = new IntersectionObserver(function (entries) {
+      btnOutOfView = !entries[0].isIntersecting;
+      var panelActive = configPanel && configPanel.classList.contains('tab-panel-active');
+      addVarFab.style.display = (btnOutOfView && panelActive) ? '' : 'none';
+    }, { threshold: 0 });
+    observer.observe(addVarBtn);
+
+    // Hide FAB when switching away from config tab
+    document.querySelectorAll('[data-tab]').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        setTimeout(function () {
+          var panelActive = configPanel && configPanel.classList.contains('tab-panel-active');
+          addVarFab.style.display = (btnOutOfView && panelActive) ? '' : 'none';
+        }, 0);
+      });
     });
   }
 }
@@ -621,7 +681,7 @@ function initEnvAddVarModal() {
     modal.style.display = 'none';
   }
 
-  document.querySelectorAll('#env-add-var-open, #env-add-var-open-empty').forEach(function (btn) {
+  document.querySelectorAll('#env-add-var-open, #env-add-var-open-empty, #env-add-var-fab').forEach(function (btn) {
     btn.addEventListener('click', openModal);
   });
   modal.querySelectorAll('[data-env-add-var-close]').forEach(function (el) {
@@ -667,6 +727,238 @@ function initEnvAddVarModal() {
       });
     });
   }
+
+  // Floating Add Variable button for the environment page
+  var envAddVarBtn = document.getElementById('env-add-var-open');
+  var envAddVarFab = document.getElementById('env-add-var-fab');
+  if (envAddVarBtn && envAddVarFab && typeof IntersectionObserver !== 'undefined') {
+    var envObserver = new IntersectionObserver(function (entries) {
+      envAddVarFab.style.display = entries[0].isIntersecting ? 'none' : '';
+    }, { threshold: 0 });
+    envObserver.observe(envAddVarBtn);
+  }
+}
+
+/* Environment Edit Variable Modal */
+function initEnvEditVarModal() {
+  var modal = document.getElementById('env-edit-var-modal');
+  if (!modal) return;
+
+  var form = document.getElementById('env-edit-var-form');
+  var configIdField = document.getElementById('env-edit-config-id');
+  var configNameField = document.getElementById('env-edit-config-name');
+  var secureField = document.getElementById('env-edit-secure');
+  var nameDisplay = document.getElementById('env-edit-name-display');
+  var currentValueText = document.getElementById('env-edit-current-value-text');
+  var currentValueSecret = document.getElementById('env-edit-current-value-secret');
+  var valueInput = document.getElementById('env-edit-value');
+  var buildtimeCheckbox = document.getElementById('env-edit-buildtime');
+  var secretStatus = document.getElementById('env-edit-secret-status');
+
+  function openModal(btn) {
+    var configId = btn.getAttribute('data-config-id');
+    var name = btn.getAttribute('data-config-name');
+    var value = btn.getAttribute('data-config-value');
+    var isSecret = btn.getAttribute('data-config-secret') === 'true';
+    var isBuildtime = btn.getAttribute('data-config-buildtime') === 'true';
+    var editUrl = btn.getAttribute('data-edit-url');
+
+    form.action = editUrl;
+    configIdField.value = configId;
+    configNameField.value = name;
+    secureField.value = isSecret ? 'y' : '';
+    nameDisplay.textContent = name;
+
+    if (isSecret) {
+      currentValueText.style.display = 'none';
+      currentValueSecret.style.display = '';
+      secretStatus.innerHTML = '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> <span>Secret (encrypted)</span>';
+    } else {
+      currentValueText.textContent = value;
+      currentValueText.style.display = '';
+      currentValueSecret.style.display = 'none';
+      secretStatus.innerHTML = '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 5-5 5 5 0 0 1 3 1"/></svg> <span>Not secret</span>';
+    }
+
+    valueInput.value = isSecret ? '' : value;
+    buildtimeCheckbox.checked = isBuildtime;
+    modal.style.display = 'flex';
+    valueInput.focus();
+  }
+
+  function closeModal() {
+    modal.style.display = 'none';
+  }
+
+  document.querySelectorAll('.env-edit-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () { openModal(btn); });
+  });
+
+  modal.querySelectorAll('[data-env-edit-var-close]').forEach(function (el) {
+    el.addEventListener('click', closeModal);
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && modal.style.display !== 'none') closeModal();
+  });
+}
+
+/* Application Edit Variable Modal */
+function initAppEditVarModal() {
+  var modal = document.getElementById('app-edit-var-modal');
+  if (!modal) return;
+
+  var form = document.getElementById('app-edit-var-form');
+  var configNameField = document.getElementById('app-edit-config-name');
+  var secureField = document.getElementById('app-edit-secure');
+  var nameDisplay = document.getElementById('app-edit-name-display');
+  var currentValueText = document.getElementById('app-edit-current-value-text');
+  var currentValueSecret = document.getElementById('app-edit-current-value-secret');
+  var valueInput = document.getElementById('app-edit-value');
+  var buildtimeCheckbox = document.getElementById('app-edit-buildtime');
+  var secretStatus = document.getElementById('app-edit-secret-status');
+
+  function openModal(btn) {
+    var name = btn.getAttribute('data-config-name');
+    var value = btn.getAttribute('data-config-value');
+    var isSecret = btn.getAttribute('data-config-secret') === 'true';
+    var isBuildtime = btn.getAttribute('data-config-buildtime') === 'true';
+    var editUrl = btn.getAttribute('data-edit-url');
+
+    form.action = editUrl;
+    configNameField.value = name;
+    secureField.value = isSecret ? 'y' : '';
+    nameDisplay.textContent = name;
+
+    if (isSecret) {
+      currentValueText.style.display = 'none';
+      currentValueSecret.style.display = '';
+      secretStatus.innerHTML = '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> <span>Secret (encrypted)</span>';
+    } else {
+      currentValueText.textContent = value;
+      currentValueText.style.display = '';
+      currentValueSecret.style.display = 'none';
+      secretStatus.innerHTML = '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 5-5 5 5 0 0 1 3 1"/></svg> <span>Not secret</span>';
+    }
+
+    valueInput.value = isSecret ? '' : value;
+    buildtimeCheckbox.checked = isBuildtime;
+    modal.style.display = 'flex';
+    valueInput.focus();
+  }
+
+  function closeModal() {
+    modal.style.display = 'none';
+  }
+
+  document.querySelectorAll('.app-config-edit-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () { openModal(btn); });
+  });
+
+  modal.querySelectorAll('[data-app-edit-var-close]').forEach(function (el) {
+    el.addEventListener('click', closeModal);
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && modal.style.display !== 'none') closeModal();
+  });
+}
+
+/* Generic History Modal — fetches detail page and extracts content */
+function initHistoryModal(btnClass, modalId, contentId, closeAttr) {
+  var modal = document.getElementById(modalId);
+  if (!modal) return;
+  var contentEl = document.getElementById(contentId);
+
+  function openModal(btn) {
+    var url = btn.getAttribute('data-history-url');
+    contentEl.innerHTML = '<span class="text-base-content/30">Loading…</span>';
+    modal.style.display = 'flex';
+
+    fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.text(); })
+      .then(function (html) {
+        var parser = new DOMParser();
+        var doc = parser.parseFromString(html, 'text/html');
+        var cards = doc.querySelectorAll('.card');
+        var out = '';
+        cards.forEach(function (card) { out += card.outerHTML; });
+        contentEl.innerHTML = out || '<p class="text-base-content/40">No history available.</p>';
+      })
+      .catch(function () {
+        contentEl.innerHTML = '<p class="text-error">Failed to load history.</p>';
+      });
+  }
+
+  function closeModal() { modal.style.display = 'none'; }
+
+  document.querySelectorAll('.' + btnClass).forEach(function (btn) {
+    btn.addEventListener('click', function () { openModal(btn); });
+  });
+  modal.querySelectorAll('[' + closeAttr + ']').forEach(function (el) {
+    el.addEventListener('click', closeModal);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && modal.style.display !== 'none') closeModal();
+  });
+}
+
+/* Generic Delete Modal */
+function initDeleteModal(btnClass, modalId, formId, nameDisplayId, configIdFieldId, configNameFieldId, configValueFieldId, confirmFieldId, closeAttr) {
+  var modal = document.getElementById(modalId);
+  if (!modal) return;
+  var form = document.getElementById(formId);
+  var nameDisplay = document.getElementById(nameDisplayId);
+  var configIdField = document.getElementById(configIdFieldId);
+  var configNameField = document.getElementById(configNameFieldId);
+  var configValueField = document.getElementById(configValueFieldId);
+  var confirmField = document.getElementById(confirmFieldId);
+
+  function openModal(btn) {
+    var configId = btn.getAttribute('data-config-id');
+    var name = btn.getAttribute('data-config-name');
+    var value = btn.getAttribute('data-config-value');
+    var deleteUrl = btn.getAttribute('data-delete-url');
+
+    form.action = deleteUrl;
+    nameDisplay.textContent = name;
+    configIdField.value = configId;
+    configNameField.value = name;
+    configValueField.value = value;
+    confirmField.value = '';
+    confirmField.placeholder = name;
+    modal.style.display = 'flex';
+    confirmField.focus();
+  }
+
+  function closeModal() { modal.style.display = 'none'; }
+
+  document.querySelectorAll('.' + btnClass).forEach(function (btn) {
+    btn.addEventListener('click', function () { openModal(btn); });
+  });
+  modal.querySelectorAll('[' + closeAttr + ']').forEach(function (el) {
+    el.addEventListener('click', closeModal);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && modal.style.display !== 'none') closeModal();
+  });
+}
+
+/* Flash Messages — dismiss + auto-fade */
+function initFlashMessages() {
+  document.querySelectorAll('.flash-message').forEach(function (el) {
+    function dismiss() {
+      el.classList.add('flash-fade-out');
+      setTimeout(function () { el.remove(); }, 400);
+    }
+
+    var btn = el.querySelector('.flash-dismiss');
+    if (btn) btn.addEventListener('click', dismiss);
+
+    if (el.getAttribute('data-flash-auto') !== 'false') {
+      setTimeout(dismiss, 5000);
+    }
+  });
 }
 
 /* Environment Config Reference Insert (edit page) */
@@ -2254,6 +2546,13 @@ document.addEventListener('DOMContentLoaded', function () {
   initRawEditor();
   initAddVarModal();
   initEnvAddVarModal();
+  initEnvEditVarModal();
+  initAppEditVarModal();
+  initHistoryModal('env-history-btn', 'env-history-modal', 'env-history-content', 'data-env-history-close');
+  initHistoryModal('app-history-btn', 'app-history-modal', 'app-history-content', 'data-app-history-close');
+  initDeleteModal('env-delete-btn', 'env-delete-var-modal', 'env-delete-var-form', 'env-delete-name-display', 'env-delete-config-id', 'env-delete-config-name', 'env-delete-config-value', 'env-delete-confirm', 'data-env-delete-var-close');
+  initDeleteModal('app-delete-btn', 'app-delete-var-modal', 'app-delete-var-form', 'app-delete-name-display', 'app-delete-config-id', 'app-delete-config-name', 'app-delete-config-value', 'app-delete-confirm', 'data-app-delete-var-close');
+  initFlashMessages();
   initEnvConfigRefInsert();
   initExpandModal();
   initAccentPicker();

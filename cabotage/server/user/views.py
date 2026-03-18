@@ -30,6 +30,7 @@ import requests as requests_lib
 from requests.exceptions import HTTPError
 from sqlalchemy import desc, func
 from sqlalchemy.exc import DataError, IntegrityError
+from sqlalchemy.orm import joinedload, subqueryload
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy_continuum import version_class
 
@@ -388,6 +389,43 @@ def _default_environment(project):
     )
 
 
+def _config_count(app_env, environment):
+    """Count effective configs: app-level (minus system) + subscribed (minus overridden)."""
+    if not app_env:
+        return 0
+    system_names = {"CABOTAGE_SENTINEL"}
+    app_config_names = {
+        c.name.upper() for c in app_env.configurations if c.name not in system_names
+    }
+    subscribed_names = set()
+    for sub in app_env.environment_config_subscriptions:
+        ec = sub.environment_configuration
+        if not ec.deleted and ec.name.upper() not in app_config_names:
+            subscribed_names.add(ec.name)
+    return len(app_config_names) + len(subscribed_names)
+
+
+def _eager_env_configs(project, environment):
+    """Load env configs with subscriptions eagerly to avoid N+1 in templates."""
+    if not environment:
+        return []
+
+    return (
+        EnvironmentConfiguration.query.filter_by(
+            project_id=project.id,
+            environment_id=environment.id,
+            deleted=False,
+        )
+        .options(
+            joinedload(EnvironmentConfiguration.subscriptions)
+            .joinedload(EnvironmentConfigSubscription.application_environment)
+            .joinedload(ApplicationEnvironment.application)
+        )
+        .order_by(EnvironmentConfiguration.name)
+        .all()
+    )
+
+
 def _resolve_app_env(
     application, environment_id=None, env_slug=None, project=None, required=True
 ):
@@ -450,7 +488,6 @@ def _create_bare_app_env(application, environment):
 @user_blueprint.route("/organizations")
 @login_required
 def organizations():
-    from sqlalchemy.orm import joinedload
 
     memberships = (
         OrganizationMember.query.filter(OrganizationMember.user_id == current_user.id)
@@ -510,7 +547,6 @@ def organizations():
 @user_blueprint.route("/organizations/<org_slug>")
 @login_required
 def organization(org_slug):
-    from sqlalchemy.orm import joinedload
 
     organization = (
         Organization.query.filter_by(slug=org_slug)
@@ -737,7 +773,6 @@ def organization_project_create(org_slug):
 @user_blueprint.route("/projects")
 @login_required
 def projects():
-    from sqlalchemy.orm import joinedload
 
     user_projects = (
         Project.query.join(Organization)
@@ -837,6 +872,12 @@ def project(org_slug, project_slug):
         env_create_form = CreateEnvironmentForm()
         env_create_form.project_id.data = str(project.id)
         has_default = any(e.is_default for e in active_envs)
+    # Compute config counts per app_env (includes subscribed shared configs)
+    app_config_counts = {}
+    for app in project.active_applications:
+        for ae in app.active_application_environments:
+            app_config_counts[ae.id] = _config_count(ae, ae.environment)
+
     return render_template(
         "user/project.html",
         project=project,
@@ -852,6 +893,7 @@ def project(org_slug, project_slug):
         errored_ae_ids=errored_ae_ids,
         last_deploy_by_ae=last_deploy_by_ae,
         ae_by_env=ae_by_env,
+        app_config_counts=app_config_counts,
     )
 
 
@@ -1170,6 +1212,12 @@ def project_environment(org_slug, project_slug, env_slug):
     env_config_form = CreateEnvironmentConfigurationForm()
     env_config_form.project_id.data = str(project.id)
     env_config_form.environment_id.data = str(environment.id)
+    env_edit_form = EditEnvironmentConfigurationForm()
+    env_delete_form = DeleteEnvironmentConfigurationForm()
+    env_configs = _eager_env_configs(project, environment)
+    app_config_counts = {
+        ae.id: _config_count(ae, environment) for ae in active_app_envs
+    }
     _app_refs, _tcp_refs = _environment_app_references(environment)
     return render_template(
         "user/project_environment.html",
@@ -1178,6 +1226,10 @@ def project_environment(org_slug, project_slug, env_slug):
         add_app_form=add_app_form,
         available_apps=available_apps,
         env_config_form=env_config_form,
+        env_edit_form=env_edit_form,
+        env_delete_form=env_delete_form,
+        env_configs=env_configs,
+        app_config_counts=app_config_counts,
         app_references=_app_refs,
         tcp_references=_tcp_refs,
     )
@@ -1544,7 +1596,32 @@ def project_environment_configuration_edit(org_slug, project_slug, env_slug, con
     if form.validate_on_submit():
         from cabotage.utils.config_templates import has_template_variables
 
+        was_buildtime = configuration.buildtime
         form.populate_obj(configuration)
+
+        if (
+            configuration.secret
+            and configuration.buildtime
+            and not was_buildtime
+            and form.value.data == "**secure**"
+        ):
+            flash(
+                "You must re-supply the secret value when enabling "
+                "build-time exposure.",
+                "error",
+            )
+            db.session.rollback()
+            _app_refs, _tcp_refs = _environment_app_references(environment)
+            return render_template(
+                "user/project_environment_configuration_edit.html",
+                form=form,
+                project=project,
+                environment=environment,
+                configuration=configuration,
+                app_references=_app_refs,
+                tcp_references=_tcp_refs,
+            )
+
         is_template = has_template_variables(configuration.value)
         if is_template and configuration.secret:
             flash("Template configs cannot be secrets.", "error")
@@ -1943,6 +2020,16 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         required=False,
     )
 
+    # Eagerly load subscriptions + env configs to avoid N+1 in
+    # _resolved_configuration and template rendering
+    if app_env:
+
+        db.session.query(ApplicationEnvironment).filter_by(id=app_env.id).options(
+            subqueryload(
+                ApplicationEnvironment.environment_config_subscriptions
+            ).joinedload(EnvironmentConfigSubscription.environment_configuration)
+        ).first()
+
     pod_class_info = (
         '<table class="table"><tr><th>Class</th><th>CPU</th><th>Mem</th></tr>'
     )
@@ -1965,8 +2052,6 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     sibling_tcp_references = []
     if app_env:
         for ae in app_env.environment.active_application_environments:
-            if ae.application_id == application.id:
-                continue
             ingress_list = []
             for ing in ae.ingresses:
                 if not ing.enabled:
@@ -2095,12 +2180,12 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         config_diff = DictDiffer(
             candidate.get("configuration", {}),
             current.get("configuration", {}),
-            ignored_keys=["id", "version_id"],
+            ignored_keys=["id"],
         )
         ingress_diff = DictDiffer(
             candidate.get("ingresses", {}),
             current.get("ingresses", {}),
-            ignored_keys=["id", "version_id"],
+            ignored_keys=["id"],
         )
 
         # Build per-ingress change summaries for the template
@@ -2169,6 +2254,8 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         .order_by(desc(version_class(Release).version_id))
         .limit(5),
         config_create_form=config_create_form,
+        config_edit_form=EditConfigurationForm(),
+        config_delete_form=DeleteConfigurationForm(),
         sibling_references=sibling_references,
         sibling_tcp_references=sibling_tcp_references,
         releases=releases,
@@ -2201,9 +2288,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         release_by_id=release_by_id,
         image_by_id=image_by_id,
         release_proc_counts=release_proc_counts,
-        env_configs=(
-            environment.active_environment_configurations if environment else []
-        ),
+        env_configs=_eager_env_configs(project, environment),
         subscribed_env_config_ids=(
             {
                 sub.environment_configuration_id
@@ -2212,6 +2297,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
             if app_env
             else set()
         ),
+        config_count=_config_count(app_env, environment),
     )
 
 
@@ -2634,6 +2720,8 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
     ).first_or_404()
     if not AdministerApplicationPermission(application.id).can():
         abort(403)
+    if configuration.name == "CABOTAGE_SENTINEL":
+        abort(403)
 
     form = EditConfigurationForm(obj=configuration)
     form.application_id.data = str(configuration.application.id)
@@ -2643,7 +2731,32 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
     if form.validate_on_submit():
         from cabotage.utils.config_templates import has_template_variables
 
+        was_buildtime = configuration.buildtime
         form.populate_obj(configuration)
+
+        # Enabling buildtime on a secret requires the value to be re-supplied
+        # so it can be written to the buildtime vault path.
+        if (
+            configuration.secret
+            and configuration.buildtime
+            and not was_buildtime
+            and form.value.data == "**secure**"
+        ):
+            flash(
+                "You must re-supply the secret value when enabling "
+                "build-time exposure.",
+                "error",
+            )
+            db.session.rollback()
+            return render_template(
+                "user/project_application_configuration_edit.html",
+                form=form,
+                org_slug=organization.slug,
+                project_slug=project.slug,
+                app_slug=application.slug,
+                configuration=configuration,
+            )
+
         is_template = has_template_variables(configuration.value)
         if is_template and configuration.secret:
             flash("Template configs cannot be secrets.", "error")
@@ -3248,6 +3361,9 @@ def project_application_configuration_delete(
         application_id=application.id, id=config_id
     ).first_or_404()
     if not AdministerApplicationPermission(application.id).can():
+        abort(403)
+
+    if configuration.name == "CABOTAGE_SENTINEL":
         abort(403)
 
     if len(configuration.application_environment.configurations) <= 1:

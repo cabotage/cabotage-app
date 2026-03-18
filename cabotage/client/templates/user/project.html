@@ -73,13 +73,13 @@
       {% elif ae.id in completed_ae_ids %}
         {% set status = "running" %}
       {% endif %}
-      {% set configs = ae.configurations %}
+
       {% set proc_counts = ae.process_counts %}
     {% endif %}
     {% set proc_count = proc_counts.values()|sum if proc_counts is defined and proc_counts else 0 %}
     {% set meta = [
               (proc_count ~ ' instance' ~ ('s' if proc_count != 1 else '')) if proc_count else 'No pods',
-              (configs|length ~ ' env vars') if configs is defined and configs else ''
+              (app_config_counts.get(ae.id, 0) ~ ' config' ~ ('s' if app_config_counts.get(ae.id, 0) != 1 else '')) if ae else ''
             ]|select|list %}
     {% if ae and ae.id in last_deploy_by_ae %}
       {% set _ = meta.append('deployed ' ~ last_deploy_by_ae[ae.id]|humanize) %}

@@ -150,12 +150,18 @@ class DictDiffer(object):
     def __init__(self, current_dict, past_dict, ignored_keys=None):
         if ignored_keys is None:
             ignored_keys = []
+        self.ignored_keys = set(ignored_keys)
         self.current_dict, self.past_dict = current_dict, past_dict
         self.current_keys, self.past_keys = [
-            set([k for k in d.keys() if k not in ignored_keys])
-            for d in (current_dict, past_dict)
+            set(d.keys()) for d in (current_dict, past_dict)
         ]
         self.intersect = self.current_keys.intersection(self.past_keys)
+
+    def _strip(self, val):
+        """Strip ignored_keys from inner dicts for comparison."""
+        if not self.ignored_keys or not isinstance(val, dict):
+            return val
+        return {k: v for k, v in val.items() if k not in self.ignored_keys}
 
     def added(self):
         return self.current_keys - self.intersect
@@ -165,12 +171,16 @@ class DictDiffer(object):
 
     def changed(self):
         return set(
-            o for o in self.intersect if self.past_dict[o] != self.current_dict[o]
+            o
+            for o in self.intersect
+            if self._strip(self.past_dict[o]) != self._strip(self.current_dict[o])
         )
 
     def unchanged(self):
         return set(
-            o for o in self.intersect if self.past_dict[o] == self.current_dict[o]
+            o
+            for o in self.intersect
+            if self._strip(self.past_dict[o]) == self._strip(self.current_dict[o])
         )
 
     def has_changes(self):
