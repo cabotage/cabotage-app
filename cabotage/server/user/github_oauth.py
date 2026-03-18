@@ -37,14 +37,14 @@ def callback():
         flash("GitHub authentication failed.", "error")
         return redirect(url_for("security.login"))
 
-    current_app.logger.info(
+    print(
         "GitHub OAuth token scopes: %s",
         token.get("scope", "(none)"),
     )
 
     resp = oauth.github.get("user", token=token)
     github_user = resp.json()
-    current_app.logger.info(
+    print(
         "GitHub user: id=%s login=%s email=%s",
         github_user.get("id"), github_user.get("login"), github_user.get("email"),
     )
@@ -52,7 +52,7 @@ def callback():
     primary_email = None
     emails_resp = oauth.github.get("user/emails", token=token)
     emails_data = emails_resp.json()
-    current_app.logger.info(
+    print(
         "GitHub /user/emails: status=%s body=%s",
         emails_resp.status_code, emails_resp.text,
     )
@@ -74,7 +74,7 @@ def callback():
             is_member = False
             for org in org_list:
                 resp = oauth.github.get(f"user/memberships/orgs/{org}", token=token)
-                current_app.logger.info(
+                print(
                     "GitHub org membership check for %s: status=%s body=%s",
                     org, resp.status_code, resp.text,
                 )
