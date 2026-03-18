@@ -14,6 +14,7 @@ from citext import CIText
 from .auth_associations import (
     OrganizationMember,
     OrganizationTeam,
+    ProjectMember,
     TeamMember,
 )
 
@@ -158,6 +159,12 @@ class Organization(db.Model):
             user_id=user.id, organization_id=self.id
         ).first()
         if association:
+            project_ids = [p.id for p in self.projects]
+            if project_ids:
+                ProjectMember.query.filter(
+                    ProjectMember.user_id == user.id,
+                    ProjectMember.project_id.in_(project_ids),
+                ).delete(synchronize_session="fetch")
             db.session.delete(association)
 
     def add_team(self, team):
