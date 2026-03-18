@@ -842,6 +842,7 @@ def projects():
         Project.query.join(Organization)
         .join(Organization.members)
         .filter(OrganizationMember.user_id == current_user.id)
+        .filter(OrganizationMember.project_scope_limited == False)  # noqa: E712
         .filter(Project.deleted_at.is_(None))
         .filter(Organization.deleted_at.is_(None))
         .options(

@@ -98,11 +98,12 @@ class User(db.Model, FsUserMixin):
     def projects(self):
         seen = set()
         projects = []
-        for organization in self.organizations:
-            for p in organization.organization.projects:
-                if p.id not in seen:
-                    seen.add(p.id)
-                    projects.append(p)
+        for membership in self.organizations:
+            if not membership.project_scope_limited:
+                for p in membership.organization.projects:
+                    if p.id not in seen:
+                        seen.add(p.id)
+                        projects.append(p)
         for team in self.teams:
             for p in team.team.projects:
                 if p.id not in seen:
