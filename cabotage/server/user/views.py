@@ -4945,7 +4945,9 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
     pods_ready = 0
     pods_by_phase = {}
     running_pod_names = []
-    processes = {}  # {process_name: {"total": N, "ready": N, "pending": N, "crashed": N}}
+    processes = (
+        {}
+    )  # {process_name: {"total": N, "ready": N, "pending": N, "crashed": N}}
     try:
         api_client = kubernetes_ext.kubernetes_client
         core_api = kubernetes.client.CoreV1Api(api_client)
