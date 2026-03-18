@@ -101,7 +101,6 @@ def callback():
 
     if identity:
         identity.github_username = github_username
-        identity.github_access_token = token["access_token"]
         db.session.commit()
         login_user(identity.user)
     else:
@@ -114,7 +113,6 @@ def callback():
                 user_id=existing_user.id,
                 github_id=github_id,
                 github_username=github_username,
-                github_access_token=token["access_token"],
             )
             db.session.add(gh_identity)
             db.session.commit()
@@ -133,7 +131,7 @@ def callback():
                 email=primary_email,
                 password="!",  # nosec B106 - unusable password for OAuth-only users
                 active=True,
-                confirmed_at=datetime.datetime.now(),
+                confirmed_at=datetime.datetime.utcnow(),
                 fs_uniquifier=uuid.uuid4().hex,
             )
             db.session.add(user)
@@ -143,7 +141,6 @@ def callback():
                 user_id=user.id,
                 github_id=github_id,
                 github_username=github_username,
-                github_access_token=token["access_token"],
             )
             db.session.add(gh_identity)
             db.session.commit()
