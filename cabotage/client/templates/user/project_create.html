@@ -29,9 +29,11 @@
       </form>
       {% else %}
       <div role="alert" class="alert alert-info text-sm">
-        <span>You need to create an organization first.</span>
+        <span>You need to be a member of an organization first.</span>
       </div>
+      {% if current_user.admin %}
       <a href="{{ url_for('user.organization_create') }}" class="btn btn-primary w-full mt-4">Create an Organization</a>
+      {% endif %}
       {% endif %}
     </div>
   </div>
