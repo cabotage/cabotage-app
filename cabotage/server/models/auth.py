@@ -14,6 +14,7 @@ from citext import CIText
 from .auth_associations import (
     OrganizationMember,
     OrganizationTeam,
+    ProjectMember,
     TeamMember,
 )
 
@@ -77,6 +78,7 @@ class User(db.Model, FsUserMixin):
 
     organizations = db.relationship("OrganizationMember", back_populates="user")
     teams = db.relationship("TeamMember", back_populates="user")
+    project_memberships = db.relationship("ProjectMember", back_populates="user")
 
     def is_authenticated(self):
         return True
@@ -95,11 +97,22 @@ class User(db.Model, FsUserMixin):
 
     @property
     def projects(self):
+        seen = set()
         projects = []
         for organization in self.organizations:
-            projects += organization.organization.projects
+            for p in organization.organization.projects:
+                if p.id not in seen:
+                    seen.add(p.id)
+                    projects.append(p)
         for team in self.teams:
-            projects += team.team.projects
+            for p in team.team.projects:
+                if p.id not in seen:
+                    seen.add(p.id)
+                    projects.append(p)
+        for pm in self.project_memberships:
+            if pm.project.id not in seen:
+                seen.add(pm.project.id)
+                projects.append(pm.project)
         return projects
 
 

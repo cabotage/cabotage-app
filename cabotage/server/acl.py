@@ -29,7 +29,10 @@ def cabotage_on_identity_loaded(sender, identity):
             identity.provides.add(RoleNeed(role.name))
 
     if hasattr(current_user, "id"):
-        from cabotage.server.models.auth_associations import OrganizationMember
+        from cabotage.server.models.auth_associations import (
+            OrganizationMember,
+            ProjectMember,
+        )
 
         memberships = (
             OrganizationMember.query.filter_by(user_id=current_user.id)
@@ -56,6 +59,23 @@ def cabotage_on_identity_loaded(sender, identity):
                     identity.provides.add(ViewApplicationNeed(application.id))
                     if membership.admin:
                         identity.provides.add(AdministerApplicationNeed(application.id))
+
+        project_memberships = (
+            ProjectMember.query.filter_by(user_id=current_user.id)
+            .options(
+                joinedload(ProjectMember.project).joinedload("project_applications")
+            )
+            .all()
+        )
+        for pm in project_memberships:
+            identity.provides.add(ViewProjectNeed(pm.project_id))
+            if pm.admin:
+                identity.provides.add(AdministerProjectNeed(pm.project_id))
+
+            for application in pm.project.project_applications:
+                identity.provides.add(ViewApplicationNeed(application.id))
+                if pm.admin:
+                    identity.provides.add(AdministerApplicationNeed(application.id))
 
 
 class ViewOrganizationPermission(Permission):

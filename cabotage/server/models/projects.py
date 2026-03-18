@@ -10,6 +10,7 @@ from sqlalchemy_utils.models import Timestamp
 
 from cabotage.server import db
 
+from cabotage.server.models.auth_associations import ProjectMember
 from cabotage.server.models.plugins import ActivityPlugin
 from cabotage.server.models.utils import (
     generate_k8s_identifier,
@@ -141,6 +142,20 @@ class Project(db.Model, Timestamp):
         order_by="Environment.sort_order",
         foreign_keys="Environment.project_id",
     )
+    members = db.relationship("ProjectMember", back_populates="project")
+
+    def add_user(self, user, admin=False):
+        association = ProjectMember(admin=admin)
+        association.project = self
+        association.user = user
+        db.session.add(association)
+
+    def remove_user(self, user):
+        association = ProjectMember.query.filter_by(
+            user_id=user.id, project_id=self.id
+        ).first()
+        if association:
+            db.session.delete(association)
 
     @property
     def active_applications(self):

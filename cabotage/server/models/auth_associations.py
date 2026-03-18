@@ -49,3 +49,20 @@ class TeamMember(db.Model):
 
     user = db.relationship("User", back_populates="teams")
     team = db.relationship("Team", back_populates="members")
+
+
+class ProjectMember(db.Model):
+    __tablename__ = "project_members"
+
+    user_id = db.Column(
+        postgresql.UUID(as_uuid=True), db.ForeignKey("users.id"), primary_key=True
+    )
+    project_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("projects.id"),
+        primary_key=True,
+    )
+
+    admin = db.Column(db.Boolean, nullable=False, default=False)
+    user = db.relationship("User", back_populates="project_memberships")
+    project = db.relationship("Project", back_populates="members")

@@ -55,7 +55,7 @@ from cabotage.server.models.auth import (
     Organization,
     User,
 )
-from cabotage.server.models.auth_associations import OrganizationMember
+from cabotage.server.models.auth_associations import OrganizationMember, ProjectMember
 from cabotage.server.models.projects import (
     DEFAULT_POD_CLASS,
     Application,
@@ -114,6 +114,7 @@ from cabotage.server.user.forms import (
     IngressHostForm,
     ReleaseDeployForm,
     AddOrganizationUserForm,
+    AddProjectUserForm,
 )
 
 from cabotage.utils.docker_auth import (
@@ -739,7 +740,7 @@ def organization_project_create(org_slug):
 def projects():
     from sqlalchemy.orm import joinedload
 
-    user_projects = (
+    org_projects = (
         Project.query.join(Organization)
         .join(Organization.members)
         .filter(OrganizationMember.user_id == current_user.id)
@@ -751,6 +752,18 @@ def projects():
         )
         .all()
     )
+    direct_projects = (
+        Project.query.join(ProjectMember)
+        .filter(ProjectMember.user_id == current_user.id)
+        .filter(Project.deleted_at.is_(None))
+        .options(
+            joinedload(Project.organization),
+            joinedload(Project.project_applications),
+        )
+        .all()
+    )
+    seen = {p.id for p in org_projects}
+    user_projects = org_projects + [p for p in direct_projects if p.id not in seen]
 
     # Pre-compute app status to avoid per-app queries in the template
     app_ids = [app.id for p in user_projects for app in p.active_applications]
@@ -1008,6 +1021,10 @@ def project_settings(org_slug, project_slug):
             ("ingress domains", _ingress_hostnames(all_app_envs)),
         ],
     )
+
+    add_member_form = AddProjectUserForm()
+    remove_member_form = FlaskForm()
+
     return render_template(
         "user/project_settings.html",
         project=project,
@@ -1015,6 +1032,150 @@ def project_settings(org_slug, project_slug):
         can_disable_environments=can_disable_environments,
         delete_form=delete_form,
         delete_impact=delete_impact,
+        add_member_form=add_member_form,
+        remove_member_form=remove_member_form,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/members/add", methods=["POST"]
+)
+@login_required
+def project_add_user(org_slug, project_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+
+    form = AddProjectUserForm()
+    if form.validate_on_submit():
+        if user := User.query.filter_by(email=form.email.data).first():
+            existing = ProjectMember.query.filter_by(
+                user_id=user.id, project_id=project.id
+            ).first()
+            if existing:
+                flash("User is already a member of this project.", "warning")
+            else:
+                project.add_user(user)
+                db.session.commit()
+                flash("User has been added to the project.", "success")
+        else:
+            flash("User with this email address does not exist.", "error")
+    return redirect(
+        url_for(
+            "user.project_settings",
+            org_slug=org_slug,
+            project_slug=project_slug,
+        )
+        + "#members"
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/members/remove", methods=["POST"]
+)
+@login_required
+def project_remove_user(org_slug, project_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+
+    user_id = request.form.get("user_id")
+    if user := _safe_get(User, user_id):
+        member = ProjectMember.query.filter_by(
+            user_id=user.id, project_id=project.id
+        ).first()
+        if member:
+            project.remove_user(user)
+            db.session.commit()
+            flash(
+                f"User {user.email} removed from project {project.name}.",
+                "success",
+            )
+        else:
+            flash("User is not a direct member of this project.", "warning")
+    else:
+        flash("User not found.", "error")
+    return redirect(
+        url_for(
+            "user.project_settings",
+            org_slug=org_slug,
+            project_slug=project_slug,
+        )
+        + "#members"
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/members/promote", methods=["POST"]
+)
+@login_required
+def project_promote_user(org_slug, project_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+
+    user_id = request.form.get("user_id")
+    if user := _safe_get(User, user_id):
+        if member := ProjectMember.query.filter_by(
+            user_id=user.id, project_id=project.id
+        ).first():
+            member.admin = True
+            db.session.commit()
+            flash(f"User {user.email} promoted to project admin.", "success")
+        else:
+            flash("User is not a direct member of this project.", "warning")
+    else:
+        flash("User not found.", "error")
+    return redirect(
+        url_for(
+            "user.project_settings",
+            org_slug=org_slug,
+            project_slug=project_slug,
+        )
+        + "#members"
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/members/demote", methods=["POST"]
+)
+@login_required
+def project_demote_user(org_slug, project_slug):
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+
+    user_id = request.form.get("user_id")
+    if user := _safe_get(User, user_id):
+        if member := ProjectMember.query.filter_by(
+            user_id=user.id, project_id=project.id
+        ).first():
+            member.admin = False
+            db.session.commit()
+            flash(f"User {user.email} demoted from project admin.", "success")
+        else:
+            flash("User is not a direct member of this project.", "warning")
+    else:
+        flash("User not found.", "error")
+    return redirect(
+        url_for(
+            "user.project_settings",
+            org_slug=org_slug,
+            project_slug=project_slug,
+        )
+        + "#members"
     )
 
 

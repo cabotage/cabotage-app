@@ -155,6 +155,111 @@
       </div>
     </form>
 
+    <hr class="border-base-content/10">
+
+    <div id="members" class="settings-row">
+      <div class="settings-row-label">
+        <div class="settings-row-icon bg-info/10 text-info">{{ icon('users', 'w-4 h-4') }}</div>
+        <div>
+          <h2 class="text-sm font-semibold text-base-content">Project Members</h2>
+          <p class="text-xs text-base-content/40 mt-0.5">Users with direct access to this project (in addition to organization members)</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between mb-3">
+      <span class="text-xs text-base-content/40">{{ project.members|length }} direct member{{ 's' if project.members|length != 1 }}</span>
+      <button type="button"
+              class="btn btn-ghost btn-xs gap-1"
+              onclick="document.getElementById('add-project-member-modal').showModal()">
+        {{ icon('plus', 'w-3.5 h-3.5') }}
+        Add Member
+      </button>
+    </div>
+
+    {% if project.members %}
+      <div class="flex flex-col gap-2 mb-6">
+        {% for membership in project.members %}
+          <div class="flex items-center justify-between p-3 rounded-lg bg-base-200/50 border border-base-content/5">
+            <div class="flex items-center gap-3 min-w-0">
+              {% if membership.admin %}
+                <div class="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
+                  {{ icon('shield', 'w-4 h-4') }}
+                </div>
+              {% else %}
+                <div class="w-8 h-8 rounded-full bg-base-300 flex items-center justify-center flex-shrink-0">
+                  {{ icon('user', 'w-4 h-4') }}
+                </div>
+              {% endif %}
+              <div class="min-w-0">
+                <span class="text-sm font-medium text-base-content truncate">{{ membership.user.username }}</span>
+                {% if membership.admin %}
+                  <span class="badge badge-xs badge-primary ml-2">Admin</span>
+                {% else %}
+                  <span class="badge badge-xs badge-ghost ml-2">Member</span>
+                {% endif %}
+                {% if membership.user.id == current_user.id %}<span class="text-xs text-base-content/30 ml-1">(you)</span>{% endif %}
+              </div>
+            </div>
+            {% if membership.user.id != current_user.id and remove_member_form is defined %}
+              <div class="flex items-center gap-1.5 flex-shrink-0">
+                {% if membership.admin %}
+                  <form action="{{ url_for('user.project_demote_user', org_slug=org_slug, project_slug=project_slug) }}" method="post" class="inline">
+                    {{ remove_member_form.hidden_tag() }}
+                    <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
+                    <button type="submit" class="btn btn-ghost btn-xs gap-1 text-warning" title="Demote from admin">
+                      {{ icon('shield', 'w-3.5 h-3.5') }}
+                      Demote
+                    </button>
+                  </form>
+                {% else %}
+                  <form action="{{ url_for('user.project_promote_user', org_slug=org_slug, project_slug=project_slug) }}" method="post" class="inline">
+                    {{ remove_member_form.hidden_tag() }}
+                    <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
+                    <button type="submit" class="btn btn-ghost btn-xs gap-1" title="Promote to admin">
+                      {{ icon('shield', 'w-3.5 h-3.5') }}
+                      Promote
+                    </button>
+                  </form>
+                {% endif %}
+                <form action="{{ url_for('user.project_remove_user', org_slug=org_slug, project_slug=project_slug) }}" method="post" class="inline">
+                  {{ remove_member_form.hidden_tag() }}
+                  <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
+                  <button type="submit" class="btn btn-ghost btn-xs text-error" title="Remove member">
+                    {{ icon('x', 'w-3.5 h-3.5') }}
+                  </button>
+                </form>
+              </div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="text-sm text-base-content/40 mb-6">No direct project members. Access is inherited from organization membership.</div>
+    {% endif %}
+
+    {% if add_member_form is defined %}
+      <dialog id="add-project-member-modal" class="modal">
+        <div class="modal-box max-w-md">
+          <h3 class="text-base font-semibold text-base-content mb-4">Add Project Member</h3>
+          <form action="{{ url_for('user.project_add_user', org_slug=org_slug, project_slug=project_slug) }}"
+                method="post"
+                class="flex flex-col gap-4">
+            {{ add_member_form.hidden_tag() }}
+            <fieldset class="fieldset">
+              <legend class="fieldset-legend text-xs">User Email</legend>
+              <input type="email" name="email" class="input input-bordered w-full" placeholder="user@example.com" required />
+            </fieldset>
+            <div class="modal-action">
+              <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('dialog').close()">Cancel</button>
+              <button type="submit" class="btn btn-primary btn-sm">Add Member</button>
+            </div>
+          </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+      </dialog>
+    {% endif %}
+
     {% if delete_form %}
       {{ danger_zone_delete(
         modal_id='delete-project-modal',
