@@ -491,15 +491,16 @@
               {% if not inherited and membership.project_scope_limited is defined %}
                 <div class="flex flex-wrap items-center gap-1 mt-0.5">
                   {% if membership.project_scope_limited %}
+                    <span class="text-[10px] text-base-content/30">{{ icon('folder', 'w-2.5 h-2.5 inline') }}</span>
                     {% if membership.user.project_memberships %}
                       {% for pm in membership.user.project_memberships %}
                         <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary/60">{{ pm.project.name }}</span>
                       {% endfor %}
                     {% else %}
-                      <span class="text-[10px] text-warning/60">no projects assigned</span>
+                      <span class="text-[10px] text-warning/60">no projects</span>
                     {% endif %}
                   {% else %}
-                    <span class="text-[10px] text-base-content/25">all projects</span>
+                    <span class="text-[10px] text-base-content/25">{{ icon('folder', 'w-2.5 h-2.5 inline') }} all projects</span>
                   {% endif %}
                 </div>
               {% endif %}
