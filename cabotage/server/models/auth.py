@@ -118,7 +118,7 @@ class GitHubIdentity(db.Model):
         nullable=False,
         unique=True,
     )
-    github_id = db.Column(db.Integer, nullable=False, unique=True)
+    github_id = db.Column(db.BigInteger, nullable=False, unique=True)
     github_username = db.Column(db.String(255), nullable=False)
     github_access_token = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.datetime.now)
