@@ -418,7 +418,7 @@
                 </div>
                 <ul tabindex="0"
                     class="dropdown-content menu bg-base-300 rounded-lg z-[60] w-52 p-2 shadow-xl border border-base-content/10 mt-2">
-                  <li class="menu-title text-xs text-base-content/40 px-2 pb-1">{{ (current_user.username or current_user.email) | display_username }}</li>
+                  <li class="menu-title text-xs text-base-content/40 px-2 pb-1"><span class="flex items-center gap-1.5">{% if current_user.github_identity %}{{ icon('github', 'w-3.5 h-3.5 shrink-0') }}{% endif %}{{ (current_user.username or current_user.email) | display_username }}</span></li>
                   {% if security.changeable %}
                   <li>
                     <a href="{{ url_for('security.change_password') }}" class="text-sm">Change Password</a>
