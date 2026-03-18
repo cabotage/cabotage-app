@@ -4323,23 +4323,33 @@ def organization_add_user(org_slug):
         user = User.query.filter_by(email=value).first()
         if not user:
             # Resolve GitHub username to user ID via API, then match by ID
-            resp = requests_lib.get(
-                f"https://api.github.com/users/{value}",
-                headers={"Accept": "application/vnd.github+json"},
-                timeout=10,
-            )
-            if resp.status_code == 200:
-                github_id = resp.json().get("id")
-                if github_id:
-                    gh_identity = GitHubIdentity.query.filter_by(
-                        github_id=github_id
-                    ).first()
-                    if gh_identity:
-                        user = gh_identity.user
+            try:
+                resp = requests_lib.get(
+                    f"https://api.github.com/users/{value}",
+                    headers={"Accept": "application/vnd.github+json"},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    github_id = resp.json().get("id")
+                    if github_id:
+                        gh_identity = GitHubIdentity.query.filter_by(
+                            github_id=github_id
+                        ).first()
+                        if gh_identity:
+                            user = gh_identity.user
+            except requests_lib.exceptions.RequestException:
+                flash("Could not reach GitHub to verify username.", "error")
+                return redirect(url_for("user.organization", org_slug=org_slug) + "#members")
         if user:
-            organization.add_user(user)
-            db.session.commit()
-            flash("User has been added to the organization.", "success")
+            existing = OrganizationMember.query.filter_by(
+                user_id=user.id, organization_id=organization.id
+            ).first()
+            if existing:
+                flash("User is already a member of this organization.", "warning")
+            else:
+                organization.add_user(user)
+                db.session.commit()
+                flash("User has been added to the organization.", "success")
         else:
             flash("No user found with that email or GitHub username.", "error")
         return redirect(url_for("user.organization", org_slug=org_slug) + "#members")
