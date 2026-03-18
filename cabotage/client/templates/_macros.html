@@ -488,6 +488,13 @@
               {% if membership.user.email %}
                 <span class="text-xs text-base-content/30 truncate block">{{ membership.user.email }}</span>
               {% endif %}
+              {% if not inherited and membership.user.project_memberships is defined and membership.user.project_memberships %}
+                <div class="flex flex-wrap gap-1 mt-0.5">
+                  {% for pm in membership.user.project_memberships %}
+                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-base-200 text-base-content/40">{{ pm.project.name }}</span>
+                  {% endfor %}
+                </div>
+              {% endif %}
             </div>
           </div>
           <div class="flex items-center gap-2 flex-shrink-0">
@@ -496,20 +503,26 @@
                 {{ 'org admin' if membership.admin else 'org member' }}
               </span>
             {% elif can_manage and membership.user.id != current_user_id and promote_url and demote_url %}
-              <form action="{{ promote_url if not membership.admin else demote_url }}" method="post" class="inline">
-                {{ csrf_form.hidden_tag() }}
-                <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
-                <select name="_role_toggle"
-                        class="select select-bordered select-xs text-xs h-7 min-h-0 font-normal rounded-md pr-7"
-                        onchange="this.closest('form').submit()">
-                  <option value="member" {{ '' if membership.admin else 'selected' }}>Member</option>
-                  <option value="admin" {{ 'selected' if membership.admin else '' }}>Admin</option>
-                </select>
-              </form>
+              <div class="flex items-center gap-2">
+                <span class="text-[11px] text-base-content/30 hidden sm:inline">{{ 'settings, members, deploys' if membership.admin else 'view and deploy' }}</span>
+                <form action="{{ promote_url if not membership.admin else demote_url }}" method="post" class="inline">
+                  {{ csrf_form.hidden_tag() }}
+                  <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
+                  <select name="_role_toggle"
+                          class="select select-bordered select-xs text-xs h-7 min-h-0 font-normal rounded-md pr-7"
+                          onchange="this.closest('form').submit()">
+                    <option value="member" {{ '' if membership.admin else 'selected' }}>Member</option>
+                    <option value="admin" {{ 'selected' if membership.admin else '' }}>Admin</option>
+                  </select>
+                </form>
+              </div>
             {% else %}
-              <span class="text-xs px-2 py-0.5 rounded {{ 'bg-primary/10 text-primary font-medium' if membership.admin else 'bg-base-200/50 text-base-content/40' }}">
-                {{ 'admin' if membership.admin else 'member' }}
-              </span>
+              <div class="flex items-center gap-2">
+                <span class="text-[11px] text-base-content/30 hidden sm:inline">{{ 'settings, members, deploys' if membership.admin else 'view and deploy' }}</span>
+                <span class="text-xs px-2 py-0.5 rounded {{ 'bg-primary/10 text-primary font-medium' if membership.admin else 'bg-base-200/50 text-base-content/40' }}">
+                  {{ 'admin' if membership.admin else 'member' }}
+                </span>
+              </div>
             {% endif %}
             {% if can_manage and not inherited and membership.user.id != current_user_id and remove_url %}
               <form action="{{ remove_url }}" method="post" class="inline opacity-0 group-hover:opacity-100 transition-opacity"
