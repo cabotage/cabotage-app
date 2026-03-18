@@ -37,12 +37,25 @@ def callback():
         flash("GitHub authentication failed.", "error")
         return redirect(url_for("security.login"))
 
+    current_app.logger.info(
+        "GitHub OAuth token scopes: %s",
+        token.get("scope", "(none)"),
+    )
+
     resp = oauth.github.get("user", token=token)
     github_user = resp.json()
+    current_app.logger.info(
+        "GitHub user: id=%s login=%s email=%s",
+        github_user.get("id"), github_user.get("login"), github_user.get("email"),
+    )
 
     primary_email = None
     emails_resp = oauth.github.get("user/emails", token=token)
     emails_data = emails_resp.json()
+    current_app.logger.info(
+        "GitHub /user/emails: status=%s body=%s",
+        emails_resp.status_code, emails_resp.text,
+    )
     if isinstance(emails_data, list):
         primary_email = next(
             (e["email"] for e in emails_data if e.get("primary") and e.get("verified")),
