@@ -2559,6 +2559,14 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
                 app_slug=application.slug,
             )
 
+        if Configuration.query.filter_by(
+            application_id=application.id,
+            application_environment_id=app_env.id,
+            name=form.name.data,
+        ).first():
+            flash(f"A config named '{form.name.data}' already exists.", "error")
+            return redirect(request.url)
+
         configuration = Configuration(
             application_id=form.application_id.data,
             application_environment_id=app_env.id,
