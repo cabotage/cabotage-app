@@ -14,7 +14,6 @@ from citext import CIText
 from .auth_associations import (
     OrganizationMember,
     OrganizationTeam,
-    ProjectMember,
     TeamMember,
 )
 

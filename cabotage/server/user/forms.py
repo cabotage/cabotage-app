@@ -366,8 +366,7 @@ class EditApplicationSettingsForm(FlaskForm):
     github_environment_name = StringField(
         "GitHub Environment Name",
         description=(
-            "Environment name for GitHub deploys, "
-            "default: cabotage/[application uuid]"
+            "Environment name for GitHub deploys, default: cabotage/[application uuid]"
         ),
         filters=[(lambda x: x.strip() if x else x), (lambda x: x if x else None)],
     )
