@@ -14,8 +14,6 @@
           <p class="text-sm text-base-content/50 mt-1">Get started with Cabotage</p>
         </div>
 
-        {% include "security/_messages.html" %}
-
         {% if github_oauth_enabled | default(false) %}
           <a href="{{ url_for('github_oauth.login') }}{% if 'next' in request.args %}?next={{ request.args.next|urlencode }}{% endif %}"
              class="btn btn-neutral w-full gap-2">

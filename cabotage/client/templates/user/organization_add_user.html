@@ -37,14 +37,14 @@
                     <tbody>
                       {% for user in available_users %}
                         <tr>
-                          <td>{{ user.username }}</td>
+                          <td>{{ user.username | display_username }}</td>
                           <td>{{ user.email }}</td>
                           <td class="text-right">
                             <form action="{{ url_for('user.organization_add_user', org_slug=organization.slug) }}"
                                   method="post"
                                   style="display: inline">
                               {{ form.hidden_tag() }}
-                              <input type="hidden" name="email" value="{{ user.email }}" />
+                              <input type="hidden" name="identity" value="{{ user.email }}" />
                               <button type="submit" class="btn btn-sm btn-success">
                                 <span class="glyphicon glyphicon-plus"></span> Add
                               </button>
@@ -66,7 +66,7 @@
                   method="post"
                   name="organization_add_user_form">
               {{ form.hidden_tag() }}
-              {{ form_field(form.email) }}
+              {{ form_field(form.identity) }}
               {{ form_button(form.submit, "Add User", method="post", class="btn btn-primary") }}
             </form>
           </div>

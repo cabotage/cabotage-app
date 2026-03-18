@@ -194,6 +194,14 @@ def create_app():
     migrate.init_app(app, db)
     nav.init_app(app)
 
+    @app.template_filter("display_username")
+    def display_username_filter(value):
+        if value and value.startswith("github:"):
+            parts = value.split(":", 2)
+            if len(parts) == 3:
+                return parts[2]
+        return value
+
     @app.template_filter("humanize")
     def humanize_filter(value):
         return humanize_lib.naturaltime(value)

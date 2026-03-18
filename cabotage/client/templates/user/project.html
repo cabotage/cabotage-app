@@ -14,9 +14,10 @@
 
 {% block content %}
   {% call page_header(project.name, project.organization.slug ~ '/' ~ project.slug) %}
+    {% if app_create_form %}
     <a href="{{ url_for('user.project_settings', org_slug=project.organization.slug, project_slug=project.slug) }}"
        class="btn btn-ghost btn-sm gap-1.5">{{ icon('settings', 'w-4 h-4') }} Settings</a>
-    {% if project.environments_enabled %}
+    {% if env_create_form %}
       <button type="button"
               onclick="document.getElementById('create-env-modal').classList.remove('hidden')"
               class="btn btn-ghost btn-sm gap-1.5">
@@ -29,6 +30,7 @@
       {{ icon('plus', 'w-4 h-4') }}
       New Application
     </button>
+    {% endif %}
   {% endcall %}
 
   {% set app_count = project.active_applications|length %}
@@ -196,13 +198,15 @@
       <div class="empty-state">
         <div class="text-base-content/15 mb-4">{{ icon('box', 'w-12 h-12') }}</div>
         <h3 class="text-base font-medium text-base-content/60 mb-1">No applications yet</h3>
-        <p class="text-sm text-base-content/40 max-w-sm">Create your first application to deploy a service.</p>
+        <p class="text-sm text-base-content/40 max-w-sm">{% if app_create_form %}Create your first application to deploy a service.{% else %}No applications in this project yet.{% endif %}</p>
+        {% if app_create_form %}
         <button type="button"
                 onclick="document.getElementById('create-app-modal').classList.remove('hidden')"
                 class="btn btn-primary btn-sm gap-2 mt-4">
           {{ icon('plus', 'w-4 h-4') }}
           Create Application
         </button>
+        {% endif %}
       </div>
     {% endif %}
   {% endif %}

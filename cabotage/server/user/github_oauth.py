@@ -22,11 +22,10 @@ oauth = OAuth()
 
 @github_oauth_bp.route("/login")
 def login():
-    redirect_uri = url_for(
-        "github_oauth.callback",
-        _external=True,
-        _scheme=current_app.config.get("EXT_PREFERRED_URL_SCHEME", "https"),
-    )
+    scheme = current_app.config["EXT_PREFERRED_URL_SCHEME"]
+    server = current_app.config["EXT_SERVER_NAME"]
+    path = url_for("github_oauth.callback")
+    redirect_uri = f"{scheme}://{server}{path}"
     session["github_oauth_next"] = request.args.get("next", "/")
     return oauth.github.authorize_redirect(redirect_uri)
 
@@ -41,11 +40,16 @@ def callback():
     resp = oauth.github.get("user", token=token)
     github_user = resp.json()
 
+    primary_email = None
     emails_resp = oauth.github.get("user/emails", token=token)
-    primary_email = next(
-        (e["email"] for e in emails_resp.json() if e["primary"] and e["verified"]),
-        None,
-    )
+    emails_data = emails_resp.json()
+    if isinstance(emails_data, list):
+        primary_email = next(
+            (e["email"] for e in emails_data if e.get("primary") and e.get("verified")),
+            None,
+        )
+    if not primary_email:
+        primary_email = github_user.get("email")
     if not primary_email:
         flash("No verified email found on your GitHub account.", "error")
         return redirect(url_for("security.login"))
@@ -54,9 +58,15 @@ def callback():
     if allowed_orgs:
         org_list = [o.strip().lower() for o in allowed_orgs.split(",") if o.strip()]
         if org_list:
-            orgs_resp = oauth.github.get("user/orgs", token=token)
-            user_orgs = {o["login"].lower() for o in orgs_resp.json()}
-            if not user_orgs.intersection(org_list):
+            is_member = False
+            for org in org_list:
+                resp = oauth.github.get(f"user/memberships/orgs/{org}", token=token)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("state") == "active":
+                        is_member = True
+                        break
+            if not is_member:
                 flash(
                     "Your GitHub account is not a member of an allowed organization.",
                     "error",
@@ -89,19 +99,18 @@ def callback():
             db.session.commit()
             login_user(existing_user)
         else:
-            base_username = github_username
-            username = base_username
-            suffix = 1
-            while User.query.filter(
-                db.func.lower(User.username) == username.lower()
-            ).first():
-                username = f"{base_username}-{suffix}"
-                suffix += 1
+            registerable = current_app.config.get("SECURITY_REGISTERABLE", True)
+            github_oauth_only = current_app.config.get("GITHUB_OAUTH_ONLY", False)
+            if not registerable and not github_oauth_only:
+                flash("Account registration is currently closed.", "error")
+                return redirect(url_for("security.login"))
+
+            username = f"github:{github_id}:{github_username}"
 
             user = User(
                 username=username,
                 email=primary_email,
-                password="!",
+                password="!",  # nosec B106 - unusable password for OAuth-only users
                 active=True,
                 confirmed_at=datetime.datetime.now(),
                 fs_uniquifier=uuid.uuid4().hex,
@@ -124,14 +133,14 @@ def callback():
 
 
 def init_github_oauth(app):
-    if not app.config.get("GITHUB_OAUTH_CLIENT_ID"):
+    if not app.config.get("GITHUB_APP_CLIENT_ID"):
         return
 
     oauth.init_app(app)
-    oauth.register(
+    oauth.register(  # nosec B106 - access_token_url is a URL, not a password
         name="github",
-        client_id=app.config["GITHUB_OAUTH_CLIENT_ID"],
-        client_secret=app.config["GITHUB_OAUTH_CLIENT_SECRET"],
+        client_id=app.config["GITHUB_APP_CLIENT_ID"],
+        client_secret=app.config["GITHUB_APP_CLIENT_SECRET"],
         access_token_url="https://github.com/login/oauth/access_token",
         authorize_url="https://github.com/login/oauth/authorize",
         api_base_url="https://api.github.com/",

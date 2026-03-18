@@ -42,6 +42,10 @@ class ExtendedRegisterForm(RegisterForm):
         validators=[
             InputRequired(),
             Length(min=1, max=64),
+            Regexp(
+                r"^[^:]+$",
+                message="Usernames cannot contain colons.",
+            ),
         ],
     )
 
@@ -52,6 +56,10 @@ class ExtendedConfirmRegisterForm(ConfirmRegisterForm):
         validators=[
             InputRequired(),
             Length(min=1, max=64),
+            Regexp(
+                r"^[^:]+$",
+                message="Usernames cannot contain colons.",
+            ),
         ],
     )
 
@@ -961,11 +969,11 @@ class DeleteEnvironmentConfigurationForm(FlaskForm):
 
 
 class AddOrganizationUserForm(FlaskForm):
-    email = StringField(
-        "User Email",
+    identity = StringField(
+        "Email or GitHub Username",
         [
             InputRequired(),
-            Length(min=3, max=255),
+            Length(min=1, max=255),
         ],
-        description="Email address of the user to add to this organization",
+        description="Email address or GitHub username of the user to add",
     )
