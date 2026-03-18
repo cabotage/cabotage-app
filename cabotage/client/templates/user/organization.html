@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, empty_state, service_card, stat_card, tab_nav, render_field %}
+{% from "_macros.html" import icon, resource_path, page_header, empty_state, service_card, stat_card, tab_nav, render_field, member_table %}
 
 {% block title %}
   {{ organization.name }} - Cabotage
@@ -138,124 +138,11 @@
       {% endif %}
     </div>
 
-    {% if organization.members %}
-      <div class="flex flex-col gap-2">
-        {% for membership in organization.members %}
-          <div class="flex items-center justify-between p-3 rounded-lg bg-base-200/50 border border-base-content/5">
-            <div class="flex items-center gap-3 min-w-0">
-              {% if membership.admin %}
-                <div class="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
-                  {{ icon('shield', 'w-4 h-4') }}
-                </div>
-              {% else %}
-                <div class="w-8 h-8 rounded-full bg-secondary/10 text-secondary flex items-center justify-center flex-shrink-0">
-                  {{ icon('user', 'w-4 h-4') }}
-                </div>
-              {% endif %}
-              <div class="min-w-0">
-                <span class="text-sm font-medium text-base-content truncate">{{ membership.user.username }}</span>
-                {% if membership.admin %}
-                  <span class="badge badge-xs badge-primary ml-2">Admin</span>
-                {% else %}
-                  <span class="badge badge-xs badge-ghost ml-2">Member</span>
-                {% endif %}
-                {% if membership.user.id == current_user.id %}<span class="text-xs text-base-content/30 ml-1">(you)</span>{% endif %}
-              </div>
-            </div>
-            {% if is_admin and membership.user.id != current_user.id and remove_member_form is defined %}
-              <div class="flex items-center gap-1.5 flex-shrink-0">
-                {% if membership.admin %}
-                  <button type="button"
-                          class="btn btn-ghost btn-xs gap-1 text-warning"
-                          title="Demote from admin"
-                          onclick="document.getElementById('demote-{{ membership.user.id }}').showModal()">
-                    {{ icon('shield', 'w-3.5 h-3.5') }}
-                    Demote
-                  </button>
-                {% else %}
-                  <button type="button"
-                          class="btn btn-ghost btn-xs gap-1"
-                          title="Promote to admin"
-                          onclick="document.getElementById('promote-{{ membership.user.id }}').showModal()">
-                    {{ icon('shield', 'w-3.5 h-3.5') }}
-                    Promote
-                  </button>
-                {% endif %}
-                  <button type="button"
-                          class="btn btn-ghost btn-xs text-error"
-                          title="Remove member"
-                          onclick="document.getElementById('remove-{{ membership.user.id }}').showModal()">
-                    {{ icon('x', 'w-3.5 h-3.5') }}
-                  </button>
-              </div>
-
-              {% if membership.admin %}
-              <dialog id="demote-{{ membership.user.id }}" class="modal confirm-modal" data-confirm-value="{{ membership.user.username }}">
-                <div class="modal-box max-w-sm">
-                  <form action="{{ url_for('user.organization_demote_user', org_slug=organization.slug) }}" method="post">
-                    {{ remove_member_form.hidden_tag() }}
-                    <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
-                    <h3 class="text-base font-semibold text-base-content mb-2">Demote from Admin</h3>
-                    <p class="text-sm text-base-content/60 mb-3">Remove admin privileges from <strong>{{ membership.user.username }}</strong>?</p>
-                    <p class="text-xs text-base-content/40 mb-1">Type <strong>{{ membership.user.username }}</strong> to confirm</p>
-                    <input type="text" class="input input-bordered input-sm w-full confirm-input" autocomplete="off" />
-                    <div class="modal-action">
-                      <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('dialog').close()">Cancel</button>
-                      <button type="submit" class="btn btn-warning btn-sm confirm-btn" disabled>Demote</button>
-                    </div>
-                  </form>
-                </div>
-                <form method="dialog" class="modal-backdrop"><button>close</button></form>
-              </dialog>
-              {% else %}
-              <dialog id="promote-{{ membership.user.id }}" class="modal confirm-modal" data-confirm-value="{{ membership.user.username }}">
-                <div class="modal-box max-w-sm">
-                  <form action="{{ url_for('user.organization_promote_user', org_slug=organization.slug) }}" method="post">
-                    {{ remove_member_form.hidden_tag() }}
-                    <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
-                    <h3 class="text-base font-semibold text-base-content mb-2">Promote to Admin</h3>
-                    <p class="text-sm text-base-content/60 mb-3">Grant admin privileges to <strong>{{ membership.user.username }}</strong>?</p>
-                    <p class="text-xs text-base-content/40 mb-1">Type <strong>{{ membership.user.username }}</strong> to confirm</p>
-                    <input type="text" class="input input-bordered input-sm w-full confirm-input" autocomplete="off" />
-                    <div class="modal-action">
-                      <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('dialog').close()">Cancel</button>
-                      <button type="submit" class="btn btn-primary btn-sm confirm-btn" disabled>Promote</button>
-                    </div>
-                  </form>
-                </div>
-                <form method="dialog" class="modal-backdrop"><button>close</button></form>
-              </dialog>
-              {% endif %}
-
-              <dialog id="remove-{{ membership.user.id }}" class="modal confirm-modal" data-confirm-value="{{ membership.user.username }}">
-                <div class="modal-box max-w-sm">
-                  <form action="{{ url_for('user.organization_remove_user', org_slug=organization.slug) }}" method="post">
-                    {{ remove_member_form.hidden_tag() }}
-                    <input type="hidden" name="organization_id" value="{{ organization.id }}" />
-                    <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
-                    <h3 class="text-base font-semibold text-base-content mb-2">Remove Member</h3>
-                    <p class="text-sm text-base-content/60 mb-3">Remove <strong>{{ membership.user.username }}</strong> from this organization?</p>
-                    <p class="text-xs text-base-content/40 mb-1">Type <strong>{{ membership.user.username }}</strong> to confirm</p>
-                    <input type="text" class="input input-bordered input-sm w-full confirm-input" autocomplete="off" />
-                    <div class="modal-action">
-                      <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('dialog').close()">Cancel</button>
-                      <button type="submit" class="btn btn-error btn-sm confirm-btn" disabled>Remove</button>
-                    </div>
-                  </form>
-                </div>
-                <form method="dialog" class="modal-backdrop"><button>close</button></form>
-              </dialog>
-            {% endif %}
-          </div>
-        {% endfor %}
-      </div>
-    {% else %}
-      <div class="empty-state">
-        <div class="text-base-content/15 mb-4">{{ icon('users', 'w-12 h-12') }}</div>
-        <h3 class="text-base font-medium text-base-content/60 mb-1">No members</h3>
-        <p class="text-sm text-base-content/40 max-w-sm">This organization has no members.</p>
-      </div>
-    {% endif %}
+    {{ member_table(organization.members, remove_member_form, current_user.id, can_manage=is_admin,
+                    promote_url=url_for('user.organization_promote_user', org_slug=organization.slug),
+                    demote_url=url_for('user.organization_demote_user', org_slug=organization.slug),
+                    remove_url=url_for('user.organization_remove_user', org_slug=organization.slug),
+                    empty_text='No members in this organization.') }}
   </div>
 
   {% from "_macros.html" import create_modal %}
@@ -307,15 +194,58 @@
             <h3 class="text-base font-semibold text-base-content">Add Member</h3>
             <p class="text-sm text-base-content/50 mt-0.5">Add a user to {{ organization.name }}</p>
           </div>
-          <button type="button"
-                  data-modal-close="add-member-modal"
+          <button type="button" data-modal-close="add-member-modal"
                   class="btn btn-ghost btn-sm btn-circle">{{ icon('x', 'w-4 h-4') }}</button>
         </div>
         <form action="{{ url_for('user.organization_add_user', org_slug=organization.slug) }}"
               method="post"
               class="flex flex-col gap-4">
           {{ add_member_form.hidden_tag() }}
-          {{ render_field(add_member_form.email, placeholder='user@example.com') }}
+
+          <div class="w-full">
+            <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Email Address</label>
+            <input type="email" name="email" required autocomplete="off"
+                   class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary"
+                   placeholder="user@example.com" />
+            <p class="text-xs text-base-content/40 mt-1">The user must already have a Cabotage account.</p>
+          </div>
+
+          <div class="w-full">
+            <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Project Access</label>
+            <div class="flex flex-col gap-2 mt-2">
+              <label class="label cursor-pointer justify-start gap-3 p-0">
+                <input type="radio" name="project_access" value="all" checked
+                       class="radio radio-primary radio-sm"
+                       onchange="document.getElementById('project-list').classList.add('hidden')" />
+                <div>
+                  <span class="text-sm">All projects</span>
+                  <span class="text-xs text-base-content/40 block">Access to all current and future projects</span>
+                </div>
+              </label>
+              <label class="label cursor-pointer justify-start gap-3 p-0">
+                <input type="radio" name="project_access" value="specific"
+                       class="radio radio-primary radio-sm"
+                       onchange="document.getElementById('project-list').classList.remove('hidden')" />
+                <div>
+                  <span class="text-sm">Specific projects</span>
+                  <span class="text-xs text-base-content/40 block">Choose which projects this member can access</span>
+                </div>
+              </label>
+            </div>
+
+            <div id="project-list" class="hidden mt-3 ml-8">
+              {% for project in organization.active_projects %}
+                <label class="label cursor-pointer justify-start gap-3 p-0 py-1">
+                  <input type="checkbox" name="project_ids" value="{{ project.id }}"
+                         class="checkbox checkbox-primary checkbox-sm" />
+                  <span class="text-sm text-base-content">{{ project.name }}</span>
+                </label>
+              {% else %}
+                <p class="text-xs text-base-content/40 py-1">No projects yet.</p>
+              {% endfor %}
+            </div>
+          </div>
+
           <div class="pt-2">
             <button type="submit" class="btn btn-primary w-full">Add Member</button>
           </div>
@@ -327,6 +257,11 @@
   var modal = document.getElementById('add-member-modal');
   modal.querySelectorAll('[data-modal-close="add-member-modal"]').forEach(function(el) {
     el.addEventListener('click', function() { modal.classList.add('hidden'); });
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+      modal.classList.add('hidden');
+    }
   });
 })();
     </script>
