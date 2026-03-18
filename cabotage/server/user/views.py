@@ -1122,6 +1122,7 @@ def project_settings(org_slug, project_slug):
 
     add_member_form = AddProjectUserForm()
     remove_member_form = FlaskForm()
+    is_org_admin = AdministerOrganizationPermission(organization.id).can()
 
     return render_template(
         "user/project_settings.html",
@@ -1132,6 +1133,7 @@ def project_settings(org_slug, project_slug):
         delete_impact=delete_impact,
         add_member_form=add_member_form,
         remove_member_form=remove_member_form,
+        is_org_admin=is_org_admin,
     )
 
 
@@ -1141,13 +1143,30 @@ def project_settings(org_slug, project_slug):
 @login_required
 def project_add_user(org_slug, project_slug):
     org, project = _lookup_org_project(org_slug, project_slug)
-    return _member_add(
-        project,
-        ProjectMember,
-        "project_id",
-        AdministerProjectPermission(project.id),
-        _project_members_redirect(org_slug, project_slug),
-    )
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    redirect_url = _project_members_redirect(org_slug, project_slug)
+    form = AddProjectUserForm()
+    if form.validate_on_submit():
+        user = User.query.filter_by(email=form.email.data).first()
+        if not user:
+            flash("User with this email address does not exist.", "error")
+            return redirect(redirect_url)
+        # Require org membership before granting project access
+        if not _find_member(OrganizationMember, "organization_id", org, user):
+            flash(
+                f"User {user.email} must be a member of {org.name} before "
+                "they can be added to a project. Add them to the organization first.",
+                "warning",
+            )
+            return redirect(redirect_url)
+        if _find_member(ProjectMember, "project_id", project, user):
+            flash("User is already a direct member of this project.", "warning")
+            return redirect(redirect_url)
+        project.add_user(user)
+        db.session.commit()
+        flash(f"User {user.email} added to project {project.name}.", "success")
+    return redirect(redirect_url)
 
 
 @user_blueprint.route(

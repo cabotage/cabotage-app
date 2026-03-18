@@ -206,13 +206,20 @@
                 class="flex flex-col">
             {{ add_member_form.hidden_tag() }}
             <div class="px-5 pb-4">
-              <input type="text" id="member-search" autocomplete="off"
-                     class="input input-bordered input-sm w-full mb-2"
-                     placeholder="Search members..." />
-              <div id="member-picker" class="max-h-48 overflow-y-auto flex flex-col gap-0.5">
-                {% set existing_member_ids = project.members | map(attribute='user_id') | list %}
-                {% for membership in project.organization.members %}
-                  {% if membership.user_id not in existing_member_ids %}
+              {% set existing_member_ids = project.members | map(attribute='user_id') | list %}
+              {% set available_members = [] %}
+              {% for membership in project.organization.members %}
+                {% if membership.user_id not in existing_member_ids %}
+                  {% set _ = available_members.append(membership) %}
+                {% endif %}
+              {% endfor %}
+
+              {% if available_members %}
+                <input type="text" id="member-search" autocomplete="off"
+                       class="input input-bordered input-sm w-full bg-base-100 border-base-content/10 focus:border-primary mb-2"
+                       placeholder="Search members..." />
+                <div id="member-picker" class="max-h-48 overflow-y-auto flex flex-col gap-0.5">
+                  {% for membership in available_members %}
                     <label class="member-option flex items-center gap-2.5 p-2 rounded-lg cursor-pointer hover:bg-base-200/50 transition-colors"
                            data-username="{{ membership.user.username|lower }}"
                            data-email="{{ (membership.user.email or '')|lower }}">
@@ -228,14 +235,25 @@
                         <span class="ml-auto text-[10px] text-primary/60 font-medium flex-shrink-0">org admin</span>
                       {% endif %}
                     </label>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <div class="text-center py-6">
+                  <div class="text-base-content/10 mb-2">{{ icon('users', 'w-8 h-8 mx-auto') }}</div>
+                  <p class="text-sm text-base-content/40">All org members have access.</p>
+                  <p class="text-xs text-base-content/30 mt-1">Users must be in the org first.</p>
+                  {% if is_org_admin %}
+                    <a href="{{ url_for('user.organization', org_slug=org_slug) }}#members"
+                       class="text-xs text-primary hover:underline mt-2 inline-block">Manage organization members</a>
+                  {% else %}
+                    <p class="text-xs text-base-content/30 mt-2">Ask an org admin to add new members.</p>
                   {% endif %}
-                {% endfor %}
-              </div>
-              <p id="member-picker-empty" class="hidden text-xs text-base-content/30 text-center py-4">All org members already have project access.</p>
+                </div>
+              {% endif %}
             </div>
             <div class="border-t border-base-content/5 px-5 py-3 flex justify-end gap-2 bg-base-200/30">
               <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('dialog').close()">Cancel</button>
-              <button type="submit" class="btn btn-primary btn-sm">Add to project</button>
+              <button type="submit" class="btn btn-primary btn-sm" {{ 'disabled' if not available_members }}>Add to project</button>
             </div>
           </form>
         </div>
