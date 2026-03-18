@@ -1128,7 +1128,8 @@ def run_image_build(image_id=None, buildkit=False):
         app_env = image.application_environment
         env_slug = app_env.environment.slug
         project_slug = application.project.slug
-        check_name = f"deploy / {project_slug} / {application.slug} ({env_slug})"
+        org_slug = application.project.organization.slug
+        check_name = f"deploy - {github_app.slug} / {org_slug} / {project_slug} / {application.slug} ({env_slug})"
         check = CheckRun.create(
             access_token,
             application.github_repository,
