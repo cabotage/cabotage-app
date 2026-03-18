@@ -4542,11 +4542,23 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
 
     # Optional process filter
     process_filter = request.args.get("process", "")
+    include_system = request.args.get("system_containers", "") == "1"
+    # Exclude pod-level aggregates and pause container; optionally exclude
+    # sidecar containers when system_containers is off.
+    container_filter = 'container!="", container!="POD"'
+    if not include_system:
+        container_filter += (
+            ', container!="cabotage-sidecar"'
+            ', container!="cabotage-sidecar-tls"'
+            ', container!="cabotage-enroller"'
+        )
     if process_filter:
         escaped_process = _REGEX_META.sub(r"\\\g<0>", process_filter)
-        labels = f'namespace="{namespace}", pod=~"{escaped_prefix}-{escaped_process}-[a-z0-9]+-[a-z0-9]+"'
+        labels = f'namespace="{namespace}", pod=~"{escaped_prefix}-{escaped_process}-[a-z0-9]+-[a-z0-9]+", {container_filter}'
     else:
-        labels = f'namespace="{namespace}", pod=~"{escaped_prefix}-.*"'
+        labels = (
+            f'namespace="{namespace}", pod=~"{escaped_prefix}-.*", {container_filter}'
+        )
 
     # Build exact traefik service labels from ingress config.
     # nginx-ingress format: {ns}-{prefix}-{ingress.name}-{prefix}-{process}-{port}@kubernetesingressnginx
@@ -4858,9 +4870,15 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
     cpu_history = []
     mem_history = []
 
+    app_labels = (
+        f'namespace="{namespace}", pod=~"{escaped_prefix}-.*"'
+        ', container!="", container!="POD"'
+        ', container!="cabotage-sidecar"'
+        ', container!="cabotage-sidecar-tls"'
+        ', container!="cabotage-enroller"'
+    )
     cpu_series = _query_mimir_range(
-        f"sum(rate(container_cpu_usage_seconds_total"
-        f'{{namespace="{namespace}", pod=~"{escaped_prefix}-.*"}}[{step}s]))',
+        f"sum(rate(container_cpu_usage_seconds_total" f"{{{app_labels}}}[{step}s]))",
         start,
         end,
         step,
@@ -4870,8 +4888,7 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
             cpu_history.append([ts, round(float(val) * 1000, 1)])
 
     mem_series = _query_mimir_range(
-        f"sum(container_memory_working_set_bytes"
-        f'{{namespace="{namespace}", pod=~"{escaped_prefix}-.*"}})',
+        f"sum(container_memory_working_set_bytes" f"{{{app_labels}}})",
         start,
         end,
         step,
@@ -4888,16 +4905,22 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
         pod_regex = "|".join(
             _REGEX_META.sub(r"\\\g<0>", name) for name in running_pod_names
         )
+        app_container_filter = (
+            ', container!="", container!="POD"'
+            ', container!="cabotage-sidecar"'
+            ', container!="cabotage-sidecar-tls"'
+            ', container!="cabotage-enroller"'
+        )
         cpu_result = _query_mimir_instant(
             f"sum(rate(container_cpu_usage_seconds_total"
-            f'{{namespace="{namespace}", pod=~"{pod_regex}"}}[5m]))'
+            f'{{namespace="{namespace}", pod=~"{pod_regex}"{app_container_filter}}}[5m]))'
         )
         if cpu_result and len(cpu_result) > 0 and cpu_result[0].get("value"):
             cpu_val = round(float(cpu_result[0]["value"][1]) * 1000, 1)
 
         mem_result = _query_mimir_instant(
             f"sum(container_memory_working_set_bytes"
-            f'{{namespace="{namespace}", pod=~"{pod_regex}"}})'
+            f'{{namespace="{namespace}", pod=~"{pod_regex}"{app_container_filter}}})'
         )
         if mem_result and len(mem_result) > 0 and mem_result[0].get("value"):
             mem_val = float(mem_result[0]["value"][1])
