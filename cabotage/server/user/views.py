@@ -159,6 +159,104 @@ user_blueprint = Blueprint(
 )
 
 
+def _lookup_org_project(org_slug, project_slug):
+    """Resolve org + project from URL slugs."""
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    return organization, project
+
+
+def _project_members_redirect(org_slug, project_slug):
+    return (
+        url_for("user.project_settings", org_slug=org_slug, project_slug=project_slug)
+        + "#members"
+    )
+
+
+def _find_member(member_model, fk_field, scope_obj, user):
+    """Look up a membership row for the given user and scope object."""
+    return member_model.query.filter_by(
+        user_id=user.id, **{fk_field: scope_obj.id}
+    ).first()
+
+
+def _member_add(scope_obj, member_model, fk_field, permission, redirect_url):
+    """Add a user as a member of the given scope (org/project)."""
+    if not permission.can():
+        abort(403)
+    form = AddProjectUserForm()
+    if form.validate_on_submit():
+        if user := User.query.filter_by(email=form.email.data).first():
+            if _find_member(member_model, fk_field, scope_obj, user):
+                flash(
+                    f"User is already a member of this {scope_obj.__class__.__name__.lower()}.",
+                    "warning",
+                )
+            else:
+                scope_obj.add_user(user)
+                db.session.commit()
+                flash(
+                    f"User has been added to the {scope_obj.__class__.__name__.lower()}.",
+                    "success",
+                )
+        else:
+            flash("User with this email address does not exist.", "error")
+    return redirect(redirect_url)
+
+
+def _member_remove(
+    scope_obj, member_model, fk_field, permission, redirect_url, min_members=0
+):
+    """Remove a user from the given scope (org/project)."""
+    if not permission.can():
+        abort(403)
+    user_id = request.form.get("user_id")
+    if user := _safe_get(User, user_id):
+        if min_members and len(scope_obj.members) <= min_members:
+            flash(
+                f"Cannot remove the last user from an {scope_obj.__class__.__name__.lower()}. "
+                "Add someone else first!",
+                "warning",
+            )
+        elif _find_member(member_model, fk_field, scope_obj, user):
+            scope_obj.remove_user(user)
+            db.session.commit()
+            flash(f"User {user.email} removed from {scope_obj.name}.", "success")
+        else:
+            flash(
+                f"User is not a member of this {scope_obj.__class__.__name__.lower()}.",
+                "warning",
+            )
+    else:
+        flash("User not found.", "error")
+    return redirect(redirect_url)
+
+
+def _member_set_admin(
+    scope_obj, member_model, fk_field, admin_value, permission, redirect_url
+):
+    """Promote or demote a member within the given scope (org/project)."""
+    if not permission.can():
+        abort(403)
+    user_id = request.form.get("user_id")
+    action = "pomoted" if admin_value else "demoted"
+    if user := _safe_get(User, user_id):
+        if member := _find_member(member_model, fk_field, scope_obj, user):
+            member.admin = admin_value
+            db.session.commit()
+            flash(f"User {user.email} {action} in {scope_obj.name}.", "success")
+        else:
+            flash(
+                f"User is not a member of this {scope_obj.__class__.__name__.lower()}.",
+                "warning",
+            )
+    else:
+        flash("User not found.", "error")
+    return redirect(redirect_url)
+
+
 def _config_k8s_namespace(organization, app_env):
     if app_env.k8s_identifier is not None:
         return safe_k8s_name(
@@ -1042,34 +1140,13 @@ def project_settings(org_slug, project_slug):
 )
 @login_required
 def project_add_user(org_slug, project_slug):
-    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
-    project = Project.query.filter_by(
-        organization_id=organization.id, slug=project_slug
-    ).first_or_404()
-    if not AdministerProjectPermission(project.id).can():
-        abort(403)
-
-    form = AddProjectUserForm()
-    if form.validate_on_submit():
-        if user := User.query.filter_by(email=form.email.data).first():
-            existing = ProjectMember.query.filter_by(
-                user_id=user.id, project_id=project.id
-            ).first()
-            if existing:
-                flash("User is already a member of this project.", "warning")
-            else:
-                project.add_user(user)
-                db.session.commit()
-                flash("User has been added to the project.", "success")
-        else:
-            flash("User with this email address does not exist.", "error")
-    return redirect(
-        url_for(
-            "user.project_settings",
-            org_slug=org_slug,
-            project_slug=project_slug,
-        )
-        + "#members"
+    org, project = _lookup_org_project(org_slug, project_slug)
+    return _member_add(
+        project,
+        ProjectMember,
+        "project_id",
+        AdministerProjectPermission(project.id),
+        _project_members_redirect(org_slug, project_slug),
     )
 
 
@@ -1078,36 +1155,13 @@ def project_add_user(org_slug, project_slug):
 )
 @login_required
 def project_remove_user(org_slug, project_slug):
-    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
-    project = Project.query.filter_by(
-        organization_id=organization.id, slug=project_slug
-    ).first_or_404()
-    if not AdministerProjectPermission(project.id).can():
-        abort(403)
-
-    user_id = request.form.get("user_id")
-    if user := _safe_get(User, user_id):
-        member = ProjectMember.query.filter_by(
-            user_id=user.id, project_id=project.id
-        ).first()
-        if member:
-            project.remove_user(user)
-            db.session.commit()
-            flash(
-                f"User {user.email} removed from project {project.name}.",
-                "success",
-            )
-        else:
-            flash("User is not a direct member of this project.", "warning")
-    else:
-        flash("User not found.", "error")
-    return redirect(
-        url_for(
-            "user.project_settings",
-            org_slug=org_slug,
-            project_slug=project_slug,
-        )
-        + "#members"
+    org, project = _lookup_org_project(org_slug, project_slug)
+    return _member_remove(
+        project,
+        ProjectMember,
+        "project_id",
+        AdministerProjectPermission(project.id),
+        _project_members_redirect(org_slug, project_slug),
     )
 
 
@@ -1116,32 +1170,14 @@ def project_remove_user(org_slug, project_slug):
 )
 @login_required
 def project_promote_user(org_slug, project_slug):
-    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
-    project = Project.query.filter_by(
-        organization_id=organization.id, slug=project_slug
-    ).first_or_404()
-    if not AdministerProjectPermission(project.id).can():
-        abort(403)
-
-    user_id = request.form.get("user_id")
-    if user := _safe_get(User, user_id):
-        if member := ProjectMember.query.filter_by(
-            user_id=user.id, project_id=project.id
-        ).first():
-            member.admin = True
-            db.session.commit()
-            flash(f"User {user.email} promoted to project admin.", "success")
-        else:
-            flash("User is not a direct member of this project.", "warning")
-    else:
-        flash("User not found.", "error")
-    return redirect(
-        url_for(
-            "user.project_settings",
-            org_slug=org_slug,
-            project_slug=project_slug,
-        )
-        + "#members"
+    org, project = _lookup_org_project(org_slug, project_slug)
+    return _member_set_admin(
+        project,
+        ProjectMember,
+        "project_id",
+        True,
+        AdministerProjectPermission(project.id),
+        _project_members_redirect(org_slug, project_slug),
     )
 
 
@@ -1150,32 +1186,14 @@ def project_promote_user(org_slug, project_slug):
 )
 @login_required
 def project_demote_user(org_slug, project_slug):
-    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
-    project = Project.query.filter_by(
-        organization_id=organization.id, slug=project_slug
-    ).first_or_404()
-    if not AdministerProjectPermission(project.id).can():
-        abort(403)
-
-    user_id = request.form.get("user_id")
-    if user := _safe_get(User, user_id):
-        if member := ProjectMember.query.filter_by(
-            user_id=user.id, project_id=project.id
-        ).first():
-            member.admin = False
-            db.session.commit()
-            flash(f"User {user.email} demoted from project admin.", "success")
-        else:
-            flash("User is not a direct member of this project.", "warning")
-    else:
-        flash("User not found.", "error")
-    return redirect(
-        url_for(
-            "user.project_settings",
-            org_slug=org_slug,
-            project_slug=project_slug,
-        )
-        + "#members"
+    org, project = _lookup_org_project(org_slug, project_slug)
+    return _member_set_admin(
+        project,
+        ProjectMember,
+        "project_id",
+        False,
+        AdministerProjectPermission(project.id),
+        _project_members_redirect(org_slug, project_slug),
     )
 
 
@@ -2109,8 +2127,8 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     )
     for pod_class, parameters in pod_classes.items():
         pod_class_info += (
-            f'<tr><td>{pod_class}</td><td>{parameters["cpu"]["requests"]}</td>'
-            f'<td>{parameters["memory"]["requests"]}</td></tr>'
+            f"<tr><td>{pod_class}</td><td>{parameters['cpu']['requests']}</td>"
+            f"<td>{parameters['memory']['requests']}</td></tr>"
         )
     pod_class_info += "</table>"
 
@@ -4490,73 +4508,45 @@ def organization_add_user(org_slug):
 @login_required
 def organization_remove_user(org_slug):
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
-    if not AdministerOrganizationPermission(organization.id).can():
-        abort(403)
-
-    user_id = request.form.get("user_id")
-    if user := User.query.get(user_id):
-        org_user_count = len(organization.members)
-        if org_user_count <= 1:
-            flash(
-                "Cannot remove the last user from an organization. Add someone else first!",
-                "warning",
-            )
-        else:
-            organization.remove_user(user)
-            db.session.commit()
-            flash(
-                f"User {user.email} removed from organization {organization.name}.",
-                "success",
-            )
-    else:
-        flash("User not found.", "error")
-    return redirect(url_for("user.organization", org_slug=org_slug) + "#members")
+    redirect_url = url_for("user.organization", org_slug=org_slug) + "#members"
+    return _member_remove(
+        organization,
+        OrganizationMember,
+        "organization_id",
+        AdministerOrganizationPermission(organization.id),
+        redirect_url,
+        min_members=1,
+    )
 
 
 @user_blueprint.route("/organizations/<org_slug>/users/promote", methods=["POST"])
 @login_required
 def organization_promote_user(org_slug):
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
-    if not AdministerOrganizationPermission(organization.id).can():
-        abort(403)
-
-    user_id = request.form.get("user_id")
-    if user := User.query.get(user_id):
-        if member := OrganizationMember.query.filter_by(
-            user_id=user.id, organization_id=organization.id
-        ).first():
-            member.admin = True
-            db.session.commit()
-            flash(
-                f"User {user.email} promoted to admin in {organization.name}.",
-                "success",
-            )
-    else:
-        flash("User not found.", "error")
-    return redirect(url_for("user.organization", org_slug=org_slug) + "#members")
+    redirect_url = url_for("user.organization", org_slug=org_slug) + "#members"
+    return _member_set_admin(
+        organization,
+        OrganizationMember,
+        "organization_id",
+        True,
+        AdministerOrganizationPermission(organization.id),
+        redirect_url,
+    )
 
 
 @user_blueprint.route("/organizations/<org_slug>/users/demote", methods=["POST"])
 @login_required
 def organization_demote_user(org_slug):
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
-    if not AdministerOrganizationPermission(organization.id).can():
-        abort(403)
-
-    user_id = request.form.get("user_id")
-    if user := User.query.get(user_id):
-        if member := OrganizationMember.query.filter_by(
-            user_id=user.id, organization_id=organization.id
-        ).first():
-            member.admin = False
-            db.session.commit()
-            flash(
-                f"User {user.email} demoted to member in {organization.name}.",
-                "success",
-            )
-    else:
-        flash("User not found.", "error")
-    return redirect(url_for("user.organization", org_slug=org_slug) + "#members")
+    redirect_url = url_for("user.organization", org_slug=org_slug) + "#members"
+    return _member_set_admin(
+        organization,
+        OrganizationMember,
+        "organization_id",
+        False,
+        AdministerOrganizationPermission(organization.id),
+        redirect_url,
+    )
 
 
 def _mimir_connection():
@@ -4955,9 +4945,7 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
     pods_ready = 0
     pods_by_phase = {}
     running_pod_names = []
-    processes = (
-        {}
-    )  # {process_name: {"total": N, "ready": N, "pending": N, "crashed": N}}
+    processes = {}  # {process_name: {"total": N, "ready": N, "pending": N, "crashed": N}}
     try:
         api_client = kubernetes_ext.kubernetes_client
         core_api = kubernetes.client.CoreV1Api(api_client)
