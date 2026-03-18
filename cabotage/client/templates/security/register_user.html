@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import render_field %}
+{% from "_macros.html" import render_field, icon %}
 
 {% block title %}
   Sign Up - Cabotage
@@ -16,19 +16,31 @@
 
         {% include "security/_messages.html" %}
 
-        <form action="{{ url_for_security('register') }}"
-              method="post"
-              name="register_user_form"
-              class="flex flex-col gap-4">
-          {{ register_user_form.hidden_tag() }}
-          {{ render_field(register_user_form.email, placeholder='you@example.com') }}
-          {{ render_field(register_user_form.username, placeholder='username') }}
-          {{ render_field(register_user_form.password) }}
-          {% if register_user_form.password_confirm %}{{ render_field(register_user_form.password_confirm) }}{% endif %}
-          <button type="submit" class="btn btn-primary w-full mt-2">Create Account</button>
-        </form>
+        {% if github_oauth_enabled | default(false) %}
+          <a href="{{ url_for('github_oauth.login') }}{% if 'next' in request.args %}?next={{ request.args.next|urlencode }}{% endif %}"
+             class="btn btn-neutral w-full gap-2">
+            {{ icon('github', 'w-5 h-5') }} Sign up with GitHub
+          </a>
+          {% if not github_oauth_only | default(false) %}
+            <div class="divider text-base-content/30 text-xs">or sign up with email</div>
+          {% endif %}
+        {% endif %}
 
-        {% include "security/_menu.html" %}
+        {% if not github_oauth_only | default(false) %}
+          <form action="{{ url_for_security('register') }}"
+                method="post"
+                name="register_user_form"
+                class="flex flex-col gap-4">
+            {{ register_user_form.hidden_tag() }}
+            {{ render_field(register_user_form.email, placeholder='you@example.com') }}
+            {{ render_field(register_user_form.username, placeholder='username') }}
+            {{ render_field(register_user_form.password) }}
+            {% if register_user_form.password_confirm %}{{ render_field(register_user_form.password_confirm) }}{% endif %}
+            <button type="submit" class="btn btn-primary w-full mt-2">Create Account</button>
+          </form>
+
+          {% include "security/_menu.html" %}
+        {% endif %}
       </div>
     </div>
   </div>

@@ -103,6 +103,33 @@ class User(db.Model, FsUserMixin):
         return projects
 
 
+class GitHubIdentity(db.Model):
+    __tablename__ = "github_identities"
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True,
+    )
+    user_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("users.id"),
+        nullable=False,
+        unique=True,
+    )
+    github_id = db.Column(db.Integer, nullable=False, unique=True)
+    github_username = db.Column(db.String(255), nullable=False)
+    github_access_token = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(
+        db.DateTime, nullable=False, default=datetime.datetime.now
+    )
+
+    user = db.relationship(
+        "User", backref=db.backref("github_identity", uselist=False)
+    )
+
+
 class Organization(db.Model):
     __versioned__: dict = {}
     __tablename__ = "organizations"

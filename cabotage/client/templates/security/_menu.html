@@ -1,3 +1,4 @@
+{% if not github_oauth_only | default(false) %}
 {% if security.registerable or security.recoverable or security.confirmable %}
   <div class="flex flex-col items-center gap-1 mt-4 pt-4 border-t border-base-300">
     {% if security.recoverable %}
@@ -9,4 +10,5 @@
          class="text-sm text-base-content/50 hover:text-accent transition-colors">Confirm account</a>
     {% endif %}
   </div>
+{% endif %}
 {% endif %}
