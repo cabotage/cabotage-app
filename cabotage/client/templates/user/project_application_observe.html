@@ -28,6 +28,10 @@
       {% set base_url = url_for('user.project_application_observe', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) %}
       <div class="flex flex-col items-end gap-1">
         <div class="flex items-center gap-2">
+          <label class="flex items-center gap-1.5 text-xs text-base-content/40 cursor-pointer select-none" title="Include envconsul and sidecar containers in resource metrics">
+            <input type="checkbox" id="system-containers-toggle" class="checkbox checkbox-xs">
+            <span>System</span>
+          </label>
           {% if process_names|length > 1 %}
             <select id="process-filter" class="select select-sm select-bordered text-xs">
               <option value="">All processes</option>
@@ -628,8 +632,11 @@
 
     var processEl = document.getElementById('process-filter');
     var proc = processEl ? processEl.value : '';
+    var sysToggle = document.getElementById('system-containers-toggle');
+    var includeSys = sysToggle && sysToggle.checked;
     var qs = '?metric=' + metric + '&range=' + RANGE + '&group=' + group;
     if (proc) qs += '&process=' + encodeURIComponent(proc);
+    if (includeSys) qs += '&system_containers=1';
     if (windowStart && windowEnd) {
       qs += '&start=' + windowStart + '&end=' + windowEnd;
     }
@@ -702,6 +709,17 @@
   if (processEl) {
     processEl.addEventListener('change', function() {
       updateURL();
+      document.querySelectorAll('[data-metric-panel]').forEach(function(el) {
+        el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/20"><span class="loading loading-spinner loading-sm"></span></div>';
+      });
+      Object.keys(panels).forEach(fetchAndRender);
+    });
+  }
+
+  // System containers toggle
+  var sysToggleEl = document.getElementById('system-containers-toggle');
+  if (sysToggleEl) {
+    sysToggleEl.addEventListener('change', function() {
       document.querySelectorAll('[data-metric-panel]').forEach(function(el) {
         el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/20"><span class="loading loading-spinner loading-sm"></span></div>';
       });
