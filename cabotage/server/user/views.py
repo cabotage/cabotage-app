@@ -628,7 +628,20 @@ def organization(org_slug):
     ]
     project_create_form.organization_id.data = str(organization.id)
 
-    active_projects = organization.active_projects
+    # Check if current user is scope-limited in this org
+    current_membership = OrganizationMember.query.filter_by(
+        user_id=current_user.id, organization_id=organization.id
+    ).first()
+    if current_membership and current_membership.project_scope_limited:
+        allowed_ids = {
+            pm.project_id
+            for pm in ProjectMember.query.filter_by(user_id=current_user.id).all()
+        }
+        active_projects = [
+            p for p in organization.active_projects if p.id in allowed_ids
+        ]
+    else:
+        active_projects = organization.active_projects
     app_ids = [app.id for p in active_projects for app in p.active_applications]
     org_app_count = len(app_ids)
     org_deploy_count = 0
