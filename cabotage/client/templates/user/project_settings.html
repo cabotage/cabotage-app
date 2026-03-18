@@ -170,9 +170,9 @@
     {# --- Organization members (inherited, read-only) --- #}
     <div class="flex items-center gap-2 mt-3 mb-1">
       <h3 class="text-xs font-medium text-base-content/50 uppercase tracking-wider">Organization Members</h3>
-      <span class="badge badge-xs badge-ghost">{{ project.organization.members|length }}</span>
+      <span class="badge badge-xs badge-ghost">{{ visible_org_members|length }}</span>
     </div>
-    {{ member_table(project.organization.members, remove_member_form, current_user.id, inherited=true,
+    {{ member_table(visible_org_members, remove_member_form, current_user.id, inherited=true,
                     empty_text='No organization members.') }}
 
     {# --- Direct project members (manageable) --- #}

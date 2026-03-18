@@ -1149,6 +1149,13 @@ def project_settings(org_slug, project_slug):
     remove_member_form = FlaskForm()
     is_org_admin = AdministerOrganizationPermission(organization.id).can()
 
+    project_member_user_ids = {pm.user_id for pm in project.members}
+    visible_org_members = [
+        m
+        for m in organization.members
+        if not m.project_scope_limited or m.user_id in project_member_user_ids
+    ]
+
     return render_template(
         "user/project_settings.html",
         project=project,
@@ -1159,6 +1166,7 @@ def project_settings(org_slug, project_slug):
         add_member_form=add_member_form,
         remove_member_form=remove_member_form,
         is_org_admin=is_org_admin,
+        visible_org_members=visible_org_members,
     )
 
 
