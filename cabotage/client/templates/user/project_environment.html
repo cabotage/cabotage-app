@@ -40,8 +40,14 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {% for app_env in active_app_envs %}
         {% set app = app_env.application %}
-        {% set config_count = app_env.configurations|length %}
-        {% set meta = [config_count ~ ' config' ~ ('s' if config_count != 1 else '')] %}
+        {% set cc = app_config_counts.get(app_env.id, 0) %}
+        {% set proc_count = app_env.process_counts.values()|sum if app_env.process_counts else 0 %}
+        {% set last_dep = app_env.latest_deployment_completed %}
+        {% set meta = [
+          (proc_count ~ ' instance' ~ ('s' if proc_count != 1 else '')) if proc_count else 'No pods',
+          cc ~ ' config' ~ ('s' if cc != 1 else ''),
+          ('deployed ' ~ last_dep.created|humanize) if last_dep else ''
+        ]|select|list %}
         {% if app_env.latest_deployment %}
           {% if app_env.latest_deployment.complete %}
             {% set status = 'running' %}
@@ -110,7 +116,7 @@
       <h2 class="text-base font-medium text-base-content">Environment Variables</h2>
       <p class="text-xs text-base-content/40 mt-0.5">
         {# env_configs passed from view with subscriptions eagerly loaded #}
-        {{ env_configs|length }} variable{{ 's' if env_configs|length != 1 }}
+        {{ env_configs|length }} config{{ 's' if env_configs|length != 1 }}
       </p>
     </div>
     <button type="button"

@@ -389,6 +389,22 @@ def _default_environment(project):
     )
 
 
+def _config_count(app_env, environment):
+    """Count effective configs: app-level (minus system) + subscribed (minus overridden)."""
+    if not app_env:
+        return 0
+    system_names = {"CABOTAGE_SENTINEL"}
+    app_config_names = {
+        c.name.upper() for c in app_env.configurations if c.name not in system_names
+    }
+    subscribed_names = set()
+    for sub in app_env.environment_config_subscriptions:
+        ec = sub.environment_configuration
+        if not ec.deleted and ec.name.upper() not in app_config_names:
+            subscribed_names.add(ec.name)
+    return len(app_config_names) + len(subscribed_names)
+
+
 def _eager_env_configs(project, environment):
     """Load env configs with subscriptions eagerly to avoid N+1 in templates."""
     if not environment:
@@ -856,6 +872,12 @@ def project(org_slug, project_slug):
         env_create_form = CreateEnvironmentForm()
         env_create_form.project_id.data = str(project.id)
         has_default = any(e.is_default for e in active_envs)
+    # Compute config counts per app_env (includes subscribed shared configs)
+    app_config_counts = {}
+    for app in project.active_applications:
+        for ae in app.active_application_environments:
+            app_config_counts[ae.id] = _config_count(ae, ae.environment)
+
     return render_template(
         "user/project.html",
         project=project,
@@ -871,6 +893,7 @@ def project(org_slug, project_slug):
         errored_ae_ids=errored_ae_ids,
         last_deploy_by_ae=last_deploy_by_ae,
         ae_by_env=ae_by_env,
+        app_config_counts=app_config_counts,
     )
 
 
@@ -1192,6 +1215,9 @@ def project_environment(org_slug, project_slug, env_slug):
     env_edit_form = EditEnvironmentConfigurationForm()
     env_delete_form = DeleteEnvironmentConfigurationForm()
     env_configs = _eager_env_configs(project, environment)
+    app_config_counts = {
+        ae.id: _config_count(ae, environment) for ae in active_app_envs
+    }
     _app_refs, _tcp_refs = _environment_app_references(environment)
     return render_template(
         "user/project_environment.html",
@@ -1203,6 +1229,7 @@ def project_environment(org_slug, project_slug, env_slug):
         env_edit_form=env_edit_form,
         env_delete_form=env_delete_form,
         env_configs=env_configs,
+        app_config_counts=app_config_counts,
         app_references=_app_refs,
         tcp_references=_tcp_refs,
     )
@@ -2270,6 +2297,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
             if app_env
             else set()
         ),
+        config_count=_config_count(app_env, environment),
     )
 
 
@@ -2691,6 +2719,8 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
         application_id=application.id, id=config_id
     ).first_or_404()
     if not AdministerApplicationPermission(application.id).can():
+        abort(403)
+    if configuration.name == "CABOTAGE_SENTINEL":
         abort(403)
 
     form = EditConfigurationForm(obj=configuration)
@@ -3331,6 +3361,9 @@ def project_application_configuration_delete(
         application_id=application.id, id=config_id
     ).first_or_404()
     if not AdministerApplicationPermission(application.id).can():
+        abort(403)
+
+    if configuration.name == "CABOTAGE_SENTINEL":
         abort(403)
 
     if len(configuration.application_environment.configurations) <= 1:

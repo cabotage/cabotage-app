@@ -297,6 +297,8 @@ class CreateConfigurationForm(FlaskForm):
     )
 
     def validate_name(form, field):
+        if field.data and field.data.upper() == "CABOTAGE_SENTINEL":
+            raise ValidationError("This name is reserved.")
         app_env_id = None
         env_id = form.environment_id.data or None
         if env_id:
