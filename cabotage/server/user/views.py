@@ -685,6 +685,7 @@ def organization(org_slug):
     return render_template(
         "user/organization.html",
         organization=organization,
+        active_projects=active_projects,
         project_create_form=project_create_form,
         org_app_count=org_app_count,
         org_deploy_count=org_deploy_count,

@@ -14,7 +14,7 @@
 
 {% block tab_bar %}
   <div class="app-content-padded !py-0">
-    {% set proj_count = organization.active_projects|length %}
+    {% set proj_count = active_projects|length %}
     {% set member_count = organization.members|length %}
     {{ tab_nav([
         {'id': 'projects', 'label': 'Projects', 'icon': 'folder', 'badge': proj_count},
@@ -24,7 +24,7 @@
 {% endblock tab_bar %}
 
 {% block content %}
-  {% set proj_count = organization.active_projects|length %}
+  {% set proj_count = active_projects|length %}
   {% set member_count = organization.members|length %}
 
   {% set latest_deploy = namespace(ts=last_deploy_ts) %}
@@ -62,10 +62,10 @@
       {% endif %}
     </div>
 
-    {% if organization.active_projects %}
+    {% if active_projects %}
       <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Projects</h2>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {% for project in organization.active_projects %}
+        {% for project in active_projects %}
           {% set app_count = project.active_applications|length %}
           {% set running = namespace(n=0) %}
           {% set errored = namespace(n=0) %}
@@ -143,7 +143,7 @@
                     demote_url=url_for('user.organization_demote_user', org_slug=organization.slug),
                     remove_url=url_for('user.organization_remove_user', org_slug=organization.slug),
                     projects_url_prefix=url_for('user.organization', org_slug=organization.slug) ~ '/users/',
-                    org_projects=organization.active_projects,
+                    org_projects=active_projects,
                     empty_text='No members in this organization.') }}
   </div>
 
@@ -236,7 +236,7 @@
             </div>
 
             <div id="project-list" class="hidden mt-3 ml-8">
-              {% for project in organization.active_projects %}
+              {% for project in active_projects %}
                 <label class="label cursor-pointer justify-start gap-3 p-0 py-1">
                   <input type="checkbox" name="project_ids" value="{{ project.id }}"
                          class="checkbox checkbox-primary checkbox-sm" />
