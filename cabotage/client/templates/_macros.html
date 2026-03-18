@@ -468,7 +468,7 @@
   </script>
 {% endmacro %}
 
-{% macro member_table(members, csrf_form, current_user_id, promote_url='', demote_url='', remove_url='', can_manage=false, inherited=false, empty_text='No members.') %}
+{% macro member_table(members, csrf_form, current_user_id, promote_url='', demote_url='', remove_url='', can_manage=false, inherited=false, empty_text='No members.', projects_url_prefix='', org_projects=[]) %}
   {% if members %}
     <div class="flex flex-col divide-y divide-base-content/5">
       {% for membership in members %}
@@ -488,11 +488,19 @@
               {% if membership.user.email %}
                 <span class="text-xs text-base-content/30 truncate block">{{ membership.user.email }}</span>
               {% endif %}
-              {% if not inherited and membership.user.project_memberships is defined and membership.user.project_memberships %}
-                <div class="flex flex-wrap gap-1 mt-0.5">
-                  {% for pm in membership.user.project_memberships %}
-                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-base-200 text-base-content/40">{{ pm.project.name }}</span>
-                  {% endfor %}
+              {% if not inherited and membership.project_scope_limited is defined %}
+                <div class="flex flex-wrap items-center gap-1 mt-0.5">
+                  {% if membership.project_scope_limited %}
+                    {% if membership.user.project_memberships %}
+                      {% for pm in membership.user.project_memberships %}
+                        <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary/60">{{ pm.project.name }}</span>
+                      {% endfor %}
+                    {% else %}
+                      <span class="text-[10px] text-warning/60">no projects assigned</span>
+                    {% endif %}
+                  {% else %}
+                    <span class="text-[10px] text-base-content/25">all projects</span>
+                  {% endif %}
                 </div>
               {% endif %}
             </div>
@@ -524,18 +532,70 @@
                 </span>
               </div>
             {% endif %}
-            {% if can_manage and not inherited and membership.user.id != current_user_id and remove_url %}
-              <form action="{{ remove_url }}" method="post" class="inline opacity-0 group-hover:opacity-100 transition-opacity"
-                    onsubmit="return confirm('Remove {{ membership.user.username }}?')">
-                {{ csrf_form.hidden_tag() }}
-                <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
-                <button type="submit" class="btn btn-ghost btn-xs btn-square text-base-content/20 hover:text-error hover:bg-error/10" title="Remove">
-                  {{ icon('x', 'w-3.5 h-3.5') }}
+            {% if can_manage and not inherited and membership.user.id != current_user_id %}
+              {% if projects_url_prefix %}
+                <button type="button" class="btn btn-ghost btn-xs text-base-content/30 hover:text-base-content"
+                        title="Manage project access"
+                        onclick="document.getElementById('projects-{{ membership.user.id }}').showModal()">
+                  {{ icon('folder', 'w-3.5 h-3.5') }}
                 </button>
-              </form>
+              {% endif %}
+              {% if remove_url %}
+                <form action="{{ remove_url }}" method="post" class="inline opacity-0 group-hover:opacity-100 transition-opacity"
+                      onsubmit="return confirm('Remove {{ membership.user.username }}?')">
+                  {{ csrf_form.hidden_tag() }}
+                  <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
+                  <button type="submit" class="btn btn-ghost btn-xs btn-square text-base-content/20 hover:text-error hover:bg-error/10" title="Remove">
+                    {{ icon('x', 'w-3.5 h-3.5') }}
+                  </button>
+                </form>
+              {% endif %}
             {% endif %}
           </div>
         </div>
+        {# Per-member project access modal #}
+        {% if can_manage and not inherited and projects_url_prefix and membership.user.id != current_user_id %}
+          {% set user_project_ids = membership.user.project_memberships | map(attribute='project_id') | map('string') | list %}
+          <dialog id="projects-{{ membership.user.id }}" class="modal">
+            <div class="modal-box max-w-sm">
+              <h3 class="text-sm font-semibold text-base-content mb-1">Project access for {{ membership.user.username }}</h3>
+              <p class="text-xs text-base-content/40 mb-3">
+                {% if membership.project_scope_limited is defined and membership.project_scope_limited %}
+                  This user can only access checked projects.
+                {% else %}
+                  This user has access to all projects via org membership.
+                {% endif %}
+              </p>
+              <form action="{{ projects_url_prefix }}{{ membership.user.id }}/projects" method="post">
+                {{ csrf_form.hidden_tag() }}
+                {% if membership.project_scope_limited is defined %}
+                  <label class="flex items-center gap-2 mb-3 cursor-pointer">
+                    <input type="checkbox" name="project_scope_limited"
+                           class="checkbox checkbox-sm checkbox-primary"
+                           {{ 'checked' if membership.project_scope_limited }}
+                           onchange="this.closest('form').querySelector('.project-checks').classList.toggle('opacity-30', !this.checked)" />
+                    <span class="text-sm text-base-content">Limit to specific projects</span>
+                  </label>
+                {% endif %}
+                <div class="project-checks flex flex-col gap-1 max-h-48 overflow-y-auto {{ 'opacity-30' if not membership.project_scope_limited }}">
+                  {% for project in org_projects %}
+                    <label class="flex items-center gap-2 py-1 cursor-pointer">
+                      <input type="checkbox" name="project_ids" value="{{ project.id }}"
+                             class="checkbox checkbox-xs checkbox-primary"
+                             {{ 'checked' if project.id|string in user_project_ids }} />
+                      <span class="text-sm text-base-content">{{ project.name }}</span>
+                    </label>
+                  {% endfor %}
+                </div>
+                <div class="modal-action">
+                  <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('dialog').close()">Cancel</button>
+                  <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                </div>
+              </form>
+            </div>
+            <form method="dialog" class="modal-backdrop"><button>close</button></form>
+          </dialog>
+        {% endif %}
       {% endfor %}
     </div>
   {% else %}

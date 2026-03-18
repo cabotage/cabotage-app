@@ -15,6 +15,9 @@ class OrganizationMember(db.Model):
         primary_key=True,
     )
     admin = db.Column(db.Boolean, nullable=False, default=False)
+    project_scope_limited = db.Column(
+        db.Boolean, nullable=False, default=False, server_default="false"
+    )
 
     user = db.relationship("User", back_populates="organizations")
     organization = db.relationship("Organization", back_populates="members")

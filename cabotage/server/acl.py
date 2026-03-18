@@ -50,6 +50,10 @@ def cabotage_on_identity_loaded(sender, identity):
                     AdministerOrganizationNeed(membership.organization_id)
                 )
 
+            # If scoped to specific projects, skip blanket project grants
+            if membership.project_scope_limited:
+                continue
+
             for project in membership.organization.projects:
                 identity.provides.add(ViewProjectNeed(project.id))
                 if membership.admin:

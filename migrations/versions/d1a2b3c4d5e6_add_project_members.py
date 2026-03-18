@@ -27,7 +27,17 @@ def upgrade():
         sa.ForeignKeyConstraint(["project_id"], ["projects.id"]),
         sa.PrimaryKeyConstraint("user_id", "project_id"),
     )
+    op.add_column(
+        "organization_members",
+        sa.Column(
+            "project_scope_limited",
+            sa.Boolean(),
+            nullable=False,
+            server_default="false",
+        ),
+    )
 
 
 def downgrade():
+    op.drop_column("organization_members", "project_scope_limited")
     op.drop_table("project_members")

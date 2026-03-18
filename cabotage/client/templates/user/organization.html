@@ -142,6 +142,8 @@
                     promote_url=url_for('user.organization_promote_user', org_slug=organization.slug),
                     demote_url=url_for('user.organization_demote_user', org_slug=organization.slug),
                     remove_url=url_for('user.organization_remove_user', org_slug=organization.slug),
+                    projects_url_prefix=url_for('user.organization', org_slug=organization.slug) ~ '/users/',
+                    org_projects=organization.active_projects,
                     empty_text='No members in this organization.') }}
   </div>
 

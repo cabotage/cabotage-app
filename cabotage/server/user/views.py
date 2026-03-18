@@ -4509,9 +4509,33 @@ def organization_add_user(org_slug):
 
     if form.validate_on_submit():
         if user := User.query.filter_by(email=form.email.data).first():
+            project_access = request.form.get("project_access", "all")
+            scoped = project_access == "specific"
             organization.add_user(user)
+            if scoped:
+                # Mark membership as project-scoped
+                db.session.flush()
+                member = OrganizationMember.query.filter_by(
+                    user_id=user.id, organization_id=organization.id
+                ).first()
+                if member:
+                    member.project_scope_limited = True
+                # Create ProjectMember rows for selected projects
+                project_ids = request.form.getlist("project_ids")
+                org_project_ids = {str(p.id) for p in organization.active_projects}
+                for pid in project_ids:
+                    if pid in org_project_ids:
+                        project = Project.query.get(pid)
+                        if project:
+                            project.add_user(user)
             db.session.commit()
-            flash("User has been added to the organization.", "success")
+            if scoped:
+                flash(
+                    f"User added to organization with access to {len(project_ids)} project(s).",
+                    "success",
+                )
+            else:
+                flash("User has been added to the organization.", "success")
         else:
             flash("User with this email address does not exist.", "error")
         return redirect(url_for("user.organization", org_slug=org_slug) + "#members")
@@ -4536,6 +4560,53 @@ def organization_remove_user(org_slug):
         redirect_url,
         min_members=1,
     )
+
+
+@user_blueprint.route(
+    "/organizations/<org_slug>/users/<user_id>/projects", methods=["POST"]
+)
+@login_required
+def organization_user_projects(org_slug, user_id):
+    """Set which projects an org member has direct access to."""
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    if not AdministerOrganizationPermission(organization.id).can():
+        abort(403)
+    user = _safe_get(User, user_id)
+    if not user:
+        flash("User not found.", "error")
+        return redirect(url_for("user.organization", org_slug=org_slug) + "#members")
+    if not _find_member(OrganizationMember, "organization_id", organization, user):
+        flash("User is not a member of this organization.", "warning")
+        return redirect(url_for("user.organization", org_slug=org_slug) + "#members")
+
+    member = OrganizationMember.query.filter_by(
+        user_id=user.id, organization_id=organization.id
+    ).first()
+
+    # Update scope toggle
+    scope_limited = "project_scope_limited" in request.form
+    member.project_scope_limited = scope_limited
+
+    # Sync project memberships
+    selected_ids = set(request.form.getlist("project_ids"))
+    org_project_ids = {str(p.id) for p in organization.active_projects}
+    selected_ids &= org_project_ids
+
+    existing = {
+        str(pm.project_id): pm
+        for pm in ProjectMember.query.filter_by(user_id=user.id).all()
+        if str(pm.project_id) in org_project_ids
+    }
+    for pid in selected_ids - set(existing.keys()):
+        project = Project.query.get(pid)
+        if project:
+            project.add_user(user)
+    for pid in set(existing.keys()) - selected_ids:
+        db.session.delete(existing[pid])
+
+    db.session.commit()
+    flash(f"Project access updated for {user.username}.", "success")
+    return redirect(url_for("user.organization", org_slug=org_slug) + "#members")
 
 
 @user_blueprint.route("/organizations/<org_slug>/users/promote", methods=["POST"])
