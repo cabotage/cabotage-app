@@ -19,9 +19,10 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {% for membership in organizations %}
         {% set org = membership.organization %}
-        {% set proj_count = org.active_projects|length %}
+        {% set visible_projects = visible_projects_by_org.get(org.id, org.active_projects) %}
+        {% set proj_count = visible_projects|length %}
         {% set app_count = namespace(n=0) %}
-        {% for p in org.active_projects %}
+        {% for p in visible_projects %}
           {% set app_count.n = app_count.n + p.active_applications|length %}
         {% endfor %}
         {{ org_card(name=org.name or org.slug,

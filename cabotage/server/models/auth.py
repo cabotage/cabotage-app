@@ -105,11 +105,6 @@ class User(db.Model, FsUserMixin):
                     if p.id not in seen:
                         seen.add(p.id)
                         projects.append(p)
-        for team in self.teams:
-            for p in team.team.projects:
-                if p.id not in seen:
-                    seen.add(p.id)
-                    projects.append(p)
         for pm in self.project_memberships:
             if pm.project.id not in seen:
                 seen.add(pm.project.id)

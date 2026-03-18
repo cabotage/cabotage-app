@@ -20,40 +20,35 @@ def home():
     app_count = 0
     deploy_count = 0
     if current_user.is_authenticated:
-        user_orgs = (
+        org_count = (
             db.session.query(OrganizationMember.organization_id)
             .join(Organization, OrganizationMember.organization_id == Organization.id)
             .filter(
                 OrganizationMember.user_id == current_user.id,
                 Organization.deleted_at.is_(None),
             )
-        )
-        org_count = user_orgs.count()
-        project_count = Project.query.filter(
-            Project.organization_id.in_(user_orgs),
-            Project.deleted_at.is_(None),
-        ).count()
-        app_count = (
-            Application.query.join(Project)
-            .filter(
-                Project.organization_id.in_(user_orgs),
-                Project.deleted_at.is_(None),
-                Application.deleted_at.is_(None),
-            )
             .count()
         )
-        deploy_count = (
-            db.session.query(func.count(Deployment.id))
-            .join(Application)
-            .join(Project)
-            .filter(
-                Project.organization_id.in_(user_orgs),
-                Project.deleted_at.is_(None),
+        visible_projects = [
+            p for p in current_user.projects if p.deleted_at is None
+        ]
+        project_count = len(visible_projects)
+        visible_project_ids = [p.id for p in visible_projects]
+        if visible_project_ids:
+            app_count = Application.query.filter(
+                Application.project_id.in_(visible_project_ids),
                 Application.deleted_at.is_(None),
-                Deployment.complete == True,  # noqa: E712
+            ).count()
+            deploy_count = (
+                db.session.query(func.count(Deployment.id))
+                .join(Application)
+                .filter(
+                    Application.project_id.in_(visible_project_ids),
+                    Application.deleted_at.is_(None),
+                    Deployment.complete == True,  # noqa: E712
+                )
+                .scalar()
             )
-            .scalar()
-        )
     return render_template(
         "main/home.html",
         org_count=org_count,

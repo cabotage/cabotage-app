@@ -597,11 +597,25 @@ def organizations():
         )
         last_deploy_by_org = {row[0]: row[1] for row in rows}
 
+    # For scoped members, compute which projects they can see per org
+    visible_projects_by_org = {}
+    user_project_ids = {
+        pm.project_id for pm in current_user.project_memberships
+    }
+    for m in memberships:
+        if m.project_scope_limited:
+            visible_projects_by_org[m.organization_id] = [
+                p
+                for p in m.organization.active_projects
+                if p.id in user_project_ids
+            ]
+
     org_create_form = CreateOrganizationForm()
     return render_template(
         "user/organizations.html",
         organizations=memberships,
         last_deploy_by_org=last_deploy_by_org,
+        visible_projects_by_org=visible_projects_by_org,
         org_create_form=org_create_form,
     )
 
