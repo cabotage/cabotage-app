@@ -29,9 +29,7 @@ def home():
             )
             .count()
         )
-        visible_projects = [
-            p for p in current_user.projects if p.deleted_at is None
-        ]
+        visible_projects = [p for p in current_user.projects if p.deleted_at is None]
         project_count = len(visible_projects)
         visible_project_ids = [p.id for p in visible_projects]
         if visible_project_ids:
