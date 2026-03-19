@@ -553,13 +553,39 @@ def fetch_service(core_api_instance, release, process_name):
 
 
 def render_ingress(release, ingress):
-    """Build a V1Ingress from an Ingress model record."""
+    """Build a V1Ingress from an Ingress model record.
+
+    Convenience wrapper that extracts naming context from a Release.
+    """
+    return render_ingress_object(
+        ingress=ingress,
+        resource_prefix=k8s_resource_prefix(release),
+        labels={
+            "organization": release.application.project.organization.slug,
+            "project": release.application.project.slug,
+            "application": release.application.slug,
+            "app": k8s_label_value(release),
+        },
+        process_names=list(release.processes) if release.processes else [],
+    )
+
+
+def render_ingress_object(
+    ingress,
+    resource_prefix,
+    labels,
+    process_names=None,
+):
+    """Build a V1Ingress from an Ingress/IngressSnapshot and explicit context.
+
+    This function has no dependency on a Release object, so it can be called
+    during early ingress pre-creation (e.g. branch deploys) as well as during
+    the normal deploy path.
+    """
     if not ingress.enabled:
         return None
 
-    resource_prefix = k8s_resource_prefix(release)
     ingress_name = f"{resource_prefix}-{ingress.name}"
-    label_value = k8s_label_value(release)
 
     annotations = {
         "nginx.ingress.kubernetes.io/backend-protocol": ingress.backend_protocol,
@@ -618,7 +644,7 @@ def render_ingress(release, ingress):
 
     if not k8s_paths:
         # No explicit paths — default to "/" routing to first web process
-        web_procs = sorted(p for p in release.processes if p.startswith("web"))
+        web_procs = sorted(p for p in (process_names or []) if p.startswith("web"))
         if not web_procs:
             return None
         target_service = f"{resource_prefix}-{web_procs[0]}"
@@ -658,17 +684,13 @@ def render_ingress(release, ingress):
             )
         )
 
+    all_labels = {"resident-ingress.cabotage.io": "true", "ingress": ingress.name}
+    all_labels.update(labels)
+
     ingress_object = kubernetes.client.V1Ingress(
         metadata=kubernetes.client.V1ObjectMeta(
             name=ingress_name,
-            labels={
-                "resident-ingress.cabotage.io": "true",
-                "organization": release.application.project.organization.slug,
-                "project": release.application.project.slug,
-                "application": release.application.slug,
-                "app": label_value,
-                "ingress": ingress.name,
-            },
+            labels=all_labels,
             annotations=annotations,
         ),
         spec=kubernetes.client.V1IngressSpec(
@@ -732,6 +754,98 @@ def fetch_ingress(networking_api, release, ingress):
         raise DeployError(
             "Unexpected exception fetching Ingress/" f"{k8s_name} in {namespace}: {exc}"
         )
+
+
+def ensure_ingresses(
+    networking_api,
+    namespace,
+    resource_prefix,
+    labels,
+    ingresses,
+    process_names=None,
+    cleanup_orphans=False,
+    log=None,
+):
+    """Create or update K8s Ingress resources and optionally remove orphans.
+
+    This is the single entry point for ingress management, used by both the
+    normal deploy path and the branch-deploy pre-creation path.
+    """
+    active_names = []
+    for ingress in ingresses:
+        k8s_name = f"{resource_prefix}-{ingress.name}"
+
+        if not ingress.enabled:
+            # Disabled — delete if exists
+            try:
+                networking_api.delete_namespaced_ingress(k8s_name, namespace)
+            except ApiException as exc:
+                if exc.status != 404:
+                    if log:
+                        log(f"Failed to delete disabled Ingress/{k8s_name}: {exc}")
+            continue
+
+        ingress_object = render_ingress_object(
+            ingress=ingress,
+            resource_prefix=resource_prefix,
+            labels=labels,
+            process_names=process_names,
+        )
+        if ingress_object is None:
+            continue
+
+        active_names.append(ingress.name)
+        if log:
+            log(f"Ensuring Ingress/{ingress.name}")
+
+        try:
+            networking_api.read_namespaced_ingress(k8s_name, namespace)
+            networking_api.patch_namespaced_ingress(k8s_name, namespace, ingress_object)
+        except ApiException as exc:
+            if exc.status == 404:
+                networking_api.create_namespaced_ingress(namespace, ingress_object)
+            else:
+                raise DeployError(
+                    f"Unexpected exception ensuring Ingress/{k8s_name} "
+                    f"in {namespace}: {exc}"
+                )
+
+    if cleanup_orphans and active_names:
+        _cleanup_orphaned_ingresses(
+            networking_api, namespace, resource_prefix, labels, active_names, log=log
+        )
+
+
+def _cleanup_orphaned_ingresses(
+    networking_api, namespace, resource_prefix, labels, active_ingress_names, log=None
+):
+    """Delete cabotage-managed ingresses that are no longer in the app's ingress list."""
+    label_selector = ",".join(
+        f"{k}={v}"
+        for k, v in labels.items()
+        if k in ("organization", "project", "application")
+    )
+    label_selector += ",resident-ingress.cabotage.io=true"
+    try:
+        existing = networking_api.list_namespaced_ingress(
+            namespace, label_selector=label_selector
+        )
+    except ApiException:
+        return
+    active_k8s_names = {f"{resource_prefix}-{n}" for n in active_ingress_names}
+    for item in existing.items:
+        if item.metadata.name not in active_k8s_names:
+            if log:
+                log(f"Deleting orphaned Ingress/{item.metadata.name}")
+            try:
+                networking_api.delete_namespaced_ingress(item.metadata.name, namespace)
+            except ApiException as exc:
+                if exc.status != 404:
+                    if log:
+                        log(
+                            f"Failed to delete orphaned Ingress/"
+                            f"{item.metadata.name}: {exc}"
+                        )
 
 
 def cleanup_orphaned_ingresses(networking_api, release, active_ingress_names, log=None):
@@ -1925,17 +2039,21 @@ def deploy_release(deployment):
                 ingress_snapshots = [
                     IngressSnapshot(data) for data in release_obj.ingresses.values()
                 ]
-            for ingress in ingress_snapshots:
-                log(f"Fetching Ingress/{ingress.name}")
-                fetch_ingress(
-                    networking_api_instance,
-                    release_obj,
-                    ingress,
-                )
-            cleanup_orphaned_ingresses(
+            ensure_ingresses(
                 networking_api_instance,
-                release_obj,
-                [i.name for i in ingress_snapshots],
+                namespace=namespace.metadata.name,
+                resource_prefix=k8s_resource_prefix(release_obj),
+                labels={
+                    "organization": release_obj.application.project.organization.slug,
+                    "project": release_obj.application.project.slug,
+                    "application": release_obj.application.slug,
+                    "app": k8s_label_value(release_obj),
+                },
+                ingresses=ingress_snapshots,
+                process_names=(
+                    list(release_obj.processes) if release_obj.processes else []
+                ),
+                cleanup_orphans=True,
                 log=log,
             )
         log("Fetching ImagePullSecrets")

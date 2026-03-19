@@ -150,6 +150,56 @@ def _create_app_env_for_branch_deploy(
     return app_env
 
 
+def _precreate_ingresses(environment):
+    """Create the K8s namespace and Ingress resources for a branch deploy.
+
+    Called before image builds start so that cert-manager can begin issuing
+    TLS certificates while builds run in parallel.
+    """
+    import kubernetes
+
+    from cabotage.celery.tasks.deploy import ensure_ingresses
+
+    if not current_app.config.get("KUBERNETES_ENABLED"):
+        return
+
+    org = environment.project.organization
+    ns_name = safe_k8s_name(org.k8s_identifier, environment.k8s_identifier)
+    api_client = kubernetes_ext.kubernetes_client
+    core_api = kubernetes.client.CoreV1Api(api_client)
+    networking_api = kubernetes.client.NetworkingV1Api(api_client)
+
+    # Ensure namespace exists
+    try:
+        core_api.read_namespace(ns_name)
+    except ApiException as exc:
+        if exc.status == 404:
+            core_api.create_namespace(
+                kubernetes.client.V1Namespace(
+                    metadata=kubernetes.client.V1ObjectMeta(name=ns_name),
+                )
+            )
+        else:
+            logger.exception("Failed to create namespace %s", ns_name)
+            return
+
+    for app_env in environment.application_environments:
+        app = app_env.application
+        ensure_ingresses(
+            networking_api,
+            namespace=ns_name,
+            resource_prefix=safe_k8s_name(
+                environment.project.k8s_identifier, app.k8s_identifier
+            ),
+            labels={
+                "organization": org.slug,
+                "project": environment.project.slug,
+                "application": app.slug,
+            },
+            ingresses=app_env.ingresses,
+        )
+
+
 def _teardown_environment(environment):
     """Delete k8s namespace and all DB records for an ephemeral environment."""
     import kubernetes
@@ -553,6 +603,14 @@ def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref
         new_app_envs.append(app_env)
 
     db.session.commit()
+
+    # Create K8s namespace + ingresses early so cert-manager can start
+    # issuing TLS certificates while image builds run in parallel.
+    try:
+        _precreate_ingresses(environment)
+    except Exception:
+        logger.exception("Failed to pre-create ingresses for %s", env_slug)
+
     _build_images_for_app_envs(new_app_envs, head_sha, installation_id)
     update_pr_comment(environment)
 
