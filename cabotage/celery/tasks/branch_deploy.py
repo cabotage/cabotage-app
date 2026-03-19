@@ -248,51 +248,33 @@ def _teardown_environment(environment):
     db.session.flush()
 
 
-def _create_skipped_deployment(environment, commit_sha, installation_id):
-    """Create a GitHub Deployment and immediately mark it as successful.
-
-    Used when all apps are skipped by watch paths so the deployment
-    status doesn't stay pending forever.
-    """
-    from cabotage.celery.tasks.github import (
-        create_deployment as create_github_deployment,
-    )
-
-    app_env = next(iter(environment.application_environments), None)
-    if not app_env:
-        return
-    application = app_env.application
-    if not application.github_repository:
-        return
+def _create_skipped_check_runs(skipped_app_envs, commit_sha, installation_id):
+    """Create completed check runs for apps skipped by watch paths."""
+    from cabotage.utils.github import CheckRun
 
     token = github_app.fetch_installation_access_token(installation_id)
     if not token:
         return
-    access_token = {"token": token}
 
-    project = environment.project
-    env_name = f"{project.organization.slug}/{project.slug}/{environment.slug}"
-    statuses_url = create_github_deployment(
-        access_token=access_token,
-        repository_name=application.github_repository,
-        ref=commit_sha,
-        transient_environment=True,
-        environment_name=env_name,
-    )
-    if statuses_url:
-        scheme = current_app.config["EXT_PREFERRED_URL_SCHEME"]
-        server = current_app.config["EXT_SERVER_NAME"]
-        env_url = (
-            f"{scheme}://{server}/projects/"
-            f"{project.organization.slug}/{project.slug}/"
-            f"environments/{environment.slug}"
-        )
-        post_deployment_status_update(
+    for app_env in skipped_app_envs:
+        application = app_env.application
+        if not application.github_repository:
+            continue
+        env_slug = app_env.environment.slug
+        project_slug = application.project.slug
+        org_slug = application.project.organization.slug
+        check_name = f"{org_slug}/{project_slug}/{application.slug} ({env_slug})"
+        check = CheckRun.create(
             token,
-            statuses_url,
-            "success",
-            "No changes in watched paths, skipped.",
-            environment_url=env_url,
+            application.github_repository,
+            commit_sha,
+            check_name,
+            application,
+            app_env=app_env,
+        )
+        check.succeed(
+            title="No deployment needed",
+            detail="Watched paths not affected by this push.",
         )
 
 
@@ -726,12 +708,12 @@ def sync_branch_deploy(project, pr_number, head_sha, installation_id):
                 )
             ]
 
+    all_app_envs = list(environment.application_environments)
+    skipped = [ae for ae in all_app_envs if ae not in app_envs]
+    if skipped:
+        _create_skipped_check_runs(skipped, head_sha, installation_id)
     if app_envs:
         _build_images_for_app_envs(app_envs, head_sha, installation_id)
-    else:
-        # All apps skipped by watch paths — create a GitHub Deployment
-        # and immediately mark it as successful.
-        _create_skipped_deployment(environment, head_sha, installation_id)
     update_pr_comment(environment)
 
 
@@ -756,28 +738,53 @@ def teardown_branch_deploy(project, pr_number):
 
 
 def _deactivate_deployment(environment):
-    """Post an 'inactive' status to the consolidated GitHub Deployment."""
-    statuses_url = _find_statuses_url(environment)
-    if not statuses_url:
-        return
-
+    """Mark all GitHub Deployments for this environment as inactive."""
     app_env = next(iter(environment.application_environments), None)
     if not app_env:
         return
-    installation_id = app_env.application.github_app_installation_id
-    if not installation_id:
+    application = app_env.application
+    repository_name = application.github_repository
+    installation_id = application.github_app_installation_id
+    if not repository_name or not installation_id:
         return
+
+    project = environment.project
+    env_name = f"{project.organization.slug}/{project.slug}/{environment.slug}"
 
     try:
         access_token = github_app.fetch_installation_access_token(installation_id)
-        post_deployment_status_update(
-            access_token,
-            statuses_url,
-            "inactive",
-            "Environment destroyed.",
-        )
+        from cabotage.utils.github import github_session, _github_headers
+
+        headers = _github_headers(access_token)
+        # List all deployments for this environment
+        page = 1
+        while True:
+            resp = github_session.get(
+                f"https://api.github.com/repos/{repository_name}/deployments",
+                headers=headers,
+                params={
+                    "environment": env_name,
+                    "per_page": 100,
+                    "page": page,
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            deployments = resp.json()
+            if not deployments:
+                break
+            for deployment in deployments:
+                post_deployment_status_update(
+                    access_token,
+                    deployment["statuses_url"],
+                    "inactive",
+                    "Environment destroyed.",
+                )
+            if len(deployments) < 100:
+                break
+            page += 1
     except Exception:
-        logger.exception("Failed to deactivate deployment for %s", environment.slug)
+        logger.exception("Failed to deactivate deployments for %s", environment.slug)
 
 
 def _post_teardown_comment(environment, pr_number):
