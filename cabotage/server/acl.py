@@ -29,14 +29,16 @@ def cabotage_on_identity_loaded(sender, identity):
             identity.provides.add(RoleNeed(role.name))
 
     if hasattr(current_user, "id"):
+        from cabotage.server.models.auth import Organization
         from cabotage.server.models.auth_associations import OrganizationMember
+        from cabotage.server.models.projects import Project
 
         memberships = (
             OrganizationMember.query.filter_by(user_id=current_user.id)
             .options(
                 joinedload(OrganizationMember.organization)
-                .joinedload("projects")
-                .joinedload("project_applications")
+                .joinedload(Organization.projects)
+                .joinedload(Project.project_applications)
             )
             .all()
         )

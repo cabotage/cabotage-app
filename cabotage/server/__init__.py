@@ -26,6 +26,8 @@ from flask_mail import Mail
 from flask_migrate import Migrate
 from flask_security import Security, SQLAlchemyUserDatastore
 from flask_principal import Principal, identity_loaded
+from typing import TYPE_CHECKING
+
 from flask_sqlalchemy import SQLAlchemy
 from flask_sock import Sock
 from flask_wtf.csrf import CSRFProtect
@@ -51,6 +53,8 @@ bcrypt = Bcrypt()
 toolbar = DebugToolbarExtension()
 bootstrap = Bootstrap()
 security = Security()
+
+
 db_metadata = MetaData(
     naming_convention={
         "ix": "ix_%(column_0_label)s",
@@ -63,6 +67,11 @@ db_metadata = MetaData(
 db: SQLAlchemy = SQLAlchemy(
     metadata=db_metadata, engine_options={"pool_pre_ping": True}
 )
+
+if TYPE_CHECKING:
+    from flask_sqlalchemy.model import Model
+else:
+    Model = db.Model
 principal = Principal()
 login_manager = LoginManager()
 mail = Mail()

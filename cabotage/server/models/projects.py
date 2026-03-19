@@ -8,7 +8,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy_continuum import make_versioned
 from sqlalchemy_utils.models import Timestamp
 
-from cabotage.server import db
+from cabotage.server import db, Model
 
 from cabotage.server.models.plugins import ActivityPlugin
 from cabotage.server.models.utils import (
@@ -89,7 +89,7 @@ pod_classes = {
 DEFAULT_POD_CLASS = "m1.large"
 
 
-class Project(db.Model, Timestamp):
+class Project(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "projects"
 
@@ -158,7 +158,7 @@ class Project(db.Model, Timestamp):
     )
 
 
-class Environment(db.Model, Timestamp):
+class Environment(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_environments"
 
@@ -233,7 +233,7 @@ class Environment(db.Model, Timestamp):
     __mapper_args__ = {"version_id_col": version_id}
 
 
-class ApplicationEnvironment(db.Model, Timestamp):
+class ApplicationEnvironment(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "application_environments"
 
@@ -440,7 +440,7 @@ class ApplicationEnvironment(db.Model, Timestamp):
         return self.health_check_host or self.application.health_check_host
 
 
-class Application(db.Model, Timestamp):
+class Application(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_applications"
 
@@ -703,7 +703,7 @@ class Application(db.Model, Timestamp):
     __mapper_args__ = {"version_id_col": version_id}
 
 
-class Deployment(db.Model, Timestamp):
+class Deployment(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "deployments"
 
@@ -758,7 +758,7 @@ class Deployment(db.Model, Timestamp):
         return None
 
 
-class Release(db.Model, Timestamp):
+class Release(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_app_releases"
 
@@ -1085,7 +1085,7 @@ def release_before_insert_listener(mapper, connection, target):
         target.version = most_recent_release.version + 1
 
 
-class Configuration(db.Model, Timestamp):
+class Configuration(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_app_configurations"
 
@@ -1190,7 +1190,7 @@ class ConfigurationSnapshot:
         self.secret = data["secret"]
 
 
-class EnvironmentConfiguration(db.Model, Timestamp):
+class EnvironmentConfiguration(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_environment_configurations"
 
@@ -1286,7 +1286,7 @@ class EnvironmentConfiguration(db.Model, Timestamp):
         return self.value
 
 
-class EnvironmentConfigSubscription(db.Model, Timestamp):
+class EnvironmentConfigSubscription(Model, Timestamp):
     __tablename__ = "environment_config_subscriptions"
 
     id = db.Column(
@@ -1317,7 +1317,7 @@ class EnvironmentConfigSubscription(db.Model, Timestamp):
     )
 
 
-class Hook(db.Model, Timestamp):
+class Hook(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "hooks"
 
@@ -1355,7 +1355,7 @@ class Hook(db.Model, Timestamp):
     __mapper_args__ = {"version_id_col": version_id}
 
 
-class Image(db.Model, Timestamp):
+class Image(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_app_images"
 
@@ -1528,7 +1528,7 @@ class ImageSnapshot:
         return self.tag
 
 
-class Ingress(db.Model, Timestamp):
+class Ingress(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "ingresses"
 
@@ -1625,7 +1625,7 @@ class Ingress(db.Model, Timestamp):
         return f"<Ingress {self.id} {self.name}>"
 
 
-class IngressHost(db.Model, Timestamp):
+class IngressHost(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "ingress_hosts"
 
@@ -1670,7 +1670,7 @@ class IngressHost(db.Model, Timestamp):
         return f"<IngressHost {self.id} {self.hostname}>"
 
 
-class IngressPath(db.Model, Timestamp):
+class IngressPath(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "ingress_paths"
 
