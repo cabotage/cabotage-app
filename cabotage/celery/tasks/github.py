@@ -395,9 +395,7 @@ def process_push_hook(hook):
         return False
 
     # Deploy immediately for apps that don't wait for CI.
-    skip_ci_matches = [
-        ae for ae in env_matches if not ae.effective_auto_deploy_wait_for_ci
-    ]
+    skip_ci_matches = [ae for ae in env_matches if not ae.auto_deploy_wait_for_ci]
     if skip_ci_matches:
         bearer_token = github_app.bearer_token
         access_token_response = github_session.post(
@@ -544,7 +542,7 @@ def process_check_suite_hook(hook):
 
         for app_env in env_matches:
             # Skip apps that already deployed on push (no CI wait).
-            if not app_env.effective_auto_deploy_wait_for_ci:
+            if not app_env.auto_deploy_wait_for_ci:
                 continue
             watch_paths = app_env.application.branch_deploy_watch_paths
             if (

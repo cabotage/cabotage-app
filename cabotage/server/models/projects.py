@@ -279,7 +279,9 @@ class ApplicationEnvironment(Model, Timestamp):
     )
     auto_deploy_wait_for_ci = db.Column(
         db.Boolean,
-        nullable=True,
+        nullable=False,
+        default=True,
+        server_default="true",
     )
     github_environment_name = db.Column(
         db.Text(),
@@ -430,12 +432,6 @@ class ApplicationEnvironment(Model, Timestamp):
         return f"{self.application.project.organization.slug}/{self.application.project.slug}/{self.environment.slug}/{self.application.slug}"
 
     @property
-    def effective_auto_deploy_wait_for_ci(self):
-        if self.auto_deploy_wait_for_ci is not None:
-            return self.auto_deploy_wait_for_ci
-        return self.application.auto_deploy_wait_for_ci
-
-    @property
     def effective_deployment_timeout(self):
         if self.deployment_timeout is not None:
             return self.deployment_timeout
@@ -553,12 +549,6 @@ class Application(Model, Timestamp):
     auto_deploy_branch = db.Column(
         db.Text(),
         nullable=True,
-    )
-    auto_deploy_wait_for_ci = db.Column(
-        db.Boolean,
-        nullable=False,
-        default=True,
-        server_default="true",
     )
     deployment_timeout = db.Column(
         db.Integer,

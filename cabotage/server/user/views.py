@@ -2977,6 +2977,7 @@ def project_application_environment_settings(
 
     if form.validate_on_submit():
         app_env.auto_deploy_branch = form.auto_deploy_branch.data or None
+        app_env.auto_deploy_wait_for_ci = form.auto_deploy_wait_for_ci.data
         app_env.github_environment_name = form.github_environment_name.data or None
         app_env.deployment_timeout = form.deployment_timeout.data
         app_env.health_check_path = form.health_check_path.data or None

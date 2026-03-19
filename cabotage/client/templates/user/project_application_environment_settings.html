@@ -60,8 +60,9 @@
           </div>
         </div>
         <div class="settings-row-fields">
-          <div class="settings-field-grid-2">
+          <div class="settings-field-grid-3">
             {{ render_field_compact(form.auto_deploy_branch, placeholder=application.auto_deploy_branch or 'inherited from app', label='Branch') }}
+            {{ render_field_compact(form.auto_deploy_wait_for_ci, label='Wait for CI') }}
             {{ render_field_compact(form.github_environment_name, placeholder=app_env.effective_github_environment_name, label='GitHub Environment') }}
           </div>
         </div>
