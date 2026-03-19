@@ -535,6 +535,10 @@ class Application(Model, Timestamp):
         db.Text(),
         nullable=True,
     )
+    branch_deploy_watch_paths = db.Column(
+        postgresql.JSONB(),
+        nullable=True,
+    )
 
     auto_deploy_branch = db.Column(
         db.Text(),
