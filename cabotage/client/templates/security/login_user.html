@@ -14,21 +14,31 @@
           <p class="text-sm text-base-content/50 mt-1">Sign in to your Cabotage account</p>
         </div>
 
-        {% include "security/_messages.html" %}
+        {% if github_oauth_enabled | default(false) %}
+          <a href="{{ url_for('github_oauth.login') }}{% if 'next' in request.args %}?next={{ request.args.next|urlencode }}{% endif %}"
+             class="btn btn-neutral w-full gap-2">
+            {{ icon('github', 'w-5 h-5') }} Sign in with GitHub
+          </a>
+          {% if not github_oauth_only | default(false) %}
+            <div class="divider text-base-content/30 text-xs">or sign in with password</div>
+          {% endif %}
+        {% endif %}
 
-        <form action="{{ url_for_security('login') }}"
-              method="post"
-              name="login_user_form"
-              class="flex flex-col gap-4">
-          {{ login_user_form.hidden_tag() }}
-          {{ render_field(login_user_form.email, placeholder='you@example.com') }}
-          {{ render_field(login_user_form.password) }}
-          {{ render_field(login_user_form.remember) }}
-          {% if login_user_form.next %}{{ login_user_form.next() }}{% endif %}
-          <button type="submit" class="btn btn-primary w-full mt-2">Sign In</button>
-        </form>
+        {% if not github_oauth_only | default(false) %}
+          <form action="{{ url_for_security('login') }}"
+                method="post"
+                name="login_user_form"
+                class="flex flex-col gap-4">
+            {{ login_user_form.hidden_tag() }}
+            {{ render_field(login_user_form.email, placeholder='you@example.com') }}
+            {{ render_field(login_user_form.password) }}
+            {{ render_field(login_user_form.remember) }}
+            {% if login_user_form.next %}{{ login_user_form.next() }}{% endif %}
+            <button type="submit" class="btn btn-primary w-full mt-2">Sign In</button>
+          </form>
 
-        {% include "security/_menu.html" %}
+          {% include "security/_menu.html" %}
+        {% endif %}
       </div>
     </div>
   </div>

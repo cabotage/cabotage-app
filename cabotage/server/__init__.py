@@ -137,6 +137,11 @@ def create_app():
     app_settings = os.getenv("APP_SETTINGS", "cabotage.server.config.Config")
     app.config.from_object(app_settings)
 
+    if app.config.get("GITHUB_OAUTH_ONLY"):
+        app.config["SECURITY_REGISTERABLE"] = False
+        app.config["SECURITY_RECOVERABLE"] = False
+        app.config["SECURITY_CHANGEABLE"] = False
+
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 31536000  # 1 year; cache-busted by hash
 
     # Static file cache-busting: append ?v=<hash> to static URLs
@@ -177,6 +182,9 @@ def create_app():
         register_form=ExtendedRegisterForm,
         login_form=ExtendedLoginForm,
     )
+    from cabotage.server.user.github_oauth import init_github_oauth
+
+    init_github_oauth(app)
     vault_db_creds.init_app(app)
     db.init_app(app)
     principal.init_app(app)
@@ -185,6 +193,14 @@ def create_app():
     mail.init_app(app)
     migrate.init_app(app, db)
     nav.init_app(app)
+
+    @app.template_filter("display_username")
+    def display_username_filter(value):
+        if value and value.startswith("github:"):
+            parts = value.split(":", 2)
+            if len(parts) == 3:
+                return parts[2]
+        return value
 
     @app.template_filter("humanize")
     def humanize_filter(value):

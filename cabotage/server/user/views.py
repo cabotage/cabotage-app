@@ -53,6 +53,7 @@ from cabotage.server.acl import (
 )
 
 from cabotage.server.models.auth import (
+    GitHubIdentity,
     Organization,
     User,
 )
@@ -559,11 +560,13 @@ def organization(org_slug):
     )
     if not ViewOrganizationPermission(organization.id).can():
         abort(403)
-    project_create_form = CreateProjectForm()
-    project_create_form.organization_id.choices = [
-        (str(organization.id), organization.name)
-    ]
-    project_create_form.organization_id.data = str(organization.id)
+    project_create_form = None
+    if AdministerOrganizationPermission(organization.id).can():
+        project_create_form = CreateProjectForm()
+        project_create_form.organization_id.choices = [
+            (str(organization.id), organization.name)
+        ]
+        project_create_form.organization_id.data = str(organization.id)
 
     active_projects = organization.active_projects
     app_ids = [app.id for p in active_projects for app in p.active_applications]
@@ -680,6 +683,8 @@ def organization_settings(org_slug):
 @login_required
 def organization_create():
     user = current_user
+    if not user.admin:
+        abort(403)
     form = CreateOrganizationForm()
 
     if form.validate_on_submit():
@@ -823,23 +828,26 @@ def project(org_slug, project_slug):
     )
     if not ViewProjectPermission(project.id).can():
         abort(403)
-    app_create_form = CreateApplicationForm()
-    app_create_form.organization_id.choices = [
-        (str(organization.id), organization.name)
-    ]
-    app_create_form.project_id.choices = [(str(project.id), project.name)]
-    app_create_form.organization_id.data = str(organization.id)
-    app_create_form.project_id.data = str(project.id)
+    can_admin_project = AdministerProjectPermission(project.id).can()
+    app_create_form = None
     active_envs = project.active_environments
-    if project.environments_enabled and len(active_envs) > 1:
-        sorted_envs = sorted(active_envs, key=lambda e: e.sort_order)
-        app_create_form.environment_id.choices = [
-            (str(e.id), e.name) for e in sorted_envs
+    if can_admin_project:
+        app_create_form = CreateApplicationForm()
+        app_create_form.organization_id.choices = [
+            (str(organization.id), organization.name)
         ]
-        default_env = next((e for e in sorted_envs if e.is_default), sorted_envs[0])
-        app_create_form.environment_id.data = str(default_env.id)
-    else:
-        app_create_form.environment_id.choices = []
+        app_create_form.project_id.choices = [(str(project.id), project.name)]
+        app_create_form.organization_id.data = str(organization.id)
+        app_create_form.project_id.data = str(project.id)
+        if project.environments_enabled and len(active_envs) > 1:
+            sorted_envs = sorted(active_envs, key=lambda e: e.sort_order)
+            app_create_form.environment_id.choices = [
+                (str(e.id), e.name) for e in sorted_envs
+            ]
+            default_env = next((e for e in sorted_envs if e.is_default), sorted_envs[0])
+            app_create_form.environment_id.data = str(default_env.id)
+        else:
+            app_create_form.environment_id.choices = []
 
     # Build ae_by_env mapping in Python (avoids duplicate eager-load path)
     ae_ids = []
@@ -869,8 +877,9 @@ def project(org_slug, project_slug):
         unassigned_apps = [
             a for a in project.active_applications if a.id not in assigned_app_ids
         ]
-        env_create_form = CreateEnvironmentForm()
-        env_create_form.project_id.data = str(project.id)
+        if can_admin_project:
+            env_create_form = CreateEnvironmentForm()
+            env_create_form.project_id.data = str(project.id)
         has_default = any(e.is_default for e in active_envs)
     # Compute config counts per app_env (includes subscribed shared configs)
     app_config_counts = {}
@@ -4434,12 +4443,41 @@ def organization_add_user(org_slug):
     all_users = User.query.all() if current_user.admin else None
 
     if form.validate_on_submit():
-        if user := User.query.filter_by(email=form.email.data).first():
-            organization.add_user(user)
-            db.session.commit()
-            flash("User has been added to the organization.", "success")
+        value = form.identity.data.strip()
+        user = User.query.filter_by(email=value).first()
+        if not user:
+            # Resolve GitHub username to user ID via API, then match by ID
+            try:
+                resp = requests_lib.get(
+                    f"https://api.github.com/users/{value}",
+                    headers={"Accept": "application/vnd.github+json"},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    github_id = resp.json().get("id")
+                    if github_id:
+                        gh_identity = GitHubIdentity.query.filter_by(
+                            github_id=github_id
+                        ).first()
+                        if gh_identity:
+                            user = gh_identity.user
+            except requests_lib.exceptions.RequestException:
+                flash("Could not reach GitHub to verify username.", "error")
+                return redirect(
+                    url_for("user.organization", org_slug=org_slug) + "#members"
+                )
+        if user:
+            existing = OrganizationMember.query.filter_by(
+                user_id=user.id, organization_id=organization.id
+            ).first()
+            if existing:
+                flash("User is already a member of this organization.", "warning")
+            else:
+                organization.add_user(user)
+                db.session.commit()
+                flash("User has been added to the organization.", "success")
         else:
-            flash("User with this email address does not exist.", "error")
+            flash("No user found with that email or GitHub username.", "error")
         return redirect(url_for("user.organization", org_slug=org_slug) + "#members")
     return render_template(
         "user/organization_add_user.html",
