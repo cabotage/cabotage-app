@@ -263,7 +263,10 @@ def _create_skipped_check_runs(skipped_app_envs, commit_sha, installation_id):
         env_slug = app_env.environment.slug
         project_slug = application.project.slug
         org_slug = application.project.organization.slug
-        check_name = f"{org_slug}/{project_slug}/{application.slug} ({env_slug})"
+        check_name = (
+            f"deploy - {github_app.slug} / {org_slug} / "
+            f"{project_slug} / {application.slug} ({env_slug})"
+        )
         check = CheckRun.create(
             token,
             application.github_repository,
