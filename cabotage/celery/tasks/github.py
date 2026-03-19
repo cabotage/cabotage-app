@@ -299,6 +299,7 @@ def create_deployment(
     ref=None,
     app_env=None,
     branch=None,
+    transient_environment=False,
 ):
     try:
         environment_string = app_env.effective_github_environment_name
@@ -309,10 +310,15 @@ def create_deployment(
             "environment": environment_string,
         }
 
-        # Fetch the branch's required status checks and pass them explicitly.
-        # This preserves CI gating while excluding our own check runs, which
-        # would otherwise cause 409 Conflicts during batch deployments.
-        if branch:
+        if transient_environment:
+            deploy_payload["transient_environment"] = True
+            deploy_payload["production_environment"] = False
+            # Skip required contexts for transient (branch deploy) environments
+            deploy_payload["required_contexts"] = []
+        elif branch:
+            # Fetch the branch's required status checks and pass them explicitly.
+            # This preserves CI gating while excluding our own check runs, which
+            # would otherwise cause 409 Conflicts during batch deployments.
             deploy_payload["required_contexts"] = _required_contexts_for_branch(
                 access_token, repository_name, branch
             )
@@ -327,15 +333,16 @@ def create_deployment(
             timeout=10,
         )
         deployment_response.raise_for_status()
+        statuses_url = deployment_response.json()["statuses_url"]
         post_deployment_status_update(
             access_token["token"],
-            deployment_response.json()["statuses_url"],
+            statuses_url,
             "pending",
             "Deployment created.",
         )
     except Exception:
-        return False
-    return True
+        return None
+    return statuses_url
 
 
 def process_push_hook(hook):
