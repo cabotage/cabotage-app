@@ -68,6 +68,7 @@
           <div class="settings-field-grid-3">
             {{ render_field_compact(form.github_repository, placeholder='owner/repo', label='Repository') }}
             {{ render_field_compact(form.auto_deploy_branch, placeholder='main', label='Branch') }}
+            {{ render_field_compact(form.auto_deploy_wait_for_ci, label='Wait for CI') }}
             {{ render_field_compact(form.subdirectory, placeholder='/', label='Subdirectory') }}
             {{ render_field_compact(form.dockerfile_path, placeholder='Dockerfile.cabotage', label='Dockerfile Path') }}
           </div>

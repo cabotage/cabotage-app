@@ -394,6 +394,50 @@ def process_push_hook(hook):
         )
         return False
 
+    # Deploy immediately for apps that don't wait for CI.
+    skip_ci_matches = [
+        ae for ae in env_matches if not ae.application.auto_deploy_wait_for_ci
+    ]
+    if skip_ci_matches:
+        bearer_token = github_app.bearer_token
+        access_token_response = github_session.post(
+            f"https://api.github.com/app/installations/{installation_id}/access_tokens",
+            headers={
+                "Accept": "application/vnd.github.machine-man-preview+json",
+                "Authorization": f"Bearer {bearer_token}",
+            },
+            timeout=10,
+        )
+        if "token" in access_token_response.json():
+            access_token = access_token_response.json()
+
+            # Extract changed files for watch path filtering.
+            changed_files = set()
+            for commit in hook.payload.get("commits", []):
+                changed_files.update(commit.get("added", []))
+                changed_files.update(commit.get("modified", []))
+                changed_files.update(commit.get("removed", []))
+
+            for app_env in skip_ci_matches:
+                watch_paths = app_env.application.branch_deploy_watch_paths
+                if (
+                    watch_paths
+                    and changed_files
+                    and not matches_watch_paths(changed_files, watch_paths)
+                ):
+                    continue
+                print(
+                    f"deploying (skip CI) {repository_name}@{commit_sha} to "
+                    f"{app_env.application.id} env {app_env.environment.slug}"
+                )
+                create_deployment(
+                    access_token=access_token,
+                    application=app_env.application,
+                    repository_name=repository_name,
+                    ref=commit_sha,
+                    app_env=app_env,
+                )
+
 
 def process_check_suite_hook(hook):
     installation_id = hook.payload["installation"]["id"]
@@ -499,6 +543,9 @@ def process_check_suite_hook(hook):
             changed_files.update(commit.get("removed", []))
 
         for app_env in env_matches:
+            # Skip apps that already deployed on push (no CI wait).
+            if not app_env.application.auto_deploy_wait_for_ci:
+                continue
             watch_paths = app_env.application.branch_deploy_watch_paths
             if (
                 watch_paths

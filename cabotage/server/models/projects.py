@@ -544,6 +544,12 @@ class Application(Model, Timestamp):
         db.Text(),
         nullable=True,
     )
+    auto_deploy_wait_for_ci = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+    )
     deployment_timeout = db.Column(
         db.Integer,
         nullable=True,
