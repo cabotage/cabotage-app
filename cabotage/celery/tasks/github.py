@@ -255,15 +255,67 @@ def process_installation_repositories_hook(hook):
         pass
 
 
+def _required_contexts_for_branch(access_token, repository_name, branch):
+    """Fetch required status check contexts for a branch, excluding our own.
+
+    Queries branch protection rules to get the authoritative list of required
+    checks, then filters out any belonging to our own GitHub App. This lets
+    GitHub's Deployment API enforce real CI gating while ignoring our own
+    in-progress check runs that would otherwise cause 409 Conflicts during
+    batch deployments.
+
+    Returns a list of context names. Raises on failure so callers do not
+    silently proceed without CI gating.
+    """
+    resp = github_session.get(
+        f"https://api.github.com/repos/{repository_name}/branches/{branch}/protection/required_status_checks",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f'token {access_token["token"]}',
+        },
+        timeout=10,
+    )
+    print(
+        f"required_status_checks for {repository_name} branch {branch}: "
+        f"{resp.status_code} {resp.text}"
+    )
+    if resp.status_code == 404:
+        # Branch is not protected or has no required status checks
+        return []
+    resp.raise_for_status()
+    data = resp.json()
+    own_app_id = int(github_app.app_id)
+    checks = data.get("checks", [])
+    if checks:
+        return [c["context"] for c in checks if c.get("app_id") != own_app_id]
+    # Fall back to legacy contexts list (no app_id available to filter)
+    return data.get("contexts", [])
+
+
 def create_deployment(
     access_token=None,
     application=None,
     repository_name=None,
     ref=None,
     app_env=None,
+    branch=None,
 ):
     try:
         environment_string = app_env.effective_github_environment_name
+
+        deploy_payload = {
+            "ref": ref,
+            "auto_merge": False,
+            "environment": environment_string,
+        }
+
+        # Fetch the branch's required status checks and pass them explicitly.
+        # This preserves CI gating while excluding our own check runs, which
+        # would otherwise cause 409 Conflicts during batch deployments.
+        if branch:
+            deploy_payload["required_contexts"] = _required_contexts_for_branch(
+                access_token, repository_name, branch
+            )
 
         deployment_response = github_session.post(
             f"https://api.github.com/repos/{repository_name}/deployments",
@@ -271,16 +323,7 @@ def create_deployment(
                 "Accept": "application/vnd.github.machine-man-preview+json",
                 "Authorization": f'token {access_token["token"]}',
             },
-            json={
-                "ref": ref,
-                "auto_merge": False,
-                "environment": environment_string,
-                # Skip GitHub's default required-contexts check — we already
-                # know CI passed (we're responding to a successful check_suite).
-                # Without this, our own in-progress check runs from earlier
-                # deployments in the same batch can cause a 409 Conflict.
-                "required_contexts": [],
-            },
+            json=deploy_payload,
             timeout=10,
         )
         deployment_response.raise_for_status()
@@ -338,7 +381,8 @@ def process_push_hook(hook):
 def process_check_suite_hook(hook):
     installation_id = hook.payload["installation"]["id"]
     repository_name = hook.payload["repository"]["full_name"]
-    branch_names = [hook.payload["check_suite"]["head_branch"]]
+    head_branch = hook.payload["check_suite"]["head_branch"]
+    branch_names = [head_branch]
     commit_sha = hook.payload["check_suite"]["head_sha"]
     bearer_token = github_app.bearer_token
     access_token = None
@@ -440,6 +484,7 @@ def process_check_suite_hook(hook):
                 repository_name=repository_name,
                 ref=commit_sha,
                 app_env=app_env,
+                branch=head_branch,
             )
 
 
