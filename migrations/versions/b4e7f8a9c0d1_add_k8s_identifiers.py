@@ -42,22 +42,36 @@ def upgrade():
 
     # -- 2. Backfill from slug --
     op.execute(
-        "UPDATE organizations SET k8s_identifier = slug WHERE k8s_identifier IS NULL"
+        sa.text(
+            "UPDATE organizations SET k8s_identifier = slug WHERE k8s_identifier IS NULL"
+        )
     )
     op.execute(
-        "UPDATE organizations_version SET k8s_identifier = slug WHERE k8s_identifier IS NULL"
+        sa.text(
+            "UPDATE organizations_version SET k8s_identifier = slug WHERE k8s_identifier IS NULL"
+        )
     )
 
-    op.execute("UPDATE projects SET k8s_identifier = slug WHERE k8s_identifier IS NULL")
     op.execute(
-        "UPDATE projects_version SET k8s_identifier = slug WHERE k8s_identifier IS NULL"
+        sa.text(
+            "UPDATE projects SET k8s_identifier = slug WHERE k8s_identifier IS NULL"
+        )
+    )
+    op.execute(
+        sa.text(
+            "UPDATE projects_version SET k8s_identifier = slug WHERE k8s_identifier IS NULL"
+        )
     )
 
     op.execute(
-        "UPDATE project_applications SET k8s_identifier = slug WHERE k8s_identifier IS NULL"
+        sa.text(
+            "UPDATE project_applications SET k8s_identifier = slug WHERE k8s_identifier IS NULL"
+        )
     )
     op.execute(
-        "UPDATE project_applications_version SET k8s_identifier = slug WHERE k8s_identifier IS NULL"
+        sa.text(
+            "UPDATE project_applications_version SET k8s_identifier = slug WHERE k8s_identifier IS NULL"
+        )
     )
 
     # -- 3. Alter to non-nullable --

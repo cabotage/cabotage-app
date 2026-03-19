@@ -20,12 +20,7 @@ def upgrade():
         "project_applications",
         sa.Column("branch_deploy_watch_paths", postgresql.JSONB(), nullable=True),
     )
-    op.add_column(
-        "project_applications_version",
-        sa.Column("branch_deploy_watch_paths", postgresql.JSONB(), nullable=True),
-    )
 
 
 def downgrade():
-    op.drop_column("project_applications_version", "branch_deploy_watch_paths")
     op.drop_column("project_applications", "branch_deploy_watch_paths")
