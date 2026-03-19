@@ -300,9 +300,12 @@ def create_deployment(
     app_env=None,
     branch=None,
     transient_environment=False,
+    environment_name=None,
 ):
     try:
-        environment_string = app_env.effective_github_environment_name
+        environment_string = (
+            environment_name or app_env.effective_github_environment_name
+        )
 
         deploy_payload = {
             "ref": ref,

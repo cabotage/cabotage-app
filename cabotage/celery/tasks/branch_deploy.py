@@ -23,7 +23,10 @@ from cabotage.server.models.projects import (
     IngressPath,
 )
 from cabotage.server.models.utils import readable_k8s_hostname, safe_k8s_name
-from cabotage.utils.github import find_or_create_pr_comment
+from cabotage.utils.github import (
+    find_or_create_pr_comment,
+    post_deployment_status_update,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +205,22 @@ def _build_images_for_app_envs(app_envs, commit_sha, installation_id):
     token = github_app.fetch_installation_access_token(installation_id)
     access_token = {"token": token} if token else None
 
+    # Create ONE consolidated GitHub Deployment for the entire environment.
+    statuses_url = None
+    if access_token and app_envs:
+        first_app = app_envs[0].application
+        environment = app_envs[0].environment
+        project = environment.project
+        if first_app.github_repository:
+            env_name = f"{project.organization.slug}/{project.slug}/{environment.slug}"
+            statuses_url = create_github_deployment(
+                access_token=access_token,
+                repository_name=first_app.github_repository,
+                ref=commit_sha,
+                transient_environment=True,
+                environment_name=env_name,
+            )
+
     images = []
     for app_env in app_envs:
         application = app_env.application
@@ -211,18 +230,8 @@ def _build_images_for_app_envs(app_envs, commit_sha, installation_id):
             "auto_deploy": True,
             "branch_deploy": True,
         }
-
-        if access_token and application.github_repository:
-            statuses_url = create_github_deployment(
-                access_token=access_token,
-                application=application,
-                repository_name=application.github_repository,
-                ref=commit_sha,
-                app_env=app_env,
-                transient_environment=True,
-            )
-            if statuses_url:
-                metadata["statuses_url"] = statuses_url
+        if statuses_url:
+            metadata["statuses_url"] = statuses_url
 
         image = Image(
             application_id=application.id,
@@ -373,6 +382,39 @@ def _render_pr_comment_body(environment):
     return "\n".join(lines)
 
 
+def _aggregate_deployment_state(environment):
+    """Derive consolidated GitHub deployment state from all app_envs."""
+    statuses = [_app_env_status(ae) for ae in environment.application_environments]
+    labels = [s[1] for s in statuses]
+    total = len(labels)
+
+    if any("Failed" in label for label in labels):
+        failed = sum("Failed" in label for label in labels)
+        return "failure", f"{failed}/{total} services failed"
+    if all(label == "Deployed" for label in labels):
+        return "success", f"All {total} services deployed"
+    in_progress_states = {
+        "Building Image",
+        "Building Release",
+        "Awaiting Release",
+        "Awaiting Deploy",
+        "Deploying",
+    }
+    if any(label in in_progress_states or label == "Deployed" for label in labels):
+        deployed = sum(label == "Deployed" for label in labels)
+        return "in_progress", f"{deployed}/{total} services deployed"
+    return "pending", "Deployment starting"
+
+
+def _find_statuses_url(environment):
+    """Find the consolidated GitHub deployment statuses_url from any app_env."""
+    for app_env in environment.application_environments:
+        image = app_env.latest_image
+        if image and image.image_metadata and image.image_metadata.get("statuses_url"):
+            return image.image_metadata["statuses_url"]
+    return None
+
+
 def update_pr_comment(environment):
     """Create or update the PR comment for a branch deploy environment."""
     match = re.match(r"pr-(\d+)", environment.slug)
@@ -392,12 +434,46 @@ def update_pr_comment(environment):
 
     try:
         access_token = github_app.fetch_installation_access_token(installation_id)
+    except Exception:
+        logger.exception(
+            "Failed to fetch access token for %s#%s", repository_name, pr_number
+        )
+        return
+
+    try:
         body = _render_pr_comment_body(environment)
         find_or_create_pr_comment(access_token, repository_name, pr_number, body)
     except Exception:
         logger.exception(
             "Failed to update PR comment for %s#%s", repository_name, pr_number
         )
+
+    # Post consolidated deployment status to the shared GitHub Deployment.
+    statuses_url = _find_statuses_url(environment)
+    if statuses_url:
+        try:
+            state, description = _aggregate_deployment_state(environment)
+            project = environment.project
+            scheme = current_app.config["EXT_PREFERRED_URL_SCHEME"]
+            server = current_app.config["EXT_SERVER_NAME"]
+            env_url = (
+                f"{scheme}://{server}/projects/"
+                f"{project.organization.slug}/{project.slug}/"
+                f"environments/{environment.slug}"
+            )
+            post_deployment_status_update(
+                access_token,
+                statuses_url,
+                state,
+                description,
+                environment_url=env_url,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to post deployment status for %s#%s",
+                repository_name,
+                pr_number,
+            )
 
 
 def maybe_update_pr_comment_for_app_env(app_env):
