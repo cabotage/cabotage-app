@@ -4465,6 +4465,20 @@ def _compute_observe_prefix(application):
     )
 
 
+def _observe_common_groups(allowed):
+    """Parse group query params, clamping to allowed set."""
+    current_groups = {
+        "cpu": request.args.get("cpu", "total"),
+        "memory": request.args.get("memory", "total"),
+        "errors": request.args.get("errors", "total"),
+        "network": request.args.get("network", "total"),
+    }
+    for k in current_groups:
+        if current_groups[k] not in allowed:
+            current_groups[k] = "total"
+    return current_groups
+
+
 @user_blueprint.route(
     "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/observe",
 )
@@ -4487,25 +4501,29 @@ def project_application_observe(org_slug, project_slug, app_slug, env_slug=None)
     if current_process not in process_names:
         current_process = ""
 
-    group_choices = {"total", "process", "pod", "status"}
-    current_groups = {
-        "cpu": request.args.get("cpu", "total"),
-        "memory": request.args.get("memory", "total"),
-        "errors": request.args.get("errors", "total"),
-        "network": request.args.get("network", "total"),
-    }
-    for k in current_groups:
-        if current_groups[k] not in group_choices:
-            current_groups[k] = "total"
-
+    observe_groups = ["total", "process", "pod"]
+    current_groups = _observe_common_groups({"total", "process", "pod", "status"})
     has_time_window = bool(request.args.get("start") and request.args.get("end"))
 
     return render_template(
-        "user/project_application_observe.html",
+        "user/observe.html",
+        observe_level="app",
+        observe_groups=observe_groups,
+        organization=org,
+        project=project,
         application=application,
         environment=environment,
         app_env=app_env,
         mimir_configured=mimir_configured,
+        metric_url=url_for(
+            "user.project_application_observe_metric",
+            org_slug=org_slug,
+            project_slug=project_slug,
+            app_slug=app_slug,
+            env_slug=env_slug,
+        ),
+        filter_hierarchy_json="[]",
+        label_map_json="{}",
         current_range=request.args.get("range", "1h"),
         process_names=process_names,
         current_process=current_process,
@@ -4514,8 +4532,220 @@ def project_application_observe(org_slug, project_slug, app_slug, env_slug=None)
     )
 
 
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/observe",
+)
+@login_required
+def environment_observe(org_slug, project_slug, env_slug):
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .first_or_404()
+    )
+    project = (
+        Project.query.filter_by(organization_id=organization.id, slug=project_slug)
+        .filter(Project.deleted_at.is_(None))
+        .first_or_404()
+    )
+    if not ViewProjectPermission(project.id).can():
+        abort(403)
+    environment = (
+        Environment.query.filter_by(project_id=project.id, slug=env_slug)
+        .filter(Environment.deleted_at.is_(None))
+        .first_or_404()
+    )
+
+    mimir_configured = bool(current_app.config.get("MIMIR_URL"))
+    observe_groups = ["total", "application", "process", "pod"]
+    current_groups = _observe_common_groups(
+        {"total", "application", "process", "pod", "status"}
+    )
+    has_time_window = bool(request.args.get("start") and request.args.get("end"))
+
+    # Build filter hierarchy and label map
+    filter_hierarchy = []
+    label_map = {}
+    for ae in environment.active_application_environments:
+        app = ae.application
+        if app.deleted_at is not None:
+            continue
+        filter_hierarchy.append({"slug": app.slug, "name": app.name})
+        app_k8s = safe_k8s_name(project.k8s_identifier, app.k8s_identifier)
+        label_map[app_k8s] = app.slug
+    filter_hierarchy.sort(key=lambda a: a["slug"])
+
+    return render_template(
+        "user/observe.html",
+        observe_level="environment",
+        observe_groups=observe_groups,
+        organization=organization,
+        project=project,
+        environment=environment,
+        mimir_configured=mimir_configured,
+        metric_url=url_for(
+            "user.environment_observe_metric",
+            org_slug=org_slug,
+            project_slug=project_slug,
+            env_slug=env_slug,
+        ),
+        filter_hierarchy=filter_hierarchy,
+        filter_hierarchy_json=json.dumps(filter_hierarchy),
+        label_map_json=json.dumps(label_map),
+        current_range=request.args.get("range", "1h"),
+        process_names=[],
+        current_process="",
+        current_groups=current_groups,
+        has_time_window=has_time_window,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/observe",
+)
+@login_required
+def project_observe(org_slug, project_slug):
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .first_or_404()
+    )
+    project = (
+        Project.query.filter_by(organization_id=organization.id, slug=project_slug)
+        .filter(Project.deleted_at.is_(None))
+        .first_or_404()
+    )
+    if not ViewProjectPermission(project.id).can():
+        abort(403)
+
+    mimir_configured = bool(current_app.config.get("MIMIR_URL"))
+    observe_groups = ["total", "environment", "application", "process", "pod"]
+    current_groups = _observe_common_groups(
+        {"total", "environment", "application", "process", "pod", "status"}
+    )
+    has_time_window = bool(request.args.get("start") and request.args.get("end"))
+
+    # Build filter hierarchy and label map
+    filter_hierarchy = []
+    label_map = {}
+    for env in project.active_environments:
+        env_entry = {"slug": env.slug, "name": env.name, "applications": []}
+        label_map[env.k8s_identifier] = env.slug
+        for ae in env.active_application_environments:
+            app = ae.application
+            if app.deleted_at is not None:
+                continue
+            env_entry["applications"].append({"slug": app.slug, "name": app.name})
+            app_k8s = safe_k8s_name(project.k8s_identifier, app.k8s_identifier)
+            label_map[app_k8s] = app.slug
+        env_entry["applications"].sort(key=lambda a: a["slug"])
+        filter_hierarchy.append(env_entry)
+
+    return render_template(
+        "user/observe.html",
+        observe_level="project",
+        observe_groups=observe_groups,
+        organization=organization,
+        project=project,
+        environment=None,
+        mimir_configured=mimir_configured,
+        metric_url=url_for(
+            "user.project_observe_metric",
+            org_slug=org_slug,
+            project_slug=project_slug,
+        ),
+        filter_hierarchy=filter_hierarchy,
+        filter_hierarchy_json=json.dumps(filter_hierarchy),
+        label_map_json=json.dumps(label_map),
+        current_range=request.args.get("range", "1h"),
+        process_names=[],
+        current_process="",
+        current_groups=current_groups,
+        has_time_window=has_time_window,
+    )
+
+
+@user_blueprint.route("/organizations/<org_slug>/observe")
+@login_required
+def organization_observe(org_slug):
+    from sqlalchemy.orm import joinedload
+
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .options(
+            joinedload(Organization.projects).joinedload(Project.project_environments),
+            joinedload(Organization.members),
+        )
+        .first_or_404()
+    )
+    if not ViewOrganizationPermission(organization.id).can():
+        abort(403)
+
+    mimir_configured = bool(current_app.config.get("MIMIR_URL"))
+    observe_groups = ["total", "project", "environment", "application"]
+    current_groups = _observe_common_groups(
+        {"total", "project", "environment", "application", "status"}
+    )
+    has_time_window = bool(request.args.get("start") and request.args.get("end"))
+
+    # Build filter hierarchy and label map
+    filter_hierarchy = []
+    label_map = {}
+    for proj in organization.active_projects:
+        proj_entry = {
+            "slug": proj.slug,
+            "name": proj.name,
+            "environments": [],
+        }
+        label_map[proj.k8s_identifier] = proj.slug
+        for env in proj.active_environments:
+            env_entry = {"slug": env.slug, "name": env.name, "applications": []}
+            label_map[env.k8s_identifier] = env.slug
+            for ae in env.active_application_environments:
+                app = ae.application
+                if app.deleted_at is not None:
+                    continue
+                env_entry["applications"].append({"slug": app.slug, "name": app.name})
+                app_k8s = safe_k8s_name(proj.k8s_identifier, app.k8s_identifier)
+                label_map[app_k8s] = app.slug
+            env_entry["applications"].sort(key=lambda a: a["slug"])
+            proj_entry["environments"].append(env_entry)
+        filter_hierarchy.append(proj_entry)
+    filter_hierarchy.sort(key=lambda p: p["slug"])
+
+    return render_template(
+        "user/observe.html",
+        observe_level="organization",
+        observe_groups=observe_groups,
+        organization=organization,
+        project=None,
+        environment=None,
+        mimir_configured=mimir_configured,
+        metric_url=url_for(
+            "user.organization_observe_metric",
+            org_slug=org_slug,
+        ),
+        filter_hierarchy=filter_hierarchy,
+        filter_hierarchy_json=json.dumps(filter_hierarchy),
+        label_map_json=json.dumps(label_map),
+        current_range=request.args.get("range", "1h"),
+        process_names=[],
+        current_process="",
+        current_groups=current_groups,
+        has_time_window=has_time_window,
+    )
+
+
 _OBSERVE_METRICS = {"cpu", "memory", "requests", "latency", "errors", "network"}
-_OBSERVE_GROUPS = {"total", "process", "pod", "status"}
+_OBSERVE_GROUPS = {
+    "total",
+    "process",
+    "pod",
+    "status",
+    "application",
+    "environment",
+    "project",
+}
 
 
 @user_blueprint.route(
@@ -4562,11 +4792,12 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
         )
     if process_filter:
         escaped_process = _REGEX_META.sub(r"\\\g<0>", process_filter)
-        labels = f'namespace="{namespace}", pod=~"{escaped_prefix}-{escaped_process}-[a-z0-9]+-[a-z0-9]+", {container_filter}'
+        base_selector = f'namespace="{namespace}", pod=~"{escaped_prefix}-{escaped_process}-[a-z0-9]+-[a-z0-9]+"'
     else:
-        labels = (
-            f'namespace="{namespace}", pod=~"{escaped_prefix}-.*", {container_filter}'
-        )
+        base_selector = f'namespace="{namespace}", pod=~"{escaped_prefix}-.*"'
+    labels = f"{base_selector}, {container_filter}"
+    # Network metrics are per-pod with no container label; use unfiltered selector
+    network_labels = base_selector
 
     # Build exact traefik service labels from ingress config.
     # nginx-ingress format: {ns}-{prefix}-{ingress.name}-{prefix}-{process}-{port}@kubernetesingressnginx
@@ -4739,6 +4970,7 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
         result = result if result else None
 
     elif metric == "network":
+        # Network metrics are per-pod with no container label
         result = []
         for direction, counter in [
             ("tx", "container_network_transmit_bytes_total"),
@@ -4747,11 +4979,11 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
             if group == "process":
                 q = (
                     f"sum by (process) (label_replace("
-                    f"sum by (pod) (rate({counter}{{{labels}}}[{rate_window}]))"
+                    f"sum by (pod) (rate({counter}{{{network_labels}}}[{rate_window}]))"
                     f', "process", "$1", "pod", "{process_re}"))'
                 )
             else:
-                q = f"sum(rate({counter}{{{labels}}}[{rate_window}])) {by_clause}"
+                q = f"sum(rate({counter}{{{network_labels}}}[{rate_window}])) {by_clause}"
             queries.append(q)
             qr = _query_mimir_range(q, start, end, step)
             if qr:
@@ -4760,6 +4992,658 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
                 result.extend(qr)
         result = result if result else None
 
+    return jsonify({"result": result, "queries": queries})
+
+
+# ── Shared helpers for multi-level observe metric endpoints ──
+
+
+def _observe_time_params():
+    """Parse range/step/start/end from request args."""
+    range_param = request.args.get("range", "1h")
+    range_map = {
+        "1h": 3600,
+        "6h": 21600,
+        "24h": 86400,
+        "7d": 604800,
+        "30d": 2592000,
+    }
+    step_map = {
+        "1h": 15,
+        "6h": 60,
+        "24h": 300,
+        "7d": 1800,
+        "30d": 7200,
+    }
+    duration = range_map.get(range_param, 3600)
+    step = step_map.get(range_param, 15)
+
+    req_end = request.args.get("end", type=int)
+    req_start = request.args.get("start", type=int)
+    if req_end and req_start and req_end > req_start:
+        end = req_end // step * step
+        start = req_start // step * step
+    else:
+        end = int(time.time()) // step * step
+        start = end - duration
+    return duration, step, start, end
+
+
+def _observe_container_filter():
+    """Build container!="" filter from system_containers param."""
+    include_system = request.args.get("system_containers", "") == "1"
+    container_filter = 'container!="", container!="POD"'
+    if not include_system:
+        container_filter += (
+            ', container!="cabotage-sidecar"'
+            ', container!="cabotage-sidecar-tls"'
+            ', container!="cabotage-enroller"'
+        )
+    return container_filter
+
+
+def _collect_traefik_svc_names(app_envs, namespace_fn, prefix_fn, process_filter=""):
+    """Enumerate traefik service names from ingress configs across app_envs."""
+    names = set()
+    for ae in app_envs:
+        ns = namespace_fn(ae)
+        pfx = prefix_fn(ae)
+        for ingress in ae.ingresses:
+            if not ingress.enabled:
+                continue
+            for path in ingress.paths:
+                if process_filter and path.target_process_name != process_filter:
+                    continue
+                names.add(
+                    f"{ns}-{pfx}-{ingress.name}-{pfx}-{path.target_process_name}-8000@kubernetesingressnginx"
+                )
+            if not ingress.paths:
+                if not process_filter or process_filter == "web":
+                    names.add(
+                        f"{ns}-{pfx}-{ingress.name}-{pfx}-web-8000@kubernetesingressnginx"
+                    )
+    return names
+
+
+def _traefik_svc_label(names):
+    """Build a service=... label selector from a set of traefik service names."""
+    if len(names) == 1:
+        return f'service="{next(iter(names))}"'
+    elif names:
+        joined = "|".join(_REGEX_META.sub(r"\\\g<0>", s) for s in sorted(names))
+        return f'service=~"{joined}"'
+    return None
+
+
+def _build_observe_queries(
+    metric,
+    group,
+    labels,
+    traefik_svc,
+    step,
+    start,
+    end,
+    duration,
+    process_re,
+    by_clause,
+    rate_window,
+    app_re=None,
+    env_re=None,
+    proj_re=None,
+    network_labels=None,
+):
+    """Build PromQL queries and execute them. Returns (result, queries)."""
+    result = None
+    queries = []
+
+    if metric == "cpu":
+        if group == "process":
+            q = (
+                f"sum by (process) (label_replace("
+                f"sum by (pod) (rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}]))"
+                f', "process", "$1", "pod", "{process_re}"))'
+            )
+        elif group == "application" and app_re:
+            q = (
+                f"sum by (application) (label_replace("
+                f"sum by (pod) (rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}]))"
+                f', "application", "$1", "pod", "{app_re}"))'
+            )
+        elif group == "environment" and env_re:
+            q = (
+                f"sum by (environment) (label_replace("
+                f"sum by (namespace) (rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}]))"
+                f', "environment", "$1", "namespace", "{env_re}"))'
+            )
+        elif group == "project" and proj_re:
+            q = (
+                f"sum by (project) (label_replace("
+                f"sum by (pod) (rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}]))"
+                f', "project", "$1", "pod", "{proj_re}"))'
+            )
+        else:
+            q = f"sum(rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}])) {by_clause}"
+        queries.append(q)
+        result = _query_mimir_range(q, start, end, step)
+
+    elif metric == "memory":
+        if group == "process":
+            q = (
+                f"sum by (process) (label_replace("
+                f"sum by (pod) (container_memory_working_set_bytes{{{labels}}})"
+                f', "process", "$1", "pod", "{process_re}"))'
+            )
+        elif group == "application" and app_re:
+            q = (
+                f"sum by (application) (label_replace("
+                f"sum by (pod) (container_memory_working_set_bytes{{{labels}}})"
+                f', "application", "$1", "pod", "{app_re}"))'
+            )
+        elif group == "environment" and env_re:
+            q = (
+                f"sum by (environment) (label_replace("
+                f"sum by (namespace) (container_memory_working_set_bytes{{{labels}}})"
+                f', "environment", "$1", "namespace", "{env_re}"))'
+            )
+        elif group == "project" and proj_re:
+            q = (
+                f"sum by (project) (label_replace("
+                f"sum by (pod) (container_memory_working_set_bytes{{{labels}}})"
+                f', "project", "$1", "pod", "{proj_re}"))'
+            )
+        else:
+            q = f"sum(container_memory_working_set_bytes{{{labels}}}) {by_clause}"
+        queries.append(q)
+        result = _query_mimir_range(q, start, end, step)
+
+    elif metric in ("requests", "errors", "latency") and traefik_svc is None:
+        result = None
+
+    elif metric == "requests":
+        req_step = max(step, 60)
+        req_start = end - duration
+        result = []
+        for code_class in ["2", "3", "4", "5"]:
+            q = (
+                f"sum(increase(traefik_service_requests_total"
+                f'{{{traefik_svc}, code=~"{code_class}.."}}[{req_step}s]))'
+            )
+            queries.append(q)
+            qr = _query_mimir_range(q, req_start, end, req_step)
+            if qr:
+                for series in qr:
+                    series["metric"]["code"] = f"{code_class}xx"
+                result.extend(qr)
+        result = result if result else None
+
+    elif metric == "errors":
+        err_step = max(step, 60)
+        err_start = end - duration
+        if group == "status":
+            result = []
+            for code_class, label in [("4", "4xx"), ("5", "5xx")]:
+                q = (
+                    f"sum(increase(traefik_service_requests_total"
+                    f'{{{traefik_svc}, code=~"{code_class}.."}}[{err_step}s]))'
+                    f" / sum(increase(traefik_service_requests_total"
+                    f"{{{traefik_svc}}}[{err_step}s]))"
+                )
+                queries.append(q)
+                qr = _query_mimir_range(q, err_start, end, err_step)
+                if qr:
+                    for series in qr:
+                        series["metric"]["label"] = label
+                    result.extend(qr)
+            result = result if result else None
+        else:
+            q = (
+                f"sum(increase(traefik_service_requests_total"
+                f'{{{traefik_svc}, code=~"5.."}}[{err_step}s]))'
+                f" / sum(increase(traefik_service_requests_total"
+                f"{{{traefik_svc}}}[{err_step}s]))"
+            )
+            queries.append(q)
+            result = _query_mimir_range(q, err_start, end, err_step)
+            if result:
+                for series in result:
+                    series["metric"]["label"] = "error rate"
+
+    elif metric == "latency":
+        rate_seconds = max(step, 30)
+        rate_rule_suffix = {30: "rate30s", 60: "rate1m", 300: "rate5m"}.get(
+            rate_seconds, "rate5m"
+        )
+        result = []
+        for quantile in [0.5, 0.9, 0.95, 0.99]:
+            q = (
+                f"histogram_quantile({quantile}, sum by (le)("
+                f"traefik:router_request_duration_seconds_bucket:{rate_rule_suffix}"
+                f"{{{traefik_svc}}}))"
+            )
+            queries.append(q)
+            qr = _query_mimir_range(q, start, end, step)
+            if qr:
+                for series in qr:
+                    series["metric"]["quantile"] = f"p{int(quantile * 100)}"
+                result.extend(qr)
+        result = result if result else None
+
+    elif metric == "network":
+        # Network metrics are per-pod and have no container label,
+        # so use network_labels (without container filter) if provided.
+        net_labels = network_labels if network_labels is not None else labels
+        result = []
+        for direction, counter in [
+            ("tx", "container_network_transmit_bytes_total"),
+            ("rx", "container_network_receive_bytes_total"),
+        ]:
+            if group == "process":
+                q = (
+                    f"sum by (process) (label_replace("
+                    f"sum by (pod) (rate({counter}{{{net_labels}}}[{rate_window}]))"
+                    f', "process", "$1", "pod", "{process_re}"))'
+                )
+            elif group == "application" and app_re:
+                q = (
+                    f"sum by (application) (label_replace("
+                    f"sum by (pod) (rate({counter}{{{net_labels}}}[{rate_window}]))"
+                    f', "application", "$1", "pod", "{app_re}"))'
+                )
+            elif group == "environment" and env_re:
+                q = (
+                    f"sum by (environment) (label_replace("
+                    f"sum by (namespace) (rate({counter}{{{net_labels}}}[{rate_window}]))"
+                    f', "environment", "$1", "namespace", "{env_re}"))'
+                )
+            elif group == "project" and proj_re:
+                q = (
+                    f"sum by (project) (label_replace("
+                    f"sum by (pod) (rate({counter}{{{net_labels}}}[{rate_window}]))"
+                    f', "project", "$1", "pod", "{proj_re}"))'
+                )
+            else:
+                q = f"sum(rate({counter}{{{net_labels}}}[{rate_window}])) {by_clause}"
+            queries.append(q)
+            qr = _query_mimir_range(q, start, end, step)
+            if qr:
+                for series in qr:
+                    series["metric"]["direction"] = direction
+                result.extend(qr)
+        result = result if result else None
+
+    return result, queries
+
+
+# ── Environment-level metric endpoint ──
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/observe/metric",
+)
+@login_required
+def environment_observe_metric(org_slug, project_slug, env_slug):
+    metric = request.args.get("metric")
+    if metric not in _OBSERVE_METRICS:
+        return jsonify({"error": "invalid metric"}), 400
+    group = request.args.get("group", "total")
+    if group not in _OBSERVE_GROUPS:
+        group = "total"
+
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .first_or_404()
+    )
+    project = (
+        Project.query.filter_by(organization_id=organization.id, slug=project_slug)
+        .filter(Project.deleted_at.is_(None))
+        .first_or_404()
+    )
+    if not ViewProjectPermission(project.id).can():
+        abort(403)
+    environment = (
+        Environment.query.filter_by(project_id=project.id, slug=env_slug)
+        .filter(Environment.deleted_at.is_(None))
+        .first_or_404()
+    )
+
+    mimir_url = current_app.config.get("MIMIR_URL")
+    if not mimir_url:
+        return jsonify({"error": "not configured"}), 404
+
+    org_k8s = organization.k8s_identifier
+    namespace = safe_k8s_name(org_k8s, environment.k8s_identifier)
+    container_filter = _observe_container_filter()
+
+    # Optional application filter
+    app_filter = request.args.get("application", "")
+    active_aes = environment.active_application_environments
+
+    if app_filter:
+        active_aes = [
+            ae
+            for ae in active_aes
+            if ae.application.deleted_at is None and ae.application.slug == app_filter
+        ]
+
+    if app_filter and active_aes:
+        ae = active_aes[0]
+        prefix = _compute_observe_prefix(ae.application)
+        escaped_prefix = _REGEX_META.sub(r"\\\g<0>", prefix)
+        base_selector = f'namespace="{namespace}", pod=~"{escaped_prefix}-.*"'
+        labels = f"{base_selector}, {container_filter}"
+        network_labels = base_selector
+        process_re = f"{escaped_prefix}-(.*)-[a-z0-9]+-[a-z0-9]+"
+    else:
+        base_selector = f'namespace="{namespace}"'
+        labels = f"{base_selector}, {container_filter}"
+        network_labels = base_selector
+        # Process RE: extract process from pod name across all apps in namespace
+        process_re = ".*-(.*)-[a-z0-9]+-[a-z0-9]+"
+
+    # Application grouping RE: extract project-app prefix from pod name
+    # Pod format: {project_k8s}-{app_k8s}-{process}-{rs_hash}-{pod_hash}
+    app_re = "(.+)-[^-]+-[a-z0-9]+-[a-z0-9]+"
+
+    duration, step, start, end = _observe_time_params()
+    rate_window = f"{max(step, 30)}s"
+    by_clause = {
+        "pod": "by (pod)",
+        "process": "by (process)",
+        "application": "by (application)",
+        "total": "",
+        "status": "",
+    }.get(group, "")
+
+    # Traefik service names
+    traefik_names = _collect_traefik_svc_names(
+        active_aes,
+        lambda ae: namespace,
+        lambda ae: _compute_observe_prefix(ae.application),
+    )
+    traefik_svc = _traefik_svc_label(traefik_names)
+
+    result, queries = _build_observe_queries(
+        metric,
+        group,
+        labels,
+        traefik_svc,
+        step,
+        start,
+        end,
+        duration,
+        process_re,
+        by_clause,
+        rate_window,
+        app_re=app_re,
+        network_labels=network_labels,
+    )
+    return jsonify({"result": result, "queries": queries})
+
+
+# ── Project-level metric endpoint ──
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/observe/metric",
+)
+@login_required
+def project_observe_metric(org_slug, project_slug):
+    metric = request.args.get("metric")
+    if metric not in _OBSERVE_METRICS:
+        return jsonify({"error": "invalid metric"}), 400
+    group = request.args.get("group", "total")
+    if group not in _OBSERVE_GROUPS:
+        group = "total"
+
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .first_or_404()
+    )
+    project = (
+        Project.query.filter_by(organization_id=organization.id, slug=project_slug)
+        .filter(Project.deleted_at.is_(None))
+        .first_or_404()
+    )
+    if not ViewProjectPermission(project.id).can():
+        abort(403)
+
+    mimir_url = current_app.config.get("MIMIR_URL")
+    if not mimir_url:
+        return jsonify({"error": "not configured"}), 404
+
+    org_k8s = organization.k8s_identifier
+    escaped_org_k8s = _REGEX_META.sub(r"\\\g<0>", org_k8s)
+    proj_k8s = project.k8s_identifier
+    escaped_proj_k8s = _REGEX_META.sub(r"\\\g<0>", proj_k8s)
+    container_filter = _observe_container_filter()
+
+    # Optional filters
+    env_filter = request.args.get("environment", "")
+    app_filter = request.args.get("application", "")
+
+    # Determine namespace selector
+    if env_filter:
+        env = (
+            Environment.query.filter_by(project_id=project.id, slug=env_filter)
+            .filter(Environment.deleted_at.is_(None))
+            .first()
+        )
+        if env:
+            ns_label = f'namespace="{safe_k8s_name(org_k8s, env.k8s_identifier)}"'
+        else:
+            ns_label = f'namespace=~"{escaped_org_k8s}-.*"'
+    else:
+        ns_label = f'namespace=~"{escaped_org_k8s}-.*"'
+
+    # Determine pod selector
+    if app_filter:
+        app = (
+            Application.query.filter_by(project_id=project.id, slug=app_filter)
+            .filter(Application.deleted_at.is_(None))
+            .first()
+        )
+        if app:
+            app_prefix = safe_k8s_name(proj_k8s, app.k8s_identifier)
+            escaped_app_prefix = _REGEX_META.sub(r"\\\g<0>", app_prefix)
+            pod_label = f'pod=~"{escaped_app_prefix}-.*"'
+        else:
+            pod_label = f'pod=~"{escaped_proj_k8s}-.*"'
+    else:
+        pod_label = f'pod=~"{escaped_proj_k8s}-.*"'
+
+    network_labels = f"{ns_label}, {pod_label}"
+    labels = f"{ns_label}, {pod_label}, {container_filter}"
+    process_re = ".*-(.*)-[a-z0-9]+-[a-z0-9]+"
+    app_re = f"({escaped_proj_k8s}-.+)-[^-]+-[a-z0-9]+-[a-z0-9]+"
+    env_re = f"{escaped_org_k8s}-(.+)"
+
+    duration, step, start, end = _observe_time_params()
+    rate_window = f"{max(step, 30)}s"
+    by_clause = {
+        "pod": "by (pod)",
+        "process": "by (process)",
+        "application": "by (application)",
+        "environment": "by (environment)",
+        "total": "",
+        "status": "",
+    }.get(group, "")
+
+    # Collect traefik svc names across all app_envs in this project
+    all_aes = []
+    for env in project.active_environments:
+        if env_filter and env.slug != env_filter:
+            continue
+        for ae in env.active_application_environments:
+            if ae.application.deleted_at is not None:
+                continue
+            if app_filter and ae.application.slug != app_filter:
+                continue
+            all_aes.append(ae)
+
+    traefik_names = _collect_traefik_svc_names(
+        all_aes,
+        lambda ae: safe_k8s_name(org_k8s, ae.environment.k8s_identifier),
+        lambda ae: _compute_observe_prefix(ae.application),
+    )
+    traefik_svc = _traefik_svc_label(traefik_names)
+
+    result, queries = _build_observe_queries(
+        metric,
+        group,
+        labels,
+        traefik_svc,
+        step,
+        start,
+        end,
+        duration,
+        process_re,
+        by_clause,
+        rate_window,
+        app_re=app_re,
+        env_re=env_re,
+        network_labels=network_labels,
+    )
+    return jsonify({"result": result, "queries": queries})
+
+
+# ── Organization-level metric endpoint ──
+
+
+@user_blueprint.route("/organizations/<org_slug>/observe/metric")
+@login_required
+def organization_observe_metric(org_slug):
+    metric = request.args.get("metric")
+    if metric not in _OBSERVE_METRICS:
+        return jsonify({"error": "invalid metric"}), 400
+    group = request.args.get("group", "total")
+    if group not in _OBSERVE_GROUPS:
+        group = "total"
+
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .first_or_404()
+    )
+    if not ViewOrganizationPermission(organization.id).can():
+        abort(403)
+
+    mimir_url = current_app.config.get("MIMIR_URL")
+    if not mimir_url:
+        return jsonify({"error": "not configured"}), 404
+
+    org_k8s = organization.k8s_identifier
+    escaped_org_k8s = _REGEX_META.sub(r"\\\g<0>", org_k8s)
+    container_filter = _observe_container_filter()
+
+    # Optional filters
+    proj_filter = request.args.get("project", "")
+    env_filter = request.args.get("environment", "")
+    app_filter = request.args.get("application", "")
+
+    # Resolve filtered project once (used for both namespace and pod selectors)
+    filtered_proj = None
+    if proj_filter:
+        filtered_proj = (
+            Project.query.filter_by(organization_id=organization.id, slug=proj_filter)
+            .filter(Project.deleted_at.is_(None))
+            .first()
+        )
+
+    # Determine namespace selector
+    ns_label = f'namespace=~"{escaped_org_k8s}-.*"'
+    if filtered_proj and env_filter:
+        env = (
+            Environment.query.filter_by(project_id=filtered_proj.id, slug=env_filter)
+            .filter(Environment.deleted_at.is_(None))
+            .first()
+        )
+        if env:
+            ns_label = f'namespace="{safe_k8s_name(org_k8s, env.k8s_identifier)}"'
+
+    # Determine pod selector
+    pod_label = 'pod=~".*"'
+    if filtered_proj and app_filter:
+        app = (
+            Application.query.filter_by(project_id=filtered_proj.id, slug=app_filter)
+            .filter(Application.deleted_at.is_(None))
+            .first()
+        )
+        if app:
+            app_prefix = safe_k8s_name(filtered_proj.k8s_identifier, app.k8s_identifier)
+            escaped_app_prefix = _REGEX_META.sub(r"\\\g<0>", app_prefix)
+            pod_label = f'pod=~"{escaped_app_prefix}-.*"'
+    elif filtered_proj:
+        escaped_proj_k8s = _REGEX_META.sub(r"\\\g<0>", filtered_proj.k8s_identifier)
+        pod_label = f'pod=~"{escaped_proj_k8s}-.*"'
+
+    network_labels = f"{ns_label}, {pod_label}"
+    labels = f"{ns_label}, {pod_label}, {container_filter}"
+
+    # Grouping regexes
+    process_re = ".*-(.*)-[a-z0-9]+-[a-z0-9]+"
+    app_re = "(.+)-[^-]+-[a-z0-9]+-[a-z0-9]+"
+    env_re = f"{escaped_org_k8s}-(.+)"
+    # Enumerate known project k8s identifiers for clean extraction
+    proj_k8s_alts = "|".join(
+        _REGEX_META.sub(r"\\\g<0>", proj.k8s_identifier)
+        for proj in organization.active_projects
+        if proj.deleted_at is None
+    )
+    proj_re = f"({proj_k8s_alts})-.*" if proj_k8s_alts else None
+
+    duration, step, start, end = _observe_time_params()
+    rate_window = f"{max(step, 30)}s"
+    by_clause = {
+        "pod": "by (pod)",
+        "process": "by (process)",
+        "application": "by (application)",
+        "environment": "by (environment)",
+        "project": "by (project)",
+        "total": "",
+        "status": "",
+    }.get(group, "")
+
+    # Collect traefik svc names across all projects
+    all_aes = []
+    for proj in organization.active_projects:
+        if proj_filter and proj.slug != proj_filter:
+            continue
+        for env in proj.active_environments:
+            if env_filter and env.slug != env_filter:
+                continue
+            for ae in env.active_application_environments:
+                if ae.application.deleted_at is not None:
+                    continue
+                if app_filter and ae.application.slug != app_filter:
+                    continue
+                all_aes.append(ae)
+
+    traefik_names = _collect_traefik_svc_names(
+        all_aes,
+        lambda ae: safe_k8s_name(org_k8s, ae.environment.k8s_identifier),
+        lambda ae: _compute_observe_prefix(ae.application),
+    )
+    traefik_svc = _traefik_svc_label(traefik_names)
+
+    result, queries = _build_observe_queries(
+        metric,
+        group,
+        labels,
+        traefik_svc,
+        step,
+        start,
+        end,
+        duration,
+        process_re,
+        by_clause,
+        rate_window,
+        app_re=app_re,
+        env_re=env_re,
+        proj_re=proj_re,
+        network_labels=network_labels,
+    )
     return jsonify({"result": result, "queries": queries})
 
 
