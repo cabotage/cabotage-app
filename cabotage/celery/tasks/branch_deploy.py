@@ -195,19 +195,40 @@ def _teardown_environment(environment):
 
 def _build_images_for_app_envs(app_envs, commit_sha, installation_id):
     """Create Image records and queue builds for a list of ApplicationEnvironments."""
+    from cabotage.celery.tasks.github import (
+        create_deployment as create_github_deployment,
+    )
+
+    token = github_app.fetch_installation_access_token(installation_id)
+    access_token = {"token": token} if token else None
+
     images = []
     for app_env in app_envs:
         application = app_env.application
+        metadata = {
+            "sha": commit_sha,
+            "installation_id": installation_id,
+            "auto_deploy": True,
+            "branch_deploy": True,
+        }
+
+        if access_token and application.github_repository:
+            statuses_url = create_github_deployment(
+                access_token=access_token,
+                application=application,
+                repository_name=application.github_repository,
+                ref=commit_sha,
+                app_env=app_env,
+                transient_environment=True,
+            )
+            if statuses_url:
+                metadata["statuses_url"] = statuses_url
+
         image = Image(
             application_id=application.id,
             application_environment_id=app_env.id,
             _repository_name=application.registry_repository_name(app_env),
-            image_metadata={
-                "sha": commit_sha,
-                "installation_id": installation_id,
-                "auto_deploy": True,
-                "branch_deploy": True,
-            },
+            image_metadata=metadata,
             build_ref=commit_sha,
         )
         db.session.add(image)
