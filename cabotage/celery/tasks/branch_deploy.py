@@ -248,6 +248,54 @@ def _teardown_environment(environment):
     db.session.flush()
 
 
+def _create_skipped_deployment(environment, commit_sha, installation_id):
+    """Create a GitHub Deployment and immediately mark it as successful.
+
+    Used when all apps are skipped by watch paths so the deployment
+    status doesn't stay pending forever.
+    """
+    from cabotage.celery.tasks.github import (
+        create_deployment as create_github_deployment,
+    )
+
+    app_env = next(iter(environment.application_environments), None)
+    if not app_env:
+        return
+    application = app_env.application
+    if not application.github_repository:
+        return
+
+    token = github_app.fetch_installation_access_token(installation_id)
+    if not token:
+        return
+    access_token = {"token": token}
+
+    project = environment.project
+    env_name = f"{project.organization.slug}/{project.slug}/{environment.slug}"
+    statuses_url = create_github_deployment(
+        access_token=access_token,
+        repository_name=application.github_repository,
+        ref=commit_sha,
+        transient_environment=True,
+        environment_name=env_name,
+    )
+    if statuses_url:
+        scheme = current_app.config["EXT_PREFERRED_URL_SCHEME"]
+        server = current_app.config["EXT_SERVER_NAME"]
+        env_url = (
+            f"{scheme}://{server}/projects/"
+            f"{project.organization.slug}/{project.slug}/"
+            f"environments/{environment.slug}"
+        )
+        post_deployment_status_update(
+            token,
+            statuses_url,
+            "success",
+            "No changes in watched paths, skipped.",
+            environment_url=env_url,
+        )
+
+
 def _changed_files_for_sha(commit_sha):
     """Extract the set of changed files from the stored push hook for a commit."""
     push_hook = (
@@ -680,6 +728,10 @@ def sync_branch_deploy(project, pr_number, head_sha, installation_id):
 
     if app_envs:
         _build_images_for_app_envs(app_envs, head_sha, installation_id)
+    else:
+        # All apps skipped by watch paths — create a GitHub Deployment
+        # and immediately mark it as successful.
+        _create_skipped_deployment(environment, head_sha, installation_id)
     update_pr_comment(environment)
 
 
@@ -692,12 +744,40 @@ def teardown_branch_deploy(project, pr_number):
     if not environment:
         return
 
+    # Mark the GitHub Deployment as inactive before tearing down the
+    # environment (which deletes the images holding the statuses_url).
+    _deactivate_deployment(environment)
     _post_teardown_comment(environment, pr_number)
     _teardown_environment(environment)
     db.session.commit()
     logger.info(
         "torn down ephemeral environment %s for project %s", env_slug, project.id
     )
+
+
+def _deactivate_deployment(environment):
+    """Post an 'inactive' status to the consolidated GitHub Deployment."""
+    statuses_url = _find_statuses_url(environment)
+    if not statuses_url:
+        return
+
+    app_env = next(iter(environment.application_environments), None)
+    if not app_env:
+        return
+    installation_id = app_env.application.github_app_installation_id
+    if not installation_id:
+        return
+
+    try:
+        access_token = github_app.fetch_installation_access_token(installation_id)
+        post_deployment_status_update(
+            access_token,
+            statuses_url,
+            "inactive",
+            "Environment destroyed.",
+        )
+    except Exception:
+        logger.exception("Failed to deactivate deployment for %s", environment.slug)
 
 
 def _post_teardown_comment(environment, pr_number):
