@@ -2231,6 +2231,7 @@ def deploy_release(deployment):
             deployment.deploy_metadata
             and "installation_id" in deployment.deploy_metadata
             and "statuses_url" in deployment.deploy_metadata
+            and not deployment.deploy_metadata.get("branch_deploy")
         ):
             access_token = github_app.fetch_installation_access_token(
                 deployment.deploy_metadata["installation_id"]
@@ -2262,6 +2263,7 @@ def deploy_release(deployment):
             deployment.deploy_metadata
             and "installation_id" in deployment.deploy_metadata
             and "statuses_url" in deployment.deploy_metadata
+            and not deployment.deploy_metadata.get("branch_deploy")
         ):
             access_token = github_app.fetch_installation_access_token(
                 deployment.deploy_metadata["installation_id"]
@@ -2320,6 +2322,7 @@ def deploy_release(deployment):
         deployment.deploy_metadata
         and "installation_id" in deployment.deploy_metadata
         and "statuses_url" in deployment.deploy_metadata
+        and not deployment.deploy_metadata.get("branch_deploy")
     ):
         access_token = github_app.fetch_installation_access_token(
             deployment.deploy_metadata["installation_id"]
@@ -2472,6 +2475,7 @@ def fake_deploy_release(deployment):
         deployment.deploy_metadata
         and "installation_id" in deployment.deploy_metadata
         and "statuses_url" in deployment.deploy_metadata
+        and not deployment.deploy_metadata.get("branch_deploy")
     ):
         access_token = github_app.fetch_installation_access_token(
             deployment.deploy_metadata["installation_id"]

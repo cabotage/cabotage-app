@@ -1172,6 +1172,7 @@ def run_image_build(image_id=None, buildkit=False):
                 image.image_metadata
                 and "installation_id" in image.image_metadata
                 and "statuses_url" in image.image_metadata
+                and not image.image_metadata.get("branch_deploy")
             ):
                 access_token = github_app.fetch_installation_access_token(
                     image.image_metadata["installation_id"]
@@ -1192,6 +1193,7 @@ def run_image_build(image_id=None, buildkit=False):
                 image.image_metadata
                 and "installation_id" in image.image_metadata
                 and "statuses_url" in image.image_metadata
+                and not image.image_metadata.get("branch_deploy")
             ):
                 access_token = github_app.fetch_installation_access_token(
                     image.image_metadata["installation_id"]
@@ -1313,6 +1315,7 @@ def run_release_build(release_id=None):
             if (
                 "installation_id" in release.release_metadata
                 and "statuses_url" in release.release_metadata
+                and not release.release_metadata.get("branch_deploy")
             ):
                 access_token = github_app.fetch_installation_access_token(
                     release.release_metadata["installation_id"]
@@ -1336,6 +1339,7 @@ def run_release_build(release_id=None):
             if (
                 "installation_id" in release.release_metadata
                 and "statuses_url" in release.release_metadata
+                and not release.release_metadata.get("branch_deploy")
             ):
                 access_token = github_app.fetch_installation_access_token(
                     release.release_metadata["installation_id"]
@@ -1369,6 +1373,7 @@ def run_release_build(release_id=None):
             if (
                 "installation_id" in release.release_metadata
                 and "statuses_url" in release.release_metadata
+                and not release.release_metadata.get("branch_deploy")
             ):
                 access_token = github_app.fetch_installation_access_token(
                     release.release_metadata["installation_id"]
