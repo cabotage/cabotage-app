@@ -15,6 +15,8 @@ from cabotage.server.models.projects import (
     ApplicationEnvironment,
     Configuration,
     Environment,
+    EnvironmentConfigSubscription,
+    EnvironmentConfiguration,
     Image,
     Ingress,
     IngressHost,
@@ -34,6 +36,7 @@ def _create_app_env_for_branch_deploy(
     environment,
     base_environment,
     auto_deploy_branch=None,
+    env_config_map=None,
 ):
     """Create ApplicationEnvironment for a branch deploy.
 
@@ -71,6 +74,20 @@ def _create_app_env_for_branch_deploy(
             shared_config.build_key_slug = config.build_key_slug
             db.session.add(shared_config)
         db.session.flush()
+
+        # Copy environment config subscriptions, pointing to the new
+        # environment's copies of the EnvironmentConfigurations.
+        if env_config_map:
+            for sub in base_app_env.environment_config_subscriptions:
+                new_config_id = env_config_map.get(sub.environment_configuration_id)
+                if new_config_id is not None:
+                    db.session.add(
+                        EnvironmentConfigSubscription(
+                            application_environment_id=app_env.id,
+                            environment_configuration_id=new_config_id,
+                        )
+                    )
+            db.session.flush()
 
         # Copy ingresses with auto-generated hostnames for the new environment
         ingress_domain = current_app.config.get("INGRESS_DOMAIN")
@@ -395,6 +412,27 @@ def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref
     db.session.add(environment)
     db.session.flush()
 
+    # Copy environment-level configurations from the base environment,
+    # sharing the same Consul/Vault key_slugs.
+    env_config_map = {}  # base config id -> new config id
+    for env_config in base_env.environment_configurations:
+        if env_config.deleted:
+            continue
+        new_env_config = EnvironmentConfiguration(
+            project_id=project.id,
+            environment_id=environment.id,
+            name=env_config.name,
+            value=env_config.value,
+            secret=env_config.secret,
+            buildtime=env_config.buildtime,
+        )
+        new_env_config.key_slug = env_config.key_slug
+        new_env_config.build_key_slug = env_config.build_key_slug
+        db.session.add(new_env_config)
+        db.session.flush()
+        env_config_map[env_config.id] = new_env_config.id
+    db.session.flush()
+
     activity = Activity(
         verb="create",
         object=environment,
@@ -415,6 +453,7 @@ def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref
             environment,
             base_env,
             auto_deploy_branch=head_ref,
+            env_config_map=env_config_map,
         )
         new_app_envs.append(app_env)
 
