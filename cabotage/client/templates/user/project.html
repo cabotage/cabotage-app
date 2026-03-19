@@ -102,6 +102,14 @@
       {% set _ = meta.append('deployed ' ~ last_deploy_by_ae[ae.id]|humanize) %}
     {% endif %}
     {% set branch = ae.effective_auto_deploy_branch if ae else application.auto_deploy_branch %}
+    {% set hosts = [] %}
+    {% if ae %}
+      {% for ing in ae.ingresses if ing.enabled %}
+        {% for host in ing.hosts %}
+          {% if hosts.append({'hostname': host.hostname, 'is_auto': host.is_auto_generated, 'ingress_name': ing.name}) %}{% endif %}
+        {% endfor %}
+      {% endfor %}
+    {% endif %}
     {{ service_card(name=application.name,
             slug=application.slug,
             url=url_for('user.project_application', org_slug=project.organization.slug, project_slug=project.slug, app_slug=application.slug, env_slug=env_slug),
@@ -109,7 +117,8 @@
     meta_items=meta,
     color='accent',
     github_repo=application.github_repository or '',
-    github_branch=branch or ''
+    github_branch=branch or '',
+    app_hosts=hosts
     ) }}
   {% endmacro %}
 
