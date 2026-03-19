@@ -21,7 +21,6 @@ from cabotage.server.models.projects import (
     Ingress,
     IngressHost,
     IngressPath,
-    create_default_ingresses,
 )
 from cabotage.server.models.utils import readable_k8s_hostname, safe_k8s_name
 from cabotage.utils.github import find_or_create_pr_comment
@@ -145,7 +144,6 @@ def _create_app_env_for_branch_deploy(
         data={"timestamp": datetime.datetime.utcnow().isoformat()},
     )
     db.session.add(activity)
-    create_default_ingresses(app_env)
     return app_env
 
 
