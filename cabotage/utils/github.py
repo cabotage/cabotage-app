@@ -312,3 +312,58 @@ def find_or_create_pr_comment(access_token, repo, pr_number, body):
             repo,
             pr_number,
         )
+
+
+def fetch_pr_changed_files(access_token, repo, pr_number):
+    """Fetch the set of changed file paths for a PR.
+
+    Paginates through all pages of the GitHub PR files endpoint.
+    Returns a set of file path strings, or None on failure.
+    """
+    if access_token is None:
+        return None
+    headers = _github_headers(access_token)
+    changed_files = set()
+    page = 1
+    try:
+        while True:
+            resp = github_session.get(
+                f"https://api.github.com/repos/{repo}/pulls/{pr_number}/files",
+                headers=headers,
+                params={"per_page": 100, "page": page},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            files = resp.json()
+            if not files:
+                break
+            for f in files:
+                changed_files.add(f["filename"])
+            if len(files) < 100:
+                break
+            page += 1
+    except requests.exceptions.RequestException:
+        logger.exception("Failed to fetch changed files for %s#%s", repo, pr_number)
+        return None
+    return changed_files
+
+
+def matches_watch_paths(changed_files, watch_patterns):
+    """Check if any changed file matches any watch pattern.
+
+    Uses pathspec with gitwildmatch (the same algorithm as .gitignore):
+    - ``*`` matches anything except ``/``
+    - ``**`` matches any number of directories
+    - ``src/*.py`` matches files directly in src/
+    - ``src/**`` matches everything under src/
+    - ``Dockerfile`` (no slash) matches in any directory
+
+    Returns True if any file matches any pattern, or if watch_patterns
+    is empty/None (always match).
+    """
+    if not watch_patterns:
+        return True
+    import pathspec
+
+    spec = pathspec.PathSpec.from_lines("gitwildmatch", watch_patterns)
+    return any(spec.match_file(f) for f in changed_files)

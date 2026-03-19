@@ -283,6 +283,8 @@
       </label>
     {% elif field.type == 'HiddenField' %}
       {{ field() }}
+    {% elif field.type == 'TextAreaField' %}
+      {{ field(class="textarea textarea-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono text-sm " + extra_class, placeholder=placeholder) }}
     {% else %}
       {{ field(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary " + extra_class, placeholder=placeholder) }}
     {% endif %}

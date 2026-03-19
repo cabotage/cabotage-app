@@ -944,6 +944,20 @@ function initDeleteModal(btnClass, modalId, formId, nameDisplayId, configIdField
   });
 }
 
+/* Auto-growing textareas */
+function initAutoGrowTextareas() {
+  document.querySelectorAll('textarea.auto-grow').forEach(function (ta) {
+    ta.style.overflow = 'hidden';
+    ta.style.resize = 'none';
+    function adjust() {
+      ta.style.height = 'auto';
+      ta.style.height = (ta.scrollHeight + parseInt(getComputedStyle(ta).lineHeight)) + 'px';
+    }
+    ta.addEventListener('input', adjust);
+    adjust();
+  });
+}
+
 /* Flash Messages — dismiss + auto-fade */
 function initFlashMessages() {
   document.querySelectorAll('.flash-message').forEach(function (el) {
@@ -2553,6 +2567,7 @@ document.addEventListener('DOMContentLoaded', function () {
   initDeleteModal('env-delete-btn', 'env-delete-var-modal', 'env-delete-var-form', 'env-delete-name-display', 'env-delete-config-id', 'env-delete-config-name', 'env-delete-config-value', 'env-delete-confirm', 'data-env-delete-var-close');
   initDeleteModal('app-delete-btn', 'app-delete-var-modal', 'app-delete-var-form', 'app-delete-name-display', 'app-delete-config-id', 'app-delete-config-name', 'app-delete-config-value', 'app-delete-confirm', 'data-app-delete-var-close');
   initFlashMessages();
+  initAutoGrowTextareas();
   initEnvConfigRefInsert();
   initExpandModal();
   initAccentPicker();

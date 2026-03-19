@@ -28,6 +28,7 @@ dependencies = [
     "hupper>=1.10.3",
     "hvac>=2.3.0",
     "kubernetes>=30.1.0",
+    "pathspec>=1.0.0",
     "psycopg2-binary>=2.9.6",
     "py-consul>=1.5.1",
     "pygithub>=1.59.1",

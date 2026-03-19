@@ -27,7 +27,11 @@ from cabotage.celery.tasks.branch_deploy import (
     sync_branch_deploy,
     teardown_branch_deploy,
 )
-from cabotage.utils.github import github_session, post_deployment_status_update
+from cabotage.utils.github import (
+    github_session,
+    matches_watch_paths,
+    post_deployment_status_update,
+)
 
 Activity = activity_plugin.activity_cls
 logger = logging.getLogger(__name__)
@@ -486,7 +490,27 @@ def process_check_suite_hook(hook):
         push_event.deployed = True
         db.session.commit()
 
+        # Extract changed files from the push event payload to filter
+        # apps by watch paths.
+        changed_files = set()
+        for commit in push_event.payload.get("commits", []):
+            changed_files.update(commit.get("added", []))
+            changed_files.update(commit.get("modified", []))
+            changed_files.update(commit.get("removed", []))
+
         for app_env in env_matches:
+            watch_paths = app_env.application.branch_deploy_watch_paths
+            if (
+                watch_paths
+                and changed_files
+                and not matches_watch_paths(changed_files, watch_paths)
+            ):
+                print(
+                    f"skipping {repository_name}@{commit_sha} for "
+                    f"{app_env.application.id} env {app_env.environment.slug}: "
+                    f"no changes in watch paths"
+                )
+                continue
             print(
                 f"deploying {repository_name}@{commit_sha} to "
                 f"{app_env.application.id} env {app_env.environment.slug}"
