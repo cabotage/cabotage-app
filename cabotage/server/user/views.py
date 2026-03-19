@@ -4946,11 +4946,12 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
         )
     if process_filter:
         escaped_process = _REGEX_META.sub(r"\\\g<0>", process_filter)
-        labels = f'namespace="{namespace}", pod=~"{escaped_prefix}-{escaped_process}-[a-z0-9]+-[a-z0-9]+", {container_filter}'
+        base_selector = f'namespace="{namespace}", pod=~"{escaped_prefix}-{escaped_process}-[a-z0-9]+-[a-z0-9]+"'
     else:
-        labels = (
-            f'namespace="{namespace}", pod=~"{escaped_prefix}-.*", {container_filter}'
-        )
+        base_selector = f'namespace="{namespace}", pod=~"{escaped_prefix}-.*"'
+    labels = f"{base_selector}, {container_filter}"
+    # Network metrics are per-pod with no container label; use unfiltered selector
+    network_labels = base_selector
 
     # Build exact traefik service labels from ingress config.
     # nginx-ingress format: {ns}-{prefix}-{ingress.name}-{prefix}-{process}-{port}@kubernetesingressnginx
@@ -5123,6 +5124,7 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
         result = result if result else None
 
     elif metric == "network":
+        # Network metrics are per-pod with no container label
         result = []
         for direction, counter in [
             ("tx", "container_network_transmit_bytes_total"),
@@ -5131,11 +5133,11 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
             if group == "process":
                 q = (
                     f"sum by (process) (label_replace("
-                    f"sum by (pod) (rate({counter}{{{labels}}}[{rate_window}]))"
+                    f"sum by (pod) (rate({counter}{{{network_labels}}}[{rate_window}]))"
                     f', "process", "$1", "pod", "{process_re}"))'
                 )
             else:
-                q = f"sum(rate({counter}{{{labels}}}[{rate_window}])) {by_clause}"
+                q = f"sum(rate({counter}{{{network_labels}}}[{rate_window}])) {by_clause}"
             queries.append(q)
             qr = _query_mimir_range(q, start, end, step)
             if qr:
@@ -5242,6 +5244,7 @@ def _build_observe_queries(
     app_re=None,
     env_re=None,
     proj_re=None,
+    network_labels=None,
 ):
     """Build PromQL queries and execute them. Returns (result, queries)."""
     result = None
@@ -5380,6 +5383,9 @@ def _build_observe_queries(
         result = result if result else None
 
     elif metric == "network":
+        # Network metrics are per-pod and have no container label,
+        # so use network_labels (without container filter) if provided.
+        net_labels = network_labels if network_labels is not None else labels
         result = []
         for direction, counter in [
             ("tx", "container_network_transmit_bytes_total"),
@@ -5388,29 +5394,29 @@ def _build_observe_queries(
             if group == "process":
                 q = (
                     f"sum by (process) (label_replace("
-                    f"sum by (pod) (rate({counter}{{{labels}}}[{rate_window}]))"
+                    f"sum by (pod) (rate({counter}{{{net_labels}}}[{rate_window}]))"
                     f', "process", "$1", "pod", "{process_re}"))'
                 )
             elif group == "application" and app_re:
                 q = (
                     f"sum by (application) (label_replace("
-                    f"sum by (pod) (rate({counter}{{{labels}}}[{rate_window}]))"
+                    f"sum by (pod) (rate({counter}{{{net_labels}}}[{rate_window}]))"
                     f', "application", "$1", "pod", "{app_re}"))'
                 )
             elif group == "environment" and env_re:
                 q = (
                     f"sum by (environment) (label_replace("
-                    f"sum by (namespace) (rate({counter}{{{labels}}}[{rate_window}]))"
+                    f"sum by (namespace) (rate({counter}{{{net_labels}}}[{rate_window}]))"
                     f', "environment", "$1", "namespace", "{env_re}"))'
                 )
             elif group == "project" and proj_re:
                 q = (
                     f"sum by (project) (label_replace("
-                    f"sum by (pod) (rate({counter}{{{labels}}}[{rate_window}]))"
+                    f"sum by (pod) (rate({counter}{{{net_labels}}}[{rate_window}]))"
                     f', "project", "$1", "pod", "{proj_re}"))'
                 )
             else:
-                q = f"sum(rate({counter}{{{labels}}}[{rate_window}])) {by_clause}"
+                q = f"sum(rate({counter}{{{net_labels}}}[{rate_window}])) {by_clause}"
             queries.append(q)
             qr = _query_mimir_range(q, start, end, step)
             if qr:
@@ -5478,12 +5484,14 @@ def environment_observe_metric(org_slug, project_slug, env_slug):
         ae = active_aes[0]
         prefix = _compute_observe_prefix(ae.application)
         escaped_prefix = _REGEX_META.sub(r"\\\g<0>", prefix)
-        labels = (
-            f'namespace="{namespace}", pod=~"{escaped_prefix}-.*", {container_filter}'
-        )
+        base_selector = f'namespace="{namespace}", pod=~"{escaped_prefix}-.*"'
+        labels = f"{base_selector}, {container_filter}"
+        network_labels = base_selector
         process_re = f"{escaped_prefix}-(.*)-[a-z0-9]+-[a-z0-9]+"
     else:
-        labels = f'namespace="{namespace}", {container_filter}'
+        base_selector = f'namespace="{namespace}"'
+        labels = f"{base_selector}, {container_filter}"
+        network_labels = base_selector
         # Process RE: extract process from pod name across all apps in namespace
         process_re = ".*-(.*)-[a-z0-9]+-[a-z0-9]+"
 
@@ -5522,6 +5530,7 @@ def environment_observe_metric(org_slug, project_slug, env_slug):
         by_clause,
         rate_window,
         app_re=app_re,
+        network_labels=network_labels,
     )
     return jsonify({"result": result, "queries": queries})
 
@@ -5598,6 +5607,7 @@ def project_observe_metric(org_slug, project_slug):
     else:
         pod_label = f'pod=~"{escaped_proj_k8s}-.*"'
 
+    network_labels = f"{ns_label}, {pod_label}"
     labels = f"{ns_label}, {pod_label}, {container_filter}"
     process_re = ".*-(.*)-[a-z0-9]+-[a-z0-9]+"
     app_re = f"({escaped_proj_k8s}-.+)-[^-]+-[a-z0-9]+-[a-z0-9]+"
@@ -5647,6 +5657,7 @@ def project_observe_metric(org_slug, project_slug):
         rate_window,
         app_re=app_re,
         env_re=env_re,
+        network_labels=network_labels,
     )
     return jsonify({"result": result, "queries": queries})
 
@@ -5721,6 +5732,7 @@ def organization_observe_metric(org_slug):
         escaped_proj_k8s = _REGEX_META.sub(r"\\\g<0>", filtered_proj.k8s_identifier)
         pod_label = f'pod=~"{escaped_proj_k8s}-.*"'
 
+    network_labels = f"{ns_label}, {pod_label}"
     labels = f"{ns_label}, {pod_label}, {container_filter}"
 
     # Grouping regexes
@@ -5784,6 +5796,7 @@ def organization_observe_metric(org_slug):
         app_re=app_re,
         env_re=env_re,
         proj_re=proj_re,
+        network_labels=network_labels,
     )
     return jsonify({"result": result, "queries": queries})
 
