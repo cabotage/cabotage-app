@@ -43,6 +43,7 @@ def reap_stale_builds():
                 image.image_metadata
                 and "installation_id" in image.image_metadata
                 and "statuses_url" in image.image_metadata
+                and not image.image_metadata.get("branch_deploy")
             ):
                 try:
                     access_token = github_app.fetch_installation_access_token(
@@ -78,6 +79,7 @@ def reap_stale_builds():
                 release.release_metadata
                 and "installation_id" in release.release_metadata
                 and "statuses_url" in release.release_metadata
+                and not release.release_metadata.get("branch_deploy")
             ):
                 try:
                     access_token = github_app.fetch_installation_access_token(
@@ -113,6 +115,7 @@ def reap_stale_builds():
                 deployment.deploy_metadata
                 and "installation_id" in deployment.deploy_metadata
                 and "statuses_url" in deployment.deploy_metadata
+                and not deployment.deploy_metadata.get("branch_deploy")
             ):
                 try:
                     access_token = github_app.fetch_installation_access_token(
