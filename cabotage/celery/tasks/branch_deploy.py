@@ -248,6 +248,39 @@ def _teardown_environment(environment):
     db.session.flush()
 
 
+def _create_skipped_check_runs(skipped_app_envs, commit_sha, installation_id):
+    """Create completed check runs for apps skipped by watch paths."""
+    from cabotage.utils.github import CheckRun
+
+    token = github_app.fetch_installation_access_token(installation_id)
+    if not token:
+        return
+
+    for app_env in skipped_app_envs:
+        application = app_env.application
+        if not application.github_repository:
+            continue
+        env_slug = app_env.environment.slug
+        project_slug = application.project.slug
+        org_slug = application.project.organization.slug
+        check_name = (
+            f"deploy - {github_app.slug} / {org_slug} / "
+            f"{project_slug} / {application.slug} ({env_slug})"
+        )
+        check = CheckRun.create(
+            token,
+            application.github_repository,
+            commit_sha,
+            check_name,
+            application,
+            app_env=app_env,
+        )
+        check.succeed(
+            title="No deployment needed",
+            detail="Watched paths not affected by this push.",
+        )
+
+
 def _changed_files_for_sha(commit_sha):
     """Extract the set of changed files from the stored push hook for a commit."""
     push_hook = (
@@ -678,6 +711,10 @@ def sync_branch_deploy(project, pr_number, head_sha, installation_id):
                 )
             ]
 
+    all_app_envs = list(environment.application_environments)
+    skipped = [ae for ae in all_app_envs if ae not in app_envs]
+    if skipped:
+        _create_skipped_check_runs(skipped, head_sha, installation_id)
     if app_envs:
         _build_images_for_app_envs(app_envs, head_sha, installation_id)
     update_pr_comment(environment)
@@ -692,12 +729,65 @@ def teardown_branch_deploy(project, pr_number):
     if not environment:
         return
 
+    # Mark the GitHub Deployment as inactive before tearing down the
+    # environment (which deletes the images holding the statuses_url).
+    _deactivate_deployment(environment)
     _post_teardown_comment(environment, pr_number)
     _teardown_environment(environment)
     db.session.commit()
     logger.info(
         "torn down ephemeral environment %s for project %s", env_slug, project.id
     )
+
+
+def _deactivate_deployment(environment):
+    """Mark all GitHub Deployments for this environment as inactive."""
+    app_env = next(iter(environment.application_environments), None)
+    if not app_env:
+        return
+    application = app_env.application
+    repository_name = application.github_repository
+    installation_id = application.github_app_installation_id
+    if not repository_name or not installation_id:
+        return
+
+    project = environment.project
+    env_name = f"{project.organization.slug}/{project.slug}/{environment.slug}"
+
+    try:
+        access_token = github_app.fetch_installation_access_token(installation_id)
+        from cabotage.utils.github import github_session, _github_headers
+
+        headers = _github_headers(access_token)
+        # List all deployments for this environment
+        page = 1
+        while True:
+            resp = github_session.get(
+                f"https://api.github.com/repos/{repository_name}/deployments",
+                headers=headers,
+                params={
+                    "environment": env_name,
+                    "per_page": 100,
+                    "page": page,
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            deployments = resp.json()
+            if not deployments:
+                break
+            for deployment in deployments:
+                post_deployment_status_update(
+                    access_token,
+                    deployment["statuses_url"],
+                    "inactive",
+                    "Environment destroyed.",
+                )
+            if len(deployments) < 100:
+                break
+            page += 1
+    except Exception:
+        logger.exception("Failed to deactivate deployments for %s", environment.slug)
 
 
 def _post_teardown_comment(environment, pr_number):
