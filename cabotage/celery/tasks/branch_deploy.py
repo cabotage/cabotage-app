@@ -263,12 +263,24 @@ def _build_images_for_app_envs(app_envs, commit_sha, installation_id):
         project = environment.project
         if first_app.github_repository:
             env_name = f"{project.organization.slug}/{project.slug}/{environment.slug}"
+            # Build a matrix of ingress URLs per application
+            ingress_urls = {}
+            for app_env in app_envs:
+                urls = []
+                for ing in app_env.ingresses:
+                    if not ing.enabled:
+                        continue
+                    for host in ing.hosts:
+                        urls.append(f"https://{host.hostname}")
+                if urls:
+                    ingress_urls[app_env.application.slug] = urls
             statuses_url = create_github_deployment(
                 access_token=access_token,
                 repository_name=first_app.github_repository,
                 ref=commit_sha,
                 transient_environment=True,
                 environment_name=env_name,
+                payload={"ingress_urls": ingress_urls} if ingress_urls else None,
             )
 
     images = []

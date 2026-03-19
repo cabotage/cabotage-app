@@ -301,6 +301,7 @@ def create_deployment(
     branch=None,
     transient_environment=False,
     environment_name=None,
+    payload=None,
 ):
     try:
         environment_string = (
@@ -312,6 +313,8 @@ def create_deployment(
             "auto_merge": False,
             "environment": environment_string,
         }
+        if payload is not None:
+            deploy_payload["payload"] = payload
 
         if transient_environment:
             deploy_payload["transient_environment"] = True
