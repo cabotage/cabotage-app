@@ -8,7 +8,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy_continuum import make_versioned
 from sqlalchemy_utils.models import Timestamp
 
-from cabotage.server import db
+from cabotage.server import db, Model
 
 from cabotage.server.models.plugins import ActivityPlugin
 from cabotage.server.models.utils import (
@@ -89,7 +89,7 @@ pod_classes = {
 DEFAULT_POD_CLASS = "m1.large"
 
 
-class Project(db.Model, Timestamp):
+class Project(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "projects"
 
@@ -158,7 +158,7 @@ class Project(db.Model, Timestamp):
     )
 
 
-class Environment(db.Model, Timestamp):
+class Environment(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_environments"
 
@@ -233,7 +233,7 @@ class Environment(db.Model, Timestamp):
     __mapper_args__ = {"version_id_col": version_id}
 
 
-class ApplicationEnvironment(db.Model, Timestamp):
+class ApplicationEnvironment(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "application_environments"
 
@@ -440,7 +440,7 @@ class ApplicationEnvironment(db.Model, Timestamp):
         return self.health_check_host or self.application.health_check_host
 
 
-class Application(db.Model, Timestamp):
+class Application(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_applications"
 
@@ -613,17 +613,17 @@ class Application(db.Model, Timestamp):
         configuration_diff = DictDiffer(
             candidate.get("configuration", {}),
             current.get("configuration", {}),
-            ignored_keys=["id", "version_id"],
+            ignored_keys=["id"],
         )
         image_diff = DictDiffer(
             candidate.get("image", {}),
             current.get("image", {}),
-            ignored_keys=["id", "version_id", "commit_sha"],
+            ignored_keys=["id", "commit_sha"],
         )
         ingress_diff = DictDiffer(
             candidate.get("ingresses", {}),
             current.get("ingresses", {}),
-            ignored_keys=["id", "version_id"],
+            ignored_keys=["id"],
         )
         return image_diff, configuration_diff, ingress_diff
 
@@ -703,7 +703,7 @@ class Application(db.Model, Timestamp):
     __mapper_args__ = {"version_id_col": version_id}
 
 
-class Deployment(db.Model, Timestamp):
+class Deployment(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "deployments"
 
@@ -758,7 +758,7 @@ class Deployment(db.Model, Timestamp):
         return None
 
 
-class Release(db.Model, Timestamp):
+class Release(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_app_releases"
 
@@ -903,6 +903,7 @@ class Release(db.Model, Timestamp):
     def envconsul_configurations(self):
         from cabotage.utils.config_templates import (
             has_template_variables,
+            resolve_shared_secret_refs,
             resolve_template_variables,
         )
 
@@ -916,6 +917,27 @@ class Release(db.Model, Timestamp):
         resolved_template_env = []
         for c in config_objects:
             if has_template_variables(c.value):
+                # Check for whole-value shared secret ref: MY_VAR=${shared.SECRET}
+                # These get a vault directive with key format renaming
+                secret_refs = resolve_shared_secret_refs(
+                    c.value, self.application_environment
+                )
+                if secret_refs:
+                    for _orig_name, env_cfg in secret_refs:
+                        if env_cfg.key_slug:
+                            path = env_cfg.key_slug.split(":", 1)[1]
+                            stmt = (
+                                "secret {\n"
+                                "  no_prefix = true\n"
+                                f'  path = "{path}"\n'
+                                "  key {\n"
+                                f'    name   = "{env_cfg.name}"\n'
+                                f'    format = "{c.name}"\n'
+                                "  }\n"
+                                "}"
+                            )
+                            statements.append(stmt)
+                    continue
                 resolved = resolve_template_variables(
                     c.value, self.application_environment
                 )
@@ -1063,7 +1085,7 @@ def release_before_insert_listener(mapper, connection, target):
         target.version = most_recent_release.version + 1
 
 
-class Configuration(db.Model, Timestamp):
+class Configuration(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_app_configurations"
 
@@ -1152,7 +1174,9 @@ class Configuration(db.Model, Timestamp):
                 return payload["data"][self.name]
             return "**secret**"
         if has_template_variables(self.value):
-            return resolve_template_variables(self.value, self.application_environment)
+            return resolve_template_variables(
+                self.value, self.application_environment, reader=reader
+            )
         return self.value
 
 
@@ -1166,7 +1190,7 @@ class ConfigurationSnapshot:
         self.secret = data["secret"]
 
 
-class EnvironmentConfiguration(db.Model, Timestamp):
+class EnvironmentConfiguration(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_environment_configurations"
 
@@ -1262,7 +1286,7 @@ class EnvironmentConfiguration(db.Model, Timestamp):
         return self.value
 
 
-class EnvironmentConfigSubscription(db.Model, Timestamp):
+class EnvironmentConfigSubscription(Model, Timestamp):
     __tablename__ = "environment_config_subscriptions"
 
     id = db.Column(
@@ -1293,7 +1317,7 @@ class EnvironmentConfigSubscription(db.Model, Timestamp):
     )
 
 
-class Hook(db.Model, Timestamp):
+class Hook(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "hooks"
 
@@ -1331,7 +1355,7 @@ class Hook(db.Model, Timestamp):
     __mapper_args__ = {"version_id_col": version_id}
 
 
-class Image(db.Model, Timestamp):
+class Image(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_app_images"
 
@@ -1448,11 +1472,16 @@ class Image(db.Model, Timestamp):
         return f"cabotage/{org_k8s}/{project_k8s}/{app_k8s}"
 
     def buildargs(self, reader):
-        return {
-            c.name: c.read_value(reader)
-            for c in self.application_environment.configurations
-            if c.buildtime
-        }
+        args = {}
+        # Subscribed env configs first (base), then app configs (override)
+        for sub in self.application_environment.environment_config_subscriptions:
+            ec = sub.environment_configuration
+            if ec.buildtime and not ec.deleted:
+                args[ec.name] = ec.read_value(reader)
+        for c in self.application_environment.configurations:
+            if c.buildtime:
+                args[c.name] = c.read_value(reader)
+        return args
 
     @property
     def commit_sha(self):
@@ -1499,7 +1528,7 @@ class ImageSnapshot:
         return self.tag
 
 
-class Ingress(db.Model, Timestamp):
+class Ingress(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "ingresses"
 
@@ -1596,7 +1625,7 @@ class Ingress(db.Model, Timestamp):
         return f"<Ingress {self.id} {self.name}>"
 
 
-class IngressHost(db.Model, Timestamp):
+class IngressHost(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "ingress_hosts"
 
@@ -1641,7 +1670,7 @@ class IngressHost(db.Model, Timestamp):
         return f"<IngressHost {self.id} {self.hostname}>"
 
 
-class IngressPath(db.Model, Timestamp):
+class IngressPath(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "ingress_paths"
 

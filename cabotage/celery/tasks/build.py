@@ -357,9 +357,9 @@ def build_release_buildkit(release):
                     propagation_policy="Foreground",
                 )
 
+            db.session.refresh(release)
             release.release_build_log = job_logs
             db.session.commit()
-            db.session.flush()
             if not job_complete:
                 raise BuildError("Image build failed!")
         else:
@@ -428,12 +428,14 @@ def build_release_buildkit(release):
                         heartbeat_id=str(release.id),
                     )
                 except subprocess.CalledProcessError as proc_exc:
+                    db.session.refresh(release)
                     release.release_build_log = proc_exc.output
                     db.session.commit()
                     raise BuildError(
                         f"Build subprocess failed with exit code {proc_exc.returncode}"
                     )
 
+            db.session.refresh(release)
             release.release_build_log = output
             db.session.commit()
     except Exception as exc:
@@ -979,9 +981,9 @@ def build_image_buildkit(image=None):
                     propagation_policy="Foreground",
                 )
 
+            db.session.refresh(image)
             image.image_build_log = job_logs
             db.session.commit()
-            db.session.flush()
             if not job_complete:
                 raise BuildError("Image build failed!")
         else:
@@ -1053,12 +1055,14 @@ def build_image_buildkit(image=None):
                         heartbeat_id=str(image.id),
                     )
                 except subprocess.CalledProcessError as proc_exc:
+                    db.session.refresh(image)
                     image.image_build_log = proc_exc.output
                     db.session.commit()
                     raise BuildError(
                         f"Build subprocess failed with exit code {proc_exc.returncode}"
                     )
 
+            db.session.refresh(image)
             image.image_build_log = output
             db.session.commit()
     except Exception as exc:
@@ -1128,7 +1132,8 @@ def run_image_build(image_id=None, buildkit=False):
         app_env = image.application_environment
         env_slug = app_env.environment.slug
         project_slug = application.project.slug
-        check_name = f"deploy / {project_slug} / {application.slug} ({env_slug})"
+        org_slug = application.project.organization.slug
+        check_name = f"deploy - {github_app.slug} / {org_slug} / {project_slug} / {application.slug} ({env_slug})"
         check = CheckRun.create(
             access_token,
             application.github_repository,
@@ -1178,6 +1183,7 @@ def run_image_build(image_id=None, buildkit=False):
                     "Image built, Release build commencing.",
                 )
         except (BuildError, TemplateResolutionError) as exc:
+            db.session.rollback()
             db.session.add(image)
             image.error = True
             image.error_detail = str(exc)
@@ -1204,6 +1210,7 @@ def run_image_build(image_id=None, buildkit=False):
             publish_end(redis_client, log_key, error=True)
         except Exception:  # nosec B110
             pass
+        db.session.rollback()
         db.session.add(image)
         if not image.error:
             image.error = True
@@ -1317,6 +1324,7 @@ def run_release_build(release_id=None):
                     "Release built, Deployment commencing.",
                 )
         except (BuildError, TemplateResolutionError) as exc:
+            db.session.rollback()
             release.error = True
             release.error_detail = str(exc)
             try:
@@ -1347,6 +1355,7 @@ def run_release_build(release_id=None):
                 Release=f"releases/{release.id}",
             )
         except Exception:
+            db.session.rollback()
             try:
                 log_key = stream_key("release", release.build_job_id)
                 redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
@@ -1442,6 +1451,7 @@ def run_release_build(release_id=None):
                     Release=f"releases/{release.id}",
                 )
     except Exception:
+        db.session.rollback()
         if release is not None and not release.error:
             release.error = True
             release.error_detail = "Release build failed due to an internal error"

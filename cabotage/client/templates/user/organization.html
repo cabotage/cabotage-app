@@ -16,9 +16,11 @@
   <div class="app-content-padded !py-0">
     {% set proj_count = organization.active_projects|length %}
     {% set member_count = organization.members|length %}
+    {% set observe_tab = {'id': 'observe', 'label': 'Observe', 'icon': 'bar-chart', 'url': url_for('user.organization_observe', org_slug=organization.slug)} if config.MIMIR_URL else {'id': 'observe', 'label': 'Observe', 'icon': 'bar-chart', 'disabled': true} %}
     {{ tab_nav([
         {'id': 'projects', 'label': 'Projects', 'icon': 'folder', 'badge': proj_count},
-        {'id': 'members', 'label': 'Members', 'icon': 'users', 'badge': member_count}
+        {'id': 'members', 'label': 'Members', 'icon': 'users', 'badge': member_count},
+        observe_tab
         ]) }}
   </div>
 {% endblock tab_bar %}
@@ -37,12 +39,14 @@
           {{ icon('settings', 'w-4 h-4') }} Settings
         </a>
       {% endif %}
+      {% if project_create_form %}
       <button type="button"
               onclick="document.getElementById('create-project-modal').classList.remove('hidden')"
               class="btn btn-primary btn-sm gap-2">
         {{ icon('plus', 'w-4 h-4') }}
         New Project
       </button>
+      {% endif %}
     </div>
   {% endcall %}
 
@@ -110,13 +114,15 @@
       <div class="empty-state">
         <div class="text-base-content/15 mb-4">{{ icon('folder', 'w-12 h-12') }}</div>
         <h3 class="text-base font-medium text-base-content/60 mb-1">No projects yet</h3>
-        <p class="text-sm text-base-content/40 max-w-sm">Create your first project in this organization.</p>
+        <p class="text-sm text-base-content/40 max-w-sm">{% if project_create_form %}Create your first project in this organization.{% else %}No projects in this organization yet.{% endif %}</p>
+        {% if project_create_form %}
         <button type="button"
                 onclick="document.getElementById('create-project-modal').classList.remove('hidden')"
                 class="btn btn-primary btn-sm gap-2 mt-4">
           {{ icon('plus', 'w-4 h-4') }}
           Create Project
         </button>
+        {% endif %}
       </div>
     {% endif %}
   </div>
@@ -153,7 +159,7 @@
                 </div>
               {% endif %}
               <div class="min-w-0">
-                <span class="text-sm font-medium text-base-content truncate">{{ membership.user.username }}</span>
+                <span class="text-sm font-medium text-base-content truncate">{{ membership.user.username | display_username }}</span>
                 {% if membership.admin %}
                   <span class="badge badge-xs badge-primary ml-2">Admin</span>
                 {% else %}
@@ -259,7 +265,7 @@
   </div>
 
   {% from "_macros.html" import create_modal %}
-  {% if project_create_form is defined %}
+  {% if project_create_form %}
     {{ create_modal(modal_id='create-project-modal',
       title='Create Project',
       subtitle='In organization ' ~ organization.slug,
@@ -315,7 +321,7 @@
               method="post"
               class="flex flex-col gap-4">
           {{ add_member_form.hidden_tag() }}
-          {{ render_field(add_member_form.email, placeholder='user@example.com') }}
+          {{ render_field(add_member_form.identity, placeholder='user@example.com or github-username') }}
           <div class="pt-2">
             <button type="submit" class="btn btn-primary w-full">Add Member</button>
           </div>

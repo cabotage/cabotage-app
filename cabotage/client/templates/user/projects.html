@@ -7,19 +7,21 @@
 
 {% block content %}
   {% call page_header('Projects', 'All projects across your organizations') %}
-    {% if project_create_form is defined and project_create_form.organization_id.choices %}
-      <button type="button"
-              onclick="document.getElementById('create-project-modal').classList.remove('hidden')"
-              class="btn btn-primary btn-sm gap-2">
-        {{ icon("plus") }}
-        New Project
-      </button>
-    {% else %}
-      <a href="{{ url_for('user.project_create') }}"
-         class="btn btn-primary btn-sm gap-2">
-        {{ icon("plus") }}
-        New Project
-      </a>
+    {% if current_user.organizations %}
+      {% if project_create_form is defined and project_create_form.organization_id.choices %}
+        <button type="button"
+                onclick="document.getElementById('create-project-modal').classList.remove('hidden')"
+                class="btn btn-primary btn-sm gap-2">
+          {{ icon("plus") }}
+          New Project
+        </button>
+      {% else %}
+        <a href="{{ url_for('user.project_create') }}"
+           class="btn btn-primary btn-sm gap-2">
+          {{ icon("plus") }}
+          New Project
+        </a>
+      {% endif %}
     {% endif %}
   {% endcall %}
 
@@ -96,12 +98,14 @@
     <div class="empty-state">
       <div class="text-base-content/15 mb-4">{{ icon('folder', 'w-12 h-12') }}</div>
       <h3 class="text-base font-medium text-base-content/60 mb-1">No projects yet</h3>
-      <p class="text-sm text-base-content/40 max-w-sm">Create your first project to start deploying applications.</p>
+      <p class="text-sm text-base-content/40 max-w-sm">{% if current_user.organizations %}Create your first project to start deploying applications.{% else %}You need to be a member of an organization to create projects.{% endif %}</p>
+      {% if current_user.organizations %}
       <a href="{{ url_for('user.project_create') }}"
          class="btn btn-primary btn-sm gap-2 mt-4">
         {{ icon('plus', 'w-4 h-4') }}
         Create Project
       </a>
+      {% endif %}
     </div>
   {% endif %}
 

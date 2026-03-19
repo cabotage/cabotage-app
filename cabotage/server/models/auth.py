@@ -4,7 +4,7 @@ import datetime
 from flask_security.models.fsqla_v3 import FsRoleMixin, FsUserMixin
 
 
-from cabotage.server import db
+from cabotage.server import db, Model
 from sqlalchemy import text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy_continuum import make_versioned
@@ -31,7 +31,7 @@ roles_users = db.Table(
 )
 
 
-class Role(db.Model, FsRoleMixin):
+class Role(Model, FsRoleMixin):
     __versioned__: dict = {}
     __tablename__ = "roles"
 
@@ -51,7 +51,7 @@ class Role(db.Model, FsRoleMixin):
         return hash(self.name)
 
 
-class User(db.Model, FsUserMixin):
+class User(Model, FsUserMixin):
     __versioned__: dict = {
         "exclude": ["password"],
     }
@@ -103,7 +103,30 @@ class User(db.Model, FsUserMixin):
         return projects
 
 
-class Organization(db.Model):
+class GitHubIdentity(Model):
+    __tablename__ = "github_identities"
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True,
+    )
+    user_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("users.id"),
+        nullable=False,
+        unique=True,
+    )
+    github_id = db.Column(db.BigInteger, nullable=False, unique=True)
+    github_username = db.Column(db.String(255), nullable=False)
+    github_access_token = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.datetime.now)
+
+    user = db.relationship("User", backref=db.backref("github_identity", uselist=False))
+
+
+class Organization(Model):
     __versioned__: dict = {}
     __tablename__ = "organizations"
 
@@ -154,7 +177,7 @@ class Organization(db.Model):
         db.session.add(association)
 
 
-class Team(db.Model):
+class Team(Model):
     __versioned__: dict = {}
     __tablename__ = "teams"
 

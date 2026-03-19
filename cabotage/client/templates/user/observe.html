@@ -1,21 +1,83 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, app_tab_nav, app_resource_path %}
+{% from "_macros.html" import icon, resource_path, app_tab_nav, app_resource_path %}
 
-{% set org_slug = application.project.organization.slug %}
-{% set project_slug = application.project.slug %}
-{% set app_slug = application.slug %}
+{# ── Level-specific slugs ── #}
+{% set org_slug = organization.slug %}
+{% set project_slug = project.slug if project else none %}
 {% set env_slug = environment.slug if environment else none %}
+{% set app_slug = application.slug if application is defined and application else none %}
 
 {% block title %}
-  Observe - {{ app_slug }} - Cabotage
+  Observe -
+  {% if observe_level == 'app' %}{{ app_slug }}{% endif %}
+  {% if observe_level == 'environment' %}{{ env_slug }}{% endif %}
+  {% if observe_level == 'project' %}{{ project_slug }}{% endif %}
+  {% if observe_level == 'organization' %}{{ org_slug }}{% endif %}
+  - Cabotage
 {% endblock title %}
 
 {% block resource_path %}
-  {{ app_resource_path(application, 'Observe', env=environment|default(none)) }}
+  {% if observe_level == 'app' %}
+    {{ app_resource_path(application, 'Observe', env=environment|default(none)) }}
+  {% elif observe_level == 'environment' %}
+    {{ resource_path([
+      {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug)},
+      {'label': project_slug, 'url': url_for('user.project', org_slug=org_slug, project_slug=project_slug)},
+      {'label': env_slug, 'url': url_for('user.project_environment', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug)},
+      {'label': 'Observe'}
+    ]) }}
+  {% elif observe_level == 'project' %}
+    {{ resource_path([
+      {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug)},
+      {'label': project_slug, 'url': url_for('user.project', org_slug=org_slug, project_slug=project_slug)},
+      {'label': 'Observe'}
+    ]) }}
+  {% elif observe_level == 'organization' %}
+    {{ resource_path([
+      {'label': 'Organizations', 'url': url_for('user.organizations')},
+      {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug)},
+      {'label': 'Observe'}
+    ]) }}
+  {% endif %}
 {% endblock resource_path %}
 
 {% block tab_bar %}
-  {{ app_tab_nav(application, 'observe', env=environment|default(none)) }}
+  {% if observe_level == 'app' %}
+    {{ app_tab_nav(application, 'observe', env=environment|default(none)) }}
+  {% elif observe_level == 'environment' %}
+    <div class="app-content-padded !py-0">
+      <div class="tab-bar">
+        <a href="{{ url_for('user.project_environment', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug) }}"
+           class="tab-item">{{ icon('activity', 'w-4 h-4') }} <span class="tab-label">Overview</span></a>
+        <a href="{{ url_for('user.environment_observe', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug) }}"
+           class="tab-item tab-active">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></a>
+      </div>
+    </div>
+  {% elif observe_level == 'project' %}
+    <div class="app-content-padded !py-0">
+      <div class="tab-bar">
+        <a href="{{ url_for('user.project', org_slug=org_slug, project_slug=project_slug) }}"
+           class="tab-item">{{ icon('activity', 'w-4 h-4') }} <span class="tab-label">Overview</span></a>
+        <a href="{{ url_for('user.project_observe', org_slug=org_slug, project_slug=project_slug) }}"
+           class="tab-item tab-active">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></a>
+      </div>
+    </div>
+  {% elif observe_level == 'organization' %}
+    <div class="app-content-padded !py-0">
+      {% set proj_count = organization.active_projects|length %}
+      {% set member_count = organization.members|length %}
+      <div class="tab-bar">
+        <a href="{{ url_for('user.organization', org_slug=org_slug) }}"
+           class="tab-item" data-tab="projects">{{ icon('folder', 'w-4 h-4') }} Projects
+          <span class="badge badge-sm badge-neutral ml-1">{{ proj_count }}</span></a>
+        <a href="{{ url_for('user.organization', org_slug=org_slug) }}#members"
+           class="tab-item" data-tab="members">{{ icon('users', 'w-4 h-4') }} Members
+          <span class="badge badge-sm badge-neutral ml-1">{{ member_count }}</span></a>
+        <a href="{{ url_for('user.organization_observe', org_slug=org_slug) }}"
+           class="tab-item tab-active" data-tab="observe">{{ icon('bar-chart', 'w-4 h-4') }} Observe</a>
+      </div>
+    </div>
+  {% endif %}
 {% endblock tab_bar %}
 
 {% block content %}
@@ -23,16 +85,47 @@
     <div class="flex items-center justify-between mb-4">
       <div>
         <h1 class="text-lg font-semibold text-base-content">Metrics</h1>
-        <p class="text-xs text-base-content/40">Application resource usage and request metrics</p>
+        <p class="text-xs text-base-content/40">
+          {% if observe_level == 'app' %}Application resource usage and request metrics{% endif %}
+          {% if observe_level == 'environment' %}Environment-wide resource usage and request metrics{% endif %}
+          {% if observe_level == 'project' %}Project-wide resource usage and request metrics{% endif %}
+          {% if observe_level == 'organization' %}Organization-wide resource usage and request metrics{% endif %}
+        </p>
       </div>
-      {% set base_url = url_for('user.project_application_observe', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) %}
       <div class="flex flex-col items-end gap-1">
         <div class="flex items-center gap-2">
           <label class="flex items-center gap-1.5 text-xs text-base-content/40 cursor-pointer select-none" title="Include envconsul and sidecar containers in resource metrics">
             <input type="checkbox" id="system-containers-toggle" class="checkbox checkbox-xs">
             <span>System</span>
           </label>
-          {% if process_names|length > 1 %}
+
+          {# ── Cascading filter dropdowns ── #}
+          {% if observe_level == 'organization' and filter_hierarchy is defined and filter_hierarchy %}
+            <select id="filter-project" class="select select-sm select-bordered text-xs">
+              <option value="">All projects</option>
+              {% for p in filter_hierarchy %}
+                <option value="{{ p.slug }}">{{ p.name }}</option>
+              {% endfor %}
+            </select>
+          {% endif %}
+          {% if observe_level in ('organization', 'project') and filter_hierarchy is defined and filter_hierarchy %}
+            <select id="filter-environment" class="select select-sm select-bordered text-xs">
+              <option value="">All environments</option>
+            </select>
+          {% endif %}
+          {% if observe_level in ('organization', 'project', 'environment') %}
+            <select id="filter-application" class="select select-sm select-bordered text-xs">
+              <option value="">All applications</option>
+              {% if observe_level == 'environment' %}
+                {% for a in filter_hierarchy %}
+                  <option value="{{ a.slug }}">{{ a.name }}</option>
+                {% endfor %}
+              {% endif %}
+            </select>
+          {% endif %}
+
+          {# Process filter – app level only (or when single app is filtered) #}
+          {% if observe_level == 'app' and process_names|length > 1 %}
             <select id="process-filter" class="select select-sm select-bordered text-xs">
               <option value="">All processes</option>
               {% for p in process_names %}
@@ -40,6 +133,7 @@
               {% endfor %}
             </select>
           {% endif %}
+
           <div class="flex gap-1.5" id="range-selector">
             {% for r in ['1h', '6h', '24h', '7d', '30d'] %}
               <button data-range="{{ r }}"
@@ -61,131 +155,7 @@
       </div>
     </div>
 
-    {% if not mimir_configured %}
-      <div class="alert alert-warning">
-        {{ icon('alert-triangle', 'w-4 h-4') }}
-        <span>Metrics are not configured. Set <code>CABOTAGE_MIMIR_URL</code> to enable observability.</span>
-      </div>
-    {% else %}
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
-        {# CPU panel with group selector #}
-        <div class="card bg-base-200/50 border border-base-content/5">
-          <div class="card-body p-4">
-            <div class="flex items-center justify-between">
-              <h2 class="card-title text-sm font-medium text-base-content/70">{{ icon('activity', 'w-4 h-4') }} CPU Usage</h2>
-              <div class="flex gap-0.5" data-group-selector="cpu">
-                <button class="btn btn-xs {% if current_groups.cpu == 'total' %}btn-primary{% else %}btn-ghost{% endif %}" data-group="total">Total</button>
-                <button class="btn btn-xs {% if current_groups.cpu == 'process' %}btn-primary{% else %}btn-ghost{% endif %}" data-group="process">Process</button>
-                <button class="btn btn-xs {% if current_groups.cpu == 'pod' %}btn-primary{% else %}btn-ghost{% endif %}" data-group="pod">Pod</button>
-              </div>
-            </div>
-            <div id="chart-cpu" class="metric-panel" data-metric-panel>
-              <div class="flex items-center justify-center h-full text-base-content/20">
-                {{ icon('loader', 'w-5 h-5 animate-spin') }}
-              </div>
-            </div>
-            <p class="text-[0.6rem] text-base-content/20 mt-1 break-all leading-tight hidden" data-query-debug="cpu"></p>
-          </div>
-        </div>
-
-        {# Memory panel with group selector #}
-        <div class="card bg-base-200/50 border border-base-content/5">
-          <div class="card-body p-4">
-            <div class="flex items-center justify-between">
-              <h2 class="card-title text-sm font-medium text-base-content/70">{{ icon('bar-chart', 'w-4 h-4') }} Memory Usage</h2>
-              <div class="flex gap-0.5" data-group-selector="memory">
-                <button class="btn btn-xs {% if current_groups.memory == 'total' %}btn-primary{% else %}btn-ghost{% endif %}" data-group="total">Total</button>
-                <button class="btn btn-xs {% if current_groups.memory == 'process' %}btn-primary{% else %}btn-ghost{% endif %}" data-group="process">Process</button>
-                <button class="btn btn-xs {% if current_groups.memory == 'pod' %}btn-primary{% else %}btn-ghost{% endif %}" data-group="pod">Pod</button>
-              </div>
-            </div>
-            <div id="chart-memory" class="metric-panel" data-metric-panel>
-              <div class="flex items-center justify-center h-full text-base-content/20">
-                {{ icon('loader', 'w-5 h-5 animate-spin') }}
-              </div>
-            </div>
-            <p class="text-[0.6rem] text-base-content/20 mt-1 break-all leading-tight hidden" data-query-debug="memory"></p>
-          </div>
-        </div>
-
-        {# Requests (stacked bars by status code class) #}
-        <div class="card bg-base-200/50 border border-base-content/5">
-          <div class="card-body p-4">
-            <div class="flex items-center justify-between">
-              <h2 class="card-title text-sm font-medium text-base-content/70">{{ icon('zap', 'w-4 h-4') }} Requests</h2>
-            </div>
-            <div id="chart-requests" class="metric-panel" data-metric-panel>
-              <div class="flex items-center justify-center h-full text-base-content/20">
-                {{ icon('loader', 'w-5 h-5 animate-spin') }}
-              </div>
-            </div>
-            <p class="text-[0.6rem] text-base-content/20 mt-1 break-all leading-tight hidden" data-query-debug="requests"></p>
-          </div>
-        </div>
-
-        {# Response Time (p50, p90, p95, p99 lines) #}
-        <div class="card bg-base-200/50 border border-base-content/5">
-          <div class="card-body p-4">
-            <div class="flex items-center justify-between">
-              <h2 class="card-title text-sm font-medium text-base-content/70">{{ icon('clock', 'w-4 h-4') }} Response Time</h2>
-            </div>
-            <div id="chart-latency" class="metric-panel" data-metric-panel>
-              <div class="flex items-center justify-center h-full text-base-content/20">
-                {{ icon('loader', 'w-5 h-5 animate-spin') }}
-              </div>
-            </div>
-            <p class="text-[0.6rem] text-base-content/20 mt-1 break-all leading-tight hidden" data-query-debug="latency"></p>
-          </div>
-        </div>
-
-        {# Error Rate #}
-        <div class="card bg-base-200/50 border border-base-content/5">
-          <div class="card-body p-4">
-            <div class="flex items-center justify-between">
-              <h2 class="card-title text-sm font-medium text-base-content/70">{{ icon('alert-triangle', 'w-4 h-4') }} Request Error Rate</h2>
-              <div class="flex gap-0.5" data-group-selector="errors">
-                <button class="btn btn-xs {% if current_groups.errors == 'total' %}btn-primary{% else %}btn-ghost{% endif %}" data-group="total">Total</button>
-                <button class="btn btn-xs {% if current_groups.errors == 'status' %}btn-primary{% else %}btn-ghost{% endif %}" data-group="status">By Status</button>
-              </div>
-            </div>
-            <div id="chart-errors" class="metric-panel metric-panel--short" data-metric-panel>
-              <div class="flex items-center justify-center h-full text-base-content/20">
-                {{ icon('loader', 'w-5 h-5 animate-spin') }}
-              </div>
-            </div>
-            <p class="text-[0.6rem] text-base-content/20 mt-1 break-all leading-tight hidden" data-query-debug="errors"></p>
-          </div>
-        </div>
-
-        {# Network I/O (TX positive, RX negative) #}
-        <div class="card bg-base-200/50 border border-base-content/5">
-          <div class="card-body p-4">
-            <div class="flex items-center justify-between">
-              <h2 class="card-title text-sm font-medium text-base-content/70">{{ icon('globe', 'w-4 h-4') }} Network I/O</h2>
-              <div class="flex gap-0.5" data-group-selector="network">
-                <button class="btn btn-xs {% if current_groups.network == 'total' %}btn-primary{% else %}btn-ghost{% endif %}" data-group="total">Total</button>
-                <button class="btn btn-xs {% if current_groups.network == 'process' %}btn-primary{% else %}btn-ghost{% endif %}" data-group="process">Process</button>
-                <button class="btn btn-xs {% if current_groups.network == 'pod' %}btn-primary{% else %}btn-ghost{% endif %}" data-group="pod">Pod</button>
-              </div>
-            </div>
-            <div id="chart-network" class="metric-panel" data-metric-panel>
-              <div class="flex items-center justify-center h-full text-base-content/20">
-                {{ icon('loader', 'w-5 h-5 animate-spin') }}
-              </div>
-            </div>
-            <p class="text-[0.6rem] text-base-content/20 mt-1 break-all leading-tight hidden" data-query-debug="network"></p>
-          </div>
-        </div>
-
-      </div>
-      <div class="flex justify-end mt-2">
-        <label class="label cursor-pointer gap-1.5">
-          <span class="text-[0.6rem] text-base-content/20">Show queries</span>
-          <input type="checkbox" id="show-debug" class="checkbox checkbox-xs checkbox-ghost">
-        </label>
-      </div>
-    {% endif %}
+    {% include "user/_observe_panels.html" %}
   </div>
 {% endblock content %}
 
@@ -202,11 +172,16 @@
   document.head.appendChild(script);
   function init() {
 
-  var METRIC_URL = {{ url_for('user.project_application_observe_metric', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug)|tojson }};
+  var METRIC_URL = {{ metric_url|tojson }};
   var RANGE = {{ current_range|tojson }};
+  var OBSERVE_LEVEL = {{ observe_level|tojson }};
   var REFRESH_MAP = { '1h': 15000, '6h': 60000, '24h': 60000, '7d': 60000, '30d': 60000 };
   var REFRESH_MS = REFRESH_MAP[RANGE] || 15000;
   var RANGE_SECS = { '1h': 3600, '6h': 21600, '24h': 86400, '7d': 604800, '30d': 2592000 };
+
+  // Filter hierarchy for cascading dropdowns
+  var FILTER_HIERARCHY = {{ filter_hierarchy_json|safe }};
+  var LABEL_MAP = {{ label_map_json|safe }};
 
   // Time window: null = live (anchored to now), otherwise {start, end} in epoch seconds
   var initParams = new URLSearchParams(window.location.search);
@@ -265,14 +240,13 @@
       });
       data.push(vals);
       var raw = s.metric[labelKey] || (labelKey === '__total__' ? 'total' : labelKey);
-      labels.push(shortLabels ? shortLabel(raw) : raw);
+      var display = LABEL_MAP[raw] || raw;
+      labels.push(shortLabels ? shortLabel(display) : display);
     });
     return { data: data, labels: labels };
   }
 
   // Floating tooltip plugin
-  // rawData: optional unstacked data array for showing original values (used by bar charts)
-  // showTotal: if true, show a total row summing all series
   function tooltipPlugin(valueFmt, rawData, showTotal) {
     var tip = document.createElement('div');
     tip.className = 'chart-tip';
@@ -457,9 +431,6 @@
   }
 
   // Mirror chart: TX series plotted positive, RX series negated.
-  // When grouped by process/pod, each entity gets a unique color shared
-  // by its TX (solid) and RX (dashed) lines.  For "total" mode the two
-  // directions simply get distinct colors.
   function makeMirrorChart(el, result, labelKey, valueFmt, shortLabels, colorMap) {
     if (!result || !result.length) {
       el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/30 text-sm">No data</div>';
@@ -468,7 +439,6 @@
     var txSeries = result.filter(function(s) { return s.metric.direction === 'tx'; });
     var rxSeries = result.filter(function(s) { return s.metric.direction === 'rx'; });
 
-    // TX gets warm-toned colors, RX gets cool-toned — direction is always visually distinct
     var TX_COLORS = ['#8b5cf6', '#f59e0b', '#ef4444', '#ec4899', '#f97316'];
     var RX_COLORS = ['#3b82f6', '#10b981', '#06b6d4', '#14b8a6', '#6366f1'];
 
@@ -484,9 +454,8 @@
     timestamps.forEach(function(t, i) { tsIndex[t] = i; });
 
     var data = [timestamps];
-    var seriesDefs = []; // {label, color, dashed}
+    var seriesDefs = [];
 
-    // TX series (positive) — warm palette
     txSeries.forEach(function(s, i) {
       var vals = new Array(timestamps.length).fill(null);
       s.values.forEach(function(v) {
@@ -500,7 +469,6 @@
       seriesDefs.push({ label: 'TX' + extra, color: TX_COLORS[i % TX_COLORS.length] });
     });
 
-    // RX series (negated) — cool palette
     rxSeries.forEach(function(s, i) {
       var vals = new Array(timestamps.length).fill(null);
       s.values.forEach(function(v) {
@@ -604,6 +572,16 @@
       if (g && g !== 'total') url.searchParams.set(m, g);
       else url.searchParams.delete(m);
     });
+    // Cascading filter params
+    var projEl = document.getElementById('filter-project');
+    var envEl = document.getElementById('filter-environment');
+    var appEl = document.getElementById('filter-application');
+    if (projEl && projEl.value) url.searchParams.set('project', projEl.value);
+    else url.searchParams.delete('project');
+    if (envEl && envEl.value) url.searchParams.set('environment', envEl.value);
+    else url.searchParams.delete('environment');
+    if (appEl && appEl.value) url.searchParams.set('application', appEl.value);
+    else url.searchParams.delete('application');
     history.replaceState(null, '', url);
   }
 
@@ -640,6 +618,14 @@
     if (windowStart && windowEnd) {
       qs += '&start=' + windowStart + '&end=' + windowEnd;
     }
+    // Cascading filters
+    var projEl = document.getElementById('filter-project');
+    var envEl = document.getElementById('filter-environment');
+    var appEl = document.getElementById('filter-application');
+    if (projEl && projEl.value) qs += '&project=' + encodeURIComponent(projEl.value);
+    if (envEl && envEl.value) qs += '&environment=' + encodeURIComponent(envEl.value);
+    if (appEl && appEl.value) qs += '&application=' + encodeURIComponent(appEl.value);
+
     var debugEl = document.querySelector('[data-query-debug="' + metric + '"]');
     fetch(METRIC_URL + qs, { credentials: 'same-origin' })
       .then(function(r) { return r.ok ? r.json() : null; })
@@ -657,6 +643,9 @@
         if (metric === 'cpu' || metric === 'memory' || metric === 'network') {
           if (group === 'total') labelKey = '__total__';
           else if (group === 'process') labelKey = 'process';
+          else if (group === 'application') labelKey = 'application';
+          else if (group === 'environment') labelKey = 'environment';
+          else if (group === 'project') labelKey = 'project';
           else labelKey = 'pod';
         } else if (metric === 'errors') {
           if (group === 'status') labelKey = 'label';
@@ -709,10 +698,7 @@
   if (processEl) {
     processEl.addEventListener('change', function() {
       updateURL();
-      document.querySelectorAll('[data-metric-panel]').forEach(function(el) {
-        el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/20"><span class="loading loading-spinner loading-sm"></span></div>';
-      });
-      Object.keys(panels).forEach(fetchAndRender);
+      refreshAllPanels();
     });
   }
 
@@ -720,12 +706,144 @@
   var sysToggleEl = document.getElementById('system-containers-toggle');
   if (sysToggleEl) {
     sysToggleEl.addEventListener('change', function() {
-      document.querySelectorAll('[data-metric-panel]').forEach(function(el) {
-        el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/20"><span class="loading loading-spinner loading-sm"></span></div>';
-      });
-      Object.keys(panels).forEach(fetchAndRender);
+      refreshAllPanels();
     });
   }
+
+  function refreshAllPanels() {
+    document.querySelectorAll('[data-metric-panel]').forEach(function(el) {
+      el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/20"><span class="loading loading-spinner loading-sm"></span></div>';
+    });
+    Object.keys(panels).forEach(fetchAndRender);
+  }
+
+  // ── Cascading filter dropdowns ──
+  var filterProject = document.getElementById('filter-project');
+  var filterEnvironment = document.getElementById('filter-environment');
+  var filterApplication = document.getElementById('filter-application');
+
+  function populateEnvironments() {
+    if (!filterEnvironment) return;
+    var prev = filterEnvironment.value;
+    var projSlug = filterProject ? filterProject.value : '';
+    filterEnvironment.innerHTML = '<option value="">All environments</option>';
+    var envs = [];
+    if (OBSERVE_LEVEL === 'organization') {
+      var projects = projSlug
+        ? FILTER_HIERARCHY.filter(function(p) { return p.slug === projSlug; })
+        : FILTER_HIERARCHY;
+      var seen = {};
+      projects.forEach(function(p) {
+        (p.environments || []).forEach(function(e) {
+          if (!seen[e.slug]) { seen[e.slug] = true; envs.push(e); }
+        });
+      });
+    } else if (OBSERVE_LEVEL === 'project') {
+      envs = FILTER_HIERARCHY;
+    }
+    envs.forEach(function(e) {
+      var opt = document.createElement('option');
+      opt.value = e.slug;
+      opt.textContent = e.name;
+      filterEnvironment.appendChild(opt);
+    });
+    // Restore previous selection if still valid, otherwise reset to ""
+    if (prev && envs.some(function(e) { return e.slug === prev; })) {
+      filterEnvironment.value = prev;
+    }
+    populateApplications();
+  }
+
+  function populateApplications() {
+    if (!filterApplication) return;
+    if (OBSERVE_LEVEL === 'environment') return; // static list already rendered
+    var prev = filterApplication.value;
+    var projSlug = filterProject ? filterProject.value : '';
+    var envSlug = filterEnvironment ? filterEnvironment.value : '';
+    filterApplication.innerHTML = '<option value="">All applications</option>';
+    var apps = [];
+    if (OBSERVE_LEVEL === 'organization') {
+      var projects = projSlug
+        ? FILTER_HIERARCHY.filter(function(p) { return p.slug === projSlug; })
+        : FILTER_HIERARCHY;
+      var seen = {};
+      projects.forEach(function(p) {
+        var envList = envSlug
+          ? (p.environments || []).filter(function(e) { return e.slug === envSlug; })
+          : (p.environments || []);
+        envList.forEach(function(e) {
+          (e.applications || []).forEach(function(a) {
+            if (!seen[a.slug]) { seen[a.slug] = true; apps.push(a); }
+          });
+        });
+      });
+    } else if (OBSERVE_LEVEL === 'project') {
+      if (envSlug) {
+        var env = FILTER_HIERARCHY.find(function(e) { return e.slug === envSlug; });
+        if (env) apps = env.applications || [];
+      } else {
+        var seen = {};
+        FILTER_HIERARCHY.forEach(function(e) {
+          (e.applications || []).forEach(function(a) {
+            if (!seen[a.slug]) { seen[a.slug] = true; apps.push(a); }
+          });
+        });
+      }
+    }
+    // Restore previous selection if still valid, otherwise reset to ""
+    var stillValid = apps.some(function(a) { return a.slug === prev; });
+    apps.forEach(function(a) {
+      var opt = document.createElement('option');
+      opt.value = a.slug;
+      opt.textContent = a.name;
+      filterApplication.appendChild(opt);
+    });
+    if (prev && stillValid) {
+      filterApplication.value = prev;
+    }
+  }
+
+  if (filterProject) {
+    filterProject.addEventListener('change', function() {
+      populateEnvironments();
+      updateURL();
+      refreshAllPanels();
+    });
+  }
+  if (filterEnvironment) {
+    filterEnvironment.addEventListener('change', function() {
+      populateApplications();
+      updateURL();
+      refreshAllPanels();
+    });
+  }
+  if (filterApplication) {
+    filterApplication.addEventListener('change', function() {
+      updateURL();
+      refreshAllPanels();
+    });
+  }
+
+  // Initialize cascading dropdowns — always populate, then restore URL params
+  (function() {
+    var params = new URLSearchParams(window.location.search);
+    // Restore project filter first (org level)
+    if (filterProject && params.get('project')) {
+      filterProject.value = params.get('project');
+    }
+    // Always populate environments from hierarchy
+    if (filterEnvironment) populateEnvironments();
+    // Restore environment selection
+    if (filterEnvironment && params.get('environment')) {
+      filterEnvironment.value = params.get('environment');
+    }
+    // Always populate applications from hierarchy (for non-environment levels)
+    if (filterApplication && OBSERVE_LEVEL !== 'environment') populateApplications();
+    // Restore application selection
+    if (filterApplication && params.get('application')) {
+      filterApplication.value = params.get('application');
+    }
+  })();
 
   // Range selector — switch time range without full page reload
   document.querySelectorAll('#range-selector button[data-range]').forEach(function(btn) {
@@ -744,11 +862,7 @@
       });
       btn.className = 'btn btn-xs btn-primary';
       updateURL();
-      // Re-fetch all panels and reset auto-refresh interval
-      document.querySelectorAll('[data-metric-panel]').forEach(function(el) {
-        el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/20"><span class="loading loading-spinner loading-sm"></span></div>';
-      });
-      Object.keys(panels).forEach(fetchAndRender);
+      refreshAllPanels();
       if (typeof resetRefreshTimer === 'function') resetRefreshTimer();
     });
   });
@@ -768,11 +882,9 @@
     if (navLeftLabel) navLeftLabel.textContent = '-' + half;
     if (navRightLabel) navRightLabel.textContent = '+' + half;
     var live = isLive();
-    // "Live" button: highlighted outline when live (disabled), ghost when navigated away (clickable)
     navNow.className = live
       ? 'btn btn-xs text-xs btn-primary btn-outline animate-pulse-gentle pointer-events-none'
       : 'btn btn-xs text-xs btn-ghost';
-    // Right arrow: faded when live
     navRight.className = live
       ? 'btn btn-xs btn-ghost btn-square opacity-30 pointer-events-none'
       : 'btn btn-xs btn-ghost btn-square';
@@ -783,15 +895,12 @@
     var halfDur = Math.floor(dur / 2);
     var bounds = xBounds();
     if (direction < 0) {
-      // Go back
       windowEnd = bounds.max - halfDur;
       windowStart = bounds.min - halfDur;
     } else {
-      // Go forward
       var newEnd = bounds.max + halfDur;
       var now = Math.floor(Date.now() / 1000);
       if (newEnd >= now) {
-        // Close enough to now — snap to live
         windowEnd = null;
         windowStart = null;
       } else {
@@ -801,10 +910,7 @@
     }
     updateNavUI();
     updateURL();
-    document.querySelectorAll('[data-metric-panel]').forEach(function(el) {
-      el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/20"><span class="loading loading-spinner loading-sm"></span></div>';
-    });
-    Object.keys(panels).forEach(fetchAndRender);
+    refreshAllPanels();
   }
 
   if (navLeft) navLeft.addEventListener('click', function() { navigate(-1); });
@@ -814,10 +920,7 @@
     windowStart = null;
     updateNavUI();
     updateURL();
-    document.querySelectorAll('[data-metric-panel]').forEach(function(el) {
-      el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/20"><span class="loading loading-spinner loading-sm"></span></div>';
-    });
-    Object.keys(panels).forEach(fetchAndRender);
+    refreshAllPanels();
   });
 
   // Set initial nav button visibility
