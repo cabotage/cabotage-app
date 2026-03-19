@@ -2,10 +2,10 @@ from sqlalchemy import text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy_utils.models import Timestamp
 
-from cabotage.server import db
+from cabotage.server import db, Model
 
 
-class Resource(db.Model, Timestamp):
+class Resource(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "resources"
 
