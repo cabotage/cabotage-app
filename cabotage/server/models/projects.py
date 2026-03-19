@@ -613,17 +613,17 @@ class Application(db.Model, Timestamp):
         configuration_diff = DictDiffer(
             candidate.get("configuration", {}),
             current.get("configuration", {}),
-            ignored_keys=["id", "version_id"],
+            ignored_keys=["id"],
         )
         image_diff = DictDiffer(
             candidate.get("image", {}),
             current.get("image", {}),
-            ignored_keys=["id", "version_id", "commit_sha"],
+            ignored_keys=["id", "commit_sha"],
         )
         ingress_diff = DictDiffer(
             candidate.get("ingresses", {}),
             current.get("ingresses", {}),
-            ignored_keys=["id", "version_id"],
+            ignored_keys=["id"],
         )
         return image_diff, configuration_diff, ingress_diff
 
@@ -903,6 +903,7 @@ class Release(db.Model, Timestamp):
     def envconsul_configurations(self):
         from cabotage.utils.config_templates import (
             has_template_variables,
+            resolve_shared_secret_refs,
             resolve_template_variables,
         )
 
@@ -916,6 +917,27 @@ class Release(db.Model, Timestamp):
         resolved_template_env = []
         for c in config_objects:
             if has_template_variables(c.value):
+                # Check for whole-value shared secret ref: MY_VAR=${shared.SECRET}
+                # These get a vault directive with key format renaming
+                secret_refs = resolve_shared_secret_refs(
+                    c.value, self.application_environment
+                )
+                if secret_refs:
+                    for _orig_name, env_cfg in secret_refs:
+                        if env_cfg.key_slug:
+                            path = env_cfg.key_slug.split(":", 1)[1]
+                            stmt = (
+                                "secret {\n"
+                                "  no_prefix = true\n"
+                                f'  path = "{path}"\n'
+                                "  key {\n"
+                                f'    name   = "{env_cfg.name}"\n'
+                                f'    format = "{c.name}"\n'
+                                "  }\n"
+                                "}"
+                            )
+                            statements.append(stmt)
+                    continue
                 resolved = resolve_template_variables(
                     c.value, self.application_environment
                 )
@@ -1152,7 +1174,9 @@ class Configuration(db.Model, Timestamp):
                 return payload["data"][self.name]
             return "**secret**"
         if has_template_variables(self.value):
-            return resolve_template_variables(self.value, self.application_environment)
+            return resolve_template_variables(
+                self.value, self.application_environment, reader=reader
+            )
         return self.value
 
 
@@ -1448,11 +1472,16 @@ class Image(db.Model, Timestamp):
         return f"cabotage/{org_k8s}/{project_k8s}/{app_k8s}"
 
     def buildargs(self, reader):
-        return {
-            c.name: c.read_value(reader)
-            for c in self.application_environment.configurations
-            if c.buildtime
-        }
+        args = {}
+        # Subscribed env configs first (base), then app configs (override)
+        for sub in self.application_environment.environment_config_subscriptions:
+            ec = sub.environment_configuration
+            if ec.buildtime and not ec.deleted:
+                args[ec.name] = ec.read_value(reader)
+        for c in self.application_environment.configurations:
+            if c.buildtime:
+                args[c.name] = c.read_value(reader)
+        return args
 
     @property
     def commit_sha(self):

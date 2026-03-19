@@ -619,16 +619,17 @@
           <div class="app-content-padded !py-3">
             <div class="flex flex-col gap-2">
               {% for category, message in messages %}
-                {% set alert_class = "alert-info" %}
+                {% set alert_class = "flash-info" %}
                 {% if category == 'error' or category == 'danger' %}
-                  {% set alert_class = "alert-error" %}
+                  {% set alert_class = "flash-error" %}
                 {% elif category == 'success' %}
-                  {% set alert_class = "alert-success" %}
+                  {% set alert_class = "flash-success" %}
                 {% elif category == 'warning' %}
-                  {% set alert_class = "alert-warning" %}
+                  {% set alert_class = "flash-warning" %}
                 {% endif %}
-                <div role="alert" class="alert {{ alert_class }} text-sm py-2">
+                <div role="alert" class="flash-message {{ alert_class }}" data-flash-auto="{{ 'false' if category == 'error' or category == 'danger' else 'true' }}">
                   <span>{{ message }}</span>
+                  <button type="button" class="flash-dismiss" aria-label="Dismiss">&times;</button>
                 </div>
               {% endfor %}
             </div>
