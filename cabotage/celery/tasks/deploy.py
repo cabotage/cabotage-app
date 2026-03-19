@@ -341,19 +341,23 @@ def render_cabotage_enrollment(release):
             "name": cabotage_enrollment_name,
         },
     }
+    spec = {}
     env = release.application_environment.environment
     forked_from = env.forked_from_environment
     if forked_from:
         org_k8s = release.application.project.organization.k8s_identifier
         base_ns = safe_k8s_name(org_k8s, forked_from.k8s_identifier)
-        cabotage_enrollment_object["spec"] = {
-            "inheritsFrom": [
-                {
-                    "namespace": base_ns,
-                    "name": cabotage_enrollment_name,
-                }
-            ],
-        }
+        spec["inheritsFrom"] = [
+            {
+                "namespace": base_ns,
+                "name": cabotage_enrollment_name,
+            }
+        ]
+    read_keys = _compute_enrollment_read_keys(release)
+    if read_keys:
+        spec["readKeys"] = read_keys
+    if spec:
+        cabotage_enrollment_object["spec"] = spec
     return cabotage_enrollment_object
 
 
@@ -2229,9 +2233,6 @@ def fake_deploy_release(deployment):
     )
     deploy_log.append(yaml.dump(remove_none(service_account.to_dict())))
     cabotage_enrollment = render_cabotage_enrollment(deployment.release_object)
-    read_keys = _compute_enrollment_read_keys(deployment.release_object)
-    if read_keys:
-        cabotage_enrollment.setdefault("spec", {})["readKeys"] = read_keys
     deploy_log.append(
         f"Creating CabotageEnrollment/{cabotage_enrollment['metadata']['name']} "
         f"in Namespace/{namespace.metadata.name}"
