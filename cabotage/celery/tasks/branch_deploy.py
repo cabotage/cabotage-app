@@ -17,6 +17,7 @@ from cabotage.server.models.projects import (
     Environment,
     EnvironmentConfigSubscription,
     EnvironmentConfiguration,
+    Hook,
     Image,
     Ingress,
     IngressHost,
@@ -25,6 +26,7 @@ from cabotage.server.models.projects import (
 from cabotage.server.models.utils import readable_k8s_hostname, safe_k8s_name
 from cabotage.utils.github import (
     find_or_create_pr_comment,
+    matches_watch_paths,
     post_deployment_status_update,
 )
 
@@ -244,6 +246,23 @@ def _teardown_environment(environment):
     # Deleting the environment cascades to its application_environments
     db.session.delete(environment)
     db.session.flush()
+
+
+def _changed_files_for_sha(commit_sha):
+    """Extract the set of changed files from the stored push hook for a commit."""
+    push_hook = (
+        Hook.query.filter(Hook.commit_sha == commit_sha)
+        .filter(Hook.headers.op("->>")("X-Github-Event") == "push")
+        .first()
+    )
+    if not push_hook:
+        return None
+    changed = set()
+    for commit in push_hook.payload.get("commits", []):
+        changed.update(commit.get("added", []))
+        changed.update(commit.get("modified", []))
+        changed.update(commit.get("removed", []))
+    return changed or None
 
 
 def _build_images_for_app_envs(app_envs, commit_sha, installation_id):
@@ -640,9 +659,27 @@ def sync_branch_deploy(project, pr_number, head_sha, installation_id):
             project.id,
         )
         return
-    _build_images_for_app_envs(
-        environment.application_environments, head_sha, installation_id
+
+    # Filter app_envs by watch paths — only rebuild apps whose watched
+    # files changed in this push.  Apps without watch paths always rebuild.
+    app_envs = list(environment.application_environments)
+    any_has_watch_paths = any(
+        ae.application.branch_deploy_watch_paths for ae in app_envs
     )
+    if any_has_watch_paths:
+        changed_files = _changed_files_for_sha(head_sha)
+        if changed_files:
+            app_envs = [
+                ae
+                for ae in app_envs
+                if matches_watch_paths(
+                    changed_files,
+                    ae.application.branch_deploy_watch_paths,
+                )
+            ]
+
+    if app_envs:
+        _build_images_for_app_envs(app_envs, head_sha, installation_id)
     update_pr_comment(environment)
 
 
