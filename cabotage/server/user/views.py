@@ -2856,6 +2856,14 @@ def project_application_settings(org_slug, project_slug, app_slug):
     )
 
     form = EditApplicationSettingsForm(obj=application)
+    # Pre-populate watch paths as newline-separated text
+    if not form.is_submitted():
+        if application.branch_deploy_watch_paths:
+            form.branch_deploy_watch_paths.data = "\n".join(
+                application.branch_deploy_watch_paths
+            )
+        else:
+            form.branch_deploy_watch_paths.data = ""
     form.application_id.choices = [
         (
             str(application.id),
@@ -2868,6 +2876,14 @@ def project_application_settings(org_slug, project_slug, app_slug):
     form.application_id.data = str(application.id)
 
     if form.validate_on_submit():
+        # Convert watch paths from newline-separated text to JSON array
+        raw = form.branch_deploy_watch_paths.data
+        if raw and raw.strip():
+            form.branch_deploy_watch_paths.data = [
+                line.strip() for line in raw.splitlines() if line.strip()
+            ]
+        else:
+            form.branch_deploy_watch_paths.data = None
         form.populate_obj(application)
         db.session.flush()
         activity = Activity(
@@ -2961,6 +2977,7 @@ def project_application_environment_settings(
 
     if form.validate_on_submit():
         app_env.auto_deploy_branch = form.auto_deploy_branch.data or None
+        app_env.auto_deploy_wait_for_ci = form.auto_deploy_wait_for_ci.data
         app_env.github_environment_name = form.github_environment_name.data or None
         app_env.deployment_timeout = form.deployment_timeout.data
         app_env.health_check_path = form.health_check_path.data or None

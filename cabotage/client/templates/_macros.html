@@ -149,7 +149,7 @@
   </div>
 {% endmacro %}
 
-{% macro service_card(name, slug, url, status='', meta_items=[], color='accent', icon_name='box', github_repo='', github_branch='') %}
+{% macro service_card(name, slug, url, status='', meta_items=[], color='accent', icon_name='box', github_repo='', github_branch='', app_hosts=[]) %}
   <a href="{{ url }}"
      class="service-card card-interactive block no-underline">
     <div class="service-card-header">
@@ -177,6 +177,15 @@
         <polyline points="9 18 15 12 9 6" />
       </svg>
     </div>
+    {% if app_hosts %}
+      <div class="flex flex-col gap-1 -mt-1">
+        {% for host in app_hosts %}
+          <span class="inline-flex items-center gap-1 text-xs font-mono text-accent/70 hover:text-accent transition-colors cursor-pointer"
+                onclick="event.preventDefault(); event.stopPropagation(); window.open('https://{{ host.hostname }}', '_blank')"
+                title="Open {{ host.hostname }}">{{ icon('globe', 'w-3 h-3') }}{% if host.is_auto %}Open {{ host.ingress_name }}{% else %}{{ host.hostname }}{% endif %}</span>
+        {% endfor %}
+      </div>
+    {% endif %}
     {% if meta_items %}
       <div class="service-card-meta">
         {% for item in meta_items %}<span>{{ item }}</span>{% endfor %}
@@ -274,6 +283,8 @@
       </label>
     {% elif field.type == 'HiddenField' %}
       {{ field() }}
+    {% elif field.type == 'TextAreaField' %}
+      {{ field(class="textarea textarea-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono text-sm " + extra_class, placeholder=placeholder) }}
     {% else %}
       {{ field(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary " + extra_class, placeholder=placeholder) }}
     {% endif %}

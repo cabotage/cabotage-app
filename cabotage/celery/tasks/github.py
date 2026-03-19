@@ -27,7 +27,11 @@ from cabotage.celery.tasks.branch_deploy import (
     sync_branch_deploy,
     teardown_branch_deploy,
 )
-from cabotage.utils.github import github_session, post_deployment_status_update
+from cabotage.utils.github import (
+    github_session,
+    matches_watch_paths,
+    post_deployment_status_update,
+)
 
 Activity = activity_plugin.activity_cls
 logger = logging.getLogger(__name__)
@@ -299,20 +303,32 @@ def create_deployment(
     ref=None,
     app_env=None,
     branch=None,
+    transient_environment=False,
+    environment_name=None,
+    payload=None,
 ):
     try:
-        environment_string = app_env.effective_github_environment_name
+        environment_string = (
+            environment_name or app_env.effective_github_environment_name
+        )
 
         deploy_payload = {
             "ref": ref,
             "auto_merge": False,
             "environment": environment_string,
         }
+        if payload is not None:
+            deploy_payload["payload"] = payload
 
-        # Fetch the branch's required status checks and pass them explicitly.
-        # This preserves CI gating while excluding our own check runs, which
-        # would otherwise cause 409 Conflicts during batch deployments.
-        if branch:
+        if transient_environment:
+            deploy_payload["transient_environment"] = True
+            deploy_payload["production_environment"] = False
+            # Skip required contexts for transient (branch deploy) environments
+            deploy_payload["required_contexts"] = []
+        elif branch:
+            # Fetch the branch's required status checks and pass them explicitly.
+            # This preserves CI gating while excluding our own check runs, which
+            # would otherwise cause 409 Conflicts during batch deployments.
             deploy_payload["required_contexts"] = _required_contexts_for_branch(
                 access_token, repository_name, branch
             )
@@ -327,15 +343,16 @@ def create_deployment(
             timeout=10,
         )
         deployment_response.raise_for_status()
+        statuses_url = deployment_response.json()["statuses_url"]
         post_deployment_status_update(
             access_token["token"],
-            deployment_response.json()["statuses_url"],
+            statuses_url,
             "pending",
             "Deployment created.",
         )
     except Exception:
-        return False
-    return True
+        return None
+    return statuses_url
 
 
 def process_push_hook(hook):
@@ -376,6 +393,48 @@ def process_push_hook(hook):
             f"branches: {branch_names}"
         )
         return False
+
+    # Deploy immediately for apps that don't wait for CI.
+    skip_ci_matches = [ae for ae in env_matches if not ae.auto_deploy_wait_for_ci]
+    if skip_ci_matches:
+        bearer_token = github_app.bearer_token
+        access_token_response = github_session.post(
+            f"https://api.github.com/app/installations/{installation_id}/access_tokens",
+            headers={
+                "Accept": "application/vnd.github.machine-man-preview+json",
+                "Authorization": f"Bearer {bearer_token}",
+            },
+            timeout=10,
+        )
+        if "token" in access_token_response.json():
+            access_token = access_token_response.json()
+
+            # Extract changed files for watch path filtering.
+            changed_files = set()
+            for commit in hook.payload.get("commits", []):
+                changed_files.update(commit.get("added", []))
+                changed_files.update(commit.get("modified", []))
+                changed_files.update(commit.get("removed", []))
+
+            for app_env in skip_ci_matches:
+                watch_paths = app_env.application.branch_deploy_watch_paths
+                if (
+                    watch_paths
+                    and changed_files
+                    and not matches_watch_paths(changed_files, watch_paths)
+                ):
+                    continue
+                print(
+                    f"deploying (skip CI) {repository_name}@{commit_sha} to "
+                    f"{app_env.application.id} env {app_env.environment.slug}"
+                )
+                create_deployment(
+                    access_token=access_token,
+                    application=app_env.application,
+                    repository_name=repository_name,
+                    ref=commit_sha,
+                    app_env=app_env,
+                )
 
 
 def process_check_suite_hook(hook):
@@ -473,7 +532,30 @@ def process_check_suite_hook(hook):
         push_event.deployed = True
         db.session.commit()
 
+        # Extract changed files from the push event payload to filter
+        # apps by watch paths.
+        changed_files = set()
+        for commit in push_event.payload.get("commits", []):
+            changed_files.update(commit.get("added", []))
+            changed_files.update(commit.get("modified", []))
+            changed_files.update(commit.get("removed", []))
+
         for app_env in env_matches:
+            # Skip apps that already deployed on push (no CI wait).
+            if not app_env.auto_deploy_wait_for_ci:
+                continue
+            watch_paths = app_env.application.branch_deploy_watch_paths
+            if (
+                watch_paths
+                and changed_files
+                and not matches_watch_paths(changed_files, watch_paths)
+            ):
+                print(
+                    f"skipping {repository_name}@{commit_sha} for "
+                    f"{app_env.application.id} env {app_env.environment.slug}: "
+                    f"no changes in watch paths"
+                )
+                continue
             print(
                 f"deploying {repository_name}@{commit_sha} to "
                 f"{app_env.application.id} env {app_env.environment.slug}"
