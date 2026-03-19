@@ -690,6 +690,10 @@ class EditApplicationEnvironmentSettingsForm(FlaskForm):
         [Optional()],
         description="Branch to auto-deploy for this environment (blank = inherit from app)",
     )
+    auto_deploy_wait_for_ci = BooleanField(
+        "Wait for CI",
+        description="Wait for CI checks to pass before deploying. Uncheck to deploy immediately on push.",
+    )
     github_environment_name = StringField(
         "GitHub Environment Name",
         [Optional()],

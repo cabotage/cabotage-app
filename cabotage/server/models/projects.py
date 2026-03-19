@@ -277,6 +277,12 @@ class ApplicationEnvironment(Model, Timestamp):
         db.Text(),
         nullable=True,
     )
+    auto_deploy_wait_for_ci = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+    )
     github_environment_name = db.Column(
         db.Text(),
         nullable=True,
