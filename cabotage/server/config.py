@@ -94,3 +94,4 @@ class Config(metaclass=MetaFlaskEnv):
     MIMIR_VERIFY = None
     LOKI_URL = None
     LOKI_VERIFY = None
+    PROXY_FIX_NUM_PROXIES = 1

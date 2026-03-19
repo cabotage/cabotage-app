@@ -15,6 +15,7 @@ except ImportError:
     TextLexer = None
 
 from flask import Flask, render_template, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_admin import Admin
 from flask_babel import Babel
 from flask_bcrypt import Bcrypt
@@ -320,6 +321,15 @@ def create_app():
     admin.add_view(AdminModelView(Deployment, db.session))
     admin.add_view(AdminModelView(Hook, db.session))
     admin.add_view(AdminModelView(User, db.session))
+
+    num_proxies = app.config.get("PROXY_FIX_NUM_PROXIES", 1)
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=num_proxies,
+        x_proto=num_proxies,
+        x_host=num_proxies,
+        x_prefix=num_proxies,
+    )
 
     original_wsgi = app.wsgi_app
 
