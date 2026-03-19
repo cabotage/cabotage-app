@@ -86,6 +86,7 @@ def callback():
         identity.github_username = github_username
         db.session.commit()
         login_user(identity.user)
+        db.session.commit()
     else:
         existing_user = User.query.filter(
             db.func.lower(User.email).in_([e.lower() for e in verified_emails])
@@ -100,6 +101,7 @@ def callback():
             db.session.add(gh_identity)
             db.session.commit()
             login_user(existing_user)
+            db.session.commit()
         else:
             registerable = current_app.config.get("SECURITY_REGISTERABLE", True)
             github_oauth_only = current_app.config.get("GITHUB_OAUTH_ONLY", False)
@@ -128,6 +130,7 @@ def callback():
             db.session.add(gh_identity)
             db.session.commit()
             login_user(user)
+            db.session.commit()
 
     next_url = session.pop("github_oauth_next", "/")
     return redirect(next_url)
