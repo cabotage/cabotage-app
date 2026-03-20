@@ -48,6 +48,7 @@ dependencies = [
     "toml>=0.10.2",
     "unidecode>=1.2.0",
     "urllib3>=2.2.2",
+    "stripe>=14.4.1",
 ]
 
 [dependency-groups]
