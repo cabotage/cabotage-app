@@ -12,8 +12,10 @@ from flask import (
     url_for,
 )
 from flask_security import login_user
+from flask_security.tf_plugin import tf_verify_validity_token
 
 from cabotage.server import db
+from cabotage.server.mfa import get_mfa_status
 from cabotage.server.models.auth import GitHubIdentity, User
 
 github_oauth_bp = Blueprint("github_oauth", __name__, url_prefix="/auth/github")
@@ -82,10 +84,11 @@ def callback():
 
     identity = GitHubIdentity.query.filter_by(github_id=github_id).first()
 
+    user = None
     if identity:
         identity.github_username = github_username
         db.session.commit()
-        login_user(identity.user)
+        user = identity.user
     else:
         existing_user = User.query.filter(
             db.func.lower(User.email).in_([e.lower() for e in verified_emails])
@@ -99,7 +102,7 @@ def callback():
             )
             db.session.add(gh_identity)
             db.session.commit()
-            login_user(existing_user)
+            user = existing_user
         else:
             registerable = current_app.config.get("SECURITY_REGISTERABLE", True)
             github_oauth_only = current_app.config.get("GITHUB_OAUTH_ONLY", False)
@@ -127,9 +130,41 @@ def callback():
             )
             db.session.add(gh_identity)
             db.session.commit()
-            login_user(user)
 
     next_url = session.pop("github_oauth_next", "/")
+    return _complete_oauth_login(user, next_url)
+
+
+def _complete_oauth_login(user, next_url):
+    """Handle MFA check and login for OAuth users.
+
+    If the user has MFA configured and no valid trust cookie, sets up
+    Flask-Security's 2FA session state and redirects to the challenge.
+    Otherwise logs in directly.
+    """
+    has_totp, num_webauthn, has_mfa = get_mfa_status(user)
+
+    if has_mfa:
+        tf_fresh = tf_verify_validity_token(user.fs_uniquifier)
+        if not tf_fresh or current_app.config.get(
+            "SECURITY_TWO_FACTOR_ALWAYS_VALIDATE"
+        ):
+            session["tf_user_id"] = user.fs_uniquifier
+            next_param = {"next": next_url} if next_url and next_url != "/" else {}
+            if has_totp and num_webauthn > 0:
+                session["tf_select"] = True
+                return redirect(url_for("security.tf_select", **next_param))
+            elif has_totp:
+                session["tf_state"] = "ready"
+                return redirect(
+                    url_for("security.two_factor_token_validation", **next_param)
+                )
+            else:
+                session["tf_state"] = "ready"
+                return redirect(url_for("security.wan_signin", **next_param))
+
+    login_user(user)
+    db.session.commit()
     return redirect(next_url)
 
 

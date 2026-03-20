@@ -3972,6 +3972,103 @@ def guide():
     )
 
 
+@user_blueprint.route("/account/security")
+@login_required
+def account_security():
+    from cabotage.server.models.auth import WebAuthn
+    from flask import session as _session
+
+    initial_setup = _session.pop("mfa_initial_setup", False)
+
+    deleted_key = request.args.get("deleted")
+    if deleted_key:
+        from markupsafe import escape
+
+        flash(f'Security key "{escape(deleted_key)}" has been removed.', "success")
+        return redirect(url_for("user.account_security"))
+
+    from cabotage.server.mfa import get_mfa_status
+
+    webauthn_creds = WebAuthn.query.filter_by(user_id=current_user.id).all()
+    has_totp, _, _ = get_mfa_status(current_user)
+    num_webauthn = len(webauthn_creds)
+    total_methods = (1 if has_totp else 0) + num_webauthn
+
+    if initial_setup and total_methods > 0:
+        return redirect(url_for("main.home"))
+    can_remove_method = total_methods > 1
+    security_ext = current_app.extensions["security"]
+    wan_register_form = (
+        security_ext.forms["wan_register_form"].cls()
+        if current_app.config.get("SECURITY_WEBAUTHN")
+        else None
+    )
+    recovery_codes = current_user.mf_recovery_codes or []
+    recovery_codes_total = current_app.config.get(
+        "SECURITY_MULTI_FACTOR_RECOVERY_CODES_N", 5
+    )
+    return render_template(
+        "user/account_security.html",
+        webauthn_creds=webauthn_creds,
+        has_totp=has_totp,
+        can_remove_method=can_remove_method,
+        wan_register_form=wan_register_form,
+        recovery_codes_remaining=len(recovery_codes),
+        recovery_codes_total=recovery_codes_total,
+    )
+
+
+@user_blueprint.route("/account/security/verify-recovery-code", methods=["POST"])
+@login_required
+def account_security_verify_recovery_code():
+    code = request.form.get("code", "").strip().lower()
+    if not code:
+        flash("Please enter a recovery code.", "error")
+        return redirect(url_for("security.mf_recovery_codes"))
+
+    codes = current_user.mf_recovery_codes or []
+    matched = None
+    for c in codes:
+        if c.lower() == code:
+            matched = c
+            break
+
+    if not matched:
+        flash("That code doesn\u2019t match any of your recovery codes.", "error")
+        return redirect(url_for("security.mf_recovery_codes"))
+
+    # Burn the code
+    codes.remove(matched)
+    current_user.mf_recovery_codes = codes
+    db.session.commit()
+
+    from flask import session as _session
+
+    if _session.pop("mfa_initial_setup", False):
+        return redirect(url_for("main.home"))
+    return redirect(url_for("user.account_security"))
+
+
+@user_blueprint.route("/account/security/qr")
+@login_required
+def account_security_qr():
+    import io
+    import qrcode
+    import qrcode.image.svg
+
+    uri = request.args.get("uri", "")
+    if not uri.startswith("otpauth://"):
+        abort(400)
+
+    img = qrcode.make(uri, image_factory=qrcode.image.svg.SvgPathImage)
+    buf = io.BytesIO()
+    img.save(buf)
+    resp = make_response(buf.getvalue())
+    resp.headers["Content-Type"] = "image/svg+xml"
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @user_blueprint.route("/docker/auth")
 def docker_auth():
     secret = current_app.config["REGISTRY_AUTH_SECRET"]

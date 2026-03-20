@@ -1,15 +1,19 @@
 import datetime
 
-
-from flask_security.models.fsqla_v3 import FsRoleMixin, FsUserMixin
-
-
-from cabotage.server import db, Model
+from citext import CIText
+from flask_security.models.fsqla_v3 import (
+    FsModels,
+    FsRoleMixin,
+    FsUserMixin,
+    FsWebAuthnMixin,
+)
 from sqlalchemy import text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy_continuum import make_versioned
 
-from citext import CIText
+from cabotage.server import db, Model
+from cabotage.server.models.plugins import ActivityPlugin
+from cabotage.server.models.utils import generate_k8s_identifier, slugify
 
 from .auth_associations import (
     OrganizationMember,
@@ -17,8 +21,9 @@ from .auth_associations import (
     TeamMember,
 )
 
-from cabotage.server.models.plugins import ActivityPlugin
-from cabotage.server.models.utils import generate_k8s_identifier, slugify
+# Must be set before model classes are defined — FsUserMixin uses
+# FsModels.db to create the webauthn relationship.
+FsModels.db = db  # type: ignore[assignment]
 
 activity_plugin = ActivityPlugin()
 make_versioned(plugins=[activity_plugin])
@@ -71,24 +76,12 @@ class User(Model, FsUserMixin):
         db.DateTime, nullable=False, default=datetime.datetime.now
     )
 
-    roles = db.relationship(
+    roles = db.relationship(  # type: ignore[assignment]
         "Role", secondary=roles_users, backref=db.backref("users", lazy="dynamic")
     )
 
     organizations = db.relationship("OrganizationMember", back_populates="user")
     teams = db.relationship("TeamMember", back_populates="user")
-
-    def is_authenticated(self):
-        return True
-
-    def is_active(self):
-        return self.active
-
-    def is_anonymous(self):
-        return False
-
-    def get_id(self):
-        return self.id
 
     def __repr__(self):
         return "<User {0}>".format(self.username)
@@ -124,6 +117,22 @@ class GitHubIdentity(Model):
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.datetime.now)
 
     user = db.relationship("User", backref=db.backref("github_identity", uselist=False))
+
+
+class WebAuthn(Model, FsWebAuthnMixin):
+    __tablename__ = "webauthn"
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True,
+    )
+    user_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("users.id"),
+        nullable=False,
+    )
 
 
 class Organization(Model):

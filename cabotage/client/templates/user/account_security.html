@@ -1,0 +1,219 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import render_field, icon, page_header %}
+
+{% block title %}
+  Two-Factor Authentication - Cabotage
+{% endblock title %}
+
+{% block css %}
+  {% if security.webauthn %}
+    <script src="{{ url_for('security.static', filename='js/webauthn.js') }}"></script>
+    <script src="{{ url_for('security.static', filename='js/base64.js') }}"></script>
+  {% endif %}
+{% endblock css %}
+
+{% block content %}
+  {% call page_header('Two-Factor Authentication', 'Manage your sign-in verification') %}
+  {% endcall %}
+
+  <div class="flex flex-col gap-6 max-w-2xl mx-auto"
+       data-wan-delete-url="{{ url_for_security('wan_delete') }}"
+       data-csrf-token="{{ csrf_token() }}"
+       id="security-settings">
+
+    {# Security Keys #}
+    {% if security.webauthn %}
+      <div class="card bg-base-200 border border-base-300">
+        <div class="card-body">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              {{ icon('key', 'w-5 h-5 text-primary') }}
+              <div>
+                <h2 class="text-base font-semibold text-base-content">Security Keys</h2>
+                <p class="text-sm text-base-content/50">Hardware keys and passkeys like YubiKey or Touch ID</p>
+              </div>
+            </div>
+            {% if webauthn_creds %}
+              <span class="badge badge-primary badge-outline badge-sm gap-1">
+                {{ icon('check', 'w-3 h-3') }} {{ webauthn_creds|length }} registered
+              </span>
+            {% else %}
+              <span class="badge badge-sm border border-base-content/20 text-base-content/50">None registered</span>
+            {% endif %}
+          </div>
+
+          {% if webauthn_creds %}
+            <div class="flex flex-col gap-2 mt-3">
+              {% for cred in webauthn_creds %}
+                <div class="flex items-center gap-3 p-3 rounded-lg border border-base-content/10 bg-base-100">
+                  {{ icon('key', 'w-4 h-4 text-base-content/40 shrink-0') }}
+                  <div class="flex-1 min-w-0">
+                    <div class="text-sm font-medium text-base-content">{{ cred.name }}</div>
+                    <div class="text-xs text-base-content/40">
+                      {% if cred.device_type == 'multi_device' %}Synced passkey{% else %}Hardware key{% endif %}
+                      {% if cred.lastuse_datetime %}&middot; last used {{ cred.lastuse_datetime|humanize }}{% endif %}
+                    </div>
+                  </div>
+                  {% if can_remove_method %}
+                    <button type="button"
+                            class="btn btn-ghost btn-xs btn-circle text-base-content/30 hover:text-error"
+                            onclick="document.getElementById('delete-key-{{ loop.index }}').showModal()"
+                            title="Remove key">
+                      {{ icon('x', 'w-3.5 h-3.5') }}
+                    </button>
+                  {% else %}
+                    <span class="text-xs text-base-content/30 whitespace-nowrap" title="Add another method before removing this one">{{ icon('lock', 'w-3 h-3 inline') }}</span>
+                  {% endif %}
+                </div>
+
+                {% if can_remove_method %}
+                  <dialog id="delete-key-{{ loop.index }}" class="modal">
+                    <div class="modal-box max-w-sm">
+                      <h3 class="text-base font-semibold text-base-content">Remove Security Key</h3>
+                      <p class="text-sm text-base-content/60 mt-2">
+                        Are you sure you want to remove <strong>{{ cred.name }}</strong>?
+                      </p>
+                      <div class="modal-action">
+                        <form method="dialog"><button class="btn btn-ghost btn-sm">Cancel</button></form>
+                        <button type="button" class="btn btn-error btn-sm wan-delete-btn"
+                                data-key-name="{{ cred.name }}">Remove</button>
+                      </div>
+                    </div>
+                    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+                  </dialog>
+                {% endif %}
+              {% endfor %}
+            </div>
+          {% endif %}
+
+          <div class="mt-3">
+            <button type="button" class="btn btn-sm btn-outline gap-1.5"
+                    onclick="document.getElementById('add-key-modal').showModal()">
+              {{ icon('plus', 'w-3.5 h-3.5') }}
+              Add Security Key
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {% include "security/_wan_register_modal.html" %}
+    {% endif %}
+
+    {# Authenticator App #}
+    {% if security.two_factor %}
+      <div class="card bg-base-200 border border-base-300">
+        <div class="card-body">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              {{ icon('shield', 'w-5 h-5 text-primary') }}
+              <div>
+                <h2 class="text-base font-semibold text-base-content">Authenticator App</h2>
+                <p class="text-sm text-base-content/50">TOTP codes from an app like Google Authenticator or 1Password</p>
+              </div>
+            </div>
+            {% if has_totp %}
+              <span class="badge badge-primary badge-outline badge-sm gap-1">
+                {{ icon('check', 'w-3 h-3') }} Enabled
+              </span>
+            {% else %}
+              <span class="badge badge-sm border border-base-content/20 text-base-content/50">Not set up</span>
+            {% endif %}
+          </div>
+          <div class="mt-3">
+            {% if has_totp %}
+              {% if can_remove_method %}
+                <button type="button" class="btn btn-sm btn-outline btn-error gap-1.5"
+                        onclick="document.getElementById('disable-totp-modal').showModal()">
+                  {{ icon('x', 'w-3.5 h-3.5') }}
+                  Disable
+                </button>
+              {% else %}
+                <div class="text-xs text-base-content/40">
+                  {{ icon('info', 'w-3.5 h-3.5 inline') }}
+                  Set up another method before disabling this one.
+                </div>
+              {% endif %}
+            {% else %}
+              <button type="button" class="btn btn-sm btn-outline gap-1.5"
+                      onclick="document.getElementById('setup-totp-modal').showModal(); initTotpSetup();">
+                {{ icon('plus', 'w-3.5 h-3.5') }}
+                Set Up
+              </button>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      {% if has_totp and can_remove_method %}
+        <dialog id="disable-totp-modal" class="modal">
+          <div class="modal-box max-w-sm">
+            <h3 class="text-base font-semibold text-base-content">Disable Authenticator App</h3>
+            <p class="text-sm text-base-content/60 mt-2">
+              Are you sure you want to disable authenticator app verification?
+            </p>
+            <div class="modal-action">
+              <form method="dialog"><button class="btn btn-ghost btn-sm">Cancel</button></form>
+              <form action="{{ url_for_security('two_factor_setup') }}" method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="setup" value="disable">
+                <button type="submit" class="btn btn-error btn-sm">Disable</button>
+              </form>
+            </div>
+          </div>
+          <form method="dialog" class="modal-backdrop"><button>close</button></form>
+        </dialog>
+      {% endif %}
+
+      {% if not has_totp %}
+        {% include "security/_totp_setup_modal.html" %}
+      {% endif %}
+    {% endif %}
+
+    {# Recovery Codes #}
+    {% if security.support_mfa and config.SECURITY_MULTI_FACTOR_RECOVERY_CODES %}
+      <div class="card bg-base-200 border border-base-300">
+        <div class="card-body">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              {{ icon('lock', 'w-5 h-5 text-primary') }}
+              <div>
+                <h2 class="text-base font-semibold text-base-content">Recovery Codes</h2>
+                <p class="text-sm text-base-content/50">One-time backup codes in case you lose access to your other methods</p>
+              </div>
+            </div>
+            {% if recovery_codes_remaining > 0 %}
+              <span class="badge badge-primary badge-outline badge-sm">
+                {{ recovery_codes_remaining }}/{{ recovery_codes_total }}
+              </span>
+            {% else %}
+              <span class="badge badge-sm border border-base-content/20 text-base-content/50">Not generated</span>
+            {% endif %}
+          </div>
+
+          {% if recovery_codes_remaining > 0 %}
+            {% if recovery_codes_remaining <= 2 %}
+              <div class="alert alert-warning text-sm py-2 mt-3">
+                {{ icon('alert-triangle', 'w-4 h-4 shrink-0') }}
+                <span>You're running low on recovery codes. Consider generating new ones.</span>
+              </div>
+            {% endif %}
+            <div class="mt-3">
+              <a href="{{ url_for_security('mf_recovery_codes') }}" class="btn btn-sm btn-outline gap-1.5">
+                {{ icon('refresh', 'w-3.5 h-3.5') }}
+                Regenerate Codes
+              </a>
+            </div>
+          {% else %}
+            <div class="mt-3">
+              <a href="{{ url_for_security('mf_recovery_codes') }}" class="btn btn-sm btn-outline gap-1.5">
+                {{ icon('plus', 'w-3.5 h-3.5') }}
+                Generate Codes
+              </a>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
+
+  </div>
+{% endblock content %}
