@@ -419,12 +419,17 @@
                 <ul tabindex="0"
                     class="dropdown-content menu bg-base-300 rounded-lg z-[60] w-52 p-2 shadow-xl border border-base-content/10 mt-2">
                   <li class="menu-title text-xs text-base-content/40 px-2 pb-1"><span class="flex items-center gap-1.5">{% if current_user.github_identity %}{{ icon('github', 'w-3.5 h-3.5 shrink-0') }}{% endif %}{{ (current_user.username or current_user.email) | display_username }}</span></li>
-                  {% if security.changeable %}
+                  {% if security.changeable and not current_user.github_identity %}
                   <li>
                     <a href="{{ url_for('security.change_password') }}" class="text-sm">Change Password</a>
                   </li>
-                  <div class="divider my-1"></div>
                   {% endif %}
+                  {% if security.two_factor or security.webauthn %}
+                  <li>
+                    <a href="{{ url_for('user.account_security') }}" class="text-sm">Two-Factor Auth</a>
+                  </li>
+                  {% endif %}
+                  <div class="divider my-1"></div>
                   <li>
                     <a href="{{ url_for('security.logout') }}" class="text-sm text-error">Sign Out</a>
                   </li>

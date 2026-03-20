@@ -22,7 +22,6 @@ from flask_bcrypt import Bcrypt
 from flask_bootstrap import Bootstrap
 from flask_debugtoolbar import DebugToolbarExtension
 import humanize as humanize_lib
-from flask_login import LoginManager
 from flask_mail import Mail
 from flask_migrate import Migrate
 from flask_security import Security, SQLAlchemyUserDatastore
@@ -48,12 +47,14 @@ from cabotage.server.ext.config_writer import ConfigWriter
 from cabotage.server.ext.kubernetes import Kubernetes
 from cabotage.server.ext.vault_db_creds import VaultDBCreds
 from cabotage.server.ext.github_app import GitHubApp
+from cabotage.server.mfa import CabotageWebauthnUtil
 
 # instantiate the extensions
 bcrypt = Bcrypt()
 toolbar = DebugToolbarExtension()
 bootstrap = Bootstrap()
-security = Security()
+
+security = Security(webauthn_util_cls=CabotageWebauthnUtil)
 
 
 db_metadata = MetaData(
@@ -74,7 +75,6 @@ if TYPE_CHECKING:
 else:
     Model = db.Model
 principal = Principal()
-login_manager = LoginManager()
 mail = Mail()
 migrate = Migrate()
 consul = Consul()
@@ -133,9 +133,9 @@ def create_app():
         name="cabotage_admin", index_view=AdminIndexView(), template_mode="bootstrap3"
     )
 
-    from cabotage.server.models.auth import User, Role
+    from cabotage.server.models.auth import User, Role, WebAuthn
 
-    user_datastore = SQLAlchemyUserDatastore(db, User, Role)
+    user_datastore = SQLAlchemyUserDatastore(db, User, Role, webauthn_model=WebAuthn)
 
     from cabotage.server.user.forms import (
         ExtendedConfirmRegisterForm,
@@ -199,7 +199,6 @@ def create_app():
     db.init_app(app)
     principal.init_app(app)
     identity_loaded.connect(cabotage_on_identity_loaded, app)
-    login_manager.init_app(app)
     mail.init_app(app)
     migrate.init_app(app, db)
     nav.init_app(app)
@@ -261,10 +260,6 @@ def create_app():
     sock.init_app(app)
     babel.init_app(app)
 
-    @login_manager.user_loader
-    def load_user(userid):
-        return user_datastore.find_user(id=userid)
-
     # register blueprints
     from cabotage.server.user.views import user_blueprint
     from cabotage.server.main.views import main_blueprint
@@ -274,6 +269,10 @@ def create_app():
 
     # GitHub webhook uses HMAC validation, not CSRF tokens
     csrf.exempt("cabotage.server.user.views.github_hooks")
+
+    from cabotage.server.mfa import register_mfa_guards
+
+    register_mfa_guards(app)
 
     # error handlers
     @app.errorhandler(401)

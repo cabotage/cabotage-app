@@ -1,0 +1,49 @@
+<dialog id="setup-totp-modal" class="modal">
+  <div class="modal-box max-w-sm"
+       id="totp-setup-container"
+       data-setup-url="{{ url_for_security('two_factor_setup') }}"
+       data-validate-url="{{ url_for_security('two_factor_token_validation') }}"
+       data-success-url="{{ url_for('user.account_security') }}"
+       data-csrf-token="{{ csrf_token() }}">
+
+    <div id="totp-step-loading" class="text-center py-4">
+      <span class="loading loading-spinner loading-md text-primary"></span>
+      <p class="text-sm text-base-content/60 mt-2">Generating secret...</p>
+    </div>
+
+    <div id="totp-step-verify" class="hidden">
+      <h3 class="text-base font-semibold text-base-content">Set Up Authenticator</h3>
+      <p class="text-sm text-base-content/60 mt-2">
+        Scan this code with your authenticator app, or enter the key manually.
+      </p>
+      <div id="totp-qr-container" class="flex justify-center my-4"></div>
+      <div class="text-center mb-4">
+        <button type="button" class="btn btn-ghost btn-xs" onclick="document.getElementById('totp-manual-key').classList.toggle('hidden')">
+          Show manual key
+        </button>
+        <div id="totp-manual-key" class="hidden mt-2 font-mono text-xs text-base-content/50 bg-base-300 rounded-lg p-3 select-all break-all"></div>
+      </div>
+      <div id="totp-verify-error" class="hidden mb-3"></div>
+      <form id="totp-verify-form" class="flex flex-col gap-3">
+        <input type="text"
+               id="totp-verify-code"
+               class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono text-center tracking-widest"
+               placeholder="666420"
+               autocomplete="one-time-code"
+               inputmode="numeric"
+               pattern="[0-9]{6}"
+               maxlength="6">
+        <div class="flex gap-2">
+          <button type="button" class="btn btn-ghost btn-sm flex-1" onclick="document.getElementById('setup-totp-modal').close()">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm flex-1">Verify</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="totp-step-error" class="hidden text-center py-4">
+      <p class="text-sm text-error mb-3" id="totp-setup-error-msg"></p>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('setup-totp-modal').close()">Close</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>

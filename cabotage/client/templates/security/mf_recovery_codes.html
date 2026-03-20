@@ -1,0 +1,156 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import render_field, icon %}
+
+{% block title %}
+  Recovery Codes - Cabotage
+{% endblock title %}
+
+{% block content %}
+  <div class="form-card">
+    <div class="card bg-base-200 border border-base-300 shadow-xl">
+      <div class="card-body">
+        <div class="text-center mb-6">
+          <h1 class="text-2xl font-semibold text-base-content">Recovery Codes</h1>
+          <p class="text-sm text-base-content/50 mt-1">Backup codes for when you lose access to your other methods</p>
+        </div>
+
+        {% if recovery_codes %}
+          <div class="bg-base-100 rounded-lg border border-base-content/10 p-4" id="recovery-codes-block">
+            <div class="grid grid-cols-2 gap-2">
+              {% for rc in recovery_codes %}
+                <div class="font-mono text-sm text-center py-1.5 px-3 bg-base-300 rounded">{{ rc }}</div>
+              {% endfor %}
+            </div>
+          </div>
+          <div class="flex gap-2 mt-3">
+            <button type="button" class="btn btn-outline btn-sm flex-1 gap-1.5" id="copy-codes-btn"
+                    data-codes="{{ recovery_codes|join('\n') }}">
+              {{ icon('copy', 'w-3.5 h-3.5') }}
+              <span>Copy</span>
+            </button>
+            <a class="btn btn-outline btn-sm flex-1 gap-1.5" id="download-codes-btn"
+               download="{{ request.host.split(':')[0] }}-recovery-codes-{{ current_user.username | display_username }}.txt"
+               href="data:text/plain;charset=utf-8,Cabotage Recovery Codes%0ASite: {{ request.host.split(':')[0] }}%0AUser: {{ current_user.username | display_username }}%0A%0A{{ recovery_codes|join('%0A') }}">
+              {{ icon('deploy', 'w-3.5 h-3.5') }}
+              Download
+            </a>
+          </div>
+          <div class="alert alert-warning text-sm py-2 mt-3" id="codes-warning">
+            {{ icon('alert-triangle', 'w-4 h-4 shrink-0') }}
+            <span>Store these codes safely. Each code can only be used once.</span>
+          </div>
+
+          {# Step 1: Save codes #}
+          <div class="mt-4" id="codes-step-save">
+            <p class="text-xs text-base-content/40 text-center mb-2">Copy or download your codes first</p>
+            <button type="button" class="btn btn-primary w-full" id="codes-saved-btn" disabled>
+              I've Saved These Codes
+            </button>
+          </div>
+
+          {# Step 2: Verify by entering one back #}
+          <div class="mt-4 hidden" id="codes-step-verify">
+            <p class="text-sm text-base-content/60 mb-3 text-center">
+              Enter one of your recovery codes to prove you saved them. This code will be consumed.
+            </p>
+            <form action="{{ url_for('user.account_security_verify_recovery_code') }}"
+                  method="post"
+                  class="flex flex-col gap-3">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="text"
+                     name="code"
+                     class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono text-center tracking-wider"
+                     placeholder="xxxx-xxxx-xxxx"
+                     autocomplete="off"
+                     required>
+              <button type="submit" class="btn btn-primary w-full">Verify &amp; Continue</button>
+            </form>
+          </div>
+
+          <script>
+          (function() {
+            var copyBtn = document.getElementById('copy-codes-btn');
+            var dlBtn = document.getElementById('download-codes-btn');
+            var savedBtn = document.getElementById('codes-saved-btn');
+            var stepSave = document.getElementById('codes-step-save');
+            var stepVerify = document.getElementById('codes-step-verify');
+
+            function enableSavedBtn() {
+              savedBtn.classList.remove('btn-disabled');
+              savedBtn.removeAttribute('disabled');
+            }
+
+            copyBtn.addEventListener('click', function() {
+              var codes = copyBtn.getAttribute('data-codes');
+              navigator.clipboard.writeText(codes).then(function() {
+                var label = copyBtn.querySelector('span');
+                label.textContent = 'Copied!';
+                setTimeout(function() { label.textContent = 'Copy'; }, 2000);
+                enableSavedBtn();
+              });
+            });
+
+            dlBtn.addEventListener('click', function() {
+              enableSavedBtn();
+            });
+
+            savedBtn.addEventListener('click', function() {
+              // Remove codes from DOM so they can't be inspected
+              var codesBlock = document.getElementById('recovery-codes-block');
+              if (codesBlock) codesBlock.remove();
+              var warning = document.getElementById('codes-warning');
+              if (warning) warning.remove();
+              var regen = document.getElementById('codes-regenerate-section');
+              if (regen) regen.remove();
+              copyBtn.remove();
+              dlBtn.remove();
+              stepSave.classList.add('hidden');
+              stepVerify.classList.remove('hidden');
+              stepVerify.querySelector('input[name="code"]').focus();
+            });
+          })();
+          </script>
+
+          <div id="codes-regenerate-section">
+            <div class="divider text-base-content/30 text-xs">regenerate</div>
+
+            <form action="{{ url_for_security('mf_recovery_codes') }}"
+                  method="post"
+                  class="flex flex-col gap-4">
+              {{ mf_recovery_codes_form.hidden_tag() }}
+              {% for error in mf_recovery_codes_form.csrf_token.errors %}
+                <p class="text-xs text-error">{{ error }}</p>
+              {% endfor %}
+              <p class="text-sm text-base-content/60">
+                Generating new codes will invalidate all previous codes.
+              </p>
+              <button type="submit" name="generate_new_codes" value="Generate New Recovery Codes"
+                      class="btn btn-outline btn-sm w-full">Regenerate Codes</button>
+            </form>
+          </div>
+        {% else %}
+          <p class="text-sm text-base-content/60 text-center mb-4">
+            Recovery codes let you sign in if you lose access to your security key or authenticator app.
+          </p>
+          <form action="{{ url_for_security('mf_recovery_codes') }}"
+                method="post"
+                class="flex flex-col gap-4">
+            {{ mf_recovery_codes_form.hidden_tag() }}
+            {% for error in mf_recovery_codes_form.csrf_token.errors %}
+              <p class="text-xs text-error">{{ error }}</p>
+            {% endfor %}
+            <button type="submit" name="generate_new_codes" value="Generate New Recovery Codes"
+                    class="btn btn-primary w-full">Generate Recovery Codes</button>
+          </form>
+        {% endif %}
+
+        {% if current_user.mf_recovery_codes %}
+          <div class="mt-4 text-center">
+            <a href="{{ url_for('user.account_security') }}"
+               class="text-sm text-base-content/40 hover:text-accent transition-colors">&larr; Back to security settings</a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endblock content %}

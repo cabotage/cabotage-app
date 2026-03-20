@@ -9,19 +9,69 @@ on:
       - main
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-24.04-arm
-    strategy:
-      matrix:
-        include:
-          - name: Lint
-            command: make lint
-          - name: Type-Check
-            command: make type-check
-          - name: Security-Check
-            command: make security-check
-    name: ${{ matrix.name }}
+    name: Lint
     steps:
       - uses: actions/checkout@v3
-      - name: Run ${{ matrix.name }}
-        run: ${{ matrix.command }}
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.11
+      - run: uv sync --frozen
+      - run: uv run black --check --diff .
+      - run: uv run ruff check .
+
+  type-check:
+    runs-on: ubuntu-24.04-arm
+    name: Type-Check
+    steps:
+      - uses: actions/checkout@v3
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.11
+      - run: uv sync --frozen
+      - run: uv run mypy --config-file pyproject.toml .
+
+  security-check:
+    runs-on: ubuntu-24.04-arm
+    name: Security-Check
+    steps:
+      - uses: actions/checkout@v3
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.11
+      - run: uv sync --frozen
+      - run: uv run bandit -c pyproject.toml -r .
+
+  test:
+    runs-on: ubuntu-24.04-arm
+    name: Tests
+    services:
+      db:
+        image: postgres:16
+        env:
+          POSTGRES_DB: cabotage_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up database extensions
+        run: |
+          docker run --rm --network host postgres:16 psql -h localhost -U postgres -d cabotage_test -c "CREATE EXTENSION IF NOT EXISTS citext; CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.11
+      - run: uv sync --frozen
+      - name: Run migrations
+        run: uv run flask db upgrade
+        env:
+          CABOTAGE_SQLALCHEMY_DATABASE_URI: postgresql://postgres@localhost/cabotage_test
+          FLASK_APP: cabotage.server.wsgi
+      - name: Run tests
+        run: uv run pytest tests/ -v
+        env:
+          CABOTAGE_SQLALCHEMY_DATABASE_URI: postgresql://postgres@localhost/cabotage_test
+          CABOTAGE_TESTING: "True"
+          FLASK_APP: cabotage.server.wsgi

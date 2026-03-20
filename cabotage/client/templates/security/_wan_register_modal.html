@@ -1,0 +1,58 @@
+{% from "_macros.html" import render_field %}
+
+<dialog id="add-key-modal" class="modal">
+  <div class="modal-box max-w-sm">
+    <h3 class="text-base font-semibold text-base-content">Add Security Key</h3>
+    <p class="text-sm text-base-content/60 mt-2">Give your new key a name to identify it.</p>
+    <form action="{{ url_for_security('wan_register') }}"
+          method="post"
+          class="flex flex-col gap-4 mt-4">
+      {% if wan_register_form is defined and wan_register_form %}
+        {{ wan_register_form.hidden_tag() }}
+        {{ render_field(wan_register_form.name, placeholder='e.g. YubiKey, Touch ID') }}
+        {% if security.wan_allow_as_first_factor %}
+          <div class="w-full">
+            <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Key Usage</label>
+            <div class="flex flex-col gap-2 mt-2">
+              {% for subfield in wan_register_form.usage %}
+                <label class="label cursor-pointer justify-start gap-3 p-3 rounded-lg border border-base-content/10 hover:border-primary/30 transition-colors">
+                  {{ subfield(class="radio radio-primary radio-sm") }}
+                  <span class="text-sm">{{ subfield.label.text }}</span>
+                </label>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+      {% else %}
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="w-full">
+          <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Key Name</label>
+          <input type="text" name="name"
+                 class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary"
+                 placeholder="e.g. YubiKey, Touch ID"
+                 required>
+        </div>
+        {% if security.wan_allow_as_first_factor %}
+          <div class="w-full">
+            <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Key Usage</label>
+            <div class="flex flex-col gap-2 mt-2">
+              <label class="label cursor-pointer justify-start gap-3 p-3 rounded-lg border border-base-content/10 hover:border-primary/30 transition-colors">
+                <input type="radio" name="usage" value="secondary" class="radio radio-primary radio-sm" checked>
+                <span class="text-sm">Second factor only</span>
+              </label>
+              <label class="label cursor-pointer justify-start gap-3 p-3 rounded-lg border border-base-content/10 hover:border-primary/30 transition-colors">
+                <input type="radio" name="usage" value="first" class="radio radio-primary radio-sm">
+                <span class="text-sm">Passwordless sign-in</span>
+              </label>
+            </div>
+          </div>
+        {% endif %}
+      {% endif %}
+      <div class="modal-action mt-2">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('add-key-modal').close()">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm">Register Key</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>

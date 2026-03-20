@@ -2580,6 +2580,8 @@ document.addEventListener('DOMContentLoaded', function () {
   initAnnotationTables();
   initIngressForms();
   initConfirmDialogs();
+  initTfSelect();
+  initSecuritySettings();
   window.addEventListener('resize', function () {
     autoExpandCollapsibleCards();
     syncDetailLogHeight();
@@ -2773,6 +2775,324 @@ function initConfirmDialogs() {
     dialog.addEventListener('close', function () {
       input.value = '';
       btn.disabled = true;
+    });
+  });
+}
+
+/* Two-Factor Select — inline TOTP + WebAuthn on tf_select page */
+function initTfSelect() {
+  var container = document.getElementById('tf-select-page');
+  if (!container) return;
+
+  var csrfToken = container.querySelector('input[name="csrf_token"]').value;
+  var selectUrl = container.getAttribute('data-select-url');
+  var validateUrl = container.getAttribute('data-validate-url');
+  var signinUrl = container.getAttribute('data-signin-url');
+  var nextUrl = container.getAttribute('data-next-url') || '';
+  var rememberCheckbox = document.getElementById('tf-remember-checkbox');
+
+  // TOTP inline submit
+  var totpForm = document.getElementById('totp-form');
+  if (totpForm) {
+    var fullValidateUrl = validateUrl;
+    if (nextUrl) fullValidateUrl += '?next=' + encodeURIComponent(nextUrl);
+
+    var codeField = totpForm.querySelector('input[name="code"]');
+    codeField.addEventListener('input', function() {
+      codeField.value = codeField.value.replace(/[^0-9]/g, '').slice(0, 6);
+    });
+
+    totpForm.addEventListener('submit', function(e) {
+      e.preventDefault();
+      var code = codeField.value;
+      var btn = totpForm.querySelector('button[type="submit"]');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loading loading-spinner loading-xs"></span>';
+
+      var selectData = new FormData();
+      selectData.append('csrf_token', csrfToken);
+      selectData.append('which', 'authenticator');
+
+      fetch(selectUrl, {
+        method: 'POST',
+        body: selectData,
+        redirect: 'manual',
+        credentials: 'same-origin',
+      }).then(function() {
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = fullValidateUrl;
+        form.style.display = 'none';
+
+        var csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrf_token';
+        csrfInput.value = csrfToken;
+        form.appendChild(csrfInput);
+
+        var codeInput = document.createElement('input');
+        codeInput.type = 'hidden';
+        codeInput.name = 'code';
+        codeInput.value = code;
+        form.appendChild(codeInput);
+
+        if (rememberCheckbox && rememberCheckbox.checked) {
+          var rememberInput = document.createElement('input');
+          rememberInput.type = 'hidden';
+          rememberInput.name = 'remember';
+          rememberInput.value = 'y';
+          form.appendChild(rememberInput);
+        }
+
+        document.body.appendChild(form);
+        form.submit();
+      });
+    });
+  }
+
+  // WebAuthn inline flow
+  var wanBtn = document.getElementById('wan-btn');
+  if (wanBtn) {
+    var wanMethod = wanBtn.getAttribute('data-method');
+
+    wanBtn.addEventListener('click', function() {
+      wanBtn.disabled = true;
+      wanBtn.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Waiting for key...';
+      var errEl = document.getElementById('wan-error');
+      errEl.classList.add('hidden');
+
+      var selectData = new FormData();
+      selectData.append('csrf_token', csrfToken);
+      selectData.append('which', wanMethod);
+
+      fetch(selectUrl, {
+        method: 'POST',
+        body: selectData,
+        redirect: 'manual',
+        credentials: 'same-origin',
+      }).then(function() {
+        var signinData = new FormData();
+        signinData.append('csrf_token', csrfToken);
+
+        return fetch(signinUrl, {
+          method: 'POST',
+          body: signinData,
+          credentials: 'same-origin',
+          headers: { 'Accept': 'application/json' },
+        });
+      }).then(function(resp) {
+        return resp.json();
+      }).then(function(data) {
+        if (!data.response || !data.response.credential_options) {
+          throw new Error(data.response && data.response.errors ? JSON.stringify(data.response.errors) : 'Failed to get credential options');
+        }
+        var credOpts = JSON.stringify(data.response.credential_options);
+        var wanState = data.response.wan_state;
+
+        return handleSignin(credOpts).then(function(result) {
+          return { result: result, wanState: wanState };
+        });
+      }).then(function(ctx) {
+        if (ctx.result.error_msg) {
+          throw new Error(ctx.result.error_msg);
+        }
+        var responseUrl = signinUrl + '/' + ctx.wanState;
+        if (nextUrl) responseUrl += '?next=' + encodeURIComponent(nextUrl);
+
+        var form = document.getElementById('wan-response-form');
+        form.action = responseUrl;
+        document.getElementById('wan-credential').value = ctx.result.credential;
+        document.getElementById('wan-remember').value = (rememberCheckbox && rememberCheckbox.checked) ? 'y' : '';
+        form.submit();
+      }).catch(function(err) {
+        wanBtn.disabled = false;
+        wanBtn.textContent = 'Use Security Key';
+        errEl.textContent = '';
+        var alertDiv = document.createElement('div');
+        alertDiv.className = 'alert alert-error text-sm py-2';
+        var msgSpan = document.createElement('span');
+        msgSpan.textContent = err.message;
+        alertDiv.appendChild(msgSpan);
+        errEl.appendChild(alertDiv);
+        errEl.classList.remove('hidden');
+      });
+    });
+  }
+}
+
+/* TOTP Authenticator Setup Modal */
+function initTotpSetup() {
+  var container = document.getElementById('totp-setup-container');
+  if (!container) return;
+
+  var setupUrl = container.getAttribute('data-setup-url');
+  var validateUrl = container.getAttribute('data-validate-url');
+  var successUrl = container.getAttribute('data-success-url');
+  var csrfToken = container.getAttribute('data-csrf-token');
+
+  var stepLoading = document.getElementById('totp-step-loading');
+  var stepVerify = document.getElementById('totp-step-verify');
+  var stepError = document.getElementById('totp-step-error');
+  var errorMsg = document.getElementById('totp-setup-error-msg');
+
+  // Reset to loading state
+  stepLoading.classList.remove('hidden');
+  stepVerify.classList.add('hidden');
+  stepError.classList.add('hidden');
+
+  // Step 1: POST to tf-setup to generate secret
+  var setupData = new FormData();
+  setupData.append('csrf_token', csrfToken);
+  setupData.append('setup', 'authenticator');
+
+  fetch(setupUrl, {
+    method: 'POST',
+    body: setupData,
+    credentials: 'same-origin',
+    headers: { 'Accept': 'application/json' },
+  }).then(function(resp) {
+    return resp.json();
+  }).then(function(data) {
+    var r = data.response || {};
+    var key = r.tf_authr_key;
+    var username = r.tf_authr_username || '';
+    var issuer = r.tf_authr_issuer || '';
+    var stateToken = r.tf_state_token;
+
+    if (!key) {
+      throw new Error('Failed to generate authenticator secret');
+    }
+
+    // Show key
+    document.getElementById('totp-manual-key').textContent = key;
+
+    // Generate otpauth URI and QR code
+    var rawKey = key.replace(/-/g, '');
+    var otpauthUri = 'otpauth://totp/' + encodeURIComponent(issuer + ':' + username)
+      + '?secret=' + rawKey + '&issuer=' + encodeURIComponent(issuer);
+    var qrContainer = document.getElementById('totp-qr-container');
+    qrContainer.textContent = '';
+    generateQrImg(otpauthUri, qrContainer);
+
+    stepLoading.classList.add('hidden');
+    stepVerify.classList.remove('hidden');
+
+    // Digit-only filtering
+    var codeInput = document.getElementById('totp-verify-code');
+    codeInput.value = '';
+    codeInput.addEventListener('input', function() {
+      codeInput.value = codeInput.value.replace(/[^0-9]/g, '').slice(0, 6);
+    });
+    codeInput.focus();
+
+    // Step 2: verify code
+    var verifyForm = document.getElementById('totp-verify-form');
+    verifyForm.onsubmit = function(e) {
+      e.preventDefault();
+      var code = codeInput.value;
+      if (code.length !== 6) return;
+
+      var btn = verifyForm.querySelector('button[type="submit"]');
+      btn.disabled = true;
+      btn.textContent = 'Verifying...';
+      var verifyErr = document.getElementById('totp-verify-error');
+      verifyErr.classList.add('hidden');
+
+      var url = stateToken ? (setupUrl + '/' + stateToken) : validateUrl;
+
+      var verifyData = new FormData();
+      verifyData.append('csrf_token', csrfToken);
+      verifyData.append('code', code);
+
+      fetch(url, {
+        method: 'POST',
+        body: verifyData,
+        credentials: 'same-origin',
+        headers: { 'Accept': 'application/json' },
+      }).then(function(resp) {
+        return resp.json();
+      }).then(function(result) {
+        var meta = result.response || {};
+        if (meta.errors || meta.field_errors) {
+          var msg = '';
+          if (meta.field_errors) {
+            for (var field in meta.field_errors) {
+              msg += meta.field_errors[field].join(', ');
+            }
+          }
+          if (meta.errors) {
+            msg = meta.errors.join(', ');
+          }
+          throw new Error(msg || 'Invalid code');
+        }
+        // Success — redirect to security settings
+        window.location.href = successUrl;
+      }).catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = 'Verify';
+        verifyErr.textContent = '';
+        var alertDiv = document.createElement('div');
+        alertDiv.className = 'alert alert-error text-sm py-2';
+        var msgSpan = document.createElement('span');
+        msgSpan.textContent = err.message;
+        alertDiv.appendChild(msgSpan);
+        verifyErr.appendChild(alertDiv);
+        verifyErr.classList.remove('hidden');
+      });
+    };
+  }).catch(function(err) {
+    stepLoading.classList.add('hidden');
+    errorMsg.textContent = err.message;
+    stepError.classList.remove('hidden');
+  });
+}
+
+/* Generate QR code as an img element using the server-side endpoint */
+function generateQrImg(otpauthUri, container) {
+  var img = document.createElement('img');
+  img.alt = 'Scan with authenticator app';
+  img.className = 'w-48 h-48 rounded-lg border border-base-content/10 bg-white p-2';
+  img.src = '/account/security/qr?uri=' + encodeURIComponent(otpauthUri);
+  container.appendChild(img);
+}
+
+/* Security Settings — WebAuthn key deletion via fetch */
+function initSecuritySettings() {
+  var container = document.getElementById('security-settings');
+  if (!container) return;
+
+  var deleteUrl = container.getAttribute('data-wan-delete-url');
+  var csrfToken = container.getAttribute('data-csrf-token');
+  if (!deleteUrl) return;
+
+  container.querySelectorAll('.wan-delete-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var keyName = btn.getAttribute('data-key-name');
+      btn.disabled = true;
+      btn.textContent = 'Removing...';
+
+      var data = new FormData();
+      data.append('csrf_token', csrfToken);
+      data.append('name', keyName);
+
+      fetch(deleteUrl, {
+        method: 'POST',
+        body: data,
+        credentials: 'same-origin',
+        headers: { 'Accept': 'application/json' },
+      }).then(function(resp) {
+        return resp.json();
+      }).then(function(result) {
+        var meta = result.response || {};
+        if (meta.errors || meta.field_errors) {
+          throw new Error('Failed to remove key');
+        }
+        // Reload — Flask-Security doesn't flash on JSON, so use a param
+        window.location.href = window.location.pathname + '?deleted=' + encodeURIComponent(keyName);
+      }).catch(function() {
+        btn.disabled = false;
+        btn.textContent = 'Remove';
+      });
     });
   });
 }
