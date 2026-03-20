@@ -147,6 +147,15 @@ def create_app():
     app_settings = os.getenv("APP_SETTINGS", "cabotage.server.config.Config")
     app.config.from_object(app_settings)
 
+    # TOTP_SECRETS must be a dict — deserialize if loaded as a string from env
+    totp_secrets = app.config.get("SECURITY_TOTP_SECRETS")
+    if isinstance(totp_secrets, str):
+        import json
+
+        app.config["SECURITY_TOTP_SECRETS"] = {
+            int(k): v for k, v in json.loads(totp_secrets).items()
+        }
+
     if app.config.get("GITHUB_OAUTH_ONLY"):
         app.config["SECURITY_REGISTERABLE"] = False
         app.config["SECURITY_RECOVERABLE"] = False

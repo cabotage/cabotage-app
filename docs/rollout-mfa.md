@@ -35,11 +35,11 @@ These settings are not new but **must not be dev defaults** in production. Verif
 | `CABOTAGE_EXT_SERVER_NAME` | Set to production hostname | Used for GitHub OAuth callback URL and email links. No scheme, no trailing slash (e.g., `cabotage.example.com`). |
 | `CABOTAGE_PROXY_FIX_NUM_PROXIES` | Set to match proxy chain | Usually `1`. Required for correct IP tracking and WebAuthn origin. |
 
-**TOTP encryption key** — `CABOTAGE_SECURITY_TOTP_SECRETS` must be configured in the application config (not as an env var, since it's a Python dict). The default is a dev placeholder. Generate a secret with:
+**TOTP encryption key** — `CABOTAGE_SECURITY_TOTP_SECRETS` must be changed from the dev default. Set it as a JSON string in the environment. Generate a secret with:
 ```bash
 python3 -c "from passlib.totp import generate_secret; print(generate_secret())"
 ```
-Set in config as: `SECURITY_TOTP_SECRETS = {1: "your-generated-secret"}`
+Set as env var: `CABOTAGE_SECURITY_TOTP_SECRETS={"1": "your-generated-secret"}`
 
 ### 3. New Configuration (Optional)
 

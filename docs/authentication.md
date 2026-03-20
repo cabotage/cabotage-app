@@ -63,7 +63,7 @@ This enforcement applies to every request via a `before_request` guard. Only MFA
 |---|---|---|
 | `CABOTAGE_SECURITY_TWO_FACTOR` | `True` | Enable TOTP-based two-factor authentication |
 | `CABOTAGE_SECURITY_TWO_FACTOR_ENABLED_METHODS` | `["authenticator"]` | Enabled 2FA methods. Only `authenticator` (TOTP) is currently used. |
-| `CABOTAGE_SECURITY_TOTP_SECRETS` | `{1: "..."}` | **Must be changed in production.** Dictionary mapping key IDs to TOTP encryption secrets. Generate a secret with `python3 -c "from passlib.totp import generate_secret; print(generate_secret())"`. |
+| `CABOTAGE_SECURITY_TOTP_SECRETS` | `{1: "..."}` | **Must be changed in production.** JSON object mapping key IDs to TOTP encryption secrets. Example: `{"1": "your-secret"}`. Generate a secret with `python3 -c "from passlib.totp import generate_secret; print(generate_secret())"`. |
 | `CABOTAGE_SECURITY_TOTP_ISSUER` | `"cabotage"` | Issuer name displayed in authenticator apps when scanning the QR code |
 
 ### WebAuthn (Security Keys & Passkeys)
