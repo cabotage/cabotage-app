@@ -114,6 +114,11 @@ def celery_init_app(app):
             "schedule": 10.0,
             "args": None,
         },
+        "tailscale-state-reconciler": {
+            "task": "cabotage.celery.tasks.tailscale.reconcile_tailscale_integration_states",
+            "schedule": 30.0,
+            "args": None,
+        },
     }
     app.extensions["celery"] = celery_app
     return celery_app

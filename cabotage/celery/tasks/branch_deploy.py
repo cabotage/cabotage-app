@@ -95,12 +95,17 @@ def _create_app_env_for_branch_deploy(
 
         # Copy ingresses with auto-generated hostnames for the new environment
         ingress_domain = current_app.config.get("INGRESS_DOMAIN")
-        if ingress_domain:
+        has_ingresses = bool(base_app_env.ingresses)
+        if ingress_domain or has_ingresses:
             from cabotage.celery.tasks.deploy import _ingress_hostname_pairs
 
             hostname_pairs = _ingress_hostname_pairs(app_env)
             hostname_prefix = readable_k8s_hostname(*hostname_pairs)
             for base_ing in base_app_env.ingresses:
+                is_tailscale = base_ing.ingress_class_name == "tailscale"
+                # Skip nginx ingresses if no INGRESS_DOMAIN
+                if not is_tailscale and not ingress_domain:
+                    continue
                 new_ing = Ingress(
                     application_environment_id=app_env.id,
                     name=base_ing.name,
@@ -118,19 +123,34 @@ def _create_app_env_for_branch_deploy(
                     cluster_issuer=base_ing.cluster_issuer,
                     force_ssl_redirect=base_ing.force_ssl_redirect,
                     service_upstream=base_ing.service_upstream,
+                    tailscale_tags=base_ing.tailscale_tags,
                 )
                 db.session.add(new_ing)
                 db.session.flush()
-                # Auto-generated hostname for the preview environment
-                auto_hostname = f"{hostname_prefix}-{base_ing.name}.{ingress_domain}"
-                db.session.add(
-                    IngressHost(
-                        ingress_id=new_ing.id,
-                        hostname=auto_hostname,
-                        tls_enabled=True,
-                        is_auto_generated=True,
+                if is_tailscale:
+                    # Tailscale: auto-generated hostname without domain suffix
+                    ts_hostname = f"{hostname_prefix}-{base_ing.name}"
+                    db.session.add(
+                        IngressHost(
+                            ingress_id=new_ing.id,
+                            hostname=ts_hostname,
+                            tls_enabled=True,
+                            is_auto_generated=True,
+                        )
                     )
-                )
+                else:
+                    # Nginx: auto-generated hostname with INGRESS_DOMAIN
+                    auto_hostname = (
+                        f"{hostname_prefix}-{base_ing.name}.{ingress_domain}"
+                    )
+                    db.session.add(
+                        IngressHost(
+                            ingress_id=new_ing.id,
+                            hostname=auto_hostname,
+                            tls_enabled=True,
+                            is_auto_generated=True,
+                        )
+                    )
                 # Copy paths
                 for base_path in base_ing.paths:
                     db.session.add(
@@ -199,6 +219,7 @@ def _precreate_ingresses(environment):
                 "application": app.slug,
             },
             ingresses=app_env.ingresses,
+            org_k8s_identifier=org.k8s_identifier,
         )
 
 

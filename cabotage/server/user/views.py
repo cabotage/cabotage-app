@@ -55,6 +55,7 @@ from cabotage.server.acl import (
 from cabotage.server.models.auth import (
     GitHubIdentity,
     Organization,
+    TailscaleIntegration,
     User,
 )
 from cabotage.server.models.auth_associations import OrganizationMember
@@ -114,6 +115,8 @@ from cabotage.server.user.forms import (
     EditProjectSettingsForm,
     IngressSettingsForm,
     IngressHostForm,
+    TailscaleIntegrationForm,
+    TailscaleIngressSettingsForm,
     ReleaseDeployForm,
     AddOrganizationUserForm,
 )
@@ -128,10 +131,12 @@ from cabotage.utils.docker_auth import (
 
 from cabotage.celery.tasks import (
     cleanup_app_env_k8s,
+    deploy_tailscale_operator,
     process_github_hook,
     run_deploy,
     run_image_build,
     run_release_build,
+    teardown_tailscale_operator,
 )
 
 from cabotage.celery.tasks.deploy import resize_deployment, scale_deployment
@@ -637,8 +642,11 @@ def organization_settings(org_slug):
         abort(403)
 
     form = EditOrganizationForm()
+    ts_form = TailscaleIntegrationForm()
+    ts_integration = organization.tailscale_integration
+    action = request.form.get("_action")
 
-    if form.validate_on_submit():
+    if request.method == "POST" and action == "save_org" and form.validate_on_submit():
         organization.name = form.name.data
         db.session.commit()
         flash("Organization settings saved.", "success")
@@ -646,9 +654,90 @@ def organization_settings(org_slug):
             url_for("user.organization_settings", org_slug=organization.slug)
         )
 
+    if (
+        request.method == "POST"
+        and action == "save_tailscale"
+        and ts_form.validate_on_submit()
+    ):
+        # Validate credentials by requesting an OAuth token from Tailscale
+        import requests as http_requests
+
+        try:
+            token_resp = http_requests.post(
+                "https://api.tailscale.com/api/v2/oauth/token",
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": ts_form.client_id.data,
+                    "client_secret": ts_form.client_secret.data,
+                },
+                timeout=10,
+            )
+            if token_resp.status_code != 200:
+                flash(
+                    "Tailscale credential validation failed. "
+                    "Please check your client ID and secret.",
+                    "danger",
+                )
+                return redirect(
+                    url_for("user.organization_settings", org_slug=organization.slug)
+                )
+        except http_requests.RequestException:
+            flash(
+                "Could not reach Tailscale API to validate credentials. "
+                "Please try again.",
+                "danger",
+            )
+            return redirect(
+                url_for("user.organization_settings", org_slug=organization.slug)
+            )
+
+        vault_path = config_writer.write_tailscale_credentials(
+            organization, ts_form.client_id.data, ts_form.client_secret.data
+        )
+        if not ts_integration:
+            ts_integration = TailscaleIntegration(
+                organization_id=organization.id,
+                client_id=ts_form.client_id.data,
+                client_secret_vault_path=vault_path,
+                tailnet=ts_form.tailnet.data,
+                default_tags=ts_form.default_tags.data,
+            )
+            db.session.add(ts_integration)
+        else:
+            ts_integration.client_id = ts_form.client_id.data
+            ts_integration.client_secret_vault_path = vault_path
+            ts_integration.tailnet = ts_form.tailnet.data
+            ts_integration.default_tags = ts_form.default_tags.data
+            ts_integration.operator_state = "pending"
+        db.session.commit()
+        deploy_tailscale_operator.delay(str(organization.id))
+        flash(
+            "Tailscale credentials validated and saved. Operator deployment in progress.",
+            "success",
+        )
+        return redirect(
+            url_for("user.organization_settings", org_slug=organization.slug)
+        )
+
+    if request.method == "POST" and action == "delete_tailscale":
+        if ts_integration:
+            teardown_tailscale_operator.delay(str(organization.id))
+            config_writer.delete_tailscale_credentials(organization)
+            db.session.delete(ts_integration)
+            db.session.commit()
+            flash("Tailscale integration removed.", "success")
+        return redirect(
+            url_for("user.organization_settings", org_slug=organization.slug)
+        )
+
     form.organization_id.data = str(organization.id)
     if not form.name.data or request.method == "GET":
         form.name.data = organization.name
+
+    if ts_integration and request.method == "GET":
+        ts_form.client_id.data = ts_integration.client_id
+        ts_form.tailnet.data = ts_integration.tailnet
+        ts_form.default_tags.data = ts_integration.default_tags
 
     delete_form = DeleteOrganizationForm()
     delete_form.organization_id.data = str(organization.id)
@@ -676,6 +765,8 @@ def organization_settings(org_slug):
         form=form,
         delete_form=delete_form,
         delete_impact=delete_impact,
+        ts_form=ts_form,
+        ts_integration=ts_integration,
     )
 
 
@@ -1958,6 +2049,11 @@ def organization_delete(org_slug):
         abort(403)
     form = DeleteOrganizationForm()
     if form.validate_on_submit():
+        # Tear down Tailscale operator if configured
+        if organization.tailscale_integration:
+            teardown_tailscale_operator.delay(str(organization.id))
+            config_writer.delete_tailscale_credentials(organization)
+            db.session.delete(organization.tailscale_integration)
         for project in list(organization.projects):
             if project.deleted_at is None:
                 _soft_delete_project(project, organization)
@@ -3036,19 +3132,20 @@ def project_application_environment_settings(
 )
 @login_required
 def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None):
-    if not current_app.config.get("INGRESS_DOMAIN"):
-        abort(404)
-
     org, project, application = _lookup_app_context(
         org_slug, project_slug, app_slug, require_admin=True
     )
+
+    ingress_domain = current_app.config.get("INGRESS_DOMAIN")
+    org_has_tailscale = org.tailscale_integration is not None
+
+    if not ingress_domain and not org_has_tailscale:
+        abort(404)
 
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=False
     )
     environment = app_env.environment if app_env else None
-
-    ingress_domain = current_app.config["INGRESS_DOMAIN"]
 
     # Collect available web processes for path target selectors
     web_processes = []
@@ -3080,19 +3177,27 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
             environment=environment,
             app_env=app_env,
             ingress_forms=ingress_forms,
+            ts_ingress_forms=ts_ingress_forms,
             csrf_form=csrf_form,
             web_processes=web_processes,
             ingress_domain=ingress_domain,
+            org_has_tailscale=org_has_tailscale,
+            ts_integration=org.tailscale_integration,
             is_admin=current_user.admin,
             **extra,
         )
 
-    # Build per-ingress forms
+    # Build per-ingress forms (nginx settings + tailscale settings)
     ingress_forms = {}
+    ts_ingress_forms = {}
     if app_env:
         for ing in app_env.ingresses:
-            form = IngressSettingsForm(obj=ing, prefix=ing.name)
-            ingress_forms[ing.name] = form
+            if ing.ingress_class_name == "tailscale":
+                ts_form = TailscaleIngressSettingsForm(obj=ing, prefix=ing.name)
+                ts_ingress_forms[ing.name] = ts_form
+            else:
+                form = IngressSettingsForm(obj=ing, prefix=ing.name)
+                ingress_forms[ing.name] = form
 
     if request.method == "POST" and app_env:
         action = request.form.get("_action")
@@ -3108,15 +3213,20 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
             if not ingress or ingress.application_environment_id != app_env.id:
                 return _redirect_back()
 
-            form = IngressSettingsForm(request.form, prefix=ingress.name)
-            ingress_forms[ingress.name] = form
+            is_tailscale = ingress.ingress_class_name == "tailscale"
+            if is_tailscale:
+                form = TailscaleIngressSettingsForm(request.form, prefix=ingress.name)
+                ts_ingress_forms[ingress.name] = form
+            else:
+                form = IngressSettingsForm(request.form, prefix=ingress.name)
+                ingress_forms[ingress.name] = form
             ingress_errors = {}
 
             if not form.validate():
                 # render_field_compact shows field.errors inline
                 return _render_ingress(ingress_errors=ingress_errors)
 
-            new_use_regex = form.use_regex.data
+            new_use_regex = form.use_regex.data if not is_tailscale else False
 
             # --- Validate everything before touching the session ---
 
@@ -3203,40 +3313,61 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                 # Enabled
                 ingress.enabled = "_enabled" in request.form
 
-                # Settings
-                ingress.proxy_connect_timeout = form.proxy_connect_timeout.data
-                ingress.proxy_read_timeout = form.proxy_read_timeout.data
-                ingress.proxy_send_timeout = form.proxy_send_timeout.data
-                ingress.proxy_body_size = form.proxy_body_size.data
-                ingress.client_body_buffer_size = form.client_body_buffer_size.data
-                ingress.proxy_request_buffering = (
-                    form.proxy_request_buffering.data or None
-                )
-                ingress.session_affinity = form.session_affinity.data
-                ingress.use_regex = new_use_regex
+                # Settings — branch on ingress class
+                if is_tailscale:
+                    ingress.tailscale_tags = form.tailscale_tags.data
 
-                # Hosts: diff existing vs form
-                kept_host_ids = set(request.form.getlist("_existing_host"))
-                for host in list(ingress.hosts):
-                    if str(host.id) not in kept_host_ids and not host.is_auto_generated:
-                        db.session.delete(host)
-                    elif str(host.id) in kept_host_ids:
-                        if host.is_auto_generated:
-                            host.tls_enabled = True
+                    # Tailscale: single hostname — update or create
+                    ts_hostname = request.form.get("_ts_hostname", "").strip()
+                    if ts_hostname:
+                        if ingress.hosts:
+                            ingress.hosts[0].hostname = ts_hostname
                         else:
-                            host.tls_enabled = (
-                                f"_existing_host_tls_{host.id}" in request.form
+                            db.session.add(
+                                IngressHost(
+                                    ingress_id=ingress.id,
+                                    hostname=ts_hostname,
+                                    tls_enabled=True,
+                                    is_auto_generated=False,
+                                )
                             )
-
-                for hostname, tls_enabled in new_hostnames:
-                    db.session.add(
-                        IngressHost(
-                            ingress_id=ingress.id,
-                            hostname=hostname,
-                            tls_enabled=tls_enabled,
-                            is_auto_generated=False,
-                        )
+                else:
+                    ingress.proxy_connect_timeout = form.proxy_connect_timeout.data
+                    ingress.proxy_read_timeout = form.proxy_read_timeout.data
+                    ingress.proxy_send_timeout = form.proxy_send_timeout.data
+                    ingress.proxy_body_size = form.proxy_body_size.data
+                    ingress.client_body_buffer_size = form.client_body_buffer_size.data
+                    ingress.proxy_request_buffering = (
+                        form.proxy_request_buffering.data or None
                     )
+                    ingress.session_affinity = form.session_affinity.data
+                    ingress.use_regex = new_use_regex
+
+                    # Nginx: diff existing hosts vs form
+                    kept_host_ids = set(request.form.getlist("_existing_host"))
+                    for host in list(ingress.hosts):
+                        if (
+                            str(host.id) not in kept_host_ids
+                            and not host.is_auto_generated
+                        ):
+                            db.session.delete(host)
+                        elif str(host.id) in kept_host_ids:
+                            if host.is_auto_generated:
+                                host.tls_enabled = True
+                            else:
+                                host.tls_enabled = (
+                                    f"_existing_host_tls_{host.id}" in request.form
+                                )
+
+                    for hostname, tls_enabled in new_hostnames:
+                        db.session.add(
+                            IngressHost(
+                                ingress_id=ingress.id,
+                                hostname=hostname,
+                                tls_enabled=tls_enabled,
+                                is_auto_generated=False,
+                            )
+                        )
 
                 # Paths: diff existing vs form
                 for path in list(ingress.paths):
@@ -3318,6 +3449,15 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
         # Create new ingress
         if action == "create_ingress":
             new_name = request.form.get("_new_ingress_name", "").strip()
+            new_class = request.form.get("_new_ingress_class", "nginx")
+            if new_class == "tailscale" and not org_has_tailscale:
+                flash(
+                    "Tailscale integration not configured for this organization.",
+                    "error",
+                )
+                return _redirect_back()
+            if new_class not in ("nginx", "tailscale"):
+                new_class = "nginx"
             if new_name and not re.match(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", new_name):
                 flash(
                     "Ingress name must be lowercase alphanumeric and hyphens.", "error"
@@ -3331,13 +3471,6 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                 if existing:
                     flash(f"Ingress '{new_name}' already exists.", "error")
                 else:
-                    ingress = Ingress(
-                        application_environment_id=app_env.id,
-                        name=new_name,
-                        enabled=False,
-                    )
-                    db.session.add(ingress)
-                    db.session.flush()
                     hostname_pairs = [(org.slug, org.k8s_identifier)]
                     if project.environments_enabled and environment:
                         hostname_pairs.append(
@@ -3349,17 +3482,44 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                             (application.slug, application.k8s_identifier),
                         ]
                     )
-                    auto_hostname = (
-                        f"{readable_k8s_hostname(*hostname_pairs)}"
-                        f"-{new_name}.{ingress_domain}"
-                    )
-                    host = IngressHost(
-                        ingress_id=ingress.id,
-                        hostname=auto_hostname,
-                        tls_enabled=True,
-                        is_auto_generated=True,
-                    )
-                    db.session.add(host)
+
+                    if new_class == "tailscale":
+                        ingress = Ingress(
+                            application_environment_id=app_env.id,
+                            name=new_name,
+                            ingress_class_name="tailscale",
+                            enabled=False,
+                        )
+                        db.session.add(ingress)
+                        db.session.flush()
+                        host = IngressHost(
+                            ingress_id=ingress.id,
+                            hostname=new_name,
+                            tls_enabled=True,
+                            is_auto_generated=False,
+                        )
+                        db.session.add(host)
+                    else:
+                        ingress = Ingress(
+                            application_environment_id=app_env.id,
+                            name=new_name,
+                            enabled=False,
+                        )
+                        db.session.add(ingress)
+                        db.session.flush()
+                        if ingress_domain:
+                            auto_hostname = (
+                                f"{readable_k8s_hostname(*hostname_pairs)}"
+                                f"-{new_name}.{ingress_domain}"
+                            )
+                            host = IngressHost(
+                                ingress_id=ingress.id,
+                                hostname=auto_hostname,
+                                tls_enabled=True,
+                                is_auto_generated=True,
+                            )
+                            db.session.add(host)
+
                     activity = Activity(
                         verb="create",
                         object=ingress,

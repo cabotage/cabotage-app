@@ -135,6 +135,45 @@ class WebAuthn(Model, FsWebAuthnMixin):
     )
 
 
+class TailscaleIntegration(Model):
+    __tablename__ = "tailscale_integrations"
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True,
+    )
+    organization_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("organizations.id"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    client_id = db.Column(db.String(255), nullable=False)
+    client_secret_vault_path = db.Column(db.String(512), nullable=True)
+    tailnet = db.Column(db.String(255), nullable=True)
+    default_tags = db.Column(db.String(512), nullable=True)
+    operator_state = db.Column(db.String(32), default="pending", nullable=False)
+    operator_version = db.Column(db.String(64), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.datetime.now)
+    updated_at = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=datetime.datetime.now,
+        onupdate=datetime.datetime.now,
+    )
+
+    organization = db.relationship(
+        "Organization",
+        backref=db.backref("tailscale_integration", uselist=False),
+    )
+
+    def __repr__(self):
+        return f"<TailscaleIntegration {self.id} org={self.organization_id}>"
+
+
 class Organization(Model):
     __versioned__: dict = {}
     __tablename__ = "organizations"

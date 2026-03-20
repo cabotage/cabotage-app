@@ -511,9 +511,10 @@ def render_service(release, process_name):
         spec=kubernetes.client.V1ServiceSpec(
             ports=[
                 kubernetes.client.V1ServicePort(
+                    name="https",
                     port=8000,
                     target_port=8000,
-                )
+                ),
             ],
             selector={
                 "app": label_value,
@@ -538,9 +539,16 @@ def create_service(core_api_instance, release, process_name):
 
 def fetch_service(core_api_instance, release, process_name):
     namespace = k8s_namespace(release)
-    service_name = f"{k8s_resource_prefix(release)}-{process_name}"
+    service_object = render_service(release, process_name)
+    service_name = service_object.metadata.name
     try:
-        service = core_api_instance.read_namespaced_service(service_name, namespace)
+        existing = core_api_instance.read_namespaced_service(service_name, namespace)
+        # Patch the service to ensure ports and selectors stay current
+        existing.spec.ports = service_object.spec.ports
+        existing.spec.selector = service_object.spec.selector
+        service = core_api_instance.patch_namespaced_service(
+            service_name, namespace, existing
+        )
     except ApiException as exc:
         if exc.status == 404:
             service = create_service(core_api_instance, release, process_name)
@@ -566,64 +574,14 @@ def render_ingress(release, ingress):
             "application": release.application.slug,
             "app": k8s_label_value(release),
         },
+        org_k8s_identifier=release.application.project.organization.k8s_identifier,
         process_names=list(release.processes) if release.processes else [],
     )
 
 
-def render_ingress_object(
-    ingress,
-    resource_prefix,
-    labels,
-    process_names=None,
-):
-    """Build a V1Ingress from an Ingress/IngressSnapshot and explicit context.
-
-    This function has no dependency on a Release object, so it can be called
-    during early ingress pre-creation (e.g. branch deploys) as well as during
-    the normal deploy path.
-    """
-    if not ingress.enabled:
-        return None
-
-    ingress_name = f"{resource_prefix}-{ingress.name}"
-
-    annotations = {
-        "nginx.ingress.kubernetes.io/backend-protocol": ingress.backend_protocol,
-        "nginx.ingress.kubernetes.io/force-ssl-redirect": str(
-            ingress.force_ssl_redirect
-        ).lower(),
-        "nginx.ingress.kubernetes.io/service-upstream": str(
-            ingress.service_upstream
-        ).lower(),
-        "nginx.ingress.kubernetes.io/proxy-next-upstream": "error",
-        "cert-manager.io/cluster-issuer": ingress.cluster_issuer,
-    }
-    annotations["nginx.ingress.kubernetes.io/proxy-connect-timeout"] = (
-        ingress.proxy_connect_timeout or "10s"
-    )
-    annotations["nginx.ingress.kubernetes.io/proxy-read-timeout"] = (
-        ingress.proxy_read_timeout or "10s"
-    )
-    annotations["nginx.ingress.kubernetes.io/proxy-send-timeout"] = (
-        ingress.proxy_send_timeout or "10s"
-    )
-    annotations["nginx.ingress.kubernetes.io/proxy-body-size"] = (
-        ingress.proxy_body_size or "10M"
-    )
-    annotations["nginx.ingress.kubernetes.io/client-body-buffer-size"] = (
-        ingress.client_body_buffer_size or "1M"
-    )
-    annotations["nginx.ingress.kubernetes.io/proxy-request-buffering"] = (
-        ingress.proxy_request_buffering or "on"
-    )
-    if ingress.session_affinity:
-        annotations["nginx.ingress.kubernetes.io/affinity"] = "cookie"
-    if ingress.use_regex:
-        annotations["nginx.ingress.kubernetes.io/use-regex"] = "true"
-    if ingress.allow_annotations and ingress.extra_annotations:
-        annotations.update(ingress.extra_annotations)
-
-    # Build paths once — shared across all hosts
+def _build_ingress_paths(ingress, resource_prefix, process_names=None):
+    """Build K8s path objects shared by both nginx and tailscale renderers."""
+    port_spec = kubernetes.client.V1ServiceBackendPort(name="https")
     k8s_paths = []
     for path in ingress.paths:
         target_service = f"{resource_prefix}-{path.target_process_name}"
@@ -634,9 +592,7 @@ def render_ingress_object(
                 backend=kubernetes.client.V1IngressBackend(
                     service=kubernetes.client.V1IngressServiceBackend(
                         name=target_service,
-                        port=kubernetes.client.V1ServiceBackendPort(
-                            number=8000,
-                        ),
+                        port=port_spec,
                     ),
                 ),
             )
@@ -655,34 +611,101 @@ def render_ingress_object(
                 backend=kubernetes.client.V1IngressBackend(
                     service=kubernetes.client.V1IngressServiceBackend(
                         name=target_service,
-                        port=kubernetes.client.V1ServiceBackendPort(
-                            number=8000,
-                        ),
+                        port=port_spec,
                     ),
                 ),
             )
         )
+    return k8s_paths
+
+
+def render_ingress_object(
+    ingress,
+    resource_prefix,
+    labels,
+    org_k8s_identifier=None,
+    process_names=None,
+):
+    """Build a V1Ingress from an Ingress/IngressSnapshot and explicit context.
+
+    This function has no dependency on a Release object, so it can be called
+    during early ingress pre-creation (e.g. branch deploys) as well as during
+    the normal deploy path.  Handles both nginx and tailscale ingress classes.
+    """
+    if not ingress.enabled:
+        return None
+
+    ingress_name = f"{resource_prefix}-{ingress.name}"
+    is_tailscale = ingress.ingress_class_name == "tailscale"
+
+    k8s_paths = _build_ingress_paths(ingress, resource_prefix, process_names)
+    if k8s_paths is None:
+        return None
+
+    if is_tailscale:
+        annotations = {}
+        if org_k8s_identifier:
+            annotations["tailscale.com/proxy-group"] = f"ingress-{org_k8s_identifier}"
+        if ingress.tailscale_tags:
+            annotations["tailscale.com/tags"] = ingress.tailscale_tags
+    else:
+        annotations = {
+            "nginx.ingress.kubernetes.io/backend-protocol": ingress.backend_protocol,
+            "nginx.ingress.kubernetes.io/force-ssl-redirect": str(
+                ingress.force_ssl_redirect
+            ).lower(),
+            "nginx.ingress.kubernetes.io/service-upstream": str(
+                ingress.service_upstream
+            ).lower(),
+            "nginx.ingress.kubernetes.io/proxy-next-upstream": "error",
+            "cert-manager.io/cluster-issuer": ingress.cluster_issuer,
+        }
+        annotations["nginx.ingress.kubernetes.io/proxy-connect-timeout"] = (
+            ingress.proxy_connect_timeout or "10s"
+        )
+        annotations["nginx.ingress.kubernetes.io/proxy-read-timeout"] = (
+            ingress.proxy_read_timeout or "10s"
+        )
+        annotations["nginx.ingress.kubernetes.io/proxy-send-timeout"] = (
+            ingress.proxy_send_timeout or "10s"
+        )
+        annotations["nginx.ingress.kubernetes.io/proxy-body-size"] = (
+            ingress.proxy_body_size or "10M"
+        )
+        annotations["nginx.ingress.kubernetes.io/client-body-buffer-size"] = (
+            ingress.client_body_buffer_size or "1M"
+        )
+        annotations["nginx.ingress.kubernetes.io/proxy-request-buffering"] = (
+            ingress.proxy_request_buffering or "on"
+        )
+        if ingress.session_affinity:
+            annotations["nginx.ingress.kubernetes.io/affinity"] = "cookie"
+        if ingress.use_regex:
+            annotations["nginx.ingress.kubernetes.io/use-regex"] = "true"
+        if ingress.allow_annotations and ingress.extra_annotations:
+            annotations.update(ingress.extra_annotations)
 
     tls_hosts = []
     rules = []
     for host in ingress.hosts:
-        if host.tls_enabled:
+        if is_tailscale or host.tls_enabled:
             tls_hosts.append(host.hostname)
         rules.append(
             kubernetes.client.V1IngressRule(
-                host=host.hostname,
+                # Tailscale: don't set host on rules — the operator derives
+                # it from tls.hosts and rejects mismatches with the FQDN
+                host=None if is_tailscale else host.hostname,
                 http=kubernetes.client.V1HTTPIngressRuleValue(paths=k8s_paths),
             )
         )
 
     tls = []
     if tls_hosts:
-        tls.append(
-            kubernetes.client.V1IngressTLS(
-                hosts=tls_hosts,
-                secret_name=f"{ingress_name}-tls",
-            )
-        )
+        tls_entry = kubernetes.client.V1IngressTLS(hosts=tls_hosts)
+        if not is_tailscale:
+            # nginx needs a secret name for cert-manager
+            tls_entry.secret_name = f"{ingress_name}-tls"
+        tls.append(tls_entry)
 
     all_labels = {"resident-ingress.cabotage.io": "true", "ingress": ingress.name}
     all_labels.update(labels)
@@ -762,6 +785,7 @@ def ensure_ingresses(
     resource_prefix,
     labels,
     ingresses,
+    org_k8s_identifier=None,
     process_names=None,
     cleanup_orphans=False,
     log=None,
@@ -789,6 +813,7 @@ def ensure_ingresses(
             ingress=ingress,
             resource_prefix=resource_prefix,
             labels=labels,
+            org_k8s_identifier=org_k8s_identifier,
             process_names=process_names,
         )
         if ingress_object is None:
@@ -1995,36 +2020,41 @@ def deploy_release(deployment):
                     fetch_service(
                         core_api_instance, deployment.release_object, process_name
                     )
-        if current_app.config.get("INGRESS_DOMAIN"):
-            ingress_domain = current_app.config["INGRESS_DOMAIN"]
-            app_env = deployment.application_environment
+        app_env = deployment.application_environment
+        ingress_domain = current_app.config.get("INGRESS_DOMAIN")
+        has_ingresses = bool(app_env.ingresses)
+        if ingress_domain or has_ingresses:
             hostname_pairs = _ingress_hostname_pairs(app_env)
             changed = False
-            for ing in app_env.ingresses:
-                auto_hosts = [h for h in ing.hosts if h.is_auto_generated]
-                existing_hostnames = {h.hostname for h in ing.hosts}
-                expected = (
-                    f"{readable_k8s_hostname(*hostname_pairs)}"
-                    f"-{ing.name}.{ingress_domain}"
-                )
-                has_expected = expected in existing_hostnames
-                if not has_expected:
-                    # Keep old auto-generated hosts as manual so DNS keeps
-                    # working, then add the new canonical auto-generated host.
-                    for host in auto_hosts:
-                        log(
-                            f"Demoting old auto-generated hostname to manual: {host.hostname}"
-                        )
-                        host.is_auto_generated = False
-                    db.session.add(
-                        IngressHost(
-                            ingress_id=ing.id,
-                            hostname=expected,
-                            tls_enabled=True,
-                            is_auto_generated=True,
-                        )
+            # Auto-hostname reconciliation only applies to nginx ingresses
+            if ingress_domain:
+                for ing in app_env.ingresses:
+                    if ing.ingress_class_name != "nginx":
+                        continue
+                    auto_hosts = [h for h in ing.hosts if h.is_auto_generated]
+                    existing_hostnames = {h.hostname for h in ing.hosts}
+                    expected = (
+                        f"{readable_k8s_hostname(*hostname_pairs)}"
+                        f"-{ing.name}.{ingress_domain}"
                     )
-                    changed = True
+                    has_expected = expected in existing_hostnames
+                    if not has_expected:
+                        # Keep old auto-generated hosts as manual so DNS keeps
+                        # working, then add the new canonical auto-generated host.
+                        for host in auto_hosts:
+                            log(
+                                f"Demoting old auto-generated hostname to manual: {host.hostname}"
+                            )
+                            host.is_auto_generated = False
+                        db.session.add(
+                            IngressHost(
+                                ingress_id=ing.id,
+                                hostname=expected,
+                                tls_enabled=True,
+                                is_auto_generated=True,
+                            )
+                        )
+                        changed = True
             if changed:
                 db.session.commit()
                 db.session.refresh(app_env)
@@ -2050,6 +2080,7 @@ def deploy_release(deployment):
                     "app": k8s_label_value(release_obj),
                 },
                 ingresses=ingress_snapshots,
+                org_k8s_identifier=release_obj.application.project.organization.k8s_identifier,
                 process_names=(
                     list(release_obj.processes) if release_obj.processes else []
                 ),
@@ -2383,34 +2414,38 @@ def fake_deploy_release(deployment):
                 deploy_log.append(f"Fetching {process_name} Service")
                 service = render_service(deployment.release_object, process_name)
                 deploy_log.append(yaml.dump(remove_none(service.to_dict())))
-    if current_app.config.get("INGRESS_DOMAIN"):
-        ingress_domain = current_app.config["INGRESS_DOMAIN"]
-        app_env = deployment.application_environment
+    app_env = deployment.application_environment
+    ingress_domain = current_app.config.get("INGRESS_DOMAIN")
+    has_ingresses = bool(app_env.ingresses)
+    if ingress_domain or has_ingresses:
         hostname_pairs = _ingress_hostname_pairs(app_env)
         changed = False
-        for ing in app_env.ingresses:
-            auto_hosts = [h for h in ing.hosts if h.is_auto_generated]
-            existing_hostnames = {h.hostname for h in ing.hosts}
-            expected = (
-                f"{readable_k8s_hostname(*hostname_pairs)}"
-                f"-{ing.name}.{ingress_domain}"
-            )
-            has_expected = expected in existing_hostnames
-            if not has_expected:
-                for host in auto_hosts:
-                    deploy_log.append(
-                        f"Demoting old auto-generated hostname to manual: {host.hostname}"
-                    )
-                    host.is_auto_generated = False
-                db.session.add(
-                    IngressHost(
-                        ingress_id=ing.id,
-                        hostname=expected,
-                        tls_enabled=True,
-                        is_auto_generated=True,
-                    )
+        if ingress_domain:
+            for ing in app_env.ingresses:
+                if ing.ingress_class_name != "nginx":
+                    continue
+                auto_hosts = [h for h in ing.hosts if h.is_auto_generated]
+                existing_hostnames = {h.hostname for h in ing.hosts}
+                expected = (
+                    f"{readable_k8s_hostname(*hostname_pairs)}"
+                    f"-{ing.name}.{ingress_domain}"
                 )
-                changed = True
+                has_expected = expected in existing_hostnames
+                if not has_expected:
+                    for host in auto_hosts:
+                        deploy_log.append(
+                            f"Demoting old auto-generated hostname to manual: {host.hostname}"
+                        )
+                        host.is_auto_generated = False
+                    db.session.add(
+                        IngressHost(
+                            ingress_id=ing.id,
+                            hostname=expected,
+                            tls_enabled=True,
+                            is_auto_generated=True,
+                        )
+                    )
+                    changed = True
         if changed:
             db.session.commit()
             db.session.refresh(app_env)

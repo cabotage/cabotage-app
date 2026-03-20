@@ -1,0 +1,237 @@
+import logging
+
+import kubernetes
+from celery import shared_task
+from kubernetes.client.rest import ApiException
+
+from flask import current_app
+
+from cabotage.server import (
+    db,
+    kubernetes as kubernetes_ext,
+)
+from cabotage.server.models.auth import TailscaleIntegration
+
+log = logging.getLogger(__name__)
+
+CRD_GROUP = "cabotage.io"
+CRD_VERSION = "v1"
+CRD_PLURAL = "cabotagetailscaleoperatorconfigs"
+
+
+def _operator_namespace(org):
+    """The org-level namespace where the Tailscale operator lives."""
+    return org.k8s_identifier
+
+
+def _ensure_namespace(core_api, namespace):
+    """Create the namespace if it doesn't exist."""
+    try:
+        core_api.read_namespace(namespace)
+    except ApiException as exc:
+        if exc.status == 404:
+            core_api.create_namespace(
+                kubernetes.client.V1Namespace(
+                    metadata=kubernetes.client.V1ObjectMeta(name=namespace),
+                )
+            )
+        else:
+            raise
+
+
+def _deploy_operator_config(org, integration):
+    """Create/update the CabotageTailscaleOperatorConfig in the org namespace.
+
+    The tailscale-operator-manager Kopf operator watches these and
+    reconciles all the actual K8s resources (Deployment, RBAC, etc).
+    """
+    api_client = kubernetes_ext.kubernetes_client
+    core_api = kubernetes.client.CoreV1Api(api_client)
+    custom_api = kubernetes.client.CustomObjectsApi(api_client)
+
+    namespace = _operator_namespace(org)
+    _ensure_namespace(core_api, namespace)
+
+    image = (
+        f"{current_app.config['TAILSCALE_OPERATOR_IMAGE']}"
+        f":{current_app.config['TAILSCALE_OPERATOR_VERSION']}"
+    )
+
+    body = {
+        "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
+        "kind": "CabotageTailscaleOperatorConfig",
+        "metadata": {
+            "name": org.k8s_identifier,
+            "namespace": namespace,
+        },
+        "spec": {
+            "vaultPath": integration.client_secret_vault_path,
+            "operatorImage": image,
+            "defaultTags": integration.default_tags or "",
+            "organizationSlug": org.slug,
+        },
+    }
+    try:
+        custom_api.get_namespaced_custom_object(
+            CRD_GROUP,
+            CRD_VERSION,
+            namespace,
+            CRD_PLURAL,
+            org.k8s_identifier,
+        )
+        custom_api.patch_namespaced_custom_object(
+            CRD_GROUP,
+            CRD_VERSION,
+            namespace,
+            CRD_PLURAL,
+            org.k8s_identifier,
+            body,
+        )
+    except ApiException as exc:
+        if exc.status == 404:
+            custom_api.create_namespaced_custom_object(
+                CRD_GROUP,
+                CRD_VERSION,
+                namespace,
+                CRD_PLURAL,
+                body,
+            )
+        else:
+            raise
+
+
+def _teardown_operator_config(org):
+    """Delete the CabotageTailscaleOperatorConfig CRD resource.
+
+    The tailscale-operator-manager handles cleanup via Kopf finalizers.
+    """
+    api_client = kubernetes_ext.kubernetes_client
+    custom_api = kubernetes.client.CustomObjectsApi(api_client)
+    namespace = _operator_namespace(org)
+
+    try:
+        custom_api.delete_namespaced_custom_object(
+            CRD_GROUP,
+            CRD_VERSION,
+            namespace,
+            CRD_PLURAL,
+            org.k8s_identifier,
+        )
+    except ApiException as exc:
+        if exc.status != 404:
+            log.warning(
+                "Failed to delete CabotageTailscaleOperatorConfig %s in %s: %s",
+                org.k8s_identifier,
+                namespace,
+                exc,
+            )
+
+
+@shared_task()
+def deploy_tailscale_operator(organization_id):
+    """Create a CabotageTailscaleOperatorConfig for an organization."""
+    integration = TailscaleIntegration.query.filter_by(
+        organization_id=organization_id,
+    ).first()
+    if integration is None:
+        log.warning("No TailscaleIntegration found for org %s", organization_id)
+        return
+
+    if not current_app.config.get("TAILSCALE_OPERATOR_ENABLED"):
+        log.info("Tailscale operator disabled, skipping for org %s", organization_id)
+        integration.operator_state = "disabled"
+        db.session.commit()
+        return
+
+    org = integration.organization
+    try:
+        _deploy_operator_config(org, integration)
+        log.info(
+            "Created CabotageTailscaleOperatorConfig in %s for org %s",
+            _operator_namespace(org),
+            org.slug,
+        )
+        integration.operator_state = "pending"
+    except Exception:
+        log.exception(
+            "Failed to create CabotageTailscaleOperatorConfig for org %s",
+            org.slug,
+        )
+        integration.operator_state = "failed"
+
+    integration.operator_version = current_app.config["TAILSCALE_OPERATOR_VERSION"]
+    db.session.commit()
+
+
+@shared_task()
+def teardown_tailscale_operator(organization_id):
+    """Delete the CabotageTailscaleOperatorConfig for an organization."""
+    integration = TailscaleIntegration.query.filter_by(
+        organization_id=organization_id,
+    ).first()
+    if integration is None:
+        log.warning("No TailscaleIntegration found for org %s", organization_id)
+        return
+
+    org = integration.organization
+    integration.operator_state = "removing"
+    db.session.commit()
+
+    try:
+        _teardown_operator_config(org)
+        log.info(
+            "Deleted CabotageTailscaleOperatorConfig for org %s",
+            org.slug,
+        )
+    except Exception:
+        log.exception(
+            "Failed to delete CabotageTailscaleOperatorConfig for org %s",
+            org.slug,
+        )
+
+
+@shared_task()
+def reconcile_tailscale_integration_states():
+    """Periodic task: sync TailscaleIntegration.operator_state from CRD status."""
+    integrations = TailscaleIntegration.query.filter(
+        TailscaleIntegration.operator_state.in_(("pending", "deployed", "failed")),
+    ).all()
+    if not integrations:
+        return
+
+    api_client = kubernetes_ext.kubernetes_client
+    custom_api = kubernetes.client.CustomObjectsApi(api_client)
+
+    for integration in integrations:
+        org = integration.organization
+        namespace = _operator_namespace(org)
+        try:
+            crd = custom_api.get_namespaced_custom_object(
+                CRD_GROUP,
+                CRD_VERSION,
+                namespace,
+                CRD_PLURAL,
+                org.k8s_identifier,
+            )
+        except ApiException as exc:
+            if exc.status == 404 and integration.operator_state != "pending":
+                integration.operator_state = "missing"
+                db.session.commit()
+            continue
+        except (
+            Exception
+        ):  # nosec B112 — don't let one org's error stop the reconcile loop
+            continue
+
+        status = crd.get("status", {}).get("reconcile_operator", {})
+        state = status.get("state")
+        if state and state != integration.operator_state:
+            integration.operator_state = state
+            if status.get("operatorVersion"):
+                integration.operator_version = status["operatorVersion"]
+            db.session.commit()
+            log.info(
+                "Updated operator state to %s for org %s",
+                state,
+                org.slug,
+            )

@@ -19,6 +19,7 @@
     <div class="card-body">
       <form method="POST" action="{{ url_for('user.organization_settings', org_slug=organization.slug) }}">
         {{ form.hidden_tag() }}
+        <input type="hidden" name="_action" value="save_org">
         <div style="display:none">{{ form.organization_id() }}</div>
         {{ render_field(form.name) }}
         <div class="mt-4">
@@ -26,6 +27,83 @@
             {{ icon('check', 'w-4 h-4') }}
             Save Changes
           </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# Tailscale Integration #}
+  <div class="card bg-base-200/50 border border-base-300/50 max-w-2xl mt-6">
+    <div class="card-body">
+      <h2 class="card-title text-lg">Tailscale Integration</h2>
+      {% if ts_integration %}
+        <div class="flex items-center gap-2 mb-4">
+          <span class="badge {% if ts_integration.operator_state == 'deployed' %}badge-success{% elif ts_integration.operator_state == 'failed' %}badge-error{% else %}badge-warning{% endif %}">
+            {{ ts_integration.operator_state }}
+          </span>
+          {% if ts_integration.tailnet %}
+            <span class="text-sm opacity-70">Tailnet: {{ ts_integration.tailnet }}</span>
+          {% endif %}
+          {% if ts_integration.operator_version %}
+            <span class="text-sm opacity-70">v{{ ts_integration.operator_version }}</span>
+          {% endif %}
+        </div>
+      {% endif %}
+
+      <div class="mb-4 text-sm opacity-80">
+        <p class="mb-2">Connect this organization to your Tailscale network. Services with Tailscale ingresses will be accessible on your tailnet.</p>
+        <details class="collapse collapse-arrow bg-base-300/30 rounded-lg">
+          <summary class="collapse-title font-medium text-sm">Setup Instructions</summary>
+          <div class="collapse-content text-sm">
+            <ol class="list-decimal list-inside space-y-2 mt-2">
+              <li>
+                <strong>Configure your tailnet policy</strong> in your
+                <a href="https://login.tailscale.com/admin/acls" class="link link-primary" target="_blank" rel="noopener">tailnet policy file</a>.
+                Add tag owners and auto-approvers:
+                <pre class="bg-base-300/50 rounded p-2 mt-1 text-xs overflow-x-auto"><code>"tagOwners": {
+  "tag:k8s-operator": [],
+  "tag:k8s": ["tag:k8s-operator"]
+},
+"autoApprovers": {
+  "services": {
+    "tag:k8s": ["tag:k8s"]
+  }
+}</code></pre>
+              </li>
+              <li>
+                Go to <a href="https://login.tailscale.com/admin/settings/trust-credentials" class="link link-primary" target="_blank" rel="noopener">Tailscale Admin Console &gt; Trust Credentials</a>.
+              </li>
+              <li>Click <strong>Credential</strong> &gt; <strong>OAuth</strong>.</li>
+              <li>
+                Enable scopes: <strong>Devices Core</strong> (Write),
+                <strong>Auth Keys</strong> (Write), <strong>Services</strong> (Write).
+              </li>
+              <li>Assign tag: <code>tag:k8s-operator</code>.</li>
+              <li>Click <strong>Generate credential</strong> and paste the client ID and secret below.</li>
+            </ol>
+          </div>
+        </details>
+      </div>
+
+      <form method="POST" action="{{ url_for('user.organization_settings', org_slug=organization.slug) }}">
+        {{ ts_form.hidden_tag() }}
+        <input type="hidden" name="_action" value="save_tailscale">
+        {{ render_field(ts_form.client_id) }}
+        {{ render_field(ts_form.client_secret) }}
+        {{ render_field(ts_form.tailnet) }}
+        {{ render_field(ts_form.default_tags) }}
+        <div class="mt-4 flex gap-2">
+          <button type="submit" class="btn btn-primary gap-2">
+            {{ icon('check', 'w-4 h-4') }}
+            {% if ts_integration %}Update Credentials{% else %}Connect Tailscale{% endif %}
+          </button>
+          {% if ts_integration %}
+            <button type="submit" name="_action" value="delete_tailscale" class="btn btn-error btn-outline gap-2"
+                    onclick="return confirm('Remove Tailscale integration? This will tear down all Tailscale operators for this organization.')">
+              {{ icon('trash-2', 'w-4 h-4') }}
+              Remove
+            </button>
+          {% endif %}
         </div>
       </form>
     </div>
