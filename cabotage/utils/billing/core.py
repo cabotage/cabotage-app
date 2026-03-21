@@ -116,13 +116,15 @@ def create_or_get_customer(org: Organization) -> Customer:
 
 def get_default_payment_method(customer_id: str) -> dict | None:
     """Retrieve the default payment method for a Stripe customer."""
-    customer = Customer.retrieve(customer_id)
-    payment_id = None
-    if customer.invoice_settings:
-        payment_id = customer.invoice_settings.get("default_payment_method")
-    if not payment_id:
+    customer = Customer.retrieve(
+        customer_id,
+        expand=["invoice_settings.default_payment_method"],
+    )
+    if not customer.invoice_settings:
         return None
-    payment_method = PaymentMethod.retrieve(payment_id)
+    payment_method = customer.invoice_settings.get("default_payment_method")
+    if not payment_method or isinstance(payment_method, str):
+        return None
     result = {"type": payment_method.type}
     if payment_method.type == "card" and payment_method.card:
         result.update({
@@ -180,6 +182,7 @@ def get_usage(customer_id: str, subscription_id: str) -> list[dict]:
 
     sub = Subscription.retrieve(subscription_id)
     # Stripe removed current_period_start/end — derive from billing_cycle_anchor
+    # https://docs.stripe.com/changelog/basil/2025-03-31/deprecate-subscription-current-period-start-and-end
     anchor = sub.billing_cycle_anchor
     now = int(time.time())
     # Walk forward from anchor in ~30-day intervals to find current period
