@@ -2,6 +2,7 @@
 
 Each collect_* function returns one meter's usage for an org over the last hour.
 """
+
 from typing import Callable
 
 from cabotage.server.models.auth import Organization
@@ -72,6 +73,7 @@ def collect_tailscale_nodes(org: Organization) -> float:
     """Tailscale private networking node count."""
     return 0.0
 
+
 COLLECTORS: dict[str, Callable[[Organization], float]] = {
     "vcpu_hours": collect_vcpu_hours,
     "ram_gb_hours": collect_ram_gb_hours,
@@ -85,7 +87,7 @@ COLLECTORS: dict[str, Callable[[Organization], float]] = {
     "tailscale_nodes": collect_tailscale_nodes,
 }
 
+
 def collect_usage(org: Organization) -> dict[str, float]:
     """Collect all metered usage for an org. Keys match METERS dict."""
     return {k: fn(org) for k, fn in COLLECTORS.items()}
-
