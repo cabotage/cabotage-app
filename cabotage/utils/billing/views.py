@@ -4,9 +4,7 @@ import logging
 
 from flask import render_template, request, jsonify, Response
 from flask_login import login_required
-from stripe import Customer, Subscription, SetupIntent
-
-logger = logging.getLogger(__name__)
+from stripe import Customer, Subscription, SubscriptionItem, SetupIntent
 
 from cabotage.server.models import Organization
 from cabotage.utils.billing._products import PLANS
@@ -19,7 +17,8 @@ from cabotage.utils.billing.core import (
     stripe_blueprint,
 )
 
-# dont allow cashapp and stuff
+logger = logging.getLogger(__name__)
+
 ALLOWED_PAYMENT_METHODS = ["card", "us_bank_account"]
 
 
@@ -83,6 +82,44 @@ def billing_usage(org_slug: str) -> Response:
     return jsonify(usage=usage)
 
 
+def _switch_plan(org, plan_tier: str) -> Response:
+    """Switch an existing active subscription to a new plan tier."""
+    sub = Subscription.retrieve(org.billing.stripe_sub_id)
+    if sub.status not in ("active", "trialing"):
+        return jsonify(error="Subscription is not active."), 400
+
+    new_plan = PLANS[plan_tier]
+    plan_price_ids = {p.price_id for p in PLANS.values()}
+    all_items = SubscriptionItem.list(subscription=sub.id, limit=100)
+    plan_item = next(
+        (item for item in all_items.data if item.price.id in plan_price_ids),
+        None,
+    )
+    if not plan_item:
+        logger.error(
+            "Could not find plan item in subscription %s. Items: %s",
+            sub.id, [i.price.id for i in all_items.data],
+        )
+        return jsonify(error="Could not find current plan in subscription."), 400
+
+    # Sync subscription default payment method with customer default
+    customer = Customer.retrieve(org.billing.stripe_customer_id)
+    default_payment_method = (
+        customer.invoice_settings.get("default_payment_method")
+        if customer.invoice_settings else None
+    )
+    modify_params = {
+        "items": [{"id": plan_item.id, "price": new_plan.price_id}],
+        "metadata": {"plan_tier": plan_tier},
+        "proration_behavior": "always_invoice",
+    }
+    if default_payment_method:
+        modify_params["default_payment_method"] = default_payment_method
+
+    Subscription.modify(sub.id, **modify_params)
+    return jsonify(redirect=f"/billing/{org.slug}/")
+
+
 @stripe_blueprint.route("/<org_slug>/subscribe", methods=["GET", "POST"])
 @login_required
 def subscribe(org_slug: str) -> tuple[Response, int] | Response | str:
@@ -97,23 +134,14 @@ def subscribe(org_slug: str) -> tuple[Response, int] | Response | str:
 
         # existing sub
         if org.billing and org.billing.stripe_sub_id:
-            sub = Subscription.retrieve(org.billing.stripe_sub_id)
-            if sub.status in ("active", "trialing"):
-                plan = PLANS[plan_tier]
-                Subscription.modify(
-                    sub.id,
-                    items=[{
-                        "id": sub["items"].data[0].id,
-                        "price": plan.price_id,
-                    }],
-                    metadata={"plan_tier": plan_tier},
-                )
-                return jsonify(redirect=f"/billing/{org_slug}/")
+            return _switch_plan(org, plan_tier)
 
-        # new sub
+        # New subscription
         sub = create_sub(org, plan_tier)
-        client_secret = sub.latest_invoice.payment_intent.client_secret
-        return jsonify(client_secret=client_secret)
+        if sub.latest_invoice and sub.latest_invoice.payment_intent:
+            return jsonify(client_secret=sub.latest_invoice.payment_intent.client_secret)
+        # Activated immediately (existing payment method on file)
+        return jsonify(redirect=f"/billing/{org_slug}/")
 
     return render_template("billing/subscribe.html", org=org)
 
@@ -150,4 +178,7 @@ def payment_methods(org_slug: str) -> Response | str:
         payment_method = get_default_payment_method(org.billing.stripe_customer_id)
         invoices = get_invoices(org.billing.stripe_customer_id, limit=5)
 
-    return render_template("billing/payment_methods.html", org=org, payment_method=payment_method, invoices=invoices)
+    return render_template(
+        "billing/payment_methods.html", org=org,
+        payment_method=payment_method, invoices=invoices,
+    )
