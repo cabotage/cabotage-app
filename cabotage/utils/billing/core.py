@@ -122,13 +122,24 @@ def get_default_payment_method(customer_id: str) -> dict | None:
         payment_id = customer.invoice_settings.get("default_payment_method")
     if not payment_id:
         return None
-    pm = PaymentMethod.retrieve(payment_id)
-    return {
-        "brand": pm.card.brand,
-        "last4": pm.card.last4,
-        "exp_month": pm.card.exp_month,
-        "exp_year": pm.card.exp_year,
-    }
+    payment_method = PaymentMethod.retrieve(payment_id)
+    result = {"type": payment_method.type}
+    if payment_method.type == "card" and payment_method.card:
+        result.update({
+            "brand": payment_method.card.brand,
+            "last4": payment_method.card.last4,
+            "exp_month": payment_method.card.exp_month,
+            "exp_year": payment_method.card.exp_year,
+        })
+    elif payment_method.type == "us_bank_account" and payment_method.us_bank_account:
+        result.update({
+            "brand": payment_method.us_bank_account.bank_name or "Bank",
+            "last4": payment_method.us_bank_account.last4,
+            "account_type": payment_method.us_bank_account.account_type,
+        })
+    else:
+        result.update({"brand": payment_method.type, "last4": "••••"})
+    return result
 
 
 def get_invoices(customer_id: str, limit: int = 10) -> list[dict]:
