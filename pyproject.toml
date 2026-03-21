@@ -55,6 +55,7 @@ dependencies = [
 dev = [
     "bandit>=1.7.9",
     "black>=24.4.2",
+    "celery-types>=0.20.0",
     "mypy>=1.11.0",
     "pytest>=9.0.0",
     "pytest-cov>=7.1.0",

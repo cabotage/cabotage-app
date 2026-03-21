@@ -274,6 +274,7 @@ dependencies = [
 dev = [
     { name = "bandit" },
     { name = "black" },
+    { name = "celery-types" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -341,6 +342,7 @@ requires-dist = [
 dev = [
     { name = "bandit", specifier = ">=1.7.9" },
     { name = "black", specifier = ">=24.4.2" },
+    { name = "celery-types", specifier = ">=0.20.0" },
     { name = "mypy", specifier = ">=1.11.0" },
     { name = "pytest", specifier = ">=9.0.0" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
@@ -431,6 +433,18 @@ dependencies = [
     { name = "tenacity" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/35/0d/63cf4db35c111554913199a54f32be3495526ff08189f9d79a879abcc6ad/celery-redbeat-2.2.0.tar.gz", hash = "sha256:71104729380d4eaefd91a9b7d270ba7851bfff9ad55a43ac8365acbb0c608b77", size = 21372, upload-time = "2023-12-22T13:34:29.853Z" }
+
+[[package]]
+name = "celery-types"
+version = "0.20.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5e/e5/df94d933eb0fe962a4790b07c7be5e6a8a8f430575cd83f740af4600bf74/celery-types-0.20.0.tar.gz", hash = "sha256:e5c762555605ed0592baed9d519230046ce8e7a11c67a821555c08b7cece1960", size = 25317, upload-time = "2023-09-19T01:58:41.804Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/76/c2/d10fdc5d7fd71110b01203958dd5b6c2cd4817805c2b7fdd957702371e13/celery_types-0.20.0-py3-none-any.whl", hash = "sha256:5ebf858a4bf73ca610652d82940dc3a2e4c86afed0421ab1becbff66b49feea4", size = 38537, upload-time = "2023-09-19T01:58:43.689Z" },
+]
 
 [[package]]
 name = "certifi"
