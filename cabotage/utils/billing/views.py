@@ -114,7 +114,9 @@ def payment_methods(org_slug: str) -> Response | str:
         return jsonify(client_secret=setup_intent.client_secret)
 
     payment_method = None
+    invoices = []
     if org.billing and org.billing.stripe_customer_id:
         payment_method = get_default_payment_method(org.billing.stripe_customer_id)
+        invoices = get_invoices(org.billing.stripe_customer_id, limit=5)
 
-    return render_template("billing/payment_methods.html", org=org, payment_method=payment_method)
+    return render_template("billing/payment_methods.html", org=org, payment_method=payment_method, invoices=invoices)

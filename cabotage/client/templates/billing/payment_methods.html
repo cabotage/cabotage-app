@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, empty_state %}
+{% from "_macros.html" import icon, resource_path, page_header, empty_state, status_badge %}
 
 {% block title %}Payment Methods - {{ org.name }} - Cabotage{% endblock title %}
 
@@ -121,10 +121,10 @@
       </div>
     </div>
 
-    {# ── Right column: billing info ── #}
+    {# ── Right column: billing info + recent invoices ── #}
     <div>
       <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Billing Information</h2>
-      <div class="card bg-base-200/50 border border-base-300/50">
+      <div class="card bg-base-200/50 border border-base-300/50 mb-6">
         <div class="card-body">
           <div class="flex flex-col gap-3">
             <div class="flex items-center justify-between">
@@ -142,6 +142,42 @@
               <span class="text-xs font-mono text-base-content/40">{{ org.billing.stripe_customer_id if org.billing else 'N/A' }}</span>
             </div>
           </div>
+        </div>
+      </div>
+
+      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Recent Invoices</h2>
+      <div class="card bg-base-200/50 border border-base-300/50">
+        <div class="card-body p-0">
+          {% if invoices is defined and invoices %}
+            <div class="flex flex-col">
+              {% for inv in invoices %}
+                <div class="flex items-center justify-between px-4 py-3 {% if not loop.last %}border-b border-base-300/30{% endif %}">
+                  <div class="flex items-center gap-3">
+                    <span class="text-base-content/30">{{ icon('file-text', 'w-4 h-4') }}</span>
+                    <div>
+                      <span class="text-sm text-base-content">{{ inv.description }}</span>
+                      <p class="text-xs text-base-content/40">{{ inv.date }}</p>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <span class="text-sm font-mono text-base-content">{{ inv.amount }}</span>
+                    {{ status_badge(inv.status) }}
+                    {% if inv.pdf_url %}
+                      <a href="{{ inv.pdf_url }}" target="_blank" rel="noopener"
+                         class="btn btn-ghost btn-xs gap-1">
+                        {{ icon('download', 'w-3 h-3') }} PDF
+                      </a>
+                    {% endif %}
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="text-center py-6">
+              <div class="text-base-content/15 mb-2">{{ icon('file-text', 'w-6 h-6') }}</div>
+              <p class="text-sm text-base-content/40">No invoices yet.</p>
+            </div>
+          {% endif %}
         </div>
       </div>
     </div>
