@@ -10,6 +10,7 @@ from celery import shared_task
 from stripe.billing import MeterEvent
 
 from cabotage.server.models.auth import Billing, Organization
+from cabotage.utils.billing.metering import collect_usage
 from cabotage.utils.billing._products import METERS
 
 logger = logging.getLogger(__name__)
