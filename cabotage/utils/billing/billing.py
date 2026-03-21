@@ -61,6 +61,7 @@ def create_or_get_customer(org: Organization) -> Customer:
     """Create or retrieve a Stripe customer for an organization."""
     org_bill = org.billing
     if org_bill and org_bill.stripe_customer_id:
+        logger.debug("Found existing Stripe customer for org %s", org.id)
         return Customer.retrieve(org_bill.stripe_customer_id)
 
     customer = Customer.create(
@@ -68,11 +69,13 @@ def create_or_get_customer(org: Organization) -> Customer:
     )
 
     if not org_bill:
+        logger.debug("Creating new Billing record for org %s", org.id)
         org_bill = Billing(org_id=org.id)
         db.session.add(org_bill)
 
     org_bill.stripe_customer_id = customer.id
     db.session.commit()
+    logger.debug("Created Stripe customer for org %s", org.id)
     return customer
 
 
