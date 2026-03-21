@@ -54,9 +54,36 @@ def dashboard(org_slug: str) -> str:
 
 @stripe_blueprint.route("/<org_slug>/subscribe", methods=["GET", "POST"])
 @login_required
-def subscribe(org_slug: str) -> str:
+def subscribe(org_slug: str) -> tuple[Response, int] | Response | str:
     """Plan selection + Stripe Payment Element for checkout."""
     org = Organization.query.filter_by(slug=org_slug).first_or_404()
+    if request.method == "POST":
+        data = request.get_json()
+        plan_tier = data.get("plan")
+
+        if plan_tier not in PLANS:
+            return jsonify(error="Invalid plan"), 400
+
+        # existing sub
+        if org.billing and org.billing.stripe_sub_id:
+            sub = Subscription.retrieve(org.billing.stripe_sub_id)
+            if sub.status in ("active", "trialing"):
+                plan = PLANS[plan_tier]
+                Subscription.modify(
+                    sub.id,
+                    items=[{
+                        "id": sub["items"].data[0].id,
+                        "price": plan.price_id,
+                    }],
+                    metadata={"plan_tier": plan_tier},
+                )
+                return jsonify(redirect=f"/billing/{org_slug}/")
+
+        # new sub
+        sub = create_sub(org, plan_tier)
+        client_secret = sub.latest_invoice.payment_intent.client_secret
+        return jsonify(client_secret=client_secret)
+
     return render_template("billing/subscribe.html", org=org)
 
 

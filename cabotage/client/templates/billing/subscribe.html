@@ -398,6 +398,10 @@
     var isDark = document.documentElement.getAttribute('data-theme') !== 'light';
 
     elements = stripe.elements({
+      mode: 'payment',
+      amount: 900,
+      currency: 'usd',
+      paymentMethodTypes: ['card', 'us_bank_account'],
       appearance: {
         theme: isDark ? 'night' : 'stripe',
         variables: {
