@@ -76,7 +76,7 @@ def receive_stripe_webhook() -> tuple[str, int]:
         return "Already working on this event, skipping", 200
 
     webhook_event = BillingWebhookEvent(
-        stripe_event_id=event.id, event_tyep=event.type, payload=event.data
+        stripe_event_id=event.id, event_type=event.type, payload=event.data
     )
     db.session.add(webhook_event)
 
