@@ -301,11 +301,9 @@ def create_app():
     app.register_blueprint(registry_auth_blueprint)
     if app.config.get("ENABLE_BILLING"):
         import stripe
+        from cabotage.utils.billing.core import stripe_blueprint
 
         stripe.api_key = app.config["STRIPE_SECRET_KEY"]
-
-        from cabotage.utils.billing.billing import stripe_blueprint
-
         app.register_blueprint(stripe_blueprint)
 
     # GitHub webhook uses HMAC validation, not CSRF tokens
