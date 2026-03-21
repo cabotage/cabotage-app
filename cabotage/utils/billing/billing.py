@@ -9,6 +9,7 @@ from flask import current_app, jsonify, Blueprint, Response
 from cabotage.server import db
 from cabotage.server.models import Organization
 from cabotage.server.models.auth import Billing
+from cabotage.utils.billing._products import PLANS, PlanTier, METERS
 
 logger = logging.getLogger(__name__)
 
@@ -75,9 +76,17 @@ def create_or_get_customer(org: Organization) -> Customer:
 
 
 ### --- Subscription stuffs
-def create_sub():
+def create_sub(org: Organization, tier: PlanTier):
     """Create a Stripe subscription for payment."""
-    pass
+    customer = get_or_get_customer(org)
+    _plan = PLANS[tier]
+
+    products = [{"price": _plan.price_id}]
+    for meter in METERS.values():
+        products.append({"price": meter.price_id})
+    # todo finish
+
+
 
 
 def get_sub():

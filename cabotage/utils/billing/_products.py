@@ -7,6 +7,7 @@ Generated with Stripe CLI and Claude.
 """
 
 from dataclasses import dataclass
+from typing import Literal
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,7 @@ class StripeMeter:
     unit_label: str
     description: str
 
+PlanTier= Literal["hobby", "indie", "team", "byoc"]
 
 # ---------------------------------------------------------------------------
 # Subscription Plans
