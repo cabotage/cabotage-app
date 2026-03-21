@@ -1,6 +1,8 @@
 """Stripe module for stripe things."""
 
 import logging
+from datetime import datetime
+
 from flask_login import login_required
 from stripe import checkout, Customer, Subscription, Webhook, SignatureVerificationError
 
@@ -119,7 +121,45 @@ def create_or_get_customer(org: Organization) -> Customer:
     return customer
 
 
-### --- Subscription stuffs
+def get_default_payment_method(customer_id: str) -> dict | None:
+    """Retrieve the default payment method for a Stripe customer."""
+    customer_id = Customer.retrieve(customer_id)
+    payment_id = None
+    if customer_id.invoice_settings:
+        payment_id = customer_id.invoice_settings.get("default_payment_method")
+    if not payment_id:
+        return None
+    pm = PaymentMethod.retrieve(payment_id)
+    return {
+        "brand": pm.card.brand,
+        "last4": pm.card.last4,
+        "exp_month": pm.card.exp_month,
+        "exp_year": pm.card.exp_year,
+    }
+
+
+def get_invoices(customer_id: str, limit: int = 10) -> list[dict]:
+    """Fetch recent invoices for a Stripe customer."""
+    invoice_list = Invoice.list(customer=customer_id, limit=limit)
+    invoices = []
+    for invoice in invoice_list.data:
+        desc = "Subscription"
+        if invoice.lines and invoice.lines.data:
+            desc = invoice.lines.data[0].description or desc
+        invoices.append({
+            "date": datetime.fromtimestamp(invoice.created).strftime("%Y-%m-%d"),
+            "description": desc,
+            "amount": f"${invoice.amount_due / 100:.2f}",
+            "status": invoice.status,
+            "pdf_url": invoice.invoice_pdf or "",
+        })
+    return invoices
+
+
+# ---------------------------------------------------------------------------
+# Subscription management
+# ---------------------------------------------------------------------------
+
 def create_sub(org: Organization, tier: PlanTier):
     """Create a Stripe subscription for payment."""
     customer = create_or_get_customer(org)
