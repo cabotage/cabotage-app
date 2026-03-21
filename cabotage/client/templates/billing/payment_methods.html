@@ -189,7 +189,10 @@
 <script>
 (function() {
   var stripe = Stripe('{{ config.STRIPE_PUB_KEY }}');
-  var isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+  var theme = document.documentElement.getAttribute('data-theme');
+  var isDark = theme !== 'light';
+  var cs = getComputedStyle(document.documentElement);
+  var primary = cs.getPropertyValue('--color-primary').trim() || '#7c3aed';
 
   var elements = stripe.elements({
     mode: 'setup',
@@ -198,15 +201,45 @@
     appearance: {
       theme: isDark ? 'night' : 'stripe',
       variables: {
-        colorPrimary: getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#7c3aed',
+        colorPrimary: primary,
+        colorBackground: isDark ? (cs.getPropertyValue('--color-base-100').trim() || '#1a1a2e') : '#fff',
+        colorText: isDark ? (cs.getPropertyValue('--color-base-content').trim() || '#e2e8f0') : '#1a1a2e',
+        colorTextSecondary: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
+        colorTextPlaceholder: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.4)',
+        colorDanger: '#ef4444',
         borderRadius: '0.5rem',
-        fontFamily: getComputedStyle(document.body).fontFamily
+        fontFamily: cs.fontFamily || 'system-ui, sans-serif',
       },
       rules: {
         '.Input': {
-          backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#fff',
-          borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
-        }
+          backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#fff',
+          borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)',
+          color: isDark ? '#e2e8f0' : '#1a1a2e',
+        },
+        '.Input:focus': {
+          borderColor: primary,
+          boxShadow: '0 0 0 1px ' + primary,
+        },
+        '.Label': {
+          color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)',
+        },
+        '.Tab': {
+          backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#fff',
+          borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+          color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)',
+        },
+        '.Tab--selected': {
+          backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#fff',
+          borderColor: primary,
+          color: isDark ? '#fff' : '#1a1a2e',
+        },
+        '.Tab:hover': {
+          backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.02)',
+        },
+        '.Block': {
+          backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#fafafa',
+          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+        },
       }
     }
   });

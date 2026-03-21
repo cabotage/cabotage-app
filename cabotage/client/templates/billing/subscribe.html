@@ -332,6 +332,26 @@
       </div>
     </div>
   </div>
+  {# ── Plan switch confirmation modal ── #}
+  <dialog id="switch-modal" class="modal">
+    <div class="modal-box max-w-sm">
+      <h3 class="text-base font-semibold text-base-content mb-1">Change plan</h3>
+      <p class="text-sm text-base-content/60 mb-4">
+        Switch to <strong id="switch-modal-plan" class="text-base-content"></strong>
+        (<span id="switch-modal-price"></span>)?
+        Your billing will be prorated.
+      </p>
+      <div id="switch-modal-error" class="text-sm text-error mb-3 hidden"></div>
+      <div class="flex justify-end gap-2">
+        <button type="button" id="switch-modal-cancel" class="btn btn-ghost btn-sm">Cancel</button>
+        <button type="button" id="switch-modal-confirm" class="btn btn-primary btn-sm gap-1.5">
+          <span id="switch-modal-btn-text">Confirm Switch</span>
+          <span id="switch-modal-spinner" class="loading loading-spinner loading-xs hidden"></span>
+        </button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
 {% endblock content %}
 
 {% block js %}
@@ -359,11 +379,66 @@
   var btnSpinner = document.getElementById('btn-spinner');
   var errorsEl = document.getElementById('payment-errors');
 
+  var hasActiveSub = {{ 'true' if org.billing and org.billing.stripe_sub_id and org.billing.stripe_sub_status == 'active' else 'false' }};
+
+  // Modal elements
+  var switchModal = document.getElementById('switch-modal');
+  var switchModalPlan = document.getElementById('switch-modal-plan');
+  var switchModalPrice = document.getElementById('switch-modal-price');
+  var switchModalError = document.getElementById('switch-modal-error');
+  var switchModalCancel = document.getElementById('switch-modal-cancel');
+  var switchModalConfirm = document.getElementById('switch-modal-confirm');
+  var switchModalBtnText = document.getElementById('switch-modal-btn-text');
+  var switchModalSpinner = document.getElementById('switch-modal-spinner');
+  var pendingSwitchPlan = null;
+
+  switchModalCancel.addEventListener('click', function() { switchModal.close(); });
+
+  switchModalConfirm.addEventListener('click', async function() {
+    if (!pendingSwitchPlan) return;
+    switchModalConfirm.disabled = true;
+    switchModalBtnText.textContent = 'Switching...';
+    switchModalSpinner.classList.remove('hidden');
+    switchModalError.classList.add('hidden');
+    try {
+      var response = await fetch('{{ url_for("billing.subscribe", org_slug=org.slug) }}', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+        },
+        body: JSON.stringify({ plan: pendingSwitchPlan })
+      });
+      var data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to switch plan.');
+      if (data.redirect) { window.location.href = data.redirect; return; }
+    } catch (err) {
+      switchModalError.textContent = err.message;
+      switchModalError.classList.remove('hidden');
+      switchModalConfirm.disabled = false;
+      switchModalBtnText.textContent = 'Confirm Switch';
+      switchModalSpinner.classList.add('hidden');
+    }
+  });
+
   // Plan selection
   document.querySelectorAll('.plan-select-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
+    btn.addEventListener('click', async function() {
       var plan = this.dataset.plan;
       var price = this.dataset.price;
+
+      // If already subscribed, show confirmation modal
+      if (hasActiveSub) {
+        pendingSwitchPlan = plan;
+        switchModalPlan.textContent = (planLabels[plan] || plan).replace('Cabotage ', '');
+        switchModalPrice.textContent = price;
+        switchModalError.classList.add('hidden');
+        switchModalConfirm.disabled = false;
+        switchModalBtnText.textContent = 'Confirm Switch';
+        switchModalSpinner.classList.add('hidden');
+        switchModal.showModal();
+        return;
+      }
 
       selectedPlanInput.value = plan;
       planNameEl.textContent = planLabels[plan] || plan;
@@ -395,7 +470,13 @@
   });
 
   function initStripeElements() {
-    var isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+    var theme = document.documentElement.getAttribute('data-theme');
+    var isDark = theme !== 'light';
+    var cs = getComputedStyle(document.documentElement);
+    var bg = cs.getPropertyValue('--color-base-100').trim();
+    var cardBg = cs.getPropertyValue('--color-base-200').trim();
+    var textColor = cs.getPropertyValue('--color-base-content').trim();
+    var primary = cs.getPropertyValue('--color-primary').trim() || '#7c3aed';
 
     elements = stripe.elements({
       mode: 'payment',
@@ -405,15 +486,45 @@
       appearance: {
         theme: isDark ? 'night' : 'stripe',
         variables: {
-          colorPrimary: getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#7c3aed',
+          colorPrimary: primary,
+          colorBackground: isDark ? (bg || '#1a1a2e') : '#fff',
+          colorText: isDark ? (textColor || '#e2e8f0') : '#1a1a2e',
+          colorTextSecondary: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
+          colorTextPlaceholder: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.4)',
+          colorDanger: '#ef4444',
           borderRadius: '0.5rem',
-          fontFamily: getComputedStyle(document.body).fontFamily
+          fontFamily: cs.fontFamily || 'system-ui, sans-serif',
         },
         rules: {
           '.Input': {
-            backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#fff',
-            borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
-          }
+            backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#fff',
+            borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)',
+            color: isDark ? '#e2e8f0' : '#1a1a2e',
+          },
+          '.Input:focus': {
+            borderColor: primary,
+            boxShadow: '0 0 0 1px ' + primary,
+          },
+          '.Label': {
+            color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)',
+          },
+          '.Tab': {
+            backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#fff',
+            borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+            color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)',
+          },
+          '.Tab--selected': {
+            backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#fff',
+            borderColor: primary,
+            color: isDark ? '#fff' : '#1a1a2e',
+          },
+          '.Tab:hover': {
+            backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.02)',
+          },
+          '.Block': {
+            backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#fafafa',
+            borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+          },
         }
       }
     });
