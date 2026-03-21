@@ -5,6 +5,8 @@ from flask_login import login_required
 
 from cabotage.server.models import Organization
 from cabotage.utils.billing.core import stripe_blueprint
+# dont allow cashapp and stuff
+ALLOWED_PAYMENT_METHODS = ["card", "us_bank_account"]
 
 
 @stripe_blueprint.route("/")
