@@ -1,8 +1,12 @@
 """Views for Stripe."""
 
+import logging
+
 from flask import render_template, request, jsonify, Response
 from flask_login import login_required
 from stripe import Customer, Subscription, SetupIntent
+
+logger = logging.getLogger(__name__)
 
 from cabotage.server.models import Organization
 from cabotage.utils.billing._products import PLANS
@@ -34,23 +38,49 @@ def dashboard(org_slug: str) -> str:
     return render_template("billing/dashboard.html", org=org)
 
 
-@stripe_blueprint.route("/<org_slug>/billing-data")
+@stripe_blueprint.route("/<org_slug>/billing-invoices")
 @login_required
-def billing_data(org_slug: str) -> Response:
-    """JSON endpoint for Stripe billing data, fetched async by the dashboard."""
+def billing_invoices(org_slug: str) -> Response:
+    """JSON endpoint for invoices."""
     org = Organization.query.filter_by(slug=org_slug).first_or_404()
     invoices = []
-    payment_method = None
-    usage = []
 
     if org.billing and org.billing.stripe_customer_id:
-        cust_id = org.billing.stripe_customer_id
-        invoices = get_invoices(cust_id)
-        payment_method = get_default_payment_method(cust_id)
-        if org.billing.stripe_sub_id:
-            usage = get_usage(cust_id, org.billing.stripe_sub_id)
+        try:
+            invoices = get_invoices(org.billing.stripe_customer_id)
+        except Exception:
+            logger.exception("Failed to fetch invoices for %s", org.billing.stripe_customer_id)
+    return jsonify(invoices=invoices)
 
-    return jsonify(invoices=invoices, payment_method=payment_method, usage=usage)
+
+@stripe_blueprint.route("/<org_slug>/billing-payment-method")
+@login_required
+def billing_payment_method(org_slug: str) -> Response:
+    """JSON endpoint for payment method."""
+    org = Organization.query.filter_by(slug=org_slug).first_or_404()
+    payment_method = None
+
+    if org.billing and org.billing.stripe_customer_id:
+        try:
+            payment_method = get_default_payment_method(org.billing.stripe_customer_id)
+        except Exception:
+            logger.exception("Failed to fetch payment method for %s", org.billing.stripe_customer_id)
+    return jsonify(payment_method=payment_method)
+
+
+@stripe_blueprint.route("/<org_slug>/billing-usage")
+@login_required
+def billing_usage(org_slug: str) -> Response:
+    """JSON endpoint for usage data."""
+    org = Organization.query.filter_by(slug=org_slug).first_or_404()
+    usage = []
+
+    if org.billing and org.billing.stripe_customer_id and org.billing.stripe_sub_id:
+        try:
+            usage = get_usage(org.billing.stripe_customer_id, org.billing.stripe_sub_id)
+        except Exception:
+            logger.exception("Failed to fetch usage for %s", org.billing.stripe_customer_id)
+    return jsonify(usage=usage)
 
 
 @stripe_blueprint.route("/<org_slug>/subscribe", methods=["GET", "POST"])
