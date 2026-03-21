@@ -299,6 +299,10 @@ def create_app():
     app.register_blueprint(main_blueprint)
     app.register_blueprint(oidc_blueprint)
     app.register_blueprint(registry_auth_blueprint)
+    if app.config.get("ENABLE_BILLING"):
+        from cabotage.utils.billing.billing import stripe_blueprint
+
+        app.register_blueprint(stripe_blueprint)
 
     # GitHub webhook uses HMAC validation, not CSRF tokens
     csrf.exempt("cabotage.server.user.views.github_hooks")
