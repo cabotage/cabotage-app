@@ -229,9 +229,18 @@ def get_usage(customer_id: str, subscription_id: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def create_sub(org: Organization, tier: PlanTier):
-    """Create a Stripe subscription with incomplete payment."""
+    """Create a Stripe subscription.
+
+    If the customer has a default payment method, charge it automatically.
+    Otherwise, require payment with  the Payment Element (default_incomplete).
+    """
     customer = create_or_get_customer(org)
     _plan = PLANS[tier]
+
+    has_payment_method = bool(
+        customer.invoice_settings
+        and customer.invoice_settings.get("default_payment_method")
+    )
 
     products = [{"price": _plan.price_id}]
     for meter in METERS.values():
@@ -240,7 +249,7 @@ def create_sub(org: Organization, tier: PlanTier):
     sub = Subscription.create(
         customer=customer.id,
         items=products,
-        payment_behavior="default_incomplete",
+        payment_behavior="allow_incomplete" if has_payment_method else "default_incomplete",
         expand=["latest_invoice.payment_intent"],
         metadata={"org_id": str(org.id), "org_slug": org.slug, "plan_tier": tier},
     )
