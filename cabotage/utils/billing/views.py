@@ -31,8 +31,25 @@ def billing_index() -> str:
 def dashboard(org_slug: str) -> str:
     """Render the billing dashboard."""
     org = Organization.query.filter_by(slug=org_slug).first_or_404()
-    # TODO: fetch real usage/invoices/payment from Stripe API
-    return render_template("billing/dashboard.html", org=org)
+    invoices = []
+    payment_method = None
+    usage = []
+
+    if org.billing and org.billing.stripe_customer_id:
+        cust_id = org.billing.stripe_customer_id
+        invoices = get_invoices(cust_id)
+        payment_method = get_default_payment_method(cust_id)
+
+        if org.billing.stripe_sub_id:
+            usage = get_usage(cust_id, org.billing.stripe_sub_id)
+
+    return render_template(
+        "billing/dashboard.html",
+        org=org,
+        invoices=invoices,
+        payment_method=payment_method,
+        usage=usage,
+    )
 
 
 @stripe_blueprint.route("/<org_slug>/subscribe", methods=["GET", "POST"])
