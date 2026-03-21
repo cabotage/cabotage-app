@@ -160,7 +160,10 @@ def _precreate_ingresses(environment):
     """
     import kubernetes
 
-    from cabotage.celery.tasks.deploy import ensure_ingresses
+    from cabotage.celery.tasks.deploy import (
+        ensure_ingresses,
+        ensure_tenant_network_policies,
+    )
 
     if not current_app.config.get("KUBERNETES_ENABLED"):
         return
@@ -178,12 +181,19 @@ def _precreate_ingresses(environment):
         if exc.status == 404:
             core_api.create_namespace(
                 kubernetes.client.V1Namespace(
-                    metadata=kubernetes.client.V1ObjectMeta(name=ns_name),
+                    metadata=kubernetes.client.V1ObjectMeta(
+                        name=ns_name,
+                        labels={
+                            "resident-namespace.cabotage.io": "true",
+                        },
+                    ),
                 )
             )
         else:
             logger.exception("Failed to create namespace %s", ns_name)
             return
+
+    ensure_tenant_network_policies(networking_api, ns_name)
 
     for app_env in environment.application_environments:
         app = app_env.application

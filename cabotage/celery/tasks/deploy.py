@@ -215,6 +215,9 @@ def render_namespace(release):
     namespace_object = kubernetes.client.V1Namespace(
         metadata=kubernetes.client.V1ObjectMeta(
             name=k8s_namespace(release),
+            labels={
+                "resident-namespace.cabotage.io": "true",
+            },
         ),
     )
     return namespace_object
@@ -243,6 +246,189 @@ def fetch_namespace(core_api_instance, release):
                 f"Unexpected exception fetching Namespace/{namespace_name}: {exc}"
             )
     return namespace
+
+
+def render_tenant_network_policies(namespace_name):
+    """Return the list of NetworkPolicy objects for a tenant namespace."""
+    return [
+        # Default deny all ingress
+        kubernetes.client.V1NetworkPolicy(
+            metadata=kubernetes.client.V1ObjectMeta(
+                name="default-deny-ingress",
+                namespace=namespace_name,
+            ),
+            spec=kubernetes.client.V1NetworkPolicySpec(
+                pod_selector=kubernetes.client.V1LabelSelector(),
+                policy_types=["Ingress"],
+            ),
+        ),
+        # Allow ingress from traefik on port 8000 (ghostunnel TLS proxy)
+        kubernetes.client.V1NetworkPolicy(
+            metadata=kubernetes.client.V1ObjectMeta(
+                name="allow-ingress-from-traefik",
+                namespace=namespace_name,
+            ),
+            spec=kubernetes.client.V1NetworkPolicySpec(
+                pod_selector=kubernetes.client.V1LabelSelector(),
+                ingress=[
+                    kubernetes.client.V1NetworkPolicyIngressRule(
+                        _from=[
+                            kubernetes.client.V1NetworkPolicyPeer(
+                                namespace_selector=kubernetes.client.V1LabelSelector(
+                                    match_labels={
+                                        "kubernetes.io/metadata.name": "traefik"
+                                    },
+                                ),
+                            ),
+                        ],
+                        ports=[
+                            kubernetes.client.V1NetworkPolicyPort(
+                                port=8000, protocol="TCP"
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+        ),
+        # Allow intra-namespace traffic
+        kubernetes.client.V1NetworkPolicy(
+            metadata=kubernetes.client.V1ObjectMeta(
+                name="allow-intra-namespace",
+                namespace=namespace_name,
+            ),
+            spec=kubernetes.client.V1NetworkPolicySpec(
+                pod_selector=kubernetes.client.V1LabelSelector(),
+                ingress=[
+                    kubernetes.client.V1NetworkPolicyIngressRule(
+                        _from=[
+                            kubernetes.client.V1NetworkPolicyPeer(
+                                pod_selector=kubernetes.client.V1LabelSelector(),
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+        ),
+        # Restrict egress: DNS + vault + consul + internet, block other infra
+        kubernetes.client.V1NetworkPolicy(
+            metadata=kubernetes.client.V1ObjectMeta(
+                name="restrict-egress",
+                namespace=namespace_name,
+            ),
+            spec=kubernetes.client.V1NetworkPolicySpec(
+                pod_selector=kubernetes.client.V1LabelSelector(),
+                policy_types=["Egress"],
+                egress=[
+                    # DNS
+                    kubernetes.client.V1NetworkPolicyEgressRule(
+                        to=[
+                            kubernetes.client.V1NetworkPolicyPeer(
+                                namespace_selector=kubernetes.client.V1LabelSelector(
+                                    match_labels={
+                                        "kubernetes.io/metadata.name": "kube-system"
+                                    },
+                                ),
+                            ),
+                        ],
+                        ports=[
+                            kubernetes.client.V1NetworkPolicyPort(
+                                port=53, protocol="UDP"
+                            ),
+                            kubernetes.client.V1NetworkPolicyPort(
+                                port=53, protocol="TCP"
+                            ),
+                        ],
+                    ),
+                    # Vault
+                    kubernetes.client.V1NetworkPolicyEgressRule(
+                        to=[
+                            kubernetes.client.V1NetworkPolicyPeer(
+                                namespace_selector=kubernetes.client.V1LabelSelector(
+                                    match_labels={
+                                        "kubernetes.io/metadata.name": "cabotage"
+                                    },
+                                ),
+                                pod_selector=kubernetes.client.V1LabelSelector(
+                                    match_labels={"app": "vault"},
+                                ),
+                            ),
+                        ],
+                        ports=[
+                            kubernetes.client.V1NetworkPolicyPort(
+                                port=8200, protocol="TCP"
+                            ),
+                        ],
+                    ),
+                    # Consul
+                    kubernetes.client.V1NetworkPolicyEgressRule(
+                        to=[
+                            kubernetes.client.V1NetworkPolicyPeer(
+                                namespace_selector=kubernetes.client.V1LabelSelector(
+                                    match_labels={
+                                        "kubernetes.io/metadata.name": "cabotage"
+                                    },
+                                ),
+                                pod_selector=kubernetes.client.V1LabelSelector(
+                                    match_labels={"app": "consul"},
+                                ),
+                            ),
+                        ],
+                        ports=[
+                            kubernetes.client.V1NetworkPolicyPort(
+                                port=8443, protocol="TCP"
+                            ),
+                        ],
+                    ),
+                    # Intra-namespace
+                    kubernetes.client.V1NetworkPolicyEgressRule(
+                        to=[
+                            kubernetes.client.V1NetworkPolicyPeer(
+                                pod_selector=kubernetes.client.V1LabelSelector(),
+                            ),
+                        ],
+                    ),
+                    # Internet (block cluster-internal)
+                    kubernetes.client.V1NetworkPolicyEgressRule(
+                        to=[
+                            kubernetes.client.V1NetworkPolicyPeer(
+                                ip_block=kubernetes.client.V1IPBlock(
+                                    cidr="0.0.0.0/0",
+                                    _except=[
+                                        "10.0.0.0/8",
+                                        "172.16.0.0/12",
+                                        "192.168.0.0/16",
+                                    ],
+                                ),
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+        ),
+    ]
+
+
+def ensure_tenant_network_policies(networking_api, namespace_name):
+    """Create or update default network policies for a tenant namespace."""
+    for policy in render_tenant_network_policies(namespace_name):
+        try:
+            networking_api.create_namespaced_network_policy(namespace_name, policy)
+        except ApiException as exc:
+            if exc.status == 409:  # Already exists
+                try:
+                    networking_api.patch_namespaced_network_policy(
+                        policy.metadata.name, namespace_name, policy
+                    )
+                except Exception as patch_exc:
+                    raise DeployError(
+                        f"Unexpected exception patching NetworkPolicy/"
+                        f"{policy.metadata.name}: {patch_exc}"
+                    )
+            else:
+                raise DeployError(
+                    f"Unexpected exception creating NetworkPolicy/"
+                    f"{policy.metadata.name}: {exc}"
+                )
 
 
 def render_cabotage_ca_configmap(release):
@@ -1041,6 +1227,11 @@ def render_cabotage_enroller_container(release, process_name, with_tls=True):
             kubernetes.client.V1VolumeMount(
                 name="vault-secrets", mount_path="/var/run/secrets/vault"
             ),
+            kubernetes.client.V1VolumeMount(
+                name="sa-token",
+                mount_path="/var/run/secrets/kubernetes.io/serviceaccount",
+                read_only=True,
+            ),
         ],
     )
 
@@ -1333,6 +1524,42 @@ def render_podspec(release, process_name, service_account_name):
                 medium="Memory", size_limit="1M"
             ),
         ),
+        kubernetes.client.V1Volume(
+            name="sa-token",
+            projected=kubernetes.client.V1ProjectedVolumeSource(
+                sources=[
+                    kubernetes.client.V1VolumeProjection(
+                        service_account_token=kubernetes.client.V1ServiceAccountTokenProjection(
+                            path="token",
+                            expiration_seconds=3600,
+                        ),
+                    ),
+                    kubernetes.client.V1VolumeProjection(
+                        config_map=kubernetes.client.V1ConfigMapProjection(
+                            name="kube-root-ca.crt",
+                            items=[
+                                kubernetes.client.V1KeyToPath(
+                                    key="ca.crt",
+                                    path="ca.crt",
+                                ),
+                            ],
+                        ),
+                    ),
+                    kubernetes.client.V1VolumeProjection(
+                        downward_api=kubernetes.client.V1DownwardAPIProjection(
+                            items=[
+                                kubernetes.client.V1DownwardAPIVolumeFile(
+                                    path="namespace",
+                                    field_ref=kubernetes.client.V1ObjectFieldSelector(
+                                        field_path="metadata.namespace",
+                                    ),
+                                ),
+                            ],
+                        ),
+                    ),
+                ],
+            ),
+        ),
     ]
     init_containers = []
     containers = []
@@ -1435,6 +1662,8 @@ def render_podspec(release, process_name, service_account_name):
 
     return kubernetes.client.V1PodSpec(
         service_account_name=service_account_name,
+        automount_service_account_token=False,
+        enable_service_links=False,
         init_containers=init_containers,
         containers=containers,
         volumes=volumes,
@@ -1956,6 +2185,9 @@ def deploy_release(deployment):
         custom_objects_api_instance = kubernetes.client.CustomObjectsApi(api_client)
         log("Fetching Namespace")
         namespace = fetch_namespace(core_api_instance, deployment.release_object)
+        log("Ensuring Tenant Network Policies")
+        networking_api = kubernetes.client.NetworkingV1Api(api_client)
+        ensure_tenant_network_policies(networking_api, namespace.metadata.name)
         log("Fetching Cabotage CA Cert ConfigMap")
         fetch_cabotage_ca_configmap(core_api_instance, deployment.release_object)
         log("Fetching ServiceAccount")
@@ -2353,6 +2585,15 @@ def fake_deploy_release(deployment):
         f"in Namespace/{namespace.metadata.name}"
     )
     deploy_log.append(yaml.dump(remove_none(service_account.to_dict())))
+    deploy_log.append(
+        f"Ensuring Tenant Network Policies in Namespace/{namespace.metadata.name}"
+    )
+    for policy in render_tenant_network_policies(namespace.metadata.name):
+        deploy_log.append(
+            f"Creating NetworkPolicy/{policy.metadata.name} "
+            f"in Namespace/{namespace.metadata.name}"
+        )
+        deploy_log.append(yaml.dump(remove_none(policy.to_dict())))
     cabotage_enrollment = render_cabotage_enrollment(deployment.release_object)
     deploy_log.append(
         f"Creating CabotageEnrollment/{cabotage_enrollment['metadata']['name']} "
