@@ -235,3 +235,16 @@ def handle_invoice_created(invoice) -> None:
         logger.info(
             "Applied %d cent credit for org %s (%s plan)", credit, org_id, plan_tier
         )
+
+
+def handle_setup_intent_succeeded(setup_intent) -> None:
+    """Set the confirmed payment method as the customer's default."""
+    customer_id = setup_intent.customer
+    payment_id = setup_intent.payment_method
+
+    if customer_id and payment_id:
+        Customer.modify(
+            customer_id,
+            invoice_settings={"default_payment_method": payment_id},
+        )
+        logger.info("Set default payment method %s for customer %s", payment_id, customer_id)
