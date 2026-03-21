@@ -1,4 +1,5 @@
 """Stripe module for stripe things."""
+
 import logging
 import os
 from typing import Final
@@ -15,6 +16,7 @@ STRIPE_SECRET_KEY: Final[str] = os.getenv("STRIPE_SECRET_KEY")
 stripe_blueprint = Blueprint(
     "billing",
     __name__,
+    url_prefix="/billing",
 )
 
 # we need to build a stripe module to support usage and sub based payments.
@@ -25,6 +27,7 @@ stripe_blueprint = Blueprint(
 # - create(_or_get?) a stripe customer
 # - create a stripe payment intent
 # - create a stripe sub for those that do that
+
 
 @stripe_blueprint.route("/checkout-session", methods=["POST"])
 @login_required
@@ -44,26 +47,32 @@ def create_checkout_session():
         return str(exc)
     return jsonify(clientSecret=session.client_secret)
 
+
 def create_payment_intent():
     """Create a Stripe payment intent for payment."""
     pass
 
+
 def create_or_get_customer():
     """Create or retrieve a Stripe customer for payment."""
     pass
+
 
 ### --- Subscription stuffs
 def create_sub():
     """Create a Stripe subscription for payment."""
     pass
 
+
 def get_sub():
     """Retrieve a Stripe subscription for payment."""
     pass
 
+
 def delete_sub():
     """Delete a Stripe subscription for payment."""
     pass
+
 
 def cancel_sub():
     """Cancel a Stripe subscription for payment."""
