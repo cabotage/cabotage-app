@@ -302,6 +302,7 @@ def create_app():
     if app.config.get("ENABLE_BILLING"):
         import stripe
         from cabotage.utils.billing.core import stripe_blueprint
+        import cabotage.utils.billing.views  # noqa: F401
 
         stripe.api_key = app.config["STRIPE_SECRET_KEY"]
         app.register_blueprint(stripe_blueprint)
