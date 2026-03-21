@@ -19,124 +19,122 @@
     </a>
   {% endcall %}
 
-  <div class="max-w-2xl">
-
-    {# ── Current payment method ── #}
-    <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Current Payment Method</h2>
-    <div class="card bg-base-200/50 border border-base-300/50 mb-6">
-      <div class="card-body">
-        {% if payment_method is defined and payment_method %}
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-4">
-              <div class="w-12 h-8 rounded bg-base-300/60 flex items-center justify-center text-base-content/40">
-                {% if payment_method.brand == 'visa' %}
-                  <span class="text-xs font-bold tracking-wide">VISA</span>
-                {% elif payment_method.brand == 'mastercard' %}
-                  <span class="text-xs font-bold tracking-wide">MC</span>
-                {% elif payment_method.brand == 'amex' %}
-                  <span class="text-xs font-bold tracking-wide">AMEX</span>
-                {% else %}
-                  {{ icon('credit-card', 'w-5 h-5') }}
-                {% endif %}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    {# ── Left column: current card + form ── #}
+    <div>
+      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Current Payment Method</h2>
+      <div class="card bg-base-200/50 border border-base-300/50 mb-6">
+        <div class="card-body">
+          {% if payment_method is defined and payment_method %}
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-4">
+                <div class="w-12 h-8 rounded bg-base-300/60 flex items-center justify-center text-base-content/40">
+                  {% if payment_method.brand == 'visa' %}
+                    <span class="text-xs font-bold tracking-wide">VISA</span>
+                  {% elif payment_method.brand == 'mastercard' %}
+                    <span class="text-xs font-bold tracking-wide">MC</span>
+                  {% elif payment_method.brand == 'amex' %}
+                    <span class="text-xs font-bold tracking-wide">AMEX</span>
+                  {% else %}
+                    {{ icon('credit-card', 'w-5 h-5') }}
+                  {% endif %}
+                </div>
+                <div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-medium text-base-content">{{ payment_method.brand|title }}</span>
+                    <span class="text-sm font-mono text-base-content/50">&middot;&middot;&middot;&middot; {{ payment_method.last4 }}</span>
+                  </div>
+                  <p class="text-xs text-base-content/40">Expires {{ payment_method.exp_month }}/{{ payment_method.exp_year }}</p>
+                </div>
+              </div>
+              <span class="badge badge-outline badge-sm gap-1 border-success/40 text-success">
+                {{ icon('check', 'w-3 h-3') }} Default
+              </span>
+            </div>
+          {% else %}
+            <div class="flex items-center gap-3">
+              <div class="w-12 h-8 rounded bg-base-300/30 flex items-center justify-center text-base-content/15">
+                {{ icon('credit-card', 'w-5 h-5') }}
               </div>
               <div>
-                <div class="flex items-center gap-2">
-                  <span class="text-sm font-medium text-base-content">
-                    {{ payment_method.brand|title }}
-                  </span>
-                  <span class="text-sm font-mono text-base-content/50">
-                    &middot;&middot;&middot;&middot; {{ payment_method.last4 }}
-                  </span>
-                </div>
-                <p class="text-xs text-base-content/40">Expires {{ payment_method.exp_month }}/{{ payment_method.exp_year }}</p>
+                <span class="text-sm text-base-content/40">No payment method on file</span>
+                <p class="text-xs text-base-content/30">Add a card below to get started.</p>
               </div>
             </div>
-            <span class="badge badge-sm badge-success gap-1">
-              {{ icon('check', 'w-3 h-3') }} Default
-            </span>
-          </div>
-        {% else %}
-          <div class="flex items-center gap-3">
-            <div class="w-12 h-8 rounded bg-base-300/30 flex items-center justify-center text-base-content/15">
-              {{ icon('credit-card', 'w-5 h-5') }}
-            </div>
-            <div>
-              <span class="text-sm text-base-content/40">No payment method on file</span>
-              <p class="text-xs text-base-content/30">Add a card below to get started.</p>
-            </div>
-          </div>
-        {% endif %}
-      </div>
-    </div>
-
-    {# ── Add / Update payment method ── #}
-    <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">
-      {% if payment_method is defined and payment_method %}Update{% else %}Add{% endif %} Payment Method
-    </h2>
-    <div class="card bg-base-200/50 border border-base-300/50 mb-6">
-      <div class="card-body">
-        <div class="flex items-start gap-3 mb-4">
-          <span class="text-base-content/30 mt-0.5">{{ icon('shield', 'w-4 h-4') }}</span>
-          <p class="text-sm text-base-content/50">
-            Your payment information is securely processed by Stripe. Card details never touch our servers.
-          </p>
+          {% endif %}
         </div>
+      </div>
 
-        <form id="setup-form">
-          <div id="payment-element" class="mb-4">
-            {# Stripe Payment Element mounts here #}
+      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">
+        {% if payment_method is defined and payment_method %}Update{% else %}Add{% endif %} Payment Method
+      </h2>
+      <div class="card bg-base-200/50 border border-base-300/50">
+        <div class="card-body">
+          <div class="flex items-start gap-3 mb-4">
+            <span class="text-base-content/30 mt-0.5">{{ icon('shield', 'w-4 h-4') }}</span>
+            <p class="text-sm text-base-content/50">
+              Your payment information is securely processed by Stripe. Card details never touch our servers.
+            </p>
           </div>
 
-          <div id="payment-errors" class="text-sm text-error mb-3 hidden"></div>
+          <form id="setup-form">
+            <div id="payment-element" class="mb-4">
+              {# Stripe Payment Element mounts here #}
+            </div>
 
-          <div class="flex items-center gap-3">
-            <button type="submit" id="submit-btn" class="btn btn-primary gap-2" disabled>
-              <span id="btn-text">
-                {% if payment_method is defined and payment_method %}Update Card{% else %}Add Card{% endif %}
-              </span>
-              <span id="btn-spinner" class="loading loading-spinner loading-sm hidden"></span>
-            </button>
+            <div id="payment-errors" class="text-sm text-error mb-3 hidden"></div>
+
+            <div class="flex items-center gap-3">
+              <button type="submit" id="submit-btn" class="btn btn-primary gap-2" disabled>
+                <span id="btn-text">
+                  {% if payment_method is defined and payment_method %}Update Card{% else %}Add Card{% endif %}
+                </span>
+                <span id="btn-spinner" class="loading loading-spinner loading-sm hidden"></span>
+              </button>
+              <a href="{{ url_for('billing.dashboard', org_slug=org.slug) }}"
+                 class="btn btn-ghost">Cancel</a>
+            </div>
+          </form>
+
+          <div id="success-message" class="hidden">
+            <div class="flex items-center gap-3 py-2">
+              <div class="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center text-success">
+                {{ icon('check', 'w-5 h-5') }}
+              </div>
+              <div>
+                <span class="text-sm font-medium text-base-content">Payment method updated</span>
+                <p class="text-xs text-base-content/40">Your new card is now the default payment method.</p>
+              </div>
+            </div>
             <a href="{{ url_for('billing.dashboard', org_slug=org.slug) }}"
-               class="btn btn-ghost">Cancel</a>
+               class="btn btn-primary btn-sm gap-1 mt-3">
+              {{ icon('arrow-left', 'w-3.5 h-3.5') }} Back to Billing
+            </a>
           </div>
-        </form>
-
-        <div id="success-message" class="hidden">
-          <div class="flex items-center gap-3 py-2">
-            <div class="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center text-success">
-              {{ icon('check', 'w-5 h-5') }}
-            </div>
-            <div>
-              <span class="text-sm font-medium text-base-content">Payment method updated</span>
-              <p class="text-xs text-base-content/40">Your new card is now the default payment method.</p>
-            </div>
-          </div>
-          <a href="{{ url_for('billing.dashboard', org_slug=org.slug) }}"
-             class="btn btn-primary btn-sm gap-1 mt-3">
-            {{ icon('arrow-left', 'w-3.5 h-3.5') }} Back to Billing
-          </a>
         </div>
       </div>
     </div>
 
-    {# ── Billing info ── #}
-    <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Billing Information</h2>
-    <div class="card bg-base-200/50 border border-base-300/50">
-      <div class="card-body">
-        <div class="flex flex-col gap-3">
-          <div class="flex items-center justify-between">
-            <span class="text-sm text-base-content/60">Organization</span>
-            <span class="text-sm font-medium text-base-content">{{ org.name }}</span>
-          </div>
-          <div class="divider my-0 h-px"></div>
-          <div class="flex items-center justify-between">
-            <span class="text-sm text-base-content/60">Billing email</span>
-            <span class="text-sm font-mono text-base-content">Not set</span>
-          </div>
-          <div class="divider my-0 h-px"></div>
-          <div class="flex items-center justify-between">
-            <span class="text-sm text-base-content/60">Customer ID</span>
-            <span class="text-xs font-mono text-base-content/40">{{ org.billing.stripe_customer_id if org.billing else 'N/A' }}</span>
+    {# ── Right column: billing info ── #}
+    <div>
+      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Billing Information</h2>
+      <div class="card bg-base-200/50 border border-base-300/50">
+        <div class="card-body">
+          <div class="flex flex-col gap-3">
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-base-content/60">Organization</span>
+              <span class="text-sm font-medium text-base-content">{{ org.name }}</span>
+            </div>
+            <div class="divider my-0 h-px"></div>
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-base-content/60">Billing email</span>
+              <span class="text-sm font-mono text-base-content">Not set</span>
+            </div>
+            <div class="divider my-0 h-px"></div>
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-base-content/60">Customer ID</span>
+              <span class="text-xs font-mono text-base-content/40">{{ org.billing.stripe_customer_id if org.billing else 'N/A' }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -152,6 +150,9 @@
   var isDark = document.documentElement.getAttribute('data-theme') !== 'light';
 
   var elements = stripe.elements({
+    mode: 'setup',
+    currency: 'usd',
+    paymentMethodTypes: ['card', 'us_bank_account'],
     appearance: {
       theme: isDark ? 'night' : 'stripe',
       variables: {
