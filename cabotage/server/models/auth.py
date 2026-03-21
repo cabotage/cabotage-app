@@ -273,9 +273,9 @@ class Billing(Model):
     __versioned__: dict = {}
     __tablename__ = "billing"
 
-    stripe_customer_id = Mapped[str] = mapped_column(db.String, nullable=True)
-    stripe_sub_id = Mapped[str] = mapped_column(db.String, nullable=True)
-    stripe_sub_status = Mapped[BillingSubsctriptionStatus | None] = mapped_column(
+    stripe_customer_id: Mapped[str] = mapped_column(db.String, nullable=True, unique=True, index=True)
+    stripe_sub_id:  Mapped[str] = mapped_column(db.String, nullable=True, unique=True, index=True)
+    stripe_sub_status:  Mapped[BillingSubsctriptionStatus | None] = mapped_column(
         db.String, nullable=True
     )
     stripe_sub_plan = Mapped[str] = mapped_column(db.String, default="free")
