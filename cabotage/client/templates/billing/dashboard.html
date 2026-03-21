@@ -189,7 +189,7 @@
 
         <div>
           <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Billing Details</h2>
-          <div class="card bg-base-200/50 border border-base-300/50">
+          <div class="card bg-base-200/50 border border-base-300/50 mb-6">
             <div class="card-body">
               <div class="flex flex-col gap-3">
                 <div class="flex items-center justify-between">
@@ -212,6 +212,13 @@
                   <span class="text-xs font-mono text-base-content/40">{{ org.billing.stripe_sub_id if org.billing else 'N/A' }}</span>
                 </div>
               </div>
+            </div>
+          </div>
+
+          <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Recent Invoices</h2>
+          <div class="card bg-base-200/50 border border-base-300/50">
+            <div id="payment-invoices-detail">
+              {{ billing_spinner() }}
             </div>
           </div>
         </div>
@@ -246,18 +253,28 @@
     return el.outerHTML;
   }
 
-  fetch(`/billing/${ORG_SLUG}/billing-data`)
+  const fail = el => { el.innerHTML = '<p class="text-sm text-error/60 py-4 text-center">Failed to load billing data.</p>'; };
+
+  fetch(`/billing/${ORG_SLUG}/billing-invoices`)
+    .then(r => r.json())
+    .then(data => {
+      renderInvoices(data.invoices || []);
+      renderPaymentInvoices(data.invoices || []);
+    })
+    .catch(() => { fail(document.getElementById('invoices-detail')); fail(document.getElementById('payment-invoices-detail')); });
+
+  fetch(`/billing/${ORG_SLUG}/billing-payment-method`)
+    .then(r => r.json())
+    .then(data => { renderPaymentMethod(data.payment_method); })
+    .catch(() => { fail(document.getElementById('payment-method-detail')); });
+
+  fetch(`/billing/${ORG_SLUG}/billing-usage`)
     .then(r => r.json())
     .then(data => {
       renderOverviewUsage(data.usage || []);
       renderUsageDetail(data.usage || []);
-      renderInvoices(data.invoices || []);
-      renderPaymentMethod(data.payment_method);
     })
-    .catch(() => {
-      document.querySelectorAll('#overview-usage, #usage-detail, #invoices-detail, #payment-method-detail')
-        .forEach(el => { el.innerHTML = '<p class="text-sm text-error/60 py-4 text-center">Failed to load billing data.</p>'; });
-    });
+    .catch(() => { fail(document.getElementById('overview-usage')); fail(document.getElementById('usage-detail')); });
 
   function renderOverviewUsage(usage) {
     const el = document.getElementById('overview-usage');
@@ -404,6 +421,30 @@
           <a href="${esc(PM_URL)}" class="btn btn-primary btn-sm gap-1">${svg('plus', 'w-3.5 h-3.5')} Add</a>
         </div>`;
     }
+  }
+
+  function renderPaymentInvoices(invoices) {
+    const el = document.getElementById('payment-invoices-detail');
+    const recent = invoices.slice(0, 5);
+    if (!recent.length) {
+      el.innerHTML = '<div class="card-body"><p class="text-sm text-base-content/40 text-center py-4">No invoices yet.</p></div>';
+      return;
+    }
+    el.innerHTML = `<div class="card-body p-0"><table class="table table-sm">
+      <thead><tr class="border-base-300/50">
+        <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Date</th>
+        <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Amount</th>
+        <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Status</th>
+      </tr></thead>
+      <tbody>${recent.map(inv => {
+        const badge = inv.status === 'paid' ? 'badge-success' : inv.status === 'open' ? 'badge-warning' : 'badge-ghost';
+        return `<tr class="border-base-300/30 hover:bg-base-300/20">
+          <td class="text-sm font-mono text-base-content/60">${esc(inv.date)}</td>
+          <td class="text-sm font-mono text-base-content">${esc(inv.amount)}</td>
+          <td><span class="badge badge-sm ${badge}">${esc(inv.status)}</span></td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>`;
   }
 })();
 </script>
