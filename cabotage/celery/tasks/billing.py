@@ -13,6 +13,21 @@ from cabotage.utils.billing._products import METERS
 
 logger = logging.getLogger(__name__)
 
+def _parse_cpu(cpu_str: str) -> float:
+    """Convert K8s CPU string to vCPU count. '250m' -> 0.25, '1' -> 1.0."""
+    if cpu_str.endswith("m"):
+        return int(cpu_str[:-1]) / 1000
+    return float(cpu_str)
+
+
+def _parse_memory_gi(mem_str: str) -> float:
+    """Convert K8s memory string to GB. '512Mi' -> 0.5, '1Gi' -> 1.0."""
+    if mem_str.endswith("Gi"):
+        return float(mem_str[:-2])
+    if mem_str.endswith("Mi"):
+        return float(mem_str[:-2]) / 1024
+    return 0.0
+
 
 def collect_usage(org: Organization) -> dict:
     """Collect usage data for an organization.
