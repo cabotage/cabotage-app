@@ -32,7 +32,8 @@ def _parse_memory_gi(mem_str: str) -> float:
 def collect_usage(org: Organization) -> dict:
     """Collect usage data for an organization.
 
-    Stub, meter names dont match (hrs->hours), and lots of data to collect"""
+    Stub, meter names dont match (hrs->hours), and lots of data to collect
+    """
     usage_data: dict[str, float] = {
         "vcpu_hrs": ...,
         "ram_gb_hrs": ...,
