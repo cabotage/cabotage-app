@@ -168,8 +168,12 @@ def handle_subscription_change(subscription) -> None:
 
     billing.stripe_sub_id = subscription.id
     billing.stripe_sub_status = subscription.status
-    billing.stripe_sub_plan = subscription.metadata.get("plan_tier", billing.stripe_sub_plan)
-    logger.info("Updated subscription for org %s: status=%s", org_id, subscription.status)
+    billing.stripe_sub_plan = subscription.metadata.get(
+        "plan_tier", billing.stripe_sub_plan
+    )
+    logger.info(
+        "Updated subscription for org %s: status=%s", org_id, subscription.status
+    )
 
 
 def handle_subscription_canceled(subscription) -> None:
@@ -191,13 +195,21 @@ def handle_subscription_canceled(subscription) -> None:
 
 def handle_invoice_paid(invoice) -> None:
     """Handle successful invoice payment."""
-    org_id = invoice.subscription_details.metadata.get("org_id") if invoice.subscription_details else None
+    org_id = (
+        invoice.subscription_details.metadata.get("org_id")
+        if invoice.subscription_details
+        else None
+    )
     logger.info("Invoice paid: %s for org %s", invoice.id, org_id)
 
 
 def handle_payment_failed(invoice) -> None:
     """Handle failed invoice payment — mark org as past_due."""
-    org_id = invoice.subscription_details.metadata.get("org_id") if invoice.subscription_details else None
+    org_id = (
+        invoice.subscription_details.metadata.get("org_id")
+        if invoice.subscription_details
+        else None
+    )
     if not org_id:
         logger.warning("Invoice %s has no org_id", invoice.id)
         return
@@ -234,4 +246,6 @@ def handle_invoice_created(invoice) -> None:
             currency="usd",
             description=f"{plan_tier} plan usage credit",
         )
-        logger.info("Applied %d cent credit for org %s (%s plan)", credit, org_id, plan_tier)
+        logger.info(
+            "Applied %d cent credit for org %s (%s plan)", credit, org_id, plan_tier
+        )

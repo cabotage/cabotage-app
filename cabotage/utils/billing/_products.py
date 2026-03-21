@@ -28,7 +28,8 @@ class StripeMeter:
     unit_label: str
     description: str
 
-PlanTier= Literal["hobby", "indie", "team", "byoc"]
+
+PlanTier = Literal["hobby", "indie", "team", "byoc"]
 
 # ---------------------------------------------------------------------------
 # Subscription Plans

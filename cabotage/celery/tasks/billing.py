@@ -3,6 +3,7 @@
 Runs hourly via Celery Beat. Collects resource usage per org
 and reports it to Stripe Billing Meters.
 """
+
 import logging
 
 from celery import shared_task
@@ -12,6 +13,7 @@ from cabotage.server.models.auth import Billing, Organization
 from cabotage.utils.billing._products import METERS
 
 logger = logging.getLogger(__name__)
+
 
 def _parse_cpu(cpu_str: str) -> float:
     """Convert K8s CPU string to vCPU count. '250m' -> 0.25, '1' -> 1.0."""
