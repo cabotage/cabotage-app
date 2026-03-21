@@ -2,13 +2,13 @@
 
 import logging
 from flask_login import login_required
-from stripe import checkout, Customer, Subscription
+from stripe import checkout, Customer, Subscription, Webhook, SignatureVerificationError
 
-from flask import current_app, jsonify, Blueprint, Response
+from flask import current_app, jsonify, Blueprint, Response, request
 
 from cabotage.server import db
 from cabotage.server.models import Organization
-from cabotage.server.models.auth import Billing
+from cabotage.server.models.auth import Billing, BillingWebhookEvent
 from cabotage.utils.billing._products import PLANS, PlanTier, METERS
 
 logger = logging.getLogger(__name__)
@@ -48,9 +48,53 @@ def create_checkout_session() -> str | Response:
     return jsonify(clientSecret=session.client_secret)
 
 
-def create_payment_intent():
-    """Create a Stripe payment intent for payment."""
-    pass
+@stripe_blueprint.route("/webhook", methods=["POST"])
+def receive_stripe_webhook() -> tuple[str, int]:
+    """Handle incoming Stripe webhooks.
+
+    Returns a tuple of (message, status code).
+    """
+    payload = request.get_data
+    header = request.headers.get("Stripe-Signature")
+
+    try:
+        event = Webhook.construct_event(
+            payload, header, current_app.config["STRIPE_WEBHOOK_SECRET"]
+        )
+    except ValueError:
+        logger.exception("Invalid Stripe webhook payload")
+        return "Invalid payload", 400
+    except SignatureVerificationError:
+        logger.exception("Invalid Stripe webhook signature")
+        return "Invalid signature", 400
+
+    logger.info("Stripe webhook received and verfied: %s", event.type)
+    # check if we already working on this
+    _seen = BillingWebhookEvent.query.filter_by(stripe_event_id=event.id).first()
+    if _seen:
+        logger.info("Already working on this event, skipping")
+        return "Already working on this event, skipping", 200
+
+    webhook_event = BillingWebhookEvent(
+        stripe_event_id=event.id, event_tyep=event.type, payload=event.data
+    )
+    db.session.add(webhook_event)
+
+    # yay i get to use the 'new' match stmt
+    match event.type:
+        case "customer.subscription.created" | "customer.subscription.updated":
+            handle_subscription_change(event.data.object)
+        case "customer.subscription.deleted":
+            handle_subscription_canceled(event.data.object)
+        case "invoice.paid":
+            handle_invoice_paid(event.data.object)
+        case "invoice.payment_failed":
+            handle_payment_failed(event.data.object)
+        case "invoice.created":
+            handle_invoice_created(event.data.object)
+
+    db.session.commit()
+    return "", 200
 
 
 def create_or_get_customer(org: Organization) -> Customer:
@@ -88,7 +132,7 @@ def create_sub(org: Organization, tier: PlanTier):
     sub = Subscription.create(
         customer=customer.id,
         items=products,
-        payment_behavior="default_incomplete", # we want a payment method
+        payment_behavior="default_incomplete",  # we want a payment method
         metadata={"org_id": str(org.id), "org_slug": org.slug},
     )
     # no db update here, wait for our webhook to do it
@@ -97,7 +141,6 @@ def create_sub(org: Organization, tier: PlanTier):
 
 def get_sub():
     """Retrieve a Stripe subscription for payment."""
-
 
 
 def delete_sub():
