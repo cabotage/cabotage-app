@@ -516,23 +516,38 @@
 {% macro status_badge(status, size='sm') %}
   {% set s = status|lower if status else 'unknown' %}
   {% if s in ('running', 'active', 'success', 'complete', 'completed', 'ready', 'built') %}
-    <span class="badge badge-success badge-{{ size }} gap-1 font-medium">
+    <span class="badge badge-outline badge-{{ size }} gap-1 font-medium border-success/40 text-success">
       <span class="status-dot status-dot-success"></span>
       {{ status }}
     </span>
   {% elif s in ('error', 'failed', 'crash', 'crashed') %}
-    <span class="badge badge-error badge-{{ size }} gap-1 font-medium">
+    <span class="badge badge-outline badge-{{ size }} gap-1 font-medium border-error/40 text-error">
       <span class="status-dot status-dot-error"></span>
       {{ status }}
     </span>
   {% elif s in ('building', 'deploying', 'pending', 'queued', 'starting') %}
-    <span class="badge badge-warning badge-{{ size }} gap-1 font-medium">
+    <span class="badge badge-outline badge-{{ size }} gap-1 font-medium border-warning/40 text-warning">
       <span class="status-dot status-dot-warning status-dot-pulse"></span>
       {{ status }}
     </span>
   {% elif s in ('stopped', 'inactive', 'paused') %}
-    <span class="badge badge-neutral badge-{{ size }} gap-1">
+    <span class="badge badge-outline badge-{{ size }} gap-1 border-base-content/20 text-base-content/50">
       <span class="status-dot status-dot-neutral"></span>
+      {{ status }}
+    </span>
+  {% elif s in ('past_due',) %}
+    <span class="badge badge-outline badge-{{ size }} gap-1 font-medium border-warning/40 text-warning">
+      <span class="status-dot status-dot-warning"></span>
+      {{ status }}
+    </span>
+  {% elif s in ('canceled',) %}
+    <span class="badge badge-outline badge-{{ size }} gap-1 font-medium border-error/40 text-error">
+      <span class="status-dot status-dot-error"></span>
+      {{ status }}
+    </span>
+  {% elif s == 'paid' %}
+    <span class="badge badge-outline badge-{{ size }} gap-1 font-medium border-success/40 text-success">
+      <span class="status-dot status-dot-success"></span>
       {{ status }}
     </span>
   {% else %}
