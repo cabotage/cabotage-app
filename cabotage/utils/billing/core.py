@@ -224,10 +224,6 @@ def get_usage(customer_id: str, subscription_id: str) -> list[dict]:
     return usage
 
 
-# ---------------------------------------------------------------------------
-# Subscription management
-# ---------------------------------------------------------------------------
-
 def create_sub(org: Organization, tier: PlanTier):
     """Create a Stripe subscription.
 
@@ -256,10 +252,6 @@ def create_sub(org: Organization, tier: PlanTier):
     # no db update here, wait for our webhook to do it
     return sub
 
-
-# ---------------------------------------------------------------------------
-# Webhook handlers
-# ---------------------------------------------------------------------------
 
 def handle_subscription_change(subscription) -> None:
     """Handle subscription created or updated events."""
