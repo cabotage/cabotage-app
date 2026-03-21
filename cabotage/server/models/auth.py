@@ -286,9 +286,13 @@ class BillingWebhookEvent(Model):
     __versioned__: dict = {}
     __tablename__ = "billing_webhook_events"
 
-    id:  Mapped[UUID] = mapped_column(postgresql.UUID(as_uuid=True), primary_key=True)
+    id: Mapped[UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        primary_key=True,
+    )
     stripe_event_id: Mapped[str] = mapped_column(unique=True, index=True)
-    event_type:  Mapped[str] = mapped_column()
-    processed_at: Mapped[datetime.datetime] = mapped_column(default=datetime.datetime.now)
+    event_type: Mapped[str] = mapped_column()
+    processed_at: Mapped[datetime.datetime] = mapped_column(server_default=text("now()"))
     payload: Mapped[dict] = mapped_column(JSONB)
 
