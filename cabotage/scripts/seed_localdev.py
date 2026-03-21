@@ -12,6 +12,7 @@ import datetime
 
 from cabotage.server import create_app, db
 from cabotage.server.models import Organization, User
+from cabotage.server.models.auth import Billing
 from cabotage.server.models.projects import (
     Application,
     ApplicationEnvironment,
@@ -598,6 +599,25 @@ def seed():
             "job-reports": 1,
         }
 
+
+        # ==============================================================
+        # Billing: Acme Corp on Indie plan with fake Stripe IDs
+        # ==============================================================
+        billing = Billing.query.filter_by(org_id=org.id).first()
+        if billing is None:
+            billing = Billing(
+                org_id=org.id,
+                stripe_customer_id="cus_seed_acme_corp_001",
+                stripe_sub_id="sub_seed_acme_corp_001",
+                stripe_sub_status="active",
+                stripe_sub_plan="indie",
+            )
+            db.session.add(billing)
+            db.session.flush()
+            print("Created billing record (Indie plan, active)")
+        else:
+            print("Billing record already exists, skipping.")
+
         # ── Commit everything ─────────────────────────────────────────
         db.session.commit()
         print()
@@ -607,6 +627,7 @@ def seed():
         print("  Projects: My API (2 envs, 2 apps), Docs Site (1 app)")
         print("  Images / Releases / Deployments created")
         print("  Ingress: api.acme.corp, docs.acme.corp")
+        print("  Billing: Indie plan (active)")
         print()
         print("Login at http://localhost:5000 with admin/admin or dev/dev")
 

@@ -1,0 +1,490 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, resource_path, page_header %}
+
+{% block title %}Choose a Plan - {{ org.name }} - Cabotage{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': org.slug, 'url': url_for('user.organization', org_slug=org.slug) },
+    {'label': 'billing', 'url': url_for('billing.dashboard', org_slug=org.slug) },
+    {'label': 'subscribe'}
+  ]) }}
+{% endblock resource_path %}
+
+{% block content %}
+  {% set current_plan = org.billing.stripe_sub_plan if org.billing else none %}
+
+  {{ page_header('Choose a Plan', org.name) }}
+
+  {# ── Plan cards ── #}
+  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+
+    {# ── Hobby ── #}
+    <div class="card bg-base-200/50 border border-base-300/50 relative overflow-hidden
+                hover:border-primary/20 transition-all duration-200
+                {% if current_plan == 'hobby' %}ring-2 ring-primary/40 border-primary/30{% endif %}">
+      {% if current_plan == 'hobby' %}
+        <div class="absolute top-3 right-3">
+          <span class="badge badge-sm badge-primary gap-1">{{ icon('check', 'w-3 h-3') }} Current</span>
+        </div>
+      {% endif %}
+      <div class="card-body">
+        <div class="mb-4">
+          <div class="w-10 h-10 rounded-lg bg-base-300/60 flex items-center justify-center text-base-content/50 mb-3">
+            {{ icon('box', 'w-5 h-5') }}
+          </div>
+          <h3 class="text-lg font-semibold text-base-content">Hobby</h3>
+          <p class="text-xs text-base-content/40 mt-1">For personal projects and experiments</p>
+        </div>
+
+        <div class="mb-5">
+          <span class="text-3xl font-bold text-base-content">$4</span>
+          <span class="text-sm text-base-content/40">/mo</span>
+        </div>
+
+        <div class="flex flex-col gap-2 mb-6">
+          <div class="flex items-center gap-2 text-sm text-base-content/60">
+            <span class="text-success/70">{{ icon('check', 'w-3.5 h-3.5') }}</span>
+            5 services
+          </div>
+          <div class="flex items-center gap-2 text-sm text-base-content/60">
+            <span class="text-success/70">{{ icon('check', 'w-3.5 h-3.5') }}</span>
+            1 project
+          </div>
+          <div class="flex items-center gap-2 text-sm text-base-content/60">
+            <span class="text-success/70">{{ icon('check', 'w-3.5 h-3.5') }}</span>
+            1 seat
+          </div>
+          <div class="flex items-center gap-2 text-sm text-base-content/60">
+            <span class="text-primary/70">{{ icon('dollar-sign', 'w-3.5 h-3.5') }}</span>
+            <span class="font-medium">$5 usage credit</span>
+          </div>
+          <div class="flex items-center gap-2 text-sm text-base-content/60">
+            <span class="text-success/70">{{ icon('check', 'w-3.5 h-3.5') }}</span>
+            Community support
+          </div>
+        </div>
+
+        <div class="mt-auto">
+          {% if current_plan == 'hobby' %}
+            <button class="btn btn-ghost btn-sm w-full" disabled>Current Plan</button>
+          {% else %}
+            <button type="button"
+                    class="btn btn-ghost btn-sm w-full plan-select-btn"
+                    data-plan="hobby"
+                    data-price="$4/mo">
+              {% if current_plan %}Switch to Hobby{% else %}Get Started{% endif %}
+            </button>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# ── Indie (recommended) ── #}
+    <div class="card bg-base-200/50 border border-primary/30 relative overflow-hidden
+                hover:border-primary/50 transition-all duration-200 shadow-[0_0_20px_rgba(var(--hover-overlay-rgb,124,58,237),0.06)]
+                {% if current_plan == 'indie' %}ring-2 ring-primary/40{% endif %}">
+      <div class="absolute top-3 right-3 flex gap-1.5">
+        {% if current_plan == 'indie' %}
+          <span class="badge badge-sm badge-primary gap-1">{{ icon('check', 'w-3 h-3') }} Current</span>
+        {% endif %}
+        <span class="badge badge-sm badge-primary">Most Popular</span>
+      </div>
+      <div class="card-body">
+        <div class="mb-4">
+          <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary mb-3">
+            {{ icon('zap', 'w-5 h-5') }}
+          </div>
+          <h3 class="text-lg font-semibold text-base-content">Indie</h3>
+          <p class="text-xs text-base-content/40 mt-1">For indie devs and small teams</p>
+        </div>
+
+        <div class="mb-5">
+          <span class="text-3xl font-bold text-base-content">$9</span>
+          <span class="text-sm text-base-content/40">/mo</span>
+        </div>
+
+        <div class="flex flex-col gap-2 mb-6">
+          <div class="flex items-center gap-2 text-sm text-base-content/60">
+            <span class="text-success/70">{{ icon('check', 'w-3.5 h-3.5') }}</span>
+            15 services
+          </div>
+          <div class="flex items-center gap-2 text-sm text-base-content/60">
+            <span class="text-success/70">{{ icon('check', 'w-3.5 h-3.5') }}</span>
+            3 projects
+          </div>
+          <div class="flex items-center gap-2 text-sm text-base-content/60">
+            <span class="text-success/70">{{ icon('check', 'w-3.5 h-3.5') }}</span>
+            3 seats
+          </div>
+          <div class="flex items-center gap-2 text-sm text-base-content/60">
+            <span class="text-primary/70">{{ icon('dollar-sign', 'w-3.5 h-3.5') }}</span>
+            <span class="font-medium">$12 usage credit</span>
+          </div>
+          <div class="flex items-center gap-2 text-sm text-base-content/60">
+            <span class="text-success/70">{{ icon('check', 'w-3.5 h-3.5') }}</span>
+            Email support
+          </div>
+        </div>
+
+        <div class="mt-auto">
+          {% if current_plan == 'indie' %}
+            <button class="btn btn-primary btn-sm w-full" disabled>Current Plan</button>
+          {% else %}
+            <button type="button"
+                    class="btn btn-primary btn-sm w-full plan-select-btn"
+                    data-plan="indie"
+                    data-price="$9/mo">
+              {% if current_plan %}Switch to Indie{% else %}Get Started{% endif %}
+            </button>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# ── Team ── #}
+    <div class="card bg-base-200/50 border border-base-300/50 relative overflow-hidden
+                hover:border-primary/20 transition-all duration-200
+                {% if current_plan == 'team' %}ring-2 ring-primary/40 border-primary/30{% endif %}">
+      {% if current_plan == 'team' %}
+        <div class="absolute top-3 right-3">
+          <span class="badge badge-sm badge-primary gap-1">{{ icon('check', 'w-3 h-3') }} Current</span>
+        </div>
+      {% endif %}
+      <div class="card-body">
+        <div class="mb-4">
+          <div class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center text-accent mb-3">
+            {{ icon('users', 'w-5 h-5') }}
+          </div>
+          <h3 class="text-lg font-semibold text-base-content">Team</h3>
+          <p class="text-xs text-base-content/40 mt-1">For growing teams and companies</p>
+        </div>
+
+        <div class="mb-5">
+          <span class="text-3xl font-bold text-base-content">$29</span>
+          <span class="text-sm text-base-content/40">/mo</span>
+        </div>
+
+        <div class="flex flex-col gap-2 mb-6">
+          <div class="flex items-center gap-2 text-sm text-base-content/60">
+            <span class="text-success/70">{{ icon('check', 'w-3.5 h-3.5') }}</span>
+            Unlimited services
+          </div>
+          <div class="flex items-center gap-2 text-sm text-base-content/60">
+            <span class="text-success/70">{{ icon('check', 'w-3.5 h-3.5') }}</span>
+            Unlimited projects
+          </div>
+          <div class="flex items-center gap-2 text-sm text-base-content/60">
+            <span class="text-success/70">{{ icon('check', 'w-3.5 h-3.5') }}</span>
+            Unlimited seats
+          </div>
+          <div class="flex items-center gap-2 text-sm text-base-content/60">
+            <span class="text-primary/70">{{ icon('dollar-sign', 'w-3.5 h-3.5') }}</span>
+            <span class="font-medium">$30 usage credit</span>
+          </div>
+          <div class="flex items-center gap-2 text-sm text-base-content/60">
+            <span class="text-success/70">{{ icon('check', 'w-3.5 h-3.5') }}</span>
+            Priority support
+          </div>
+          <div class="flex items-center gap-2 text-sm text-base-content/60">
+            <span class="text-success/70">{{ icon('shield', 'w-3.5 h-3.5') }}</span>
+            RBAC & teams
+          </div>
+        </div>
+
+        <div class="mt-auto">
+          {% if current_plan == 'team' %}
+            <button class="btn btn-ghost btn-sm w-full" disabled>Current Plan</button>
+          {% else %}
+            <button type="button"
+                    class="btn btn-ghost btn-sm w-full plan-select-btn"
+                    data-plan="team"
+                    data-price="$29/mo">
+              {% if current_plan %}Switch to Team{% else %}Get Started{% endif %}
+            </button>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# ── BYOC ── #}
+    <div class="card bg-base-200/50 border border-base-300/50 relative overflow-hidden
+                hover:border-primary/20 transition-all duration-200
+                {% if current_plan == 'byoc' %}ring-2 ring-primary/40 border-primary/30{% endif %}">
+      {% if current_plan == 'byoc' %}
+        <div class="absolute top-3 right-3">
+          <span class="badge badge-sm badge-primary gap-1">{{ icon('check', 'w-3 h-3') }} Current</span>
+        </div>
+      {% endif %}
+      <div class="card-body">
+        <div class="mb-4">
+          <div class="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center text-warning mb-3">
+            {{ icon('cloud', 'w-5 h-5') }}
+          </div>
+          <h3 class="text-lg font-semibold text-base-content">BYOC</h3>
+          <p class="text-xs text-base-content/40 mt-1">Deploy into your own cloud account</p>
+        </div>
+
+        <div class="mb-5">
+          <span class="text-3xl font-bold text-base-content">$250</span>
+          <span class="text-sm text-base-content/40">/mo</span>
+        </div>
+
+        <div class="flex flex-col gap-2 mb-6">
+          <div class="flex items-center gap-2 text-sm text-base-content/60">
+            <span class="text-success/70">{{ icon('check', 'w-3.5 h-3.5') }}</span>
+            Dedicated infrastructure
+          </div>
+          <div class="flex items-center gap-2 text-sm text-base-content/60">
+            <span class="text-success/70">{{ icon('check', 'w-3.5 h-3.5') }}</span>
+            Your cloud account
+          </div>
+          <div class="flex items-center gap-2 text-sm text-base-content/60">
+            <span class="text-success/70">{{ icon('check', 'w-3.5 h-3.5') }}</span>
+            Custom usage terms
+          </div>
+          <div class="flex items-center gap-2 text-sm text-base-content/60">
+            <span class="text-success/70">{{ icon('check', 'w-3.5 h-3.5') }}</span>
+            Dedicated support
+          </div>
+          <div class="flex items-center gap-2 text-sm text-base-content/60">
+            <span class="text-success/70">{{ icon('shield', 'w-3.5 h-3.5') }}</span>
+            SLA included
+          </div>
+        </div>
+
+        <div class="mt-auto">
+          {% if current_plan == 'byoc' %}
+            <button class="btn btn-ghost btn-sm w-full" disabled>Current Plan</button>
+          {% else %}
+            <button type="button"
+                    class="btn btn-ghost btn-sm w-full plan-select-btn"
+                    data-plan="byoc"
+                    data-price="$250/mo">
+              {% if current_plan %}Switch to BYOC{% else %}Get Started{% endif %}
+            </button>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Payment section (shown after plan selection) ── #}
+  <div id="payment-section" class="hidden max-w-lg mx-auto">
+    <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Payment Details</h2>
+    <div class="card bg-base-200/50 border border-base-300/50">
+      <div class="card-body">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+              {{ icon('credit-card', 'w-5 h-5') }}
+            </div>
+            <div>
+              <h3 class="text-base font-semibold text-base-content" id="selected-plan-name">Select a plan above</h3>
+              <span class="text-sm text-base-content/40" id="selected-plan-price"></span>
+            </div>
+          </div>
+          <button type="button" id="change-plan-btn" class="btn btn-ghost btn-xs gap-1">
+            {{ icon('x', 'w-3 h-3') }} Change
+          </button>
+        </div>
+
+        <div class="divider my-2"></div>
+
+        <form id="payment-form">
+          <input type="hidden" id="selected-plan" name="plan" value="">
+
+          <div id="payment-element" class="mb-4">
+            {# Stripe Payment Element mounts here #}
+          </div>
+
+          <div id="payment-errors" class="text-sm text-error mb-3 hidden"></div>
+
+          <button type="submit" id="submit-btn" class="btn btn-primary w-full gap-2" disabled>
+            <span id="btn-text">Subscribe</span>
+            <span id="btn-spinner" class="loading loading-spinner loading-sm hidden"></span>
+          </button>
+        </form>
+
+        <p class="text-xs text-base-content/30 mt-3 text-center">
+          Secured by Stripe. You can cancel or change plans anytime.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  {# ── Metered usage note ── #}
+  <div class="max-w-lg mx-auto mt-6">
+    <div class="card bg-base-200/30 border border-base-300/30">
+      <div class="card-body py-4">
+        <div class="flex items-start gap-3">
+          <span class="text-base-content/30 mt-0.5">{{ icon('info', 'w-4 h-4') }}</span>
+          <div>
+            <p class="text-sm text-base-content/50">
+              All plans include a usage credit applied toward compute, storage, and egress.
+              Usage beyond the credit is billed at standard metered rates.
+            </p>
+            <p class="text-xs text-base-content/30 mt-1">
+              vCPU $0.020/hr &middot; RAM $0.010/GB-hr &middot; Egress $0.045/GB &middot; Builds $0.004/min
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock content %}
+
+{% block js %}
+<script src="https://js.stripe.com/v3/"></script>
+<script>
+(function() {
+  var stripe = Stripe('{{ config.STRIPE_PUB_KEY }}');
+  var elements = null;
+  var paymentElement = null;
+
+  var planLabels = {
+    hobby: 'Cabotage Hobby',
+    indie: 'Cabotage Indie',
+    team: 'Cabotage Team',
+    byoc: 'Cabotage BYOC'
+  };
+
+  var paymentSection = document.getElementById('payment-section');
+  var selectedPlanInput = document.getElementById('selected-plan');
+  var planNameEl = document.getElementById('selected-plan-name');
+  var planPriceEl = document.getElementById('selected-plan-price');
+  var paymentForm = document.getElementById('payment-form');
+  var submitBtn = document.getElementById('submit-btn');
+  var btnText = document.getElementById('btn-text');
+  var btnSpinner = document.getElementById('btn-spinner');
+  var errorsEl = document.getElementById('payment-errors');
+
+  // Plan selection
+  document.querySelectorAll('.plan-select-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var plan = this.dataset.plan;
+      var price = this.dataset.price;
+
+      selectedPlanInput.value = plan;
+      planNameEl.textContent = planLabels[plan] || plan;
+      planPriceEl.textContent = price;
+
+      // Highlight selected card
+      document.querySelectorAll('.plan-select-btn').forEach(function(b) {
+        b.closest('.card').classList.remove('ring-2', 'ring-primary/40', 'border-primary/30');
+      });
+      this.closest('.card').classList.add('ring-2', 'ring-primary/40', 'border-primary/30');
+
+      paymentSection.classList.remove('hidden');
+      paymentSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      // Initialize Stripe Elements if not already done
+      if (!elements) {
+        initStripeElements();
+      }
+    });
+  });
+
+  // Change plan button
+  document.getElementById('change-plan-btn').addEventListener('click', function() {
+    paymentSection.classList.add('hidden');
+    selectedPlanInput.value = '';
+    document.querySelectorAll('.plan-select-btn').forEach(function(b) {
+      b.closest('.card').classList.remove('ring-2', 'ring-primary/40', 'border-primary/30');
+    });
+  });
+
+  function initStripeElements() {
+    var isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+
+    elements = stripe.elements({
+      appearance: {
+        theme: isDark ? 'night' : 'stripe',
+        variables: {
+          colorPrimary: getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#7c3aed',
+          borderRadius: '0.5rem',
+          fontFamily: getComputedStyle(document.body).fontFamily
+        },
+        rules: {
+          '.Input': {
+            backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#fff',
+            borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
+          }
+        }
+      }
+    });
+
+    paymentElement = elements.create('payment');
+    paymentElement.mount('#payment-element');
+
+    paymentElement.on('ready', function() {
+      submitBtn.disabled = false;
+    });
+
+    paymentElement.on('change', function(event) {
+      if (event.error) {
+        errorsEl.textContent = event.error.message;
+        errorsEl.classList.remove('hidden');
+      } else {
+        errorsEl.classList.add('hidden');
+      }
+    });
+  }
+
+  // Form submission
+  paymentForm.addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    var plan = selectedPlanInput.value;
+    if (!plan) return;
+
+    submitBtn.disabled = true;
+    btnText.textContent = 'Processing...';
+    btnSpinner.classList.remove('hidden');
+    errorsEl.classList.add('hidden');
+
+    try {
+      // POST to backend to create/update subscription and get client_secret
+      var response = await fetch('{{ url_for("billing.subscribe", org_slug=org.slug) }}', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+        },
+        body: JSON.stringify({ plan: plan })
+      });
+
+      var data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Something went wrong.');
+      }
+
+      if (data.client_secret) {
+        // Confirm the payment with Stripe
+        var result = await stripe.confirmPayment({
+          elements: elements,
+          clientSecret: data.client_secret,
+          confirmParams: {
+            return_url: window.location.origin + '{{ url_for("billing.dashboard", org_slug=org.slug) }}'
+          }
+        });
+
+        if (result.error) {
+          throw new Error(result.error.message);
+        }
+        // If successful, Stripe redirects to return_url
+      } else if (data.redirect) {
+        window.location.href = data.redirect;
+      }
+    } catch (err) {
+      errorsEl.textContent = err.message;
+      errorsEl.classList.remove('hidden');
+      submitBtn.disabled = false;
+      btnText.textContent = 'Subscribe';
+      btnSpinner.classList.add('hidden');
+    }
+  });
+})();
+</script>
+{% endblock js %}

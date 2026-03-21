@@ -1,0 +1,316 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, resource_path, page_header, stat_card, tab_nav, status_badge, empty_state %}
+
+{% block title %}Billing - {{ org.name }} - Cabotage{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': org.slug, 'url': url_for('user.organization', org_slug=org.slug) },
+    {'label': 'billing'}
+  ]) }}
+{% endblock resource_path %}
+
+{% block tab_bar %}
+  <div class="app-content-padded !py-0">
+    {{ tab_nav([
+      {'id': 'overview', 'label': 'Overview', 'icon': 'activity'},
+      {'id': 'invoices', 'label': 'Invoices', 'icon': 'file-text'},
+      {'id': 'payment', 'label': 'Payment', 'icon': 'credit-card'}
+    ]) }}
+  </div>
+{% endblock tab_bar %}
+
+{% block content %}
+  {% set plan = org.billing.stripe_sub_plan if org.billing else none %}
+  {% set status = org.billing.stripe_sub_status if org.billing else none %}
+
+  {% if plan %}
+    {% call page_header('Billing', org.name) %}
+      <div class="flex gap-2">
+        <a href="{{ url_for('billing.subscribe', org_slug=org.slug) }}"
+           class="btn btn-sm btn-ghost gap-1">
+          {{ icon('zap', 'w-4 h-4') }} Change Plan
+        </a>
+        <a href="{{ url_for('billing.payment_methods', org_slug=org.slug) }}"
+           class="btn btn-sm btn-ghost gap-1">
+          {{ icon('credit-card', 'w-4 h-4') }} Payment
+        </a>
+      </div>
+    {% endcall %}
+  {% else %}
+    {{ page_header('Billing', org.name) }}
+  {% endif %}
+
+  {# ── No plan: empty state ── #}
+  {% if not plan %}
+    <div data-tab-panel="overview" class="tab-panel">
+      {{ empty_state(
+        'No active plan',
+        'Subscribe to a plan to start deploying applications with Cabotage.',
+        url_for('billing.subscribe', org_slug=org.slug),
+        'Choose a Plan',
+        'credit-card'
+      ) }}
+    </div>
+
+    <div data-tab-panel="invoices" class="tab-panel">
+      {{ empty_state(
+        'No invoices yet',
+        'Invoices will appear here once you subscribe to a plan.',
+        '',
+        '',
+        'file-text'
+      ) }}
+    </div>
+
+    <div data-tab-panel="payment" class="tab-panel">
+      {{ empty_state(
+        'No payment method',
+        'Add a payment method when you subscribe to a plan.',
+        url_for('billing.subscribe', org_slug=org.slug),
+        'Get Started',
+        'credit-card'
+      ) }}
+    </div>
+
+  {% else %}
+
+    {# ── Plan metadata ── #}
+    {% set plan_labels = {'hobby': 'Hobby', 'indie': 'Indie', 'team': 'Team', 'byoc': 'BYOC'} %}
+    {% set plan_prices = {'hobby': '$4/mo', 'indie': '$9/mo', 'team': '$29/mo', 'byoc': '$250/mo'} %}
+    {% set plan_credits = {'hobby': '$5.00', 'indie': '$12.00', 'team': '$30.00', 'byoc': 'Custom'} %}
+
+    {# ── Overview tab ── #}
+    <div data-tab-panel="overview" class="tab-panel">
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        {{ stat_card(plan_labels.get(plan, plan|title), 'Current Plan', 'zap', 'primary') }}
+        <div class="stat-card">
+          <div class="flex items-center gap-2">
+            {% if status == 'active' %}
+              <span class="text-success/60">{{ icon('check', 'w-4 h-4') }}</span>
+              <span class="stat-card-value text-success">Active</span>
+            {% elif status == 'past_due' %}
+              <span class="text-warning/60">{{ icon('alert-triangle', 'w-4 h-4') }}</span>
+              <span class="stat-card-value text-warning">Past Due</span>
+            {% elif status == 'canceled' %}
+              <span class="text-error/60">{{ icon('x', 'w-4 h-4') }}</span>
+              <span class="stat-card-value text-error">Canceled</span>
+            {% else %}
+              <span class="text-base-content/30">{{ icon('help-circle', 'w-4 h-4') }}</span>
+              <span class="stat-card-value text-base-content/40">{{ status or 'Unknown' }}</span>
+            {% endif %}
+          </div>
+          <span class="stat-card-label">Status</span>
+        </div>
+        {{ stat_card(plan_prices.get(plan, '--'), 'Next Invoice', 'dollar-sign', 'accent') }}
+        {{ stat_card(plan_credits.get(plan, '--'), 'Usage Credit', 'activity', 'info') }}
+      </div>
+
+      {# Current plan card #}
+      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Current Plan</h2>
+      <div class="card bg-base-200/50 border border-base-300/50 max-w-2xl mb-6">
+        <div class="card-body">
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                {{ icon('zap', 'w-5 h-5') }}
+              </div>
+              <div>
+                <h3 class="text-base font-semibold text-base-content">Cabotage {{ plan_labels.get(plan, plan|title) }}</h3>
+                <span class="text-sm text-base-content/40">{{ plan_prices.get(plan, '') }}</span>
+              </div>
+            </div>
+            {{ status_badge(status or 'unknown') }}
+          </div>
+
+          {% set plan_features = {
+            'hobby': ['5 services', '1 project', '1 seat', '$5 usage credit', 'Community support'],
+            'indie': ['15 services', '3 projects', '3 seats', '$12 usage credit', 'Email support'],
+            'team': ['Unlimited services', 'Unlimited projects', 'Unlimited seats', '$30 usage credit', 'Priority support', 'RBAC & teams'],
+            'byoc': ['Dedicated infrastructure', 'Your cloud account', 'Custom usage terms', 'Dedicated support', 'SLA included']
+          } %}
+          <div class="grid grid-cols-2 gap-2">
+            {% for feature in plan_features.get(plan, []) %}
+              <div class="flex items-center gap-2 text-sm text-base-content/60">
+                <span class="text-success/70">{{ icon('check', 'w-3.5 h-3.5') }}</span>
+                {{ feature }}
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      {# Usage summary #}
+      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Current Usage</h2>
+      <div class="card bg-base-200/50 border border-base-300/50 max-w-2xl mb-6">
+        <div class="card-body">
+          {% set usage_items = [
+            {'label': 'vCPU Hours', 'used': 0, 'credit': 100, 'icon': 'cpu'},
+            {'label': 'RAM (GB-hours)', 'used': 0, 'credit': 200, 'icon': 'hard-drive'},
+            {'label': 'Egress (GB)', 'used': 0, 'credit': 50, 'icon': 'upload'},
+            {'label': 'Build Minutes', 'used': 0, 'credit': 500, 'icon': 'tool'}
+          ] %}
+          <div class="flex flex-col gap-4">
+            {% for item in usage_items %}
+              <div>
+                <div class="flex items-center justify-between mb-1.5">
+                  <div class="flex items-center gap-2 text-sm text-base-content/60">
+                    {{ icon(item.icon, 'w-3.5 h-3.5') }}
+                    <span>{{ item.label }}</span>
+                  </div>
+                  <span class="text-xs font-mono text-base-content/40">{{ item.used }} / {{ item.credit }}</span>
+                </div>
+                {% set pct = (item.used / item.credit * 100) if item.credit > 0 else 0 %}
+                <div class="w-full bg-base-300/50 rounded-full h-1.5">
+                  <div class="bg-primary/60 h-1.5 rounded-full transition-all"
+                       style="width: {{ pct }}%"></div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+          <p class="text-xs text-base-content/30 mt-3">Usage resets at the start of each billing cycle. Data is updated periodically.</p>
+        </div>
+      </div>
+
+      {# Quick actions #}
+      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Quick Actions</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl">
+        <a href="{{ url_for('billing.subscribe', org_slug=org.slug) }}"
+           class="card bg-base-200/50 border border-base-300/50 card-body p-4 no-underline hover:border-primary/30 transition-colors">
+          <div class="flex items-center gap-3">
+            <span class="text-primary/60">{{ icon('zap', 'w-5 h-5') }}</span>
+            <div>
+              <span class="text-sm font-medium text-base-content">Change Plan</span>
+              <p class="text-xs text-base-content/40">Upgrade or downgrade</p>
+            </div>
+          </div>
+        </a>
+        <a href="{{ url_for('billing.payment_methods', org_slug=org.slug) }}"
+           class="card bg-base-200/50 border border-base-300/50 card-body p-4 no-underline hover:border-primary/30 transition-colors">
+          <div class="flex items-center gap-3">
+            <span class="text-accent/60">{{ icon('credit-card', 'w-5 h-5') }}</span>
+            <div>
+              <span class="text-sm font-medium text-base-content">Update Payment</span>
+              <p class="text-xs text-base-content/40">Change card on file</p>
+            </div>
+          </div>
+        </a>
+        <a href="{{ url_for('billing.invoice', org_slug=org.slug) }}"
+           class="card bg-base-200/50 border border-base-300/50 card-body p-4 no-underline hover:border-primary/30 transition-colors">
+          <div class="flex items-center gap-3">
+            <span class="text-info/60">{{ icon('download', 'w-5 h-5') }}</span>
+            <div>
+              <span class="text-sm font-medium text-base-content">Download Invoice</span>
+              <p class="text-xs text-base-content/40">Latest billing period</p>
+            </div>
+          </div>
+        </a>
+      </div>
+    </div>
+
+    {# ── Invoices tab ── #}
+    <div data-tab-panel="invoices" class="tab-panel">
+      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Recent Invoices</h2>
+      <div class="card bg-base-200/50 border border-base-300/50 max-w-3xl">
+        <div class="card-body p-0">
+          <table class="table table-sm">
+            <thead>
+              <tr class="border-base-300/50">
+                <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Date</th>
+                <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Description</th>
+                <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Amount</th>
+                <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Status</th>
+                <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if invoices is defined and invoices %}
+                {% for inv in invoices %}
+                  <tr class="border-base-300/30 hover:bg-base-300/20">
+                    <td class="text-sm font-mono text-base-content/60">{{ inv.date }}</td>
+                    <td class="text-sm text-base-content">{{ inv.description }}</td>
+                    <td class="text-sm font-mono text-base-content">{{ inv.amount }}</td>
+                    <td>{{ status_badge(inv.status) }}</td>
+                    <td>
+                      {% if inv.pdf_url %}
+                        <a href="{{ inv.pdf_url }}" target="_blank" rel="noopener"
+                           class="btn btn-ghost btn-xs gap-1">
+                          {{ icon('download', 'w-3 h-3') }} PDF
+                        </a>
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              {% else %}
+                <tr>
+                  <td colspan="5" class="text-center py-8">
+                    <div class="text-base-content/15 mb-2">{{ icon('file-text', 'w-8 h-8') }}</div>
+                    <p class="text-sm text-base-content/40">No invoices yet. Your first invoice will appear at the end of the billing cycle.</p>
+                  </td>
+                </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    {# ── Payment tab ── #}
+    <div data-tab-panel="payment" class="tab-panel">
+      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Payment Method</h2>
+      <div class="card bg-base-200/50 border border-base-300/50 max-w-2xl mb-4">
+        <div class="card-body">
+          {% if payment_method is defined and payment_method %}
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-base-300/50 flex items-center justify-center text-base-content/40">
+                  {{ icon('credit-card', 'w-5 h-5') }}
+                </div>
+                <div>
+                  <span class="text-sm font-medium text-base-content">
+                    {{ payment_method.brand|title }} ending in {{ payment_method.last4 }}
+                  </span>
+                  <p class="text-xs text-base-content/40">Expires {{ payment_method.exp_month }}/{{ payment_method.exp_year }}</p>
+                </div>
+              </div>
+              <a href="{{ url_for('billing.payment_methods', org_slug=org.slug) }}"
+                 class="btn btn-ghost btn-sm gap-1">
+                {{ icon('edit-2', 'w-3.5 h-3.5') }} Update
+              </a>
+            </div>
+          {% else %}
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-base-300/50 flex items-center justify-center text-base-content/20">
+                  {{ icon('credit-card', 'w-5 h-5') }}
+                </div>
+                <span class="text-sm text-base-content/40">No payment method on file</span>
+              </div>
+              <a href="{{ url_for('billing.payment_methods', org_slug=org.slug) }}"
+                 class="btn btn-primary btn-sm gap-1">
+                {{ icon('plus', 'w-3.5 h-3.5') }} Add
+              </a>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Billing Details</h2>
+      <div class="card bg-base-200/50 border border-base-300/50 max-w-2xl">
+        <div class="card-body">
+          <div class="flex flex-col gap-3">
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-base-content/60">Billing email</span>
+              <span class="text-sm font-mono text-base-content">Not set</span>
+            </div>
+            <div class="divider my-0 h-px"></div>
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-base-content/60">Customer ID</span>
+              <span class="text-xs font-mono text-base-content/40">{{ org.billing.stripe_customer_id if org.billing else 'N/A' }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+{% endblock content %}

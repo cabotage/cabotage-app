@@ -428,6 +428,11 @@
                   <a href="{{ url_for('user.account_security') }}"
                      class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors">Two-Factor Auth</a>
                   {% endif %}
+                  {% if config.ENABLE_BILLING %}
+                  <div class="border-t border-base-content/10 my-1"></div>
+                  <a href="{{ url_for('billing.billing_index') }}"
+                     class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors">{{ icon('credit-card', 'w-3.5 h-3.5') }} Billing</a>
+                  {% endif %}
                   <div class="border-t border-base-content/10 my-1"></div>
                   <a href="{{ url_for('security.logout') }}"
                      class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors text-error">Sign Out</a>
