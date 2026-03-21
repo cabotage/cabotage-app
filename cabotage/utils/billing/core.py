@@ -5,6 +5,7 @@ from datetime import datetime
 
 from flask_login import login_required
 from stripe import checkout, Customer, Subscription, Webhook, SignatureVerificationError, PaymentMethod, Invoice
+from stripe.billing import Meter
 
 from flask import current_app, jsonify, Blueprint, Response, request
 
@@ -146,6 +147,65 @@ def get_invoices(customer_id: str, limit: int = 10) -> list[dict]:
             "pdf_url": invoice.invoice_pdf or "",
         })
     return invoices
+
+
+METER_DISPLAY = {
+    "vcpu_hours": ("vCPU Hours", "cpu", "hr"),
+    "ram_gb_hours": ("RAM (GB-hours)", "hard-drive", "GB-hr"),
+    "egress_gb": ("Egress (GB)", "upload", "GB"),
+    "build_minutes": ("Build Minutes", "tool", "min"),
+    "block_storage_gb": ("Block Storage (GB)", "hard-drive", "GB-mo"),
+    "object_storage_gb": ("Object Storage (GB)", "hard-drive", "GB-mo"),
+    "db_storage_gb": ("DB Storage (GB)", "layers", "GB-mo"),
+    "postgres_gb_hours": ("PostgreSQL (GB-hours)", "layers", "GB-hr"),
+    "redis_gb_hours": ("Redis (GB-hours)", "layers", "GB-hr"),
+    "tailscale_nodes": ("Tailscale Nodes", "globe", "nodes"),
+}
+
+
+def get_usage(customer_id: str, subscription_id: str) -> list[dict]:
+    """Fetch current-period usage from Stripe Billing Meters."""
+    import time
+
+    sub = Subscription.retrieve(subscription_id)
+    # Stripe removed current_period_start/end — derive from billing_cycle_anchor
+    anchor = sub.billing_cycle_anchor
+    now = int(time.time())
+    # Walk forward from anchor in ~30-day intervals to find current period
+    period_start = anchor
+    while period_start + 2592000 < now:  # 30 days in seconds
+        period_start += 2592000
+    period_end = now
+
+    usage = []
+    for meter_key, meter in METERS.items():
+        label, icon, unit = METER_DISPLAY.get(meter_key, (meter_key, "activity", "units"))
+        rate = float(meter.unit_amount_decimal) / 100
+
+        total_used = 0
+        try:
+            summaries = Meter.list_event_summaries(
+                meter.meter_id,
+                customer=customer_id,
+                start_time=period_start,
+                end_time=period_end,
+            )
+            if summaries.data:
+                total_used = sum(s.aggregated_value for s in summaries.data)
+        except Exception:
+            logger.debug("Could not fetch meter summaries for %s", meter_key)
+
+        if total_used > 0:
+            usage.append({
+                "label": label,
+                "used": total_used,
+                "credit": 0,
+                "icon": icon,
+                "unit": unit,
+                "rate": rate,
+            })
+
+    return usage
 
 
 # ---------------------------------------------------------------------------
