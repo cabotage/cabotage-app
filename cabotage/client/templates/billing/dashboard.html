@@ -359,12 +359,13 @@
     if (invoices.length) {
       rows = invoices.map(inv => {
         const pdf = inv.pdf_url ? `<a href="${esc(inv.pdf_url)}" target="_blank" rel="noopener" class="btn btn-ghost btn-xs gap-1">${svg('download', 'w-3 h-3')} PDF</a>` : '';
-        const badge = inv.status === 'paid' ? 'badge-success' : inv.status === 'open' ? 'badge-warning' : 'badge-ghost';
+        const badgeCls = inv.status === 'paid' ? 'border-success/40 text-success' : inv.status === 'open' ? 'border-warning/40 text-warning' : 'border-base-content/20 text-base-content/50';
+        const dotCls = inv.status === 'paid' ? 'status-dot-success' : inv.status === 'open' ? 'status-dot-warning' : 'status-dot-neutral';
         return `<tr class="border-base-300/30 hover:bg-base-300/20">
           <td class="text-sm font-mono text-base-content/60">${esc(inv.date)}</td>
           <td class="text-sm text-base-content">${esc(inv.description)}</td>
           <td class="text-sm font-mono text-base-content">${esc(inv.amount)}</td>
-          <td><span class="badge badge-sm ${badge}">${esc(inv.status)}</span></td>
+          <td><span class="badge badge-outline badge-sm gap-1 font-medium ${badgeCls}"><span class="status-dot ${dotCls}"></span>${esc(inv.status)}</span></td>
           <td>${pdf}</td>
         </tr>`;
       }).join('');
@@ -437,11 +438,12 @@
         <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Status</th>
       </tr></thead>
       <tbody>${recent.map(inv => {
-        const badge = inv.status === 'paid' ? 'badge-success' : inv.status === 'open' ? 'badge-warning' : 'badge-ghost';
+        const badgeCls = inv.status === 'paid' ? 'border-success/40 text-success' : inv.status === 'open' ? 'border-warning/40 text-warning' : 'border-base-content/20 text-base-content/50';
+        const dotCls = inv.status === 'paid' ? 'status-dot-success' : inv.status === 'open' ? 'status-dot-warning' : 'status-dot-neutral';
         return `<tr class="border-base-300/30 hover:bg-base-300/20">
           <td class="text-sm font-mono text-base-content/60">${esc(inv.date)}</td>
           <td class="text-sm font-mono text-base-content">${esc(inv.amount)}</td>
-          <td><span class="badge badge-sm ${badge}">${esc(inv.status)}</span></td>
+          <td><span class="badge badge-outline badge-sm gap-1 font-medium ${badgeCls}"><span class="status-dot ${dotCls}"></span>${esc(inv.status)}</span></td>
         </tr>`;
       }).join('')}</tbody>
     </table></div>`;

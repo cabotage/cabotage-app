@@ -551,7 +551,10 @@
       {{ status }}
     </span>
   {% else %}
-    <span class="badge badge-ghost badge-{{ size }}">{{ status or 'Unknown' }}</span>
+    <span class="badge badge-outline badge-{{ size }} gap-1 border-base-content/20 text-base-content/50">
+      <span class="status-dot status-dot-neutral"></span>
+      {{ status or 'Unknown' }}
+    </span>
   {% endif %}
 {% endmacro %}
 
