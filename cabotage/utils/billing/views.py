@@ -19,7 +19,7 @@ def invoice(org_slug: str) -> str:
     """Render the Stripe invoice list."""
     ...
 
-@stripe.blueprint.route("/<org_slug>/subscribe", methods=["GET", "POST"])
+@stripe_blueprint.blueprint.route("/<org_slug>/subscribe", methods=["GET", "POST"])
 @login_required
 def subscribe(org_slug: str) -> str:
     """Subscription UI."""
@@ -28,7 +28,7 @@ def subscribe(org_slug: str) -> str:
     # post will handle the stripe payment elemtn, return client secret
     return render_template("billing/subscribe.html", org=org)
 
-@stripe.blueprint.route("/<org_slug>/payment", methods=["GET", "POST"])
+@stripe_blueprint.blueprint.route("/<org_slug>/payment", methods=["GET", "POST"])
 @login_required
 def payment_methods(org_slug: str) -> str:
     """Subscription UI."""
