@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 
 from flask_login import login_required
-from stripe import checkout, Customer, Subscription, Webhook, SignatureVerificationError
+from stripe import checkout, Customer, Subscription, Webhook, SignatureVerificationError, PaymentMethod, Invoice
 
 from flask import current_app, jsonify, Blueprint, Response, request
 
@@ -20,15 +20,6 @@ stripe_blueprint = Blueprint(
     __name__,
     url_prefix="/billing",
 )
-
-# we need to build a stripe module to support usage and sub based payments.
-# we want a payment intents or whatever so we can have the UI all in cabotage
-
-# Things need to do:
-# - create a stripe checkout session ✅
-# - create(_or_get?) a stripe customer
-# - create a stripe payment intent
-# - create a stripe sub for those that do that
 
 
 @stripe_blueprint.route("/checkout-session", methods=["POST"])
@@ -52,11 +43,8 @@ def create_checkout_session() -> str | Response:
 
 @stripe_blueprint.route("/webhook", methods=["POST"])
 def receive_stripe_webhook() -> tuple[str, int]:
-    """Handle incoming Stripe webhooks.
-
-    Returns a tuple of (message, status code).
-    """
-    payload = request.get_data
+    """Handle incoming Stripe webhooks."""
+    payload = request.get_data()
     header = request.headers.get("Stripe-Signature")
 
     try:
@@ -70,19 +58,17 @@ def receive_stripe_webhook() -> tuple[str, int]:
         logger.exception("Invalid Stripe webhook signature")
         return "Invalid signature", 400
 
-    logger.info("Stripe webhook received and verfied: %s", event.type)
-    # check if we already working on this
+    logger.info("Stripe webhook received and verified: %s", event.type)
     _seen = BillingWebhookEvent.query.filter_by(stripe_event_id=event.id).first()
     if _seen:
-        logger.info("Already working on this event, skipping")
-        return "Already working on this event, skipping", 200
+        logger.info("Already processed event %s, skipping", event.id)
+        return "Already processed", 200
 
     webhook_event = BillingWebhookEvent(
         stripe_event_id=event.id, event_type=event.type, payload=event.data
     )
     db.session.add(webhook_event)
 
-    # yay i get to use the 'new' match stmt
     match event.type:
         case "customer.subscription.created" | "customer.subscription.updated":
             handle_subscription_change(event.data.object)
@@ -94,10 +80,16 @@ def receive_stripe_webhook() -> tuple[str, int]:
             handle_payment_failed(event.data.object)
         case "invoice.created":
             handle_invoice_created(event.data.object)
+        case "setup_intent.succeeded":
+            handle_setup_intent_succeeded(event.data.object)
 
     db.session.commit()
     return "", 200
 
+
+# ---------------------------------------------------------------------------
+# Customer management
+# ---------------------------------------------------------------------------
 
 def create_or_get_customer(org: Organization) -> Customer:
     """Create or retrieve a Stripe customer for an organization."""
@@ -161,7 +153,7 @@ def get_invoices(customer_id: str, limit: int = 10) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def create_sub(org: Organization, tier: PlanTier):
-    """Create a Stripe subscription for payment."""
+    """Create a Stripe subscription with incomplete payment."""
     customer = create_or_get_customer(org)
     _plan = PLANS[tier]
 
@@ -172,14 +164,18 @@ def create_sub(org: Organization, tier: PlanTier):
     sub = Subscription.create(
         customer=customer.id,
         items=products,
-        payment_behavior="default_incomplete",  # we want a payment method
-        metadata={"org_id": str(org.id), "org_slug": org.slug},
+        payment_behavior="default_incomplete",
+        expand=["latest_invoice.payment_intent"],
+        metadata={"org_id": str(org.id), "org_slug": org.slug, "plan_tier": tier},
     )
     # no db update here, wait for our webhook to do it
     return sub
 
 
-### --- Webhook handlers
+# ---------------------------------------------------------------------------
+# Webhook handlers
+# ---------------------------------------------------------------------------
+
 def handle_subscription_change(subscription) -> None:
     """Handle subscription created or updated events."""
     org_id = subscription.metadata.get("org_id")
@@ -249,11 +245,7 @@ def handle_payment_failed(invoice) -> None:
 
 
 def handle_invoice_created(invoice) -> None:
-    """Handle invoice created — apply usage credits before it finalizes.
-
-    Stripe creates the invoice ~1 hour before finalizing,
-    giving us a window to add the plan's usage credit.
-    """
+    """Handle invoice created — apply usage credits before it finalizes."""
     if not invoice.subscription:
         return
 
@@ -268,7 +260,7 @@ def handle_invoice_created(invoice) -> None:
     if credit > 0:
         Customer.create_balance_transaction(
             invoice.customer,
-            amount=-credit,  # negative = credit
+            amount=-credit,
             currency="usd",
             description=f"{plan_tier} plan usage credit",
         )
