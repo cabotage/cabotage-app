@@ -17,31 +17,23 @@ def billing_index() -> str:
 @stripe_blueprint.route("/<org_slug>/", methods=["GET"])
 @login_required
 def dashboard(org_slug: str) -> str:
-    """Render the Stripe dashboard."""
+    """Render the billing dashboard."""
     org = Organization.query.filter_by(slug=org_slug).first_or_404()
+    # TODO: fetch real usage/invoices/payment from Stripe API
     return render_template("billing/dashboard.html", org=org)
-
-
-@stripe_blueprint.route("/<org_slug>/invoices", methods=["GET", "POST"])
-@login_required
-def invoice(org_slug: str) -> str:
-    """Render the Stripe invoice list."""
-    ...
 
 
 @stripe_blueprint.route("/<org_slug>/subscribe", methods=["GET", "POST"])
 @login_required
 def subscribe(org_slug: str) -> str:
-    """Subscription UI."""
+    """Plan selection + Stripe Payment Element for checkout."""
     org = Organization.query.filter_by(slug=org_slug).first_or_404()
-    # get can show the plan picker since its ui
-    # post will handle the stripe payment elemtn, return client secret
     return render_template("billing/subscribe.html", org=org)
 
 
 @stripe_blueprint.route("/<org_slug>/payment", methods=["GET", "POST"])
 @login_required
 def payment_methods(org_slug: str) -> str:
-    """Subscription UI."""
+    """Manage payment methods via Stripe Payment Element."""
     org = Organization.query.filter_by(slug=org_slug).first_or_404()
     return render_template("billing/payment_methods.html", org=org)

@@ -139,20 +139,6 @@ def create_sub(org: Organization, tier: PlanTier):
     return sub
 
 
-def get_sub():
-    """Retrieve a Stripe subscription for payment."""
-
-
-def delete_sub():
-    """Delete a Stripe subscription for payment."""
-    pass
-
-
-def cancel_sub():
-    """Cancel a Stripe subscription for payment."""
-    pass
-
-
 ### --- Webhook handlers
 def handle_subscription_change(subscription) -> None:
     """Handle subscription created or updated events."""
