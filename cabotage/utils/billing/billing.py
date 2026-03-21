@@ -57,17 +57,14 @@ def create_payment_intent():
     pass
 
 
-def create_or_get_customer(org: Organization) -> Customer | str:
-    """Create or retrieve a Stripe customer for payment.
-
-    Returns the Stripe customer ID or the Stripe customer ID as string.
-    """
+def create_or_get_customer(org: Organization) -> Customer:
+    """Create or retrieve a Stripe customer for an organization."""
     org_bill = org.billing
     if org_bill and org_bill.stripe_customer_id:
-        return org_bill.stripe_customer_id
+        return Customer.retrieve(org_bill.stripe_customer_id)
 
     customer = Customer.create(
-        name=org.name, metadata={"org_id": org.id, "org_slug": org.slug}
+        name=org.name, metadata={"org_id": str(org.id), "org_slug": org.slug}
     )
 
     if not org_bill:
@@ -76,7 +73,7 @@ def create_or_get_customer(org: Organization) -> Customer | str:
 
     org_bill.stripe_customer_id = customer.id
     db.session.commit()
-    return customer.id
+    return customer
 
 
 ### --- Subscription stuffs
