@@ -300,6 +300,10 @@ def create_app():
     app.register_blueprint(oidc_blueprint)
     app.register_blueprint(registry_auth_blueprint)
     if app.config.get("ENABLE_BILLING"):
+        import stripe
+
+        stripe.api_key = app.config["STRIPE_SECRET_KEY"]
+
         from cabotage.utils.billing.billing import stripe_blueprint
 
         app.register_blueprint(stripe_blueprint)

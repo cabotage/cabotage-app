@@ -1,9 +1,6 @@
 """Stripe module for stripe things."""
 
 import logging
-import os
-from typing import Final
-
 from flask_login import login_required
 from stripe import checkout, Customer
 
@@ -15,8 +12,6 @@ from cabotage.server.models.auth import Billing
 
 logger = logging.getLogger(__name__)
 
-STRIPE_PUB_KEY: Final[str] = os.getenv("STRIPE_PUB_KEY")
-STRIPE_SECRET_KEY: Final[str] = os.getenv("STRIPE_SECRET_KEY")
 stripe_blueprint = Blueprint(
     "billing",
     __name__,
