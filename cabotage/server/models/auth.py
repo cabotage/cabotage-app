@@ -275,6 +275,11 @@ class Billing(Model):
     __versioned__: dict = {}
     __tablename__ = "billing"
 
+    org_id: Mapped[UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("organizations.id"),
+        primary_key=True,
+    )
     stripe_customer_id: Mapped[str] = mapped_column(
         db.String, nullable=True, unique=True, index=True
     )
