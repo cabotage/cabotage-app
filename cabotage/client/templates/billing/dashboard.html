@@ -119,57 +119,29 @@
           'team': ['Unlimited services', 'Unlimited projects', 'Unlimited seats', '$30 usage credit', 'Priority support', 'RBAC & teams'],
           'byoc': ['Dedicated infrastructure', 'Your cloud account', 'Custom usage terms', 'Dedicated support', 'SLA included']
         } %}
-        {% set tier_colors = {
-          'hobby': 'from-info/20 to-info/5',
-          'indie': 'from-primary/20 to-primary/5',
-          'team': 'from-accent/20 to-accent/5',
-          'byoc': 'from-warning/20 to-warning/5'
-        } %}
-        {% set tier_accent = {
-          'hobby': 'bg-info',
-          'indie': 'bg-primary',
-          'team': 'bg-accent',
-          'byoc': 'bg-warning'
-        } %}
-        {% set tier_text = {
-          'hobby': 'text-info',
-          'indie': 'text-primary',
-          'team': 'text-accent',
-          'byoc': 'text-warning'
-        } %}
-        <div>
+        <div class="flex flex-col">
           <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Current Plan</h2>
-          <div class="card border border-base-300/50 h-full overflow-hidden relative">
-            {# Accent stripe on left edge #}
-            <div class="absolute inset-y-0 left-0 w-1 {{ tier_accent.get(plan, 'bg-primary') }}"></div>
-            {# Subtle gradient bg #}
-            <div class="absolute inset-0 bg-gradient-to-br {{ tier_colors.get(plan, 'from-primary/20 to-primary/5') }} opacity-30"></div>
-
-            <div class="card-body relative">
+          <div class="card bg-base-200/50 border border-base-300/50 flex-1 flex flex-col">
+            <div class="card-body flex flex-col flex-1 p-5">
               {# Header: plan name + price + status #}
-              <div class="flex items-start justify-between mb-5">
-                <div class="flex items-center gap-3.5">
-                  <div class="w-11 h-11 rounded-xl bg-base-100/80 border border-base-300/50 flex items-center justify-center {{ tier_text.get(plan, 'text-primary') }} shadow-sm">
-                    {{ icon('zap', 'w-5 h-5') }}
+              <div class="flex items-center gap-3 mb-3">
+                <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                  {{ icon('zap', 'w-5 h-5') }}
+                </div>
+                <div class="flex-1">
+                  <div class="flex items-center gap-2">
+                    <h3 class="text-base font-semibold text-base-content">{{ plan_labels.get(plan, plan|title) }}</h3>
+                    {{ status_badge(status or 'unknown') }}
                   </div>
-                  <div>
-                    <div class="flex items-center gap-2.5">
-                      <h3 class="text-lg font-bold tracking-tight text-base-content">{{ plan_labels.get(plan, plan|title) }}</h3>
-                      {{ status_badge(status or 'unknown') }}
-                    </div>
-                    <div class="flex items-baseline gap-1 mt-0.5">
-                      <span class="text-xl font-bold font-mono {{ tier_text.get(plan, 'text-primary') }}">{{ plan_prices.get(plan, '').replace('/mo', '') }}</span>
-                      <span class="text-xs text-base-content/35 font-medium">/month</span>
-                    </div>
+                  <div class="flex items-baseline gap-1">
+                    <span class="text-lg font-bold font-mono text-base-content">{{ plan_prices.get(plan, '').replace('/mo', '') }}</span>
+                    <span class="text-xs text-base-content/35">/month</span>
                   </div>
                 </div>
               </div>
 
-              {# Divider #}
-              <div class="h-px bg-base-content/[0.06] -mx-1 mb-4"></div>
-
               {# Features grid #}
-              <div class="grid grid-cols-2 gap-x-4 gap-y-2 mb-5">
+              <div class="grid grid-cols-2 gap-x-4 gap-y-1.5 mb-auto">
                 {% for feature in plan_features.get(plan, []) %}
                   <div class="flex items-center gap-2 text-[13px] text-base-content/55">
                     <span class="text-success/60 flex-shrink-0">{{ icon('check', 'w-3.5 h-3.5') }}</span>
@@ -178,8 +150,8 @@
                 {% endfor %}
               </div>
 
-              {# CTA #}
-              <div class="flex items-center justify-between pt-1">
+              {# Footer — pinned to bottom #}
+              <div class="flex items-end justify-between pt-3 mt-auto h-11">
                 <span class="text-xs text-base-content/25 font-mono">{{ plan_credits.get(plan, '--') }} usage credit included</span>
                 <a href="{{ url_for('billing.subscribe', org_slug=org.slug) }}"
                    class="btn btn-outline btn-sm gap-1.5 border-base-content/15 hover:border-base-content/30 text-base-content/60 hover:text-base-content">
@@ -191,11 +163,16 @@
         </div>
 
         {# Usage summary (Stripe data — deferred) #}
-        <div>
+        <div class="flex flex-col">
           <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Current Period Usage</h2>
-          <div class="card bg-base-200/50 border border-base-300/50 h-full">
-            <div class="card-body" id="overview-usage">
-              {{ billing_spinner() }}
+          <div class="card bg-base-200/50 border border-base-300/50 flex-1 flex flex-col">
+            <div class="card-body flex flex-col flex-1 p-5">
+              <div class="flex-1" id="overview-usage">
+                {{ billing_spinner() }}
+              </div>
+              <div class="flex items-end pt-3 mt-auto h-11" id="overview-usage-footer" style="display:none">
+                <span class="text-xs text-base-content/25">Usage resets at the start of each billing cycle.</span>
+              </div>
             </div>
           </div>
         </div>
@@ -327,18 +304,16 @@
           <p class="text-sm text-base-content/40">No usage this billing period.</p>
         </div>`;
     } else {
-      el.innerHTML = '<div class="flex flex-col gap-4">' + usage.map(item => `
-        <div>
-          <div class="flex items-center justify-between mb-1.5">
-            <div class="flex items-center gap-2 text-sm text-base-content/60">
-              ${svg(item.icon, 'w-3.5 h-3.5')}
-              <span>${esc(item.label)}</span>
-            </div>
-            <span class="text-xs font-mono text-base-content/40">${esc(String(item.used))} ${esc(item.unit)} &middot; $${item.cost}</span>
+      el.innerHTML = '<div class="flex flex-col gap-3">' + usage.map(item => `
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2 text-sm text-base-content/60">
+            ${svg(item.icon, 'w-3.5 h-3.5')}
+            <span>${esc(item.label)}</span>
           </div>
+          <span class="text-xs font-mono text-base-content/40">${esc(String(item.used))} ${esc(item.unit)} &middot; $${item.cost}</span>
         </div>`).join('') + '</div>';
     }
-    el.innerHTML += '<p class="text-xs text-base-content/30 mt-4">Usage resets at the start of each billing cycle.</p>';
+    document.getElementById('overview-usage-footer').style.display = '';
   }
 
   function renderUsageDetail(usage) {
