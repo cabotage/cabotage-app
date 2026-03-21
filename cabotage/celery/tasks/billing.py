@@ -16,7 +16,7 @@ from cabotage.utils.billing._products import METERS
 logger = logging.getLogger(__name__)
 
 
-@shared_task()
+@shared_task(autoretry_for=(Exception,), retry_backoff=True, max_retries=3)
 def report_usage() -> None:
     """Report metered usage to Stripe for all active billing orgs."""
     for org in Organization.query.join(Billing).filter(
