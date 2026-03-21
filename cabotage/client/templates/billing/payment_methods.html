@@ -29,7 +29,9 @@
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-4">
                 <div class="w-12 h-8 rounded bg-base-300/60 flex items-center justify-center text-base-content/40">
-                  {% if payment_method.brand == 'visa' %}
+                  {% if payment_method.type == 'us_bank_account' %}
+                    {{ icon('building', 'w-5 h-5') }}
+                  {% elif payment_method.brand == 'visa' %}
                     <span class="text-xs font-bold tracking-wide">VISA</span>
                   {% elif payment_method.brand == 'mastercard' %}
                     <span class="text-xs font-bold tracking-wide">MC</span>
@@ -44,7 +46,11 @@
                     <span class="text-sm font-medium text-base-content">{{ payment_method.brand|title }}</span>
                     <span class="text-sm font-mono text-base-content/50">&middot;&middot;&middot;&middot; {{ payment_method.last4 }}</span>
                   </div>
-                  <p class="text-xs text-base-content/40">Expires {{ payment_method.exp_month }}/{{ payment_method.exp_year }}</p>
+                  {% if payment_method.exp_month is defined %}
+                    <p class="text-xs text-base-content/40">Expires {{ payment_method.exp_month }}/{{ payment_method.exp_year }}</p>
+                  {% elif payment_method.account_type is defined %}
+                    <p class="text-xs text-base-content/40">{{ payment_method.account_type|title }} account</p>
+                  {% endif %}
                 </div>
               </div>
               <span class="badge badge-outline badge-sm gap-1 border-success/40 text-success">
@@ -201,6 +207,12 @@
     errorsEl.classList.add('hidden');
 
     try {
+      // Validate the Payment Element before any async work
+      var submitResult = await elements.submit();
+      if (submitResult.error) {
+        throw new Error(submitResult.error.message);
+      }
+
       // Request a SetupIntent client_secret from the backend
       var response = await fetch('{{ url_for("billing.payment_methods", org_slug=org.slug) }}', {
         method: 'POST',
@@ -231,9 +243,20 @@
         throw new Error(result.error.message);
       }
 
-      // Setup succeeded without redirect
-      setupForm.classList.add('hidden');
-      successEl.classList.remove('hidden');
+      // Set the new payment method as default
+      if (result.setupIntent && result.setupIntent.payment_method) {
+        await fetch('{{ url_for("billing.payment_methods", org_slug=org.slug) }}', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+          },
+          body: JSON.stringify({ action: 'set_default', payment_method: result.setupIntent.payment_method })
+        });
+      }
+
+      // Reload to show updated payment method
+      window.location.reload();
 
     } catch (err) {
       errorsEl.textContent = err.message;

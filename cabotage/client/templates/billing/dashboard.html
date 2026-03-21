@@ -146,37 +146,28 @@
           <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Current Period Usage</h2>
           <div class="card bg-base-200/50 border border-base-300/50 h-full">
             <div class="card-body">
-              {% set usage_items = usage if usage is defined and usage else [
-                {'label': 'vCPU Hours', 'used': 0, 'credit': 100, 'icon': 'cpu'},
-                {'label': 'RAM (GB-hours)', 'used': 0, 'credit': 200, 'icon': 'hard-drive'},
-                {'label': 'Egress (GB)', 'used': 0, 'credit': 50, 'icon': 'upload'},
-                {'label': 'Build Minutes', 'used': 0, 'credit': 500, 'icon': 'tool'}
-              ] %}
+              {% set usage_items = usage if usage is defined and usage else [] %}
+              {% if usage_items %}
               <div class="flex flex-col gap-4">
                 {% for item in usage_items %}
-                  {% set pct = (item.used / item.credit * 100) if item.credit > 0 else 0 %}
-                  {% set over_credit = pct > 100 %}
                   <div>
                     <div class="flex items-center justify-between mb-1.5">
                       <div class="flex items-center gap-2 text-sm text-base-content/60">
                         {{ icon(item.icon, 'w-3.5 h-3.5') }}
                         <span>{{ item.label }}</span>
                       </div>
-                      <div class="flex items-center gap-2">
-                        <span class="text-xs font-mono text-base-content/40">{{ item.used }} / {{ item.credit }}</span>
-                        {% if over_credit %}
-                          <span class="badge badge-xs badge-warning">overage</span>
-                        {% endif %}
-                      </div>
-                    </div>
-                    <div class="w-full bg-base-300/50 rounded-full h-2">
-                      <div class="{{ 'bg-error' if pct > 80 else 'bg-warning' if pct > 50 else 'bg-success' }} h-2 rounded-full transition-all"
-                           style="width: {{ [pct, 100]|min }}%"></div>
+                      <span class="text-xs font-mono text-base-content/40">{{ item.used }} {{ item.unit }} &middot; ${{ item.cost }}</span>
                     </div>
                   </div>
                 {% endfor %}
               </div>
-              <p class="text-xs text-base-content/30 mt-4">Usage resets at the start of each billing cycle. Data is updated periodically.</p>
+              {% else %}
+              <div class="text-center py-6">
+                <div class="text-base-content/15 mb-2">{{ icon('bar-chart', 'w-8 h-8') }}</div>
+                <p class="text-sm text-base-content/40">No usage this billing period.</p>
+              </div>
+              {% endif %}
+              <p class="text-xs text-base-content/30 mt-4">Usage resets at the start of each billing cycle.</p>
             </div>
           </div>
         </div>
@@ -213,18 +204,13 @@
               <tr class="border-base-300/50">
                 <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Resource</th>
                 <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Used</th>
-                <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Included</th>
                 <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Rate</th>
                 <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Cost</th>
-                <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium w-1/3">Usage</th>
               </tr>
             </thead>
             <tbody>
               {% if usage_data %}
                 {% for item in usage_data %}
-                  {% set pct = (item.used / item.credit * 100) if item.credit > 0 else 0 %}
-                  {% set over = pct > 100 %}
-                  {% set cost = (item.used * item.rate)|round(2) %}
                   <tr class="border-base-300/30 hover:bg-base-300/20">
                     <td>
                       <div class="flex items-center gap-2 text-sm text-base-content">
@@ -233,23 +219,13 @@
                       </div>
                     </td>
                     <td class="text-sm font-mono text-base-content">{{ item.used }} {{ item.unit }}</td>
-                    <td class="text-sm font-mono text-base-content/50">{{ item.credit }} {{ item.unit }}</td>
                     <td class="text-sm font-mono text-base-content/50">${{ item.rate }}/{{ item.unit }}</td>
-                    <td class="text-sm font-mono {% if over %}text-warning{% else %}text-base-content{% endif %}">${{ cost }}</td>
-                    <td>
-                      <div class="flex items-center gap-2">
-                        <div class="w-full bg-base-300/50 rounded-full h-2">
-                          <div class="{{ 'bg-error' if pct > 80 else 'bg-warning' if pct > 50 else 'bg-success' }} h-2 rounded-full transition-all"
-                               style="width: {{ [pct, 100]|min }}%"></div>
-                        </div>
-                        <span class="text-xs font-mono text-base-content/40 whitespace-nowrap">{{ pct|round(0)|int }}%</span>
-                      </div>
-                    </td>
+                    <td class="text-sm font-mono text-base-content">${{ item.cost }}</td>
                   </tr>
                 {% endfor %}
               {% else %}
                 <tr>
-                  <td colspan="6" class="text-center py-8">
+                  <td colspan="4" class="text-center py-8">
                     <div class="text-base-content/15 mb-2">{{ icon('bar-chart', 'w-8 h-8') }}</div>
                     <p class="text-sm text-base-content/40">No usage data available for the current billing period.</p>
                   </td>
@@ -342,7 +318,11 @@
                       <span class="text-sm font-medium text-base-content">
                         {{ payment_method.brand|title }} ending in {{ payment_method.last4 }}
                       </span>
-                      <p class="text-xs text-base-content/40">Expires {{ payment_method.exp_month }}/{{ payment_method.exp_year }}</p>
+                      {% if payment_method.exp_month is defined %}
+                        <p class="text-xs text-base-content/40">Expires {{ payment_method.exp_month }}/{{ payment_method.exp_year }}</p>
+                      {% elif payment_method.account_type is defined %}
+                        <p class="text-xs text-base-content/40">{{ payment_method.account_type|title }} account</p>
+                      {% endif %}
                     </div>
                   </div>
                   <a href="{{ url_for('billing.payment_methods', org_slug=org.slug) }}"
