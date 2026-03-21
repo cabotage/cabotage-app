@@ -2,7 +2,6 @@ from cabotage.server import db, Model
 
 from sqlalchemy.dialects import postgresql
 
-
 class OrganizationMember(Model):
     __tablename__ = "organization_members"
 
@@ -34,17 +33,6 @@ class OrganizationTeam(Model):
 
     organization = db.relationship("Organization", back_populates="teams")
     team = db.relationship("Team", back_populates="organizations")
-
-
-class OrganizationBilling(Model):
-    __tablename__ = "organization_billing"
-    organization_id = db.Column(
-        postgresql.UUID(as_uuid=True),
-        db.ForeignKey("organizations.id"),
-        primary_key=True,
-    )
-    organization = db.relationship("Organization", back_populates="billing")
-    billing = db.relationship("Billing", back_populates="organization")
 
 
 class TeamMember(Model):

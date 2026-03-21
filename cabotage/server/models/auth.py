@@ -202,7 +202,7 @@ class Organization(Model):
 
     members = db.relationship("OrganizationMember", back_populates="organization")
     teams = db.relationship("OrganizationTeam", back_populates="organization")
-    billing = db.relationship("OrganizationBilling", back_populates="organization")
+    billing = db.relationship("Billing", back_populates="organization", uselist=False)
 
     projects = db.relationship("Project", backref="organization")
 
@@ -290,6 +290,8 @@ class Billing(Model):
         db.String, nullable=True
     )
     stripe_sub_plan: Mapped[str] = mapped_column(db.String, default="free")
+
+    organization = db.relationship("Organization", back_populates="billing")
 
 
 class BillingWebhookEvent(Model):
