@@ -91,15 +91,13 @@ def create_sub(org: Organization, tier: PlanTier):
         payment_behavior="default_incomplete", # we want a payment method
         metadata={"org_id": str(org.id), "org_slug": org.slug},
     )
+    # no db update here, wait for our webhook to do it
     return sub
-
-
-
 
 
 def get_sub():
     """Retrieve a Stripe subscription for payment."""
-    pass
+
 
 
 def delete_sub():
