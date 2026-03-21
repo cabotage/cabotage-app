@@ -2,6 +2,7 @@ from cabotage.server import db, Model
 
 from sqlalchemy.dialects import postgresql
 
+
 class OrganizationMember(Model):
     __tablename__ = "organization_members"
 

@@ -329,7 +329,12 @@ def create_app():
         return render_template("errors/500.html"), 500
 
     from cabotage.server.models.admin import AdminModelView
-    from cabotage.server.models.auth import Organization, Team, Billing, BillingWebhookEvent
+    from cabotage.server.models.auth import (
+        Organization,
+        Team,
+        Billing,
+        BillingWebhookEvent,
+    )
     from cabotage.server.models.projects import (
         Project,
         Application,
