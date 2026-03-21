@@ -2,7 +2,7 @@
 
 import logging
 from flask_login import login_required
-from stripe import checkout, Customer
+from stripe import checkout, Customer, Subscription
 
 from flask import current_app, jsonify, Blueprint, Response
 
@@ -78,13 +78,21 @@ def create_or_get_customer(org: Organization) -> Customer:
 ### --- Subscription stuffs
 def create_sub(org: Organization, tier: PlanTier):
     """Create a Stripe subscription for payment."""
-    customer = get_or_get_customer(org)
+    customer = create_or_get_customer(org)
     _plan = PLANS[tier]
 
     products = [{"price": _plan.price_id}]
     for meter in METERS.values():
         products.append({"price": meter.price_id})
-    # todo finish
+
+    sub = Subscription.create(
+        customer=customer.id,
+        items=products,
+        payment_behavior="default_incomplete", # we want a payment method
+        metadata={"org_id": str(org.id), "org_slug": org.slug},
+    )
+    return sub
+
 
 
 
