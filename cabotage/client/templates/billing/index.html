@@ -16,7 +16,7 @@
   {% set user_orgs = current_user.organizations %}
   {% if user_orgs %}
     <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Organizations</h2>
-    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 max-w-4xl">
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
       {% for membership in user_orgs %}
         {% set org = membership.organization %}
         {% set plan = org.billing.stripe_sub_plan if org.billing else none %}
