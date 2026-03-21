@@ -36,6 +36,17 @@ class OrganizationTeam(Model):
     team = db.relationship("Team", back_populates="organizations")
 
 
+class OrganizationBilling(Model):
+    __tablename__ = "organization_billing"
+    organization_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("organizations.id"),
+        primary_key=True,
+    )
+    organization = db.relationship("Organization", back_populates="billing")
+    billing = db.relationship("Billing", back_populates="organization")
+
+
 class TeamMember(Model):
     __tablename__ = "team_members"
 

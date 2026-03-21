@@ -1,4 +1,5 @@
 import datetime
+from enum import StrEnum
 
 from citext import CIText
 from flask_security.models.fsqla_v3 import (
@@ -9,6 +10,7 @@ from flask_security.models.fsqla_v3 import (
 )
 from sqlalchemy import text
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy_continuum import make_versioned
 
 from cabotage.server import db, Model
@@ -198,6 +200,7 @@ class Organization(Model):
 
     members = db.relationship("OrganizationMember", back_populates="organization")
     teams = db.relationship("OrganizationTeam", back_populates="organization")
+    billing = db.relationship("OrganizationBilling", back_populates="organization")
 
     projects = db.relationship("Project", backref="organization")
 
@@ -257,3 +260,22 @@ class Team(Model):
         association = TeamMember.query.filter_by(user_id=user.id, team_id=self.id)
         if association:
             db.session.delete(association)
+
+
+class BillingSubsctriptionStatus(StrEnum):
+    ACTIVE = "active"
+    PAST_DUE = "past_due"
+    CANCELED = "canceled"
+    """not sure what else we will want here yet"""
+
+
+class Billing(Model):
+    __versioned__: dict = {}
+    __tablename__ = "billing"
+
+    stripe_customer_id = Mapped[str] = mapped_column(db.String, nullable=True)
+    stripe_sub_id = Mapped[str] = mapped_column(db.String, nullable=True)
+    stripe_sub_status = Mapped[BillingSubsctriptionStatus | None] = mapped_column(
+        db.String, nullable=True
+    )
+    stripe_sub_plan = Mapped[str] = mapped_column(db.String, default="free")
