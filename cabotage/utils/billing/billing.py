@@ -5,9 +5,13 @@ import os
 from typing import Final
 
 from flask_login import login_required
-from stripe import checkout
+from stripe import checkout, Customer
 
-from flask import current_app, jsonify, Blueprint
+from flask import current_app, jsonify, Blueprint, Response
+
+from cabotage.server import db
+from cabotage.server.models import Organization
+from cabotage.server.models.auth import Billing
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +35,7 @@ stripe_blueprint = Blueprint(
 
 @stripe_blueprint.route("/checkout-session", methods=["POST"])
 @login_required
-def create_checkout_session():
+def create_checkout_session() -> str | Response:
     """Create a Stripe checkout session for payment."""
     scheme = current_app.config["EXT_PREFERRED_URL_SCHEME"]
     server = current_app.config["EXT_SERVER_NAME"]
