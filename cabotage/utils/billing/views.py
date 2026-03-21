@@ -89,7 +89,21 @@ def subscribe(org_slug: str) -> tuple[Response, int] | Response | str:
 
 @stripe_blueprint.route("/<org_slug>/payment", methods=["GET", "POST"])
 @login_required
-def payment_methods(org_slug: str) -> str:
+def payment_methods(org_slug: str) -> Response | str:
     """Manage payment methods via Stripe Payment Element."""
     org = Organization.query.filter_by(slug=org_slug).first_or_404()
-    return render_template("billing/payment_methods.html", org=org)
+
+    if request.method == "POST":
+        customer = create_or_get_customer(org)
+        setup_intent = SetupIntent.create(
+            customer=customer.id,
+            payment_method_types=ALLOWED_PAYMENT_METHODS,
+            metadata={"org_id": str(org.id)},
+        )
+        return jsonify(client_secret=setup_intent.client_secret)
+
+    payment_method = None
+    if org.billing and org.billing.stripe_customer_id:
+        payment_method = get_default_payment_method(org.billing.stripe_customer_id)
+
+    return render_template("billing/payment_methods.html", org=org, payment_method=payment_method)
