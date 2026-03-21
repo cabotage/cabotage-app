@@ -113,36 +113,78 @@
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
 
         {# Current plan card (DB data — instant) #}
+        {% set plan_features = {
+          'hobby': ['5 services', '1 project', '1 seat', '$5 usage credit', 'Community support'],
+          'indie': ['15 services', '3 projects', '3 seats', '$12 usage credit', 'Email support'],
+          'team': ['Unlimited services', 'Unlimited projects', 'Unlimited seats', '$30 usage credit', 'Priority support', 'RBAC & teams'],
+          'byoc': ['Dedicated infrastructure', 'Your cloud account', 'Custom usage terms', 'Dedicated support', 'SLA included']
+        } %}
+        {% set tier_colors = {
+          'hobby': 'from-info/20 to-info/5',
+          'indie': 'from-primary/20 to-primary/5',
+          'team': 'from-accent/20 to-accent/5',
+          'byoc': 'from-warning/20 to-warning/5'
+        } %}
+        {% set tier_accent = {
+          'hobby': 'bg-info',
+          'indie': 'bg-primary',
+          'team': 'bg-accent',
+          'byoc': 'bg-warning'
+        } %}
+        {% set tier_text = {
+          'hobby': 'text-info',
+          'indie': 'text-primary',
+          'team': 'text-accent',
+          'byoc': 'text-warning'
+        } %}
         <div>
           <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Current Plan</h2>
-          <div class="card bg-base-200/50 border border-base-300/50 h-full">
-            <div class="card-body">
-              <div class="flex items-center justify-between mb-4">
-                <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+          <div class="card border border-base-300/50 h-full overflow-hidden relative">
+            {# Accent stripe on left edge #}
+            <div class="absolute inset-y-0 left-0 w-1 {{ tier_accent.get(plan, 'bg-primary') }}"></div>
+            {# Subtle gradient bg #}
+            <div class="absolute inset-0 bg-gradient-to-br {{ tier_colors.get(plan, 'from-primary/20 to-primary/5') }} opacity-30"></div>
+
+            <div class="card-body relative">
+              {# Header: plan name + price + status #}
+              <div class="flex items-start justify-between mb-5">
+                <div class="flex items-center gap-3.5">
+                  <div class="w-11 h-11 rounded-xl bg-base-100/80 border border-base-300/50 flex items-center justify-center {{ tier_text.get(plan, 'text-primary') }} shadow-sm">
                     {{ icon('zap', 'w-5 h-5') }}
                   </div>
                   <div>
-                    <h3 class="text-base font-semibold text-base-content">Cabotage {{ plan_labels.get(plan, plan|title) }}</h3>
-                    <span class="text-sm text-base-content/40">{{ plan_prices.get(plan, '') }}</span>
+                    <div class="flex items-center gap-2.5">
+                      <h3 class="text-lg font-bold tracking-tight text-base-content">{{ plan_labels.get(plan, plan|title) }}</h3>
+                      {{ status_badge(status or 'unknown') }}
+                    </div>
+                    <div class="flex items-baseline gap-1 mt-0.5">
+                      <span class="text-xl font-bold font-mono {{ tier_text.get(plan, 'text-primary') }}">{{ plan_prices.get(plan, '').replace('/mo', '') }}</span>
+                      <span class="text-xs text-base-content/35 font-medium">/month</span>
+                    </div>
                   </div>
                 </div>
-                {{ status_badge(status or 'unknown') }}
               </div>
 
-              {% set plan_features = {
-                'hobby': ['5 services', '1 project', '1 seat', '$5 usage credit', 'Community support'],
-                'indie': ['15 services', '3 projects', '3 seats', '$12 usage credit', 'Email support'],
-                'team': ['Unlimited services', 'Unlimited projects', 'Unlimited seats', '$30 usage credit', 'Priority support', 'RBAC & teams'],
-                'byoc': ['Dedicated infrastructure', 'Your cloud account', 'Custom usage terms', 'Dedicated support', 'SLA included']
-              } %}
-              <div class="grid grid-cols-2 gap-2">
+              {# Divider #}
+              <div class="h-px bg-base-content/[0.06] -mx-1 mb-4"></div>
+
+              {# Features grid #}
+              <div class="grid grid-cols-2 gap-x-4 gap-y-2 mb-5">
                 {% for feature in plan_features.get(plan, []) %}
-                  <div class="flex items-center gap-2 text-sm text-base-content/60">
-                    <span class="text-success/70">{{ icon('check', 'w-3.5 h-3.5') }}</span>
-                    {{ feature }}
+                  <div class="flex items-center gap-2 text-[13px] text-base-content/55">
+                    <span class="text-success/60 flex-shrink-0">{{ icon('check', 'w-3.5 h-3.5') }}</span>
+                    <span>{{ feature }}</span>
                   </div>
                 {% endfor %}
+              </div>
+
+              {# CTA #}
+              <div class="flex items-center justify-between pt-1">
+                <span class="text-xs text-base-content/25 font-mono">{{ plan_credits.get(plan, '--') }} usage credit included</span>
+                <a href="{{ url_for('billing.subscribe', org_slug=org.slug) }}"
+                   class="btn btn-outline btn-sm gap-1.5 border-base-content/15 hover:border-base-content/30 text-base-content/60 hover:text-base-content">
+                  {{ icon('chevron-right', 'w-3.5 h-3.5') }} Change Plan
+                </a>
               </div>
             </div>
           </div>
@@ -431,22 +473,26 @@
       el.innerHTML = '<div class="card-body"><p class="text-sm text-base-content/40 text-center py-4">No invoices yet.</p></div>';
       return;
     }
-    el.innerHTML = `<div class="card-body p-0"><table class="table table-sm">
-      <thead><tr class="border-base-300/50">
-        <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Date</th>
-        <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Amount</th>
-        <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Status</th>
-      </tr></thead>
-      <tbody>${recent.map(inv => {
-        const badgeCls = inv.status === 'paid' ? 'border-success/40 text-success' : inv.status === 'open' ? 'border-warning/40 text-warning' : 'border-base-content/20 text-base-content/50';
-        const dotCls = inv.status === 'paid' ? 'status-dot-success' : inv.status === 'open' ? 'status-dot-warning' : 'status-dot-neutral';
-        return `<tr class="border-base-300/30 hover:bg-base-300/20">
-          <td class="text-sm font-mono text-base-content/60">${esc(inv.date)}</td>
-          <td class="text-sm font-mono text-base-content">${esc(inv.amount)}</td>
-          <td><span class="badge badge-outline badge-sm gap-1 font-medium ${badgeCls}"><span class="status-dot ${dotCls}"></span>${esc(inv.status)}</span></td>
-        </tr>`;
-      }).join('')}</tbody>
-    </table></div>`;
+    el.innerHTML = `<div class="card-body p-0"><div class="flex flex-col">${recent.map((inv, i) => {
+      const badgeCls = inv.status === 'paid' ? 'border-success/40 text-success' : inv.status === 'open' ? 'border-warning/40 text-warning' : 'border-base-content/20 text-base-content/50';
+      const dotCls = inv.status === 'paid' ? 'status-dot-success' : inv.status === 'open' ? 'status-dot-warning' : 'status-dot-neutral';
+      const pdf = inv.pdf_url ? `<a href="${esc(inv.pdf_url)}" target="_blank" rel="noopener" class="btn btn-ghost btn-xs gap-1">${svg('download', 'w-3 h-3')} PDF</a>` : '';
+      const border = i < recent.length - 1 ? 'border-b border-base-300/30' : '';
+      return `<div class="flex items-center justify-between px-4 py-3 ${border}">
+        <div class="flex items-center gap-3">
+          <span class="text-base-content/30">${svg('file-text', 'w-4 h-4')}</span>
+          <div>
+            <span class="text-sm text-base-content">${esc(inv.description)}</span>
+            <p class="text-xs text-base-content/40">${esc(inv.date)}</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="text-sm font-mono text-base-content">${esc(inv.amount)}</span>
+          <span class="badge badge-outline badge-sm gap-1 font-medium ${badgeCls}"><span class="status-dot ${dotCls}"></span>${esc(inv.status)}</span>
+          ${pdf}
+        </div>
+      </div>`;
+    }).join('')}</div></div>`;
   }
 })();
 </script>
