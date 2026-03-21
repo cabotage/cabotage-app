@@ -71,10 +71,17 @@
 
   {% else %}
 
-    {# ── Plan metadata ── #}
+    {# ── Plan metadata (from DB, instant) ── #}
     {% set plan_labels = {'hobby': 'Hobby', 'indie': 'Indie', 'team': 'Team', 'byoc': 'BYOC'} %}
     {% set plan_prices = {'hobby': '$4/mo', 'indie': '$9/mo', 'team': '$29/mo', 'byoc': '$250/mo'} %}
     {% set plan_credits = {'hobby': '$5.00', 'indie': '$12.00', 'team': '$30.00', 'byoc': 'Custom'} %}
+
+    {# ── Shared loading spinner ── #}
+    {% macro billing_spinner() %}
+      <div class="flex items-center justify-center py-8">
+        <span class="loading loading-spinner loading-md text-base-content/30"></span>
+      </div>
+    {% endmacro %}
 
     {# ── Overview tab ── #}
     <div data-tab-panel="overview" class="tab-panel">
@@ -105,7 +112,7 @@
       {# Plan + Usage side by side #}
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
 
-        {# Current plan card #}
+        {# Current plan card (DB data — instant) #}
         <div>
           <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Current Plan</h2>
           <div class="card bg-base-200/50 border border-base-300/50 h-full">
@@ -141,33 +148,12 @@
           </div>
         </div>
 
-        {# Usage summary #}
+        {# Usage summary (Stripe data — deferred) #}
         <div>
           <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Current Period Usage</h2>
           <div class="card bg-base-200/50 border border-base-300/50 h-full">
-            <div class="card-body">
-              {% set usage_items = usage if usage is defined and usage else [] %}
-              {% if usage_items %}
-              <div class="flex flex-col gap-4">
-                {% for item in usage_items %}
-                  <div>
-                    <div class="flex items-center justify-between mb-1.5">
-                      <div class="flex items-center gap-2 text-sm text-base-content/60">
-                        {{ icon(item.icon, 'w-3.5 h-3.5') }}
-                        <span>{{ item.label }}</span>
-                      </div>
-                      <span class="text-xs font-mono text-base-content/40">{{ item.used }} {{ item.unit }} &middot; ${{ item.cost }}</span>
-                    </div>
-                  </div>
-                {% endfor %}
-              </div>
-              {% else %}
-              <div class="text-center py-6">
-                <div class="text-base-content/15 mb-2">{{ icon('bar-chart', 'w-8 h-8') }}</div>
-                <p class="text-sm text-base-content/40">No usage this billing period.</p>
-              </div>
-              {% endif %}
-              <p class="text-xs text-base-content/30 mt-4">Usage resets at the start of each billing cycle.</p>
+            <div class="card-body" id="overview-usage">
+              {{ billing_spinner() }}
             </div>
           </div>
         </div>
@@ -175,175 +161,28 @@
 
     </div>
 
-    {# ── Usage tab (detailed breakdown) ── #}
+    {# ── Usage tab (detailed breakdown — deferred) ── #}
     <div data-tab-panel="usage" class="tab-panel">
-      {% set usage_data = usage if usage is defined and usage else [] %}
-
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        {% set total_used_dollars = [] %}
-        {% for item in usage_data %}
-          {% set cost = (item.used * item.rate)|round(2) %}
-          {% set _ = total_used_dollars.append(cost) %}
-        {% endfor %}
-        {% set total_cost = total_used_dollars|sum if total_used_dollars else 0 %}
-        {% set credit_cents = {'hobby': 500, 'indie': 1200, 'team': 3000, 'byoc': 0} %}
-        {% set credit_dollars = (credit_cents.get(plan, 0) / 100)|round(2) %}
-        {% set net = (total_cost - credit_dollars)|round(2) %}
-
-        {{ stat_card('$' ~ total_cost|round(2), 'Total Usage', 'activity', 'primary') }}
-        {{ stat_card('$' ~ credit_dollars, 'Plan Credit', 'dollar-sign', 'success') }}
-        {{ stat_card('$' ~ ([net, 0]|max)|round(2), 'Overage', 'alert-triangle', 'warning' if net > 0 else 'ghost') }}
-        {{ stat_card(usage_data|length ~ ' meters', 'Active Meters', 'bar-chart', 'info') }}
-      </div>
-
-      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Resource Breakdown</h2>
-      <div class="card bg-base-200/50 border border-base-300/50 mb-6">
-        <div class="card-body p-0">
-          <table class="table table-sm">
-            <thead>
-              <tr class="border-base-300/50">
-                <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Resource</th>
-                <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Used</th>
-                <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Rate</th>
-                <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% if usage_data %}
-                {% for item in usage_data %}
-                  <tr class="border-base-300/30 hover:bg-base-300/20">
-                    <td>
-                      <div class="flex items-center gap-2 text-sm text-base-content">
-                        {{ icon(item.icon, 'w-3.5 h-3.5 text-base-content/40') }}
-                        {{ item.label }}
-                      </div>
-                    </td>
-                    <td class="text-sm font-mono text-base-content">{{ item.used }} {{ item.unit }}</td>
-                    <td class="text-sm font-mono text-base-content/50">${{ item.rate }}/{{ item.unit }}</td>
-                    <td class="text-sm font-mono text-base-content">${{ item.cost }}</td>
-                  </tr>
-                {% endfor %}
-              {% else %}
-                <tr>
-                  <td colspan="4" class="text-center py-8">
-                    <div class="text-base-content/15 mb-2">{{ icon('bar-chart', 'w-8 h-8') }}</div>
-                    <p class="text-sm text-base-content/40">No usage data available for the current billing period.</p>
-                  </td>
-                </tr>
-              {% endif %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="card bg-base-200/30 border border-base-300/30">
-        <div class="card-body py-4">
-          <div class="flex items-start gap-3">
-            <span class="text-base-content/30 mt-0.5">{{ icon('info', 'w-4 h-4') }}</span>
-            <div>
-              <p class="text-sm text-base-content/50">
-                Usage is metered and reported to Stripe at the end of each billing cycle.
-                Your plan includes a usage credit that is applied before any overage charges.
-              </p>
-              <p class="text-xs text-base-content/30 mt-1">
-                vCPU $0.020/hr &middot; RAM $0.010/GB-hr &middot; Egress $0.045/GB &middot; Builds $0.004/min &middot; Storage $0.12/GB-mo
-              </p>
-            </div>
-          </div>
-        </div>
+      <div id="usage-detail">
+        {{ billing_spinner() }}
       </div>
     </div>
 
-    {# ── Invoices tab ── #}
+    {# ── Invoices tab (deferred) ── #}
     <div data-tab-panel="invoices" class="tab-panel">
-      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Recent Invoices</h2>
-      <div class="card bg-base-200/50 border border-base-300/50">
-        <div class="card-body p-0">
-          <table class="table table-sm">
-            <thead>
-              <tr class="border-base-300/50">
-                <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Date</th>
-                <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Description</th>
-                <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Amount</th>
-                <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Status</th>
-                <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% if invoices is defined and invoices %}
-                {% for inv in invoices %}
-                  <tr class="border-base-300/30 hover:bg-base-300/20">
-                    <td class="text-sm font-mono text-base-content/60">{{ inv.date }}</td>
-                    <td class="text-sm text-base-content">{{ inv.description }}</td>
-                    <td class="text-sm font-mono text-base-content">{{ inv.amount }}</td>
-                    <td>{{ status_badge(inv.status) }}</td>
-                    <td>
-                      {% if inv.pdf_url %}
-                        <a href="{{ inv.pdf_url }}" target="_blank" rel="noopener"
-                           class="btn btn-ghost btn-xs gap-1">
-                          {{ icon('download', 'w-3 h-3') }} PDF
-                        </a>
-                      {% endif %}
-                    </td>
-                  </tr>
-                {% endfor %}
-              {% else %}
-                <tr>
-                  <td colspan="5" class="text-center py-8">
-                    <div class="text-base-content/15 mb-2">{{ icon('file-text', 'w-8 h-8') }}</div>
-                    <p class="text-sm text-base-content/40">No invoices yet. Your first invoice will appear at the end of the billing cycle.</p>
-                  </td>
-                </tr>
-              {% endif %}
-            </tbody>
-          </table>
-        </div>
+      <div id="invoices-detail">
+        {{ billing_spinner() }}
       </div>
     </div>
 
-    {# ── Payment tab ── #}
+    {# ── Payment tab (partially deferred) ── #}
     <div data-tab-panel="payment" class="tab-panel">
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div>
           <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Payment Method</h2>
           <div class="card bg-base-200/50 border border-base-300/50 mb-6">
-            <div class="card-body">
-              {% if payment_method is defined and payment_method %}
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-lg bg-base-300/50 flex items-center justify-center text-base-content/40">
-                      {{ icon('credit-card', 'w-5 h-5') }}
-                    </div>
-                    <div>
-                      <span class="text-sm font-medium text-base-content">
-                        {{ payment_method.brand|title }} ending in {{ payment_method.last4 }}
-                      </span>
-                      {% if payment_method.exp_month is defined %}
-                        <p class="text-xs text-base-content/40">Expires {{ payment_method.exp_month }}/{{ payment_method.exp_year }}</p>
-                      {% elif payment_method.account_type is defined %}
-                        <p class="text-xs text-base-content/40">{{ payment_method.account_type|title }} account</p>
-                      {% endif %}
-                    </div>
-                  </div>
-                  <a href="{{ url_for('billing.payment_methods', org_slug=org.slug) }}"
-                     class="btn btn-ghost btn-sm gap-1">
-                    {{ icon('edit-2', 'w-3.5 h-3.5') }} Update
-                  </a>
-                </div>
-              {% else %}
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-lg bg-base-300/50 flex items-center justify-center text-base-content/20">
-                      {{ icon('credit-card', 'w-5 h-5') }}
-                    </div>
-                    <span class="text-sm text-base-content/40">No payment method on file</span>
-                  </div>
-                  <a href="{{ url_for('billing.payment_methods', org_slug=org.slug) }}"
-                     class="btn btn-primary btn-sm gap-1">
-                    {{ icon('plus', 'w-3.5 h-3.5') }} Add
-                  </a>
-                </div>
-              {% endif %}
+            <div class="card-body" id="payment-method-detail">
+              {{ billing_spinner() }}
             </div>
           </div>
         </div>
@@ -380,3 +219,193 @@
     </div>
   {% endif %}
 {% endblock content %}
+
+{% block js %}
+{% if org.billing and org.billing.stripe_customer_id %}
+{# Pre-render icons server-side so JS can clone them without raw SVG strings #}
+<div id="icon-bank" hidden>
+  {% for name in ['bar-chart', 'credit-card', 'edit-2', 'plus', 'download', 'file-text', 'info',
+                   'cpu', 'hard-drive', 'upload', 'tool', 'globe', 'layers', 'activity'] %}
+    <template data-icon="{{ name }}">{{ icon(name) }}</template>
+  {% endfor %}
+</div>
+<script>
+(function() {
+  const ORG_SLUG = {{ org.slug|tojson }};
+  const PLAN = {{ (org.billing.stripe_sub_plan or '')|tojson }};
+  const CREDIT_CENTS = {hobby: 500, indie: 1200, team: 3000, byoc: 0};
+  const PM_URL = {{ url_for('billing.payment_methods', org_slug=org.slug)|tojson }};
+
+  function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  function svg(name, cls) {
+    const tpl = document.querySelector(`#icon-bank template[data-icon="${name}"]`);
+    if (!tpl) return '';
+    const el = tpl.content.firstElementChild.cloneNode(true);
+    el.setAttribute('class', cls);
+    return el.outerHTML;
+  }
+
+  fetch(`/billing/${ORG_SLUG}/billing-data`)
+    .then(r => r.json())
+    .then(data => {
+      renderOverviewUsage(data.usage || []);
+      renderUsageDetail(data.usage || []);
+      renderInvoices(data.invoices || []);
+      renderPaymentMethod(data.payment_method);
+    })
+    .catch(() => {
+      document.querySelectorAll('#overview-usage, #usage-detail, #invoices-detail, #payment-method-detail')
+        .forEach(el => { el.innerHTML = '<p class="text-sm text-error/60 py-4 text-center">Failed to load billing data.</p>'; });
+    });
+
+  function renderOverviewUsage(usage) {
+    const el = document.getElementById('overview-usage');
+    if (!usage.length) {
+      el.innerHTML = `
+        <div class="text-center py-6">
+          <div class="text-base-content/15 mb-2">${svg('bar-chart', 'w-8 h-8 inline-block')}</div>
+          <p class="text-sm text-base-content/40">No usage this billing period.</p>
+        </div>`;
+    } else {
+      el.innerHTML = '<div class="flex flex-col gap-4">' + usage.map(item => `
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <div class="flex items-center gap-2 text-sm text-base-content/60">
+              ${svg(item.icon, 'w-3.5 h-3.5')}
+              <span>${esc(item.label)}</span>
+            </div>
+            <span class="text-xs font-mono text-base-content/40">${esc(String(item.used))} ${esc(item.unit)} &middot; $${item.cost}</span>
+          </div>
+        </div>`).join('') + '</div>';
+    }
+    el.innerHTML += '<p class="text-xs text-base-content/30 mt-4">Usage resets at the start of each billing cycle.</p>';
+  }
+
+  function renderUsageDetail(usage) {
+    const el = document.getElementById('usage-detail');
+    const totalCost = usage.reduce((s, i) => s + i.cost, 0);
+    const creditDollars = (CREDIT_CENTS[PLAN] || 0) / 100;
+    const net = Math.max(totalCost - creditDollars, 0);
+
+    let rows = '';
+    if (usage.length) {
+      rows = usage.map(item => `
+        <tr class="border-base-300/30 hover:bg-base-300/20">
+          <td><div class="flex items-center gap-2 text-sm text-base-content">
+            ${svg(item.icon, 'w-3.5 h-3.5 text-base-content/40')} ${esc(item.label)}
+          </div></td>
+          <td class="text-sm font-mono text-base-content">${esc(String(item.used))} ${esc(item.unit)}</td>
+          <td class="text-sm font-mono text-base-content/50">$${item.rate}/${esc(item.unit)}</td>
+          <td class="text-sm font-mono text-base-content">$${item.cost}</td>
+        </tr>`).join('');
+    } else {
+      rows = `<tr><td colspan="4" class="text-center py-8">
+        <div class="text-base-content/15 mb-2">${svg('bar-chart', 'w-8 h-8 inline-block')}</div>
+        <p class="text-sm text-base-content/40">No usage data available for the current billing period.</p>
+      </td></tr>`;
+    }
+
+    el.innerHTML = `
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <div class="stat-card"><span class="stat-card-value text-primary">$${totalCost.toFixed(2)}</span><span class="stat-card-label">Total Usage</span></div>
+        <div class="stat-card"><span class="stat-card-value text-success">$${creditDollars.toFixed(2)}</span><span class="stat-card-label">Plan Credit</span></div>
+        <div class="stat-card"><span class="stat-card-value ${net > 0 ? 'text-warning' : ''}">\$${net.toFixed(2)}</span><span class="stat-card-label">Overage</span></div>
+        <div class="stat-card"><span class="stat-card-value text-info">${usage.length} meters</span><span class="stat-card-label">Active Meters</span></div>
+      </div>
+      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Resource Breakdown</h2>
+      <div class="card bg-base-200/50 border border-base-300/50 mb-6">
+        <div class="card-body p-0"><table class="table table-sm">
+          <thead><tr class="border-base-300/50">
+            <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Resource</th>
+            <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Used</th>
+            <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Rate</th>
+            <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Cost</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+      </div>
+      <div class="card bg-base-200/30 border border-base-300/30">
+        <div class="card-body py-4"><div class="flex items-start gap-3">
+          <span class="text-base-content/30 mt-0.5">${svg('info', 'w-4 h-4')}</span>
+          <div>
+            <p class="text-sm text-base-content/50">Usage is metered and reported to Stripe at the end of each billing cycle. Your plan includes a usage credit that is applied before any overage charges.</p>
+            <p class="text-xs text-base-content/30 mt-1">vCPU $0.020/hr &middot; RAM $0.010/GB-hr &middot; Egress $0.045/GB &middot; Builds $0.004/min &middot; Storage $0.12/GB-mo</p>
+          </div>
+        </div></div>
+      </div>`;
+  }
+
+  function renderInvoices(invoices) {
+    const el = document.getElementById('invoices-detail');
+    let rows = '';
+    if (invoices.length) {
+      rows = invoices.map(inv => {
+        const pdf = inv.pdf_url ? `<a href="${esc(inv.pdf_url)}" target="_blank" rel="noopener" class="btn btn-ghost btn-xs gap-1">${svg('download', 'w-3 h-3')} PDF</a>` : '';
+        const badge = inv.status === 'paid' ? 'badge-success' : inv.status === 'open' ? 'badge-warning' : 'badge-ghost';
+        return `<tr class="border-base-300/30 hover:bg-base-300/20">
+          <td class="text-sm font-mono text-base-content/60">${esc(inv.date)}</td>
+          <td class="text-sm text-base-content">${esc(inv.description)}</td>
+          <td class="text-sm font-mono text-base-content">${esc(inv.amount)}</td>
+          <td><span class="badge badge-sm ${badge}">${esc(inv.status)}</span></td>
+          <td>${pdf}</td>
+        </tr>`;
+      }).join('');
+    } else {
+      rows = `<tr><td colspan="5" class="text-center py-8">
+        <div class="text-base-content/15 mb-2">${svg('file-text', 'w-8 h-8 inline-block')}</div>
+        <p class="text-sm text-base-content/40">No invoices yet. Your first invoice will appear at the end of the billing cycle.</p>
+      </td></tr>`;
+    }
+    el.innerHTML = `
+      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Recent Invoices</h2>
+      <div class="card bg-base-200/50 border border-base-300/50">
+        <div class="card-body p-0"><table class="table table-sm">
+          <thead><tr class="border-base-300/50">
+            <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Date</th>
+            <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Description</th>
+            <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Amount</th>
+            <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Status</th>
+            <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium"></th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+      </div>`;
+  }
+
+  function renderPaymentMethod(pm) {
+    const el = document.getElementById('payment-method-detail');
+    if (pm) {
+      let detail = '';
+      if (pm.exp_month !== undefined) detail = `<p class="text-xs text-base-content/40">Expires ${pm.exp_month}/${pm.exp_year}</p>`;
+      else if (pm.account_type !== undefined) detail = `<p class="text-xs text-base-content/40">${esc(pm.account_type)} account</p>`;
+      el.innerHTML = `
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-base-300/50 flex items-center justify-center text-base-content/40">
+              ${svg('credit-card', 'w-5 h-5')}
+            </div>
+            <div>
+              <span class="text-sm font-medium text-base-content">${esc(pm.brand.charAt(0).toUpperCase() + pm.brand.slice(1))} ending in ${esc(pm.last4)}</span>
+              ${detail}
+            </div>
+          </div>
+          <a href="${esc(PM_URL)}" class="btn btn-ghost btn-sm gap-1">${svg('edit-2', 'w-3.5 h-3.5')} Update</a>
+        </div>`;
+    } else {
+      el.innerHTML = `
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-base-300/50 flex items-center justify-center text-base-content/20">
+              ${svg('credit-card', 'w-5 h-5')}
+            </div>
+            <span class="text-sm text-base-content/40">No payment method on file</span>
+          </div>
+          <a href="${esc(PM_URL)}" class="btn btn-primary btn-sm gap-1">${svg('plus', 'w-3.5 h-3.5')} Add</a>
+        </div>`;
+    }
+  }
+})();
+</script>
+{% endif %}
+{% endblock js %}

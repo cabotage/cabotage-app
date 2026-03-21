@@ -29,7 +29,15 @@ def billing_index() -> str:
 @stripe_blueprint.route("/<org_slug>/", methods=["GET"])
 @login_required
 def dashboard(org_slug: str) -> str:
-    """Render the billing dashboard."""
+    """Render the billing dashboard — no Stripe calls, instant load."""
+    org = Organization.query.filter_by(slug=org_slug).first_or_404()
+    return render_template("billing/dashboard.html", org=org)
+
+
+@stripe_blueprint.route("/<org_slug>/billing-data")
+@login_required
+def billing_data(org_slug: str) -> Response:
+    """JSON endpoint for Stripe billing data, fetched async by the dashboard."""
     org = Organization.query.filter_by(slug=org_slug).first_or_404()
     invoices = []
     payment_method = None
@@ -39,17 +47,10 @@ def dashboard(org_slug: str) -> str:
         cust_id = org.billing.stripe_customer_id
         invoices = get_invoices(cust_id)
         payment_method = get_default_payment_method(cust_id)
-
         if org.billing.stripe_sub_id:
             usage = get_usage(cust_id, org.billing.stripe_sub_id)
 
-    return render_template(
-        "billing/dashboard.html",
-        org=org,
-        invoices=invoices,
-        payment_method=payment_method,
-        usage=usage,
-    )
+    return jsonify(invoices=invoices, payment_method=payment_method, usage=usage)
 
 
 @stripe_blueprint.route("/<org_slug>/subscribe", methods=["GET", "POST"])
