@@ -110,3 +110,7 @@ class Config(metaclass=MetaFlaskEnv):
     LOKI_URL = None
     LOKI_VERIFY = None
     PROXY_FIX_NUM_PROXIES = 1
+    ENABLE_BILLING = False
+    STRIPE_PUB_KEY = None
+    STRIPE_SECRET_KEY = None
+    STRIPE_WEBHOOK_SECRET = None
