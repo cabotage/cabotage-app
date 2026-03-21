@@ -1,3 +1,4 @@
+
 """Seed script for local development.
 
 Runs create_admin first (user + org + bare project), then layers on
@@ -601,20 +602,103 @@ def seed():
 
 
         # ==============================================================
-        # Billing: Acme Corp on Indie plan with fake Stripe IDs
+        # Billing: Acme Corp on Indie plan with real Stripe test objects
         # ==============================================================
         billing = Billing.query.filter_by(org_id=org.id).first()
         if billing is None:
-            billing = Billing(
-                org_id=org.id,
-                stripe_customer_id="cus_seed_acme_corp_001",
-                stripe_sub_id="sub_seed_acme_corp_001",
-                stripe_sub_status="active",
-                stripe_sub_plan="indie",
-            )
-            db.session.add(billing)
-            db.session.flush()
-            print("Created billing record (Indie plan, active)")
+            if not app.config.get("STRIPE_SECRET_KEY"):
+                print("STRIPE_SECRET_KEY not set, skipping billing seed")
+            else:
+                import stripe
+                from cabotage.utils.billing._products import PLANS, METERS
+
+                # Create real Stripe test customer
+                customer = stripe.Customer.create(
+                    name=org.name,
+                    email="admin@acme.corp",
+                    metadata={"org_id": str(org.id), "org_slug": org.slug},
+                )
+
+                # Attach test payment method (Stripe magic token)
+                pm = stripe.PaymentMethod.attach("pm_card_visa", customer=customer.id)
+                stripe.Customer.modify(
+                    customer.id,
+                    invoice_settings={"default_payment_method": pm.id},
+                )
+
+                # Create real subscription (indie plan + all meters)
+                plan = PLANS["indie"]
+                items = [{"price": plan.price_id}]
+                for meter in METERS.values():
+                    items.append({"price": meter.price_id})
+
+                sub = stripe.Subscription.create(
+                    customer=customer.id,
+                    items=items,
+                    default_payment_method=pm.id,
+                    metadata={
+                        "org_id": str(org.id),
+                        "org_slug": org.slug,
+                        "plan_tier": "indie",
+                    },
+                )
+
+                billing = Billing(
+                    org_id=org.id,
+                    stripe_customer_id=customer.id,
+                    stripe_sub_id=sub.id,
+                    stripe_sub_status=sub.status,
+                    stripe_sub_plan="indie",
+                )
+                db.session.add(billing)
+                db.session.flush()
+                print(f"Created billing: customer={customer.id}, sub={sub.id}")
+
+                # Report meter events so usage data shows up
+                import time
+
+                seed_usage = {
+                    "vcpu_hours": 67,
+                    "ram_gb_hours": 142,
+                    "egress_gb": 23,
+                    "build_minutes": 387,
+                    "block_storage_gb": 12,
+                    "postgres_gb_hours": 48,
+                }
+                now = int(time.time())
+                for meter_key, value in seed_usage.items():
+                    meter = METERS.get(meter_key)
+                    if meter:
+                        stripe.billing.MeterEvent.create(
+                            event_name=meter.event_name,
+                            payload={
+                                "value": str(value),
+                                "stripe_customer_id": customer.id,
+                            },
+                            timestamp=now,
+                        )
+                        print(f"  Reported {value} {meter.unit_label} for {meter_key}")
+
+                # Create past invoices so the invoice tab is populated
+                for months_ago in [1, 2, 3]:
+                    inv = stripe.Invoice.create(
+                        customer=customer.id,
+                        auto_advance=False,
+                        collection_method="charge_automatically",
+                        metadata={"seed": "true", "months_ago": str(months_ago)},
+                    )
+                    stripe.InvoiceItem.create(
+                        customer=customer.id,
+                        invoice=inv.id,
+                        amount=900,
+                        currency="usd",
+                        description=f"Cabotage Indie — seed invoice ({months_ago}mo ago)",
+                    )
+                    stripe.Invoice.finalize_invoice(inv.id)
+                    stripe.Invoice.pay(inv.id, paid_out_of_band=True)
+                    print(f"  Created seed invoice {inv.id} ({months_ago}mo ago)")
+        elif billing.stripe_customer_id and billing.stripe_customer_id.startswith("cus_seed"):
+            print("Found fake billing IDs — delete billing record and re-seed to get real Stripe objects")
         else:
             print("Billing record already exists, skipping.")
 
