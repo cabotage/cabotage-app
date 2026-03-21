@@ -116,10 +116,10 @@ def create_or_get_customer(org: Organization) -> Customer:
 
 def get_default_payment_method(customer_id: str) -> dict | None:
     """Retrieve the default payment method for a Stripe customer."""
-    customer_id = Customer.retrieve(customer_id)
+    customer = Customer.retrieve(customer_id)
     payment_id = None
-    if customer_id.invoice_settings:
-        payment_id = customer_id.invoice_settings.get("default_payment_method")
+    if customer.invoice_settings:
+        payment_id = customer.invoice_settings.get("default_payment_method")
     if not payment_id:
         return None
     pm = PaymentMethod.retrieve(payment_id)
