@@ -329,7 +329,7 @@ def create_app():
         return render_template("errors/500.html"), 500
 
     from cabotage.server.models.admin import AdminModelView
-    from cabotage.server.models.auth import Organization, Team
+    from cabotage.server.models.auth import Organization, Team, Billing, BillingWebhookEvent
     from cabotage.server.models.projects import (
         Project,
         Application,
@@ -357,6 +357,8 @@ def create_app():
     admin.add_view(AdminModelView(Deployment, db.session))
     admin.add_view(AdminModelView(Hook, db.session))
     admin.add_view(AdminModelView(User, db.session))
+    admin.add_view(AdminModelView(Billing, db.session))
+    admin.add_view(AdminModelView(BillingWebhookEvent, db.session))
 
     num_proxies = app.config.get("PROXY_FIX_NUM_PROXIES", 1)
     app.wsgi_app = ProxyFix(
