@@ -207,10 +207,12 @@ def get_usage(customer_id: str, subscription_id: str) -> list[dict]:
             logger.debug("Could not fetch meter summaries for %s", meter_key)
 
         if total_used > 0:
+            used_display = int(total_used) if total_used == int(total_used) else round(total_used, 2)
+            cost = round(total_used * rate, 2)
             usage.append({
                 "label": label,
-                "used": total_used,
-                "credit": 0,
+                "used": used_display,
+                "cost": cost,
                 "icon": icon,
                 "unit": unit,
                 "rate": rate,
