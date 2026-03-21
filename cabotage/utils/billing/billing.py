@@ -9,7 +9,7 @@ from flask import current_app, jsonify, Blueprint, Response, request
 from cabotage.server import db
 from cabotage.server.models import Organization
 from cabotage.server.models.auth import Billing, BillingWebhookEvent
-from cabotage.utils.billing._products import PLANS, PlanTier, METERS
+from cabotage.utils.billing._products import PLANS, PLAN_CREDITS, PlanTier, METERS
 
 logger = logging.getLogger(__name__)
 
@@ -151,3 +151,87 @@ def delete_sub():
 def cancel_sub():
     """Cancel a Stripe subscription for payment."""
     pass
+
+
+### --- Webhook handlers
+def handle_subscription_change(subscription) -> None:
+    """Handle subscription created or updated events."""
+    org_id = subscription.metadata.get("org_id")
+    if not org_id:
+        logger.warning("Subscription %s has no org_id in metadata", subscription.id)
+        return
+
+    billing = Billing.query.filter_by(org_id=org_id).first()
+    if not billing:
+        logger.warning("No billing record for org %s", org_id)
+        return
+
+    billing.stripe_sub_id = subscription.id
+    billing.stripe_sub_status = subscription.status
+    billing.stripe_sub_plan = subscription.metadata.get("plan_tier", billing.stripe_sub_plan)
+    logger.info("Updated subscription for org %s: status=%s", org_id, subscription.status)
+
+
+def handle_subscription_canceled(subscription) -> None:
+    """Handle subscription deleted — reset org to free tier."""
+    org_id = subscription.metadata.get("org_id")
+    if not org_id:
+        logger.warning("Subscription %s has no org_id in metadata", subscription.id)
+        return
+
+    billing = Billing.query.filter_by(org_id=org_id).first()
+    if not billing:
+        logger.warning("No billing record for org %s", org_id)
+        return
+
+    billing.stripe_sub_status = "canceled"
+    billing.stripe_sub_plan = None
+    logger.info("Subscription canceled for org %s", org_id)
+
+
+def handle_invoice_paid(invoice) -> None:
+    """Handle successful invoice payment."""
+    org_id = invoice.subscription_details.metadata.get("org_id") if invoice.subscription_details else None
+    logger.info("Invoice paid: %s for org %s", invoice.id, org_id)
+
+
+def handle_payment_failed(invoice) -> None:
+    """Handle failed invoice payment — mark org as past_due."""
+    org_id = invoice.subscription_details.metadata.get("org_id") if invoice.subscription_details else None
+    if not org_id:
+        logger.warning("Invoice %s has no org_id", invoice.id)
+        return
+
+    billing = Billing.query.filter_by(org_id=org_id).first()
+    if not billing:
+        return
+
+    billing.stripe_sub_status = "past_due"
+    logger.warning("Payment failed for org %s, marked as past_due", org_id)
+
+
+def handle_invoice_created(invoice) -> None:
+    """Handle invoice created — apply usage credits before it finalizes.
+
+    Stripe creates the invoice ~1 hour before finalizing,
+    giving us a window to add the plan's usage credit.
+    """
+    if not invoice.subscription:
+        return
+
+    sub = Subscription.retrieve(invoice.subscription)
+    org_id = sub.metadata.get("org_id")
+    plan_tier = sub.metadata.get("plan_tier")
+
+    if not org_id or not plan_tier:
+        return
+
+    credit = PLAN_CREDITS.get(plan_tier, 0)
+    if credit > 0:
+        Customer.create_balance_transaction(
+            invoice.customer,
+            amount=-credit,  # negative = credit
+            currency="usd",
+            description=f"{plan_tier} plan usage credit",
+        )
+        logger.info("Applied %d cent credit for org %s (%s plan)", credit, org_id, plan_tier)
