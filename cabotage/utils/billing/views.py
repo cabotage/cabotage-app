@@ -2,7 +2,7 @@
 
 from flask import render_template, request, jsonify, Response
 from flask_login import login_required
-from stripe import Subscription, SetupIntent
+from stripe import Customer, Subscription, SetupIntent
 
 from cabotage.server.models import Organization
 from cabotage.utils.billing._products import PLANS
@@ -94,7 +94,18 @@ def payment_methods(org_slug: str) -> Response | str:
     org = Organization.query.filter_by(slug=org_slug).first_or_404()
 
     if request.method == "POST":
+        data = request.get_json() or {}
         customer = create_or_get_customer(org)
+
+        if data.get("action") == "set_default":
+            payment_method_id = data.get("payment_method")
+            if payment_method_id:
+                Customer.modify(
+                    customer.id,
+                    invoice_settings={"default_payment_method": payment_method_id},
+                )
+            return jsonify(ok=True)
+
         setup_intent = SetupIntent.create(
             customer=customer.id,
             payment_method_types=ALLOWED_PAYMENT_METHODS,
