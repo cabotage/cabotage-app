@@ -4,7 +4,7 @@ import logging
 
 from flask import render_template, request, jsonify, Response
 from flask_login import login_required
-from stripe import Customer, Subscription, SubscriptionItem, SetupIntent, PaymentMethod, PromotionCode
+from stripe import Customer, Subscription, SubscriptionItem, SetupIntent, PaymentMethod, PromotionCode, Coupon
 
 from cabotage.server.models import Organization
 from cabotage.utils.billing._products import PLANS
@@ -293,17 +293,20 @@ def manage_coupon(org_slug: str) -> tuple[Response, int] | Response:
         return jsonify(error="No active subscription."), 400
 
     if request.method == "GET":
-        sub = Subscription.retrieve(org.billing.stripe_sub_id)
-        discount = sub.discount
-        if discount and discount.coupon:
-            c = discount.coupon
-            return jsonify(coupon={
-                "id": c.id,
-                "name": c.name or c.id,
-                "percent_off": c.percent_off,
-                "amount_off": c.amount_off,
-                "duration": c.duration,
-            })
+        sub = Subscription.retrieve(org.billing.stripe_sub_id, expand=["discounts"])
+        discounts = sub.get("discounts") or []
+        if discounts:
+            d = discounts[0]
+         i   coupon_id = d.source.get("coupon") if d.source else None
+            if coupon_id:
+                coupon = Coupon.retrieve(coupon_id)
+                return jsonify(coupon={
+                    "id": coupon.id,
+                    "name": coupon.name or coupon.id,
+                    "percent_off": coupon.percent_off,
+                    "amount_off": coupon.amount_off,
+                    "duration": coupon.duration,
+                })
         return jsonify(coupon=None)
 
     data = request.get_json() or {}
