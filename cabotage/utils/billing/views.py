@@ -230,6 +230,19 @@ def cancel_subscription(org_slug: str) -> tuple[Response, int] | Response:
     return jsonify(ok=True, redirect=f"/billing/{org_slug}/")
 
 
+@stripe_blueprint.route("/<org_slug>/reactivate", methods=["POST"])
+@login_required
+def reactivate_subscription(org_slug: str) -> tuple[Response, int] | Response:
+    """Undo a pending cancellation."""
+    org = Organization.query.filter_by(slug=org_slug).first_or_404()
+    if not org.billing or not org.billing.stripe_sub_id:
+        return jsonify(error="No subscription."), 400
+
+    Subscription.modify(org.billing.stripe_sub_id, cancel_at_period_end=False)
+    logger.info("Reactivated subscription for org %s", org_slug)
+    return jsonify(ok=True, redirect=f"/billing/{org_slug}/")
+
+
 @stripe_blueprint.route("/<org_slug>/remove-payment-method", methods=["POST"])
 @login_required
 def remove_payment_method(org_slug: str) -> tuple[Response, int] | Response:
