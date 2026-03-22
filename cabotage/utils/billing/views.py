@@ -296,16 +296,16 @@ def manage_coupon(org_slug: str) -> tuple[Response, int] | Response:
         sub = Subscription.retrieve(org.billing.stripe_sub_id, expand=["discounts"])
         discounts = sub.get("discounts") or []
         if discounts:
-            d = discounts[0]
-         i   coupon_id = d.source.get("coupon") if d.source else None
+            discount = discounts[0]
+            coupon_id = discount.source.get("coupon") if discount.source else None
             if coupon_id:
-                coupon = Coupon.retrieve(coupon_id)
+                c = Coupon.retrieve(coupon_id)
                 return jsonify(coupon={
-                    "id": coupon.id,
-                    "name": coupon.name or coupon.id,
-                    "percent_off": coupon.percent_off,
-                    "amount_off": coupon.amount_off,
-                    "duration": coupon.duration,
+                    "id": c.id,
+                    "name": c.name or c.id,
+                    "percent_off": c.percent_off,
+                    "amount_off": c.amount_off,
+                    "duration": c.duration,
                 })
         return jsonify(coupon=None)
 
