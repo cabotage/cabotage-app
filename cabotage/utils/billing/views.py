@@ -4,7 +4,7 @@ import logging
 
 from flask import render_template, request, jsonify, Response
 from flask_login import login_required
-from stripe import Customer, Subscription, SubscriptionItem, SetupIntent
+from stripe import Customer, Subscription, SubscriptionItem, SetupIntent, PaymentMethod
 
 from cabotage.server.models import Organization
 from cabotage.utils.billing._products import PLANS
@@ -208,6 +208,52 @@ def _switch_plan(org, plan_tier: str) -> Response:
 
     Subscription.modify(sub.id, **modify_params)
     return jsonify(redirect=f"/billing/{org.slug}/")
+
+
+@stripe_blueprint.route("/<org_slug>/cancel", methods=["POST"])
+@login_required
+def cancel_subscription(org_slug: str) -> tuple[Response, int] | Response:
+    """Cancel the org's subscription.
+
+    Is not instant, rolls until the end of the billing period.
+    """
+    org = Organization.query.filter_by(slug=org_slug).first_or_404()
+    if not org.billing or not org.billing.stripe_sub_id:
+        return jsonify(error="No active subscription."), 400
+
+    sub = Subscription.retrieve(org.billing.stripe_sub_id)
+    if sub.status not in ("active", "trialing"):
+        return jsonify(error="Subscription is not active."), 400
+
+    Subscription.modify(sub.id, cancel_at_period_end=True)
+    logger.info("Subscription %s set to cancel at period end for org %s", sub.id, org_slug)
+    return jsonify(ok=True, redirect=f"/billing/{org_slug}/")
+
+
+@stripe_blueprint.route("/<org_slug>/remove-payment-method", methods=["POST"])
+@login_required
+def remove_payment_method(org_slug: str) -> tuple[Response, int] | Response:
+    """Detach the default payment method from the customer."""
+    org = Organization.query.filter_by(slug=org_slug).first_or_404()
+    if not org.billing or not org.billing.stripe_customer_id:
+        return jsonify(error="No billing record."), 400
+
+    customer = Customer.retrieve(org.billing.stripe_customer_id)
+    payment_method_id = (
+        customer.invoice_settings.get("default_payment_method")
+        if customer.invoice_settings else None
+    )
+    if not payment_method_id:
+        return jsonify(error="No payment method on file."), 400
+
+    # clear it first, then detach
+    Customer.modify(
+        customer.id,
+        invoice_settings={"default_payment_method": ""},
+    )
+    PaymentMethod.detach(payment_method_id)
+    logger.info("Detached payment method %s for org %s", payment_method_id, org_slug)
+    return jsonify(ok=True)
 
 
 @stripe_blueprint.route("/<org_slug>/subscribe", methods=["GET", "POST"])
