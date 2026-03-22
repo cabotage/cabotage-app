@@ -269,7 +269,7 @@
         <div id="cancel-error" class="text-sm text-error mb-3 hidden"></div>
         <div class="flex justify-end gap-2">
           <button type="button" onclick="document.getElementById('cancel-modal').close()" class="btn btn-ghost btn-sm">Keep Plan</button>
-          <button type="button" id="cancel-confirm-btn" class="btn btn-error btn-sm gap-1.5">
+          <button type="button" id="cancel-confirm-btn" class="btn btn-outline btn-sm gap-1.5 border-error/40 text-error hover:bg-error/10 hover:border-error/60">
             <span id="cancel-btn-text">Cancel Subscription</span>
             <span id="cancel-spinner" class="loading loading-spinner loading-xs hidden"></span>
           </button>
@@ -288,7 +288,7 @@
         <div id="remove-pm-error" class="text-sm text-error mb-3 hidden"></div>
         <div class="flex justify-end gap-2">
           <button type="button" onclick="document.getElementById('remove-pm-modal').close()" class="btn btn-ghost btn-sm">Keep</button>
-          <button type="button" id="remove-pm-confirm-btn" class="btn btn-error btn-sm gap-1.5">
+          <button type="button" id="remove-pm-confirm-btn" class="btn btn-outline btn-sm gap-1.5 border-error/40 text-error hover:bg-error/10 hover:border-error/60">
             <span id="remove-pm-btn-text">Remove</span>
             <span id="remove-pm-spinner" class="loading loading-spinner loading-xs hidden"></span>
           </button>
@@ -685,8 +685,17 @@
         if (!r.ok) throw new Error(data.error || 'Failed.');
         window.location.href = data.redirect || `/billing/${ORG_SLUG}/`;
       } catch(e) {
+        // Show error inline next to the button
         reactivateBtn.textContent = 'Reactivate';
         reactivateBtn.disabled = false;
+        var errSpan = document.getElementById('reactivate-error');
+        if (!errSpan) {
+          errSpan = document.createElement('span');
+          errSpan.id = 'reactivate-error';
+          errSpan.className = 'text-xs text-error ml-2';
+          reactivateBtn.parentNode.appendChild(errSpan);
+        }
+        errSpan.textContent = e.message;
       }
     });
   }

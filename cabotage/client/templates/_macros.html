@@ -624,7 +624,7 @@
     </div>
     <div class="collapse-content">
       <p class="text-sm text-base-content/60 mb-3">{{ description or 'This action cannot be undone.' }}</p>
-      <button type="button" class="btn btn-error btn-sm gap-1.5"
+      <button type="button" class="btn btn-outline btn-sm border-error/40 text-error hover:bg-error/10 hover:border-error/60 gap-1.5"
               onclick="document.getElementById('{{ modal_id }}').showModal()">
         {{ icon('trash-2', 'w-3.5 h-3.5') }}
         {{ title }}
@@ -655,7 +655,7 @@
                oninput="this.closest('.modal-box').querySelector('.btn-delete-confirm').disabled = (this.value !== '{{ confirm_slug }}')">
         <div class="modal-action">
           <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('dialog').close()">Cancel</button>
-          <button type="submit" class="btn btn-error btn-sm btn-delete-confirm" disabled>Delete</button>
+          <button type="submit" class="btn btn-outline btn-sm border-error/40 text-error hover:bg-error/10 hover:border-error/60 btn-delete-confirm" disabled>Delete</button>
         </div>
       </form>
     </div>
