@@ -92,6 +92,9 @@
             {% if status == 'active' %}
               <span class="text-success/60">{{ icon('check', 'w-4 h-4') }}</span>
               <span class="stat-card-value text-success">Active</span>
+            {% elif status == 'canceling' %}
+              <span class="text-warning/60">{{ icon('clock', 'w-4 h-4') }}</span>
+              <span class="stat-card-value text-warning">Canceling</span>
             {% elif status == 'past_due' %}
               <span class="text-warning/60">{{ icon('alert-triangle', 'w-4 h-4') }}</span>
               <span class="stat-card-value text-warning">Past Due</span>
@@ -152,7 +155,16 @@
 
               {# Footer — pinned to bottom #}
               <div class="flex items-end justify-between pt-3 mt-auto h-11">
-                <span class="text-xs text-base-content/25 font-mono">{{ plan_credits.get(plan, '--') }} usage credit included</span>
+                <div class="flex items-center gap-2">
+                  <span class="text-xs text-base-content/25 font-mono">{{ plan_credits.get(plan, '--') }} credit</span>
+                  {% if status == 'canceling' %}
+                    <button type="button" id="reactivate-btn"
+                            class="text-xs text-success/50 hover:text-success/80 transition-colors cursor-pointer">Reactivate</button>
+                  {% else %}
+                    <button type="button" onclick="document.getElementById('cancel-modal').showModal()"
+                            class="text-xs text-base-content/25 hover:text-error/70 transition-colors cursor-pointer">Cancel</button>
+                  {% endif %}
+                </div>
                 <a href="{{ url_for('billing.subscribe', org_slug=org.slug) }}"
                    class="btn btn-outline btn-sm gap-1.5 border-base-content/15 hover:border-base-content/30 text-base-content/60 hover:text-base-content">
                   {{ icon('chevron-right', 'w-3.5 h-3.5') }} Change Plan
@@ -246,6 +258,44 @@
         </div>
       </div>
     </div>
+    {# ── Cancel subscription modal ── #}
+    <dialog id="cancel-modal" class="modal">
+      <div class="modal-box max-w-sm">
+        <h3 class="text-base font-semibold text-base-content mb-1">Cancel subscription</h3>
+        <p class="text-sm text-base-content/60 mb-1">
+          Your plan will remain active until the end of the current billing period, then be canceled.
+        </p>
+        <p class="text-xs text-base-content/40 mb-4">You can resubscribe at any time.</p>
+        <div id="cancel-error" class="text-sm text-error mb-3 hidden"></div>
+        <div class="flex justify-end gap-2">
+          <button type="button" onclick="document.getElementById('cancel-modal').close()" class="btn btn-ghost btn-sm">Keep Plan</button>
+          <button type="button" id="cancel-confirm-btn" class="btn btn-error btn-sm gap-1.5">
+            <span id="cancel-btn-text">Cancel Subscription</span>
+            <span id="cancel-spinner" class="loading loading-spinner loading-xs hidden"></span>
+          </button>
+        </div>
+      </div>
+      <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+
+    {# ── Remove payment method modal ── #}
+    <dialog id="remove-pm-modal" class="modal">
+      <div class="modal-box max-w-sm">
+        <h3 class="text-base font-semibold text-base-content mb-1">Remove payment method</h3>
+        <p class="text-sm text-base-content/60 mb-4">
+          This will detach your payment method. You'll need to add a new one before your next invoice.
+        </p>
+        <div id="remove-pm-error" class="text-sm text-error mb-3 hidden"></div>
+        <div class="flex justify-end gap-2">
+          <button type="button" onclick="document.getElementById('remove-pm-modal').close()" class="btn btn-ghost btn-sm">Keep</button>
+          <button type="button" id="remove-pm-confirm-btn" class="btn btn-error btn-sm gap-1.5">
+            <span id="remove-pm-btn-text">Remove</span>
+            <span id="remove-pm-spinner" class="loading loading-spinner loading-xs hidden"></span>
+          </button>
+        </div>
+      </div>
+      <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
   {% endif %}
 {% endblock content %}
 
@@ -573,7 +623,10 @@
               ${detail}
             </div>
           </div>
-          <a href="${esc(PM_URL)}" class="btn btn-ghost btn-sm gap-1">${svg('edit-2', 'w-3.5 h-3.5')} Update</a>
+          <div class="flex items-center gap-1">
+            <a href="${esc(PM_URL)}" class="btn btn-ghost btn-sm gap-1">${svg('edit-2', 'w-3.5 h-3.5')} Update</a>
+            <button type="button" onclick="document.getElementById('remove-pm-modal').showModal()" class="btn btn-ghost btn-sm text-error/50 hover:text-error">Remove</button>
+          </div>
         </div>`;
     } else {
       el.innerHTML = `
@@ -616,6 +669,79 @@
         </div>
       </div>`;
     }).join('')}</div></div>`;
+  }
+  // Reactivate subscription
+  var reactivateBtn = document.getElementById('reactivate-btn');
+  if (reactivateBtn) {
+    reactivateBtn.addEventListener('click', async function() {
+      reactivateBtn.textContent = 'Reactivating...';
+      reactivateBtn.disabled = true;
+      try {
+        var r = await fetch(`/billing/${ORG_SLUG}/reactivate`, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''},
+        });
+        var data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'Failed.');
+        window.location.href = data.redirect || `/billing/${ORG_SLUG}/`;
+      } catch(e) {
+        reactivateBtn.textContent = 'Reactivate';
+        reactivateBtn.disabled = false;
+      }
+    });
+  }
+
+  // Cancel subscription
+  var cancelBtn = document.getElementById('cancel-confirm-btn');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', async function() {
+      cancelBtn.disabled = true;
+      document.getElementById('cancel-btn-text').textContent = 'Canceling...';
+      document.getElementById('cancel-spinner').classList.remove('hidden');
+      document.getElementById('cancel-error').classList.add('hidden');
+      try {
+        var r = await fetch(`/billing/${ORG_SLUG}/cancel`, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''},
+        });
+        var data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'Failed to cancel.');
+        window.location.href = data.redirect || `/billing/${ORG_SLUG}/`;
+      } catch(e) {
+        document.getElementById('cancel-error').textContent = e.message;
+        document.getElementById('cancel-error').classList.remove('hidden');
+        cancelBtn.disabled = false;
+        document.getElementById('cancel-btn-text').textContent = 'Cancel Subscription';
+        document.getElementById('cancel-spinner').classList.add('hidden');
+      }
+    });
+  }
+
+  // Remove payment method
+  var removePmBtn = document.getElementById('remove-pm-confirm-btn');
+  if (removePmBtn) {
+    removePmBtn.addEventListener('click', async function() {
+      removePmBtn.disabled = true;
+      document.getElementById('remove-pm-btn-text').textContent = 'Removing...';
+      document.getElementById('remove-pm-spinner').classList.remove('hidden');
+      document.getElementById('remove-pm-error').classList.add('hidden');
+      try {
+        var r = await fetch(`/billing/${ORG_SLUG}/remove-payment-method`, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''},
+        });
+        var data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'Failed to remove.');
+        document.getElementById('remove-pm-modal').close();
+        renderPaymentMethod(null);
+      } catch(e) {
+        document.getElementById('remove-pm-error').textContent = e.message;
+        document.getElementById('remove-pm-error').classList.remove('hidden');
+        removePmBtn.disabled = false;
+        document.getElementById('remove-pm-btn-text').textContent = 'Remove';
+        document.getElementById('remove-pm-spinner').classList.add('hidden');
+      }
+    });
   }
 })();
 </script>
