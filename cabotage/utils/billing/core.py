@@ -266,7 +266,10 @@ def handle_subscription_change(subscription) -> None:
         return
 
     billing.stripe_sub_id = subscription.id
-    billing.stripe_sub_status = subscription.status
+    if subscription.cancel_at_period_end:
+        billing.stripe_sub_status = "canceling"
+    else:
+        billing.stripe_sub_status = subscription.status
     billing.stripe_sub_plan = subscription.metadata.get(
         "plan_tier", billing.stripe_sub_plan
     )

@@ -540,6 +540,11 @@
       <span class="status-dot status-dot-warning"></span>
       {{ status }}
     </span>
+  {% elif s in ('canceling',) %}
+    <span class="badge badge-outline badge-{{ size }} gap-1 font-medium border-warning/40 text-warning">
+      <span class="status-dot status-dot-warning"></span>
+      {{ status }}
+    </span>
   {% elif s in ('canceled',) %}
     <span class="badge badge-outline badge-{{ size }} gap-1 font-medium border-error/40 text-error">
       <span class="status-dot status-dot-error"></span>
