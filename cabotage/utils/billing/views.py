@@ -4,7 +4,7 @@ import logging
 
 from flask import render_template, request, jsonify, Response
 from flask_login import login_required
-from stripe import Customer, Subscription, SubscriptionItem, SetupIntent, PaymentMethod
+from stripe import Customer, Subscription, SubscriptionItem, SetupIntent, PaymentMethod, PromotionCode
 
 from cabotage.server.models import Organization
 from cabotage.utils.billing._products import PLANS
@@ -284,6 +284,55 @@ def remove_payment_method(org_slug: str) -> tuple[Response, int] | Response:
     return jsonify(ok=True)
 
 
+@stripe_blueprint.route("/<org_slug>/coupon", methods=["GET", "POST"])
+@login_required
+def manage_coupon(org_slug: str) -> tuple[Response, int] | Response:
+    """Apply or remove a coupon/promo code on the subscription."""
+    org = Organization.query.filter_by(slug=org_slug).first_or_404()
+    if not org.billing or not org.billing.stripe_sub_id:
+        return jsonify(error="No active subscription."), 400
+
+    if request.method == "GET":
+        sub = Subscription.retrieve(org.billing.stripe_sub_id)
+        discount = sub.discount
+        if discount and discount.coupon:
+            c = discount.coupon
+            return jsonify(coupon={
+                "id": c.id,
+                "name": c.name or c.id,
+                "percent_off": c.percent_off,
+                "amount_off": c.amount_off,
+                "duration": c.duration,
+            })
+        return jsonify(coupon=None)
+
+    data = request.get_json() or {}
+    action = data.get("action")
+
+    if action == "remove":
+        Subscription.modify(org.billing.stripe_sub_id, discounts=[])
+        logger.info("Removed coupon from subscription for org %s", org_slug)
+        return jsonify(ok=True)
+
+    code = (data.get("code") or "").strip()
+    if not code:
+        return jsonify(error="Please enter a coupon code."), 400
+
+    try:
+        promos = PromotionCode.list(code=code, active=True, limit=1)
+        if not promos.data:
+            return jsonify(error="Invalid or expired promo code."), 400
+        Subscription.modify(
+            org.billing.stripe_sub_id,
+            discounts=[{"promotion_code": promos.data[0].id}],
+        )
+        logger.info("Applied promo code %s for org %s", code, org_slug)
+        return jsonify(ok=True)
+    except Exception as e:
+        logger.warning("Failed to apply promo code %s for org %s: %s", code, org_slug, e)
+        return jsonify(error="Invalid or expired promo code."), 400
+
+
 @stripe_blueprint.route("/<org_slug>/subscribe", methods=["GET", "POST"])
 @login_required
 def subscribe(org_slug: str) -> tuple[Response, int] | Response | str:
@@ -336,13 +385,5 @@ def payment_methods(org_slug: str) -> Response | str:
         )
         return jsonify(client_secret=setup_intent.client_secret)
 
-    payment_method = None
-    invoices = []
-    if org.billing and org.billing.stripe_customer_id:
-        payment_method = get_default_payment_method(org.billing.stripe_customer_id)
-        invoices = get_invoices(org.billing.stripe_customer_id, limit=5)
-
-    return render_template(
-        "billing/payment_methods.html", org=org,
-        payment_method=payment_method, invoices=invoices,
-    )
+    from flask import redirect as flask_redirect
+    return flask_redirect(f"/billing/{org_slug}/#payment")
