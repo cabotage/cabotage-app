@@ -152,7 +152,7 @@
               </div>
               <div class="flex flex-wrap gap-x-4 gap-y-0.5">
                 ${meters.map(m => `
-                  <span class="text-[11px] text-base-content/35 font-mono">${m.label} <span class="text-base-content/50">${m.value.toFixed(1)} ${m.unit}</span></span>
+                  <span class="text-[11px] font-mono"><span class="font-semibold text-base-content/50">${m.label}</span> <span class="text-base-content/35">${m.value.toFixed(1)} ${m.unit}</span></span>
                 `).join('')}
               </div>
             </div>
@@ -163,9 +163,13 @@
       <div class="card bg-base-200/30 border border-base-300/30">
         <div class="card-body py-3 px-5"><div class="flex items-start gap-3">
           <span class="text-base-content/30 mt-0.5">${svg('info', 'w-4 h-4')}</span>
-          <p class="text-xs text-base-content/40">
-            vCPU $0.020/hr · RAM $0.010/GB-hr · Egress $0.045/GB · Builds $0.004/min · Storage $0.12/GB-mo
-          </p>
+          <div class="flex flex-wrap gap-x-5 gap-y-1 text-xs text-base-content/40">
+            <span><strong class="text-base-content/55">vCPU</strong> $0.020/hr</span>
+            <span><strong class="text-base-content/55">RAM</strong> $0.010/GB-hr</span>
+            <span><strong class="text-base-content/55">Egress</strong> $0.045/GB</span>
+            <span><strong class="text-base-content/55">Builds</strong> $0.004/min</span>
+            <span><strong class="text-base-content/55">Storage</strong> $0.12/GB-mo</span>
+          </div>
         </div></div>
       </div>`;
   }
