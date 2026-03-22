@@ -185,6 +185,9 @@
       <div id="usage-detail">
         {{ billing_spinner() }}
       </div>
+      <div id="service-usage-detail" class="mt-6" style="display:none">
+        {{ billing_spinner() }}
+      </div>
     </div>
 
     {# ── Invoices tab (deferred) ── #}
@@ -251,7 +254,7 @@
 {# Pre-render icons server-side so JS can clone them without raw SVG strings #}
 <div id="icon-bank" hidden>
   {% for name in ['bar-chart', 'credit-card', 'edit-2', 'plus', 'download', 'file-text', 'info',
-                   'cpu', 'hard-drive', 'upload', 'tool', 'globe', 'layers', 'activity'] %}
+                   'cpu', 'hard-drive', 'upload', 'tool', 'globe', 'layers', 'activity', 'box', 'dollar-sign'] %}
     <template data-icon="{{ name }}">{{ icon(name) }}</template>
   {% endfor %}
 </div>
@@ -295,6 +298,11 @@
     })
     .catch(() => { fail(document.getElementById('overview-usage')); fail(document.getElementById('usage-detail')); });
 
+  fetch(`/billing/${ORG_SLUG}/billing-service-usage`)
+    .then(r => r.json())
+    .then(data => { renderServiceUsage(data.services || []); })
+    .catch(() => { fail(document.getElementById('service-usage-detail')); });
+
   function renderOverviewUsage(usage) {
     const el = document.getElementById('overview-usage');
     if (!usage.length) {
@@ -316,57 +324,197 @@
     document.getElementById('overview-usage-footer').style.display = '';
   }
 
+  const METER_COLORS = ['#8b5cf6','#3b82f6','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#6366f1','#14b8a6','#f97316'];
+  const SVC_COLORS = ['#8b5cf6','#3b82f6','#10b981','#f59e0b','#ef4444','#ec4899'];
+
   function renderUsageDetail(usage) {
     const el = document.getElementById('usage-detail');
     const totalCost = usage.reduce((s, i) => s + i.cost, 0);
     const creditDollars = (CREDIT_CENTS[PLAN] || 0) / 100;
     const net = Math.max(totalCost - creditDollars, 0);
+    const maxUsed = Math.max(...usage.map(i => i.cost), 1);
 
-    let rows = '';
-    if (usage.length) {
-      rows = usage.map(item => `
-        <tr class="border-base-300/30 hover:bg-base-300/20">
-          <td><div class="flex items-center gap-2 text-sm text-base-content">
-            ${svg(item.icon, 'w-3.5 h-3.5 text-base-content/40')} ${esc(item.label)}
-          </div></td>
-          <td class="text-sm font-mono text-base-content">${esc(String(item.used))} ${esc(item.unit)}</td>
-          <td class="text-sm font-mono text-base-content/50">$${item.rate}/${esc(item.unit)}</td>
-          <td class="text-sm font-mono text-base-content">$${item.cost}</td>
-        </tr>`).join('');
-    } else {
-      rows = `<tr><td colspan="4" class="text-center py-8">
+    if (!usage.length) {
+      el.innerHTML = `<div class="text-center py-12">
         <div class="text-base-content/15 mb-2">${svg('bar-chart', 'w-8 h-8 inline-block')}</div>
         <p class="text-sm text-base-content/40">No usage data available for the current billing period.</p>
-      </td></tr>`;
+      </div>`;
+      return;
     }
 
+    // Cost summary with credit gauge
+    const creditPct = Math.min((totalCost / Math.max(creditDollars, 0.01)) * 100, 100);
+    const gaugeColor = creditPct > 100 ? '#ef4444' : creditPct > 75 ? '#f59e0b' : '#10b981';
+
     el.innerHTML = `
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <div class="stat-card"><span class="stat-card-value text-primary">$${totalCost.toFixed(2)}</span><span class="stat-card-label">Total Usage</span></div>
-        <div class="stat-card"><span class="stat-card-value text-success">$${creditDollars.toFixed(2)}</span><span class="stat-card-label">Plan Credit</span></div>
-        <div class="stat-card"><span class="stat-card-value ${net > 0 ? 'text-warning' : ''}">\$${net.toFixed(2)}</span><span class="stat-card-label">Overage</span></div>
-        <div class="stat-card"><span class="stat-card-value text-info">${usage.length} meters</span><span class="stat-card-label">Active Meters</span></div>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+        {# Cost summary card with gauge #}
+        <div class="card bg-base-200/50 border border-base-300/50 lg:col-span-1">
+          <div class="card-body p-5 flex flex-col items-center justify-center">
+            <div class="relative w-32 h-32 mb-3">
+              <svg viewBox="0 0 120 120" class="w-full h-full -rotate-90">
+                <circle cx="60" cy="60" r="52" fill="none" stroke="currentColor" class="text-base-content/[0.06]" stroke-width="8"/>
+                <circle cx="60" cy="60" r="52" fill="none" stroke="${gaugeColor}" stroke-width="8"
+                  stroke-dasharray="${52 * 2 * Math.PI}" stroke-dashoffset="${52 * 2 * Math.PI * (1 - Math.min(creditPct, 100) / 100)}"
+                  stroke-linecap="round" style="transition: stroke-dashoffset 0.8s ease"/>
+              </svg>
+              <div class="absolute inset-0 flex flex-col items-center justify-center">
+                <span class="text-2xl font-bold font-mono text-base-content">$${totalCost.toFixed(2)}</span>
+                <span class="text-[10px] text-base-content/35 uppercase tracking-wider">of $${creditDollars.toFixed(2)}</span>
+              </div>
+            </div>
+            <div class="flex gap-4 text-center">
+              <div>
+                <span class="text-xs font-mono font-semibold text-success">$${creditDollars.toFixed(2)}</span>
+                <p class="text-[10px] text-base-content/30 uppercase">Credit</p>
+              </div>
+              <div>
+                <span class="text-xs font-mono font-semibold ${net > 0 ? 'text-warning' : 'text-base-content/50'}">$${net.toFixed(2)}</span>
+                <p class="text-[10px] text-base-content/30 uppercase">Overage</p>
+              </div>
+              <div>
+                <span class="text-xs font-mono font-semibold text-info">${usage.length}</span>
+                <p class="text-[10px] text-base-content/30 uppercase">Meters</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {# Resource bars #}
+        <div class="card bg-base-200/50 border border-base-300/50 lg:col-span-2">
+          <div class="card-body p-5">
+            <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-4">Resource Breakdown</h2>
+            <div class="flex flex-col gap-3">
+              ${usage.map((item, i) => {
+                const pct = Math.max((item.cost / maxUsed) * 100, 2);
+                const color = METER_COLORS[i % METER_COLORS.length];
+                return `<div>
+                  <div class="flex items-center justify-between mb-1">
+                    <div class="flex items-center gap-2 text-sm text-base-content/70">
+                      ${svg(item.icon, 'w-3.5 h-3.5 text-base-content/40')}
+                      <span>${esc(item.label)}</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs font-mono text-base-content/40">${esc(String(item.used))} ${esc(item.unit)}</span>
+                      <span class="text-xs font-mono font-semibold text-base-content min-w-[3.5rem] text-right">$${item.cost.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div class="h-1.5 rounded-full bg-base-content/[0.06] overflow-hidden">
+                    <div class="h-full rounded-full" style="width:${pct}%;background:${color};transition:width 0.6s ease ${i * 0.05}s"></div>
+                  </div>
+                </div>`;
+              }).join('')}
+            </div>
+          </div>
+        </div>
       </div>
-      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Resource Breakdown</h2>
-      <div class="card bg-base-200/50 border border-base-300/50 mb-6">
-        <div class="card-body p-0"><table class="table table-sm">
-          <thead><tr class="border-base-300/50">
-            <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Resource</th>
-            <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Used</th>
-            <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Rate</th>
-            <th class="text-xs text-base-content/40 uppercase tracking-wider font-medium">Cost</th>
-          </tr></thead>
-          <tbody>${rows}</tbody>
-        </table></div>
-      </div>
+
+      {# Rate reference #}
       <div class="card bg-base-200/30 border border-base-300/30">
-        <div class="card-body py-4"><div class="flex items-start gap-3">
+        <div class="card-body py-3 px-5"><div class="flex items-start gap-3">
           <span class="text-base-content/30 mt-0.5">${svg('info', 'w-4 h-4')}</span>
           <div>
-            <p class="text-sm text-base-content/50">Usage is metered and reported to Stripe at the end of each billing cycle. Your plan includes a usage credit that is applied before any overage charges.</p>
-            <p class="text-xs text-base-content/30 mt-1">vCPU $0.020/hr &middot; RAM $0.010/GB-hr &middot; Egress $0.045/GB &middot; Builds $0.004/min &middot; Storage $0.12/GB-mo</p>
+            <p class="text-xs text-base-content/40">
+              vCPU $0.020/hr · RAM $0.010/GB-hr · Egress $0.045/GB · Builds $0.004/min · Storage $0.12/GB-mo ·
+              PostgreSQL $0.015/GB-hr · Redis $0.015/GB-hr · Tailscale $5.00/node
+            </p>
           </div>
         </div></div>
+      </div>`;
+  }
+
+  function renderServiceUsage(services) {
+    const el = document.getElementById('service-usage-detail');
+    if (!services.length) { el.style.display = 'none'; return; }
+    el.style.display = '';
+
+    const maxCost = Math.max(...services.map(s => s.cost), 1);
+    const totalCost = services.reduce((s, svc) => s + svc.cost, 0);
+
+    // Ring chart data
+    const ringSize = 100;
+    const ringR = 40;
+    const ringC = 2 * Math.PI * ringR;
+    let ringOffset = 0;
+    const ringSegments = services.map((svc, i) => {
+      const pct = totalCost > 0 ? svc.cost / totalCost : 0;
+      const dash = ringC * pct;
+      const seg = `<circle cx="${ringSize/2}" cy="${ringSize/2}" r="${ringR}" fill="none"
+        stroke="${SVC_COLORS[i % SVC_COLORS.length]}" stroke-width="6"
+        stroke-dasharray="${dash} ${ringC - dash}" stroke-dashoffset="${-ringOffset}"
+        style="transition: stroke-dasharray 0.6s ease ${i * 0.1}s"/>`;
+      ringOffset += dash;
+      return seg;
+    }).join('');
+
+    el.innerHTML = `
+      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Cost by Service</h2>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {# Ring chart #}
+        <div class="card bg-base-200/50 border border-base-300/50">
+          <div class="card-body p-5 flex flex-col items-center justify-center">
+            <div class="relative w-28 h-28 mb-3">
+              <svg viewBox="0 0 ${ringSize} ${ringSize}" class="w-full h-full -rotate-90">
+                <circle cx="${ringSize/2}" cy="${ringSize/2}" r="${ringR}" fill="none" stroke="currentColor" class="text-base-content/[0.04]" stroke-width="6"/>
+                ${ringSegments}
+              </svg>
+              <div class="absolute inset-0 flex flex-col items-center justify-center">
+                <span class="text-lg font-bold font-mono text-base-content">$${totalCost.toFixed(2)}</span>
+                <span class="text-[10px] text-base-content/30 uppercase">Total</span>
+              </div>
+            </div>
+            <div class="flex flex-col gap-1.5 w-full">
+              ${services.map((svc, i) => `
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${SVC_COLORS[i % SVC_COLORS.length]}"></span>
+                    <span class="text-xs text-base-content/60 truncate">${esc(svc.service)}</span>
+                  </div>
+                  <span class="text-xs font-mono text-base-content/50">$${svc.cost.toFixed(2)}</span>
+                </div>`).join('')}
+            </div>
+          </div>
+        </div>
+
+        {# Service cards #}
+        <div class="lg:col-span-2 flex flex-col gap-3">
+          ${services.map((svc, i) => {
+            const color = SVC_COLORS[i % SVC_COLORS.length];
+            const pct = Math.max((svc.cost / maxCost) * 100, 3);
+            // Show top meters for this service
+            const meters = [
+              {k: 'vcpu_hours', label: 'vCPU', unit: 'hr'},
+              {k: 'ram_gb_hours', label: 'RAM', unit: 'GB-hr'},
+              {k: 'egress_gb', label: 'Egress', unit: 'GB'},
+              {k: 'build_minutes', label: 'Builds', unit: 'min'},
+              {k: 'block_storage_gb', label: 'Storage', unit: 'GB'},
+              {k: 'postgres_gb_hours', label: 'PG', unit: 'GB-hr'},
+            ].filter(m => svc[m.k] > 0);
+
+            return `<div class="card bg-base-200/50 border border-base-300/50 overflow-hidden">
+              <div class="card-body p-4">
+                <div class="flex items-center justify-between mb-2">
+                  <div class="flex items-center gap-2.5">
+                    <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${color}"></span>
+                    <div>
+                      <span class="text-sm font-medium text-base-content">${esc(svc.service)}</span>
+                      <span class="text-xs text-base-content/30 ml-1.5">${esc(svc.project)}</span>
+                    </div>
+                  </div>
+                  <span class="text-sm font-mono font-semibold text-base-content">$${svc.cost.toFixed(2)}</span>
+                </div>
+                <div class="h-1 rounded-full bg-base-content/[0.06] overflow-hidden mb-2">
+                  <div class="h-full rounded-full" style="width:${pct}%;background:${color};transition:width 0.5s ease"></div>
+                </div>
+                <div class="flex flex-wrap gap-x-4 gap-y-0.5">
+                  ${meters.map(m => `
+                    <span class="text-[11px] text-base-content/35 font-mono">${m.label} <span class="text-base-content/50">${svc[m.k]}${m.unit}</span></span>
+                  `).join('')}
+                </div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
       </div>`;
   }
 

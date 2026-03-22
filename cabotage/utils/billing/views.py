@@ -16,6 +16,11 @@ from cabotage.utils.billing.core import (
     get_usage,
     stripe_blueprint,
 )
+from cabotage.utils.billing.metering import (
+    collect_environment_usage,
+    collect_project_usage,
+    get_service_usage_list,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +86,91 @@ def billing_usage(org_slug: str) -> Response:
             logger.exception("Failed to fetch usage for %s", org.billing.stripe_customer_id)
     return jsonify(usage=usage)
 
+
+@stripe_blueprint.route("/<org_slug>/billing-service-usage")
+@login_required
+def billing_service_usage(org_slug: str) -> Response:
+    """Per-service usage breakdown.
+
+    Derived from pod_class × replicas for compute, mock data for other
+    meters until K8s collectors are wired up.
+    """
+    org = Organization.query.filter_by(slug=org_slug).first_or_404()
+    try:
+        services = get_service_usage_list(org)
+    except Exception:
+        logger.exception("Failed to build service usage for org %s", org_slug)
+        services = []
+    return jsonify(services=services)
+
+
+@stripe_blueprint.route("/<org_slug>/billing-project-usage/<project_slug>")
+@login_required
+def billing_project_usage(org_slug: str, project_slug: str) -> Response:
+    """Per-service usage for a single project."""
+    from cabotage.server.models.projects import Project
+    from cabotage.utils.billing._products import METERS
+
+    org = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=org.id, slug=project_slug,
+    ).first_or_404()
+
+    try:
+        data = collect_project_usage(project)
+        # Add cost to each service
+        for svc in data["services"]:
+            cost = 0.0
+            for meter_key, value in svc["usage"].items():
+                meter = METERS.get(meter_key)
+                if meter and value > 0:
+                    cost += value * float(meter.unit_amount_decimal) / 100
+            svc["cost"] = round(cost, 2)
+        # Total cost
+        total_cost = sum(s["cost"] for s in data["services"])
+        data["total_cost"] = round(total_cost, 2)
+    except Exception:
+        logger.exception("Failed to build project usage for %s/%s", org_slug, project_slug)
+        data = {"project": project.name, "services": [], "totals": {}, "total_cost": 0}
+
+    return jsonify(**data)
+
+
+@stripe_blueprint.route("/<org_slug>/billing-env-usage/<project_slug>/<env_slug>")
+@login_required
+def billing_env_usage(org_slug: str, project_slug: str, env_slug: str) -> Response:
+    """Per-service usage for a single environment."""
+    from cabotage.server.models.projects import Environment, Project
+    from cabotage.utils.billing._products import METERS
+
+    org = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=org.id, slug=project_slug,
+    ).first_or_404()
+    environment = Environment.query.filter_by(
+        project_id=project.id, slug=env_slug,
+    ).first_or_404()
+
+    try:
+        data = collect_environment_usage(environment)
+        for svc in data["services"]:
+            cost = 0.0
+            for meter_key, value in svc["usage"].items():
+                meter = METERS.get(meter_key)
+                if meter and value > 0:
+                    cost += value * float(meter.unit_amount_decimal) / 100
+            svc["cost"] = round(cost, 2)
+        data["total_cost"] = round(sum(s["cost"] for s in data["services"]), 2)
+    except Exception:
+        logger.exception("Failed to build env usage for %s/%s/%s", org_slug, project_slug, env_slug)
+        data = {"environment": environment.name, "services": [], "totals": {}, "total_cost": 0}
+
+    return jsonify(**data)
+
+
+# ---------------------------------------------------------------------------
+# Subscribe / plan management
+# ---------------------------------------------------------------------------
 
 def _switch_plan(org, plan_tier: str) -> Response:
     """Switch an existing active subscription to a new plan tier."""

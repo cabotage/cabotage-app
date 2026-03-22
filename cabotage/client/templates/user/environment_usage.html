@@ -1,0 +1,174 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, resource_path, page_header, stat_card %}
+
+{% block title %}Usage - {{ environment.name }} - {{ project.name }} - Cabotage{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': project.organization.slug, 'url': url_for('user.organization', org_slug=project.organization.slug) },
+    {'label': project.slug, 'url': url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug) },
+    {'label': environment.slug, 'url': url_for('user.project_environment', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) },
+    {'label': 'usage'}
+  ]) }}
+{% endblock resource_path %}
+
+{% block tab_bar %}
+  <div class="app-content-padded !py-0">
+    <div class="tab-bar" data-tabs data-tabs-links>
+      <a href="{{ url_for('user.project_environment', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}"
+         class="tab-item" data-tab="overview">{{ icon('activity', 'w-4 h-4') }} Overview</a>
+      {% if config.MIMIR_URL %}
+      <a href="{{ url_for('user.environment_observe', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}"
+         class="tab-item" data-tab="observe">{{ icon('bar-chart', 'w-4 h-4') }} Observe</a>
+      {% else %}
+      <span class="tab-item tab-disabled" data-tab="observe">{{ icon('bar-chart', 'w-4 h-4') }} Observe</span>
+      {% endif %}
+      <a href="{{ url_for('user.environment_usage', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}"
+         class="tab-item tab-active" data-tab="usage">{{ icon('dollar-sign', 'w-4 h-4') }} Usage</a>
+    </div>
+  </div>
+{% endblock tab_bar %}
+
+{% block content %}
+  {{ page_header('Usage', environment.name ~ ' · ' ~ project.name) }}
+
+  <div id="env-usage-content">
+    <div class="flex items-center justify-center py-12">
+      <span class="loading loading-spinner loading-md text-base-content/30"></span>
+    </div>
+  </div>
+{% endblock content %}
+
+{% block js %}
+<div id="icon-bank" hidden>
+  {% for name in ['cpu', 'hard-drive', 'upload', 'tool', 'globe', 'layers', 'activity', 'box', 'bar-chart', 'info', 'dollar-sign'] %}
+    <template data-icon="{{ name }}">{{ icon(name) }}</template>
+  {% endfor %}
+</div>
+<script>
+(function() {
+  const ORG_SLUG = {{ project.organization.slug|tojson }};
+  const PROJECT_SLUG = {{ project.slug|tojson }};
+  const ENV_SLUG = {{ environment.slug|tojson }};
+
+  function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  function svg(name, cls) {
+    const tpl = document.querySelector(`#icon-bank template[data-icon="${name}"]`);
+    if (!tpl) return '';
+    const el = tpl.content.firstElementChild.cloneNode(true);
+    el.setAttribute('class', cls);
+    return el.outerHTML;
+  }
+
+  const METER_COLORS = ['#8b5cf6','#3b82f6','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#6366f1'];
+  const SVC_COLORS = ['#8b5cf6','#3b82f6','#10b981','#f59e0b','#ef4444','#ec4899'];
+  const METER_META = {
+    vcpu_hours: {label: 'vCPU Hours', icon: 'cpu', unit: 'hr'},
+    ram_gb_hours: {label: 'RAM', icon: 'hard-drive', unit: 'GB-hr'},
+    egress_gb: {label: 'Egress', icon: 'upload', unit: 'GB'},
+    build_minutes: {label: 'Builds', icon: 'tool', unit: 'min'},
+    block_storage_gb: {label: 'Block Storage', icon: 'hard-drive', unit: 'GB'},
+    object_storage_gb: {label: 'Object Storage', icon: 'hard-drive', unit: 'GB'},
+    db_storage_gb: {label: 'DB Storage', icon: 'layers', unit: 'GB'},
+    postgres_gb_hours: {label: 'PostgreSQL', icon: 'layers', unit: 'GB-hr'},
+    redis_gb_hours: {label: 'Redis', icon: 'layers', unit: 'GB-hr'},
+    tailscale_nodes: {label: 'Tailscale', icon: 'globe', unit: 'nodes'},
+  };
+
+  fetch(`/billing/${ORG_SLUG}/billing-env-usage/${PROJECT_SLUG}/${ENV_SLUG}`)
+    .then(r => r.json())
+    .then(render)
+    .catch(() => {
+      document.getElementById('env-usage-content').innerHTML =
+        '<p class="text-sm text-error/60 py-8 text-center">Failed to load usage data.</p>';
+    });
+
+  function render(data) {
+    const el = document.getElementById('env-usage-content');
+    const services = data.services || [];
+    const totals = data.totals || {};
+    const totalCost = data.total_cost || 0;
+
+    if (!services.length) {
+      el.innerHTML = `<div class="text-center py-12">
+        <div class="text-base-content/15 mb-2">${svg('bar-chart', 'w-8 h-8 inline-block')}</div>
+        <p class="text-sm text-base-content/40">No usage data for this environment.</p>
+      </div>`;
+      return;
+    }
+
+    const activeMeters = Object.entries(totals)
+      .filter(([k, v]) => v > 0 && METER_META[k])
+      .map(([k, v]) => ({key: k, value: v, ...METER_META[k]}))
+      .sort((a, b) => b.value - a.value);
+
+    const maxSvcCost = Math.max(...services.map(s => s.cost), 1);
+
+    el.innerHTML = `
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <div class="stat-card">
+          <div class="flex items-center gap-2">
+            ${svg('dollar-sign', 'w-4 h-4 text-primary/60')}
+            <span class="stat-card-value text-primary">$${totalCost.toFixed(2)}</span>
+          </div>
+          <span class="stat-card-label">Total Cost</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-card-value">${services.length}</span>
+          <span class="stat-card-label">Services</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-card-value">${activeMeters.length}</span>
+          <span class="stat-card-label">Active Meters</span>
+        </div>
+        <div class="stat-card">
+          <div class="flex items-center gap-2">
+            ${svg('activity', 'w-4 h-4 text-info/60')}
+            <span class="stat-card-value text-info">${totals.vcpu_hours ? totals.vcpu_hours.toFixed(0) : '0'}</span>
+          </div>
+          <span class="stat-card-label">vCPU Hours</span>
+        </div>
+      </div>
+
+      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Services</h2>
+      <div class="flex flex-col gap-3 mb-6">
+        ${services.map((svc, i) => {
+          const color = SVC_COLORS[i % SVC_COLORS.length];
+          const pct = Math.max((svc.cost / maxSvcCost) * 100, 3);
+          const meters = Object.entries(METER_META)
+            .filter(([k]) => svc.usage && svc.usage[k] > 0)
+            .map(([k, m]) => ({key: k, value: svc.usage[k], ...m}));
+          return `<div class="card bg-base-200/50 border border-base-300/50 overflow-hidden">
+            <div class="card-body p-4">
+              <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-2.5">
+                  <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${color}"></span>
+                  <span class="text-sm font-medium text-base-content">${esc(svc.service)}</span>
+                </div>
+                <span class="text-sm font-mono font-semibold text-base-content">$${svc.cost.toFixed(2)}</span>
+              </div>
+              <div class="h-1 rounded-full bg-base-content/[0.06] overflow-hidden mb-2">
+                <div class="h-full rounded-full" style="width:${pct}%;background:${color};transition:width 0.5s ease"></div>
+              </div>
+              <div class="flex flex-wrap gap-x-4 gap-y-0.5">
+                ${meters.map(m => `
+                  <span class="text-[11px] text-base-content/35 font-mono">${m.label} <span class="text-base-content/50">${m.value.toFixed(1)} ${m.unit}</span></span>
+                `).join('')}
+              </div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+
+      <div class="card bg-base-200/30 border border-base-300/30">
+        <div class="card-body py-3 px-5"><div class="flex items-start gap-3">
+          <span class="text-base-content/30 mt-0.5">${svg('info', 'w-4 h-4')}</span>
+          <p class="text-xs text-base-content/40">
+            vCPU $0.020/hr · RAM $0.010/GB-hr · Egress $0.045/GB · Builds $0.004/min · Storage $0.12/GB-mo
+          </p>
+        </div></div>
+      </div>`;
+  }
+})();
+</script>
+{% endblock js %}

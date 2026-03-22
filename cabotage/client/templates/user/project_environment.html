@@ -16,15 +16,17 @@
 
 {% block tab_bar %}
   <div class="app-content-padded !py-0">
-    <div class="tab-bar">
+    <div class="tab-bar" data-tabs data-tabs-links>
       <a href="{{ url_for('user.project_environment', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}"
-         class="tab-item tab-active">{{ icon('activity', 'w-4 h-4') }} <span class="tab-label">Overview</span></a>
+         class="tab-item tab-active" data-tab="overview">{{ icon('activity', 'w-4 h-4') }} Overview</a>
       {% if config.MIMIR_URL %}
       <a href="{{ url_for('user.environment_observe', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}"
-         class="tab-item">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></a>
+         class="tab-item" data-tab="observe">{{ icon('bar-chart', 'w-4 h-4') }} Observe</a>
       {% else %}
-      <span class="tab-item tab-disabled">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></span>
+      <span class="tab-item tab-disabled" data-tab="observe">{{ icon('bar-chart', 'w-4 h-4') }} Observe</span>
       {% endif %}
+      <a href="/projects/{{ project.organization.slug }}/{{ project.slug }}/environments/{{ environment.slug }}/usage"
+         class="tab-item" data-tab="usage">{{ icon('dollar-sign', 'w-4 h-4') }} Usage</a>
     </div>
   </div>
 {% endblock tab_bar %}

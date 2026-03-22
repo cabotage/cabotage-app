@@ -1,0 +1,250 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, resource_path, page_header, stat_card %}
+
+{% block title %}Usage - {{ project.name }} - Cabotage{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': project.organization.slug, 'url': url_for('user.organization', org_slug=project.organization.slug) },
+    {'label': project.slug, 'url': url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug) },
+    {'label': 'usage'}
+  ]) }}
+{% endblock resource_path %}
+
+{% block tab_bar %}
+  <div class="app-content-padded !py-0">
+    <div class="tab-bar" data-tabs data-tabs-links>
+      <a href="{{ url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug) }}"
+         class="tab-item" data-tab="overview">{{ icon('activity', 'w-4 h-4') }} Overview</a>
+      {% if config.MIMIR_URL %}
+      <a href="{{ url_for('user.project_observe', org_slug=project.organization.slug, project_slug=project.slug) }}"
+         class="tab-item" data-tab="observe">{{ icon('bar-chart', 'w-4 h-4') }} Observe</a>
+      {% else %}
+      <span class="tab-item tab-disabled" data-tab="observe">{{ icon('bar-chart', 'w-4 h-4') }} Observe</span>
+      {% endif %}
+      <a href="{{ url_for('user.project_usage', org_slug=project.organization.slug, project_slug=project.slug) }}"
+         class="tab-item tab-active" data-tab="usage">{{ icon('dollar-sign', 'w-4 h-4') }} Usage</a>
+    </div>
+  </div>
+{% endblock tab_bar %}
+
+{% block content %}
+  {{ page_header('Usage', project.name) }}
+
+  <div id="project-usage-content">
+    <div class="flex items-center justify-center py-12">
+      <span class="loading loading-spinner loading-md text-base-content/30"></span>
+    </div>
+  </div>
+{% endblock content %}
+
+{% block js %}
+<div id="icon-bank" hidden>
+  {% for name in ['cpu', 'hard-drive', 'upload', 'tool', 'globe', 'layers', 'activity', 'box', 'bar-chart', 'info', 'dollar-sign'] %}
+    <template data-icon="{{ name }}">{{ icon(name) }}</template>
+  {% endfor %}
+</div>
+<script>
+(function() {
+  const ORG_SLUG = {{ project.organization.slug|tojson }};
+  const PROJECT_SLUG = {{ project.slug|tojson }};
+
+  function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  function svg(name, cls) {
+    const tpl = document.querySelector(`#icon-bank template[data-icon="${name}"]`);
+    if (!tpl) return '';
+    const el = tpl.content.firstElementChild.cloneNode(true);
+    el.setAttribute('class', cls);
+    return el.outerHTML;
+  }
+
+  const METER_COLORS = ['#8b5cf6','#3b82f6','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#6366f1'];
+  const SVC_COLORS = ['#8b5cf6','#3b82f6','#10b981','#f59e0b','#ef4444','#ec4899'];
+
+  const METER_META = {
+    vcpu_hours: {label: 'vCPU Hours', icon: 'cpu', unit: 'hr'},
+    ram_gb_hours: {label: 'RAM', icon: 'hard-drive', unit: 'GB-hr'},
+    egress_gb: {label: 'Egress', icon: 'upload', unit: 'GB'},
+    build_minutes: {label: 'Builds', icon: 'tool', unit: 'min'},
+    block_storage_gb: {label: 'Block Storage', icon: 'hard-drive', unit: 'GB'},
+    object_storage_gb: {label: 'Object Storage', icon: 'hard-drive', unit: 'GB'},
+    db_storage_gb: {label: 'DB Storage', icon: 'layers', unit: 'GB'},
+    postgres_gb_hours: {label: 'PostgreSQL', icon: 'layers', unit: 'GB-hr'},
+    redis_gb_hours: {label: 'Redis', icon: 'layers', unit: 'GB-hr'},
+    tailscale_nodes: {label: 'Tailscale', icon: 'globe', unit: 'nodes'},
+  };
+
+  const METER_RATES = {
+    vcpu_hours: 0.02, ram_gb_hours: 0.01, egress_gb: 0.045,
+    build_minutes: 0.004, block_storage_gb: 0.12, object_storage_gb: 0.03,
+    db_storage_gb: 0.15, postgres_gb_hours: 0.015, redis_gb_hours: 0.015,
+    tailscale_nodes: 5.00,
+  };
+
+  fetch(`/billing/${ORG_SLUG}/billing-project-usage/${PROJECT_SLUG}`)
+    .then(r => r.json())
+    .then(render)
+    .catch(() => {
+      document.getElementById('project-usage-content').innerHTML =
+        '<p class="text-sm text-error/60 py-8 text-center">Failed to load usage data.</p>';
+    });
+
+  function render(data) {
+    const el = document.getElementById('project-usage-content');
+    const services = data.services || [];
+    const totals = data.totals || {};
+    const totalCost = data.total_cost || 0;
+
+    if (!services.length) {
+      el.innerHTML = `<div class="text-center py-12">
+        <div class="text-base-content/15 mb-2">${svg('bar-chart', 'w-8 h-8 inline-block')}</div>
+        <p class="text-sm text-base-content/40">No usage data for this project.</p>
+      </div>`;
+      return;
+    }
+
+    // Build active meters from totals
+    const activeMeters = Object.entries(totals)
+      .filter(([k, v]) => v > 0 && METER_META[k])
+      .map(([k, v]) => ({key: k, value: v, ...METER_META[k], rate: METER_RATES[k] || 0, cost: v * (METER_RATES[k] || 0)}))
+      .sort((a, b) => b.cost - a.cost);
+
+    const maxMeterCost = Math.max(...activeMeters.map(m => m.cost), 1);
+    const maxSvcCost = Math.max(...services.map(s => s.cost), 1);
+
+    el.innerHTML = `
+      {# Summary stats #}
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <div class="stat-card">
+          <div class="flex items-center gap-2">
+            ${svg('dollar-sign', 'w-4 h-4 text-primary/60')}
+            <span class="stat-card-value text-primary">$${totalCost.toFixed(2)}</span>
+          </div>
+          <span class="stat-card-label">Total Cost</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-card-value">${services.length}</span>
+          <span class="stat-card-label">Services</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-card-value">${activeMeters.length}</span>
+          <span class="stat-card-label">Active Meters</span>
+        </div>
+        <div class="stat-card">
+          <div class="flex items-center gap-2">
+            ${svg('activity', 'w-4 h-4 text-info/60')}
+            <span class="stat-card-value text-info">${totals.vcpu_hours ? totals.vcpu_hours.toFixed(0) : '0'}</span>
+          </div>
+          <span class="stat-card-label">vCPU Hours</span>
+        </div>
+      </div>
+
+      {# Two-column: resource bars + service breakdown #}
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {# Resource breakdown #}
+        <div>
+          <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Resource Breakdown</h2>
+          <div class="card bg-base-200/50 border border-base-300/50">
+            <div class="card-body p-5">
+              <div class="flex flex-col gap-3">
+                ${activeMeters.map((m, i) => {
+                  const pct = Math.max((m.cost / maxMeterCost) * 100, 2);
+                  const color = METER_COLORS[i % METER_COLORS.length];
+                  return `<div>
+                    <div class="flex items-center justify-between mb-1">
+                      <div class="flex items-center gap-2 text-sm text-base-content/70">
+                        ${svg(m.icon, 'w-3.5 h-3.5 text-base-content/40')}
+                        <span>${esc(m.label)}</span>
+                      </div>
+                      <div class="flex items-center gap-3">
+                        <span class="text-xs font-mono text-base-content/40">${m.value.toFixed(1)} ${esc(m.unit)}</span>
+                        <span class="text-xs font-mono font-semibold text-base-content min-w-[3.5rem] text-right">$${m.cost.toFixed(2)}</span>
+                      </div>
+                    </div>
+                    <div class="h-1.5 rounded-full bg-base-content/[0.06] overflow-hidden">
+                      <div class="h-full rounded-full" style="width:${pct}%;background:${color};transition:width 0.6s ease ${i*0.05}s"></div>
+                    </div>
+                  </div>`;
+                }).join('')}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {# Per-environment cost comparison #}
+        <div>
+          <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Cost by Environment</h2>
+          ${(() => {
+            // Group services by environment
+            const envs = {};
+            services.forEach((svc, i) => {
+              const env = svc.environment || 'default';
+              if (!envs[env]) envs[env] = {services: [], cost: 0};
+              envs[env].services.push({...svc, _idx: i});
+              envs[env].cost += svc.cost;
+            });
+            const envEntries = Object.entries(envs).sort((a, b) => b[1].cost - a[1].cost);
+            const maxEnvCost = Math.max(...envEntries.map(([,e]) => e.cost), 1);
+
+            return envEntries.map(([envName, envData]) => {
+              const envPct = Math.max((envData.cost / maxEnvCost) * 100, 3);
+              return `<div class="card bg-base-200/50 border border-base-300/50 mb-3 overflow-hidden">
+                <div class="card-body p-0">
+                  {# Env header #}
+                  <div class="flex items-center justify-between px-4 py-3 border-b border-base-content/[0.04]">
+                    <div class="flex items-center gap-2">
+                      ${svg('box', 'w-3.5 h-3.5 text-base-content/30')}
+                      <span class="text-sm font-semibold text-base-content">${esc(envName)}</span>
+                      <span class="text-xs text-base-content/25">${envData.services.length} service${envData.services.length > 1 ? 's' : ''}</span>
+                    </div>
+                    <span class="text-sm font-mono font-bold text-base-content">$${envData.cost.toFixed(2)}</span>
+                  </div>
+                  <div class="px-4 pt-2 pb-1">
+                    <div class="h-1 rounded-full bg-base-content/[0.06] overflow-hidden">
+                      <div class="h-full rounded-full bg-primary/60" style="width:${envPct}%;transition:width 0.5s ease"></div>
+                    </div>
+                  </div>
+                  {# Services in this env #}
+                  ${envData.services.map(svc => {
+                    const color = SVC_COLORS[svc._idx % SVC_COLORS.length];
+                    const svcPct = Math.max((svc.cost / envData.cost) * 100, 2);
+                    const meters = Object.entries(METER_META)
+                      .filter(([k]) => svc.usage && svc.usage[k] > 0)
+                      .map(([k, m]) => ({key: k, value: svc.usage[k], ...m}));
+                    return `<div class="px-4 py-2.5 border-t border-base-content/[0.03]">
+                      <div class="flex items-center justify-between mb-1.5">
+                        <div class="flex items-center gap-2">
+                          <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${color}"></span>
+                          <span class="text-sm text-base-content/80">${esc(svc.service)}</span>
+                        </div>
+                        <span class="text-xs font-mono font-semibold text-base-content">$${svc.cost.toFixed(2)}</span>
+                      </div>
+                      <div class="flex flex-wrap gap-x-3 gap-y-0.5">
+                        ${meters.map(m => `
+                          <span class="text-[11px] text-base-content/30 font-mono">${m.label} <span class="text-base-content/45">${m.value.toFixed(1)} ${m.unit}</span></span>
+                        `).join('')}
+                      </div>
+                    </div>`;
+                  }).join('')}
+                </div>
+              </div>`;
+            }).join('');
+          })()}
+        </div>
+      </div>
+
+      {# Rate reference #}
+      <div class="card bg-base-200/30 border border-base-300/30">
+        <div class="card-body py-3 px-5"><div class="flex items-start gap-3">
+          <span class="text-base-content/30 mt-0.5">${svg('info', 'w-4 h-4')}</span>
+          <p class="text-xs text-base-content/40">
+            vCPU $0.020/hr · RAM $0.010/GB-hr · Egress $0.045/GB · Builds $0.004/min · Storage $0.12/GB-mo ·
+            PostgreSQL $0.015/GB-hr · Redis $0.015/GB-hr · Tailscale $5.00/node
+          </p>
+        </div></div>
+      </div>`;
+  }
+})();
+</script>
+{% endblock js %}

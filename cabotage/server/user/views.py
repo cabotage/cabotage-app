@@ -5433,6 +5433,58 @@ def project_observe(org_slug, project_slug):
     )
 
 
+@user_blueprint.route("/projects/<org_slug>/<project_slug>/usage")
+@login_required
+def project_usage(org_slug, project_slug):
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .first_or_404()
+    )
+    project = (
+        Project.query.filter_by(organization_id=organization.id, slug=project_slug)
+        .filter(Project.deleted_at.is_(None))
+        .first_or_404()
+    )
+    if not ViewProjectPermission(project.id).can():
+        abort(403)
+
+    return render_template(
+        "user/project_usage.html",
+        project=project,
+        organization=organization,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/usage"
+)
+@login_required
+def environment_usage(org_slug, project_slug, env_slug):
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .first_or_404()
+    )
+    project = (
+        Project.query.filter_by(organization_id=organization.id, slug=project_slug)
+        .filter(Project.deleted_at.is_(None))
+        .first_or_404()
+    )
+    if not ViewProjectPermission(project.id).can():
+        abort(403)
+    environment = Environment.query.filter_by(
+        project_id=project.id, slug=env_slug
+    ).first_or_404()
+
+    return render_template(
+        "user/environment_usage.html",
+        project=project,
+        organization=organization,
+        environment=environment,
+    )
+
+
 @user_blueprint.route("/organizations/<org_slug>/observe")
 @login_required
 def organization_observe(org_slug):
