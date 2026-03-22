@@ -238,8 +238,13 @@ def reactivate_subscription(org_slug: str) -> tuple[Response, int] | Response:
     if not org.billing or not org.billing.stripe_sub_id:
         return jsonify(error="No subscription."), 400
 
-    Subscription.modify(org.billing.stripe_sub_id, cancel_at_period_end=False)
-    logger.info("Reactivated subscription for org %s", org_slug)
+    try:
+        sub = Subscription.modify(org.billing.stripe_sub_id, cancel_at_period_end=False)
+        logger.info("Reactivated subscription %s for org %s, status=%s, cancel_at_period_end=%s",
+                     sub.id, org_slug, sub.status, sub.cancel_at_period_end)
+    except Exception as e:
+        logger.exception("Failed to reactivate subscription for org %s", org_slug)
+        return jsonify(error=str(e)), 500
     return jsonify(ok=True, redirect=f"/billing/{org_slug}/")
 
 
