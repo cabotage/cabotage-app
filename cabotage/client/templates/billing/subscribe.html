@@ -3,6 +3,19 @@
 
 {% block title %}Choose a Plan - {{ org.name }} - Cabotage{% endblock title %}
 
+{% block tab_bar %}
+  <div class="app-content-padded !py-0">
+    <div class="tab-bar" data-tabs data-tabs-links>
+      <a href="{{ url_for('billing.dashboard', org_slug=org.slug) }}"
+         class="tab-item" data-tab="billing">{{ icon('activity', 'w-4 h-4') }} Billing</a>
+      <a href="{{ url_for('billing.subscribe', org_slug=org.slug) }}"
+         class="tab-item tab-active" data-tab="plans">{{ icon('zap', 'w-4 h-4') }} Plans</a>
+      <a href="{{ url_for('billing.payment_methods', org_slug=org.slug) }}"
+         class="tab-item" data-tab="payment">{{ icon('credit-card', 'w-4 h-4') }} Payment</a>
+    </div>
+  </div>
+{% endblock tab_bar %}
+
 {% block resource_path %}
   {{ resource_path([
     {'label': org.slug, 'url': url_for('user.organization', org_slug=org.slug) },
