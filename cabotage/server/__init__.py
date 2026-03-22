@@ -310,7 +310,7 @@ def create_app():
     # GitHub webhook uses HMAC validation, not CSRF tokens
     csrf.exempt("cabotage.server.user.views.github_hooks")
     # Stripe webhook uses signature verification, not CSRF tokens
-    csrf.exempt("billing.receive_stripe_webhook")
+    csrf.exempt("cabotage.utils.billing.core.receive_stripe_webhook")
 
     from cabotage.server.mfa import register_mfa_guards
 
