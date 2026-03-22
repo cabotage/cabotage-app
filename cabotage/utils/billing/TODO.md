@@ -3,3 +3,6 @@
     sure to be able to reuse
 - Gating
   - requires discsion on auth
+- admin dashboard to provision coupons, see profit, reports, etc.
+- fix the a7bb2fbfbca88bbc443078d4cebd771886f777e0 commit with the 
+  usage stubs done by claude
