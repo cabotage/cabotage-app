@@ -209,7 +209,7 @@
       </div>
     </div>
 
-    {# ── Payment tab (partially deferred) ── #}
+    {# ── Payment tab (with embedded Stripe Element) ── #}
     <div data-tab-panel="payment" class="tab-panel">
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div>
@@ -217,6 +217,47 @@
           <div class="card bg-base-200/50 border border-base-300/50 mb-6">
             <div class="card-body" id="payment-method-detail">
               {{ billing_spinner() }}
+            </div>
+          </div>
+
+          {# Inline Stripe Payment Element for add/update #}
+          <div id="payment-form-section" style="display:none">
+            <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3" id="payment-form-title">Add Payment Method</h2>
+            <div class="card bg-base-200/50 border border-base-300/50 mb-6">
+              <div class="card-body">
+                <div class="flex items-start gap-3 mb-4">
+                  <span class="text-base-content/30 mt-0.5">{{ icon('shield', 'w-4 h-4') }}</span>
+                  <p class="text-sm text-base-content/50">
+                    Your payment information is securely processed by Stripe. Card details never touch our servers.
+                  </p>
+                </div>
+
+                <form id="pm-setup-form">
+                  <div id="pm-stripe-element" class="mb-4">
+                    {# Stripe Payment Element mounts here #}
+                  </div>
+                  <div id="pm-errors" class="text-sm text-error mb-3 hidden"></div>
+                  <div class="flex items-center gap-3">
+                    <button type="submit" id="pm-submit-btn" class="btn btn-primary btn-sm gap-2" disabled>
+                      <span id="pm-btn-text">Save</span>
+                      <span id="pm-btn-spinner" class="loading loading-spinner loading-xs hidden"></span>
+                    </button>
+                    <button type="button" id="pm-cancel-btn" class="btn btn-ghost btn-sm">Cancel</button>
+                  </div>
+                </form>
+
+                <div id="pm-success" class="hidden">
+                  <div class="flex items-center gap-3 py-2">
+                    <div class="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center text-success">
+                      {{ icon('check', 'w-5 h-5') }}
+                    </div>
+                    <div>
+                      <span class="text-sm font-medium text-base-content">Payment method updated</span>
+                      <p class="text-xs text-base-content/40">Your new payment method is now the default.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -245,6 +286,21 @@
                   <span class="text-sm text-base-content/60">Subscription ID</span>
                   <span class="text-xs font-mono text-base-content/40">{{ org.billing.stripe_sub_id if org.billing else 'N/A' }}</span>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Coupon / Promo Code</h2>
+          <div class="card bg-base-200/50 border border-base-300/50 mb-6">
+            <div class="card-body" id="coupon-section">
+              <div id="coupon-current" style="display:none"></div>
+              <div id="coupon-form">
+                <div class="flex gap-2">
+                  <input type="text" id="coupon-input" placeholder="Enter coupon code"
+                         class="input input-sm input-bordered flex-1 font-mono" />
+                  <button type="button" id="coupon-apply-btn" class="btn btn-primary btn-sm">Apply</button>
+                </div>
+                <div id="coupon-error" class="text-xs text-error mt-2 hidden"></div>
               </div>
             </div>
           </div>
@@ -401,7 +457,7 @@
         {# Cost summary card with gauge #}
         <div class="card bg-base-200/50 border border-base-300/50 lg:col-span-1">
           <div class="card-body p-5 flex flex-col items-center justify-center">
-            <div class="relative w-32 h-32 mb-3">
+            <div class="relative w-40 h-40 lg:w-32 lg:h-32 mb-3">
               <svg viewBox="0 0 120 120" class="w-full h-full -rotate-90">
                 <circle cx="60" cy="60" r="52" fill="none" stroke="currentColor" class="text-base-content/[0.06]" stroke-width="8"/>
                 <circle cx="60" cy="60" r="52" fill="none" stroke="${gaugeColor}" stroke-width="8"
@@ -503,7 +559,7 @@
         {# Ring chart #}
         <div class="card bg-base-200/50 border border-base-300/50">
           <div class="card-body p-5 flex flex-col items-center justify-center">
-            <div class="relative w-28 h-28 mb-3">
+            <div class="relative w-36 h-36 lg:w-28 lg:h-28 mb-3">
               <svg viewBox="0 0 ${ringSize} ${ringSize}" class="w-full h-full -rotate-90">
                 <circle cx="${ringSize/2}" cy="${ringSize/2}" r="${ringR}" fill="none" stroke="currentColor" class="text-base-content/[0.04]" stroke-width="6"/>
                 ${ringSegments}
@@ -624,7 +680,7 @@
             </div>
           </div>
           <div class="flex items-center gap-1">
-            <a href="${esc(PM_URL)}" class="btn btn-ghost btn-sm gap-1">${svg('edit-2', 'w-3.5 h-3.5')} Update</a>
+            <button type="button" class="btn btn-ghost btn-sm gap-1 pm-show-form-btn">${svg('edit-2', 'w-3.5 h-3.5')} Update</button>
             <button type="button" onclick="document.getElementById('remove-pm-modal').showModal()" class="btn btn-ghost btn-sm text-error/50 hover:text-error">Remove</button>
           </div>
         </div>`;
@@ -637,9 +693,13 @@
             </div>
             <span class="text-sm text-base-content/40">No payment method on file</span>
           </div>
-          <a href="${esc(PM_URL)}" class="btn btn-primary btn-sm gap-1">${svg('plus', 'w-3.5 h-3.5')} Add</a>
+          <button type="button" class="btn btn-primary btn-sm gap-1 pm-show-form-btn">${svg('plus', 'w-3.5 h-3.5')} Add</button>
         </div>`;
     }
+    // Bind show-form buttons
+    el.querySelectorAll('.pm-show-form-btn').forEach(function(btn) {
+      btn.addEventListener('click', showPaymentForm);
+    });
   }
 
   function renderPaymentInvoices(invoices) {
@@ -749,6 +809,227 @@
         removePmBtn.disabled = false;
         document.getElementById('remove-pm-btn-text').textContent = 'Remove';
         document.getElementById('remove-pm-spinner').classList.add('hidden');
+      }
+    });
+  }
+  // ── Coupon management ──
+  fetch(`/billing/${ORG_SLUG}/coupon`)
+    .then(r => r.json())
+    .then(data => { renderCoupon(data.coupon); })
+    .catch(() => {});
+
+  function renderCoupon(coupon) {
+    const currentEl = document.getElementById('coupon-current');
+    const formEl = document.getElementById('coupon-form');
+    if (coupon) {
+      const desc = coupon.percent_off ? coupon.percent_off + '% off' : coupon.amount_off ? '$' + (coupon.amount_off / 100).toFixed(2) + ' off' : '';
+      currentEl.style.display = '';
+      currentEl.innerHTML = `
+        <div class="flex items-center justify-between mb-2">
+          <div>
+            <span class="text-sm font-medium text-base-content">${esc(coupon.name)}</span>
+            <span class="badge badge-outline badge-xs ml-2 border-success/40 text-success">${esc(desc)}</span>
+            <span class="text-xs text-base-content/30 ml-1">${esc(coupon.duration)}</span>
+          </div>
+          <button type="button" class="text-xs text-base-content/30 hover:text-error transition-colors" id="coupon-remove-btn">Remove</button>
+        </div>`;
+      formEl.style.display = 'none';
+      document.getElementById('coupon-remove-btn').addEventListener('click', async function() {
+        this.textContent = 'Removing...';
+        try {
+          var r = await fetch(`/billing/${ORG_SLUG}/coupon`, {
+            method: 'POST',
+            headers: {'Content-Type':'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''},
+            body: JSON.stringify({action: 'remove'})
+          });
+          if (!r.ok) throw new Error('Failed');
+          renderCoupon(null);
+        } catch(e) { this.textContent = 'Remove'; }
+      });
+    } else {
+      currentEl.style.display = 'none';
+      formEl.style.display = '';
+    }
+  }
+
+  var couponApplyBtn = document.getElementById('coupon-apply-btn');
+  if (couponApplyBtn) {
+    couponApplyBtn.addEventListener('click', async function() {
+      var input = document.getElementById('coupon-input');
+      var errEl = document.getElementById('coupon-error');
+      var code = input.value.trim();
+      if (!code) return;
+      couponApplyBtn.disabled = true;
+      couponApplyBtn.textContent = 'Applying...';
+      errEl.classList.add('hidden');
+      try {
+        var r = await fetch(`/billing/${ORG_SLUG}/coupon`, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''},
+          body: JSON.stringify({code: code})
+        });
+        var data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'Invalid code.');
+        // Re-fetch to show the applied coupon
+        var cr = await fetch(`/billing/${ORG_SLUG}/coupon`);
+        var cd = await cr.json();
+        renderCoupon(cd.coupon);
+        input.value = '';
+      } catch(e) {
+        errEl.textContent = e.message;
+        errEl.classList.remove('hidden');
+      }
+      couponApplyBtn.disabled = false;
+      couponApplyBtn.textContent = 'Apply';
+    });
+  }
+
+  // ── Inline Stripe Payment Element ──
+  var stripeLoaded = false;
+  var stripeInstance = null;
+  var stripeElements = null;
+  var pmFormSection = document.getElementById('payment-form-section');
+
+  function showPaymentForm() {
+    pmFormSection.style.display = '';
+    document.getElementById('pm-setup-form').style.display = '';
+    document.getElementById('pm-success').classList.add('hidden');
+    document.getElementById('pm-errors').classList.add('hidden');
+    var title = document.getElementById('payment-form-title');
+    // Check if there's already a payment method displayed
+    var hasPm = document.querySelector('#payment-method-detail .pm-show-form-btn')?.textContent.trim() === 'Update';
+    title.textContent = hasPm ? 'Update Payment Method' : 'Add Payment Method';
+    document.getElementById('pm-btn-text').textContent = hasPm ? 'Update' : 'Save';
+
+    if (!stripeLoaded) {
+      stripeLoaded = true;
+      var script = document.createElement('script');
+      script.src = 'https://js.stripe.com/v3/';
+      script.onload = initStripePaymentElement;
+      document.head.appendChild(script);
+    } else if (stripeInstance && !stripeElements) {
+      initStripePaymentElement();
+    }
+
+    pmFormSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  function initStripePaymentElement() {
+    var cs = getComputedStyle(document.documentElement);
+    var theme = document.documentElement.getAttribute('data-theme');
+    var isDark = theme !== 'light';
+    var primary = cs.getPropertyValue('--color-primary').trim() || '#7c3aed';
+
+    stripeInstance = Stripe({{ config.STRIPE_PUB_KEY|tojson }});
+    stripeElements = stripeInstance.elements({
+      mode: 'setup',
+      currency: 'usd',
+      paymentMethodTypes: ['card', 'us_bank_account'],
+      appearance: {
+        theme: isDark ? 'night' : 'stripe',
+        variables: {
+          colorPrimary: primary,
+          colorBackground: isDark ? (cs.getPropertyValue('--color-base-100').trim() || '#1a1a2e') : '#fff',
+          colorText: isDark ? (cs.getPropertyValue('--color-base-content').trim() || '#e2e8f0') : '#1a1a2e',
+          colorTextSecondary: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
+          colorTextPlaceholder: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.4)',
+          colorDanger: '#ef4444',
+          borderRadius: '0.5rem',
+          fontFamily: cs.fontFamily || 'system-ui, sans-serif',
+        },
+        rules: {
+          '.Input': { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#fff', borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)', color: isDark ? '#e2e8f0' : '#1a1a2e' },
+          '.Input:focus': { borderColor: primary, boxShadow: '0 0 0 1px ' + primary },
+          '.Label': { color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)' },
+          '.Tab': { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#fff', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)' },
+          '.Tab--selected': { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#fff', borderColor: primary, color: isDark ? '#fff' : '#1a1a2e' },
+          '.Tab:hover': { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.02)' },
+          '.Block': { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#fafafa', borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' },
+        }
+      }
+    });
+
+    var paymentEl = stripeElements.create('payment');
+    paymentEl.mount('#pm-stripe-element');
+    paymentEl.on('ready', function() {
+      document.getElementById('pm-submit-btn').disabled = false;
+    });
+    paymentEl.on('change', function(event) {
+      var errEl = document.getElementById('pm-errors');
+      if (event.error) { errEl.textContent = event.error.message; errEl.classList.remove('hidden'); }
+      else { errEl.classList.add('hidden'); }
+    });
+  }
+
+  // Cancel button hides the form
+  var pmCancelBtn = document.getElementById('pm-cancel-btn');
+  if (pmCancelBtn) {
+    pmCancelBtn.addEventListener('click', function() {
+      pmFormSection.style.display = 'none';
+    });
+  }
+
+  // Form submission
+  var pmSetupForm = document.getElementById('pm-setup-form');
+  if (pmSetupForm) {
+    pmSetupForm.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var submitBtn = document.getElementById('pm-submit-btn');
+      var btnText = document.getElementById('pm-btn-text');
+      var spinner = document.getElementById('pm-btn-spinner');
+      var errEl = document.getElementById('pm-errors');
+
+      submitBtn.disabled = true;
+      btnText.textContent = 'Processing...';
+      spinner.classList.remove('hidden');
+      errEl.classList.add('hidden');
+
+      try {
+        var submitResult = await stripeElements.submit();
+        if (submitResult.error) throw new Error(submitResult.error.message);
+
+        // Get SetupIntent client_secret from backend
+        var r = await fetch(`/billing/${ORG_SLUG}/payment`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || '' },
+          body: JSON.stringify({ action: 'setup' })
+        });
+        var data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'Failed to initialize payment setup.');
+
+        // Confirm with Stripe
+        var result = await stripeInstance.confirmSetup({
+          elements: stripeElements,
+          clientSecret: data.client_secret,
+          confirmParams: { return_url: window.location.origin + `/billing/${ORG_SLUG}/#payment` },
+          redirect: 'if_required'
+        });
+        if (result.error) throw new Error(result.error.message);
+
+        // Set as default
+        if (result.setupIntent && result.setupIntent.payment_method) {
+          await fetch(`/billing/${ORG_SLUG}/payment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || '' },
+            body: JSON.stringify({ action: 'set_default', payment_method: result.setupIntent.payment_method })
+          });
+        }
+
+        // Show success, hide form, refresh payment method display
+        pmSetupForm.style.display = 'none';
+        document.getElementById('pm-success').classList.remove('hidden');
+
+        // Re-fetch and re-render payment method
+        fetch(`/billing/${ORG_SLUG}/billing-payment-method`)
+          .then(function(r) { return r.json(); })
+          .then(function(data) { renderPaymentMethod(data.payment_method); });
+
+      } catch(err) {
+        errEl.textContent = err.message;
+        errEl.classList.remove('hidden');
+        submitBtn.disabled = false;
+        btnText.textContent = 'Save';
+        spinner.classList.add('hidden');
       }
     });
   }
