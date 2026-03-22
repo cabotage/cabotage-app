@@ -192,12 +192,14 @@ def _switch_plan(org, plan_tier: str) -> Response:
         )
         return jsonify(error="Could not find current plan in subscription."), 400
 
-    # Sync subscription default payment method with customer default
+    # Require a payment method on file
     customer = Customer.retrieve(org.billing.stripe_customer_id)
     default_payment_method = (
         customer.invoice_settings.get("default_payment_method")
         if customer.invoice_settings else None
     )
+    if not default_payment_method:
+        return jsonify(error="Please add a payment method before switching plans."), 400
     modify_params = {
         "items": [{"id": plan_item.id, "price": new_plan.price_id}],
         "metadata": {"plan_tier": plan_tier},
