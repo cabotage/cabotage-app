@@ -240,6 +240,14 @@ def reactivate_subscription(org_slug: str) -> tuple[Response, int] | Response:
     if not org.billing or not org.billing.stripe_sub_id:
         return jsonify(error="No subscription."), 400
 
+    customer = Customer.retrieve(org.billing.stripe_customer_id)
+    has_pm = (
+        customer.invoice_settings.get("default_payment_method")
+        if customer.invoice_settings else None
+    )
+    if not has_pm:
+        return jsonify(error="Please add a payment method before reactivating."), 400
+
     try:
         sub = Subscription.modify(org.billing.stripe_sub_id, cancel_at_period_end=False)
         logger.info("Reactivated subscription %s for org %s, status=%s, cancel_at_period_end=%s",
