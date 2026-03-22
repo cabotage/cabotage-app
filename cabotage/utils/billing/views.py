@@ -172,7 +172,7 @@ def billing_env_usage(org_slug: str, project_slug: str, env_slug: str) -> Respon
 # Subscribe / plan management
 # ---------------------------------------------------------------------------
 
-def _switch_plan(org, plan_tier: str) -> Response:
+def _switch_plan(org, plan_tier: str) -> tuple[Response, int] | Response:
     """Switch an existing active subscription to a new plan tier."""
     sub = Subscription.retrieve(org.billing.stripe_sub_id)
     if sub.status not in ("active", "trialing"):
