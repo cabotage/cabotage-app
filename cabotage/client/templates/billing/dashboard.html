@@ -369,8 +369,6 @@
   const ORG_SLUG = {{ org.slug|tojson }};
   const PLAN = {{ (org.billing.stripe_sub_plan or '')|tojson }};
   const CREDIT_CENTS = {hobby: 500, indie: 1200, team: 3000, byoc: 0};
-  const PM_URL = {{ url_for('billing.payment_methods', org_slug=org.slug)|tojson }};
-
   function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
   function svg(name, cls) {
