@@ -13,8 +13,13 @@
 
 {% block content %}
   {% set current_plan = org.billing.stripe_sub_plan if org.billing else none %}
+  {% set sub_status = org.billing.stripe_sub_status if org.billing else none %}
+  {% set is_canceling = sub_status == 'canceling' %}
 
-  {{ page_header('Choose a Plan', org.name) }}
+  {% call page_header('Choose a Plan', org.name) %}
+    <a href="{{ url_for('billing.dashboard', org_slug=org.slug) }}"
+       class="btn btn-ghost btn-sm gap-1">{{ icon('arrow-left', 'w-4 h-4') }} Back to Billing</a>
+  {% endcall %}
 
   {# ── Plan cards ── #}
   <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
@@ -67,7 +72,11 @@
 
         <div class="mt-auto">
           {% if current_plan == 'hobby' %}
-            <button class="btn btn-ghost btn-sm w-full" disabled>Current Plan</button>
+            {% if is_canceling %}
+              <button type="button" class="btn btn-success btn-sm w-full reactivate-btn">Reactivate</button>
+            {% else %}
+              <button class="btn btn-ghost btn-sm w-full" disabled>Current Plan</button>
+            {% endif %}
           {% else %}
             <button type="button"
                     class="btn btn-ghost btn-sm w-full plan-select-btn"
@@ -129,7 +138,11 @@
 
         <div class="mt-auto">
           {% if current_plan == 'indie' %}
-            <button class="btn btn-primary btn-sm w-full" disabled>Current Plan</button>
+            {% if is_canceling %}
+              <button type="button" class="btn btn-success btn-sm w-full reactivate-btn">Reactivate</button>
+            {% else %}
+              <button class="btn btn-ghost btn-sm w-full" disabled>Current Plan</button>
+            {% endif %}
           {% else %}
             <button type="button"
                     class="btn btn-primary btn-sm w-full plan-select-btn"
@@ -194,7 +207,11 @@
 
         <div class="mt-auto">
           {% if current_plan == 'team' %}
-            <button class="btn btn-ghost btn-sm w-full" disabled>Current Plan</button>
+            {% if is_canceling %}
+              <button type="button" class="btn btn-success btn-sm w-full reactivate-btn">Reactivate</button>
+            {% else %}
+              <button class="btn btn-ghost btn-sm w-full" disabled>Current Plan</button>
+            {% endif %}
           {% else %}
             <button type="button"
                     class="btn btn-ghost btn-sm w-full plan-select-btn"
@@ -255,7 +272,11 @@
 
         <div class="mt-auto">
           {% if current_plan == 'byoc' %}
-            <button class="btn btn-ghost btn-sm w-full" disabled>Current Plan</button>
+            {% if is_canceling %}
+              <button type="button" class="btn btn-success btn-sm w-full reactivate-btn">Reactivate</button>
+            {% else %}
+              <button class="btn btn-ghost btn-sm w-full" disabled>Current Plan</button>
+            {% endif %}
           {% else %}
             <button type="button"
                     class="btn btn-ghost btn-sm w-full plan-select-btn"
@@ -379,7 +400,27 @@
   var btnSpinner = document.getElementById('btn-spinner');
   var errorsEl = document.getElementById('payment-errors');
 
-  var hasActiveSub = {{ 'true' if org.billing and org.billing.stripe_sub_id and org.billing.stripe_sub_status == 'active' else 'false' }};
+  var hasActiveSub = {{ 'true' if org.billing and org.billing.stripe_sub_id and org.billing.stripe_sub_status in ('active', 'canceling') else 'false' }};
+
+  // Reactivate buttons (shown when plan is canceling)
+  document.querySelectorAll('.reactivate-btn').forEach(function(btn) {
+    btn.addEventListener('click', async function() {
+      btn.textContent = 'Reactivating...';
+      btn.disabled = true;
+      try {
+        var r = await fetch('/billing/{{ org.slug }}/reactivate', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''},
+        });
+        var data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'Failed.');
+        setTimeout(function() { window.location.reload(); }, 1500);
+      } catch(e) {
+        btn.textContent = 'Reactivate';
+        btn.disabled = false;
+      }
+    });
+  });
 
   // Modal elements
   var switchModal = document.getElementById('switch-modal');
