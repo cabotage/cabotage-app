@@ -1508,6 +1508,23 @@ def render_datadog_container(dd_api_key, datadog_tags):
     )
 
 
+def _gvisor_pod_annotations(process_name):
+    if not current_app.config.get("GVISOR"):
+        return None
+    annotations = {
+        "dev.gvisor.spec.mount.vault-secrets.share": "pod",
+        "dev.gvisor.spec.mount.vault-secrets.type": "tmpfs",
+        "dev.gvisor.spec.mount.vault-secrets.options": "rw,rprivate",
+    }
+    if process_name.startswith("web"):
+        annotations.update({
+            "dev.gvisor.spec.mount.cabotage-sock.share": "pod",
+            "dev.gvisor.spec.mount.cabotage-sock.type": "tmpfs",
+            "dev.gvisor.spec.mount.cabotage-sock.options": "rw,rprivate",
+        })
+    return annotations or None
+
+
 def render_podspec(release, process_name, service_account_name):
     datadog_tags = {
         "organization": release.application.project.organization.slug,
@@ -1664,6 +1681,7 @@ def render_podspec(release, process_name, service_account_name):
         service_account_name=service_account_name,
         automount_service_account_token=False,
         enable_service_links=False,
+        runtime_class_name="gvisor" if current_app.config.get("GVISOR") else None,
         init_containers=init_containers,
         containers=containers,
         volumes=volumes,
@@ -1712,7 +1730,10 @@ def render_deployment(
                 },
             ),
             template=kubernetes.client.V1PodTemplateSpec(
-                metadata=kubernetes.client.V1ObjectMeta(labels=pod_labels),
+                metadata=kubernetes.client.V1ObjectMeta(
+                    labels=pod_labels,
+                    annotations=_gvisor_pod_annotations(process_name),
+                ),
                 spec=render_podspec(release, process_name, service_account_name),
             ),
         ),
@@ -1903,7 +1924,8 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
                         "deployment": job_id,
                         "ca-admission.cabotage.io": "true",
                         "resident-pod.cabotage.io": "true",
-                    }
+                    },
+                    annotations=_gvisor_pod_annotations(process_name),
                 ),
                 spec=render_podspec(release, process_name, service_account_name),
             ),
