@@ -39,7 +39,6 @@ from cabotage.server import (
     db,
     github_app,
     kubernetes as kubernetes_ext,
-    vault,
     sock,
 )
 
@@ -122,11 +121,7 @@ from cabotage.server.user.forms import (
 )
 
 from cabotage.utils.docker_auth import (
-    check_docker_credentials,
     generate_docker_registry_jwt,
-    generate_signing_jwks,
-    parse_docker_scope,
-    docker_access_intersection,
 )
 
 from cabotage.celery.tasks import (
@@ -4229,25 +4224,6 @@ def account_security_qr():
     return resp
 
 
-@user_blueprint.route("/docker/auth")
-def docker_auth():
-    secret = current_app.config["REGISTRY_AUTH_SECRET"]
-    password = request.authorization.password
-    scope_params = request.args.getlist("scope")
-    scope = " ".join(scope_params) if scope_params else "registry:catalog:*"
-    requested_access = parse_docker_scope(scope)
-    max_age = None
-    if "push" in [
-        action for access in requested_access for action in access["actions"]
-    ]:
-        max_age = 600
-    granted_access = check_docker_credentials(password, secret=secret, max_age=max_age)
-    if not granted_access:
-        return jsonify({"error": "unauthorized"}), 401
-    access = docker_access_intersection(granted_access, requested_access)
-    return jsonify({"token": generate_docker_registry_jwt(access=access)})
-
-
 @user_blueprint.route(
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/images/fromsource",
     methods=["POST"],
@@ -4673,26 +4649,6 @@ def release_deploy_legacy(release_id):
         ),
         code=307,
     )
-
-
-@user_blueprint.route("/signing-cert", methods=["GET"])
-def signing_cert():
-    cert = vault.signing_cert
-    raw = request.args.get("raw", None)
-    if raw is not None:
-        response = make_response(cert, 200)
-        response.mimetype = "text/plain"
-        return response
-    return render_template("user/signing_cert.html", signing_certificate=cert)
-
-
-@user_blueprint.route("/signing-jwks", methods=["GET"])
-def signing_jwks():
-    public_key_pem = vault.signing_public_key
-    jwks_json = generate_signing_jwks(public_key_pem)
-    response = make_response(jwks_json, 200)
-    response.mimetype = "application/json"
-    return response
 
 
 @user_blueprint.route("/github/hooks", methods=["POST"])
