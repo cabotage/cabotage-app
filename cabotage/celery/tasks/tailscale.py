@@ -52,11 +52,6 @@ def _deploy_operator_config(org, integration):
     namespace = _operator_namespace(org)
     _ensure_namespace(core_api, namespace)
 
-    image = (
-        f"{current_app.config['TAILSCALE_OPERATOR_IMAGE']}"
-        f":{current_app.config['TAILSCALE_OPERATOR_VERSION']}"
-    )
-
     body = {
         "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
         "kind": "CabotageTailscaleOperatorConfig",
@@ -66,7 +61,6 @@ def _deploy_operator_config(org, integration):
         },
         "spec": {
             "clientId": integration.client_id,
-            "operatorImage": image,
             "defaultTags": integration.default_tags or "",
             "organizationSlug": org.slug,
         },
@@ -194,7 +188,6 @@ def deploy_tailscale_operator(organization_id):
         )
         integration.operator_state = "failed"
 
-    integration.operator_version = current_app.config["TAILSCALE_OPERATOR_VERSION"]
     db.session.commit()
 
 
@@ -226,11 +219,16 @@ def teardown_tailscale_operator(organization_id):
         except ApiException as exc:
             if exc.status != 404:
                 log.warning("Failed to delete Secret %s: %s", secret_name, exc)
+        # K8s cleanup succeeded — remove the integration from DB
+        db.session.delete(integration)
+        db.session.commit()
     except Exception:
         log.exception(
             "Failed to delete CabotageTailscaleOperatorConfig for org %s",
             org.slug,
         )
+        integration.operator_state = "failed"
+        db.session.commit()
 
 
 @shared_task()
@@ -268,10 +266,16 @@ def reconcile_tailscale_integration_states():
 
         status = crd.get("status", {}).get("reconcile_operator", {})
         state = status.get("state")
-        if state and state != integration.operator_state:
+        valid_states = {
+            "pending",
+            "deployed",
+            "failed",
+            "disabled",
+            "missing",
+            "removing",
+        }
+        if state and state in valid_states and state != integration.operator_state:
             integration.operator_state = state
-            if status.get("operatorVersion"):
-                integration.operator_version = status["operatorVersion"]
             db.session.commit()
             log.info(
                 "Updated operator state to %s for org %s",
@@ -323,7 +327,5 @@ def refresh_tailscale_oidc_tokens():
                 else:
                     raise
             log.debug("Refreshed OIDC JWT for org %s", org.slug)
-        except (
-            Exception
-        ):  # nosec B112 — don't let one org's error stop the refresh loop
+        except Exception:
             log.exception("Failed to refresh OIDC JWT for org %s", org.slug)

@@ -67,26 +67,3 @@ class ConfigWriter(object):
         if secret:
             return self.vault.vault_connection.read(key_slug)
         return self.consul.consul_connection.read(key_slug)
-
-    def write_tailscale_credentials(self, organization, client_id, client_secret):
-        if self.vault is None:
-            raise RuntimeError("No Vault extension configured!")
-        vault_path = (
-            f"{self.vault_prefix}/integrations"
-            f"/{organization.k8s_identifier}/tailscale"
-        )
-        self.vault.vault_connection.write(
-            vault_path,
-            client_id=client_id,
-            client_secret=client_secret,
-        )
-        return vault_path
-
-    def delete_tailscale_credentials(self, organization):
-        if self.vault is None:
-            raise RuntimeError("No Vault extension configured!")
-        vault_path = (
-            f"{self.vault_prefix}/integrations"
-            f"/{organization.k8s_identifier}/tailscale"
-        )
-        self.vault.vault_connection.delete(vault_path)

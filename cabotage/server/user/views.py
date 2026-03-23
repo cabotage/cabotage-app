@@ -750,10 +750,10 @@ def organization_settings(org_slug):
 
     if request.method == "POST" and action == "delete_tailscale":
         if ts_integration:
-            teardown_tailscale_operator.delay(str(organization.id))
-            db.session.delete(ts_integration)
+            ts_integration.operator_state = "removing"
             db.session.commit()
-            flash("Tailscale integration removed.", "success")
+            teardown_tailscale_operator.delay(str(organization.id))
+            flash("Tailscale integration removal in progress.", "success")
         return redirect(
             url_for("user.organization_settings", org_slug=organization.slug)
         )
@@ -2079,9 +2079,8 @@ def organization_delete(org_slug):
     if form.validate_on_submit():
         # Tear down Tailscale operator if configured
         if organization.tailscale_integration:
+            organization.tailscale_integration.operator_state = "removing"
             teardown_tailscale_operator.delay(str(organization.id))
-            config_writer.delete_tailscale_credentials(organization)
-            db.session.delete(organization.tailscale_integration)
         for project in list(organization.projects):
             if project.deleted_at is None:
                 _soft_delete_project(project, organization)
@@ -3233,6 +3232,8 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
         _HOSTNAME_RE = re.compile(
             r"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*$"
         )
+        _TS_HOSTNAME_RE = re.compile(r"^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?$")
+        _ALLOWED_PATH_TYPES = {"Prefix", "Exact", "ImplementationSpecific"}
 
         # Save ingress (unified: enabled, hosts, paths, settings, annotations)
         if action == "save_ingress":
@@ -3307,6 +3308,8 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
             for idx in sorted(new_path_indices):
                 path_value = request.form.get(f"_new_path_{idx}_path", "").strip()
                 path_type = request.form.get(f"_new_path_{idx}_type", "Prefix")
+                if path_type not in _ALLOWED_PATH_TYPES:
+                    path_type = "Prefix"
                 target = request.form.get(f"_new_path_{idx}_target", "")
                 if not path_value:
                     continue
@@ -3345,7 +3348,12 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                 if is_tailscale:
                     # Tailscale: single hostname — update or create
                     ts_hostname = request.form.get("_ts_hostname", "").strip()
-                    if ts_hostname:
+                    if ts_hostname and not _TS_HOSTNAME_RE.match(ts_hostname):
+                        ingress_errors["hostname"] = [
+                            "Hostname must be lowercase alphanumeric and hyphens (max 63 chars)"
+                        ]
+                        return _render_ingress(ingress_errors=ingress_errors)
+                    elif ts_hostname:
                         if ingress.hosts:
                             ingress.hosts[0].hostname = ts_hostname
                         else:
@@ -3487,6 +3495,16 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
             if new_name and not re.match(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", new_name):
                 flash(
                     "Ingress name must be lowercase alphanumeric and hyphens.", "error"
+                )
+                return _redirect_back()
+            if (
+                new_name
+                and new_class == "tailscale"
+                and not _TS_HOSTNAME_RE.match(new_name)
+            ):
+                flash(
+                    "Tailscale hostname must be lowercase alphanumeric and hyphens (max 63 chars).",
+                    "error",
                 )
                 return _redirect_back()
             if new_name:
