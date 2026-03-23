@@ -65,7 +65,7 @@ def _deploy_operator_config(org, integration):
             "namespace": namespace,
         },
         "spec": {
-            "vaultPath": integration.client_secret_vault_path,
+            "clientId": integration.client_id,
             "operatorImage": image,
             "defaultTags": integration.default_tags or "",
             "organizationSlug": org.slug,
@@ -145,16 +145,51 @@ def deploy_tailscale_operator(organization_id):
 
     org = integration.organization
     try:
+        # Mint and write the first JWT before creating the CRD, so the
+        # operator has a valid token from the moment the Tailnet CRD is created.
+        from cabotage.utils.oidc import mint_tailscale_jwt
+
+        namespace = _operator_namespace(org)
+        operator_namespace = "tailscale"
+        _ensure_namespace(
+            kubernetes.client.CoreV1Api(kubernetes_ext.kubernetes_client),
+            namespace,
+        )
+        jwt = mint_tailscale_jwt(org.k8s_identifier, integration.client_id)
+        secret_name = f"tailscale-tailnet-{org.k8s_identifier}"
+        core_api = kubernetes.client.CoreV1Api(kubernetes_ext.kubernetes_client)
+        secret_body = kubernetes.client.V1Secret(
+            metadata=kubernetes.client.V1ObjectMeta(
+                name=secret_name,
+                namespace=operator_namespace,
+            ),
+            string_data={
+                "client_id": integration.client_id,
+                "jwt": jwt,
+            },
+        )
+        try:
+            core_api.read_namespaced_secret(secret_name, operator_namespace)
+            core_api.patch_namespaced_secret(
+                secret_name, operator_namespace, secret_body
+            )
+        except ApiException as exc:
+            if exc.status == 404:
+                core_api.create_namespaced_secret(operator_namespace, secret_body)
+            else:
+                raise
+        log.info("Wrote initial OIDC JWT for org %s", org.slug)
+
         _deploy_operator_config(org, integration)
         log.info(
             "Created CabotageTailscaleOperatorConfig in %s for org %s",
-            _operator_namespace(org),
+            namespace,
             org.slug,
         )
         integration.operator_state = "pending"
     except Exception:
         log.exception(
-            "Failed to create CabotageTailscaleOperatorConfig for org %s",
+            "Failed to deploy Tailscale for org %s",
             org.slug,
         )
         integration.operator_state = "failed"
@@ -183,6 +218,14 @@ def teardown_tailscale_operator(organization_id):
             "Deleted CabotageTailscaleOperatorConfig for org %s",
             org.slug,
         )
+        # Clean up the Tailnet credential Secret
+        core_api = kubernetes.client.CoreV1Api(kubernetes_ext.kubernetes_client)
+        secret_name = f"tailscale-tailnet-{org.k8s_identifier}"
+        try:
+            core_api.delete_namespaced_secret(secret_name, "tailscale")
+        except ApiException as exc:
+            if exc.status != 404:
+                log.warning("Failed to delete Secret %s: %s", secret_name, exc)
     except Exception:
         log.exception(
             "Failed to delete CabotageTailscaleOperatorConfig for org %s",
@@ -235,3 +278,52 @@ def reconcile_tailscale_integration_states():
                 state,
                 org.slug,
             )
+
+
+@shared_task()
+def refresh_tailscale_oidc_tokens():
+    """Periodic task: mint fresh JWTs for all orgs with Tailscale integration."""
+    from cabotage.utils.oidc import mint_tailscale_jwt
+
+    integrations = TailscaleIntegration.query.filter(
+        TailscaleIntegration.operator_state.in_(("pending", "deployed")),
+    ).all()
+    if not integrations:
+        return
+
+    api_client = kubernetes_ext.kubernetes_client
+    core_api = kubernetes.client.CoreV1Api(api_client)
+
+    # JWT Secrets live in the cabotage namespace (where the single operator reads them)
+    operator_namespace = "tailscale"
+
+    for integration in integrations:
+        org = integration.organization
+        secret_name = f"tailscale-tailnet-{org.k8s_identifier}"
+        try:
+            jwt = mint_tailscale_jwt(org.k8s_identifier, integration.client_id)
+            secret_body = kubernetes.client.V1Secret(
+                metadata=kubernetes.client.V1ObjectMeta(
+                    name=secret_name,
+                    namespace=operator_namespace,
+                ),
+                string_data={
+                    "client_id": integration.client_id,
+                    "jwt": jwt,
+                },
+            )
+            try:
+                core_api.read_namespaced_secret(secret_name, operator_namespace)
+                core_api.patch_namespaced_secret(
+                    secret_name, operator_namespace, secret_body
+                )
+            except ApiException as exc:
+                if exc.status == 404:
+                    core_api.create_namespaced_secret(operator_namespace, secret_body)
+                else:
+                    raise
+            log.debug("Refreshed OIDC JWT for org %s", org.slug)
+        except (
+            Exception
+        ):  # nosec B112 — don't let one org's error stop the refresh loop
+            log.exception("Failed to refresh OIDC JWT for org %s", org.slug)

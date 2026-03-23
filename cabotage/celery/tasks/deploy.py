@@ -624,6 +624,7 @@ def render_ingress_object(
     resource_prefix,
     labels,
     org_k8s_identifier=None,
+    org_default_tags=None,
     process_names=None,
 ):
     """Build a V1Ingress from an Ingress/IngressSnapshot and explicit context.
@@ -646,8 +647,9 @@ def render_ingress_object(
         annotations = {}
         if org_k8s_identifier:
             annotations["tailscale.com/proxy-group"] = f"ingress-{org_k8s_identifier}"
-        if ingress.tailscale_tags:
-            annotations["tailscale.com/tags"] = ingress.tailscale_tags
+        tags = ingress.tailscale_tags or org_default_tags
+        if tags:
+            annotations["tailscale.com/tags"] = tags
     else:
         annotations = {
             "nginx.ingress.kubernetes.io/backend-protocol": ingress.backend_protocol,
@@ -786,6 +788,7 @@ def ensure_ingresses(
     labels,
     ingresses,
     org_k8s_identifier=None,
+    org_default_tags=None,
     process_names=None,
     cleanup_orphans=False,
     log=None,
@@ -814,6 +817,7 @@ def ensure_ingresses(
             resource_prefix=resource_prefix,
             labels=labels,
             org_k8s_identifier=org_k8s_identifier,
+            org_default_tags=org_default_tags,
             process_names=process_names,
         )
         if ingress_object is None:
@@ -2081,6 +2085,7 @@ def deploy_release(deployment):
                 },
                 ingresses=ingress_snapshots,
                 org_k8s_identifier=release_obj.application.project.organization.k8s_identifier,
+                org_default_tags=f"tag:{current_app.config.get('TAILSCALE_TAG_PREFIX', 'cabotage')}",
                 process_names=(
                     list(release_obj.processes) if release_obj.processes else []
                 ),

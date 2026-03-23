@@ -43,5 +43,17 @@ def jwks():
     return Response(
         jwks_json(),
         mimetype="application/json",
-        headers={"Cache-Control": "public, max-age=3600"},
+        headers={"Cache-Control": "public, max-age=300"},
     )
+
+
+@oidc_blueprint.route("/oidc/authorize")
+def oidc_authorize():
+    """Not implemented — cabotage is a token issuer, not an authorization server."""
+    return Response("Not Implemented", status=501)
+
+
+@oidc_blueprint.route("/oidc/token", methods=["GET", "POST"])
+def oidc_token():
+    """Not implemented — cabotage is a token issuer, not an authorization server."""
+    return Response("Not Implemented", status=501)

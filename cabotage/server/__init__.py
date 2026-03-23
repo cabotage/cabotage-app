@@ -119,6 +119,11 @@ def celery_init_app(app):
             "schedule": 30.0,
             "args": None,
         },
+        "tailscale-oidc-token-refresh": {
+            "task": "cabotage.celery.tasks.tailscale.refresh_tailscale_oidc_tokens",
+            "schedule": crontab(minute="*/15"),
+            "args": None,
+        },
     }
     app.extensions["celery"] = celery_app
     return celery_app

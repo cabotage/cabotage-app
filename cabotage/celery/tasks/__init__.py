@@ -22,5 +22,6 @@ from .github import process_github_hook  # noqa: F401
 from .tailscale import (
     deploy_tailscale_operator,  # noqa: F401
     reconcile_tailscale_integration_states,  # noqa: F401
+    refresh_tailscale_oidc_tokens,  # noqa: F401
     teardown_tailscale_operator,  # noqa: F401
 )

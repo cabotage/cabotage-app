@@ -8,7 +8,6 @@ from wtforms import (
     BooleanField,
     HiddenField,
     IntegerField,
-    PasswordField,
     SelectField,
     StringField,
     TextAreaField,
@@ -838,50 +837,16 @@ class IngressPathForm(FlaskForm):
 
 class TailscaleIntegrationForm(FlaskForm):
     client_id = StringField(
-        "OAuth Client ID",
+        "Client ID",
         [InputRequired(), Length(max=255)],
-        description="Tailscale OAuth client ID",
-    )
-    client_secret = PasswordField(
-        "OAuth Client Secret",
-        [InputRequired(), Length(max=255)],
-        description="Tailscale OAuth client secret",
-    )
-    tailnet = StringField(
-        "Tailnet Name",
-        [Optional(), Length(max=255)],
-        description="Your tailnet name (e.g. example.org.github)",
-        filters=[(lambda x: x.strip() if x else x), (lambda x: x if x else None)],
-    )
-    default_tags = StringField(
-        "Default ACL Tags",
-        [
-            Optional(),
-            Length(max=512),
-            Regexp(
-                r"^(tag:[a-z0-9\-]+(,\s*tag:[a-z0-9\-]+)*)?$",
-                message="Tags must be comma-separated tag:name format (e.g. tag:k8s-operator,tag:k8s)",
-            ),
-        ],
-        description="Default ACL tags for operator nodes",
-        filters=[(lambda x: x.strip() if x else x), (lambda x: x if x else None)],
+        description="From the OIDC federated identity in Tailscale",
     )
 
 
 class TailscaleIngressSettingsForm(FlaskForm):
-    tailscale_tags = StringField(
-        "ACL Tags",
-        [
-            Optional(),
-            Length(max=512),
-            Regexp(
-                r"^(tag:[a-z0-9\-]+(,\s*tag:[a-z0-9\-]+)*)?$",
-                message="Tags must be comma-separated tag:name format",
-            ),
-        ],
-        description="ACL tags for this ingress (e.g. tag:web,tag:prod)",
-        filters=[(lambda x: x.strip() if x else x), (lambda x: x if x else None)],
-    )
+    """Placeholder — tags are now derived from the platform config."""
+
+    pass
 
 
 class CreateEnvironmentConfigurationForm(FlaskForm):

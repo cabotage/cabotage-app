@@ -141,6 +141,8 @@ from cabotage.utils.build_log_stream import (
     stream_key,
 )
 
+from cabotage.utils import oidc
+
 _REGEX_META = re.compile(r"[.*+?{}()|\\^$\[\]]")
 
 
@@ -654,28 +656,61 @@ def organization_settings(org_slug):
         and action == "save_tailscale"
         and ts_form.validate_on_submit()
     ):
-        # Validate credentials by requesting an OAuth token from Tailscale
+        client_id = ts_form.client_id.data
+        # Validate the OIDC trust by attempting a token exchange
         import requests as http_requests
 
         try:
+            jwt = oidc.mint_tailscale_jwt(organization.k8s_identifier, client_id)
             token_resp = http_requests.post(
-                "https://api.tailscale.com/api/v2/oauth/token",
+                "https://api.tailscale.com/api/v2/oauth/token-exchange",
                 data={
-                    "grant_type": "client_credentials",
-                    "client_id": ts_form.client_id.data,
-                    "client_secret": ts_form.client_secret.data,
+                    "grant_type": "authorization_code",
+                    "client_id": client_id,
+                    "jwt": jwt,
                 },
                 timeout=10,
             )
             if token_resp.status_code != 200:
                 flash(
-                    "Tailscale credential validation failed. "
-                    "Please check your client ID and secret.",
+                    "OIDC trust validation failed. Please check that the "
+                    "federated identity is configured with the correct "
+                    f"issuer URL and subject (org:{organization.k8s_identifier}).",
                     "danger",
                 )
                 return redirect(
-                    url_for("user.organization_settings", org_slug=organization.slug)
+                    url_for(
+                        "user.organization_settings",
+                        org_slug=organization.slug,
+                    )
                 )
+            access_token = token_resp.json().get("access_token")
+
+            # Fetch tailnet name from devices (we have Devices Core write scope)
+            tailnet_name = None
+            if access_token:
+                try:
+                    devices_resp = http_requests.get(
+                        "https://api.tailscale.com/api/v2/tailnet/-/devices?fields=default",
+                        headers={"Authorization": f"Bearer {access_token}"},
+                        timeout=10,
+                    )
+                    if devices_resp.status_code == 200:
+                        devices = devices_resp.json().get("devices", [])
+                        for dev in devices:
+                            name = dev.get("name", "")
+                            # Device name format: hostname.tailnet.ts.net
+                            parts = name.rsplit(".", 3)
+                            if (
+                                len(parts) >= 3
+                                and parts[-1] == "net"
+                                and parts[-2] == "ts"
+                            ):
+                                tailnet_name = f"{parts[-3]}.ts.net"
+                                break
+                except http_requests.RequestException:
+                    pass  # tailnet_name stays None
+
         except http_requests.RequestException:
             flash(
                 "Could not reach Tailscale API to validate credentials. "
@@ -686,28 +721,27 @@ def organization_settings(org_slug):
                 url_for("user.organization_settings", org_slug=organization.slug)
             )
 
-        vault_path = config_writer.write_tailscale_credentials(
-            organization, ts_form.client_id.data, ts_form.client_secret.data
-        )
+        tag_prefix = current_app.config.get("TAILSCALE_TAG_PREFIX", "cabotage")
+        default_tags = f"tag:{tag_prefix}"
         if not ts_integration:
             ts_integration = TailscaleIntegration(
                 organization_id=organization.id,
-                client_id=ts_form.client_id.data,
-                client_secret_vault_path=vault_path,
-                tailnet=ts_form.tailnet.data,
-                default_tags=ts_form.default_tags.data,
+                client_id=client_id,
+                tailnet=tailnet_name,
+                default_tags=default_tags,
             )
             db.session.add(ts_integration)
         else:
-            ts_integration.client_id = ts_form.client_id.data
-            ts_integration.client_secret_vault_path = vault_path
-            ts_integration.tailnet = ts_form.tailnet.data
-            ts_integration.default_tags = ts_form.default_tags.data
+            ts_integration.client_id = client_id
+            ts_integration.tailnet = tailnet_name
+            ts_integration.default_tags = default_tags
             ts_integration.operator_state = "pending"
         db.session.commit()
         deploy_tailscale_operator.delay(str(organization.id))
         flash(
-            "Tailscale credentials validated and saved. Operator deployment in progress.",
+            f"Tailscale integration validated and saved "
+            f"(tailnet: {tailnet_name}). "
+            f"Operator deployment in progress.",
             "success",
         )
         return redirect(
@@ -717,7 +751,6 @@ def organization_settings(org_slug):
     if request.method == "POST" and action == "delete_tailscale":
         if ts_integration:
             teardown_tailscale_operator.delay(str(organization.id))
-            config_writer.delete_tailscale_credentials(organization)
             db.session.delete(ts_integration)
             db.session.commit()
             flash("Tailscale integration removed.", "success")
@@ -729,10 +762,9 @@ def organization_settings(org_slug):
     if not form.name.data or request.method == "GET":
         form.name.data = organization.name
 
-    if ts_integration and request.method == "GET":
-        ts_form.client_id.data = ts_integration.client_id
-        ts_form.tailnet.data = ts_integration.tailnet
-        ts_form.default_tags.data = ts_integration.default_tags
+    if request.method == "GET":
+        if ts_integration:
+            ts_form.client_id.data = ts_integration.client_id
 
     delete_form = DeleteOrganizationForm()
     delete_form.organization_id.data = str(organization.id)
@@ -762,6 +794,7 @@ def organization_settings(org_slug):
         delete_impact=delete_impact,
         ts_form=ts_form,
         ts_integration=ts_integration,
+        oidc_issuer_url=oidc.issuer_url(),
     )
 
 
@@ -3310,8 +3343,6 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
 
                 # Settings — branch on ingress class
                 if is_tailscale:
-                    ingress.tailscale_tags = form.tailscale_tags.data
-
                     # Tailscale: single hostname — update or create
                     ts_hostname = request.form.get("_ts_hostname", "").strip()
                     if ts_hostname:

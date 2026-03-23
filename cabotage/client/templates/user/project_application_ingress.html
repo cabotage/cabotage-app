@@ -191,21 +191,7 @@
               {# end paths section #}
 
               {# Settings — conditional on ingress class #}
-              {% if is_tailscale %}
-                {# Tailscale Settings #}
-                <div class="divider"></div>
-                <details class="ingress-collapse collapse collapse-arrow bg-base-200/30"
-                        {% if form.errors %}open{% endif %}>
-                  <summary class="collapse-title">
-                    {{ icon('settings', 'w-3 h-3 inline mr-1') }} Tailscale Settings
-                  </summary>
-                  <div class="collapse-content">
-                    <div class="grid grid-cols-2 gap-2 mb-1">
-                      {{ render_field_compact(form.tailscale_tags, label='ACL Tags', placeholder='tag:k8s') }}
-                    </div>
-                  </div>
-                </details>
-              {% else %}
+              {% if not is_tailscale %}
                 {# Nginx Advanced Settings #}
                 <div class="divider"></div>
                 <details class="ingress-collapse collapse collapse-arrow bg-base-200/30"

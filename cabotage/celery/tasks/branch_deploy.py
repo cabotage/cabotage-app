@@ -220,6 +220,7 @@ def _precreate_ingresses(environment):
             },
             ingresses=app_env.ingresses,
             org_k8s_identifier=org.k8s_identifier,
+            org_default_tags=f"tag:{current_app.config.get('TAILSCALE_TAG_PREFIX', 'cabotage')}",
         )
 
 

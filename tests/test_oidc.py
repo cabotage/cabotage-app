@@ -94,7 +94,7 @@ class TestJWKS:
 
     def test_cache_header(self, client):
         resp = client.get("/.well-known/jwks.json")
-        assert "max-age=3600" in resp.headers.get("Cache-Control", "")
+        assert "max-age=300" in resp.headers.get("Cache-Control", "")
 
     def test_keys_present(self, client):
         resp = client.get("/.well-known/jwks.json")

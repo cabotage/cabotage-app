@@ -346,6 +346,20 @@ class TestRenderTailscaleIngress:
         obj = render_ingress_object(ing, RESOURCE_PREFIX, LABELS)
         assert "tailscale.com/tags" not in obj.metadata.annotations
 
+    def test_org_default_tags_fallback(self):
+        ing = self._make_ts_ingress(tailscale_tags=None)
+        obj = render_ingress_object(
+            ing, RESOURCE_PREFIX, LABELS, org_default_tags="tag:cabotage"
+        )
+        assert obj.metadata.annotations["tailscale.com/tags"] == "tag:cabotage"
+
+    def test_ingress_tags_override_org_default(self):
+        ing = self._make_ts_ingress(tailscale_tags="tag:custom")
+        obj = render_ingress_object(
+            ing, RESOURCE_PREFIX, LABELS, org_default_tags="tag:cabotage"
+        )
+        assert obj.metadata.annotations["tailscale.com/tags"] == "tag:custom"
+
     def test_tls_always_on(self):
         """Tailscale ingresses always include all hosts in TLS, regardless of tls_enabled."""
         ing = self._make_ts_ingress(

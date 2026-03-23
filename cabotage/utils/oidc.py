@@ -21,10 +21,19 @@ from cabotage.utils.docker_auth import (
 
 
 def issuer_url():
-    """Return cabotage's OIDC issuer URL."""
+    """Return cabotage's OIDC issuer URL.
+
+    Enforces HTTPS — an HTTP issuer URL would allow MITM of JWKS
+    fetches, enabling token forgery.
+    """
     scheme = current_app.config.get("EXT_PREFERRED_URL_SCHEME", "https")
+    if scheme != "https":
+        raise ValueError(
+            f"OIDC issuer requires HTTPS but EXT_PREFERRED_URL_SCHEME is {scheme!r}. "
+            "Set EXT_PREFERRED_URL_SCHEME=https."
+        )
     server = current_app.config["EXT_SERVER_NAME"]
-    return f"{scheme}://{server}"
+    return f"https://{server}"
 
 
 def jwks_json():
@@ -78,6 +87,7 @@ def mint_jwt(subject, audience, ttl=3600):
             "sub": subject,
             "aud": audience,
             "exp": now + ttl,
+            "nbf": now,
             "iat": now,
             "jti": str(uuid.uuid4()),
         },
@@ -90,14 +100,15 @@ def mint_jwt(subject, audience, ttl=3600):
     return f"{payload}.{signature}"
 
 
-def mint_tailscale_jwt(org_slug, client_id, ttl=3600):
+def mint_tailscale_jwt(org_k8s_identifier, client_id, ttl=3600):
     """Mint a JWT for Tailscale workload identity federation.
 
     The audience must be api.tailscale.com/{client_id} per Tailscale's
-    OIDC federation requirements.
+    OIDC federation requirements. The subject uses the org's immutable
+    k8s_identifier (not the slug, which can change).
     """
     return mint_jwt(
-        subject=f"org:{org_slug}",
+        subject=f"org:{org_k8s_identifier}",
         audience=f"api.tailscale.com/{client_id}",
         ttl=ttl,
     )

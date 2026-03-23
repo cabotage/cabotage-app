@@ -105,6 +105,7 @@ class Config(metaclass=MetaFlaskEnv):
     TAILSCALE_OPERATOR_IMAGE = "ghcr.io/tailscale/k8s-operator"
     TAILSCALE_OPERATOR_VERSION = "v1.94.2"
     TAILSCALE_OPERATOR_ENABLED = False
+    TAILSCALE_TAG_PREFIX = "cabotage"
     MIMIR_URL = None
     MIMIR_VERIFY = None
     LOKI_URL = None
