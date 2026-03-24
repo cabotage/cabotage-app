@@ -351,6 +351,11 @@ def create_deployment(
             "Deployment created.",
         )
     except Exception:
+        logger.exception(
+            "failed to create deployment for %s ref=%s",
+            repository_name,
+            ref,
+        )
         return None
     return statuses_url
 
