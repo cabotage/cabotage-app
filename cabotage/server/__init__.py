@@ -15,13 +15,13 @@ except ImportError:
     TextLexer = None
 
 from flask import Flask, render_template, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_admin import Admin
 from flask_babel import Babel
 from flask_bcrypt import Bcrypt
 from flask_bootstrap import Bootstrap
 from flask_debugtoolbar import DebugToolbarExtension
 import humanize as humanize_lib
-from flask_login import LoginManager
 from flask_mail import Mail
 from flask_migrate import Migrate
 from flask_security import Security, SQLAlchemyUserDatastore
@@ -47,12 +47,14 @@ from cabotage.server.ext.config_writer import ConfigWriter
 from cabotage.server.ext.kubernetes import Kubernetes
 from cabotage.server.ext.vault_db_creds import VaultDBCreds
 from cabotage.server.ext.github_app import GitHubApp
+from cabotage.server.mfa import CabotageWebauthnUtil
 
 # instantiate the extensions
 bcrypt = Bcrypt()
 toolbar = DebugToolbarExtension()
 bootstrap = Bootstrap()
-security = Security()
+
+security = Security(webauthn_util_cls=CabotageWebauthnUtil)
 
 
 db_metadata = MetaData(
@@ -73,7 +75,6 @@ if TYPE_CHECKING:
 else:
     Model = db.Model
 principal = Principal()
-login_manager = LoginManager()
 mail = Mail()
 migrate = Migrate()
 consul = Consul()
@@ -113,6 +114,16 @@ def celery_init_app(app):
             "schedule": 10.0,
             "args": None,
         },
+        "tailscale-state-reconciler": {
+            "task": "cabotage.celery.tasks.tailscale.reconcile_tailscale_integration_states",
+            "schedule": 30.0,
+            "args": None,
+        },
+        "tailscale-oidc-token-refresh": {
+            "task": "cabotage.celery.tasks.tailscale.refresh_tailscale_oidc_tokens",
+            "schedule": crontab(minute="*/15"),
+            "args": None,
+        },
     }
     app.extensions["celery"] = celery_app
     return celery_app
@@ -132,9 +143,9 @@ def create_app():
         name="cabotage_admin", index_view=AdminIndexView(), template_mode="bootstrap3"
     )
 
-    from cabotage.server.models.auth import User, Role
+    from cabotage.server.models.auth import User, Role, WebAuthn
 
-    user_datastore = SQLAlchemyUserDatastore(db, User, Role)
+    user_datastore = SQLAlchemyUserDatastore(db, User, Role, webauthn_model=WebAuthn)
 
     from cabotage.server.user.forms import (
         ExtendedConfirmRegisterForm,
@@ -145,6 +156,15 @@ def create_app():
     # set config
     app_settings = os.getenv("APP_SETTINGS", "cabotage.server.config.Config")
     app.config.from_object(app_settings)
+
+    # TOTP_SECRETS must be a dict — deserialize if loaded as a string from env
+    totp_secrets = app.config.get("SECURITY_TOTP_SECRETS")
+    if isinstance(totp_secrets, str):
+        import json
+
+        app.config["SECURITY_TOTP_SECRETS"] = {
+            int(k): v for k, v in json.loads(totp_secrets).items()
+        }
 
     if app.config.get("GITHUB_OAUTH_ONLY"):
         app.config["SECURITY_REGISTERABLE"] = False
@@ -198,7 +218,6 @@ def create_app():
     db.init_app(app)
     principal.init_app(app)
     identity_loaded.connect(cabotage_on_identity_loaded, app)
-    login_manager.init_app(app)
     mail.init_app(app)
     migrate.init_app(app, db)
     nav.init_app(app)
@@ -260,19 +279,23 @@ def create_app():
     sock.init_app(app)
     babel.init_app(app)
 
-    @login_manager.user_loader
-    def load_user(userid):
-        return user_datastore.find_user(id=userid)
-
     # register blueprints
     from cabotage.server.user.views import user_blueprint
     from cabotage.server.main.views import main_blueprint
+    from cabotage.server.oidc.views import oidc_blueprint
+    from cabotage.server.registry_auth.views import registry_auth_blueprint
 
     app.register_blueprint(user_blueprint)
     app.register_blueprint(main_blueprint)
+    app.register_blueprint(oidc_blueprint)
+    app.register_blueprint(registry_auth_blueprint)
 
     # GitHub webhook uses HMAC validation, not CSRF tokens
     csrf.exempt("cabotage.server.user.views.github_hooks")
+
+    from cabotage.server.mfa import register_mfa_guards
+
+    register_mfa_guards(app)
 
     # error handlers
     @app.errorhandler(401)
@@ -320,6 +343,15 @@ def create_app():
     admin.add_view(AdminModelView(Deployment, db.session))
     admin.add_view(AdminModelView(Hook, db.session))
     admin.add_view(AdminModelView(User, db.session))
+
+    num_proxies = app.config.get("PROXY_FIX_NUM_PROXIES", 1)
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=num_proxies,
+        x_proto=num_proxies,
+        x_host=num_proxies,
+        x_prefix=num_proxies,
+    )
 
     original_wsgi = app.wsgi_app
 

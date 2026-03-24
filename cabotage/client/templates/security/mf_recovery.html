@@ -1,0 +1,45 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import render_field, icon %}
+
+{% block title %}
+  Recovery Code - Cabotage
+{% endblock title %}
+
+{% block content %}
+  <div class="form-card">
+    <div class="card bg-base-200 border border-base-300 shadow-xl">
+      <div class="card-body">
+        <div class="text-center mb-6">
+          <h1 class="text-2xl font-semibold text-base-content">Enter Recovery Code</h1>
+          <p class="text-sm text-base-content/50 mt-1">Use one of your saved recovery codes to sign in</p>
+        </div>
+
+        {% include "security/_messages.html" %}
+
+        <form action="{{ url_for_security('mf_recovery') }}"
+              method="post"
+              name="mf_recovery_form"
+              class="flex flex-col gap-4">
+          {{ mf_recovery_form.hidden_tag() }}
+          <div class="w-full">
+            <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Recovery Code</label>
+            {{ mf_recovery_form.code(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono text-center tracking-widest", placeholder="Enter recovery code", autocomplete="off", autofocus=true) }}
+            {% for error in mf_recovery_form.code.errors %}
+              <p class="text-xs text-error mt-0.5">{{ error }}</p>
+            {% endfor %}
+          </div>
+          <button type="submit" class="btn btn-primary w-full mt-2">Verify</button>
+          <label class="label cursor-pointer justify-center gap-3 mt-1">
+            <input type="checkbox" name="remember" value="y" class="checkbox checkbox-primary checkbox-sm">
+            <span class="text-sm text-base-content/60">Trust this browser for 30 days</span>
+          </label>
+        </form>
+
+        <div class="text-center mt-4">
+          <a href="{{ url_for_security('login') }}"
+             class="text-sm text-base-content/40 hover:text-accent transition-colors">&larr; Back to sign in</a>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock content %}

@@ -1,0 +1,68 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import render_field, icon %}
+
+{% block title %}
+  Re-Authenticate - Cabotage
+{% endblock title %}
+
+{% block css %}
+  <script src="{{ url_for('security.static', filename='js/webauthn.js') }}"></script>
+  <script src="{{ url_for('security.static', filename='js/base64.js') }}"></script>
+{% endblock css %}
+
+{% block content %}
+  <div class="form-card">
+    <div class="card bg-base-200 border border-base-300 shadow-xl">
+      <div class="card-body">
+        <div class="text-center mb-6">
+          <h1 class="text-2xl font-semibold text-base-content">Re-Authenticate</h1>
+          <p class="text-sm text-base-content/50 mt-1">Please verify your identity with your security key</p>
+        </div>
+
+        {% include "security/_messages.html" %}
+
+        {% if not credential_options %}
+          <form action="{{ url_for_security('wan_verify') }}{% if 'next' in request.args %}?next={{ request.args.next|urlencode }}{% endif %}"
+                method="post"
+                name="wan_verify_form"
+                class="flex flex-col gap-4">
+            {{ wan_verify_form.hidden_tag() }}
+            <button type="submit" class="btn btn-primary w-full">
+              {{ icon('key', 'w-4 h-4') }} Verify with Security Key
+            </button>
+          </form>
+        {% else %}
+          <div class="text-center py-8">
+            <span class="loading loading-spinner loading-lg text-primary"></span>
+            <p class="text-sm text-base-content/60 mt-4">Follow your browser's prompt to verify...</p>
+          </div>
+          <div id="wan-errors" class="text-center text-error text-sm"></div>
+          <form action="{{ url_for_security('wan_verify_response', token=wan_state) }}{% if 'next' in request.args %}?next={{ request.args.next|urlencode }}{% endif %}"
+                method="post"
+                name="wan_signin_response_form"
+                id="wan-signin-response-form">
+            {{ wan_signin_response_form.hidden_tag() }}
+          </form>
+          <script type="text/javascript">
+            handleSignin('{{ credential_options|safe }}')
+              .then((result) => {
+                if (result.credential) {
+                  document.getElementById("credential").value = result.credential;
+                  document.forms["wan-signin-response-form"].submit();
+                } else {
+                  document.querySelector('.loading').classList.add('hidden');
+                  var errEl = document.getElementById("wan-errors");
+                  var alertDiv = document.createElement('div');
+                  alertDiv.className = 'alert alert-error text-sm py-2';
+                  var msgSpan = document.createElement('span');
+                  msgSpan.textContent = result.error_msg;
+                  alertDiv.appendChild(msgSpan);
+                  errEl.appendChild(alertDiv);
+                }
+              });
+          </script>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endblock content %}

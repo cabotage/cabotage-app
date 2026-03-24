@@ -2,7 +2,7 @@
 	lint reformat type-check security-check \
 	start stop rebuild destroy \
 	migrate create-admin seed \
-	routes migrations lock
+	routes migrations lock test
 
 default:
 	@echo "Call a specific subcommand:"
@@ -43,6 +43,16 @@ routes:
 
 lock:
 	uv lock
+
+test:
+	docker compose exec db psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'cabotage_test'" | grep -q 1 || \
+		docker compose exec db psql -U postgres -c "CREATE DATABASE cabotage_test" && \
+		docker compose exec db psql -U postgres -d cabotage_test -c "CREATE EXTENSION IF NOT EXISTS citext; CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+	docker compose run --rm \
+		-e CABOTAGE_SQLALCHEMY_DATABASE_URI=postgresql://postgres@db/cabotage_test \
+		-e CABOTAGE_TESTING=True \
+		-e FLASK_APP=cabotage.server.wsgi \
+		base sh -c "uv pip install pytest && python3 -m flask db upgrade && python3 -m pytest tests/ -v $(ARGS)"
 
 reformat:
 	docker compose run --build --rm base black .

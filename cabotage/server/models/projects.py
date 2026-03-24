@@ -277,6 +277,12 @@ class ApplicationEnvironment(Model, Timestamp):
         db.Text(),
         nullable=True,
     )
+    auto_deploy_wait_for_ci = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+    )
     github_environment_name = db.Column(
         db.Text(),
         nullable=True,
@@ -533,6 +539,10 @@ class Application(Model, Timestamp):
 
     dockerfile_path = db.Column(
         db.Text(),
+        nullable=True,
+    )
+    branch_deploy_watch_paths = db.Column(
+        postgresql.JSONB(),
         nullable=True,
     )
 
@@ -1575,6 +1585,9 @@ class Ingress(Model, Timestamp):
     cluster_issuer = db.Column(db.String(64), default="letsencrypt", nullable=False)
     force_ssl_redirect = db.Column(db.Boolean(), default=True, nullable=False)
     service_upstream = db.Column(db.Boolean(), default=True, nullable=False)
+    tailscale_hostname = db.Column(db.String(253), nullable=True)
+    tailscale_funnel = db.Column(db.Boolean(), default=False, nullable=False)
+    tailscale_tags = db.Column(db.String(512), nullable=True)
     version_id = db.Column(db.Integer, nullable=False)
 
     hosts = db.relationship(
@@ -1615,6 +1628,9 @@ class Ingress(Model, Timestamp):
             "cluster_issuer": self.cluster_issuer,
             "force_ssl_redirect": self.force_ssl_redirect,
             "service_upstream": self.service_upstream,
+            "tailscale_hostname": self.tailscale_hostname,
+            "tailscale_funnel": self.tailscale_funnel,
+            "tailscale_tags": self.tailscale_tags,
             "hosts": sorted(
                 [h.asdict for h in self.hosts], key=lambda h: h["hostname"]
             ),
@@ -1744,6 +1760,9 @@ class IngressSnapshot:
         self.cluster_issuer = data["cluster_issuer"]
         self.force_ssl_redirect = data["force_ssl_redirect"]
         self.service_upstream = data["service_upstream"]
+        self.tailscale_hostname = data.get("tailscale_hostname")
+        self.tailscale_funnel = data.get("tailscale_funnel", False)
+        self.tailscale_tags = data.get("tailscale_tags")
         self.hosts = [IngressHostSnapshot(h) for h in data.get("hosts", [])]
         self.paths = [IngressPathSnapshot(p) for p in data.get("paths", [])]
 

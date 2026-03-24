@@ -203,7 +203,7 @@
       {% endif %}
       <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
          class="btn btn-ghost btn-sm gap-1.5">{{ icon('settings', 'w-3.5 h-3.5') }} Settings</a>
-      {% if config.INGRESS_DOMAIN %}
+      {% if config.INGRESS_DOMAIN or (application and application.project.organization.tailscale_integration) %}
         <a href="{{ url_for('user.project_application_ingress', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}"
            class="btn btn-ghost btn-sm gap-1.5">{{ icon('globe', 'w-3.5 h-3.5') }} Ingress</a>
       {% endif %}

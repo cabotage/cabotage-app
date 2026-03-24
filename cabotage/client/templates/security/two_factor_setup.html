@@ -1,0 +1,80 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import render_field, icon %}
+
+{% block title %}
+  Two-Factor Authentication - Cabotage
+{% endblock title %}
+
+{% block css %}
+  {% if security.webauthn %}
+    <script src="{{ url_for('security.static', filename='js/webauthn.js') }}"></script>
+    <script src="{{ url_for('security.static', filename='js/base64.js') }}"></script>
+  {% endif %}
+{% endblock css %}
+
+{% block content %}
+  <div class="form-card" style="max-width: 32rem;">
+    <div class="card bg-base-200 border border-base-300 shadow-xl">
+      <div class="card-body">
+        <div class="text-center mb-6">
+          <h1 class="text-2xl font-semibold text-base-content">Set Up Two-Factor Authentication</h1>
+          {% if primary_method and primary_method != 'none' %}
+            <p class="text-sm text-base-content/50 mt-1">Configure your authenticator app</p>
+          {% else %}
+            <p class="text-sm text-base-content/50 mt-1">Two-factor authentication is required to continue</p>
+          {% endif %}
+        </div>
+
+        {% if not chosen_method %}
+          {# Security Key — primary option #}
+          {% if security.webauthn %}
+            <div class="flex flex-col gap-4">
+              <div class="flex items-center gap-3 p-4 rounded-lg border border-base-content/10 bg-base-100">
+                {{ icon('key', 'w-5 h-5 text-primary shrink-0') }}
+                <div>
+                  <div class="text-sm font-medium text-base-content">Security Key</div>
+                  <div class="text-xs text-base-content/50">Use a hardware key or passkey like YubiKey or Touch ID</div>
+                </div>
+              </div>
+              <button type="button" class="btn btn-primary w-full gap-2"
+                      onclick="document.getElementById('add-key-modal').showModal()">
+                {{ icon('key', 'w-4 h-4') }} Set Up Security Key
+              </button>
+            </div>
+            <div class="divider text-base-content/30 text-xs">or</div>
+          {% endif %}
+
+          {# Authenticator App — secondary option #}
+          <div class="flex flex-col gap-4">
+            <div class="flex items-center gap-3 p-4 rounded-lg border border-base-content/10 bg-base-100">
+              {{ icon('shield', 'w-5 h-5 text-primary shrink-0') }}
+              <div>
+                <div class="text-sm font-medium text-base-content">Authenticator App</div>
+                <div class="text-xs text-base-content/50">Use an app like Google Authenticator, 1Password, or Authy</div>
+              </div>
+            </div>
+            <button type="button" class="btn btn-outline w-full"
+                    onclick="document.getElementById('setup-totp-modal').showModal(); initTotpSetup();">
+              Set Up Authenticator
+            </button>
+          </div>
+        {% endif %}
+
+        {% if primary_method and primary_method != 'none' %}
+          <div class="mt-4 text-center">
+            <a href="{{ url_for('user.account_security') }}"
+               class="text-sm text-base-content/40 hover:text-accent transition-colors">&larr; Back to security settings</a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if security.webauthn and not chosen_method %}
+    {% include "security/_wan_register_modal.html" %}
+  {% endif %}
+
+  {% if not chosen_method %}
+    {% include "security/_totp_setup_modal.html" %}
+  {% endif %}
+{% endblock content %}

@@ -19,6 +19,7 @@
     <div class="card-body">
       <form method="POST" action="{{ url_for('user.organization_settings', org_slug=organization.slug) }}">
         {{ form.hidden_tag() }}
+        <input type="hidden" name="_action" value="save_org">
         <div style="display:none">{{ form.organization_id() }}</div>
         {{ render_field(form.name) }}
         <div class="mt-4">
@@ -26,6 +27,162 @@
             {{ icon('check', 'w-4 h-4') }}
             Save Changes
           </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# Tailscale Integration #}
+  <div class="card bg-base-200/50 border border-base-300/50 max-w-2xl mt-6">
+    <div class="card-body">
+      <div class="flex items-center justify-between">
+        <h2 class="card-title text-lg">Tailscale Integration</h2>
+        {% if ts_integration %}
+          <span class="badge badge-sm {% if ts_integration.operator_state == 'deployed' %}badge-success{% elif ts_integration.operator_state == 'failed' %}badge-error{% else %}badge-warning{% endif %}">
+            {{ ts_integration.operator_state }}
+          </span>
+        {% endif %}
+      </div>
+      {% if ts_integration and ts_integration.tailnet %}
+        <span class="text-sm opacity-70">Tailnet: {{ ts_integration.tailnet }}</span>
+      {% endif %}
+
+      {% set tp = config.TAILSCALE_TAG_PREFIX %}
+      {# Click-to-copy helper: shows value + copy icon, copies on click #}
+      {% macro copyable(value) %}
+        <code class="inline-flex items-center gap-1 bg-base-300/50 rounded px-1.5 py-0.5 text-xs cursor-pointer hover:bg-base-300/80 transition-colors group"
+              onclick="navigator.clipboard.writeText('{{ value }}'); this.querySelector('.copy-ok').classList.remove('hidden'); setTimeout(() => this.querySelector('.copy-ok').classList.add('hidden'), 1500)"
+              title="Click to copy">{{ value }}<span class="opacity-30 group-hover:opacity-60">{{ icon('copy', 'w-3 h-3') }}</span><span class="copy-ok hidden text-success">{{ icon('check', 'w-3 h-3') }}</span></code>
+      {% endmacro %}
+
+      <div class="mb-4 text-sm opacity-80">
+        <p class="mb-2">Connect this organization to your Tailscale network. Services with Tailscale ingresses will be accessible on your tailnet.</p>
+        <details class="collapse collapse-arrow bg-base-300/30 rounded-lg">
+          <summary class="collapse-title font-medium text-sm">Setup Instructions</summary>
+          <div class="collapse-content text-sm space-y-4 mt-2">
+
+            {# Step 1: Create Tags #}
+            <div>
+              <h4 class="font-semibold text-base-content mb-1">1. Create ACL Tags</h4>
+              <p class="opacity-70 mb-2">
+                In your <a href="https://login.tailscale.com/admin/acls" class="link link-primary" target="_blank" rel="noopener">tailnet policy file</a>,
+                add two tags. {{ copyable('tag:' ~ tp ~ '-operator') }} is used by the platform to manage devices.
+                {{ copyable('tag:' ~ tp) }} is applied to the devices that serve your ingresses.
+                The operator tag must own the service tag.
+              </p>
+              <pre class="bg-base-300/50 rounded p-2 text-xs overflow-x-auto"><code>"tagOwners": {
+  "tag:{{ tp }}-operator": [],
+  "tag:{{ tp }}": ["tag:{{ tp }}-operator"]
+}</code></pre>
+            </div>
+
+            {# Step 2: Setup ACLs #}
+            <div>
+              <h4 class="font-semibold text-base-content mb-1">2. Configure ACL Policies</h4>
+              <p class="opacity-70 mb-2">
+                Allow devices to advertise Tailscale Services without manual approval,
+                and enable Funnel for public internet access.
+              </p>
+              <div role="tablist" class="tabs tabs-bordered tabs-sm mb-2">
+                <input type="radio" name="acl-tabs" role="tab" class="tab" aria-label="JSON Policy" checked="checked" />
+                <div role="tabpanel" class="tab-content pt-2">
+                  <p class="opacity-70 mb-1 text-xs">Add to your <a href="https://login.tailscale.com/admin/acls" class="link link-primary" target="_blank" rel="noopener">tailnet policy JSON</a>:</p>
+                  <pre class="bg-base-300/50 rounded p-2 text-xs overflow-x-auto"><code>"autoApprovers": {
+  "services": {
+    "tag:{{ tp }}": ["tag:{{ tp }}"]
+  }
+},
+"nodeAttrs": [
+  {
+    "target": ["tag:{{ tp }}"],
+    "attr": ["funnel"]
+  }
+]</code></pre>
+                </div>
+
+                <input type="radio" name="acl-tabs" role="tab" class="tab" aria-label="Admin Console" />
+                <div role="tabpanel" class="tab-content pt-2">
+                  <ol class="list-decimal list-inside space-y-1 text-xs opacity-80">
+                    <li>Go to <a href="https://login.tailscale.com/admin/acls/auto-approvers" class="link link-primary" target="_blank" rel="noopener">Access Controls &gt; Auto Approvers</a></li>
+                    <li>Under <strong>Services</strong>, add: Service {{ copyable('tag:' ~ tp) }} can be auto-approved by {{ copyable('tag:' ~ tp) }}</li>
+                    <li>Go to <a href="https://login.tailscale.com/admin/acls/node-attributes" class="link link-primary" target="_blank" rel="noopener">Access Controls &gt; Node Attributes</a></li>
+                    <li>Add: Target {{ copyable('tag:' ~ tp) }}, Attribute {{ copyable('funnel') }}</li>
+                  </ol>
+                </div>
+              </div>
+            </div>
+
+            {# Step 3: Enable HTTPS #}
+            <div>
+              <h4 class="font-semibold text-base-content mb-1">3. Enable HTTPS Certificates</h4>
+              <p class="opacity-70 mb-2">
+                Go to <a href="https://login.tailscale.com/admin/dns" class="link link-primary" target="_blank" rel="noopener">DNS</a>
+                and enable <strong>HTTPS Certificates</strong>. This allows ingress
+                proxies to obtain TLS certificates for your tailnet domain.
+              </p>
+            </div>
+
+            {# Step 4: Trust Credentials #}
+            <div>
+              <h4 class="font-semibold text-base-content mb-1">4. Create Trust Credential</h4>
+              <p class="opacity-70 mb-2">
+                Go to <a href="https://login.tailscale.com/admin/settings/trust-credentials" class="link link-primary" target="_blank" rel="noopener">Tailscale Admin &gt; Trust Credentials</a>
+                and click <strong>Credential</strong>.
+              </p>
+
+              <div class="bg-base-300/20 rounded-lg p-3 space-y-3">
+                <div>
+                  <span class="badge badge-sm badge-outline mr-1">4a</span>
+                  <span class="font-medium text-xs">Settings</span>
+                  <ol class="list-disc list-inside mt-1 space-y-1 text-xs opacity-80 ml-4">
+                    <li>Select <strong>OpenID Connect</strong></li>
+                    <li>Set <strong>Issuer</strong> to <strong>Custom issuer</strong></li>
+                    <li><strong>Issuer URL</strong>: {{ copyable(oidc_issuer_url) }}</li>
+                    <li><strong>Subject</strong>: {{ copyable('org:' ~ organization.k8s_identifier) }}</li>
+                    <li>Leave <strong>Audience</strong> and <strong>Custom claims</strong> blank</li>
+                    <li>Click <strong>Continue</strong></li>
+                  </ol>
+                </div>
+
+                <div class="divider my-0"></div>
+
+                <div>
+                  <span class="badge badge-sm badge-outline mr-1">4b</span>
+                  <span class="font-medium text-xs">Scopes</span>
+                  <ol class="list-disc list-inside mt-1 space-y-1 text-xs opacity-80 ml-4">
+                    <li>Set <strong>Scopes</strong> to <strong>Custom scopes</strong></li>
+                    <li>Under <strong>General &gt; Services</strong>: check <strong>Write</strong></li>
+                    <li>Under <strong>Devices &gt; Core</strong>: check <strong>Write</strong></li>
+                    <li>Under <strong>Keys &gt; Auth Keys</strong>: check <strong>Write</strong></li>
+                    <li>Set <strong>Tag</strong> to {{ copyable('tag:' ~ tp ~ '-operator') }}</li>
+                    <li>Click <strong>Generate credential</strong></li>
+                  </ol>
+                </div>
+              </div>
+
+              <p class="mt-2 opacity-70">Copy the <strong>Client ID</strong> and paste it below.</p>
+            </div>
+
+          </div>
+        </details>
+      </div>
+
+      <form method="POST" action="{{ url_for('user.organization_settings', org_slug=organization.slug) }}">
+        {{ ts_form.hidden_tag() }}
+        <input type="hidden" name="_action" value="save_tailscale">
+        {{ render_field(ts_form.client_id) }}
+        <div class="mt-4 flex gap-2">
+          <button type="submit" class="btn btn-primary gap-2">
+            {{ icon('check', 'w-4 h-4') }}
+            {% if ts_integration %}Update Credentials{% else %}Connect Tailscale{% endif %}
+          </button>
+          {% if ts_integration %}
+            <button type="submit" name="_action" value="delete_tailscale" class="btn btn-error btn-outline gap-2"
+                    onclick="return confirm('Remove Tailscale integration? This will tear down all Tailscale operators for this organization.')">
+              {{ icon('trash-2', 'w-4 h-4') }}
+              Remove
+            </button>
+          {% endif %}
         </div>
       </form>
     </div>

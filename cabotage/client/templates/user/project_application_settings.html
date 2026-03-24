@@ -122,6 +122,29 @@
             </div>
           </div>
         </div>
+        <div class="settings-row-fields">
+          <div class="settings-field-grid-3">
+            {{ render_field_compact(form.github_repository, placeholder='owner/repo', label='Repository') }}
+            {{ render_field_compact(form.auto_deploy_branch, placeholder='main', label='Branch') }}
+            {{ render_field_compact(form.subdirectory, placeholder='/', label='Subdirectory') }}
+            {{ render_field_compact(form.dockerfile_path, placeholder='Dockerfile.cabotage', label='Dockerfile Path') }}
+          </div>
+          <div class="mt-2">
+            {{ render_field_compact(form.branch_deploy_watch_paths, placeholder='src/**', label='Watch Paths', extra_class='auto-grow') }}
+          </div>
+          {% if not application.project.environments_enabled %}
+          <div class="settings-field-grid-2">
+            {{ render_field_compact(form.github_app_installation_id, label='Installation ID') }}
+            {{ render_field_compact(form.github_environment_name, placeholder=project_slug + '/' + app_slug, label='Environment') }}
+          </div>
+          {% else %}
+          <div class="settings-field-grid-1">
+            {{ render_field_compact(form.github_app_installation_id, label='Installation ID') }}
+          </div>
+          {% endif %}
+          {{ render_field_compact(form.github_repository_is_private, label='Private Repository') }}
+        </div>
+      </div>
 
         <div class="settings-row-actions">
           <a href="#"
@@ -167,6 +190,7 @@
                 {{ render_field_compact(env_form.auto_deploy_branch, placeholder=application.auto_deploy_branch or 'inherited from app', label='Branch') }}
                 {{ render_field_compact(env_form.github_environment_name, placeholder=app_env.effective_github_environment_name, label='GitHub Environment') }}
               </div>
+              {{ render_field_compact(env_form.auto_deploy_wait_for_ci, label='Wait for CI') }}
             </div>
           </div>
 

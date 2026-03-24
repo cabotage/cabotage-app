@@ -21,7 +21,7 @@ def upgrade():
         "project_app_configurations",
         sa.Column("build_key_slug", sa.Text(), nullable=True),
     )
-    op.execute("UPDATE project_app_configurations SET buildtime=FALSE")
+    op.execute(sa.text("UPDATE project_app_configurations SET buildtime=FALSE"))
     op.alter_column("project_app_configurations", "buildtime", nullable=False)
     op.add_column(
         "project_app_configurations_version",
