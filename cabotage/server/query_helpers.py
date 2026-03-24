@@ -42,6 +42,7 @@ def compute_app_status_sets(app_ids):
         .join(ApplicationEnvironment)
         .filter(
             Deployment.application_id.in_(app_ids),
+            ApplicationEnvironment.deleted_at.is_(None),
             ApplicationEnvironment.k8s_identifier.is_(None),
             or_(
                 Deployment.complete == True,  # noqa: E712
@@ -63,6 +64,7 @@ def compute_app_status_sets(app_ids):
         .join(ApplicationEnvironment)
         .filter(
             Image.application_id.in_(app_ids),
+            ApplicationEnvironment.deleted_at.is_(None),
             ApplicationEnvironment.k8s_identifier.is_(None),
             Image.error == True,  # noqa: E712
         )
@@ -77,6 +79,7 @@ def compute_app_status_sets(app_ids):
         .join(ApplicationEnvironment)
         .filter(
             Image.application_id.in_(app_ids),
+            ApplicationEnvironment.deleted_at.is_(None),
             ApplicationEnvironment.k8s_identifier.is_(None),
             Image.built == True,  # noqa: E712
         )
@@ -100,6 +103,7 @@ def compute_app_status_sets(app_ids):
         .join(ApplicationEnvironment)
         .filter(
             Image.application_id.in_(app_ids),
+            ApplicationEnvironment.deleted_at.is_(None),
             ApplicationEnvironment.k8s_identifier.is_(None),
             Image.built == False,  # noqa: E712
             Image.error == False,  # noqa: E712

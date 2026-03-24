@@ -70,6 +70,7 @@
         {% if release.error %}
           <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
                 method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
             {% if release.application_environment_id %}<input type="hidden" name="environment_id" value="{{ release.application_environment.environment_id }}" />{% endif %}
             <button type="submit"
                     class="btn btn-ghost btn-sm gap-1.5 text-error hover:bg-error/10">

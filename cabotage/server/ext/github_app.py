@@ -71,8 +71,7 @@ class GitHubApp(object):
             self._bearer_token_exp = issued + 599
         return self._bearer_token
 
-    @property
-    def bot_login(self):
+    def _fetch_app_metadata(self):
         if self._bot_login is None:
             resp = github_session.get(
                 "https://api.github.com/app",
@@ -83,7 +82,18 @@ class GitHubApp(object):
                 timeout=10,
             )
             resp.raise_for_status()
-            self._bot_login = f"{resp.json()['slug']}[bot]"
+            data = resp.json()
+            self._slug = data["slug"]
+            self._bot_login = f"{self._slug}[bot]"
+
+    @property
+    def slug(self):
+        self._fetch_app_metadata()
+        return self._slug
+
+    @property
+    def bot_login(self):
+        self._fetch_app_metadata()
         return self._bot_login
 
     def fetch_installation_access_token(self, installation_id):

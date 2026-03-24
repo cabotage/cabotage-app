@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, render_field %}
+{% from "_macros.html" import icon, resource_path, page_header, render_field, danger_zone_delete %}
 
 {% block title %}
   Settings - {{ environment.name }} - {{ project.name }} - Cabotage
@@ -33,23 +33,17 @@
     </div>
   </div>
 
-  <div class="mt-8 max-w-2xl">
-    <div class="collapse collapse-arrow bg-error/5 border border-error/20">
-      <input type="checkbox" />
-      <div class="collapse-title text-sm font-medium text-error">
-        Danger Zone
-      </div>
-      <div class="collapse-content">
-        <form method="POST" action="{{ url_for('user.project_environment_delete', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}">
-          {{ delete_form.hidden_tag() }}
-          <div style="display:none">{{ delete_form.name() }}</div>
-          {{ render_field(delete_form.confirm) }}
-          <button type="submit" class="btn btn-error btn-sm gap-2 mt-2">
-            {{ icon('trash-2', 'w-4 h-4') }}
-            Delete Environment
-          </button>
-        </form>
-      </div>
-    </div>
+  <div class="max-w-2xl">
+    {% if not environment.is_default or can_delete_default %}
+      {{ danger_zone_delete(
+        modal_id='delete-env-modal',
+        title='Delete Environment',
+        confirm_slug=environment.slug,
+        form=delete_form,
+        action_url=url_for('user.project_environment_delete', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug),
+        description='Deleting this environment will remove all application enrollments, configurations, and deployments within it.',
+        impact_items=delete_impact
+      ) }}
+    {% endif %}
   </div>
 {% endblock content %}

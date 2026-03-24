@@ -55,6 +55,14 @@
               <code class="text-sm font-mono text-base-content/70 break-words">{{ configuration.value }}</code>
             {% endif %}
           </div>
+          <div class="flex items-center gap-2 pt-1">
+            {% if configuration.buildtime %}
+              <span class="env-badge env-badge-build">{{ icon('box', 'w-3 h-3') }} Build</span>
+            {% endif %}
+            {% if configuration.secret %}
+              <span class="env-badge env-badge-secret">{{ icon('lock', 'w-3 h-3') }} Secret</span>
+            {% endif %}
+          </div>
         </div>
       </div>
     </div>
@@ -69,6 +77,7 @@
                 <tr class="text-base-content/50 text-xs uppercase tracking-wider">
                   <th>Name</th>
                   <th>Value</th>
+                  <th>Flags</th>
                   <th>Updated</th>
                 </tr>
               </thead>
@@ -84,6 +93,16 @@
                       {% else %}
                         <code class="text-sm font-mono text-base-content/70 break-words">{{ version.value }}</code>
                       {% endif %}
+                    </td>
+                    <td>
+                      <div class="flex items-center gap-1">
+                        {% if version.buildtime %}
+                          <span class="env-badge env-badge-build" style="font-size:0.65rem">{{ icon('box', 'w-2.5 h-2.5') }} Build</span>
+                        {% endif %}
+                        {% if version.secret %}
+                          <span class="env-badge env-badge-secret" style="font-size:0.65rem">{{ icon('lock', 'w-2.5 h-2.5') }} Secret</span>
+                        {% endif %}
+                      </div>
                     </td>
                     <td class="text-sm text-base-content/50 whitespace-nowrap">{{ version.updated|humanize }}</td>
                   </tr>

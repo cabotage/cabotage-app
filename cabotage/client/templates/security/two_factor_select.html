@@ -1,0 +1,101 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import render_field, icon %}
+
+{% block title %}
+  Verify Your Identity - Cabotage
+{% endblock title %}
+
+{% block css %}
+  {% if security.webauthn %}
+    <script src="{{ url_for('security.static', filename='js/webauthn.js') }}"></script>
+    <script src="{{ url_for('security.static', filename='js/base64.js') }}"></script>
+  {% endif %}
+{% endblock css %}
+
+{% block content %}
+  {% set ns = namespace(has_authenticator=false, has_webauthn=false, webauthn_value='') %}
+  {% for value, label in two_factor_select_form.which.choices %}
+    {% if value == 'authenticator' %}{% set ns.has_authenticator = true %}{% endif %}
+    {% if value in ('webauthn', 'passkey') %}{% set ns.has_webauthn = true %}{% set ns.webauthn_value = value %}{% endif %}
+  {% endfor %}
+
+  <div class="form-card" style="max-width: 40rem;">
+    <div class="card bg-base-200 border border-base-300 shadow-xl">
+      <div class="card-body"
+           id="tf-select-page"
+           data-select-url="{{ url_for_security('tf_select') }}"
+           data-validate-url="{{ url_for_security('two_factor_token_validation') }}"
+           data-signin-url="{{ url_for_security('wan_signin') }}"
+           data-next-url="{{ request.args.get('next', '') }}">
+        <div class="text-center mb-6">
+          <h1 class="text-2xl font-semibold text-base-content">Verify Your Identity</h1>
+          <p class="text-sm text-base-content/50 mt-1">Complete sign in with a second factor</p>
+        </div>
+
+        {% include "security/_messages.html" %}
+
+        <div id="wan-error" class="hidden"></div>
+
+        <div class="grid grid-cols-1 {% if ns.has_authenticator and ns.has_webauthn %}md:grid-cols-2{% endif %} gap-4">
+          {% if ns.has_authenticator %}
+            <div class="card bg-base-100 border border-base-content/10">
+              <div class="card-body p-5">
+                <div class="flex items-center gap-2 mb-3">
+                  {{ icon('shield', 'w-5 h-5 text-primary') }}
+                  <h3 class="text-sm font-semibold text-base-content">Authenticator App</h3>
+                </div>
+                <form id="totp-form" class="flex flex-col gap-3">
+                  {{ two_factor_select_form.hidden_tag() }}
+                  <input type="text"
+                         name="code"
+                         class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono text-center tracking-widest"
+                         placeholder="666420"
+                         autocomplete="one-time-code"
+                         inputmode="numeric"
+                         pattern="[0-9]{6}"
+                         maxlength="6"
+                         autofocus>
+                  <button type="submit" class="btn btn-primary btn-sm w-full">Verify Code</button>
+                </form>
+              </div>
+            </div>
+          {% endif %}
+
+          {% if ns.has_webauthn %}
+            <div class="card bg-base-100 border border-base-content/10">
+              <div class="card-body p-5 justify-center">
+                <div class="flex items-center gap-2 mb-3">
+                  {{ icon('key', 'w-5 h-5 text-primary') }}
+                  <h3 class="text-sm font-semibold text-base-content">Security Key</h3>
+                </div>
+                <p class="text-xs text-base-content/50 mb-3">Use your passkey or hardware security key</p>
+                <button id="wan-btn" type="button" data-method="{{ ns.webauthn_value }}"
+                        class="btn btn-primary btn-sm w-full gap-1.5">
+                  {{ icon('key', 'w-3.5 h-3.5') }} Use Security Key
+                </button>
+              </div>
+            </div>
+          {% endif %}
+        </div>
+
+        <label class="label cursor-pointer justify-center gap-3 mt-2" id="tf-remember-label">
+          <input type="checkbox" id="tf-remember-checkbox" class="checkbox checkbox-primary checkbox-sm">
+          <span class="text-sm text-base-content/60">Trust this browser for 30 days</span>
+        </label>
+
+        {% if security.support_mfa and config.SECURITY_MULTI_FACTOR_RECOVERY_CODES %}
+          <div class="text-center mt-4">
+            <a href="{{ url_for_security('mf_recovery') }}"
+               class="text-sm text-base-content/40 hover:text-accent transition-colors">Use a recovery code</a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <form id="wan-response-form" method="post" style="display:none">
+    <input type="hidden" name="csrf_token" value="{{ two_factor_select_form.csrf_token.current_token }}">
+    <input type="hidden" name="credential" id="wan-credential">
+    <input type="hidden" name="remember" id="wan-remember" value="">
+  </form>
+{% endblock content %}

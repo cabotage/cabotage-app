@@ -8,7 +8,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy_continuum import make_versioned
 from sqlalchemy_utils.models import Timestamp
 
-from cabotage.server import db
+from cabotage.server import db, Model
 
 from cabotage.server.models.plugins import ActivityPlugin
 from cabotage.server.models.utils import (
@@ -89,7 +89,7 @@ pod_classes = {
 DEFAULT_POD_CLASS = "m1.large"
 
 
-class Project(db.Model, Timestamp):
+class Project(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "projects"
 
@@ -124,6 +124,7 @@ class Project(db.Model, Timestamp):
         db.ForeignKey("project_environments.id"),
         nullable=True,
     )
+    deleted_at = db.Column(db.DateTime, nullable=True, index=True)
 
     branch_deploy_base_environment = db.relationship(
         "Environment", foreign_keys=[branch_deploy_base_environment_id]
@@ -141,6 +142,14 @@ class Project(db.Model, Timestamp):
         foreign_keys="Environment.project_id",
     )
 
+    @property
+    def active_applications(self):
+        return [a for a in self.project_applications if a.deleted_at is None]
+
+    @property
+    def active_environments(self):
+        return [e for e in self.project_environments if e.deleted_at is None]
+
     __table_args__ = (
         UniqueConstraint(organization_id, slug),
         UniqueConstraint(
@@ -149,7 +158,7 @@ class Project(db.Model, Timestamp):
     )
 
 
-class Environment(db.Model, Timestamp):
+class Environment(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_environments"
 
@@ -179,6 +188,7 @@ class Environment(db.Model, Timestamp):
     ephemeral = db.Column(db.Boolean, nullable=False, default=False)
     ttl_hours = db.Column(db.Integer, nullable=True)
     is_default = db.Column(db.Boolean, nullable=False, default=False)
+    deleted_at = db.Column(db.DateTime, nullable=True, index=True)
     forked_from_environment_id = db.Column(
         postgresql.UUID(as_uuid=True),
         db.ForeignKey("project_environments.id"),
@@ -196,6 +206,20 @@ class Environment(db.Model, Timestamp):
         backref="environment",
         cascade="all, delete-orphan",
     )
+    environment_configurations = db.relationship(
+        "EnvironmentConfiguration",
+        backref="environment",
+        cascade="all, delete-orphan",
+        order_by="EnvironmentConfiguration.name",
+    )
+
+    @property
+    def active_application_environments(self):
+        return [ae for ae in self.application_environments if ae.deleted_at is None]
+
+    @property
+    def active_environment_configurations(self):
+        return [ec for ec in self.environment_configurations if not ec.deleted]
 
     __table_args__ = (
         UniqueConstraint(project_id, slug),
@@ -209,7 +233,7 @@ class Environment(db.Model, Timestamp):
     __mapper_args__ = {"version_id_col": version_id}
 
 
-class ApplicationEnvironment(db.Model, Timestamp):
+class ApplicationEnvironment(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "application_environments"
 
@@ -253,6 +277,12 @@ class ApplicationEnvironment(db.Model, Timestamp):
         db.Text(),
         nullable=True,
     )
+    auto_deploy_wait_for_ci = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+    )
     github_environment_name = db.Column(
         db.Text(),
         nullable=True,
@@ -261,6 +291,7 @@ class ApplicationEnvironment(db.Model, Timestamp):
         db.String(64),
         nullable=True,
     )
+    deleted_at = db.Column(db.DateTime, nullable=True, index=True)
     version_id = db.Column(db.Integer, nullable=False)
 
     configurations = db.relationship(
@@ -268,6 +299,11 @@ class ApplicationEnvironment(db.Model, Timestamp):
         backref="application_environment",
         foreign_keys="Configuration.application_environment_id",
         order_by="Configuration.name",
+    )
+    environment_config_subscriptions = db.relationship(
+        "EnvironmentConfigSubscription",
+        backref="application_environment",
+        cascade="all, delete-orphan",
     )
     images = db.relationship(
         "Image",
@@ -294,7 +330,15 @@ class ApplicationEnvironment(db.Model, Timestamp):
         cascade="all, delete-orphan",
     )
 
-    __table_args__ = (UniqueConstraint(application_id, environment_id),)
+    __table_args__ = (
+        db.Index(
+            "uq_app_env_active",
+            application_id,
+            environment_id,
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+    )
 
     __mapper_args__ = {"version_id_col": version_id}
 
@@ -402,7 +446,7 @@ class ApplicationEnvironment(db.Model, Timestamp):
         return self.health_check_host or self.application.health_check_host
 
 
-class Application(db.Model, Timestamp):
+class Application(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_applications"
 
@@ -432,6 +476,7 @@ class Application(db.Model, Timestamp):
     process_pod_classes = db.Column(
         postgresql.JSONB(), server_default=text("json_object('{}')")
     )
+    deleted_at = db.Column(db.DateTime, nullable=True, index=True)
 
     images = db.relationship(
         "Image",
@@ -462,6 +507,11 @@ class Application(db.Model, Timestamp):
         backref="application",
         cascade="all, delete-orphan",
     )
+
+    @property
+    def active_application_environments(self):
+        return [ae for ae in self.application_environments if ae.deleted_at is None]
+
     version_id = db.Column(db.Integer, nullable=False)
 
     github_app_installation_id = db.Column(
@@ -489,6 +539,10 @@ class Application(db.Model, Timestamp):
 
     dockerfile_path = db.Column(
         db.Text(),
+        nullable=True,
+    )
+    branch_deploy_watch_paths = db.Column(
+        postgresql.JSONB(),
         nullable=True,
     )
 
@@ -522,9 +576,10 @@ class Application(db.Model, Timestamp):
     @property
     def default_app_env(self):
         """Return the implicit/default ApplicationEnvironment for this app."""
+        active = self.active_application_environments
         return next(
-            (ae for ae in self.application_environments if ae.k8s_identifier is None),
-            self.application_environments[0] if self.application_environments else None,
+            (ae for ae in active if ae.k8s_identifier is None),
+            active[0] if active else None,
         )
 
     # Proxy properties that delegate to default_app_env so listing-page
@@ -568,19 +623,32 @@ class Application(db.Model, Timestamp):
         configuration_diff = DictDiffer(
             candidate.get("configuration", {}),
             current.get("configuration", {}),
-            ignored_keys=["id", "version_id"],
+            ignored_keys=["id"],
         )
         image_diff = DictDiffer(
             candidate.get("image", {}),
             current.get("image", {}),
-            ignored_keys=["id", "version_id", "commit_sha"],
+            ignored_keys=["id", "commit_sha"],
         )
         ingress_diff = DictDiffer(
             candidate.get("ingresses", {}),
             current.get("ingresses", {}),
-            ignored_keys=["id", "version_id"],
+            ignored_keys=["id"],
         )
         return image_diff, configuration_diff, ingress_diff
+
+    @staticmethod
+    def _resolved_configuration(app_env):
+        """Merge environment-level configs (base) with app-level configs (override)."""
+        config = {}
+        for sub in app_env.environment_config_subscriptions:
+            ec = sub.environment_configuration
+            if not ec.deleted:
+                config[ec.name] = ec.asdict
+        for c in app_env.configurations:
+            if not c.deleted:
+                config[c.name] = c.asdict
+        return config
 
     def release_candidate_for_env(self, app_env):
         release = Release(
@@ -589,7 +657,7 @@ class Application(db.Model, Timestamp):
             image=(
                 app_env.latest_image_built.asdict if app_env.latest_image_built else {}
             ),
-            configuration={c.name: c.asdict for c in app_env.configurations},
+            configuration=self._resolved_configuration(app_env),
             ingresses={ing.name: ing.asdict for ing in app_env.ingresses},
             platform=self.platform,
         )
@@ -614,7 +682,7 @@ class Application(db.Model, Timestamp):
                 app_env.latest_image_built.asdict if app_env.latest_image_built else {}
             ),
             _repository_name=self.registry_repository_name(app_env),
-            configuration={c.name: c.asdict for c in app_env.configurations},
+            configuration=self._resolved_configuration(app_env),
             image_changes=image_diff.asdict,
             configuration_changes=configuration_diff.asdict,
             ingresses={ing.name: ing.asdict for ing in app_env.ingresses},
@@ -645,7 +713,7 @@ class Application(db.Model, Timestamp):
     __mapper_args__ = {"version_id_col": version_id}
 
 
-class Deployment(db.Model, Timestamp):
+class Deployment(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "deployments"
 
@@ -700,7 +768,7 @@ class Deployment(db.Model, Timestamp):
         return None
 
 
-class Release(db.Model, Timestamp):
+class Release(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_app_releases"
 
@@ -811,6 +879,10 @@ class Release(db.Model, Timestamp):
                 id=configuration_serialized["id"]
             ).first()
             if configuration_object is None:
+                configuration_object = EnvironmentConfiguration.query.filter_by(
+                    id=configuration_serialized["id"]
+                ).first()
+            if configuration_object is None:
                 reasons.append(
                     f"<code>Configuration for {configuration} no longer exists!</code>"
                 )
@@ -829,15 +901,19 @@ class Release(db.Model, Timestamp):
 
     @property
     def configuration_objects(self):
-        return {
-            k: Configuration.query.filter_by(id=v["id"]).first()
-            for k, v in self.configuration.items()
-        }
+        result = {}
+        for k, v in self.configuration.items():
+            obj = Configuration.query.filter_by(id=v["id"]).first()
+            if obj is None:
+                obj = EnvironmentConfiguration.query.filter_by(id=v["id"]).first()
+            result[k] = obj
+        return result
 
     @property
     def envconsul_configurations(self):
         from cabotage.utils.config_templates import (
             has_template_variables,
+            resolve_shared_secret_refs,
             resolve_template_variables,
         )
 
@@ -851,6 +927,27 @@ class Release(db.Model, Timestamp):
         resolved_template_env = []
         for c in config_objects:
             if has_template_variables(c.value):
+                # Check for whole-value shared secret ref: MY_VAR=${shared.SECRET}
+                # These get a vault directive with key format renaming
+                secret_refs = resolve_shared_secret_refs(
+                    c.value, self.application_environment
+                )
+                if secret_refs:
+                    for _orig_name, env_cfg in secret_refs:
+                        if env_cfg.key_slug:
+                            path = env_cfg.key_slug.split(":", 1)[1]
+                            stmt = (
+                                "secret {\n"
+                                "  no_prefix = true\n"
+                                f'  path = "{path}"\n'
+                                "  key {\n"
+                                f'    name   = "{env_cfg.name}"\n'
+                                f'    format = "{c.name}"\n'
+                                "  }\n"
+                                "}"
+                            )
+                            statements.append(stmt)
+                    continue
                 resolved = resolve_template_variables(
                     c.value, self.application_environment
                 )
@@ -998,7 +1095,7 @@ def release_before_insert_listener(mapper, connection, target):
         target.version = most_recent_release.version + 1
 
 
-class Configuration(db.Model, Timestamp):
+class Configuration(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_app_configurations"
 
@@ -1067,6 +1164,8 @@ class Configuration(db.Model, Timestamp):
 
         if has_template_variables(self.value):
             return None
+        if not self.key_slug:
+            return None
         directive = "secret" if self.secret else "prefix"
         path = self.key_slug.split(":", 1)[1]
         return f"{directive} {{\n" "  no_prefix = true\n" f'  path = "{path}"\n' "}"
@@ -1085,7 +1184,9 @@ class Configuration(db.Model, Timestamp):
                 return payload["data"][self.name]
             return "**secret**"
         if has_template_variables(self.value):
-            return resolve_template_variables(self.value, self.application_environment)
+            return resolve_template_variables(
+                self.value, self.application_environment, reader=reader
+            )
         return self.value
 
 
@@ -1099,7 +1200,134 @@ class ConfigurationSnapshot:
         self.secret = data["secret"]
 
 
-class Hook(db.Model, Timestamp):
+class EnvironmentConfiguration(Model, Timestamp):
+    __versioned__: dict = {}
+    __tablename__ = "project_environment_configurations"
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True,
+    )
+    project_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("projects.id"),
+        nullable=False,
+        index=True,
+    )
+    environment_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("project_environments.id"),
+        nullable=False,
+        index=True,
+    )
+    name = db.Column(
+        CIText(),
+        nullable=False,
+    )
+    value = db.Column(
+        db.String(2048),
+        nullable=False,
+    )
+    key_slug = db.Column(
+        db.Text(),
+        nullable=True,
+    )
+    build_key_slug = db.Column(
+        db.Text(),
+        nullable=True,
+    )
+    version_id = db.Column(db.Integer, nullable=False)
+    deleted = db.Column(db.Boolean, nullable=False, default=False)
+    secret = db.Column(db.Boolean, nullable=False, default=False)
+    buildtime = db.Column(db.Boolean, nullable=False, default=False)
+
+    subscriptions = db.relationship(
+        "EnvironmentConfigSubscription",
+        backref="environment_configuration",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            project_id,
+            environment_id,
+            name,
+            name="uq_project_env_configurations_project_env_name",
+        ),
+    )
+
+    __mapper_args__ = {"version_id_col": version_id}
+
+    @property
+    def asdict(self):
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "version_id": self.version_id,
+            "secret": self.secret,
+        }
+
+    @property
+    def envconsul_statement(self):
+        from cabotage.utils.config_templates import has_template_variables
+
+        if has_template_variables(self.value):
+            return None
+        if not self.key_slug:
+            return None
+        directive = "secret" if self.secret else "prefix"
+        path = self.key_slug.split(":", 1)[1]
+        return f"{directive} {{\n" "  no_prefix = true\n" f'  path = "{path}"\n' "}"
+
+    def read_value(self, reader):
+        from cabotage.utils.config_templates import has_template_variables
+
+        if self.secret:
+            if self.buildtime:
+                payload = reader.read(
+                    self.build_key_slug.split(":", 1)[1], build=True, secret=True
+                )
+                return payload["data"][self.name]
+            return "**secret**"
+        if has_template_variables(self.value):
+            return self.value
+        return self.value
+
+
+class EnvironmentConfigSubscription(Model, Timestamp):
+    __tablename__ = "environment_config_subscriptions"
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True,
+    )
+    application_environment_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("application_environments.id"),
+        nullable=False,
+        index=True,
+    )
+    environment_configuration_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("project_environment_configurations.id"),
+        nullable=False,
+        index=True,
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            application_environment_id,
+            environment_configuration_id,
+            name="uq_env_config_subscription_app_env_config",
+        ),
+    )
+
+
+class Hook(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "hooks"
 
@@ -1137,7 +1365,7 @@ class Hook(db.Model, Timestamp):
     __mapper_args__ = {"version_id_col": version_id}
 
 
-class Image(db.Model, Timestamp):
+class Image(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_app_images"
 
@@ -1254,11 +1482,16 @@ class Image(db.Model, Timestamp):
         return f"cabotage/{org_k8s}/{project_k8s}/{app_k8s}"
 
     def buildargs(self, reader):
-        return {
-            c.name: c.read_value(reader)
-            for c in self.application_environment.configurations
-            if c.buildtime
-        }
+        args = {}
+        # Subscribed env configs first (base), then app configs (override)
+        for sub in self.application_environment.environment_config_subscriptions:
+            ec = sub.environment_configuration
+            if ec.buildtime and not ec.deleted:
+                args[ec.name] = ec.read_value(reader)
+        for c in self.application_environment.configurations:
+            if c.buildtime:
+                args[c.name] = c.read_value(reader)
+        return args
 
     @property
     def commit_sha(self):
@@ -1305,7 +1538,7 @@ class ImageSnapshot:
         return self.tag
 
 
-class Ingress(db.Model, Timestamp):
+class Ingress(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "ingresses"
 
@@ -1352,6 +1585,9 @@ class Ingress(db.Model, Timestamp):
     cluster_issuer = db.Column(db.String(64), default="letsencrypt", nullable=False)
     force_ssl_redirect = db.Column(db.Boolean(), default=True, nullable=False)
     service_upstream = db.Column(db.Boolean(), default=True, nullable=False)
+    tailscale_hostname = db.Column(db.String(253), nullable=True)
+    tailscale_funnel = db.Column(db.Boolean(), default=False, nullable=False)
+    tailscale_tags = db.Column(db.String(512), nullable=True)
     version_id = db.Column(db.Integer, nullable=False)
 
     hosts = db.relationship(
@@ -1392,6 +1628,9 @@ class Ingress(db.Model, Timestamp):
             "cluster_issuer": self.cluster_issuer,
             "force_ssl_redirect": self.force_ssl_redirect,
             "service_upstream": self.service_upstream,
+            "tailscale_hostname": self.tailscale_hostname,
+            "tailscale_funnel": self.tailscale_funnel,
+            "tailscale_tags": self.tailscale_tags,
             "hosts": sorted(
                 [h.asdict for h in self.hosts], key=lambda h: h["hostname"]
             ),
@@ -1402,7 +1641,7 @@ class Ingress(db.Model, Timestamp):
         return f"<Ingress {self.id} {self.name}>"
 
 
-class IngressHost(db.Model, Timestamp):
+class IngressHost(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "ingress_hosts"
 
@@ -1447,7 +1686,7 @@ class IngressHost(db.Model, Timestamp):
         return f"<IngressHost {self.id} {self.hostname}>"
 
 
-class IngressPath(db.Model, Timestamp):
+class IngressPath(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "ingress_paths"
 
@@ -1521,6 +1760,9 @@ class IngressSnapshot:
         self.cluster_issuer = data["cluster_issuer"]
         self.force_ssl_redirect = data["force_ssl_redirect"]
         self.service_upstream = data["service_upstream"]
+        self.tailscale_hostname = data.get("tailscale_hostname")
+        self.tailscale_funnel = data.get("tailscale_funnel", False)
+        self.tailscale_tags = data.get("tailscale_tags")
         self.hosts = [IngressHostSnapshot(h) for h in data.get("hosts", [])]
         self.paths = [IngressPathSnapshot(p) for p in data.get("paths", [])]
 

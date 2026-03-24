@@ -75,7 +75,7 @@ services:
     volumes:
       - ./docker-compose/registry:/etc/docker/registry-local
   cabotage-buildkitd:
-    image: moby/buildkit:v0.18.2-rootless
+    image: moby/buildkit:v0.28.0-rootless
     command: --addr tcp://0.0.0.0:1234
     restart: always
     ports:
@@ -111,9 +111,6 @@ services:
         DEVEL: yes
     image: cabotage-app:docker-compose
     environment: &base_environment
-      # Runs as `nobody`, override the home directory
-      - PIP_CACHE_DIR=/opt/cabotage-app/src/dev/.pip-cache
-      - PIP_TOOLS_CACHE_DIR=/opt/cabotage-app/src/dev/.pip-tools-cache
       # Application configuration
       - CABOTAGE_BCRYPT_LOG_ROUNDS=4
       - CABOTAGE_DEBUG=True
@@ -124,7 +121,6 @@ services:
       - CABOTAGE_SQLALCHEMY_DATABASE_URI=postgresql://postgres@db/cabotage_dev
       - CABOTAGE_TESTING=True
       - CABOTAGE_VAULT_TOKEN=deadbeef-dead-beef-dead-beefdeadbeef
-      - CABOTAGE_WTF_CSRF_ENABLED=False
       - C_FORCE_ROOT=1
       - FLASK_APP=cabotage.server.wsgi
       - KUBECONFIG=/var/run/kube/config

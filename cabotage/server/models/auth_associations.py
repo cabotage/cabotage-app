@@ -1,9 +1,9 @@
-from cabotage.server import db
+from cabotage.server import db, Model
 
 from sqlalchemy.dialects import postgresql
 
 
-class OrganizationMember(db.Model):
+class OrganizationMember(Model):
     __tablename__ = "organization_members"
 
     user_id = db.Column(
@@ -20,7 +20,7 @@ class OrganizationMember(db.Model):
     organization = db.relationship("Organization", back_populates="members")
 
 
-class OrganizationTeam(db.Model):
+class OrganizationTeam(Model):
     __tablename__ = "organization_teams"
 
     organization_id = db.Column(
@@ -36,7 +36,7 @@ class OrganizationTeam(db.Model):
     team = db.relationship("Team", back_populates="organizations")
 
 
-class TeamMember(db.Model):
+class TeamMember(Model):
     __tablename__ = "team_members"
 
     user_id = db.Column(

@@ -4,6 +4,7 @@ from .build import (
 )
 
 from .deploy import (
+    cleanup_app_env_k8s,  # noqa: F401
     run_deploy,  # noqa: F401
 )
 
@@ -17,3 +18,10 @@ from .prune_images import (
 )
 
 from .github import process_github_hook  # noqa: F401
+
+from .tailscale import (
+    deploy_tailscale_operator,  # noqa: F401
+    reconcile_tailscale_integration_states,  # noqa: F401
+    refresh_tailscale_oidc_tokens,  # noqa: F401
+    teardown_tailscale_operator,  # noqa: F401
+)

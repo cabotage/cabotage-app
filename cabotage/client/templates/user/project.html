@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, empty_state, service_card, stat_card, create_modal, render_field %}
+{% from "_macros.html" import icon, resource_path, page_header, empty_state, service_card, stat_card, create_modal, render_field, tab_nav %}
 
 {% block title %}
   {{ project.name }} - Cabotage
@@ -12,11 +12,27 @@
   ]) }}
 {% endblock resource_path %}
 
+{% block tab_bar %}
+  <div class="app-content-padded !py-0">
+    <div class="tab-bar">
+      <a href="{{ url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug) }}"
+         class="tab-item tab-active">{{ icon('activity', 'w-4 h-4') }} <span class="tab-label">Overview</span></a>
+      {% if config.MIMIR_URL %}
+      <a href="{{ url_for('user.project_observe', org_slug=project.organization.slug, project_slug=project.slug) }}"
+         class="tab-item">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></a>
+      {% else %}
+      <span class="tab-item tab-disabled">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></span>
+      {% endif %}
+    </div>
+  </div>
+{% endblock tab_bar %}
+
 {% block content %}
   {% call page_header(project.name, project.organization.slug ~ '/' ~ project.slug) %}
+    {% if app_create_form %}
     <a href="{{ url_for('user.project_settings', org_slug=project.organization.slug, project_slug=project.slug) }}"
        class="btn btn-ghost btn-sm gap-1.5">{{ icon('settings', 'w-4 h-4') }} Settings</a>
-    {% if project.environments_enabled %}
+    {% if env_create_form %}
       <button type="button"
               onclick="document.getElementById('create-env-modal').classList.remove('hidden')"
               class="btn btn-ghost btn-sm gap-1.5">
@@ -29,14 +45,15 @@
       {{ icon('plus', 'w-4 h-4') }}
       New Application
     </button>
+    {% endif %}
   {% endcall %}
 
-  {% set app_count = project.project_applications|length %}
+  {% set app_count = project.active_applications|length %}
   {% set total_pods = namespace(n=0) %}
   {% set running_count = namespace(n=0) %}
   {% set errored_count = namespace(n=0) %}
   {% set building_count = namespace(n=0) %}
-  {% for app in project.project_applications %}
+  {% for app in project.active_applications %}
     {% set dae = app.default_app_env %}
     {% if dae %}
       {% set total_pods.n = total_pods.n + (dae.process_counts.values()|sum if dae.process_counts else 0) %}
@@ -73,18 +90,27 @@
       {% elif ae.id in completed_ae_ids %}
         {% set status = "running" %}
       {% endif %}
-      {% set configs = ae.configurations %}
+
       {% set proc_counts = ae.process_counts %}
     {% endif %}
     {% set proc_count = proc_counts.values()|sum if proc_counts is defined and proc_counts else 0 %}
     {% set meta = [
               (proc_count ~ ' instance' ~ ('s' if proc_count != 1 else '')) if proc_count else 'No pods',
-              (configs|length ~ ' env vars') if configs is defined and configs else ''
+              (app_config_counts.get(ae.id, 0) ~ ' config' ~ ('s' if app_config_counts.get(ae.id, 0) != 1 else '')) if ae else ''
             ]|select|list %}
     {% if ae and ae.id in last_deploy_by_ae %}
       {% set _ = meta.append('deployed ' ~ last_deploy_by_ae[ae.id]|humanize) %}
     {% endif %}
     {% set branch = ae.effective_auto_deploy_branch if ae else application.auto_deploy_branch %}
+    {% set hosts = [] %}
+    {% set ts_int = application.project.organization.tailscale_integration %}
+    {% if ae %}
+      {% for ing in ae.ingresses if ing.enabled %}
+        {% for host in ing.hosts %}
+          {% if hosts.append({'hostname': host.hostname, 'is_auto': host.is_auto_generated, 'ingress_name': ing.name, 'ingress_class': ing.ingress_class_name, 'tailnet': ts_int.tailnet if ts_int else ''}) %}{% endif %}
+        {% endfor %}
+      {% endfor %}
+    {% endif %}
     {{ service_card(name=application.name,
             slug=application.slug,
             url=url_for('user.project_application', org_slug=project.organization.slug, project_slug=project.slug, app_slug=application.slug, env_slug=env_slug),
@@ -92,13 +118,14 @@
     meta_items=meta,
     color='accent',
     github_repo=application.github_repository or '',
-    github_branch=branch or ''
+    github_branch=branch or '',
+    app_hosts=hosts
     ) }}
   {% endmacro %}
 
   {% if project.environments_enabled %}
     {# ── Environment-centric layout ── #}
-    {% set sorted_envs = project.project_environments|sort(attribute='sort_order') %}
+    {% set sorted_envs = project.active_environments|sort(attribute='sort_order') %}
     {% if sorted_envs %}
       {% for env in sorted_envs %}
         <div class="mb-6">
@@ -137,12 +164,12 @@
       {% endif %}
     {% else %}
       {# environments enabled but none created yet #}
-      {% if project.project_applications %}
+      {% if project.active_applications %}
         <div class="flex items-center gap-3 mb-3">
           <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider">Services</h2>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
-          {% for application in project.project_applications %}
+          {% for application in project.active_applications %}
             {{ app_card(application) }}
           {% endfor %}
         </div>
@@ -161,7 +188,7 @@
     {% endif %}
   {% else %}
     {# ── Flat app list (environments not enabled) ── #}
-    {% if project.project_applications %}
+    {% if project.active_applications %}
       <div class="flex items-center gap-3 mb-3">
         <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider">Services</h2>
         {% if app_count > 0 %}
@@ -188,7 +215,7 @@
         {% endif %}
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {% for application in project.project_applications %}
+        {% for application in project.active_applications %}
           {{ app_card(application) }}
         {% endfor %}
       </div>
@@ -196,13 +223,15 @@
       <div class="empty-state">
         <div class="text-base-content/15 mb-4">{{ icon('box', 'w-12 h-12') }}</div>
         <h3 class="text-base font-medium text-base-content/60 mb-1">No applications yet</h3>
-        <p class="text-sm text-base-content/40 max-w-sm">Create your first application to deploy a service.</p>
+        <p class="text-sm text-base-content/40 max-w-sm">{% if app_create_form %}Create your first application to deploy a service.{% else %}No applications in this project yet.{% endif %}</p>
+        {% if app_create_form %}
         <button type="button"
                 onclick="document.getElementById('create-app-modal').classList.remove('hidden')"
                 class="btn btn-primary btn-sm gap-2 mt-4">
           {{ icon('plus', 'w-4 h-4') }}
           Create Application
         </button>
+        {% endif %}
       </div>
     {% endif %}
   {% endif %}

@@ -25,6 +25,7 @@
     <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
           method="post"
           class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
       {% if environment %}
         <input type="hidden" name="environment_id" value="{{ environment.id }}" />
       {% endif %}
@@ -159,6 +160,7 @@
           <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
                 method="post"
                 class="inline mt-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
             <button class="btn btn-primary btn-sm gap-2" type="submit">{{ icon('play', 'w-4 h-4') }} Build from Source</button>
           </form>
         </div>

@@ -10,7 +10,6 @@ from base64 import (
 )
 
 
-from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
     PublicFormat,
@@ -31,7 +30,7 @@ def number_to_bytes(num, num_bytes):
 
 
 def generate_libcrypt_key_id(public_key_pem):
-    pub_key = load_pem_public_key(public_key_pem, backend=default_backend())
+    pub_key = load_pem_public_key(public_key_pem)
 
     der_bytes = pub_key.public_bytes(
         encoding=Encoding.DER,
@@ -47,6 +46,30 @@ def generate_libcrypt_key_id(public_key_pem):
 
     fingerprint = ":".join(b32_digest_chunks)
     return fingerprint
+
+
+def public_key_to_jwk(public_key_pem):
+    """Convert a PEM-encoded EC public key to a JWK dict."""
+    pub_key = load_pem_public_key(public_key_pem)
+    numbers = pub_key.public_numbers()
+    x_bytes = number_to_bytes(numbers.x, 32)
+    y_bytes = number_to_bytes(numbers.y, 32)
+    x_b64 = urlsafe_b64encode(x_bytes).rstrip(b"=").decode()
+    y_b64 = urlsafe_b64encode(y_bytes).rstrip(b"=").decode()
+    kid = generate_libcrypt_key_id(public_key_pem)
+    return {
+        "kty": "EC",
+        "crv": "P-256",
+        "kid": kid,
+        "alg": "ES256",
+        "use": "sig",
+        "x": x_b64,
+        "y": y_b64,
+    }
+
+
+def generate_signing_jwks(public_key_pem):
+    return json.dumps({"keys": [public_key_to_jwk(public_key_pem)]})
 
 
 def generate_docker_jose_header(public_key_pem):

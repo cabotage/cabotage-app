@@ -9,7 +9,6 @@ Create Date: 2018-03-10 20:39:45.816820
 from alembic import op
 import sqlalchemy as sa
 
-
 revision = "6d4d5e6bc617"
 down_revision = "d64c16d7ce0c"
 branch_labels = None
@@ -22,7 +21,7 @@ def upgrade():
         "project_app_configurations",
         sa.Column("build_key_slug", sa.Text(), nullable=True),
     )
-    op.execute("UPDATE project_app_configurations SET buildtime=FALSE")
+    op.execute(sa.text("UPDATE project_app_configurations SET buildtime=FALSE"))
     op.alter_column("project_app_configurations", "buildtime", nullable=False)
     op.add_column(
         "project_app_configurations_version",

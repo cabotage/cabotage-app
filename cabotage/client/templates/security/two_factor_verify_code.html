@@ -1,0 +1,47 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import render_field, icon %}
+
+{% block title %}
+  Verify Code - Cabotage
+{% endblock title %}
+
+{% block content %}
+  <div class="form-card">
+    <div class="card bg-base-200 border border-base-300 shadow-xl">
+      <div class="card-body">
+        <div class="text-center mb-6">
+          <h1 class="text-2xl font-semibold text-base-content">Two-Factor Authentication</h1>
+          <p class="text-sm text-base-content/50 mt-1">Enter the code from your {% if chosen_method == 'authenticator' %}authenticator app{% else %}{{ chosen_method }}{% endif %}</p>
+        </div>
+
+        {% include "security/_messages.html" %}
+
+        <form action="{{ url_for_security('two_factor_token_validation') }}{% if 'next' in request.args %}?next={{ request.args.next|urlencode }}{% endif %}"
+              method="post"
+              name="two_factor_verify_code_form"
+              class="flex flex-col gap-4">
+          {{ two_factor_verify_code_form.hidden_tag() }}
+          <div class="w-full">
+            <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Verification Code</label>
+            {{ two_factor_verify_code_form.code(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono text-center tracking-widest", placeholder="666420", autocomplete="one-time-code", inputmode="numeric", pattern="[0-9]{6}", maxlength="6", autofocus=true) }}
+            {% for error in two_factor_verify_code_form.code.errors %}
+              <p class="text-xs text-error mt-0.5">{{ error }}</p>
+            {% endfor %}
+          </div>
+          <button type="submit" class="btn btn-primary w-full mt-2">Verify</button>
+          <label class="label cursor-pointer justify-center gap-3 mt-1">
+            <input type="checkbox" name="remember" value="y" class="checkbox checkbox-primary checkbox-sm">
+            <span class="text-sm text-base-content/60">Trust this browser for 30 days</span>
+          </label>
+        </form>
+
+        {% if config.SECURITY_MULTI_FACTOR_RECOVERY_CODES %}
+          <div class="text-center mt-4">
+            <a href="{{ url_for_security('mf_recovery') }}"
+               class="text-sm text-base-content/40 hover:text-accent transition-colors">Use a recovery code</a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endblock content %}

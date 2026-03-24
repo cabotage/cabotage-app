@@ -14,28 +14,40 @@
 
 {% block tab_bar %}
   <div class="app-content-padded !py-0">
-    {% set proj_count = organization.projects|length %}
+    {% set proj_count = organization.active_projects|length %}
     {% set member_count = organization.members|length %}
+    {% set observe_tab = {'id': 'observe', 'label': 'Observe', 'icon': 'bar-chart', 'url': url_for('user.organization_observe', org_slug=organization.slug)} if config.MIMIR_URL else {'id': 'observe', 'label': 'Observe', 'icon': 'bar-chart', 'disabled': true} %}
     {{ tab_nav([
         {'id': 'projects', 'label': 'Projects', 'icon': 'folder', 'badge': proj_count},
-        {'id': 'members', 'label': 'Members', 'icon': 'users', 'badge': member_count}
+        {'id': 'members', 'label': 'Members', 'icon': 'users', 'badge': member_count},
+        observe_tab
         ]) }}
   </div>
 {% endblock tab_bar %}
 
 {% block content %}
-  {% set proj_count = organization.projects|length %}
+  {% set proj_count = organization.active_projects|length %}
   {% set member_count = organization.members|length %}
 
   {% set latest_deploy = namespace(ts=last_deploy_ts) %}
 
   {% call page_header(organization.name, 'Organization') %}
-    <button type="button"
-            onclick="document.getElementById('create-project-modal').classList.remove('hidden')"
-            class="btn btn-primary btn-sm gap-2">
-      {{ icon('plus', 'w-4 h-4') }}
-      New Project
-    </button>
+    <div class="flex gap-2">
+      {% if is_admin %}
+        <a href="{{ url_for('user.organization_settings', org_slug=organization.slug) }}"
+           class="btn btn-sm btn-ghost gap-1">
+          {{ icon('settings', 'w-4 h-4') }} Settings
+        </a>
+      {% endif %}
+      {% if project_create_form %}
+      <button type="button"
+              onclick="document.getElementById('create-project-modal').classList.remove('hidden')"
+              class="btn btn-primary btn-sm gap-2">
+        {{ icon('plus', 'w-4 h-4') }}
+        New Project
+      </button>
+      {% endif %}
+    </div>
   {% endcall %}
 
   <div data-tab-panel="projects" class="tab-panel">
@@ -54,15 +66,15 @@
       {% endif %}
     </div>
 
-    {% if organization.projects %}
+    {% if organization.active_projects %}
       <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Projects</h2>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {% for project in organization.projects %}
-          {% set app_count = project.project_applications|length %}
+        {% for project in organization.active_projects %}
+          {% set app_count = project.active_applications|length %}
           {% set running = namespace(n=0) %}
           {% set errored = namespace(n=0) %}
           {% set building = namespace(n=0) %}
-          {% for app in project.project_applications %}
+          {% for app in project.active_applications %}
             {% if app.id in deployed_app_ids %}
               {% set running.n = running.n + 1 %}
             {% endif %}
@@ -102,13 +114,15 @@
       <div class="empty-state">
         <div class="text-base-content/15 mb-4">{{ icon('folder', 'w-12 h-12') }}</div>
         <h3 class="text-base font-medium text-base-content/60 mb-1">No projects yet</h3>
-        <p class="text-sm text-base-content/40 max-w-sm">Create your first project in this organization.</p>
+        <p class="text-sm text-base-content/40 max-w-sm">{% if project_create_form %}Create your first project in this organization.{% else %}No projects in this organization yet.{% endif %}</p>
+        {% if project_create_form %}
         <button type="button"
                 onclick="document.getElementById('create-project-modal').classList.remove('hidden')"
                 class="btn btn-primary btn-sm gap-2 mt-4">
           {{ icon('plus', 'w-4 h-4') }}
           Create Project
         </button>
+        {% endif %}
       </div>
     {% endif %}
   </div>
@@ -120,7 +134,7 @@
 
     <div class="flex items-center justify-between mb-3">
       <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider">Members</h2>
-      {% if is_admin is defined and is_admin %}
+      {% if is_admin %}
         <button type="button"
                 onclick="document.getElementById('add-member-modal').classList.remove('hidden')"
                 class="btn btn-primary btn-sm gap-2">
@@ -145,7 +159,7 @@
                 </div>
               {% endif %}
               <div class="min-w-0">
-                <span class="text-sm font-medium text-base-content truncate">{{ membership.user.username }}</span>
+                <span class="text-sm font-medium text-base-content truncate">{{ membership.user.username | display_username }}</span>
                 {% if membership.admin %}
                   <span class="badge badge-xs badge-primary ml-2">Admin</span>
                 {% else %}
@@ -156,41 +170,87 @@
             </div>
             {% if is_admin and membership.user.id != current_user.id and remove_member_form is defined %}
               <div class="flex items-center gap-1.5 flex-shrink-0">
-                <form action="{{ url_for('user.organization_promote_user', org_slug=organization.slug) }}"
-                      method="post"
-                      class="inline">
-                  {{ remove_member_form.hidden_tag() }}
-                  <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
-                  {% if membership.admin %}
-                    <button type="submit"
-                            class="btn btn-ghost btn-xs gap-1 text-warning"
-                            title="Demote from admin">
-                      {{ icon('shield', 'w-3.5 h-3.5') }}
-                      Demote
-                    </button>
-                  {% else %}
-                    <button type="submit"
-                            class="btn btn-ghost btn-xs gap-1"
-                            title="Promote to admin">
-                      {{ icon('shield', 'w-3.5 h-3.5') }}
-                      Promote
-                    </button>
-                  {% endif %}
-                </form>
-                <form action="{{ url_for('user.organization_remove_user', org_slug=organization.slug) }}"
-                      method="post"
-                      class="inline">
-                  {{ remove_member_form.hidden_tag() }}
-                  <input type="hidden" name="organization_id" value="{{ organization.id }}" />
-                  <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
-                  <button type="submit"
+                {% if membership.admin %}
+                  <button type="button"
+                          class="btn btn-ghost btn-xs gap-1 text-warning"
+                          title="Demote from admin"
+                          onclick="document.getElementById('demote-{{ membership.user.id }}').showModal()">
+                    {{ icon('shield', 'w-3.5 h-3.5') }}
+                    Demote
+                  </button>
+                {% else %}
+                  <button type="button"
+                          class="btn btn-ghost btn-xs gap-1"
+                          title="Promote to admin"
+                          onclick="document.getElementById('promote-{{ membership.user.id }}').showModal()">
+                    {{ icon('shield', 'w-3.5 h-3.5') }}
+                    Promote
+                  </button>
+                {% endif %}
+                  <button type="button"
                           class="btn btn-ghost btn-xs text-error"
                           title="Remove member"
-                          onclick="return confirm('Remove {{ membership.user.username }} from this organization?')">
+                          onclick="document.getElementById('remove-{{ membership.user.id }}').showModal()">
                     {{ icon('x', 'w-3.5 h-3.5') }}
                   </button>
-                </form>
               </div>
+
+              {% if membership.admin %}
+              <dialog id="demote-{{ membership.user.id }}" class="modal confirm-modal" data-confirm-value="{{ membership.user.username }}">
+                <div class="modal-box max-w-sm">
+                  <form action="{{ url_for('user.organization_demote_user', org_slug=organization.slug) }}" method="post">
+                    {{ remove_member_form.hidden_tag() }}
+                    <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
+                    <h3 class="text-base font-semibold text-base-content mb-2">Demote from Admin</h3>
+                    <p class="text-sm text-base-content/60 mb-3">Remove admin privileges from <strong>{{ membership.user.username }}</strong>?</p>
+                    <p class="text-xs text-base-content/40 mb-1">Type <strong>{{ membership.user.username }}</strong> to confirm</p>
+                    <input type="text" class="input input-bordered input-sm w-full confirm-input" autocomplete="off" />
+                    <div class="modal-action">
+                      <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('dialog').close()">Cancel</button>
+                      <button type="submit" class="btn btn-warning btn-sm confirm-btn" disabled>Demote</button>
+                    </div>
+                  </form>
+                </div>
+                <form method="dialog" class="modal-backdrop"><button>close</button></form>
+              </dialog>
+              {% else %}
+              <dialog id="promote-{{ membership.user.id }}" class="modal confirm-modal" data-confirm-value="{{ membership.user.username }}">
+                <div class="modal-box max-w-sm">
+                  <form action="{{ url_for('user.organization_promote_user', org_slug=organization.slug) }}" method="post">
+                    {{ remove_member_form.hidden_tag() }}
+                    <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
+                    <h3 class="text-base font-semibold text-base-content mb-2">Promote to Admin</h3>
+                    <p class="text-sm text-base-content/60 mb-3">Grant admin privileges to <strong>{{ membership.user.username }}</strong>?</p>
+                    <p class="text-xs text-base-content/40 mb-1">Type <strong>{{ membership.user.username }}</strong> to confirm</p>
+                    <input type="text" class="input input-bordered input-sm w-full confirm-input" autocomplete="off" />
+                    <div class="modal-action">
+                      <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('dialog').close()">Cancel</button>
+                      <button type="submit" class="btn btn-primary btn-sm confirm-btn" disabled>Promote</button>
+                    </div>
+                  </form>
+                </div>
+                <form method="dialog" class="modal-backdrop"><button>close</button></form>
+              </dialog>
+              {% endif %}
+
+              <dialog id="remove-{{ membership.user.id }}" class="modal confirm-modal" data-confirm-value="{{ membership.user.username }}">
+                <div class="modal-box max-w-sm">
+                  <form action="{{ url_for('user.organization_remove_user', org_slug=organization.slug) }}" method="post">
+                    {{ remove_member_form.hidden_tag() }}
+                    <input type="hidden" name="organization_id" value="{{ organization.id }}" />
+                    <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
+                    <h3 class="text-base font-semibold text-base-content mb-2">Remove Member</h3>
+                    <p class="text-sm text-base-content/60 mb-3">Remove <strong>{{ membership.user.username }}</strong> from this organization?</p>
+                    <p class="text-xs text-base-content/40 mb-1">Type <strong>{{ membership.user.username }}</strong> to confirm</p>
+                    <input type="text" class="input input-bordered input-sm w-full confirm-input" autocomplete="off" />
+                    <div class="modal-action">
+                      <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('dialog').close()">Cancel</button>
+                      <button type="submit" class="btn btn-error btn-sm confirm-btn" disabled>Remove</button>
+                    </div>
+                  </form>
+                </div>
+                <form method="dialog" class="modal-backdrop"><button>close</button></form>
+              </dialog>
             {% endif %}
           </div>
         {% endfor %}
@@ -205,7 +265,7 @@
   </div>
 
   {% from "_macros.html" import create_modal %}
-  {% if project_create_form is defined %}
+  {% if project_create_form %}
     {{ create_modal(modal_id='create-project-modal',
       title='Create Project',
       subtitle='In organization ' ~ organization.slug,
@@ -261,8 +321,7 @@
               method="post"
               class="flex flex-col gap-4">
           {{ add_member_form.hidden_tag() }}
-          {{ render_field(add_member_form.username, placeholder='Enter username') }}
-          {{ render_field(add_member_form.admin) }}
+          {{ render_field(add_member_form.identity, placeholder='user@example.com or github-username') }}
           <div class="pt-2">
             <button type="submit" class="btn btn-primary w-full">Add Member</button>
           </div>
@@ -278,4 +337,5 @@
 })();
     </script>
   {% endif %}
+
 {% endblock content %}

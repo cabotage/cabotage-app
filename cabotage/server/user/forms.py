@@ -10,6 +10,7 @@ from wtforms import (
     IntegerField,
     SelectField,
     StringField,
+    TextAreaField,
 )
 from wtforms.validators import (
     DataRequired,
@@ -27,6 +28,7 @@ from cabotage.server.models.projects import (
     ApplicationEnvironment,
     Configuration,
     Environment,
+    EnvironmentConfiguration,
     Project,
 )
 
@@ -41,6 +43,10 @@ class ExtendedRegisterForm(RegisterForm):
         validators=[
             InputRequired(),
             Length(min=1, max=64),
+            Regexp(
+                r"^[^:]+$",
+                message="Usernames cannot contain colons.",
+            ),
         ],
     )
 
@@ -51,6 +57,10 @@ class ExtendedConfirmRegisterForm(ConfirmRegisterForm):
         validators=[
             InputRequired(),
             Length(min=1, max=64),
+            Regexp(
+                r"^[^:]+$",
+                message="Usernames cannot contain colons.",
+            ),
         ],
     )
 
@@ -175,19 +185,19 @@ class EditProjectSettingsForm(FlaskForm):
 
 
 class DeleteProjectForm(FlaskForm):
-    application_id = HiddenField(
+    project_id = HiddenField(
         "Project ID",
         [DataRequired()],
         description="ID of the Project to delete.",
     )
     name = StringField(
-        "Name",
+        "Slug",
         [InputRequired()],
-        description="Name for the Project being deleted.",
+        description="Slug of the Project being deleted.",
     )
     confirm = StringField(
-        "Type the name of the Project.",
-        [EqualTo("name", message="Must confirm the *exact* name of the Project!")],
+        "Type the slug of the Project.",
+        [EqualTo("name", message="Must confirm the *exact* slug of the Project!")],
     )
 
 
@@ -242,13 +252,13 @@ class DeleteApplicationForm(FlaskForm):
         description="ID of the Application to delete.",
     )
     name = StringField(
-        "Name",
+        "Slug",
         [InputRequired()],
-        description="Name for the Application being deleted.",
+        description="Slug of the Application being deleted.",
     )
     confirm = StringField(
-        "Type the name of the Application.",
-        [EqualTo("name", message="Must confirm the *exact* name of the Application!")],
+        "Type the slug of the Application.",
+        [EqualTo("name", message="Must confirm the *exact* slug of the Application!")],
     )
 
 
@@ -296,6 +306,8 @@ class CreateConfigurationForm(FlaskForm):
     )
 
     def validate_name(form, field):
+        if field.data and field.data.upper() == "CABOTAGE_SENTINEL":
+            raise ValidationError("This name is reserved.")
         app_env_id = None
         env_id = form.environment_id.data or None
         if env_id:
@@ -353,6 +365,10 @@ class EditApplicationSettingsForm(FlaskForm):
             (lambda x: x.strip() if (x and isinstance(x, str)) else x),
             (lambda x: x if x else None),
         ],
+    )
+    branch_deploy_watch_paths = TextAreaField(
+        "Watch Paths",
+        description="Only deploy this app when files matching these patterns change. One .gitignore-style pattern per line (e.g. src/**, Dockerfile). Leave empty to always deploy.",
     )
     github_app_installation_id = StringField(
         "GitHub Application Installation ID",
@@ -579,16 +595,73 @@ class DeleteEnvironmentForm(FlaskForm):
         description="ID of the Environment to delete.",
     )
     name = StringField(
-        "Name",
+        "Slug",
         [InputRequired()],
-        description="Name for the Environment being deleted.",
+        description="Slug of the Environment being deleted.",
     )
     confirm = StringField(
-        "Type the name of the Environment.",
+        "Type the slug of the Environment.",
         [
             EqualTo(
                 "name",
-                message="Must confirm the *exact* name of the Environment!",
+                message="Must confirm the *exact* slug of the Environment!",
+            )
+        ],
+    )
+
+
+class EditOrganizationForm(FlaskForm):
+    organization_id = HiddenField(
+        "Organization ID",
+        [DataRequired()],
+        description="ID of the Organization to edit.",
+    )
+    name = StringField(
+        "Organization Name",
+        [InputRequired()],
+        description="Friendly name for this Organization.",
+    )
+
+
+class DeleteOrganizationForm(FlaskForm):
+    organization_id = HiddenField(
+        "Organization ID",
+        [DataRequired()],
+        description="ID of the Organization to delete.",
+    )
+    name = StringField(
+        "Slug",
+        [InputRequired()],
+        description="Slug of the Organization being deleted.",
+    )
+    confirm = StringField(
+        "Type the slug of the Organization.",
+        [
+            EqualTo(
+                "name",
+                message="Must confirm the *exact* slug of the Organization!",
+            )
+        ],
+    )
+
+
+class DeleteApplicationEnvironmentForm(FlaskForm):
+    app_env_id = HiddenField(
+        "Application Environment ID",
+        [DataRequired()],
+        description="ID of the Application Environment to delete.",
+    )
+    name = StringField(
+        "Slug",
+        [InputRequired()],
+        description="Slug of the Application being unenrolled.",
+    )
+    confirm = StringField(
+        "Type the slug of the Application.",
+        [
+            EqualTo(
+                "name",
+                message="Must confirm the *exact* slug of the Application!",
             )
         ],
     )
@@ -616,6 +689,10 @@ class EditApplicationEnvironmentSettingsForm(FlaskForm):
         "Branch",
         [Optional()],
         description="Branch to auto-deploy for this environment (blank = inherit from app)",
+    )
+    auto_deploy_wait_for_ci = BooleanField(
+        "Wait for CI",
+        description="Wait for CI checks to pass before deploying. Uncheck to deploy immediately on push.",
     )
     github_environment_name = StringField(
         "GitHub Environment Name",
@@ -758,12 +835,170 @@ class IngressPathForm(FlaskForm):
     )
 
 
-class AddOrganizationUserForm(FlaskForm):
-    email = StringField(
-        "User Email",
+class TailscaleIntegrationForm(FlaskForm):
+    client_id = StringField(
+        "Client ID",
+        [InputRequired(), Length(max=255)],
+        description="From the OIDC federated identity in Tailscale",
+    )
+
+
+class TailscaleIngressSettingsForm(FlaskForm):
+    """Placeholder — tags are now derived from the platform config."""
+
+    pass
+
+
+class CreateEnvironmentConfigurationForm(FlaskForm):
+    project_id = HiddenField(
+        "Project",
+        [DataRequired()],
+        description="Project this Configuration belongs to.",
+    )
+    environment_id = HiddenField(
+        "Environment",
+        [DataRequired()],
+        description="Environment this Configuration belongs to.",
+    )
+    name = StringField(
+        "Name",
         [
             InputRequired(),
-            Length(min=3, max=255),
+            Regexp(
+                "^[a-zA-Z_]+[a-zA-Z0-9_]*$",
+                message=(
+                    "Invalid Environment Variable Name! "
+                    "Must match ^[a-zA-Z_]+[a-zA-Z0-9_]*$"
+                ),
+            ),
         ],
-        description="Email address of the user to add to this organization",
+        description="Name for the Environment Variable.",
+    )
+    value = StringField(
+        "Value",
+        [InputRequired()],
+        description="Value for the Environment Variable.",
+    )
+    secure = BooleanField(
+        "Secure",
+        [],
+        description=(
+            "Store this Environment Variable Securely. "
+            "It will not be recoverable again via the UI."
+        ),
+    )
+    buildtime = BooleanField(
+        "Expose during Build",
+        [],
+        description="Set this Environment Variable during Image builds.",
+    )
+
+    def validate_name(form, field):
+        configuration = EnvironmentConfiguration.query.filter_by(
+            project_id=form.project_id.data,
+            environment_id=form.environment_id.data,
+            name=field.data,
+        ).first()
+        if configuration is not None:
+            raise ValidationError(
+                "Configuration names must be unique (case insensitive) "
+                "within an environment"
+            )
+        return True
+
+
+class EditEnvironmentConfigurationForm(FlaskForm):
+    environment_configuration_id = HiddenField(
+        "Environment Configuration ID",
+        [DataRequired()],
+    )
+    name = StringField(
+        "Name",
+        [
+            DataRequired(),
+            Regexp(
+                "^[a-zA-Z_]+[a-zA-Z0-9_]*$",
+                message=(
+                    "Invalid Environment Variable Name! "
+                    "Must match ^[a-zA-Z_]+[a-zA-Z0-9_]*$"
+                ),
+            ),
+        ],
+        description="Name for the Environment Variable.",
+    )
+    value = StringField(
+        "Value",
+        [InputRequired()],
+        description="Value for the Environment Variable.",
+    )
+    secure = BooleanField(
+        "Secure",
+        [],
+        description=(
+            "Store this Environment Variable Securely. "
+            "It will not be recoverable again via the UI."
+        ),
+    )
+    buildtime = BooleanField(
+        "Expose during Build",
+        [],
+        description="Set this Environment Variable during Image builds.",
+    )
+
+    def validate_name(form, field):
+        configuration = EnvironmentConfiguration.query.filter_by(
+            id=form.environment_configuration_id.data,
+        ).first()
+        if configuration is not None:
+            if form.name.data == configuration.name:
+                return True
+            raise ValidationError(
+                "Configuration names cannot be changed! Delete and re-create"
+            )
+        raise ValidationError("Configuration not found")
+
+
+class DeleteEnvironmentConfigurationForm(FlaskForm):
+    configuration_id = HiddenField(
+        "Configuration ID",
+        [DataRequired()],
+        description="ID of the Environment Variable to delete.",
+    )
+    name = StringField(
+        "Name",
+        [DataRequired()],
+        description="Name for the Environment Variable.",
+    )
+    value = StringField(
+        "Value",
+        [DataRequired()],
+        description="Value for the Environment Variable.",
+    )
+    secure = BooleanField(
+        "Secure",
+        [],
+        description=(
+            "Store this Environment Variable Securely. "
+            "It will not be recoverable again via the UI."
+        ),
+    )
+    confirm = StringField(
+        "Type the name of the Environment Variable.",
+        [
+            EqualTo(
+                "name",
+                message="Must confirm the *exact* name of the Environment Variable!",
+            )
+        ],
+    )
+
+
+class AddOrganizationUserForm(FlaskForm):
+    identity = StringField(
+        "Email or GitHub Username",
+        [
+            InputRequired(),
+            Length(min=1, max=255),
+        ],
+        description="Email address or GitHub username of the user to add",
     )

@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, service_card %}
+{% from "_macros.html" import icon, resource_path, page_header, service_card, danger_zone_delete, tab_nav %}
 
 {% block title %}
   {{ environment.name }} - {{ project.name }} - Cabotage
@@ -13,6 +13,21 @@
     {'label': environment.slug}
   ]) }}
 {% endblock resource_path %}
+
+{% block tab_bar %}
+  <div class="app-content-padded !py-0">
+    <div class="tab-bar">
+      <a href="{{ url_for('user.project_environment', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}"
+         class="tab-item tab-active">{{ icon('activity', 'w-4 h-4') }} <span class="tab-label">Overview</span></a>
+      {% if config.MIMIR_URL %}
+      <a href="{{ url_for('user.environment_observe', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}"
+         class="tab-item">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></a>
+      {% else %}
+      <span class="tab-item tab-disabled">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></span>
+      {% endif %}
+    </div>
+  </div>
+{% endblock tab_bar %}
 
 {% block content %}
   {% call page_header(environment.name, 'Environment') %}
@@ -35,12 +50,19 @@
     <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider">Applications</h2>
   </div>
 
-  {% if environment.application_environments %}
+  {% set active_app_envs = environment.active_application_environments %}
+  {% if active_app_envs %}
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-      {% for app_env in environment.application_environments %}
+      {% for app_env in active_app_envs %}
         {% set app = app_env.application %}
-        {% set config_count = app_env.configurations|length %}
-        {% set meta = [config_count ~ ' config' ~ ('s' if config_count != 1 else '')] %}
+        {% set cc = app_config_counts.get(app_env.id, 0) %}
+        {% set proc_count = app_env.process_counts.values()|sum if app_env.process_counts else 0 %}
+        {% set last_dep = app_env.latest_deployment_completed %}
+        {% set meta = [
+          (proc_count ~ ' instance' ~ ('s' if proc_count != 1 else '')) if proc_count else 'No pods',
+          cc ~ ' config' ~ ('s' if cc != 1 else ''),
+          ('deployed ' ~ last_dep.created|humanize) if last_dep else ''
+        ]|select|list %}
         {% if app_env.latest_deployment %}
           {% if app_env.latest_deployment.complete %}
             {% set status = 'running' %}
@@ -52,6 +74,12 @@
         {% else %}
           {% set status = '' %}
         {% endif %}
+        {% set hosts = [] %}
+        {% for ing in app_env.ingresses if ing.enabled %}
+          {% for host in ing.hosts %}
+            {% if hosts.append({'hostname': host.hostname, 'is_auto': host.is_auto_generated, 'ingress_name': ing.name}) %}{% endif %}
+          {% endfor %}
+        {% endfor %}
         {{ service_card(name=app.name,
                 slug=app.slug,
                 url=url_for('user.project_application', org_slug=project.organization.slug, project_slug=project.slug, app_slug=app.slug, env_slug=environment.slug),
@@ -59,10 +87,14 @@
         meta_items=meta,
         color='accent',
         github_repo=app.github_repository or '',
-        github_branch=app_env.effective_auto_deploy_branch or ''
+        github_branch=app_env.effective_auto_deploy_branch or '',
+        app_hosts=hosts
         ) }}
       {% endfor %}
     </div>
+
+
+
   {% else %}
     <div class="empty-state">
       <div class="text-base-content/15 mb-4">{{ icon('box', 'w-12 h-12') }}</div>
@@ -98,5 +130,379 @@
       {% endfor %}
     </div>
   {% endif %}
+
+  <hr class="border-base-content/10 my-6" id="config">
+
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h2 class="text-base font-medium text-base-content">Environment Variables</h2>
+      <p class="text-xs text-base-content/40 mt-0.5">
+        {# env_configs passed from view with subscriptions eagerly loaded #}
+        {{ env_configs|length }} config{{ 's' if env_configs|length != 1 }}
+      </p>
+    </div>
+    <button type="button"
+            id="env-add-var-open"
+            class="btn btn-primary btn-sm gap-1.5">
+      {{ icon('plus', 'w-4 h-4') }} Add Variable
+    </button>
+  </div>
+  <button type="button"
+          id="env-add-var-fab"
+          class="btn btn-primary btn-sm gap-1.5 add-var-fab"
+          style="display:none;">
+    {{ icon('plus', 'w-4 h-4') }}
+    Add Variable
+  </button>
+
+  {% if env_configs %}
+    <div class="card bg-base-200 border border-base-300">
+      <div class="env-grid">
+        {% for config in env_configs %}
+          <div class="env-row">
+            <div class="env-row-header">
+              <code class="env-key">{{ config.name }}</code>
+              {% if config.buildtime %}
+                <div class="info-popup-anchor">
+                  <span class="env-badge env-badge-build">{{ icon('box', 'w-3 h-3') }} Build</span>
+                  <div class="info-popup">
+                    <div class="info-popup-header">
+                      {{ icon('box', 'w-3 h-3 info-popup-header-icon') }}
+                      <span class="info-popup-header-text">Build-time Variable</span>
+                    </div>
+                    <div class="info-popup-body">
+                      <div class="info-popup-row">
+                        <span class="info-popup-desc">Injected during <strong>docker build</strong> as a build arg. Available only at image build time — not at runtime.</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              {% endif %}
+              {% if config.secret %}
+                <div class="info-popup-anchor">
+                  <span class="env-badge env-badge-secret">{{ icon('lock', 'w-3 h-3') }} Secret</span>
+                  <div class="info-popup">
+                    <div class="info-popup-header">
+                      {{ icon('shield', 'w-3 h-3 info-popup-header-icon') }}
+                      <span class="info-popup-header-text">Secret Variable</span>
+                    </div>
+                    <div class="info-popup-body">
+                      <div class="info-popup-row">
+                        <span class="info-popup-desc">Stored encrypted and delivered via <strong>Vault</strong> at runtime. The value is never displayed after being set.</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              {% endif %}
+              {% if config.subscriptions|length > 0 %}
+                <span class="env-badge env-badge-neutral">{{ config.subscriptions|length }} app{{ 's' if config.subscriptions|length != 1 }}</span>
+              {% endif %}
+              <div class="env-row-actions">
+                <button type="button"
+                        class="btn btn-ghost btn-xs env-edit-btn"
+                        title="Edit"
+                        data-config-id="{{ config.id }}"
+                        data-config-name="{{ config.name }}"
+                        data-config-value="{{ '' if config.secret else config.value }}"
+                        data-config-secret="{{ 'true' if config.secret else 'false' }}"
+                        data-config-buildtime="{{ 'true' if config.buildtime else 'false' }}"
+                        data-edit-url="{{ url_for('user.project_environment_configuration_edit', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug, config_id=config.id) }}"
+                >{{ icon('edit', 'w-3.5 h-3.5') }}</button>
+                <button type="button"
+                        class="btn btn-ghost btn-xs env-history-btn"
+                        title="History"
+                        data-history-url="{{ url_for('user.project_environment_configuration', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug, config_id=config.id) }}"
+                >{{ icon('clock', 'w-3.5 h-3.5') }}</button>
+                <button type="button"
+                        class="btn btn-ghost btn-xs text-error env-delete-btn"
+                        title="Delete"
+                        data-config-id="{{ config.id }}"
+                        data-config-name="{{ config.name }}"
+                        data-config-value="{{ '**secure**' if config.secret else config.value }}"
+                        data-delete-url="{{ url_for('user.project_environment_configuration_delete', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug, config_id=config.id) }}"
+                >{{ icon('trash', 'w-3.5 h-3.5') }}</button>
+              </div>
+            </div>
+            <div class="min-w-0">
+              {% if config.secret %}
+                <span class="env-secret-dots" aria-label="Hidden value">••••••••</span>
+              {% else %}
+                <code class="env-value">{{ config.value }}</code>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% else %}
+    <div class="card bg-base-200 border border-base-300">
+      <div class="card-body">
+        <div class="empty-state !py-12">
+          <div class="text-base-content/15 mb-4">{{ icon('settings', 'w-12 h-12') }}</div>
+          <h3 class="text-base font-medium text-base-content/60 mb-1">No shared environment variables</h3>
+          <p class="text-sm text-base-content/40 max-w-sm">Add variables here to share them across applications in this environment.</p>
+          <button type="button"
+                  id="env-add-var-open-empty"
+                  class="btn btn-primary btn-sm gap-2 mt-4">{{ icon('plus', 'w-4 h-4') }} Add Variable</button>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  {# Add Variable Modal #}
+  <div id="env-add-var-modal" class="raw-editor-modal" style="display:none;">
+    <div class="raw-editor-backdrop" data-env-add-var-close></div>
+    <div class="raw-editor-dialog" style="max-width: 36rem;">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-base font-semibold text-base-content">Add Environment Variable</h3>
+        <button type="button"
+                data-env-add-var-close
+                class="btn btn-ghost btn-sm btn-circle">
+          <svg class="w-4 h-4"
+               viewBox="0 0 24 24"
+               fill="none"
+               stroke="currentColor"
+               stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+
+      <form action="{{ url_for('user.project_environment_configuration_create', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}"
+            method="post"
+            name="env_add_var_form"
+            class="flex flex-col gap-4">
+        <div class="hidden">{{ env_config_form.hidden_tag() }}</div>
+
+        <div>
+          <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Name</label>
+          {{ env_config_form.name(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono", placeholder="MY_VARIABLE", autocomplete="off", **{"data-1p-ignore": ""}) }}
+          <p class="text-xs text-base-content/40 mt-1">Name for the environment variable</p>
+        </div>
+
+        <div>
+          <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Value</label>
+          {{ env_config_form.value(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono", placeholder="value", id="env-add-var-value", autocomplete="off", **{"data-1p-ignore": ""}) }}
+          <p class="text-xs text-base-content/40 mt-1">Value for the environment variable</p>
+        </div>
+
+        {% if app_references or tcp_references %}
+        <div>
+          <label class="label cursor-pointer justify-start gap-2">
+            <input type="checkbox" id="env-add-var-ref-check" class="checkbox checkbox-primary checkbox-sm" />
+            <span class="text-sm text-base-content/70">Reference an application</span>
+          </label>
+        </div>
+
+        <div id="env-add-var-ref-picker" style="display:none;" class="flex flex-col gap-2">
+          <div class="text-xs text-base-content/50">Click to insert at cursor</div>
+          <div class="flex flex-col gap-1 max-h-48 overflow-y-auto">
+            {% for ref in app_references %}
+              {% for ing in ref.ingresses %}
+                {% if ref.ingresses|length == 1 %}
+                  {% set ref_url = '${' ~ ref.slug ~ '.url}' %}
+                  {% set ref_host = '${' ~ ref.slug ~ '.host}' %}
+                {% else %}
+                  {% set ref_url = '${' ~ ref.slug ~ '.' ~ ing.name ~ '.url}' %}
+                  {% set ref_host = '${' ~ ref.slug ~ '.' ~ ing.name ~ '.host}' %}
+                {% endif %}
+                <div class="flex items-center gap-2 p-2 rounded-lg border border-base-content/10">
+                  <div class="flex-1 min-w-0">
+                    <div class="text-sm font-mono text-base-content truncate">{{ ref.slug }}{% if ref.ingresses|length > 1 %} / {{ ing.name }}{% endif %}</div>
+                    <div class="text-xs text-base-content/40 font-mono fade-scroll">{{ ing.hostname }}</div>
+                  </div>
+                  <div class="flex gap-1 shrink-0">
+                    <button type="button"
+                            class="env-add-var-ref-insert btn btn-ghost btn-xs font-mono"
+                            data-ref="{{ ref_url }}">.url</button>
+                    <button type="button"
+                            class="env-add-var-ref-insert btn btn-ghost btn-xs font-mono"
+                            data-ref="{{ ref_host }}">.host</button>
+                  </div>
+                </div>
+              {% endfor %}
+            {% endfor %}
+            {% for sib in tcp_references %}
+              {% for proc in sib.processes %}
+                {% set ref_svc = '${' ~ sib.slug ~ '.' ~ proc ~ '.svc}' %}
+                {% set ref_hostname = '${' ~ sib.slug ~ '.' ~ proc ~ '.hostname}' %}
+                {% set ref_port = '${' ~ sib.slug ~ '.' ~ proc ~ '.port}' %}
+                <div class="flex items-center gap-2 p-2 rounded-lg border border-base-content/10">
+                  <div class="flex-1 min-w-0">
+                    <div class="text-sm font-mono text-base-content truncate">{{ sib.slug }} / {{ proc }}</div>
+                    <div class="text-xs text-base-content/40">TCP service</div>
+                  </div>
+                  <div class="flex gap-1 shrink-0">
+                    <button type="button"
+                            class="env-add-var-ref-insert btn btn-ghost btn-xs font-mono"
+                            data-ref="{{ ref_svc }}">.svc</button>
+                    <button type="button"
+                            class="env-add-var-ref-insert btn btn-ghost btn-xs font-mono"
+                            data-ref="{{ ref_hostname }}">.hostname</button>
+                    <button type="button"
+                            class="env-add-var-ref-insert btn btn-ghost btn-xs font-mono"
+                            data-ref="{{ ref_port }}">.port</button>
+                  </div>
+                </div>
+              {% endfor %}
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        <div class="flex flex-col gap-2 p-3 rounded-lg bg-base-300/30">
+          <label class="label cursor-pointer justify-start gap-3">
+            {{ env_config_form.secure(class="checkbox checkbox-primary checkbox-sm") }}
+            <div>
+              <span class="text-sm text-base-content">Secure</span>
+              <p class="text-xs text-base-content/40">Encrypted at rest. Value won't be visible in the UI.</p>
+            </div>
+          </label>
+          <label class="label cursor-pointer justify-start gap-3">
+            {{ env_config_form.buildtime(class="checkbox checkbox-primary checkbox-sm") }}
+            <div>
+              <span class="text-sm text-base-content">Expose during build</span>
+              <p class="text-xs text-base-content/40">Available as an env var during image builds.</p>
+            </div>
+          </label>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-1">
+          <button type="button" data-env-add-var-close class="btn btn-ghost btn-sm">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm gap-1.5">
+            {{ icon('plus', 'w-3.5 h-3.5') }}
+            Create Variable
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# Edit Variable Modal #}
+  <div id="env-edit-var-modal" class="raw-editor-modal" style="display:none;">
+    <div class="raw-editor-backdrop" data-env-edit-var-close></div>
+    <div class="raw-editor-dialog" style="max-width: 36rem;">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-base font-semibold text-base-content">Edit Environment Variable</h3>
+        <button type="button"
+                data-env-edit-var-close
+                class="btn btn-ghost btn-sm btn-circle">
+          <svg class="w-4 h-4"
+               viewBox="0 0 24 24"
+               fill="none"
+               stroke="currentColor"
+               stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+
+      <form id="env-edit-var-form"
+            action=""
+            method="post"
+            class="flex flex-col gap-4">
+        {{ env_edit_form.hidden_tag() }}
+        <input type="hidden" name="environment_configuration_id" id="env-edit-config-id">
+        <input type="hidden" name="name" id="env-edit-config-name">
+        <input type="hidden" name="secure" id="env-edit-secure" value="">
+
+        <div>
+          <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Name</label>
+          <code id="env-edit-name-display" class="text-sm text-accent font-mono block mt-1"></code>
+        </div>
+
+        <div id="env-edit-current-value" class="p-3 rounded-lg bg-base-300/50 overflow-hidden">
+          <p class="text-xs text-base-content/50 mb-1">Current Value</p>
+          <code id="env-edit-current-value-text" class="text-sm font-mono text-base-content/70 break-words"></code>
+          <span id="env-edit-current-value-secret" class="inline-flex items-center gap-1 text-base-content/40 text-sm" style="display:none;">
+            {{ icon('lock', 'w-3 h-3') }} Secret
+          </span>
+        </div>
+
+        <div>
+          <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">New Value</label>
+          <input type="text" name="value" id="env-edit-value"
+                 class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono"
+                 placeholder="New value" autocomplete="off" data-1p-ignore>
+        </div>
+
+        <div class="flex flex-col gap-2 p-3 rounded-lg bg-base-300/30">
+          <div id="env-edit-secret-status" class="flex items-center gap-3 text-sm text-base-content/50">
+          </div>
+          <label class="label cursor-pointer justify-start gap-3">
+            <input type="checkbox" name="buildtime" id="env-edit-buildtime" class="checkbox checkbox-primary checkbox-sm">
+            <div>
+              <span class="text-sm text-base-content">Expose during build</span>
+              <p class="text-xs text-base-content/40">Available as a build arg during image builds.</p>
+            </div>
+          </label>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-1">
+          <button type="button" data-env-edit-var-close class="btn btn-ghost btn-sm">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm gap-1.5">
+            {{ icon('check', 'w-3.5 h-3.5') }}
+            Update Variable
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# History Modal #}
+  <div id="env-history-modal" class="raw-editor-modal" style="display:none;">
+    <div class="raw-editor-backdrop" data-env-history-close></div>
+    <div class="raw-editor-dialog" style="max-width: 40rem;">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-base font-semibold text-base-content">Variable History</h3>
+        <button type="button" data-env-history-close class="btn btn-ghost btn-sm btn-circle">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+      <div id="env-history-content" class="text-sm text-base-content/50">Loading…</div>
+    </div>
+  </div>
+
+  {# Delete Variable Modal #}
+  <div id="env-delete-var-modal" class="raw-editor-modal" style="display:none;">
+    <div class="raw-editor-backdrop" data-env-delete-var-close></div>
+    <div class="raw-editor-dialog" style="max-width: 32rem;">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-base font-semibold text-error">Delete Environment Variable</h3>
+        <button type="button" data-env-delete-var-close class="btn btn-ghost btn-sm btn-circle">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+
+      <p class="text-sm text-base-content/50 mb-3">This action cannot be undone. All application subscriptions to this variable will be removed.</p>
+      <div id="env-delete-preview" class="p-3 rounded-lg bg-base-300/50 mb-4">
+        <code id="env-delete-name-display" class="text-sm text-accent"></code>
+      </div>
+
+      <form id="env-delete-var-form" action="" method="post" class="flex flex-col gap-4">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="configuration_id" id="env-delete-config-id">
+        <input type="hidden" name="name" id="env-delete-config-name">
+        <input type="hidden" name="value" id="env-delete-config-value">
+        <div>
+          <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Type the variable name to confirm</label>
+          <input type="text" name="confirm" id="env-delete-confirm"
+                 class="input input-bordered input-error w-full bg-base-100 text-base-content border-error/30 focus:border-error font-mono"
+                 placeholder="" autocomplete="off" data-1p-ignore>
+        </div>
+        <div class="flex items-center justify-end gap-2 pt-1">
+          <button type="button" data-env-delete-var-close class="btn btn-ghost btn-sm">Cancel</button>
+          <button type="submit" class="btn btn-error btn-sm gap-1.5">
+            {{ icon('trash', 'w-3.5 h-3.5') }}
+            Delete Variable
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
 
 {% endblock content %}

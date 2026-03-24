@@ -472,16 +472,58 @@ function initAddVarModal() {
   var previewFadeUpdate = previewEl ? initFadeScroll(previewEl) : null;
   var siblingDataEl = document.getElementById('sibling-ref-data');
   var siblingRefs = null;
+  var siblingTcpDataEl = document.getElementById('sibling-tcp-ref-data');
+  var siblingTcpRefs = null;
 
   if (siblingDataEl) {
     try { siblingRefs = JSON.parse(siblingDataEl.textContent); } catch (e) { /* ignore */ }
   }
+  if (siblingTcpDataEl) {
+    try { siblingTcpRefs = JSON.parse(siblingTcpDataEl.textContent); } catch (e) { /* ignore */ }
+  }
+
+  var sharedDataEl = document.getElementById('shared-ref-data');
+  var sharedRefs = null;
+  if (sharedDataEl) {
+    try { sharedRefs = JSON.parse(sharedDataEl.textContent); } catch (e) { /* ignore */ }
+  }
 
   function resolvePreview(val) {
-    if (!siblingRefs || !val || val.indexOf('${') === -1) return null;
-    var pattern = /\$\{([a-zA-Z0-9_-]+)(?:\.([a-zA-Z0-9_-]+))?\.(url|host)\}/g;
+    if (!val || val.indexOf('${') === -1) return null;
+    if (!siblingRefs && !siblingTcpRefs && !sharedRefs) return null;
+    var pattern = /\$\{([a-zA-Z0-9_-]+)(?:\.([a-zA-Z0-9_-]+))?\.(url|host|svc|hostname|port)\}/g;
+    var sharedRefPattern = /\$\{shared\.([a-zA-Z_][a-zA-Z0-9_]*)\}/g;
     var hasMatch = false;
+
+    // Resolve shared references first
+    if (sharedRefs) {
+      val = val.replace(sharedRefPattern, function (match, varName) {
+        var ref = sharedRefs[varName];
+        if (ref) { hasMatch = true; return ref; }
+        return match;
+      });
+    }
+
     var resolved = val.replace(pattern, function (match, appSlug, middle, prop) {
+      if (prop === 'svc' || prop === 'hostname' || prop === 'port') {
+        if (!siblingTcpRefs || !middle) return match;
+        var tcpSib = null;
+        for (var i = 0; i < siblingTcpRefs.length; i++) {
+          if (siblingTcpRefs[i].slug === appSlug) { tcpSib = siblingTcpRefs[i]; break; }
+        }
+        if (!tcpSib) return match;
+        var found = false;
+        for (var j = 0; j < tcpSib.processes.length; j++) {
+          if (tcpSib.processes[j] === middle) { found = true; break; }
+        }
+        if (!found) return match;
+        hasMatch = true;
+        if (prop === 'port') return '8000';
+        var fqdn = appSlug + '-' + middle + '.<namespace>.svc.cluster.local';
+        if (prop === 'hostname') return fqdn;
+        return fqdn + ':8000';
+      }
+      if (!siblingRefs) return match;
       var sib = null;
       for (var i = 0; i < siblingRefs.length; i++) {
         if (siblingRefs[i].slug === appSlug) { sib = siblingRefs[i]; break; }
@@ -504,10 +546,11 @@ function initAddVarModal() {
   }
 
   var secureCheckbox = modal.querySelector('input[name="secure"]');
-  var templatePattern = /\$\{[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)?\.(url|host)\}/;
+  var templatePattern = /\$\{[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)?\.(url|host|svc|hostname|port)\}/;
+  var sharedPattern = /\$\{shared\.[a-zA-Z_][a-zA-Z0-9_]*\}/;
 
   function hasTemplateVars(val) {
-    return val && templatePattern.test(val);
+    return val && (templatePattern.test(val) || sharedPattern.test(val));
   }
 
   function updatePreview() {
@@ -541,6 +584,20 @@ function initAddVarModal() {
   }
 
   // Reference picker — inserts template strings into value field at cursor
+  modal.querySelectorAll('.add-var-ref-insert').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var ref = btn.getAttribute('data-ref');
+      var pos = valueInput.selectionStart || valueInput.value.length;
+      var before = valueInput.value.slice(0, pos);
+      var after = valueInput.value.slice(pos);
+      valueInput.value = before + ref + after;
+      valueInput.focus();
+      var newPos = pos + ref.length;
+      valueInput.selectionStart = valueInput.selectionEnd = newPos;
+      updatePreview();
+    });
+  });
+
   var refCheck = document.getElementById('add-var-ref-check');
   var refPicker = document.getElementById('add-var-ref-picker');
 
@@ -552,8 +609,113 @@ function initAddVarModal() {
       }
     });
 
-    modal.querySelectorAll('.add-var-ref-insert').forEach(function (btn) {
+    _addVarResetHooks.push(function () {
+      refCheck.checked = false;
+      refPicker.style.display = 'none';
+      if (previewEl) previewEl.style.display = 'none';
+    });
+  }
+
+  var sharedCheck = document.getElementById('add-var-shared-check');
+  var sharedPicker = document.getElementById('add-var-shared-picker');
+
+  if (sharedCheck && sharedPicker) {
+    sharedCheck.addEventListener('change', function () {
+      sharedPicker.style.display = this.checked ? '' : 'none';
+      if (this.checked && secureCheckbox) {
+        secureCheckbox.checked = false;
+      }
+    });
+
+    _addVarResetHooks.push(function () {
+      sharedCheck.checked = false;
+      sharedPicker.style.display = 'none';
+    });
+  }
+
+  // Floating Add Variable button — appears when the original scrolls out of view
+  var addVarBtn = document.getElementById('add-var-open');
+  var addVarFab = document.getElementById('add-var-fab');
+  if (addVarBtn && addVarFab && typeof IntersectionObserver !== 'undefined') {
+    var configPanel = addVarBtn.closest('[data-tab-panel="config"]');
+    var btnOutOfView = false;
+    var observer = new IntersectionObserver(function (entries) {
+      btnOutOfView = !entries[0].isIntersecting;
+      var panelActive = configPanel && configPanel.classList.contains('tab-panel-active');
+      addVarFab.style.display = (btnOutOfView && panelActive) ? '' : 'none';
+    }, { threshold: 0 });
+    observer.observe(addVarBtn);
+
+    // Hide FAB when switching away from config tab
+    document.querySelectorAll('[data-tab]').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        setTimeout(function () {
+          var panelActive = configPanel && configPanel.classList.contains('tab-panel-active');
+          addVarFab.style.display = (btnOutOfView && panelActive) ? '' : 'none';
+        }, 0);
+      });
+    });
+  }
+}
+
+/* Environment Add Variable Modal */
+function initEnvAddVarModal() {
+  var modal = document.getElementById('env-add-var-modal');
+  if (!modal) return;
+
+  function openModal() {
+    modal.style.display = 'flex';
+    var nameInput = modal.querySelector('input[name="name"]');
+    if (nameInput) {
+      nameInput.value = '';
+      nameInput.focus();
+    }
+    var valueInput = modal.querySelector('input[name="value"]');
+    if (valueInput) valueInput.value = '';
+    var refCheck = document.getElementById('env-add-var-ref-check');
+    var refPicker = document.getElementById('env-add-var-ref-picker');
+    if (refCheck) refCheck.checked = false;
+    if (refPicker) refPicker.style.display = 'none';
+  }
+  function closeModal() {
+    modal.style.display = 'none';
+  }
+
+  document.querySelectorAll('#env-add-var-open, #env-add-var-open-empty, #env-add-var-fab').forEach(function (btn) {
+    btn.addEventListener('click', openModal);
+  });
+  modal.querySelectorAll('[data-env-add-var-close]').forEach(function (el) {
+    el.addEventListener('click', closeModal);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && modal.style.display !== 'none') closeModal();
+  });
+
+  var nameField = modal.querySelector('input[name="name"]');
+  if (nameField) {
+    nameField.addEventListener('input', function () {
+      var pos = this.selectionStart;
+      this.value = this.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+      this.selectionStart = this.selectionEnd = pos;
+    });
+  }
+
+  var valueInput = document.getElementById('env-add-var-value');
+  var refCheck = document.getElementById('env-add-var-ref-check');
+  var refPicker = document.getElementById('env-add-var-ref-picker');
+  var secureCheckbox = modal.querySelector('input[name="secure"]');
+
+  if (refCheck && refPicker) {
+    refCheck.addEventListener('change', function () {
+      refPicker.style.display = this.checked ? '' : 'none';
+      if (this.checked && secureCheckbox) {
+        secureCheckbox.checked = false;
+      }
+    });
+
+    modal.querySelectorAll('.env-add-var-ref-insert').forEach(function (btn) {
       btn.addEventListener('click', function () {
+        if (!valueInput) return;
         var ref = btn.getAttribute('data-ref');
         var pos = valueInput.selectionStart || valueInput.value.length;
         var before = valueInput.value.slice(0, pos);
@@ -562,16 +724,276 @@ function initAddVarModal() {
         valueInput.focus();
         var newPos = pos + ref.length;
         valueInput.selectionStart = valueInput.selectionEnd = newPos;
-        updatePreview();
       });
     });
-
-    _addVarResetHooks.push(function () {
-      refCheck.checked = false;
-      refPicker.style.display = 'none';
-      if (previewEl) previewEl.style.display = 'none';
-    });
   }
+
+  // Floating Add Variable button for the environment page
+  var envAddVarBtn = document.getElementById('env-add-var-open');
+  var envAddVarFab = document.getElementById('env-add-var-fab');
+  if (envAddVarBtn && envAddVarFab && typeof IntersectionObserver !== 'undefined') {
+    var envObserver = new IntersectionObserver(function (entries) {
+      envAddVarFab.style.display = entries[0].isIntersecting ? 'none' : '';
+    }, { threshold: 0 });
+    envObserver.observe(envAddVarBtn);
+  }
+}
+
+/* Environment Edit Variable Modal */
+function initEnvEditVarModal() {
+  var modal = document.getElementById('env-edit-var-modal');
+  if (!modal) return;
+
+  var form = document.getElementById('env-edit-var-form');
+  var configIdField = document.getElementById('env-edit-config-id');
+  var configNameField = document.getElementById('env-edit-config-name');
+  var secureField = document.getElementById('env-edit-secure');
+  var nameDisplay = document.getElementById('env-edit-name-display');
+  var currentValueText = document.getElementById('env-edit-current-value-text');
+  var currentValueSecret = document.getElementById('env-edit-current-value-secret');
+  var valueInput = document.getElementById('env-edit-value');
+  var buildtimeCheckbox = document.getElementById('env-edit-buildtime');
+  var secretStatus = document.getElementById('env-edit-secret-status');
+
+  function openModal(btn) {
+    var configId = btn.getAttribute('data-config-id');
+    var name = btn.getAttribute('data-config-name');
+    var value = btn.getAttribute('data-config-value');
+    var isSecret = btn.getAttribute('data-config-secret') === 'true';
+    var isBuildtime = btn.getAttribute('data-config-buildtime') === 'true';
+    var editUrl = btn.getAttribute('data-edit-url');
+
+    form.action = editUrl;
+    configIdField.value = configId;
+    configNameField.value = name;
+    secureField.value = isSecret ? 'y' : '';
+    nameDisplay.textContent = name;
+
+    if (isSecret) {
+      currentValueText.style.display = 'none';
+      currentValueSecret.style.display = '';
+      secretStatus.innerHTML = '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> <span>Secret (encrypted)</span>';
+    } else {
+      currentValueText.textContent = value;
+      currentValueText.style.display = '';
+      currentValueSecret.style.display = 'none';
+      secretStatus.innerHTML = '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 5-5 5 5 0 0 1 3 1"/></svg> <span>Not secret</span>';
+    }
+
+    valueInput.value = isSecret ? '' : value;
+    buildtimeCheckbox.checked = isBuildtime;
+    modal.style.display = 'flex';
+    valueInput.focus();
+  }
+
+  function closeModal() {
+    modal.style.display = 'none';
+  }
+
+  document.querySelectorAll('.env-edit-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () { openModal(btn); });
+  });
+
+  modal.querySelectorAll('[data-env-edit-var-close]').forEach(function (el) {
+    el.addEventListener('click', closeModal);
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && modal.style.display !== 'none') closeModal();
+  });
+}
+
+/* Application Edit Variable Modal */
+function initAppEditVarModal() {
+  var modal = document.getElementById('app-edit-var-modal');
+  if (!modal) return;
+
+  var form = document.getElementById('app-edit-var-form');
+  var configNameField = document.getElementById('app-edit-config-name');
+  var secureField = document.getElementById('app-edit-secure');
+  var nameDisplay = document.getElementById('app-edit-name-display');
+  var currentValueText = document.getElementById('app-edit-current-value-text');
+  var currentValueSecret = document.getElementById('app-edit-current-value-secret');
+  var valueInput = document.getElementById('app-edit-value');
+  var buildtimeCheckbox = document.getElementById('app-edit-buildtime');
+  var secretStatus = document.getElementById('app-edit-secret-status');
+
+  function openModal(btn) {
+    var name = btn.getAttribute('data-config-name');
+    var value = btn.getAttribute('data-config-value');
+    var isSecret = btn.getAttribute('data-config-secret') === 'true';
+    var isBuildtime = btn.getAttribute('data-config-buildtime') === 'true';
+    var editUrl = btn.getAttribute('data-edit-url');
+
+    form.action = editUrl;
+    configNameField.value = name;
+    secureField.value = isSecret ? 'y' : '';
+    nameDisplay.textContent = name;
+
+    if (isSecret) {
+      currentValueText.style.display = 'none';
+      currentValueSecret.style.display = '';
+      secretStatus.innerHTML = '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> <span>Secret (encrypted)</span>';
+    } else {
+      currentValueText.textContent = value;
+      currentValueText.style.display = '';
+      currentValueSecret.style.display = 'none';
+      secretStatus.innerHTML = '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 5-5 5 5 0 0 1 3 1"/></svg> <span>Not secret</span>';
+    }
+
+    valueInput.value = isSecret ? '' : value;
+    buildtimeCheckbox.checked = isBuildtime;
+    modal.style.display = 'flex';
+    valueInput.focus();
+  }
+
+  function closeModal() {
+    modal.style.display = 'none';
+  }
+
+  document.querySelectorAll('.app-config-edit-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () { openModal(btn); });
+  });
+
+  modal.querySelectorAll('[data-app-edit-var-close]').forEach(function (el) {
+    el.addEventListener('click', closeModal);
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && modal.style.display !== 'none') closeModal();
+  });
+}
+
+/* Generic History Modal — fetches detail page and extracts content */
+function initHistoryModal(btnClass, modalId, contentId, closeAttr) {
+  var modal = document.getElementById(modalId);
+  if (!modal) return;
+  var contentEl = document.getElementById(contentId);
+
+  function openModal(btn) {
+    var url = btn.getAttribute('data-history-url');
+    contentEl.innerHTML = '<span class="text-base-content/30">Loading…</span>';
+    modal.style.display = 'flex';
+
+    fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.text(); })
+      .then(function (html) {
+        var parser = new DOMParser();
+        var doc = parser.parseFromString(html, 'text/html');
+        var cards = doc.querySelectorAll('.card');
+        var out = '';
+        cards.forEach(function (card) { out += card.outerHTML; });
+        contentEl.innerHTML = out || '<p class="text-base-content/40">No history available.</p>';
+      })
+      .catch(function () {
+        contentEl.innerHTML = '<p class="text-error">Failed to load history.</p>';
+      });
+  }
+
+  function closeModal() { modal.style.display = 'none'; }
+
+  document.querySelectorAll('.' + btnClass).forEach(function (btn) {
+    btn.addEventListener('click', function () { openModal(btn); });
+  });
+  modal.querySelectorAll('[' + closeAttr + ']').forEach(function (el) {
+    el.addEventListener('click', closeModal);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && modal.style.display !== 'none') closeModal();
+  });
+}
+
+/* Generic Delete Modal */
+function initDeleteModal(btnClass, modalId, formId, nameDisplayId, configIdFieldId, configNameFieldId, configValueFieldId, confirmFieldId, closeAttr) {
+  var modal = document.getElementById(modalId);
+  if (!modal) return;
+  var form = document.getElementById(formId);
+  var nameDisplay = document.getElementById(nameDisplayId);
+  var configIdField = document.getElementById(configIdFieldId);
+  var configNameField = document.getElementById(configNameFieldId);
+  var configValueField = document.getElementById(configValueFieldId);
+  var confirmField = document.getElementById(confirmFieldId);
+
+  function openModal(btn) {
+    var configId = btn.getAttribute('data-config-id');
+    var name = btn.getAttribute('data-config-name');
+    var value = btn.getAttribute('data-config-value');
+    var deleteUrl = btn.getAttribute('data-delete-url');
+
+    form.action = deleteUrl;
+    nameDisplay.textContent = name;
+    configIdField.value = configId;
+    configNameField.value = name;
+    configValueField.value = value;
+    confirmField.value = '';
+    confirmField.placeholder = name;
+    modal.style.display = 'flex';
+    confirmField.focus();
+  }
+
+  function closeModal() { modal.style.display = 'none'; }
+
+  document.querySelectorAll('.' + btnClass).forEach(function (btn) {
+    btn.addEventListener('click', function () { openModal(btn); });
+  });
+  modal.querySelectorAll('[' + closeAttr + ']').forEach(function (el) {
+    el.addEventListener('click', closeModal);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && modal.style.display !== 'none') closeModal();
+  });
+}
+
+/* Auto-growing textareas */
+function initAutoGrowTextareas() {
+  document.querySelectorAll('textarea.auto-grow').forEach(function (ta) {
+    ta.style.overflow = 'hidden';
+    ta.style.resize = 'none';
+    function adjust() {
+      ta.style.height = 'auto';
+      ta.style.height = (ta.scrollHeight + parseInt(getComputedStyle(ta).lineHeight)) + 'px';
+    }
+    ta.addEventListener('input', adjust);
+    adjust();
+  });
+}
+
+/* Flash Messages — dismiss + auto-fade */
+function initFlashMessages() {
+  document.querySelectorAll('.flash-message').forEach(function (el) {
+    function dismiss() {
+      el.classList.add('flash-fade-out');
+      setTimeout(function () { el.remove(); }, 400);
+    }
+
+    var btn = el.querySelector('.flash-dismiss');
+    if (btn) btn.addEventListener('click', dismiss);
+
+    if (el.getAttribute('data-flash-auto') !== 'false') {
+      setTimeout(dismiss, 5000);
+    }
+  });
+}
+
+/* Environment Config Reference Insert (edit page) */
+function initEnvConfigRefInsert() {
+  var buttons = document.querySelectorAll('.env-config-ref-insert');
+  if (!buttons.length) return;
+  var valueInput = document.querySelector('input[name="value"]');
+  if (!valueInput) return;
+
+  buttons.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var ref = btn.getAttribute('data-ref');
+      var pos = valueInput.selectionStart || valueInput.value.length;
+      var before = valueInput.value.slice(0, pos);
+      var after = valueInput.value.slice(pos);
+      valueInput.value = before + ref + after;
+      valueInput.focus();
+      var newPos = pos + ref.length;
+      valueInput.selectionStart = valueInput.selectionEnd = newPos;
+    });
+  });
 }
 
 /* Expand Modal */
@@ -2137,6 +2559,16 @@ document.addEventListener('DOMContentLoaded', function () {
   initThemeToggle();
   initRawEditor();
   initAddVarModal();
+  initEnvAddVarModal();
+  initEnvEditVarModal();
+  initAppEditVarModal();
+  initHistoryModal('env-history-btn', 'env-history-modal', 'env-history-content', 'data-env-history-close');
+  initHistoryModal('app-history-btn', 'app-history-modal', 'app-history-content', 'data-app-history-close');
+  initDeleteModal('env-delete-btn', 'env-delete-var-modal', 'env-delete-var-form', 'env-delete-name-display', 'env-delete-config-id', 'env-delete-config-name', 'env-delete-config-value', 'env-delete-confirm', 'data-env-delete-var-close');
+  initDeleteModal('app-delete-btn', 'app-delete-var-modal', 'app-delete-var-form', 'app-delete-name-display', 'app-delete-config-id', 'app-delete-config-name', 'app-delete-config-value', 'app-delete-confirm', 'data-app-delete-var-close');
+  initFlashMessages();
+  initAutoGrowTextareas();
+  initEnvConfigRefInsert();
   initExpandModal();
   initAccentPicker();
   initPreferenceToggles();
@@ -2147,6 +2579,9 @@ document.addEventListener('DOMContentLoaded', function () {
   syncDetailLogHeight();
   initAnnotationTables();
   initIngressForms();
+  initConfirmDialogs();
+  initTfSelect();
+  initSecuritySettings();
   window.addEventListener('resize', function () {
     autoExpandCollapsibleCards();
     syncDetailLogHeight();
@@ -2323,6 +2758,341 @@ function initIngressForms() {
       row.appendChild(rmBtn);
       container.appendChild(row);
       pathInput.focus();
+    });
+  });
+}
+
+/* Confirm-to-act dialogs (type username/slug to enable action button) */
+function initConfirmDialogs() {
+  document.querySelectorAll('.confirm-modal').forEach(function (dialog) {
+    var expected = dialog.getAttribute('data-confirm-value');
+    var input = dialog.querySelector('.confirm-input');
+    var btn = dialog.querySelector('.confirm-btn');
+    if (!input || !btn) return;
+    input.addEventListener('input', function () {
+      btn.disabled = input.value !== expected;
+    });
+    dialog.addEventListener('close', function () {
+      input.value = '';
+      btn.disabled = true;
+    });
+  });
+}
+
+/* Two-Factor Select — inline TOTP + WebAuthn on tf_select page */
+function initTfSelect() {
+  var container = document.getElementById('tf-select-page');
+  if (!container) return;
+
+  var csrfToken = container.querySelector('input[name="csrf_token"]').value;
+  var selectUrl = container.getAttribute('data-select-url');
+  var validateUrl = container.getAttribute('data-validate-url');
+  var signinUrl = container.getAttribute('data-signin-url');
+  var nextUrl = container.getAttribute('data-next-url') || '';
+  var rememberCheckbox = document.getElementById('tf-remember-checkbox');
+
+  // TOTP inline submit
+  var totpForm = document.getElementById('totp-form');
+  if (totpForm) {
+    var fullValidateUrl = validateUrl;
+    if (nextUrl) fullValidateUrl += '?next=' + encodeURIComponent(nextUrl);
+
+    var codeField = totpForm.querySelector('input[name="code"]');
+    codeField.addEventListener('input', function() {
+      codeField.value = codeField.value.replace(/[^0-9]/g, '').slice(0, 6);
+    });
+
+    totpForm.addEventListener('submit', function(e) {
+      e.preventDefault();
+      var code = codeField.value;
+      var btn = totpForm.querySelector('button[type="submit"]');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loading loading-spinner loading-xs"></span>';
+
+      var selectData = new FormData();
+      selectData.append('csrf_token', csrfToken);
+      selectData.append('which', 'authenticator');
+
+      fetch(selectUrl, {
+        method: 'POST',
+        body: selectData,
+        redirect: 'manual',
+        credentials: 'same-origin',
+      }).then(function() {
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = fullValidateUrl;
+        form.style.display = 'none';
+
+        var csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrf_token';
+        csrfInput.value = csrfToken;
+        form.appendChild(csrfInput);
+
+        var codeInput = document.createElement('input');
+        codeInput.type = 'hidden';
+        codeInput.name = 'code';
+        codeInput.value = code;
+        form.appendChild(codeInput);
+
+        if (rememberCheckbox && rememberCheckbox.checked) {
+          var rememberInput = document.createElement('input');
+          rememberInput.type = 'hidden';
+          rememberInput.name = 'remember';
+          rememberInput.value = 'y';
+          form.appendChild(rememberInput);
+        }
+
+        document.body.appendChild(form);
+        form.submit();
+      });
+    });
+  }
+
+  // WebAuthn inline flow
+  var wanBtn = document.getElementById('wan-btn');
+  if (wanBtn) {
+    var wanMethod = wanBtn.getAttribute('data-method');
+
+    wanBtn.addEventListener('click', function() {
+      wanBtn.disabled = true;
+      wanBtn.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Waiting for key...';
+      var errEl = document.getElementById('wan-error');
+      errEl.classList.add('hidden');
+
+      var selectData = new FormData();
+      selectData.append('csrf_token', csrfToken);
+      selectData.append('which', wanMethod);
+
+      fetch(selectUrl, {
+        method: 'POST',
+        body: selectData,
+        redirect: 'manual',
+        credentials: 'same-origin',
+      }).then(function() {
+        var signinData = new FormData();
+        signinData.append('csrf_token', csrfToken);
+
+        return fetch(signinUrl, {
+          method: 'POST',
+          body: signinData,
+          credentials: 'same-origin',
+          headers: { 'Accept': 'application/json' },
+        });
+      }).then(function(resp) {
+        return resp.json();
+      }).then(function(data) {
+        if (!data.response || !data.response.credential_options) {
+          throw new Error(data.response && data.response.errors ? JSON.stringify(data.response.errors) : 'Failed to get credential options');
+        }
+        var credOpts = JSON.stringify(data.response.credential_options);
+        var wanState = data.response.wan_state;
+
+        return handleSignin(credOpts).then(function(result) {
+          return { result: result, wanState: wanState };
+        });
+      }).then(function(ctx) {
+        if (ctx.result.error_msg) {
+          throw new Error(ctx.result.error_msg);
+        }
+        var responseUrl = signinUrl + '/' + ctx.wanState;
+        if (nextUrl) responseUrl += '?next=' + encodeURIComponent(nextUrl);
+
+        var form = document.getElementById('wan-response-form');
+        form.action = responseUrl;
+        document.getElementById('wan-credential').value = ctx.result.credential;
+        document.getElementById('wan-remember').value = (rememberCheckbox && rememberCheckbox.checked) ? 'y' : '';
+        form.submit();
+      }).catch(function(err) {
+        wanBtn.disabled = false;
+        wanBtn.textContent = 'Use Security Key';
+        errEl.textContent = '';
+        var alertDiv = document.createElement('div');
+        alertDiv.className = 'alert alert-error text-sm py-2';
+        var msgSpan = document.createElement('span');
+        msgSpan.textContent = err.message;
+        alertDiv.appendChild(msgSpan);
+        errEl.appendChild(alertDiv);
+        errEl.classList.remove('hidden');
+      });
+    });
+  }
+}
+
+/* TOTP Authenticator Setup Modal */
+function initTotpSetup() {
+  var container = document.getElementById('totp-setup-container');
+  if (!container) return;
+
+  var setupUrl = container.getAttribute('data-setup-url');
+  var validateUrl = container.getAttribute('data-validate-url');
+  var successUrl = container.getAttribute('data-success-url');
+  var csrfToken = container.getAttribute('data-csrf-token');
+
+  var stepLoading = document.getElementById('totp-step-loading');
+  var stepVerify = document.getElementById('totp-step-verify');
+  var stepError = document.getElementById('totp-step-error');
+  var errorMsg = document.getElementById('totp-setup-error-msg');
+
+  // Reset to loading state
+  stepLoading.classList.remove('hidden');
+  stepVerify.classList.add('hidden');
+  stepError.classList.add('hidden');
+
+  // Step 1: POST to tf-setup to generate secret
+  var setupData = new FormData();
+  setupData.append('csrf_token', csrfToken);
+  setupData.append('setup', 'authenticator');
+
+  fetch(setupUrl, {
+    method: 'POST',
+    body: setupData,
+    credentials: 'same-origin',
+    headers: { 'Accept': 'application/json' },
+  }).then(function(resp) {
+    return resp.json();
+  }).then(function(data) {
+    var r = data.response || {};
+    var key = r.tf_authr_key;
+    var username = r.tf_authr_username || '';
+    var issuer = r.tf_authr_issuer || '';
+    var stateToken = r.tf_state_token;
+
+    if (!key) {
+      throw new Error('Failed to generate authenticator secret');
+    }
+
+    // Show key
+    document.getElementById('totp-manual-key').textContent = key;
+
+    // Generate otpauth URI and QR code
+    var rawKey = key.replace(/-/g, '');
+    var otpauthUri = 'otpauth://totp/' + encodeURIComponent(issuer + ':' + username)
+      + '?secret=' + rawKey + '&issuer=' + encodeURIComponent(issuer);
+    var qrContainer = document.getElementById('totp-qr-container');
+    qrContainer.textContent = '';
+    generateQrImg(otpauthUri, qrContainer);
+
+    stepLoading.classList.add('hidden');
+    stepVerify.classList.remove('hidden');
+
+    // Digit-only filtering
+    var codeInput = document.getElementById('totp-verify-code');
+    codeInput.value = '';
+    codeInput.addEventListener('input', function() {
+      codeInput.value = codeInput.value.replace(/[^0-9]/g, '').slice(0, 6);
+    });
+    codeInput.focus();
+
+    // Step 2: verify code
+    var verifyForm = document.getElementById('totp-verify-form');
+    verifyForm.onsubmit = function(e) {
+      e.preventDefault();
+      var code = codeInput.value;
+      if (code.length !== 6) return;
+
+      var btn = verifyForm.querySelector('button[type="submit"]');
+      btn.disabled = true;
+      btn.textContent = 'Verifying...';
+      var verifyErr = document.getElementById('totp-verify-error');
+      verifyErr.classList.add('hidden');
+
+      var url = stateToken ? (setupUrl + '/' + stateToken) : validateUrl;
+
+      var verifyData = new FormData();
+      verifyData.append('csrf_token', csrfToken);
+      verifyData.append('code', code);
+
+      fetch(url, {
+        method: 'POST',
+        body: verifyData,
+        credentials: 'same-origin',
+        headers: { 'Accept': 'application/json' },
+      }).then(function(resp) {
+        return resp.json();
+      }).then(function(result) {
+        var meta = result.response || {};
+        if (meta.errors || meta.field_errors) {
+          var msg = '';
+          if (meta.field_errors) {
+            for (var field in meta.field_errors) {
+              msg += meta.field_errors[field].join(', ');
+            }
+          }
+          if (meta.errors) {
+            msg = meta.errors.join(', ');
+          }
+          throw new Error(msg || 'Invalid code');
+        }
+        // Success — redirect to security settings
+        window.location.href = successUrl;
+      }).catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = 'Verify';
+        verifyErr.textContent = '';
+        var alertDiv = document.createElement('div');
+        alertDiv.className = 'alert alert-error text-sm py-2';
+        var msgSpan = document.createElement('span');
+        msgSpan.textContent = err.message;
+        alertDiv.appendChild(msgSpan);
+        verifyErr.appendChild(alertDiv);
+        verifyErr.classList.remove('hidden');
+      });
+    };
+  }).catch(function(err) {
+    stepLoading.classList.add('hidden');
+    errorMsg.textContent = err.message;
+    stepError.classList.remove('hidden');
+  });
+}
+
+/* Generate QR code as an img element using the server-side endpoint */
+function generateQrImg(otpauthUri, container) {
+  var img = document.createElement('img');
+  img.alt = 'Scan with authenticator app';
+  img.className = 'w-48 h-48 rounded-lg border border-base-content/10 bg-white p-2';
+  img.src = '/account/security/qr?uri=' + encodeURIComponent(otpauthUri);
+  container.appendChild(img);
+}
+
+/* Security Settings — WebAuthn key deletion via fetch */
+function initSecuritySettings() {
+  var container = document.getElementById('security-settings');
+  if (!container) return;
+
+  var deleteUrl = container.getAttribute('data-wan-delete-url');
+  var csrfToken = container.getAttribute('data-csrf-token');
+  if (!deleteUrl) return;
+
+  container.querySelectorAll('.wan-delete-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var keyName = btn.getAttribute('data-key-name');
+      btn.disabled = true;
+      btn.textContent = 'Removing...';
+
+      var data = new FormData();
+      data.append('csrf_token', csrfToken);
+      data.append('name', keyName);
+
+      fetch(deleteUrl, {
+        method: 'POST',
+        body: data,
+        credentials: 'same-origin',
+        headers: { 'Accept': 'application/json' },
+      }).then(function(resp) {
+        return resp.json();
+      }).then(function(result) {
+        var meta = result.response || {};
+        if (meta.errors || meta.field_errors) {
+          throw new Error('Failed to remove key');
+        }
+        // Reload — Flask-Security doesn't flash on JSON, so use a param
+        window.location.href = window.location.pathname + '?deleted=' + encodeURIComponent(keyName);
+      }).catch(function() {
+        btn.disabled = false;
+        btn.textContent = 'Remove';
+      });
     });
   });
 }

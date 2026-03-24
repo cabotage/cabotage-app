@@ -15,19 +15,22 @@ except ImportError:
     TextLexer = None
 
 from flask import Flask, render_template, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_admin import Admin
 from flask_babel import Babel
 from flask_bcrypt import Bcrypt
 from flask_bootstrap import Bootstrap
 from flask_debugtoolbar import DebugToolbarExtension
 import humanize as humanize_lib
-from flask_login import LoginManager
 from flask_mail import Mail
 from flask_migrate import Migrate
 from flask_security import Security, SQLAlchemyUserDatastore
 from flask_principal import Principal, identity_loaded
+from typing import TYPE_CHECKING
+
 from flask_sqlalchemy import SQLAlchemy
 from flask_sock import Sock
+from flask_wtf.csrf import CSRFProtect
 
 from celery import Celery
 from celery import Task
@@ -44,12 +47,16 @@ from cabotage.server.ext.config_writer import ConfigWriter
 from cabotage.server.ext.kubernetes import Kubernetes
 from cabotage.server.ext.vault_db_creds import VaultDBCreds
 from cabotage.server.ext.github_app import GitHubApp
+from cabotage.server.mfa import CabotageWebauthnUtil
 
 # instantiate the extensions
 bcrypt = Bcrypt()
 toolbar = DebugToolbarExtension()
 bootstrap = Bootstrap()
-security = Security()
+
+security = Security(webauthn_util_cls=CabotageWebauthnUtil)
+
+
 db_metadata = MetaData(
     naming_convention={
         "ix": "ix_%(column_0_label)s",
@@ -62,8 +69,12 @@ db_metadata = MetaData(
 db: SQLAlchemy = SQLAlchemy(
     metadata=db_metadata, engine_options={"pool_pre_ping": True}
 )
+
+if TYPE_CHECKING:
+    from flask_sqlalchemy.model import Model
+else:
+    Model = db.Model
 principal = Principal()
-login_manager = LoginManager()
 mail = Mail()
 migrate = Migrate()
 consul = Consul()
@@ -73,6 +84,7 @@ kubernetes = Kubernetes()
 config_writer = ConfigWriter(consul=consul, vault=vault)
 github_app = GitHubApp()
 sock = Sock()
+csrf = CSRFProtect()
 babel = Babel()
 sentry_sdk.init(
     dsn=os.getenv("SENTRY_DSN"),
@@ -102,6 +114,16 @@ def celery_init_app(app):
             "schedule": 10.0,
             "args": None,
         },
+        "tailscale-state-reconciler": {
+            "task": "cabotage.celery.tasks.tailscale.reconcile_tailscale_integration_states",
+            "schedule": 30.0,
+            "args": None,
+        },
+        "tailscale-oidc-token-refresh": {
+            "task": "cabotage.celery.tasks.tailscale.refresh_tailscale_oidc_tokens",
+            "schedule": crontab(minute="*/15"),
+            "args": None,
+        },
     }
     app.extensions["celery"] = celery_app
     return celery_app
@@ -121,9 +143,9 @@ def create_app():
         name="cabotage_admin", index_view=AdminIndexView(), template_mode="bootstrap3"
     )
 
-    from cabotage.server.models.auth import User, Role
+    from cabotage.server.models.auth import User, Role, WebAuthn
 
-    user_datastore = SQLAlchemyUserDatastore(db, User, Role)
+    user_datastore = SQLAlchemyUserDatastore(db, User, Role, webauthn_model=WebAuthn)
 
     from cabotage.server.user.forms import (
         ExtendedConfirmRegisterForm,
@@ -134,6 +156,20 @@ def create_app():
     # set config
     app_settings = os.getenv("APP_SETTINGS", "cabotage.server.config.Config")
     app.config.from_object(app_settings)
+
+    # TOTP_SECRETS must be a dict — deserialize if loaded as a string from env
+    totp_secrets = app.config.get("SECURITY_TOTP_SECRETS")
+    if isinstance(totp_secrets, str):
+        import json
+
+        app.config["SECURITY_TOTP_SECRETS"] = {
+            int(k): v for k, v in json.loads(totp_secrets).items()
+        }
+
+    if app.config.get("GITHUB_OAUTH_ONLY"):
+        app.config["SECURITY_REGISTERABLE"] = False
+        app.config["SECURITY_RECOVERABLE"] = False
+        app.config["SECURITY_CHANGEABLE"] = False
 
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 31536000  # 1 year; cache-busted by hash
 
@@ -175,14 +211,24 @@ def create_app():
         register_form=ExtendedRegisterForm,
         login_form=ExtendedLoginForm,
     )
+    from cabotage.server.user.github_oauth import init_github_oauth
+
+    init_github_oauth(app)
     vault_db_creds.init_app(app)
     db.init_app(app)
     principal.init_app(app)
     identity_loaded.connect(cabotage_on_identity_loaded, app)
-    login_manager.init_app(app)
     mail.init_app(app)
     migrate.init_app(app, db)
     nav.init_app(app)
+
+    @app.template_filter("display_username")
+    def display_username_filter(value):
+        if value and value.startswith("github:"):
+            parts = value.split(":", 2)
+            if len(parts) == 3:
+                return parts[2]
+        return value
 
     @app.template_filter("humanize")
     def humanize_filter(value):
@@ -229,19 +275,27 @@ def create_app():
     config_writer.init_app(app, consul, vault)
     github_app.init_app(app)
     celery_init_app(app)
+    csrf.init_app(app)
     sock.init_app(app)
     babel.init_app(app)
-
-    @login_manager.user_loader
-    def load_user(userid):
-        return user_datastore.find_user(id=userid)
 
     # register blueprints
     from cabotage.server.user.views import user_blueprint
     from cabotage.server.main.views import main_blueprint
+    from cabotage.server.oidc.views import oidc_blueprint
+    from cabotage.server.registry_auth.views import registry_auth_blueprint
 
     app.register_blueprint(user_blueprint)
     app.register_blueprint(main_blueprint)
+    app.register_blueprint(oidc_blueprint)
+    app.register_blueprint(registry_auth_blueprint)
+
+    # GitHub webhook uses HMAC validation, not CSRF tokens
+    csrf.exempt("cabotage.server.user.views.github_hooks")
+
+    from cabotage.server.mfa import register_mfa_guards
+
+    register_mfa_guards(app)
 
     # error handlers
     @app.errorhandler(401)
@@ -289,6 +343,15 @@ def create_app():
     admin.add_view(AdminModelView(Deployment, db.session))
     admin.add_view(AdminModelView(Hook, db.session))
     admin.add_view(AdminModelView(User, db.session))
+
+    num_proxies = app.config.get("PROXY_FIX_NUM_PROXIES", 1)
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=num_proxies,
+        x_proto=num_proxies,
+        x_host=num_proxies,
+        x_prefix=num_proxies,
+    )
 
     original_wsgi = app.wsgi_app
 

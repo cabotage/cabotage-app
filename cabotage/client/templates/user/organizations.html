@@ -7,22 +7,24 @@
 
 {% block content %}
   {% call page_header('Organizations', 'Manage your organizations and teams') %}
+    {% if current_user.admin %}
     <button type="button"
             onclick="document.getElementById('create-org-modal').classList.remove('hidden')"
             class="btn btn-primary btn-sm gap-2">
       {{ icon('plus', 'w-4 h-4') }}
       New Organization
     </button>
+    {% endif %}
   {% endcall %}
 
   {% if organizations %}
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {% for membership in organizations %}
         {% set org = membership.organization %}
-        {% set proj_count = org.projects|length %}
+        {% set proj_count = org.active_projects|length %}
         {% set app_count = namespace(n=0) %}
-        {% for p in org.projects %}
-          {% set app_count.n = app_count.n + p.project_applications|length %}
+        {% for p in org.active_projects %}
+          {% set app_count.n = app_count.n + p.active_applications|length %}
         {% endfor %}
         {{ org_card(name=org.name or org.slug,
                 slug=org.slug,
@@ -39,16 +41,19 @@
     <div class="empty-state">
       <div class="text-base-content/15 mb-4">{{ icon('building', 'w-12 h-12') }}</div>
       <h3 class="text-base font-medium text-base-content/60 mb-1">No organizations yet</h3>
-      <p class="text-sm text-base-content/40 max-w-sm">Create your first organization to start deploying.</p>
+      <p class="text-sm text-base-content/40 max-w-sm">{% if current_user.admin %}Create your first organization to start deploying.{% else %}You are not a member of any organizations yet.{% endif %}</p>
+      {% if current_user.admin %}
       <button type="button"
               onclick="document.getElementById('create-org-modal').classList.remove('hidden')"
               class="btn btn-primary btn-sm gap-2 mt-4">
         {{ icon('plus', 'w-4 h-4') }}
         Create Organization
       </button>
+      {% endif %}
     </div>
   {% endif %}
 
+  {% if current_user.admin %}
   {{ create_modal(modal_id='create-org-modal',
     title='Create Organization',
     form=org_create_form,
@@ -57,5 +62,6 @@
     name_field=org_create_form.name,
     slug_field=org_create_form.slug
   ) }}
+  {% endif %}
 
 {% endblock content %}

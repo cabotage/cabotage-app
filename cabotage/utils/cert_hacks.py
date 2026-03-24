@@ -3,7 +3,6 @@ import datetime
 
 
 from cryptography import x509
-from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
@@ -22,12 +21,11 @@ See: https://github.com/hashicorp/vault/issues/3845#event-10158156553
 def issue_dummy_cert(public_key_pem, common_name):
     """A kind courtesy of @reaperhulk"""
     discarding_private_key = ec.generate_private_key(
-        curve=ec.SECP256R1(), backend=default_backend()
+        curve=ec.SECP256R1(),
     )
 
     public_key = serialization.load_pem_public_key(
         public_key_pem,
-        backend=default_backend(),
     )
 
     one_day = datetime.timedelta(1, 0, 0)
@@ -48,14 +46,17 @@ def issue_dummy_cert(public_key_pem, common_name):
             ]
         )
     )
-    builder = builder.not_valid_before(datetime.datetime.today() - one_day)
-    builder = builder.not_valid_after(datetime.datetime.today() + one_year)
+    builder = builder.not_valid_before(
+        datetime.datetime.now(datetime.timezone.utc) - one_day
+    )
+    builder = builder.not_valid_after(
+        datetime.datetime.now(datetime.timezone.utc) + one_year
+    )
     builder = builder.serial_number(x509.random_serial_number())
     builder = builder.public_key(public_key)
     certificate = builder.sign(
         private_key=discarding_private_key,
         algorithm=hashes.SHA256(),
-        backend=default_backend(),
     )
     return certificate
 
@@ -84,7 +85,6 @@ def construct_cert_from_public_key(signer, public_key_pem, common_name):
     final_certificate_bytes = certificate_squisher(dummy_cert, signature_bytes)
     final_cert = x509.load_der_x509_certificate(
         final_certificate_bytes,
-        backend=default_backend(),
     )
     return final_cert.public_bytes(
         encoding=serialization.Encoding.PEM,

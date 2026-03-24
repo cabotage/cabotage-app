@@ -54,17 +54,16 @@ later invocations are much faster.
 Most changes to application code will show up immediately without having to
 explicitly restart anything. However, some changes may require rebuilding the
 base application image. For example, changing the dependencies in the
-`requirements.*` files, or changing the Docker config itself. Use this command
-after making such changes to rebuild images and restart containers.
+`pyproject.toml`, `uv.lock`, or changing the Docker config itself. Use this
+command after making such changes to rebuild images and restart containers.
 
 
-## `make requirements/{base,dev}.txt`
+## `make lock`
 
-Recompiles dependency files.
-Additional arguments can be passed to pip-compile with `F=`:
+Regenerates `uv.lock` from `pyproject.toml`. To upgrade a single package:
 
 ```shell
-make requirements/base.txt F='--upgrade-package flask'
+uv lock --upgrade-package flask
 ```
 
 
