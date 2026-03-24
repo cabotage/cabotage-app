@@ -123,11 +123,18 @@ def _resolve_ingress(app_env, ingress_name, app_slug, prop="url"):
             f"Ingress '{ingress.name}' on application '{app_slug}' has no hosts"
         )
 
-    if prop == "host":
-        return host.hostname
+    hostname = host.hostname
+    is_tailscale = ingress.ingress_class_name == "tailscale"
+    if is_tailscale:
+        ts_integration = app_env.application.project.organization.tailscale_integration
+        if ts_integration and ts_integration.tailnet:
+            hostname = f"{host.hostname}.{ts_integration.tailnet}"
 
-    scheme = "https" if host.tls_enabled else "http"
-    return f"{scheme}://{host.hostname}"
+    if prop == "host":
+        return hostname
+
+    scheme = "https" if host.tls_enabled or is_tailscale else "http"
+    return f"{scheme}://{hostname}"
 
 
 def _resolve_tcp_service(app_env, process_name, app_slug, prop="svc"):

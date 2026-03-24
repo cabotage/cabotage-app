@@ -114,6 +114,16 @@ def celery_init_app(app):
             "schedule": 10.0,
             "args": None,
         },
+        "tailscale-state-reconciler": {
+            "task": "cabotage.celery.tasks.tailscale.reconcile_tailscale_integration_states",
+            "schedule": 30.0,
+            "args": None,
+        },
+        "tailscale-oidc-token-refresh": {
+            "task": "cabotage.celery.tasks.tailscale.refresh_tailscale_oidc_tokens",
+            "schedule": crontab(minute="*/15"),
+            "args": None,
+        },
     }
     app.extensions["celery"] = celery_app
     return celery_app
@@ -272,9 +282,13 @@ def create_app():
     # register blueprints
     from cabotage.server.user.views import user_blueprint
     from cabotage.server.main.views import main_blueprint
+    from cabotage.server.oidc.views import oidc_blueprint
+    from cabotage.server.registry_auth.views import registry_auth_blueprint
 
     app.register_blueprint(user_blueprint)
     app.register_blueprint(main_blueprint)
+    app.register_blueprint(oidc_blueprint)
+    app.register_blueprint(registry_auth_blueprint)
 
     # GitHub webhook uses HMAC validation, not CSRF tokens
     csrf.exempt("cabotage.server.user.views.github_hooks")

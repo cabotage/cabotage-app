@@ -835,6 +835,20 @@ class IngressPathForm(FlaskForm):
     )
 
 
+class TailscaleIntegrationForm(FlaskForm):
+    client_id = StringField(
+        "Client ID",
+        [InputRequired(), Length(max=255)],
+        description="From the OIDC federated identity in Tailscale",
+    )
+
+
+class TailscaleIngressSettingsForm(FlaskForm):
+    """Placeholder — tags are now derived from the platform config."""
+
+    pass
+
+
 class CreateEnvironmentConfigurationForm(FlaskForm):
     project_id = HiddenField(
         "Project",
