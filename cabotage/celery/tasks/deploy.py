@@ -282,7 +282,10 @@ TENANT_NETWORK_POLICIES = [
                             },
                         },
                     ],
-                    "ports": [{"port": 8000, "protocol": "TCP"}],
+                    "ports": [
+                        {"port": 8000, "protocol": "TCP"},
+                        {"port": 8089, "protocol": "TCP"},
+                    ],
                 },
             ],
         },
