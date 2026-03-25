@@ -173,18 +173,28 @@ def _wait_for_tls_secret(core_api, namespace, secret_name, timeout=120, log=None
 
 
 def k8s_namespace(release):
-    org_k8s = release.application.project.organization.k8s_identifier
     app_env = release.application_environment
-    if app_env.k8s_identifier is not None:
-        return safe_k8s_name(org_k8s, app_env.environment.k8s_identifier)
+    env = app_env.environment if app_env.k8s_identifier is not None else None
+    fargate_ns = current_app.config.get("FARGATE_PREVIEW_NAMESPACE")
+    if fargate_ns and env and env.ephemeral:
+        return fargate_ns
+    org_k8s = release.application.project.organization.k8s_identifier
+    if env:
+        return safe_k8s_name(org_k8s, env.k8s_identifier)
     return org_k8s
 
 
 def k8s_resource_prefix(release):
-    return safe_k8s_name(
+    app_env = release.application_environment
+    env = app_env.environment if app_env.k8s_identifier is not None else None
+    parts = [
         release.application.project.k8s_identifier,
         release.application.k8s_identifier,
-    )
+    ]
+    fargate_ns = current_app.config.get("FARGATE_PREVIEW_NAMESPACE")
+    if fargate_ns and env and env.ephemeral:
+        parts.insert(1, env.k8s_identifier)
+    return safe_k8s_name(*parts)
 
 
 def k8s_role_name(release):
@@ -1747,6 +1757,7 @@ def render_deployment(
                 "organization": release.application.project.organization.slug,
                 "project": release.application.project.slug,
                 "application": release.application.slug,
+                "environment": env_slug,
                 "process": process_name,
                 "app": label_value,
                 "resident-deployment.cabotage.io": "true",
@@ -2339,6 +2350,7 @@ def deploy_release(deployment):
                     "organization": release_obj.application.project.organization.slug,
                     "project": release_obj.application.project.slug,
                     "application": release_obj.application.slug,
+                    "environment": app_env.environment.slug if app_env.environment else "",
                     "app": k8s_label_value(release_obj),
                 },
                 ingresses=ingress_snapshots,

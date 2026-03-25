@@ -164,14 +164,22 @@ user_blueprint = Blueprint(
 
 def _config_k8s_namespace(organization, app_env):
     if app_env.k8s_identifier is not None:
+        env = app_env.environment
+        fargate_ns = current_app.config.get("FARGATE_PREVIEW_NAMESPACE")
+        if fargate_ns and env.ephemeral:
+            return fargate_ns
         return safe_k8s_name(
-            organization.k8s_identifier, app_env.environment.k8s_identifier
+            organization.k8s_identifier, env.k8s_identifier
         )
     return organization.k8s_identifier
 
 
-def _config_k8s_resource_prefix(project, application):
-    return safe_k8s_name(project.k8s_identifier, application.k8s_identifier)
+def _config_k8s_resource_prefix(project, application, environment=None):
+    parts = [project.k8s_identifier, application.k8s_identifier]
+    fargate_ns = current_app.config.get("FARGATE_PREVIEW_NAMESPACE")
+    if fargate_ns and environment and environment.ephemeral:
+        parts.insert(1, environment.k8s_identifier)
+    return safe_k8s_name(*parts)
 
 
 def _env_config_k8s_resource_prefix(project):
@@ -263,7 +271,7 @@ def _enqueue_app_env_cleanup(app_env, organization):
     app = app_env.application
     project = app.project
     namespace = _config_k8s_namespace(organization, app_env)
-    resource_prefix = _config_k8s_resource_prefix(project, app)
+    resource_prefix = _config_k8s_resource_prefix(project, app, environment=app_env.environment)
     label_selector = ",".join(
         [
             f"organization={organization.slug}",

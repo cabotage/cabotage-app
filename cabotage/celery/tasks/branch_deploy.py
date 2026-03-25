@@ -186,7 +186,11 @@ def _precreate_ingresses(environment):
         return
 
     org = environment.project.organization
-    ns_name = safe_k8s_name(org.k8s_identifier, environment.k8s_identifier)
+    fargate_ns = current_app.config.get("FARGATE_PREVIEW_NAMESPACE")
+    if fargate_ns:
+        ns_name = fargate_ns
+    else:
+        ns_name = safe_k8s_name(org.k8s_identifier, environment.k8s_identifier)
     api_client = kubernetes_ext.kubernetes_client
     core_api = kubernetes.client.CoreV1Api(api_client)
     networking_api = kubernetes.client.NetworkingV1Api(api_client)
@@ -223,17 +227,23 @@ def _precreate_ingresses(environment):
 
     for app_env in environment.application_environments:
         app = app_env.application
+        prefix_parts = [
+            environment.project.k8s_identifier,
+            app.k8s_identifier,
+        ]
+        if fargate_ns:
+            prefix_parts.insert(1, environment.k8s_identifier)
+        ingress_labels = {
+            "organization": org.slug,
+            "project": environment.project.slug,
+            "application": app.slug,
+            "environment": environment.slug,
+        }
         ensure_ingresses(
             networking_api,
             namespace=ns_name,
-            resource_prefix=safe_k8s_name(
-                environment.project.k8s_identifier, app.k8s_identifier
-            ),
-            labels={
-                "organization": org.slug,
-                "project": environment.project.slug,
-                "application": app.slug,
-            },
+            resource_prefix=safe_k8s_name(*prefix_parts),
+            labels=ingress_labels,
             ingresses=app_env.ingresses,
             org_k8s_identifier=org.k8s_identifier,
             org_default_tags=f"tag:{current_app.config.get('TAILSCALE_TAG_PREFIX', 'cabotage')}",
@@ -245,19 +255,49 @@ def _teardown_environment(environment):
     import kubernetes
 
     from cabotage.celery.tasks.build import build_cache_pvc_name
+    from cabotage.celery.tasks.deploy import cleanup_app_env_k8s
 
     if current_app.config["KUBERNETES_ENABLED"]:
         org = environment.project.organization
-        ns_name = safe_k8s_name(org.k8s_identifier, environment.k8s_identifier)
-        api_client = kubernetes_ext.kubernetes_client
-        core_api = kubernetes.client.CoreV1Api(api_client)
-        try:
-            core_api.delete_namespace(ns_name, propagation_policy="Foreground")
-        except ApiException as exc:
-            if exc.status != 404:
-                raise
+        fargate_ns = current_app.config.get("FARGATE_PREVIEW_NAMESPACE")
+
+        if fargate_ns:
+            # Shared namespace — clean up per-app-env resources, not the namespace
+            for app_env in environment.application_environments:
+                app = app_env.application
+                prefix_parts = [
+                    environment.project.k8s_identifier,
+                    environment.k8s_identifier,
+                    app.k8s_identifier,
+                ]
+                resource_prefix = safe_k8s_name(*prefix_parts)
+                label_selector = ",".join(
+                    [
+                        f"organization={org.slug}",
+                        f"project={environment.project.slug}",
+                        f"application={app.slug}",
+                        f"environment={environment.slug}",
+                    ]
+                )
+                cleanup_app_env_k8s(
+                    app_env_id=str(app_env.id),
+                    namespace=fargate_ns,
+                    resource_prefix=resource_prefix,
+                    label_selector=label_selector,
+                )
+        else:
+            ns_name = safe_k8s_name(org.k8s_identifier, environment.k8s_identifier)
+            api_client = kubernetes_ext.kubernetes_client
+            core_api = kubernetes.client.CoreV1Api(api_client)
+            try:
+                core_api.delete_namespace(ns_name, propagation_policy="Foreground")
+            except ApiException as exc:
+                if exc.status != 404:
+                    raise
 
         # Clean up build cache PVCs
+        api_client = kubernetes_ext.kubernetes_client
+        core_api = kubernetes.client.CoreV1Api(api_client)
         for app_env in environment.application_environments:
             pvc_name = build_cache_pvc_name(app_env)
             try:

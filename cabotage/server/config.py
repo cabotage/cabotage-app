@@ -105,6 +105,7 @@ class Config(metaclass=MetaFlaskEnv):
     INGRESS_DOMAIN = None
     TAILSCALE_OPERATOR_ENABLED = False
     TAILSCALE_TAG_PREFIX = "cabotage"
+    FARGATE_PREVIEW_NAMESPACE = None
     MIMIR_URL = None
     MIMIR_VERIFY = None
     LOKI_URL = None
