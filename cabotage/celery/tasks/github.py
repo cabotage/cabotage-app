@@ -296,7 +296,9 @@ def _required_contexts_for_branch(access_token, repository_name, branch):
     return data.get("contexts", [])
 
 
-def _all_required_checks_passed(access_token, repository_name, commit_sha, required_contexts):
+def _all_required_checks_passed(
+    access_token, repository_name, commit_sha, required_contexts
+):
     """Check whether all required status checks have passed for a commit.
 
     Queries both the combined status API (for commit statuses) and the check
