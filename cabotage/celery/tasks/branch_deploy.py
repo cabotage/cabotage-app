@@ -180,7 +180,7 @@ def _precreate_ingresses(environment):
     """
     import kubernetes
 
-    from cabotage.celery.tasks.deploy import ensure_ingresses
+    from cabotage.celery.tasks.deploy import ensure_ingresses, ensure_network_policies
 
     if not current_app.config.get("KUBERNETES_ENABLED"):
         return
@@ -191,19 +191,35 @@ def _precreate_ingresses(environment):
     core_api = kubernetes.client.CoreV1Api(api_client)
     networking_api = kubernetes.client.NetworkingV1Api(api_client)
 
-    # Ensure namespace exists
+    # Ensure namespace exists with resident-namespace label
     try:
-        core_api.read_namespace(ns_name)
+        ns = core_api.read_namespace(ns_name)
+        labels = ns.metadata.labels or {}
+        if labels.get("resident-namespace.cabotage.io") != "true":
+            core_api.patch_namespace(
+                ns_name,
+                kubernetes.client.V1Namespace(
+                    metadata=kubernetes.client.V1ObjectMeta(
+                        labels={"resident-namespace.cabotage.io": "true"},
+                    ),
+                ),
+            )
     except ApiException as exc:
         if exc.status == 404:
             core_api.create_namespace(
                 kubernetes.client.V1Namespace(
-                    metadata=kubernetes.client.V1ObjectMeta(name=ns_name),
+                    metadata=kubernetes.client.V1ObjectMeta(
+                        name=ns_name,
+                        labels={"resident-namespace.cabotage.io": "true"},
+                    ),
                 )
             )
         else:
             logger.exception("Failed to create namespace %s", ns_name)
             return
+
+    if current_app.config.get("NETWORK_POLICIES_ENABLED"):
+        ensure_network_policies(networking_api, ns_name)
 
     for app_env in environment.application_environments:
         app = app_env.application
