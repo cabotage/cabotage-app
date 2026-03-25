@@ -75,13 +75,14 @@ class TestRenderNamespace:
 
 
 class TestTenantNetworkPoliciesData:
-    def test_four_policies_defined(self):
-        assert len(TENANT_NETWORK_POLICIES) == 4
+    def test_five_policies_defined(self):
+        assert len(TENANT_NETWORK_POLICIES) == 5
 
     def test_policy_names(self):
         names = [p["name"] for p in TENANT_NETWORK_POLICIES]
         assert "default-deny-ingress" in names
         assert "allow-ingress-from-traefik" in names
+        assert "allow-ingress-from-tailscale" in names
         assert "allow-intra-namespace" in names
         assert "restrict-egress" in names
 
@@ -111,6 +112,29 @@ class TestTenantNetworkPoliciesData:
         )
         ns_selector = policy["spec"]["ingress"][0]["from"][0]["namespaceSelector"]
         assert ns_selector["matchLabels"]["kubernetes.io/metadata.name"] == "traefik"
+
+    def test_tailscale_ingress_port(self):
+        policy = next(
+            p
+            for p in TENANT_NETWORK_POLICIES
+            if p["name"] == "allow-ingress-from-tailscale"
+        )
+        ports = policy["spec"]["ingress"][0]["ports"]
+        assert len(ports) == 1
+        assert ports[0]["port"] == 8000
+        assert ports[0]["protocol"] == "TCP"
+
+    def test_tailscale_ingress_selectors(self):
+        policy = next(
+            p
+            for p in TENANT_NETWORK_POLICIES
+            if p["name"] == "allow-ingress-from-tailscale"
+        )
+        from_clause = policy["spec"]["ingress"][0]["from"][0]
+        ns_selector = from_clause["namespaceSelector"]
+        assert ns_selector["matchLabels"]["kubernetes.io/metadata.name"] == "tailscale"
+        pod_selector = from_clause["podSelector"]
+        assert pod_selector["matchLabels"]["tailscale.com/managed"] == "true"
 
     def test_restrict_egress_allows_dns(self):
         policy = next(
@@ -222,13 +246,14 @@ class TestEnsureNetworkPolicies:
 
         ensure_network_policies(api, "tenant-ns")
 
-        assert api.create_namespaced_network_policy.call_count == 4
+        assert api.create_namespaced_network_policy.call_count == 5
         created_names = [
             c.args[1]["metadata"]["name"]
             for c in api.create_namespaced_network_policy.call_args_list
         ]
         assert "default-deny-ingress" in created_names
         assert "allow-ingress-from-traefik" in created_names
+        assert "allow-ingress-from-tailscale" in created_names
         assert "allow-intra-namespace" in created_names
         assert "restrict-egress" in created_names
 
@@ -238,7 +263,7 @@ class TestEnsureNetworkPolicies:
 
         ensure_network_policies(api, "tenant-ns")
 
-        assert api.patch_namespaced_network_policy.call_count == 4
+        assert api.patch_namespaced_network_policy.call_count == 5
         assert api.create_namespaced_network_policy.call_count == 0
 
     def test_sets_namespace_on_created_policies(self):
@@ -276,7 +301,7 @@ class TestEnsureNetworkPolicies:
         ensure_network_policies(api, "tenant-ns")
 
         assert api.patch_namespaced_network_policy.call_count == 2
-        assert api.create_namespaced_network_policy.call_count == 2
+        assert api.create_namespaced_network_policy.call_count == 3
 
 
 # ---------------------------------------------------------------------------
