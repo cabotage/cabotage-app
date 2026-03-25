@@ -296,6 +296,69 @@ def _required_contexts_for_branch(access_token, repository_name, branch):
     return data.get("contexts", [])
 
 
+def _all_required_checks_passed(
+    access_token, repository_name, commit_sha, required_contexts
+):
+    """Check whether all required status checks have passed for a commit.
+
+    Queries both the combined status API (for commit statuses) and the check
+    runs API (for GitHub Actions), then verifies every context in
+    required_contexts has a successful result.
+
+    Returns True if all required contexts have passed, False otherwise.
+    """
+    if not required_contexts:
+        return True
+
+    passed = set()
+
+    # Check runs (GitHub Actions)
+    page = 1
+    while True:
+        resp = github_session.get(
+            f"https://api.github.com/repos/{repository_name}/commits/{commit_sha}/check-runs",
+            headers={
+                "Accept": "application/vnd.github+json",
+                "Authorization": f'token {access_token["token"]}',
+            },
+            params={"per_page": 100, "page": page},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        for run in data.get("check_runs", []):
+            if run.get("conclusion") == "success":
+                passed.add(run["name"])
+        if len(data.get("check_runs", [])) < 100:
+            break
+        page += 1
+
+    # Commit statuses (legacy status API)
+    resp = github_session.get(
+        f"https://api.github.com/repos/{repository_name}/commits/{commit_sha}/status",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f'token {access_token["token"]}',
+        },
+        timeout=10,
+    )
+    resp.raise_for_status()
+    for status in resp.json().get("statuses", []):
+        if status.get("state") == "success":
+            passed.add(status["context"])
+
+    missing = set(required_contexts) - passed
+    if missing:
+        logger.info(
+            "skipping deployment for %s@%s: required checks not yet passed: %s",
+            repository_name,
+            commit_sha,
+            ", ".join(sorted(missing)),
+        )
+        return False
+    return True
+
+
 def create_deployment(
     access_token=None,
     application=None,
@@ -306,6 +369,7 @@ def create_deployment(
     transient_environment=False,
     environment_name=None,
     payload=None,
+    required_contexts=None,
 ):
     try:
         environment_string = (
@@ -326,12 +390,12 @@ def create_deployment(
             # Skip required contexts for transient (branch deploy) environments
             deploy_payload["required_contexts"] = []
         elif branch:
-            # Fetch the branch's required status checks and pass them explicitly.
-            # This preserves CI gating while excluding our own check runs, which
-            # would otherwise cause 409 Conflicts during batch deployments.
-            deploy_payload["required_contexts"] = _required_contexts_for_branch(
-                access_token, repository_name, branch
-            )
+            # Use pre-fetched required contexts if available, otherwise fetch.
+            if required_contexts is None:
+                required_contexts = _required_contexts_for_branch(
+                    access_token, repository_name, branch
+                )
+            deploy_payload["required_contexts"] = required_contexts
 
         deployment_response = github_session.post(
             f"https://api.github.com/repos/{repository_name}/deployments",
@@ -532,6 +596,17 @@ def process_check_suite_hook(hook):
             )
             return False
 
+        # Check that all required status checks have passed before
+        # attempting to create deployments. If not, bail out so a later
+        # check_suite webhook (when more suites complete) can retry.
+        required_contexts = _required_contexts_for_branch(
+            access_token, repository_name, head_branch
+        )
+        if not _all_required_checks_passed(
+            access_token, repository_name, commit_sha, required_contexts
+        ):
+            return False
+
         # Mark deployed *before* creating deployments to prevent races
         # between concurrent check_suite webhooks for the same SHA.
         push_event.deployed = True
@@ -572,6 +647,7 @@ def process_check_suite_hook(hook):
                 ref=commit_sha,
                 app_env=app_env,
                 branch=head_branch,
+                required_contexts=required_contexts,
             )
 
 
