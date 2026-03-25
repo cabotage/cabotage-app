@@ -5242,10 +5242,16 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
             if process_filter and path.target_process_name != process_filter:
                 continue
             traefik_svc_names.add(
+                f"{namespace}-{prefix}-{ingress.name}-{prefix}-{path.target_process_name}-https@kubernetesingressnginx"
+            )
+            traefik_svc_names.add(
                 f"{namespace}-{prefix}-{ingress.name}-{prefix}-{path.target_process_name}-8000@kubernetesingressnginx"
             )
         if not ingress.paths:
             if not process_filter or process_filter == "web":
+                traefik_svc_names.add(
+                    f"{namespace}-{prefix}-{ingress.name}-{prefix}-web-https@kubernetesingressnginx"
+                )
                 traefik_svc_names.add(
                     f"{namespace}-{prefix}-{ingress.name}-{prefix}-web-8000@kubernetesingressnginx"
                 )
@@ -5260,7 +5266,7 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
         # Filtered process has no ingresses — no traefik metrics available
         traefik_svc = None
     else:
-        traefik_svc = f'service="{namespace}-{prefix}-web-{prefix}-web-8000@kubernetesingressnginx"'
+        traefik_svc = f'service=~"{namespace}-{prefix}-web-{prefix}-web-(https|8000)@kubernetesingressnginx"'
 
     range_param = request.args.get("range", "1h")
     range_map = {
@@ -5488,10 +5494,16 @@ def _collect_traefik_svc_names(app_envs, namespace_fn, prefix_fn, process_filter
                 if process_filter and path.target_process_name != process_filter:
                     continue
                 names.add(
+                    f"{ns}-{pfx}-{ingress.name}-{pfx}-{path.target_process_name}-https@kubernetesingressnginx"
+                )
+                names.add(
                     f"{ns}-{pfx}-{ingress.name}-{pfx}-{path.target_process_name}-8000@kubernetesingressnginx"
                 )
             if not ingress.paths:
                 if not process_filter or process_filter == "web":
+                    names.add(
+                        f"{ns}-{pfx}-{ingress.name}-{pfx}-web-https@kubernetesingressnginx"
+                    )
                     names.add(
                         f"{ns}-{pfx}-{ingress.name}-{pfx}-web-8000@kubernetesingressnginx"
                     )
