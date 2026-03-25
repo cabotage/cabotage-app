@@ -1711,8 +1711,23 @@ def render_podspec(release, process_name, service_account_name):
         if dd_api_key:
             init_containers.append(render_datadog_container(dd_api_key, datadog_tags))
 
+    app_env = release.application_environment
+    env = app_env.environment if app_env.k8s_identifier is not None else None
+    if env and getattr(env, "ephemeral", False):
+        node_pool = "preview"
+    else:
+        node_pool = "standard"
+
     return kubernetes.client.V1PodSpec(
         service_account_name=service_account_name,
+        node_selector={"cabotage.dev/node-pool": node_pool},
+        tolerations=[
+            kubernetes.client.V1Toleration(
+                key="cabotage.dev/node-pool",
+                value=node_pool,
+                effect="NoSchedule",
+            ),
+        ],
         init_containers=init_containers,
         containers=containers,
         volumes=volumes,
@@ -2339,6 +2354,9 @@ def deploy_release(deployment):
                     "organization": release_obj.application.project.organization.slug,
                     "project": release_obj.application.project.slug,
                     "application": release_obj.application.slug,
+                    "environment": (
+                        app_env.environment.slug if app_env.environment else ""
+                    ),
                     "app": k8s_label_value(release_obj),
                 },
                 ingresses=ingress_snapshots,
