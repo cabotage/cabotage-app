@@ -288,6 +288,31 @@ TENANT_NETWORK_POLICIES = [
         },
     },
     {
+        "name": "allow-ingress-from-tailscale",
+        "spec": {
+            "podSelector": {},
+            "ingress": [
+                {
+                    "from": [
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {
+                                    "kubernetes.io/metadata.name": "tailscale",
+                                },
+                            },
+                            "podSelector": {
+                                "matchLabels": {
+                                    "tailscale.com/managed": "true",
+                                },
+                            },
+                        },
+                    ],
+                    "ports": [{"port": 8000, "protocol": "TCP"}],
+                },
+            ],
+        },
+    },
+    {
         "name": "allow-intra-namespace",
         "spec": {
             "podSelector": {},
