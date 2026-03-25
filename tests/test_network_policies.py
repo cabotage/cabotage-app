@@ -100,9 +100,11 @@ class TestTenantNetworkPoliciesData:
             if p["name"] == "allow-ingress-from-traefik"
         )
         ports = policy["spec"]["ingress"][0]["ports"]
-        assert len(ports) == 1
+        assert len(ports) == 2
         assert ports[0]["port"] == 8000
         assert ports[0]["protocol"] == "TCP"
+        assert ports[1]["port"] == 8089
+        assert ports[1]["protocol"] == "TCP"
 
     def test_traefik_ingress_namespace_selector(self):
         policy = next(
