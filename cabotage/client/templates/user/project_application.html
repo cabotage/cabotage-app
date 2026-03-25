@@ -177,11 +177,12 @@
       </span>
     </div>
     <div class="app-header-actions">
-      {% if app_env and application.github_repository %}
+      {% if app_env and application.github_repository and app_env.effective_auto_deploy_branch %}
         <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
               method="post"
               class="inline"
               data-full-deploy-form>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
           <input type="hidden" name="auto_deploy" value="true">
           {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}">{% endif %}
           <button class="btn btn-ghost btn-sm gap-1.5"
