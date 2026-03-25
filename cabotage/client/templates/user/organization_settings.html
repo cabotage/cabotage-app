@@ -33,6 +33,7 @@
   </div>
 
   {# Tailscale Integration #}
+  {% if config.TAILSCALE_OPERATOR_ENABLED %}
   <div class="card bg-base-200/50 border border-base-300/50 max-w-2xl mt-6">
     <div class="card-body">
       <div class="flex items-center justify-between">
@@ -187,6 +188,7 @@
       </form>
     </div>
   </div>
+  {% endif %}
 
   <div class="max-w-2xl">
     {{ danger_zone_delete(
