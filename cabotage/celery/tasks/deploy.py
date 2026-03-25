@@ -2206,7 +2206,12 @@ def deploy_release(deployment):
         custom_objects_api_instance = kubernetes.client.CustomObjectsApi(api_client)
         log("Fetching Namespace")
         namespace = fetch_namespace(core_api_instance, deployment.release_object)
-        if current_app.config.get("NETWORK_POLICIES_ENABLED"):
+        if (
+            current_app.config.get("NETWORK_POLICIES_ENABLED")
+            # Legacy: skip network policies for the cabotage namespace — cabotage
+            # deploys itself here and needs unrestricted cluster access.
+            and namespace.metadata.name != "cabotage"
+        ):
             log("Ensuring Network Policies")
             networking_api_instance = kubernetes.client.NetworkingV1Api(api_client)
             ensure_network_policies(networking_api_instance, namespace.metadata.name)
