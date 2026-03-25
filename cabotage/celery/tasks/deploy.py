@@ -215,6 +215,9 @@ def render_namespace(release):
     namespace_object = kubernetes.client.V1Namespace(
         metadata=kubernetes.client.V1ObjectMeta(
             name=k8s_namespace(release),
+            labels={
+                "resident-namespace.cabotage.io": "true",
+            },
         ),
     )
     return namespace_object
@@ -235,6 +238,17 @@ def fetch_namespace(core_api_instance, release):
     namespace_name = k8s_namespace(release)
     try:
         namespace = core_api_instance.read_namespace(namespace_name)
+        # Ensure the resident-namespace label is present on existing namespaces
+        labels = namespace.metadata.labels or {}
+        if labels.get("resident-namespace.cabotage.io") != "true":
+            namespace = core_api_instance.patch_namespace(
+                namespace_name,
+                kubernetes.client.V1Namespace(
+                    metadata=kubernetes.client.V1ObjectMeta(
+                        labels={"resident-namespace.cabotage.io": "true"},
+                    ),
+                ),
+            )
     except ApiException as exc:
         if exc.status == 404:
             namespace = create_namespace(core_api_instance, release)
@@ -243,6 +257,213 @@ def fetch_namespace(core_api_instance, release):
                 f"Unexpected exception fetching Namespace/{namespace_name}: {exc}"
             )
     return namespace
+
+
+TENANT_NETWORK_POLICIES = [
+    {
+        "name": "default-deny-ingress",
+        "spec": {
+            "podSelector": {},
+            "policyTypes": ["Ingress"],
+        },
+    },
+    {
+        "name": "allow-ingress-from-traefik",
+        "spec": {
+            "podSelector": {},
+            "ingress": [
+                {
+                    "from": [
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {
+                                    "kubernetes.io/metadata.name": "traefik",
+                                },
+                            },
+                        },
+                    ],
+                    "ports": [{"port": 8000, "protocol": "TCP"}],
+                },
+            ],
+        },
+    },
+    {
+        "name": "allow-intra-namespace",
+        "spec": {
+            "podSelector": {},
+            "ingress": [{"from": [{"podSelector": {}}]}],
+        },
+    },
+    {
+        "name": "restrict-egress",
+        "spec": {
+            "podSelector": {},
+            "policyTypes": ["Egress"],
+            "egress": [
+                # DNS resolution (kube-system CoreDNS)
+                {
+                    "to": [
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {
+                                    "kubernetes.io/metadata.name": "kube-system",
+                                },
+                            },
+                        },
+                    ],
+                    "ports": [
+                        {"port": 53, "protocol": "UDP"},
+                        {"port": 53, "protocol": "TCP"},
+                    ],
+                },
+                # Vault — envconsul reads secrets at runtime
+                {
+                    "to": [
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {
+                                    "kubernetes.io/metadata.name": "cabotage",
+                                },
+                            },
+                            "podSelector": {
+                                "matchLabels": {"app": "vault"},
+                            },
+                        },
+                    ],
+                    "ports": [
+                        {"port": 443, "protocol": "TCP"},
+                        {"port": 8200, "protocol": "TCP"},
+                    ],
+                },
+                # Consul — envconsul reads config at runtime
+                {
+                    "to": [
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {
+                                    "kubernetes.io/metadata.name": "cabotage",
+                                },
+                            },
+                            "podSelector": {
+                                "matchLabels": {"app": "consul"},
+                            },
+                        },
+                    ],
+                    "ports": [{"port": 8443, "protocol": "TCP"}],
+                },
+                # Legacy service providers
+                # ClickHouse
+                {
+                    "to": [
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {
+                                    "kubernetes.io/metadata.name": "clickhouse",
+                                },
+                            },
+                        },
+                    ],
+                    "ports": [
+                        {"port": 8443, "protocol": "TCP"},
+                        {"port": 9440, "protocol": "TCP"},
+                    ],
+                },
+                # Redis
+                {
+                    "to": [
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {
+                                    "kubernetes.io/metadata.name": "redis",
+                                },
+                            },
+                        },
+                    ],
+                    "ports": [{"port": 6379, "protocol": "TCP"}],
+                },
+                # Elasticsearch
+                {
+                    "to": [
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {
+                                    "kubernetes.io/metadata.name": "elasticsearch",
+                                },
+                            },
+                        },
+                    ],
+                    "ports": [{"port": 9200, "protocol": "TCP"}],
+                },
+                # PostgreSQL
+                {
+                    "to": [
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {
+                                    "kubernetes.io/metadata.name": "postgres",
+                                },
+                            },
+                        },
+                    ],
+                    "ports": [{"port": 5432, "protocol": "TCP"}],
+                },
+                # END Legacy service providers
+                # Intra-namespace
+                {"to": [{"podSelector": {}}]},
+                # Internet — block cluster-internal CIDRs, allow external
+                {
+                    "to": [
+                        {
+                            "ipBlock": {
+                                "cidr": "0.0.0.0/0",
+                                "except": [
+                                    "10.0.0.0/8",
+                                    "100.64.0.0/10",
+                                    "169.254.0.0/16",
+                                    "172.16.0.0/12",
+                                    "192.168.0.0/16",
+                                ],
+                            },
+                        },
+                    ],
+                    "ports": [
+                        {"protocol": "TCP"},
+                        {"protocol": "UDP", "port": 123},
+                        {"protocol": "UDP", "port": 443},
+                        {"protocol": "UDP", "port": 8443},
+                    ],
+                },
+            ],
+        },
+    },
+]
+
+
+def ensure_network_policies(networking_api, namespace):
+    """Create or update tenant network policies in the given namespace."""
+    for policy_def in TENANT_NETWORK_POLICIES:
+        body = {
+            "apiVersion": "networking.k8s.io/v1",
+            "kind": "NetworkPolicy",
+            "metadata": {
+                "name": policy_def["name"],
+                "namespace": namespace,
+            },
+            "spec": policy_def["spec"],
+        }
+        try:
+            networking_api.read_namespaced_network_policy(policy_def["name"], namespace)
+            networking_api.patch_namespaced_network_policy(
+                policy_def["name"], namespace, body
+            )
+        except ApiException as exc:
+            if exc.status == 404:
+                networking_api.create_namespaced_network_policy(namespace, body)
+            else:
+                raise DeployError(
+                    f"Unexpected exception ensuring NetworkPolicy/"
+                    f"{policy_def['name']} in {namespace}: {exc}"
+                )
 
 
 def render_cabotage_ca_configmap(release):
@@ -1985,6 +2206,10 @@ def deploy_release(deployment):
         custom_objects_api_instance = kubernetes.client.CustomObjectsApi(api_client)
         log("Fetching Namespace")
         namespace = fetch_namespace(core_api_instance, deployment.release_object)
+        if current_app.config.get("NETWORK_POLICIES_ENABLED"):
+            log("Ensuring Network Policies")
+            networking_api_instance = kubernetes.client.NetworkingV1Api(api_client)
+            ensure_network_policies(networking_api_instance, namespace.metadata.name)
         log("Fetching Cabotage CA Cert ConfigMap")
         fetch_cabotage_ca_configmap(core_api_instance, deployment.release_object)
         log("Fetching ServiceAccount")
