@@ -1714,20 +1714,27 @@ def render_podspec(release, process_name, service_account_name):
     app_env = release.application_environment
     env = app_env.environment if app_env.k8s_identifier is not None else None
     if env and getattr(env, "ephemeral", False):
-        node_pool = "preview"
+        node_pool = current_app.config.get("PREVIEW_POOL") or None
     else:
-        node_pool = "standard"
+        node_pool = current_app.config.get("STANDARD_POOL") or None
 
-    return kubernetes.client.V1PodSpec(
-        service_account_name=service_account_name,
-        node_selector={"cabotage.dev/node-pool": node_pool},
-        tolerations=[
+    node_selector = {"cabotage.dev/node-pool": node_pool} if node_pool else None
+    tolerations = (
+        [
             kubernetes.client.V1Toleration(
                 key="cabotage.dev/node-pool",
                 value=node_pool,
                 effect="NoSchedule",
             ),
-        ],
+        ]
+        if node_pool
+        else None
+    )
+
+    return kubernetes.client.V1PodSpec(
+        service_account_name=service_account_name,
+        node_selector=node_selector,
+        tolerations=tolerations,
         init_containers=init_containers,
         containers=containers,
         volumes=volumes,
