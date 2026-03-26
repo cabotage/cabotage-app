@@ -593,6 +593,48 @@ class TestProcessPushHook:
 
         assert _count_deployment_posts(mock_session) == 1
 
+    @patch("cabotage.celery.tasks.github.github_session")
+    @patch("cabotage.celery.tasks.github.github_app")
+    def test_skip_ci_passes_empty_required_contexts(
+        self,
+        mock_gh_app,
+        mock_session,
+        db_session,
+        project,
+        environment,
+        installation_id,
+    ):
+        """Skip-CI deploys must pass required_contexts=[] so GitHub doesn't
+        enforce branch protection checks (which haven't run yet at push time)."""
+        application = _make_app(project, installation_id, "skipci2")
+        _make_app_env(application, environment, wait_for_ci=False)
+        hook = _make_push_hook(installation_id)
+
+        mock_gh_app.bearer_token = "bt"
+        mock_get, mock_post = _mock_github_responses()
+        mock_session.get.side_effect = mock_get
+        mock_session.post.side_effect = mock_post
+
+        from cabotage.celery.tasks.github import process_push_hook
+
+        process_push_hook(hook)
+
+        for c in mock_session.post.call_args_list:
+            url = c[0][0] if c[0] else ""
+            if (
+                "/deployments" in url
+                and "/access_tokens" not in url
+                and "/statuses" not in url
+            ):
+                payload = c[1].get("json", {})
+                assert payload["required_contexts"] == [], (
+                    "skip-CI deployments must send required_contexts=[] "
+                    "to bypass branch protection check enforcement"
+                )
+                break
+        else:
+            pytest.fail("No deployment POST call found")
+
 
 # ---------------------------------------------------------------------------
 # process_check_suite_hook
@@ -1184,3 +1226,42 @@ class TestCreateDeployment:
         payload = deploy_call[1].get("json", {})
         assert payload["required_contexts"] == []
         assert payload["transient_environment"] is True
+
+    @patch("cabotage.celery.tasks.github.github_session")
+    @patch("cabotage.celery.tasks.github.github_app")
+    def test_required_contexts_without_branch(
+        self,
+        mock_gh_app,
+        mock_session,
+        db_session,
+        project,
+        environment,
+        installation_id,
+    ):
+        """When required_contexts is passed without branch, it should still be
+        included in the deployment payload (skip-CI path)."""
+        application = _make_app(project, installation_id, "app15")
+        app_env = _make_app_env(application, environment)
+
+        mock_gh_app.app_id = OWN_APP_ID
+
+        deploy_resp = MagicMock()
+        deploy_resp.raise_for_status = MagicMock()
+        deploy_resp.json.return_value = {"statuses_url": "https://api.github.com/s/1"}
+        status_resp = MagicMock()
+        mock_session.post.side_effect = [deploy_resp, status_resp]
+
+        from cabotage.celery.tasks.github import create_deployment
+
+        create_deployment(
+            access_token={"token": "t"},
+            application=application,
+            repository_name=REPO,
+            ref=COMMIT_SHA,
+            app_env=app_env,
+            required_contexts=[],
+        )
+
+        deploy_call = mock_session.post.call_args_list[0]
+        payload = deploy_call[1].get("json", {})
+        assert payload["required_contexts"] == []

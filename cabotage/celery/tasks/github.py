@@ -396,6 +396,8 @@ def create_deployment(
                     access_token, repository_name, branch
                 )
             deploy_payload["required_contexts"] = required_contexts
+        elif required_contexts is not None:
+            deploy_payload["required_contexts"] = required_contexts
 
         deployment_response = github_session.post(
             f"https://api.github.com/repos/{repository_name}/deployments",
@@ -427,7 +429,7 @@ def create_deployment(
 def process_push_hook(hook):
     installation_id = hook.payload["installation"]["id"]
     repository_name = hook.payload["repository"]["full_name"]
-    branch_names = [hook.payload["ref"].lstrip("refs/heads/")]
+    branch_names = [hook.payload["ref"].removeprefix("refs/heads/")]
     commit_sha = hook.payload["after"]
 
     hook.commit_sha = commit_sha
@@ -503,6 +505,7 @@ def process_push_hook(hook):
                     repository_name=repository_name,
                     ref=commit_sha,
                     app_env=app_env,
+                    required_contexts=[],
                 )
 
 
