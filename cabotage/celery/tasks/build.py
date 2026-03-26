@@ -109,6 +109,7 @@ class BuildkitEnv:
 
     def verify_registry_tag(self, repository_name, tag):
         """Verify a tag was pushed to the registry. Returns the digest."""
+
         def auth(dxf, response):
             dxf.token = generate_docker_registry_jwt(
                 access=[
@@ -275,8 +276,6 @@ def _fetch_image_source(image, access_token):
 def build_release_buildkit(release):
     bke = BuildkitEnv(release.repository_name)
     registry = bke.registry
-    registry_secure = bke.registry_secure
-    registry_ca = bke.registry_ca
     buildkit_image = bke.buildkit_image
 
     process_commands = "\n".join(
@@ -742,8 +741,6 @@ def fetch_image_build_cache_volume_claim(core_api_instance, buildable):
 def build_image_buildkit(image=None):
     bke = BuildkitEnv(image.repository_name)
     registry = bke.registry
-    registry_secure = bke.registry_secure
-    registry_ca = bke.registry_ca
     buildkit_image = bke.buildkit_image
     insecure_reg = bke.insecure_reg
     dockerconfigjson = bke.dockerconfigjson
@@ -1164,7 +1161,9 @@ def build_omnibus_buildkit(image, release):
     ]
 
     image_buildctl_args.append("--opt")
-    image_buildctl_args.append(shlex.quote(f"build-arg:SOURCE_COMMIT={image.commit_sha}"))
+    image_buildctl_args.append(
+        shlex.quote(f"build-arg:SOURCE_COMMIT={image.commit_sha}")
+    )
 
     for k, v in image.buildargs(config_writer).items():
         image_buildctl_args.append("--opt")
@@ -1242,9 +1241,7 @@ def build_omnibus_buildkit(image, release):
         core_api_instance = kubernetes.client.CoreV1Api(api_client)
         batch_api_instance = kubernetes.client.BatchV1Api(api_client)
         # Single PVC mount for both build steps
-        volume_claim = fetch_image_build_cache_volume_claim(
-            core_api_instance, image
-        )
+        volume_claim = fetch_image_build_cache_volume_claim(core_api_instance, image)
         docker_secret_object = kubernetes.client.V1Secret(
             type="kubernetes.io/dockerconfigjson",
             metadata=kubernetes.client.V1ObjectMeta(
@@ -1259,9 +1256,7 @@ def build_omnibus_buildkit(image, release):
                 name=f"github-access-token-{image.build_job_id}",
             ),
             data={
-                "github_access_token": b64encode(
-                    str(access_token).encode()
-                ).decode(),
+                "github_access_token": b64encode(str(access_token).encode()).decode(),
             },
         )
         buildkitd_toml_configmap_object = kubernetes.client.V1ConfigMap(
@@ -1312,7 +1307,8 @@ def build_omnibus_buildkit(image, release):
             args=image_buildctl_args,
             env=shared_env,
             security_context=shared_security_context,
-            volume_mounts=shared_volume_mounts + [
+            volume_mounts=shared_volume_mounts
+            + [
                 kubernetes.client.V1VolumeMount(
                     mount_path="/home/user/.secret",
                     name="build-secrets",
@@ -1328,7 +1324,8 @@ def build_omnibus_buildkit(image, release):
             args=release_buildctl_args,
             env=shared_env,
             security_context=shared_security_context,
-            volume_mounts=shared_volume_mounts + [
+            volume_mounts=shared_volume_mounts
+            + [
                 kubernetes.client.V1VolumeMount(
                     mount_path="/context/Dockerfile",
                     sub_path="Dockerfile",

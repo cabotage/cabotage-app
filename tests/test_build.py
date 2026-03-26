@@ -1,7 +1,7 @@
 """Tests for image and release build tasks."""
 
 import uuid
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -172,7 +172,7 @@ def _mock_k8s():
     return {"core": core, "batch": batch}
 
 
-DOCKERFILE_BODY = "FROM python:3.11\nENV APP_ENV production\nCMD [\"python\"]"
+DOCKERFILE_BODY = 'FROM python:3.11\nENV APP_ENV production\nCMD ["python"]'
 PROCFILE_BODY = "web: python -m http.server\nworker: celery -A app worker"
 
 
@@ -192,9 +192,17 @@ class TestBuildImageBuildkit:
     @patch("cabotage.celery.tasks.build.GithubAppAuth")
     @patch("cabotage.celery.tasks.build.github_app")
     def test_successful_image_build(
-        self, mock_github_app, mock_auth_cls, mock_gi_cls,
-        mock_fetch_file, mock_k8s_ext, mock_fetch_pvc, mock_run_job,
-        app, db_session, image,
+        self,
+        mock_github_app,
+        mock_auth_cls,
+        mock_gi_cls,
+        mock_fetch_file,
+        mock_k8s_ext,
+        mock_fetch_pvc,
+        mock_run_job,
+        app,
+        db_session,
+        image,
     ):
         """A successful image build fetches source, creates K8s Job, returns metadata."""
         from cabotage.celery.tasks.build import build_image_buildkit
@@ -226,7 +234,9 @@ class TestBuildImageBuildkit:
             mock_dxf.get_digest.return_value = "sha256:image-digest-123"
             mock_dxf_cls.return_value = mock_dxf
 
-            with patch("cabotage.celery.tasks.build.get_redis_client", side_effect=Exception):
+            with patch(
+                "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
+            ):
                 image.build_job_id = "test1234"
                 result = build_image_buildkit(image)
 
@@ -247,8 +257,14 @@ class TestBuildImageBuildkit:
     @patch("cabotage.celery.tasks.build.github_app")
     @patch("cabotage.celery.tasks.build._fetch_github_file")
     def test_missing_dockerfile_raises(
-        self, mock_fetch_file, mock_github_app, mock_auth_cls, mock_gi_cls,
-        app, db_session, image,
+        self,
+        mock_fetch_file,
+        mock_github_app,
+        mock_auth_cls,
+        mock_gi_cls,
+        app,
+        db_session,
+        image,
     ):
         """BuildError raised when no Dockerfile found."""
         from cabotage.celery.tasks.build import build_image_buildkit, BuildError
@@ -267,8 +283,14 @@ class TestBuildImageBuildkit:
     @patch("cabotage.celery.tasks.build.github_app")
     @patch("cabotage.celery.tasks.build._fetch_github_file")
     def test_missing_procfile_raises(
-        self, mock_fetch_file, mock_github_app, mock_auth_cls, mock_gi_cls,
-        app, db_session, image,
+        self,
+        mock_fetch_file,
+        mock_github_app,
+        mock_auth_cls,
+        mock_gi_cls,
+        app,
+        db_session,
+        image,
     ):
         """BuildError raised when no Procfile found."""
         from cabotage.celery.tasks.build import build_image_buildkit, BuildError
@@ -278,8 +300,10 @@ class TestBuildImageBuildkit:
         mock_gi_cls.return_value = mock_gi
         # Dockerfile found, but no Procfile
         mock_fetch_file.side_effect = [
-            None, DOCKERFILE_BODY,  # Dockerfile.cabotage miss, Dockerfile hit
-            None, None,  # Procfile.cabotage miss, Procfile miss
+            None,
+            DOCKERFILE_BODY,  # Dockerfile.cabotage miss, Dockerfile hit
+            None,
+            None,  # Procfile.cabotage miss, Procfile miss
         ]
 
         image.build_job_id = "test1234"
@@ -291,8 +315,14 @@ class TestBuildImageBuildkit:
     @patch("cabotage.celery.tasks.build.github_app")
     @patch("cabotage.celery.tasks.build._fetch_github_file")
     def test_whitespace_process_name_raises(
-        self, mock_fetch_file, mock_github_app, mock_auth_cls, mock_gi_cls,
-        app, db_session, image,
+        self,
+        mock_fetch_file,
+        mock_github_app,
+        mock_auth_cls,
+        mock_gi_cls,
+        app,
+        db_session,
+        image,
     ):
         """BuildError raised for process names with whitespace."""
         from cabotage.celery.tasks.build import build_image_buildkit, BuildError
@@ -301,8 +331,10 @@ class TestBuildImageBuildkit:
         mock_gi.get_access_token.return_value.token = "gh-token"
         mock_gi_cls.return_value = mock_gi
         mock_fetch_file.side_effect = [
-            None, "FROM python:3.11",
-            None, "web server: python -m http.server",
+            None,
+            "FROM python:3.11",
+            None,
+            "web server: python -m http.server",
         ]
 
         image.build_job_id = "test1234"
@@ -317,9 +349,17 @@ class TestBuildImageBuildkit:
     @patch("cabotage.celery.tasks.build.GithubAppAuth")
     @patch("cabotage.celery.tasks.build.github_app")
     def test_failed_k8s_job_raises(
-        self, mock_github_app, mock_auth_cls, mock_gi_cls,
-        mock_fetch_file, mock_k8s_ext, mock_fetch_pvc, mock_run_job,
-        app, db_session, image,
+        self,
+        mock_github_app,
+        mock_auth_cls,
+        mock_gi_cls,
+        mock_fetch_file,
+        mock_k8s_ext,
+        mock_fetch_pvc,
+        mock_run_job,
+        app,
+        db_session,
+        image,
     ):
         """BuildError raised when the K8s Job fails."""
         from cabotage.celery.tasks.build import build_image_buildkit, BuildError
@@ -337,7 +377,9 @@ class TestBuildImageBuildkit:
         # Job fails
         mock_run_job.return_value = (False, "error: build failed")
 
-        with patch("cabotage.celery.tasks.build.get_redis_client", side_effect=Exception):
+        with patch(
+            "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
+        ):
             image.build_job_id = "test1234"
             with pytest.raises(BuildError, match="Image build failed"):
                 build_image_buildkit(image)
@@ -357,8 +399,13 @@ class TestBuildReleaseBuildkit:
     @patch("cabotage.celery.tasks.build.fetch_image_build_cache_volume_claim")
     @patch("cabotage.celery.tasks.build.kubernetes_ext")
     def test_successful_release_build(
-        self, mock_k8s_ext, mock_fetch_pvc, mock_run_job,
-        app, db_session, release,
+        self,
+        mock_k8s_ext,
+        mock_fetch_pvc,
+        mock_run_job,
+        app,
+        db_session,
+        release,
     ):
         """A successful release build generates Dockerfile and returns metadata."""
         from cabotage.celery.tasks.build import build_release_buildkit
@@ -375,7 +422,9 @@ class TestBuildReleaseBuildkit:
             mock_dxf.get_digest.return_value = "sha256:release-digest-456"
             mock_dxf_cls.return_value = mock_dxf
 
-            with patch("cabotage.celery.tasks.build.get_redis_client", side_effect=Exception):
+            with patch(
+                "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
+            ):
                 result = build_release_buildkit(release)
 
         assert result["release_id"] == "sha256:release-digest-456"
@@ -385,8 +434,13 @@ class TestBuildReleaseBuildkit:
     @patch("cabotage.celery.tasks.build.fetch_image_build_cache_volume_claim")
     @patch("cabotage.celery.tasks.build.kubernetes_ext")
     def test_release_dockerfile_generated(
-        self, mock_k8s_ext, mock_fetch_pvc, mock_run_job,
-        app, db_session, release,
+        self,
+        mock_k8s_ext,
+        mock_fetch_pvc,
+        mock_run_job,
+        app,
+        db_session,
+        release,
     ):
         """The release Dockerfile is generated from the template."""
         from cabotage.celery.tasks.build import build_release_buildkit
@@ -403,7 +457,9 @@ class TestBuildReleaseBuildkit:
             mock_dxf.get_digest.return_value = "sha256:digest"
             mock_dxf_cls.return_value = mock_dxf
 
-            with patch("cabotage.celery.tasks.build.get_redis_client", side_effect=Exception):
+            with patch(
+                "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
+            ):
                 build_release_buildkit(release)
 
         assert release.dockerfile is not None
@@ -413,8 +469,13 @@ class TestBuildReleaseBuildkit:
     @patch("cabotage.celery.tasks.build.fetch_image_build_cache_volume_claim")
     @patch("cabotage.celery.tasks.build.kubernetes_ext")
     def test_failed_release_build_raises(
-        self, mock_k8s_ext, mock_fetch_pvc, mock_run_job,
-        app, db_session, release,
+        self,
+        mock_k8s_ext,
+        mock_fetch_pvc,
+        mock_run_job,
+        app,
+        db_session,
+        release,
     ):
         """BuildError raised when the release K8s Job fails."""
         from cabotage.celery.tasks.build import build_release_buildkit, BuildError
@@ -426,7 +487,9 @@ class TestBuildReleaseBuildkit:
 
         mock_run_job.return_value = (False, "release build error")
 
-        with patch("cabotage.celery.tasks.build.get_redis_client", side_effect=Exception):
+        with patch(
+            "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
+        ):
             with pytest.raises(BuildError):
                 build_release_buildkit(release)
 
@@ -443,8 +506,13 @@ class TestRunImageBuild:
     @patch("cabotage.celery.tasks.build.build_image_buildkit")
     @patch("cabotage.celery.tasks.build.github_app")
     def test_auto_deploy_creates_release_and_chains(
-        self, mock_github_app, mock_build, mock_run_release,
-        app, db_session, image,
+        self,
+        mock_github_app,
+        mock_build,
+        mock_run_release,
+        app,
+        db_session,
+        image,
     ):
         """When auto_deploy=True, run_image_build creates a Release and queues release build."""
         from cabotage.celery.tasks.build import run_image_build
@@ -460,7 +528,9 @@ class TestRunImageBuild:
             "dockerfile_env_vars": ["APP_ENV"],
         }
 
-        with patch("cabotage.celery.tasks.build.get_redis_client", side_effect=Exception):
+        with patch(
+            "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
+        ):
             with patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
                 mock_check_cls.return_value = MagicMock()
                 mock_check_cls.create.return_value = MagicMock(check_run_id=None)
@@ -486,8 +556,12 @@ class TestRunImageBuild:
     @patch("cabotage.celery.tasks.build.build_image_buildkit")
     @patch("cabotage.celery.tasks.build.github_app")
     def test_no_auto_deploy_skips_release(
-        self, mock_github_app, mock_build,
-        app, db_session, image,
+        self,
+        mock_github_app,
+        mock_build,
+        app,
+        db_session,
+        image,
     ):
         """When auto_deploy is not set, no Release is created."""
         from cabotage.celery.tasks.build import run_image_build
@@ -507,7 +581,9 @@ class TestRunImageBuild:
             "dockerfile_env_vars": [],
         }
 
-        with patch("cabotage.celery.tasks.build.get_redis_client", side_effect=Exception):
+        with patch(
+            "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
+        ):
             with patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
                 mock_check_cls.return_value = MagicMock()
                 mock_check_cls.create.return_value = MagicMock(check_run_id=None)
@@ -522,8 +598,12 @@ class TestRunImageBuild:
     @patch("cabotage.celery.tasks.build.build_image_buildkit")
     @patch("cabotage.celery.tasks.build.github_app")
     def test_build_error_marks_image_as_error(
-        self, mock_github_app, mock_build,
-        app, db_session, image,
+        self,
+        mock_github_app,
+        mock_build,
+        app,
+        db_session,
+        image,
     ):
         """BuildError is recorded on the image record."""
         from cabotage.celery.tasks.build import run_image_build, BuildError
@@ -533,7 +613,9 @@ class TestRunImageBuild:
         mock_github_app.slug = "cabotage"
         mock_build.side_effect = BuildError("something broke")
 
-        with patch("cabotage.celery.tasks.build.get_redis_client", side_effect=Exception):
+        with patch(
+            "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
+        ):
             with patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
                 mock_check_cls.return_value = MagicMock()
                 mock_check_cls.create.return_value = MagicMock(check_run_id=None)
@@ -557,8 +639,13 @@ class TestRunReleaseBuild:
     @patch("cabotage.celery.tasks.build.build_release_buildkit")
     @patch("cabotage.celery.tasks.build.github_app")
     def test_auto_deploy_creates_deployment_and_chains(
-        self, mock_github_app, mock_build, mock_run_deploy,
-        app, db_session, release,
+        self,
+        mock_github_app,
+        mock_build,
+        mock_run_deploy,
+        app,
+        db_session,
+        release,
     ):
         """When auto_deploy=True, run_release_build creates Deployment and queues deploy."""
         from cabotage.celery.tasks.build import run_release_build
@@ -574,7 +661,9 @@ class TestRunReleaseBuild:
         mock_github_app.fetch_installation_access_token.return_value = "token"
         mock_build.return_value = {"release_id": "sha256:release-abc"}
 
-        with patch("cabotage.celery.tasks.build.get_redis_client", side_effect=Exception):
+        with patch(
+            "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
+        ):
             with patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
                 mock_check = MagicMock()
                 mock_check_cls.from_metadata.return_value = mock_check
@@ -596,8 +685,12 @@ class TestRunReleaseBuild:
     @patch("cabotage.celery.tasks.build.build_release_buildkit")
     @patch("cabotage.celery.tasks.build.github_app")
     def test_no_auto_deploy_skips_deployment(
-        self, mock_github_app, mock_build,
-        app, db_session, release,
+        self,
+        mock_github_app,
+        mock_build,
+        app,
+        db_session,
+        release,
     ):
         """When auto_deploy is not set, no Deployment is created."""
         from cabotage.celery.tasks.build import run_release_build
@@ -609,7 +702,9 @@ class TestRunReleaseBuild:
         mock_github_app.fetch_installation_access_token.return_value = "token"
         mock_build.return_value = {"release_id": "sha256:release-abc"}
 
-        with patch("cabotage.celery.tasks.build.get_redis_client", side_effect=Exception):
+        with patch(
+            "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
+        ):
             with patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
                 mock_check_cls.from_metadata.return_value = MagicMock()
                 run_release_build(release_id=release.id)
@@ -624,8 +719,12 @@ class TestRunReleaseBuild:
     @patch("cabotage.celery.tasks.build.build_release_buildkit")
     @patch("cabotage.celery.tasks.build.github_app")
     def test_build_error_marks_release_as_error(
-        self, mock_github_app, mock_build,
-        app, db_session, release,
+        self,
+        mock_github_app,
+        mock_build,
+        app,
+        db_session,
+        release,
     ):
         """BuildError is recorded on the release record."""
         from cabotage.celery.tasks.build import run_release_build, BuildError
@@ -637,7 +736,9 @@ class TestRunReleaseBuild:
         mock_github_app.fetch_installation_access_token.return_value = "token"
         mock_build.side_effect = BuildError("release broke")
 
-        with patch("cabotage.celery.tasks.build.get_redis_client", side_effect=Exception):
+        with patch(
+            "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
+        ):
             with patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
                 mock_check_cls.from_metadata.return_value = MagicMock()
                 # BuildError is caught internally by run_release_build
@@ -663,9 +764,16 @@ class TestBuildOmnibusBuildkit:
     @patch("cabotage.celery.tasks.build._fetch_image_source")
     @patch("cabotage.celery.tasks.build._fetch_github_access_token")
     def test_successful_omnibus_build(
-        self, mock_fetch_token, mock_fetch_source,
-        mock_k8s_ext, mock_fetch_pvc, mock_run_job,
-        app, db_session, image, release,
+        self,
+        mock_fetch_token,
+        mock_fetch_source,
+        mock_k8s_ext,
+        mock_fetch_pvc,
+        mock_run_job,
+        app,
+        db_session,
+        image,
+        release,
     ):
         """Omnibus build returns both image and release digests."""
         from cabotage.celery.tasks.build import build_omnibus_buildkit
@@ -694,13 +802,17 @@ class TestBuildOmnibusBuildkit:
             ]
             mock_dxf_cls.return_value = mock_dxf
 
-            with patch("cabotage.celery.tasks.build.get_redis_client", side_effect=Exception):
+            with patch(
+                "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
+            ):
                 image.build_job_id = "omni1234"
                 result = build_omnibus_buildkit(image, release)
 
         assert result["image_id"] == "sha256:image-digest"
         assert result["release_id"] == "sha256:release-digest"
-        assert result["processes"] == {"web": {"cmd": "python -m http.server", "env": []}}
+        assert result["processes"] == {
+            "web": {"cmd": "python -m http.server", "env": []}
+        }
 
         # Image should be marked built with processes populated
         assert image.built is True
@@ -719,9 +831,16 @@ class TestBuildOmnibusBuildkit:
     @patch("cabotage.celery.tasks.build._fetch_image_source")
     @patch("cabotage.celery.tasks.build._fetch_github_access_token")
     def test_failed_job_raises(
-        self, mock_fetch_token, mock_fetch_source,
-        mock_k8s_ext, mock_fetch_pvc, mock_run_job,
-        app, db_session, image, release,
+        self,
+        mock_fetch_token,
+        mock_fetch_source,
+        mock_k8s_ext,
+        mock_fetch_pvc,
+        mock_run_job,
+        app,
+        db_session,
+        image,
+        release,
     ):
         """BuildError raised when the K8s Job fails."""
         from cabotage.celery.tasks.build import build_omnibus_buildkit, BuildError
@@ -742,7 +861,9 @@ class TestBuildOmnibusBuildkit:
         mock_fetch_pvc.return_value = pvc
         mock_run_job.return_value = (False, "job failed")
 
-        with patch("cabotage.celery.tasks.build.get_redis_client", side_effect=Exception):
+        with patch(
+            "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
+        ):
             image.build_job_id = "omni1234"
             with pytest.raises(BuildError, match="Omnibus build failed"):
                 build_omnibus_buildkit(image, release)
@@ -750,8 +871,13 @@ class TestBuildOmnibusBuildkit:
     @patch("cabotage.celery.tasks.build._fetch_image_source")
     @patch("cabotage.celery.tasks.build._fetch_github_access_token")
     def test_requires_kubernetes_enabled(
-        self, mock_fetch_token, mock_fetch_source,
-        app, db_session, image, release,
+        self,
+        mock_fetch_token,
+        mock_fetch_source,
+        app,
+        db_session,
+        image,
+        release,
     ):
         """BuildError raised when KUBERNETES_ENABLED is False."""
         from cabotage.celery.tasks.build import build_omnibus_buildkit, BuildError
@@ -777,9 +903,16 @@ class TestBuildOmnibusBuildkit:
     @patch("cabotage.celery.tasks.build._fetch_image_source")
     @patch("cabotage.celery.tasks.build._fetch_github_access_token")
     def test_single_run_job_call(
-        self, mock_fetch_token, mock_fetch_source,
-        mock_k8s_ext, mock_fetch_pvc, mock_run_job,
-        app, db_session, image, release,
+        self,
+        mock_fetch_token,
+        mock_fetch_source,
+        mock_k8s_ext,
+        mock_fetch_pvc,
+        mock_run_job,
+        app,
+        db_session,
+        image,
+        release,
     ):
         """Omnibus build calls run_job exactly once (not twice)."""
         from cabotage.celery.tasks.build import build_omnibus_buildkit
@@ -805,7 +938,9 @@ class TestBuildOmnibusBuildkit:
             mock_dxf.get_digest.return_value = "sha256:digest"
             mock_dxf_cls.return_value = mock_dxf
 
-            with patch("cabotage.celery.tasks.build.get_redis_client", side_effect=Exception):
+            with patch(
+                "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
+            ):
                 image.build_job_id = "omni1234"
                 build_omnibus_buildkit(image, release)
 
@@ -825,8 +960,13 @@ class TestRunOmnibusBuild:
     @patch("cabotage.celery.tasks.build.build_omnibus_buildkit")
     @patch("cabotage.celery.tasks.build.github_app")
     def test_creates_release_and_deployment(
-        self, mock_github_app, mock_build, mock_run_deploy,
-        app, db_session, image,
+        self,
+        mock_github_app,
+        mock_build,
+        mock_run_deploy,
+        app,
+        db_session,
+        image,
     ):
         """run_omnibus_build creates Release, Deployment and queues deploy."""
         from cabotage.celery.tasks.build import run_omnibus_build
@@ -843,7 +983,9 @@ class TestRunOmnibusBuild:
             "dockerfile_env_vars": [],
         }
 
-        with patch("cabotage.celery.tasks.build.get_redis_client", side_effect=Exception):
+        with patch(
+            "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
+        ):
             with patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
                 mock_check_cls.return_value = MagicMock()
                 mock_check_cls.create.return_value = MagicMock(check_run_id=None)
@@ -875,8 +1017,12 @@ class TestRunOmnibusBuild:
     @patch("cabotage.celery.tasks.build.build_omnibus_buildkit")
     @patch("cabotage.celery.tasks.build.github_app")
     def test_build_error_marks_both_records(
-        self, mock_github_app, mock_build,
-        app, db_session, image,
+        self,
+        mock_github_app,
+        mock_build,
+        app,
+        db_session,
+        image,
     ):
         """BuildError marks both image and release as errored."""
         from cabotage.celery.tasks.build import run_omnibus_build, BuildError
@@ -886,7 +1032,9 @@ class TestRunOmnibusBuild:
         mock_github_app.slug = "cabotage"
         mock_build.side_effect = BuildError("omnibus broke")
 
-        with patch("cabotage.celery.tasks.build.get_redis_client", side_effect=Exception):
+        with patch(
+            "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
+        ):
             with patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
                 mock_check_cls.return_value = MagicMock()
                 mock_check_cls.create.return_value = MagicMock(check_run_id=None)
@@ -908,8 +1056,12 @@ class TestRunOmnibusBuild:
     @patch("cabotage.celery.tasks.build.build_omnibus_buildkit")
     @patch("cabotage.celery.tasks.build.github_app")
     def test_no_separate_release_build_queued(
-        self, mock_github_app, mock_build,
-        app, db_session, image,
+        self,
+        mock_github_app,
+        mock_build,
+        app,
+        db_session,
+        image,
     ):
         """Omnibus build does NOT queue a separate run_release_build."""
         from cabotage.celery.tasks.build import run_omnibus_build
@@ -926,11 +1078,15 @@ class TestRunOmnibusBuild:
             "dockerfile_env_vars": [],
         }
 
-        with patch("cabotage.celery.tasks.build.get_redis_client", side_effect=Exception):
+        with patch(
+            "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
+        ):
             with patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
                 mock_check_cls.return_value = MagicMock()
                 mock_check_cls.create.return_value = MagicMock(check_run_id=None)
-                with patch("cabotage.celery.tasks.build.run_release_build") as mock_release:
+                with patch(
+                    "cabotage.celery.tasks.build.run_release_build"
+                ) as mock_release:
                     with patch("cabotage.celery.tasks.build.run_deploy"):
                         run_omnibus_build(image_id=image.id)
 
