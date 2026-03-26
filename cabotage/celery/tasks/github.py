@@ -2,6 +2,7 @@ import datetime
 import logging
 
 from celery import shared_task
+from flask import current_app
 from sqlalchemy import and_, or_
 from sqlalchemy.orm.exc import MultipleResultsFound, NoResultFound
 
@@ -21,6 +22,7 @@ from cabotage.server.models.projects import (
 from cabotage.server.models.auth import Organization
 from cabotage.celery.tasks import (
     run_image_build,
+    run_omnibus_build,
 )
 from cabotage.celery.tasks.branch_deploy import (
     create_branch_deploy,
@@ -229,7 +231,10 @@ def process_deployment_hook(hook):
         db.session.add(activity)
         db.session.commit()
 
-        run_image_build.delay(image_id=image.id)
+        if current_app.config.get("CABOTAGE_OMNIBUS_BUILDS"):
+            run_omnibus_build.delay(image_id=image.id)
+        else:
+            run_image_build.delay(image_id=image.id)
 
         post_deployment_status_update(
             access_token["token"],
