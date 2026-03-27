@@ -1,13 +1,16 @@
 """Tests for the job reaper: helper functions and the reap_finished_jobs task."""
 
 import datetime
-from unittest.mock import MagicMock
+import os
+from unittest.mock import MagicMock, patch
 
 from cabotage.celery.tasks.reap_jobs import (
     _is_finished,
     _is_succeeded,
     _parse_datetime,
     _extract_resources,
+    _reap_limit,
+    DEFAULT_REAP_LIMIT,
 )
 
 # ---------------------------------------------------------------------------
@@ -219,3 +222,23 @@ class TestExtractResources:
         )
         job = _make_job(labels={}, containers=[container])
         assert _extract_resources(job) is None
+
+
+# ---------------------------------------------------------------------------
+# _reap_limit
+# ---------------------------------------------------------------------------
+
+
+class TestReapLimit:
+    def test_default(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("CABOTAGE_JOBS_REAPED_PER_RUN", None)
+            assert _reap_limit() == DEFAULT_REAP_LIMIT
+
+    def test_from_env(self):
+        with patch.dict(os.environ, {"CABOTAGE_JOBS_REAPED_PER_RUN": "25"}):
+            assert _reap_limit() == 25
+
+    def test_invalid_env_falls_back(self):
+        with patch.dict(os.environ, {"CABOTAGE_JOBS_REAPED_PER_RUN": "nope"}):
+            assert _reap_limit() == DEFAULT_REAP_LIMIT
