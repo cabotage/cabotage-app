@@ -2244,6 +2244,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     latest_release_image = None
     latest_release_processes = {}
     latest_release_release_commands = {}
+    latest_release_job_processes = {}
     release_by_id = {}
     image_by_id = {}
     release_proc_counts = {}
@@ -2280,9 +2281,12 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         latest_deploy_release = resolver.get_release(latest_deployment)
         latest_release_image = resolver.get_image_for_release(latest_release)
 
-        latest_release_processes, latest_release_release_commands, _ = (
-            split_image_processes(latest_release_image)
-        )
+        (
+            latest_release_processes,
+            latest_release_release_commands,
+            _,
+            latest_release_job_processes,
+        ) = split_image_processes(latest_release_image)
 
         # Batch-warm caches for template loops
         resolver.warm_caches(all_deployments, all_releases)
@@ -2417,6 +2421,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         latest_release_image=latest_release_image,
         latest_release_processes=latest_release_processes,
         latest_release_release_commands=latest_release_release_commands,
+        latest_release_job_processes=latest_release_job_processes,
         release_by_id=release_by_id,
         image_by_id=image_by_id,
         release_proc_counts=release_proc_counts,
@@ -4583,25 +4588,35 @@ def application_scale(org_slug, project_slug, app_slug):
 
             if current_app.config["KUBERNETES_ENABLED"]:
                 from cabotage.celery.tasks.deploy import k8s_namespace as _k8s_ns
+                from cabotage.celery.tasks.deploy import suspend_cronjob
 
                 latest = app_env.latest_release_built
                 if latest:
                     namespace = _k8s_ns(latest)
                     for process_name, change in scaled.items():
-                        if "process_count" in change:
-                            scale_deployment(
-                                namespace,
-                                latest,
-                                process_name,
-                                change["process_count"]["new_value"],
-                            )
-                        if "pod_class" in change:
-                            resize_deployment(
-                                namespace,
-                                latest,
-                                process_name,
-                                change["pod_class"]["new_value"],
-                            )
+                        if process_name.startswith("job"):
+                            if "process_count" in change:
+                                suspend_cronjob(
+                                    namespace,
+                                    latest,
+                                    process_name,
+                                    suspend=change["process_count"]["new_value"] == 0,
+                                )
+                        else:
+                            if "process_count" in change:
+                                scale_deployment(
+                                    namespace,
+                                    latest,
+                                    process_name,
+                                    change["process_count"]["new_value"],
+                                )
+                            if "pod_class" in change:
+                                resize_deployment(
+                                    namespace,
+                                    latest,
+                                    process_name,
+                                    change["pod_class"]["new_value"],
+                                )
     else:
         return jsonify(form.errors), 400
     return redirect(
