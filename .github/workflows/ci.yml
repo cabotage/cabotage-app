@@ -77,3 +77,11 @@ jobs:
           CABOTAGE_SQLALCHEMY_DATABASE_URI: postgresql://postgres@localhost/cabotage_test
           CABOTAGE_TESTING: "True"
           FLASK_APP: cabotage.server.wsgi
+
+  publish:
+    if: github.event_name == 'push'
+    needs: [lint, type-check, security-check, test]
+    uses: ./.github/workflows/docker.yml
+    permissions:
+      contents: write
+      packages: write
