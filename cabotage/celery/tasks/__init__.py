@@ -14,6 +14,10 @@ from .maintain import (
     reap_stale_builds,  # noqa: F401
 )
 
+from .reap_jobs import (
+    reap_finished_jobs,  # noqa: F401
+)
+
 from .prune_images import (
     prune_images,  # noqa: F401
 )
