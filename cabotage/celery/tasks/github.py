@@ -262,15 +262,16 @@ def process_installation_repositories_hook(hook):
 def _required_contexts_for_branch(access_token, repository_name, branch):
     """Fetch required status check contexts for a branch, excluding our own.
 
-    Queries branch protection rules to get the authoritative list of required
-    checks, then filters out any belonging to our own GitHub App. This lets
-    GitHub's Deployment API enforce real CI gating while ignoring our own
-    in-progress check runs that would otherwise cause 409 Conflicts during
-    batch deployments.
+    Queries both legacy branch protection rules and repository rulesets to get
+    the authoritative list of required checks, then filters out any belonging
+    to our own GitHub App.
 
-    Returns a list of context names. Raises on failure so callers do not
-    silently proceed without CI gating.
+    Returns a list of context names.
     """
+    own_app_id = int(github_app.app_id)
+    required = []
+
+    # Try legacy branch protection API first.
     resp = github_session.get(
         f"https://api.github.com/repos/{repository_name}/branches/{branch}/protection/required_status_checks",
         headers={
@@ -283,17 +284,47 @@ def _required_contexts_for_branch(access_token, repository_name, branch):
         f"required_status_checks for {repository_name} branch {branch}: "
         f"{resp.status_code} {resp.text}"
     )
-    if resp.status_code == 404:
-        # Branch is not protected or has no required status checks
-        return []
-    resp.raise_for_status()
-    data = resp.json()
-    own_app_id = int(github_app.app_id)
-    checks = data.get("checks", [])
-    if checks:
-        return [c["context"] for c in checks if c.get("app_id") != own_app_id]
-    # Fall back to legacy contexts list (no app_id available to filter)
-    return data.get("contexts", [])
+    if resp.status_code != 404:
+        resp.raise_for_status()
+        data = resp.json()
+        checks = data.get("checks", [])
+        if checks:
+            required = [c["context"] for c in checks if c.get("app_id") != own_app_id]
+        else:
+            required = data.get("contexts", [])
+
+    # Also query the repository rulesets API, which covers rules configured
+    # via GitHub's newer rulesets feature (not returned by the legacy API).
+    rules_resp = github_session.get(
+        f"https://api.github.com/repos/{repository_name}/rules/branches/{branch}",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f'token {access_token["token"]}',
+        },
+        timeout=10,
+    )
+    print(
+        f"branch rules for {repository_name} branch {branch}: "
+        f"{rules_resp.status_code} {rules_resp.text}"
+    )
+    if rules_resp.status_code != 404:
+        rules_resp.raise_for_status()
+        existing = set(required)
+        for rule in rules_resp.json():
+            if rule.get("type") != "required_status_checks":
+                continue
+            for check in rule.get("parameters", {}).get("required_status_checks", []):
+                context = check.get("context")
+                integration_id = check.get("integration_id")
+                if not context:
+                    continue
+                if integration_id and int(integration_id) == own_app_id:
+                    continue
+                if context not in existing:
+                    required.append(context)
+                    existing.add(context)
+
+    return required
 
 
 def _all_required_checks_passed(
