@@ -124,6 +124,11 @@ def celery_init_app(app):
             "schedule": crontab(minute="*/15"),
             "args": None,
         },
+        "job-reaper": {
+            "task": "cabotage.celery.tasks.reap_jobs.reap_finished_jobs",
+            "schedule": 15.0,
+            "args": None,
+        },
     }
     app.extensions["celery"] = celery_app
     return celery_app

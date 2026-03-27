@@ -186,6 +186,14 @@ class TestRenderCronjob:
         assert cj.metadata.name == "proj-app-job-cleanup"
         assert cj.metadata.labels["resident-cronjob.cabotage.io"] == "true"
         assert cj.metadata.labels["process"] == "job-cleanup"
+        # Job template gets resident-job label, not resident-pod
+        job_tmpl_labels = cj.spec.job_template.metadata.labels
+        assert job_tmpl_labels["resident-job.cabotage.io"] == "true"
+        assert "resident-pod.cabotage.io" not in job_tmpl_labels
+        # Pod template gets resident-pod label, not resident-job
+        pod_tmpl_labels = cj.spec.job_template.spec.template.metadata.labels
+        assert pod_tmpl_labels["resident-pod.cabotage.io"] == "true"
+        assert "resident-job.cabotage.io" not in pod_tmpl_labels
 
     def test_cronjob_suspended_when_count_zero(self, mock_app):
         job_procs = {
