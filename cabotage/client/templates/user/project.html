@@ -102,6 +102,7 @@
       {% set _ = meta.append('deployed ' ~ last_deploy_by_ae[ae.id]|humanize) %}
     {% endif %}
     {% set branch = ae.effective_auto_deploy_branch if ae else application.auto_deploy_branch %}
+    {% set pr_num = env_slug[3:] if env_slug and env_slug.startswith('pr-') else '' %}
     {% set hosts = [] %}
     {% set ts_int = application.project.organization.tailscale_integration %}
     {% if ae %}
@@ -119,6 +120,7 @@
     color='accent',
     github_repo=application.github_repository or '',
     github_branch=branch or '',
+    github_pr_number=pr_num,
     app_hosts=hosts
     ) }}
   {% endmacro %}
