@@ -129,6 +129,22 @@ function initCountInputs() {
   });
 }
 
+/* Job Toggle (CronJob suspend/resume) */
+function initJobToggles() {
+  document.querySelectorAll('.job-toggle').forEach(function (toggle) {
+    toggle.addEventListener('change', function () {
+      var fieldName = toggle.getAttribute('data-count-field');
+      var hidden = document.querySelector('input[type="hidden"][name="' + fieldName + '"]');
+      if (hidden) hidden.value = toggle.checked ? '1' : '0';
+      var label = toggle.closest('label').querySelector('.job-toggle-label');
+      if (label) label.textContent = toggle.checked ? 'Active' : 'Suspended';
+      document.querySelectorAll('.update_process_settings').forEach(function (el) {
+        el.classList.remove('hidden');
+      });
+    });
+  });
+}
+
 /* Env Var Reveal */
 function initEnvReveal() {
   document.querySelectorAll('[data-reveal]').forEach(function (btn) {
@@ -2553,6 +2569,7 @@ document.addEventListener('DOMContentLoaded', function () {
   initTabs();
   initCompactTopbar();
   initCountInputs();
+  initJobToggles();
   initEnvReveal();
   initDropdowns();
   initMobileNav();
