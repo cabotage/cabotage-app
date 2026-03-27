@@ -835,6 +835,11 @@
                 </div>
               </div>
             {% endfor %}
+          </div>
+
+          {% if latest_release_job_processes %}
+          <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mt-4 mb-2">Jobs</h2>
+          <div class="process-grid">
             {% for process_name, proc in latest_release_job_processes.items() %}
               {% set count = src.process_counts.get(process_name, 0) %}
               {% set pod_class = src.process_pod_classes.get(process_name, DEFAULT_POD_CLASS) %}
@@ -842,7 +847,8 @@
               {% for key, value in proc.get('env', []) %}
                 {% if key == 'SCHEDULE' %}{% set schedule = value %}{% endif %}
               {% endfor %}
-              <div class="process-card {{ 'process-card-active' if count > 0 else 'process-card-idle' }}">
+              {% set last_log = last_job_logs.get(process_name) %}
+              <div class="job-card {{ 'process-card-active' if count > 0 else 'process-card-idle' }}">
                 <div class="process-name">
                   {% if count > 0 %}
                     <span class="status-dot status-dot-success flex-shrink-0"
@@ -855,9 +861,6 @@
                                  opacity:0.25"></span>
                   {% endif %}
                   <code class="text-xs text-accent font-semibold">{{ process_name }}</code>
-                  {% if schedule %}
-                    <code class="text-xs opacity-50" title="Cron schedule">{{ schedule }}</code>
-                  {% endif %}
                 </div>
                 <div class="process-controls">
                   <label class="label cursor-pointer gap-2">
@@ -866,7 +869,6 @@
                            class="toggle toggle-xs toggle-primary job-toggle"
                            data-count-field="process-count-{{ process_name }}"
                            {{ 'checked' if count > 0 }} />
-                    <span class="text-xs job-toggle-label">{{ 'Active' if count > 0 else 'Suspended' }}</span>
                   </label>
                   <select class="select select-bordered select-xs bg-base-300 text-base-content border-base-content/10 pod-size text-xs"
                           name="process-pod-class-{{ process_name }}"
@@ -878,13 +880,28 @@
                     <option value="{{ pod_class }}" selected hidden>{{ pod_class }}</option>
                     {% for class in pod_classes.keys() %}<option value="{{ class }}">{{ class }}</option>{% endfor %}
                   </select>
-                  <a href="{{ url_for('user.project_application_logs_view', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug, env_slug=environment.slug if environment else none) }}?process={{ process_name }}"
-                     class="btn btn-ghost btn-xs process-log-btn gap-1"
-                     title="View {{ process_name }} logs">{{ icon('terminal', 'w-3 h-3') }} Logs</a>
+                  <div class="job-links">
+                    <a href="{{ url_for('user.project_application_logs_view', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug, env_slug=environment.slug if environment else none) }}?process={{ process_name }}"
+                       class="btn btn-ghost btn-xs process-log-btn gap-1"
+                       title="View {{ process_name }} logs">{{ icon('terminal', 'w-3 h-3') }} Logs</a>
+                    <a href="{{ url_for('user.job_history', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug, env_slug=environment.slug if environment else none, process_name=process_name) }}"
+                       class="btn btn-ghost btn-xs process-log-btn gap-1"
+                       title="View {{ process_name }} history">{{ icon('clock', 'w-3 h-3') }} History</a>
+                  </div>
+                </div>
+                <div class="job-status-left">
+                  {% if last_log %}
+                    <span class="job-status-icon {% if last_log.succeeded %}text-success{% else %}text-error{% endif %}">{% if last_log.succeeded %}&#10003;{% else %}&#10007;{% endif %}</span>
+                    <span>last ran {{ last_log.completion_time|humanize }}{% if last_log.duration_seconds is not none %} ({{ last_log.duration_seconds }}s){% endif %}</span>
+                  {% else %}
+                    <span class="job-status-icon"></span>
+                    <span class="opacity-40">no runs yet</span>
+                  {% endif %}
                 </div>
               </div>
             {% endfor %}
           </div>
+          {% endif %}
 
           <div class="mt-3">
             <button type="submit"

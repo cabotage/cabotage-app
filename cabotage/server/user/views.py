@@ -70,6 +70,7 @@ from cabotage.server.models.projects import (
     Hook,
     Image,
     Ingress,
+    JobLog,
     IngressHost,
     IngressPath,
     Project,
@@ -2245,6 +2246,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     latest_release_processes = {}
     latest_release_release_commands = {}
     latest_release_job_processes = {}
+    last_job_logs = {}
     release_by_id = {}
     image_by_id = {}
     release_proc_counts = {}
@@ -2287,6 +2289,20 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
             _,
             latest_release_job_processes,
         ) = split_image_processes(latest_release_image)
+
+        # Fetch most recent job log per job process for the "last ran" display
+        for proc_name in latest_release_job_processes:
+            last_log = (
+                JobLog.query.filter_by(
+                    application_id=application.id,
+                    application_environment_id=app_env.id,
+                    process_name=proc_name,
+                )
+                .order_by(JobLog.completion_time.desc())
+                .first()
+            )
+            if last_log is not None:
+                last_job_logs[proc_name] = last_log
 
         # Batch-warm caches for template loops
         resolver.warm_caches(all_deployments, all_releases)
@@ -2422,6 +2438,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         latest_release_processes=latest_release_processes,
         latest_release_release_commands=latest_release_release_commands,
         latest_release_job_processes=latest_release_job_processes,
+        last_job_logs=last_job_logs,
         release_by_id=release_by_id,
         image_by_id=image_by_id,
         release_proc_counts=release_proc_counts,
@@ -6377,6 +6394,7 @@ def _loki_query_response(selectors, process_names):
 
     search = request.args.get("search", "").strip()
     process = request.args.get("process", "").strip()
+    job_name = request.args.get("job_name", "").strip()
     time_range = request.args.get("range", "1h")
     limit = min(request.args.get("limit", 500, type=int), 5000)
     end_ns = request.args.get("end", None)
@@ -6403,6 +6421,8 @@ def _loki_query_response(selectors, process_names):
 
     # Build LogQL query — filter to user process containers
     all_selectors = list(selectors)
+    if job_name:
+        all_selectors.append(f'pod_name=~"{job_name}.*"')
     if process:
         all_selectors.append(f'pod_container_name="{process}"')
     elif process_names:
@@ -6474,6 +6494,45 @@ def _loki_query_response(selectors, process_names):
     entries = entries[:limit]
 
     return jsonify({"entries": entries})
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/jobs/<process_name>/history",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/jobs/<process_name>/history",
+    defaults={"env_slug": None},
+)
+@login_required
+def job_history(org_slug, project_slug, app_slug, process_name, env_slug=None):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=False
+    )
+    environment = app_env.environment if app_env else None
+
+    logs = []
+    if app_env:
+        logs = (
+            JobLog.query.filter_by(
+                application_id=application.id,
+                application_environment_id=app_env.id,
+                process_name=process_name,
+            )
+            .order_by(JobLog.completion_time.desc())
+            .limit(100)
+            .all()
+        )
+
+    return render_template(
+        "user/job_history.html",
+        application=application,
+        environment=environment,
+        app_env=app_env,
+        project=project,
+        process_name=process_name,
+        job_logs=logs,
+    )
 
 
 @user_blueprint.route(
