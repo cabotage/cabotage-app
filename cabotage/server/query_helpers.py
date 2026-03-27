@@ -517,19 +517,22 @@ def compute_release_change_details(releases, deployments=None):
 
 
 def split_image_processes(image):
-    """Split image.processes into (service_procs, release_cmds, postdeploy_cmds).
+    """Split image.processes into (service_procs, release_cmds, postdeploy_cmds, job_procs).
 
-    Mirrors Release.processes / release_commands / postdeploy_commands without
-    triggering an image_object query.
+    Mirrors Release.processes / release_commands / postdeploy_commands / job_processes
+    without triggering an image_object query.
     """
     if not image or not image.processes:
-        return {}, {}, {}
+        return {}, {}, {}, {}
     all_procs = image.processes
     service_procs = {
         k: v
         for k, v in all_procs.items()
-        if not (k.startswith("release") or k.startswith("postdeploy"))
+        if not (
+            k.startswith("release") or k.startswith("postdeploy") or k.startswith("job")
+        )
     }
     release_cmds = {k: v for k, v in all_procs.items() if k.startswith("release")}
     postdeploy_cmds = {k: v for k, v in all_procs.items() if k.startswith("postdeploy")}
-    return service_procs, release_cmds, postdeploy_cmds
+    job_procs = {k: v for k, v in all_procs.items() if k.startswith("job")}
+    return service_procs, release_cmds, postdeploy_cmds, job_procs

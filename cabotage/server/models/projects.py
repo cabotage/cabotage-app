@@ -1011,7 +1011,11 @@ class Release(Model, Timestamp):
         return {
             k: v
             for k, v in self.image_snapshot.processes.items()
-            if not (k.startswith("release") or k.startswith("postdeploy"))
+            if not (
+                k.startswith("release")
+                or k.startswith("postdeploy")
+                or k.startswith("job")
+            )
         }
 
     @property
@@ -1032,6 +1036,16 @@ class Release(Model, Timestamp):
             k: v
             for k, v in self.image_snapshot.processes.items()
             if k.startswith("postdeploy")
+        }
+
+    @property
+    def job_processes(self):
+        if not self.image_snapshot:
+            return {}
+        return {
+            k: v
+            for k, v in self.image_snapshot.processes.items()
+            if k.startswith("job")
         }
 
     @property
@@ -1801,7 +1815,11 @@ class ReleaseSnapshot:
         return {
             k: v
             for k, v in self.image_snapshot.processes.items()
-            if not (k.startswith("release") or k.startswith("postdeploy"))
+            if not (
+                k.startswith("release")
+                or k.startswith("postdeploy")
+                or k.startswith("job")
+            )
         }
 
     @property
@@ -1822,6 +1840,16 @@ class ReleaseSnapshot:
             k: v
             for k, v in self.image_snapshot.processes.items()
             if k.startswith("postdeploy")
+        }
+
+    @property
+    def job_processes(self):
+        if not self.image_snapshot:
+            return {}
+        return {
+            k: v
+            for k, v in self.image_snapshot.processes.items()
+            if k.startswith("job")
         }
 
     @property
