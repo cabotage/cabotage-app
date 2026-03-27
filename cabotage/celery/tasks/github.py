@@ -690,6 +690,55 @@ def process_check_suite_hook(hook):
             )
 
 
+def _base_ref_chains_to_auto_deploy_branch(
+    access_token, repository_name, base_ref, auto_deploy_branches, max_depth=10
+):
+    """Check if base_ref transitively reaches an auto-deploy branch.
+
+    Walks the chain of open pull requests via the GitHub API: if base_ref
+    is the head branch of an open PR whose own base branch is an
+    auto-deploy branch (or chains to one), returns True.
+    """
+    owner = repository_name.split("/")[0]
+    visited = set()
+    to_check = [base_ref]
+
+    for _ in range(max_depth):
+        if not to_check:
+            return False
+        current = to_check.pop(0)
+        if current in visited:
+            continue
+        visited.add(current)
+
+        resp = github_session.get(
+            f"https://api.github.com/repos/{repository_name}/pulls",
+            headers={
+                "Accept": "application/vnd.github+json",
+                "Authorization": f'token {access_token["token"]}',
+            },
+            params={"state": "open", "head": f"{owner}:{current}"},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            logger.warning(
+                "failed to query open PRs for %s head=%s: %s",
+                repository_name,
+                current,
+                resp.status_code,
+            )
+            return False
+
+        for pr in resp.json():
+            pr_base = pr["base"]["ref"]
+            if pr_base in auto_deploy_branches:
+                return True
+            if pr_base not in visited:
+                to_check.append(pr_base)
+
+    return False
+
+
 def process_pull_request_hook(hook):
     action = hook.payload["action"]
     if action not in ("opened", "reopened", "synchronize", "closed"):
@@ -755,15 +804,40 @@ def process_pull_request_hook(hook):
             )
             .all()
         )
-        if not any(ae.effective_auto_deploy_branch == base_ref for ae in base_app_envs):
-            logger.info(
-                "skipping project %s: PR base branch %s does not match any "
-                "auto_deploy_branch in base environment %s",
-                project.slug,
-                base_ref,
-                base_env.slug,
+        auto_deploy_branches = {ae.effective_auto_deploy_branch for ae in base_app_envs}
+        if base_ref not in auto_deploy_branches:
+            # base_ref is not a direct auto-deploy branch; check if it
+            # chains to one via stacked PRs (e.g. frontend -> backend -> main).
+            bearer_token = github_app.bearer_token
+            access_token_response = github_session.post(
+                f"https://api.github.com/app/installations/{installation_id}/access_tokens",
+                headers={
+                    "Accept": "application/vnd.github.machine-man-preview+json",
+                    "Authorization": f"Bearer {bearer_token}",
+                },
+                timeout=10,
             )
-            continue
+            if "token" not in access_token_response.json():
+                logger.warning(
+                    "unable to authenticate for stacked PR check on %s",
+                    repository_name,
+                )
+                continue
+            access_token = access_token_response.json()
+            if not _base_ref_chains_to_auto_deploy_branch(
+                access_token,
+                repository_name,
+                base_ref,
+                auto_deploy_branches,
+            ):
+                logger.info(
+                    "skipping project %s: PR base branch %s does not chain to any "
+                    "auto_deploy_branch in base environment %s",
+                    project.slug,
+                    base_ref,
+                    base_env.slug,
+                )
+                continue
         if action in ("opened", "reopened"):
             create_branch_deploy(
                 project, pr_number, head_sha, installation_id, head_ref
