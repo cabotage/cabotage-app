@@ -1499,6 +1499,60 @@ details[open] summary .collapse-icon {
 .process-log-btn:hover {
   opacity: 1 !important;
 }
+.job-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  column-gap: 0.75rem;
+  row-gap: 0.125rem;
+  padding: 0.375rem 0.625rem;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border-color);
+  background: var(--surface-card);
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+.job-card:hover {
+  background: var(--hover-overlay, rgba(124, 58, 237, 0.04));
+  border-color: rgba(124, 58, 237, 0.15);
+}
+.job-card .process-name {
+  grid-column: 1;
+  grid-row: 1;
+}
+.job-card .process-controls {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  margin-left: 0;
+  display: grid;
+  grid-template-columns: auto auto auto;
+  align-items: start;
+  gap: 0.5rem;
+}
+.job-links {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.125rem;
+}
+.job-status-left {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.65rem;
+  color: var(--fallback-bc, oklch(var(--bc) / 0.5));
+  white-space: nowrap;
+}
+.job-status-left .job-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 4px;
+  flex-shrink: 0;
+}
 
 /* Process Filter Chips */
 /* Process Footer (commands + meta) */

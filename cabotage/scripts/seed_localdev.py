@@ -5,7 +5,10 @@ realistic data so the UI is fully populated:
   - Extra dev user
   - Multiple projects, apps, environments
   - Configurations, images, releases, deployments, ingress rules
+  - Job process history
 """
+
+import datetime
 
 from cabotage.server import create_app, db
 from cabotage.server.models import Organization, User
@@ -19,6 +22,7 @@ from cabotage.server.models.projects import (
     Ingress,
     IngressHost,
     IngressPath,
+    JobLog,
     Project,
     Release,
 )
@@ -147,6 +151,14 @@ WEB_PROCESSES = {
     "web": {"cmd": "gunicorn app:application --bind 0.0.0.0:8000", "env": []},
     "worker": {"cmd": "celery -A app.celery worker --loglevel=info", "env": []},
     "release": {"cmd": "flask db upgrade", "env": []},
+    "job-cleanup": {
+        "cmd": "python manage.py cleanup_stale_sessions",
+        "env": [("SCHEDULE", "0 */6 * * *")],
+    },
+    "job-reports": {
+        "cmd": "python manage.py generate_daily_report",
+        "env": [("SCHEDULE", "30 2 * * *")],
+    },
 }
 
 WORKER_PROCESSES = {
@@ -528,6 +540,63 @@ def seed():
         # Ingress for Site
         if not site_env.ingresses:
             _make_ingress(site_env, "docs.acme.corp", path="/", target_process="web")
+
+        # ── Job history for Web/Production ─────────────────────────────
+        existing_job_logs = JobLog.query.filter_by(
+            application_id=app_web.id,
+            application_environment_id=web_prod.id,
+        ).count()
+        if existing_job_logs == 0:
+            now = datetime.datetime.utcnow()
+            for proc_name, interval_min, count in [
+                ("job-cleanup", 360, 12),
+                ("job-reports", 1440, 7),
+            ]:
+                for i in range(count):
+                    scheduled = now - datetime.timedelta(
+                        minutes=interval_min * (count - i)
+                    )
+                    started = scheduled + datetime.timedelta(seconds=3)
+                    duration = 25 + (i * 7) % 30
+                    completed = started + datetime.timedelta(seconds=duration)
+                    succeeded = i != 2  # one failure
+                    db.session.add(
+                        JobLog(
+                            application_id=app_web.id,
+                            application_environment_id=web_prod.id,
+                            process_name=proc_name,
+                            job_name=f"seed-{app_web.slug}-{proc_name}-{29577000 + i}",
+                            namespace=f"seed-{web_prod.id}",
+                            schedule_timestamp=scheduled,
+                            start_time=started,
+                            completion_time=completed,
+                            duration_seconds=duration,
+                            succeeded=succeeded,
+                            pods_active=0,
+                            pods_succeeded=1 if succeeded else 0,
+                            pods_failed=0 if succeeded else 1,
+                            release_version=1,
+                            deployment_id="seed-deploy",
+                            labels={
+                                "organization": org.slug,
+                                "project": proj_api.slug,
+                                "application": app_web.slug,
+                                "process": proc_name,
+                            },
+                            resources={
+                                "requests": {"cpu": "500m", "memory": "1Gi"},
+                                "limits": {"cpu": "1", "memory": "1536Mi"},
+                            },
+                        )
+                    )
+            db.session.flush()
+            print("Created job history for Web/Production (job-cleanup, job-reports)")
+
+        web_prod.process_counts = {
+            **web_prod.process_counts,
+            "job-cleanup": 1,
+            "job-reports": 1,
+        }
 
         # ── Commit everything ─────────────────────────────────────────
         db.session.commit()

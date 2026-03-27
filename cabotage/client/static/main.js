@@ -136,8 +136,6 @@ function initJobToggles() {
       var fieldName = toggle.getAttribute('data-count-field');
       var hidden = document.querySelector('input[type="hidden"][name="' + fieldName + '"]');
       if (hidden) hidden.value = toggle.checked ? '1' : '0';
-      var label = toggle.closest('label').querySelector('.job-toggle-label');
-      if (label) label.textContent = toggle.checked ? 'Active' : 'Suspended';
       document.querySelectorAll('.update_process_settings').forEach(function (el) {
         el.classList.remove('hidden');
       });
@@ -2298,6 +2296,8 @@ function initLokiLogViewer() {
       if (searchInput.value.trim()) params.set('search', searchInput.value.trim());
       if (processFilter.value) params.set('process', processFilter.value);
       if (!showProbes.checked) params.set('hide_probes', '1');
+      var pageParams = new URLSearchParams(window.location.search);
+      if (pageParams.get('job_name')) params.set('job_name', pageParams.get('job_name'));
 
       if (mode === 'newer' && newestTs) {
         params.set('start', tsIncrement(newestTs));

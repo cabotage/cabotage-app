@@ -809,6 +809,13 @@ class JobLog(Model, Timestamp):
         db.UniqueConstraint(
             "job_name", "namespace", name="uq_job_logs_job_name_namespace"
         ),
+        db.Index(
+            "ix_job_logs_app_env_process_completion",
+            "application_id",
+            "application_environment_id",
+            "process_name",
+            completion_time.desc(),
+        ),
     )
 
     application = db.relationship(
