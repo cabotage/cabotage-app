@@ -790,7 +790,7 @@ class JobLog(Model, Timestamp):
         index=True,
     )
     process_name = db.Column(db.String(64), nullable=False)
-    job_name = db.Column(db.String(253), nullable=False, unique=True)
+    job_name = db.Column(db.String(253), nullable=False)
     namespace = db.Column(db.String(253), nullable=False)
     schedule_timestamp = db.Column(db.DateTime, nullable=True)
     start_time = db.Column(db.DateTime, nullable=True)
@@ -804,6 +804,19 @@ class JobLog(Model, Timestamp):
     deployment_id = db.Column(db.String(64), nullable=True)
     labels = db.Column(postgresql.JSONB(), nullable=True)
     resources = db.Column(postgresql.JSONB(), nullable=True)
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "job_name", "namespace", name="uq_job_logs_job_name_namespace"
+        ),
+        db.Index(
+            "ix_job_logs_app_env_process_completion",
+            "application_id",
+            "application_environment_id",
+            "process_name",
+            completion_time.desc(),
+        ),
+    )
 
     application = db.relationship(
         "Application",

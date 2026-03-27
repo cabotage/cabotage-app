@@ -1,0 +1,82 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, app_resource_path %}
+
+{% set app = application %}
+{% set org_slug = app.project.organization.slug %}
+{% set project_slug = app.project.slug %}
+{% set app_slug = app.slug %}
+
+{% block title %}
+  Job History - {{ process_name }} - {{ app_slug }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ app_resource_path(application, 'Job History: ' ~ process_name, env=environment|default(none)) }}
+{% endblock resource_path %}
+
+{% block content %}
+
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-base font-medium text-base-content">{{ process_name }} &mdash; Job History</h2>
+    <a href="{{ url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}"
+       class="btn btn-ghost btn-sm gap-1">{{ icon('arrow-left', 'w-3.5 h-3.5') }} Back</a>
+  </div>
+
+  {% if job_logs %}
+    <div class="dpl-list">
+      {% for log in job_logs %}
+        <div class="dpl-row {{ 'dpl-row-error' if not log.succeeded }}">
+
+          {% if log.succeeded %}
+            <span class="dpl-row-icon dpl-row-icon-ok">{{ icon('check', 'w-3.5 h-3.5') }}</span>
+          {% else %}
+            <span class="dpl-row-icon dpl-row-icon-err">{{ icon('x', 'w-3.5 h-3.5') }}</span>
+          {% endif %}
+
+          <div class="dpl-row-body">
+            <div class="dpl-row-primary">
+              {% if log.release_version %}
+                <code class="dpl-row-version">v{{ log.release_version }}</code>
+              {% endif %}
+              {% if log.succeeded %}
+                <span class="dpl-row-status-text dpl-row-status-ok">Success</span>
+              {% else %}
+                <span class="dpl-row-status-text dpl-row-status-err">Failed</span>
+              {% endif %}
+              {% if log.duration_seconds is not none %}
+                <span class="dpl-row-dur">{{ log.duration_seconds }}s</span>
+              {% endif %}
+            </div>
+            <div class="dpl-row-meta">
+              {% if log.resources and log.resources.requests %}
+                <span class="dpl-meta-chip">
+                  {{ icon('cpu', 'w-3 h-3') }}
+                  <span>{{ log.resources.requests.get('cpu', '?') }}</span>
+                </span>
+                <span class="dpl-meta-chip">
+                  {{ icon('database', 'w-3 h-3') }}
+                  <span>{{ log.resources.requests.get('memory', '?') }}</span>
+                </span>
+              {% endif %}
+              <span class="dpl-meta-chip">
+                {{ icon('activity', 'w-3 h-3') }}
+                <span>{{ log.pods_succeeded }} ok / {{ log.pods_failed }} fail</span>
+              </span>
+            </div>
+          </div>
+
+          <span class="dpl-row-time">
+            {% if log.completion_time %}
+              <time data-timestamp="{{ log.completion_time|isoformat_utc }}">{{ log.completion_time|humanize }}</time>
+            {% elif log.start_time %}
+              <time data-timestamp="{{ log.start_time|isoformat_utc }}">{{ log.start_time|humanize }}</time>
+            {% endif %}
+          </span>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="text-sm text-base-content/40 mt-4">No job runs recorded yet.</p>
+  {% endif %}
+
+{% endblock content %}
