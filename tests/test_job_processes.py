@@ -140,8 +140,8 @@ class TestRenderPodspecJob:
     def test_job_process_has_init_containers(self, mock_app):
         release = _make_release()
         pod_spec = deploy_module.render_podspec(release, "job-cleanup", "sa-name")
-        # enroller + sidecar
-        assert len(pod_spec.init_containers) == 2
+        # enroller only, no sidecar
+        assert len(pod_spec.init_containers) == 1
 
     def test_job_process_has_one_container(self, mock_app):
         release = _make_release()
