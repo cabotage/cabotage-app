@@ -1218,6 +1218,40 @@ def cleanup_orphaned_deployments_and_services(
                         )
 
 
+def cleanup_orphaned_cronjobs(batch_api, release, active_job_names, log=None):
+    """Delete k8s CronJobs for job processes no longer in the Procfile."""
+    namespace = k8s_namespace(release)
+    resource_prefix = k8s_resource_prefix(release)
+    label_selector = ",".join(
+        [
+            "resident-cronjob.cabotage.io=true",
+            f"organization={release.application.project.organization.slug}",
+            f"project={release.application.project.slug}",
+            f"application={release.application.slug}",
+        ]
+    )
+    expected_names = {f"{resource_prefix}-{name}" for name in active_job_names}
+
+    try:
+        existing = batch_api.list_namespaced_cron_job(
+            namespace, label_selector=label_selector
+        )
+    except ApiException:
+        return
+    for item in existing.items if existing else []:
+        if item.metadata.name not in expected_names:
+            if log:
+                log(f"Deleting orphaned CronJob/{item.metadata.name}")
+            try:
+                batch_api.delete_namespaced_cron_job(item.metadata.name, namespace)
+            except ApiException as exc:
+                if exc.status != 404:
+                    if log:
+                        log(
+                            f"Warning: failed to delete orphaned CronJob/{item.metadata.name}: {exc}"
+                        )
+
+
 def render_image_pull_secrets(release):
     registry_auth_secret = current_app.config["REGISTRY_AUTH_SECRET"]
     secret = kubernetes.client.V1Secret(
@@ -1666,6 +1700,19 @@ def render_podspec(release, process_name, service_account_name):
                 release, process_name, datadog_tags, with_tls=False, unix=False
             )
         )
+    elif process_name.startswith("job"):
+        init_containers.append(
+            render_cabotage_enroller_container(release, process_name, with_tls=False)
+        )
+        init_containers.append(
+            render_cabotage_sidecar_container(release, with_tls=False)
+        )
+        containers.append(
+            render_process_container(
+                release, process_name, datadog_tags, with_tls=False, unix=False
+            )
+        )
+        restart_policy = "OnFailure"
     elif process_name.startswith("release"):
         init_containers.append(
             render_cabotage_enroller_container(release, process_name, with_tls=False)
@@ -1981,6 +2028,160 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
         ),
     )
     return job_object
+
+
+def _get_job_schedule(process_def):
+    """Extract the SCHEDULE env var from a job process definition."""
+    for key, value in process_def.get("env", []):
+        if key == "SCHEDULE":
+            return value
+    return None
+
+
+def _history_limit_for_schedule(schedule, hours=12):
+    """Estimate how many times a cron schedule fires in the given window."""
+    from croniter import croniter
+    from datetime import datetime, timedelta
+
+    now = datetime.utcnow()
+    end = now + timedelta(hours=hours)
+    it = croniter(schedule, now)
+    count = 0
+    while it.get_next(datetime) <= end:
+        count += 1
+    return max(count, 3)
+
+
+def render_cronjob(
+    namespace, release, service_account_name, process_name, deployment_id
+):
+    label_value = k8s_label_value(release)
+    resource_prefix = k8s_resource_prefix(release)
+    app_env = release.application_environment
+    env_slug = app_env.environment.slug if app_env.environment else ""
+    process_def = release.job_processes.get(process_name, {})
+    schedule = _get_job_schedule(process_def)
+    if schedule is None:
+        raise DeployError(
+            f"Job process {process_name} is missing required SCHEDULE env var"
+        )
+    process_counts = app_env.process_counts or {}
+    suspended = process_counts.get(process_name, 0) == 0
+    common_labels = {
+        "organization": release.application.project.organization.slug,
+        "project": release.application.project.slug,
+        "application": release.application.slug,
+        "process": process_name,
+        "app": label_value,
+        "environment": env_slug,
+        "release": str(release.version),
+        "deployment": str(deployment_id),
+    }
+    job_labels = {
+        **common_labels,
+        "ca-admission.cabotage.io": "true",
+        "resident-job.cabotage.io": "true",
+    }
+    pod_labels = {
+        **common_labels,
+        "ca-admission.cabotage.io": "true",
+        "resident-pod.cabotage.io": "true",
+    }
+    cronjob_object = kubernetes.client.V1CronJob(
+        metadata=kubernetes.client.V1ObjectMeta(
+            name=f"{resource_prefix}-{process_name}",
+            labels={
+                "organization": release.application.project.organization.slug,
+                "project": release.application.project.slug,
+                "application": release.application.slug,
+                "process": process_name,
+                "app": label_value,
+                "resident-cronjob.cabotage.io": "true",
+            },
+        ),
+        spec=kubernetes.client.V1CronJobSpec(
+            schedule=schedule,
+            suspend=suspended,
+            concurrency_policy="Forbid",
+            successful_jobs_history_limit=_history_limit_for_schedule(schedule),
+            failed_jobs_history_limit=_history_limit_for_schedule(schedule),
+            job_template=kubernetes.client.V1JobTemplateSpec(
+                metadata=kubernetes.client.V1ObjectMeta(labels=job_labels),
+                spec=kubernetes.client.V1JobSpec(
+                    active_deadline_seconds=3600,
+                    backoff_limit=0,
+                    template=kubernetes.client.V1PodTemplateSpec(
+                        metadata=kubernetes.client.V1ObjectMeta(labels=pod_labels),
+                        spec=render_podspec(
+                            release, process_name, service_account_name
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    return cronjob_object
+
+
+def create_cronjob(
+    batch_api_instance,
+    namespace,
+    release,
+    service_account_name,
+    process_name,
+    deployment_id,
+):
+    cronjob_object = render_cronjob(
+        namespace, release, service_account_name, process_name, deployment_id
+    )
+    existing = None
+    try:
+        existing = batch_api_instance.read_namespaced_cron_job(
+            cronjob_object.metadata.name, namespace
+        )
+    except ApiException as exc:
+        if exc.status == 404:
+            pass
+        else:
+            raise DeployError(
+                "Unexpected exception fetching CronJob/"
+                f"{cronjob_object.metadata.name} in {namespace}: {exc}"
+            )
+    if existing is None:
+        try:
+            return batch_api_instance.create_namespaced_cron_job(
+                namespace, cronjob_object
+            )
+        except Exception as exc:
+            raise DeployError(
+                "Unexpected exception creating CronJob/"
+                f"{cronjob_object.metadata.name} in {namespace}: {exc}"
+            )
+    else:
+        try:
+            return batch_api_instance.replace_namespaced_cron_job(
+                cronjob_object.metadata.name, namespace, cronjob_object
+            )
+        except Exception as exc:
+            raise DeployError(
+                "Unexpected exception replacing CronJob/"
+                f"{cronjob_object.metadata.name} in {namespace}: {exc}"
+            )
+
+
+def suspend_cronjob(namespace, release, process_name, suspend):
+    """Suspend or unsuspend a CronJob."""
+    api_client = kubernetes_ext.kubernetes_client
+    batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+    cronjob_name = f"{k8s_resource_prefix(release)}-{process_name}"
+    try:
+        batch_api_instance.read_namespaced_cron_job(cronjob_name, namespace)
+    except ApiException as exc:
+        if exc.status == 404:
+            return
+        raise
+    patch = {"spec": {"suspend": suspend}}
+    batch_api_instance.patch_namespaced_cron_job(cronjob_name, namespace, patch)
 
 
 def fetch_job_logs(core_api_instance, namespace, job_object):
@@ -2431,6 +2632,18 @@ def deploy_release(deployment):
                 process_name,
                 deployment_id=deployment.id,
             )
+        for process_name in deployment.release_object.job_processes:
+            _pc = deployment.application_environment.process_counts or {}
+            _suspended = "suspended" if _pc.get(process_name, 0) == 0 else "active"
+            log(f"Creating CronJob for {process_name} ({_suspended})")
+            create_cronjob(
+                batch_api_instance,
+                namespace.metadata.name,
+                deployment.release_object,
+                service_account.metadata.name,
+                process_name,
+                deployment_id=deployment.id,
+            )
 
         log("Waiting on deployment to rollout...")
         start = time.time()
@@ -2488,6 +2701,7 @@ def deploy_release(deployment):
         # Clean up k8s Deployments and Services for processes no longer in
         # the Procfile (e.g., a "worker" process that was removed).
         active_process_names = list(deployment.release_object.processes.keys())
+        active_job_names = list(deployment.release_object.job_processes.keys())
         cleanup_orphaned_deployments_and_services(
             apps_api_instance,
             core_api_instance,
@@ -2495,10 +2709,16 @@ def deploy_release(deployment):
             active_process_names,
             log=log,
         )
+        cleanup_orphaned_cronjobs(
+            batch_api_instance,
+            deployment.release_object,
+            active_job_names,
+            log=log,
+        )
 
         # Prune stale keys from process_counts and process_pod_classes
         app_env = deployment.application_environment
-        active_set = set(active_process_names)
+        active_set = set(active_process_names) | set(active_job_names)
         pc = dict(app_env.process_counts or {})
         ppc = dict(app_env.process_pod_classes or {})
         stale_pc = set(pc.keys()) - active_set
@@ -2792,6 +3012,19 @@ def fake_deploy_release(deployment):
             f"in Namespace/{namespace.metadata.name}"
         )
         deploy_log.append(yaml.dump(remove_none(deployment_object.to_dict())))
+    for process in deployment.release_object.job_processes:
+        cronjob_object = render_cronjob(
+            namespace.metadata.name,
+            deployment.release_object,
+            service_account.metadata.name,
+            process,
+            deployment_id=deployment.id,
+        )
+        deploy_log.append(
+            f"Creating CronJob/{cronjob_object.metadata.name} "
+            f"in Namespace/{namespace.metadata.name}"
+        )
+        deploy_log.append(yaml.dump(remove_none(cronjob_object.to_dict())))
     deployment.deploy_log = "\n".join(deploy_log)
     db.session.commit()
     if (

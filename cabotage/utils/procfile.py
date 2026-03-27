@@ -33,11 +33,13 @@ _PROCFILE_LINE = re.compile(
     "".join(
         [
             r"^(?P<process_type>.+?):\s*",
-            r"(?:env(?P<environment>(?:\s+\S+=\S+)+)\s+)?",
+            r"(?:env(?P<environment>(?:\s+\S+=\"[^\"]*\"|\s+\S+=\S+)+)\s+)?",
             r"(?P<command>.+)$",
         ]
     )
 )
+
+_ENV_VAR = re.compile(r"""(\S+)=(?:"([^"]*)"|(\S+))""")
 
 
 def _find_duplicates(items):
@@ -76,8 +78,8 @@ def _parse_procfile_line(line):
     environment = parts["environment"]
     if environment:
         environment = [
-            tuple(variable.strip().split("=", 1))
-            for variable in environment.strip().split(" ")
+            (m.group(1), m.group(2) if m.group(2) is not None else m.group(3))
+            for m in _ENV_VAR.finditer(environment)
         ]
     else:
         environment = []

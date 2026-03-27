@@ -256,12 +256,20 @@ def _fetch_image_source(image, access_token):
     except ValueError as exc:
         raise BuildError(f"error parsing Procfile: {exc}")
 
-    for process_name in processes.keys():
+    for process_name, process_def in processes.items():
         if re.search("\s", process_name) is not None:
             raise BuildError(
                 f'Invalid process name: "{process_name}" in Procfile, '
                 "may not contain whitespace."
             )
+        if process_name.startswith("job"):
+            env_keys = [k for k, v in process_def.get("env", [])]
+            if "SCHEDULE" not in env_keys:
+                raise BuildError(
+                    f'Job process "{process_name}" is missing required '
+                    "SCHEDULE env var in Procfile. "
+                    'Expected: job-name: env SCHEDULE="<cron expression>" <command>'
+                )
 
     return {
         "git_ref": git_ref,
