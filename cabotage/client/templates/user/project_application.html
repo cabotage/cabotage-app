@@ -835,6 +835,11 @@
                 </div>
               </div>
             {% endfor %}
+          </div>
+
+          {% if latest_release_job_processes %}
+          <h3 class="text-sm font-semibold mt-4 mb-2 text-base-content/70">Jobs</h3>
+          <div class="process-grid">
             {% for process_name, proc in latest_release_job_processes.items() %}
               {% set count = src.process_counts.get(process_name, 0) %}
               {% set pod_class = src.process_pod_classes.get(process_name, DEFAULT_POD_CLASS) %}
@@ -842,6 +847,7 @@
               {% for key, value in proc.get('env', []) %}
                 {% if key == 'SCHEDULE' %}{% set schedule = value %}{% endif %}
               {% endfor %}
+              {% set last_log = last_job_logs.get(process_name) %}
               <div class="process-card {{ 'process-card-active' if count > 0 else 'process-card-idle' }}">
                 <div class="process-name">
                   {% if count > 0 %}
@@ -882,9 +888,28 @@
                      class="btn btn-ghost btn-xs process-log-btn gap-1"
                      title="View {{ process_name }} logs">{{ icon('terminal', 'w-3 h-3') }} Logs</a>
                 </div>
+                <div class="process-job-status text-xs mt-1" style="padding-left: 12px">
+                  {% if last_log %}
+                    {% if last_log.succeeded %}
+                      <span class="text-success">&#10003;</span>
+                    {% else %}
+                      <span class="text-error">&#10007;</span>
+                    {% endif %}
+                    last ran {{ last_log.completion_time|humanize }}
+                    {% if last_log.duration_seconds is not none %}
+                      ({{ last_log.duration_seconds }}s)
+                    {% endif %}
+                    &middot;
+                    <a href="{{ url_for('user.job_history', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug, env_slug=environment.slug if environment else none, process_name=process_name) }}"
+                       class="link link-hover text-xs">view history</a>
+                  {% else %}
+                    <span class="opacity-40">no runs yet</span>
+                  {% endif %}
+                </div>
               </div>
             {% endfor %}
           </div>
+          {% endif %}
 
           <div class="mt-3">
             <button type="submit"
