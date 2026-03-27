@@ -1,5 +1,6 @@
 from .build import (
     run_image_build,  # noqa: F401
+    run_omnibus_build,  # noqa: F401
     run_release_build,  # noqa: F401
 )
 

@@ -68,12 +68,215 @@ class BuildError(RuntimeError):
     pass
 
 
+class BuildkitEnv:
+    """Shared registry and buildkit configuration."""
+
+    def __init__(self, repository_name):
+        self.secret = current_app.config["REGISTRY_AUTH_SECRET"]
+        self.registry = current_app.config["REGISTRY_BUILD"]
+        self.registry_secure = current_app.config["REGISTRY_SECURE"]
+        self.registry_ca = current_app.config["REGISTRY_VERIFY"]
+        self.buildkit_image = current_app.config["BUILDKIT_IMAGE"]
+
+        self.insecure_reg = ""
+        registry_url = f"https://{self.registry}/v2"
+        if not self.registry_secure:
+            self.insecure_reg = ",registry.insecure=true"
+            registry_url = f"http://{self.registry}/v2"
+
+        self.dockerconfigjson = generate_kubernetes_imagepullsecrets(
+            secret=self.secret,
+            registry_urls=[registry_url],
+            resource_type="repository",
+            resource_name=repository_name,
+            resource_actions=["push", "pull"],
+        )
+        buildkitd_config = {
+            "registry": {
+                self.registry: {
+                    "insecure": not self.registry_secure,
+                    "ca": [
+                        ca
+                        for ca in [self.registry_ca]
+                        if self.registry_secure and not isinstance(ca, bool)
+                    ],
+                }
+            },
+        }
+        if not self.registry_secure:
+            buildkitd_config["registry"][self.registry]["http"] = True
+        self.buildkitd_toml = toml.dumps(buildkitd_config)
+
+    def verify_registry_tag(self, repository_name, tag):
+        """Verify a tag was pushed to the registry. Returns the digest."""
+
+        def auth(dxf, response):
+            dxf.token = generate_docker_registry_jwt(
+                access=[
+                    {
+                        "type": "repository",
+                        "name": repository_name,
+                        "actions": ["pull"],
+                    }
+                ]
+            )
+
+        _tlsverify = False
+        if self.registry_secure:
+            _tlsverify = self.registry_ca
+            if _tlsverify == "True":
+                _tlsverify = True
+        client = DXF(
+            host=self.registry,
+            repo=repository_name,
+            auth=auth,
+            insecure=(not self.registry_secure),
+            tlsverify=_tlsverify,
+        )
+        return client.get_digest(tag)
+
+    def tls_context_args(self):
+        """Return --registry-auth-tlscontext args if needed, else empty list."""
+        if self.registry_ca and not isinstance(self.registry_ca, bool):
+            return [
+                "--registry-auth-tlscontext",
+                f"host={self.registry},ca={self.registry_ca}",
+            ]
+        return []
+
+
+def _fetch_github_access_token(application):
+    """Get a GitHub access token for the application's installation."""
+    access_token = current_app.config.get("GITHUB_TOKEN")
+    if (
+        application.github_repository_is_private
+        or application.github_app_installation_id
+    ):
+        try:
+            auth = GithubAppAuth(github_app.app_id, github_app.app_private_key_pem)
+            gi = GithubIntegration(auth=auth)
+            access_token = gi.get_access_token(
+                application.github_app_installation_id
+            ).token
+            if access_token is None:
+                raise Exception
+        except Exception:
+            raise BuildError(
+                "Unable to authenticate for Installation ID "
+                f"{application.github_app_installation_id}"
+            )
+    return access_token
+
+
+def _fetch_image_source(image, access_token):
+    """Fetch Dockerfile, Procfile from GitHub and parse processes.
+
+    Returns dict with keys: dockerfile_body, dockerfile_name, procfile_body,
+    processes, dockerfile_env_vars.  Also updates image.dockerfile/procfile
+    and commits.
+    """
+    if image.commit_sha == "null":
+        commit_sha = _fetch_commit_sha_for_ref(
+            image.application.github_repository,
+            image.build_ref,
+            access_token=access_token,
+        )
+        if image.image_metadata is None:
+            image.image_metadata = {"sha": commit_sha}
+        else:
+            image.image_metadata["sha"] = commit_sha
+
+    def git_ref(repository, sha):
+        ref = f"https://x-access-token@github.com/{image.application.github_repository}.git#{image.commit_sha}"
+        if image.application.subdirectory:
+            return f"{ref}:{image.application.subdirectory}"
+        return ref
+
+    def file_path(filename):
+        if image.application.subdirectory:
+            return os.path.join(image.application.subdirectory, filename)
+        return filename
+
+    dockerfile_candidates = ["Dockerfile.cabotage", "Dockerfile"]
+    if image.application.dockerfile_path:
+        dockerfile_candidates = [image.application.dockerfile_path]
+
+    dockerfile_name = None
+    dockerfile_body = None
+    for candidate in dockerfile_candidates:
+        dockerfile_body = _fetch_github_file(
+            image.application.github_repository,
+            image.commit_sha,
+            access_token=access_token,
+            filename=file_path(candidate),
+        )
+        if dockerfile_body is not None:
+            dockerfile_name = candidate
+            break
+    if dockerfile_body is None:
+        raise BuildError(
+            f"No Dockerfile found in "
+            f"{git_ref(image.application.github_repository, image.commit_sha)}"
+        )
+
+    procfile_body = _fetch_github_file(
+        image.application.github_repository,
+        image.commit_sha,
+        access_token=access_token,
+        filename=file_path("Procfile.cabotage"),
+    )
+    if procfile_body is None:
+        procfile_body = _fetch_github_file(
+            image.application.github_repository,
+            image.commit_sha,
+            access_token=access_token,
+            filename=file_path("Procfile"),
+        )
+    if procfile_body is None:
+        raise BuildError(
+            "No Procfile.cabotage or Procfile found in root of "
+            f"{git_ref(image.application.github_repository, image.commit_sha)}"
+        )
+
+    image.dockerfile = dockerfile_body
+    image.procfile = procfile_body
+    db.session.commit()
+
+    dockerfile_object = DockerfileParser()
+    with TemporaryDirectory() as tempdir:
+        previous_dir = os.getcwd()
+        os.chdir(tempdir)
+        try:
+            dockerfile_object.content = dockerfile_body
+        finally:
+            os.chdir(previous_dir)
+    dockerfile_env_vars = list(dockerfile_object.envs.keys())
+    try:
+        processes = procfile.loads(procfile_body)
+    except ValueError as exc:
+        raise BuildError(f"error parsing Procfile: {exc}")
+
+    for process_name in processes.keys():
+        if re.search("\s", process_name) is not None:
+            raise BuildError(
+                f'Invalid process name: "{process_name}" in Procfile, '
+                "may not contain whitespace."
+            )
+
+    return {
+        "git_ref": git_ref,
+        "dockerfile_body": dockerfile_body,
+        "dockerfile_name": dockerfile_name,
+        "procfile_body": procfile_body,
+        "processes": processes,
+        "dockerfile_env_vars": dockerfile_env_vars,
+    }
+
+
 def build_release_buildkit(release):
-    secret = current_app.config["REGISTRY_AUTH_SECRET"]
-    registry = current_app.config["REGISTRY_BUILD"]
-    registry_secure = current_app.config["REGISTRY_SECURE"]
-    registry_ca = current_app.config["REGISTRY_VERIFY"]
-    buildkit_image = current_app.config["BUILDKIT_IMAGE"]
+    bke = BuildkitEnv(release.repository_name)
+    registry = bke.registry
+    buildkit_image = bke.buildkit_image
 
     process_commands = "\n".join(
         [
@@ -92,34 +295,9 @@ def build_release_buildkit(release):
     db.session.add(release)
     db.session.commit()
 
-    insecure_reg = ""
-    registry_url = f"https://{registry}/v2"
-    if not registry_secure:
-        insecure_reg = ",registry.insecure=true"
-        registry_url = f"http://{registry}/v2"
-
-    dockerconfigjson = generate_kubernetes_imagepullsecrets(
-        secret=secret,
-        registry_urls=[registry_url],
-        resource_type="repository",
-        resource_name=release.repository_name,
-        resource_actions=["push", "pull"],
-    )
-    buildkitd_config = {
-        "registry": {
-            registry: {
-                "insecure": not registry_secure,
-                "ca": [
-                    ca
-                    for ca in [registry_ca]
-                    if registry_secure and not isinstance(ca, bool)
-                ],
-            }
-        },
-    }
-    if not registry_secure:
-        buildkitd_config["registry"][registry]["http"] = True
-    buildkitd_toml = toml.dumps(buildkitd_config)
+    insecure_reg = bke.insecure_reg
+    dockerconfigjson = bke.dockerconfigjson
+    buildkitd_toml = bke.buildkitd_toml
 
     buildctl_command = [
         "buildctl-daemonless.sh",
@@ -136,9 +314,7 @@ def build_release_buildkit(release):
         ),
     ]
 
-    if registry_ca and not isinstance(registry_ca, bool):
-        buildctl_args.append("--registry-auth-tlscontext")
-        buildctl_args.append(f"host={registry},ca={registry_ca}")
+    buildctl_args += bke.tls_context_args()
 
     db.session.add(release)
     try:
@@ -441,31 +617,10 @@ def build_release_buildkit(release):
     except Exception as exc:
         raise BuildError(f"Build failed: {exc}")
 
-    def auth(dxf, response):
-        dxf.token = generate_docker_registry_jwt(
-            access=[
-                {
-                    "type": "repository",
-                    "name": release.repository_name,
-                    "actions": ["pull"],
-                }
-            ]
-        )
-
     try:
-        _tlsverify = False
-        if registry_secure:
-            _tlsverify = registry_ca
-            if _tlsverify == "True":
-                _tlsverify = True
-        client = DXF(
-            host=registry,
-            repo=release.repository_name,
-            auth=auth,
-            insecure=(not registry_secure),
-            tlsverify=_tlsverify,
+        pushed_release = bke.verify_registry_tag(
+            release.repository_name, f"release-{release.version}"
         )
-        pushed_release = client.get_digest(f"release-{release.version}")
     except Exception as exc:
         raise BuildError(f"Release push failed: {exc}")
 
@@ -584,148 +739,21 @@ def fetch_image_build_cache_volume_claim(core_api_instance, buildable):
 
 
 def build_image_buildkit(image=None):
-    secret = current_app.config["REGISTRY_AUTH_SECRET"]
-    registry = current_app.config["REGISTRY_BUILD"]
-    registry_secure = current_app.config["REGISTRY_SECURE"]
-    registry_ca = current_app.config["REGISTRY_VERIFY"]
-    buildkit_image = current_app.config["BUILDKIT_IMAGE"]
+    bke = BuildkitEnv(image.repository_name)
+    registry = bke.registry
+    buildkit_image = bke.buildkit_image
+    insecure_reg = bke.insecure_reg
+    dockerconfigjson = bke.dockerconfigjson
+    buildkitd_toml = bke.buildkitd_toml
 
-    access_token = current_app.config.get("GITHUB_TOKEN")
-
-    if (
-        image.application.github_repository_is_private
-        or image.application.github_app_installation_id
-    ):
-        try:
-            auth = GithubAppAuth(github_app.app_id, github_app.app_private_key_pem)
-            gi = GithubIntegration(auth=auth)
-            access_token = gi.get_access_token(
-                image.application.github_app_installation_id
-            ).token
-            if access_token is None:
-                raise Exception
-        except Exception:
-            raise BuildError(
-                "Unable to authenticate for Installation ID "
-                f"{image.application.github_app_installation_id}"
-            )
-
-    if image.commit_sha == "null":
-        commit_sha = _fetch_commit_sha_for_ref(
-            image.application.github_repository,
-            image.build_ref,
-            access_token=access_token,
-        )
-        if image.image_metadata is None:
-            image.image_metadata = {"sha": commit_sha}
-        else:
-            image.image_metadata["sha"] = commit_sha
-
-    def git_ref(repository, sha):
-        ref = f"https://x-access-token@github.com/{image.application.github_repository}.git#{image.commit_sha}"
-        if image.application.subdirectory:
-            return f"{ref}:{image.application.subdirectory}"
-        return ref
-
-    def file_path(filename):
-        if image.application.subdirectory:
-            return os.path.join(image.application.subdirectory, filename)
-        return filename
-
-    dockerfile_candidates = ["Dockerfile.cabotage", "Dockerfile"]
-    if image.application.dockerfile_path:
-        dockerfile_candidates = [image.application.dockerfile_path]
-
-    dockerfile_name = None
-    dockerfile_body = None
-    for candidate in dockerfile_candidates:
-        dockerfile_body = _fetch_github_file(
-            image.application.github_repository,
-            image.commit_sha,
-            access_token=access_token,
-            filename=file_path(candidate),
-        )
-        if dockerfile_body is not None:
-            dockerfile_name = candidate
-            break
-    if dockerfile_body is None:
-        raise BuildError(
-            f"No Dockerfile found in "
-            f"{git_ref(image.application.github_repository, image.commit_sha)}"
-        )
-
-    procfile_body = _fetch_github_file(
-        image.application.github_repository,
-        image.commit_sha,
-        access_token=access_token,
-        filename=file_path("Procfile.cabotage"),
-    )
-    if procfile_body is None:
-        procfile_body = _fetch_github_file(
-            image.application.github_repository,
-            image.commit_sha,
-            access_token=access_token,
-            filename=file_path("Procfile"),
-        )
-    if procfile_body is None:
-        raise BuildError(
-            "No Procfile.cabotage or Procfile found in root of "
-            f"{git_ref(image.application.github_repository, image.commit_sha)}"
-        )
-
-    image.dockerfile = dockerfile_body
-    image.procfile = procfile_body
-    db.session.commit()
-
-    dockerfile_object = DockerfileParser()
-    with TemporaryDirectory() as tempdir:
-        previous_dir = os.getcwd()
-        os.chdir(tempdir)
-        try:
-            dockerfile_object.content = dockerfile_body
-        finally:
-            os.chdir(previous_dir)
-    dockerfile_env_vars = list(dockerfile_object.envs.keys())
-    try:
-        processes = procfile.loads(procfile_body)
-    except ValueError as exc:
-        raise BuildError(f"error parsing Procfile: {exc}")
-
-    for process_name in processes.keys():
-        if re.search("\s", process_name) is not None:
-            raise BuildError(
-                f'Invalid process name: "{process_name}" in Procfile, '
-                "may not contain whitespace."
-            )
-
-    insecure_reg = ""
-    registry_url = f"https://{registry}/v2"
-    if not registry_secure:
-        insecure_reg = ",registry.insecure=true"
-        registry_url = f"http://{registry}/v2"
-
-    dockerconfigjson = generate_kubernetes_imagepullsecrets(
-        secret=secret,
-        registry_urls=[registry_url],
-        resource_type="repository",
-        resource_name=image.repository_name,
-        resource_actions=["push", "pull"],
-    )
-    buildkitd_config = {
-        "registry": {
-            registry: {
-                "insecure": not registry_secure,
-                "ca": [
-                    ca
-                    for ca in [registry_ca]
-                    if registry_secure and not isinstance(ca, bool)
-                ],
-            }
-        },
-    }
-    if not registry_secure:
-        buildkitd_config["registry"][registry]["http"] = True
-    buildkitd_toml = toml.dumps(buildkitd_config)
+    access_token = _fetch_github_access_token(image.application)
+    source = _fetch_image_source(image, access_token)
+    git_ref = source["git_ref"]
+    dockerfile_name = source["dockerfile_name"]
+    dockerfile_body = source["dockerfile_body"]
+    procfile_body = source["procfile_body"]
+    processes = source["processes"]
+    dockerfile_env_vars = source["dockerfile_env_vars"]
 
     buildctl_command = [
         "buildctl-daemonless.sh",
@@ -763,9 +791,7 @@ def build_image_buildkit(image=None):
         buildctl_args.append("--opt")
         buildctl_args.append(shlex.quote(f"build-arg:{k}={v}"))
 
-    if registry_ca and not isinstance(registry_ca, bool):
-        buildctl_args.append("--registry-auth-tlscontext")
-        buildctl_args.append(f"host={registry},ca={registry_ca}")
+    buildctl_args += bke.tls_context_args()
 
     try:
         if current_app.config["KUBERNETES_ENABLED"]:
@@ -1068,31 +1094,10 @@ def build_image_buildkit(image=None):
     except Exception as exc:
         raise BuildError(f"Build failed: {exc}")
 
-    def auth(dxf, response):
-        dxf.token = generate_docker_registry_jwt(
-            access=[
-                {
-                    "type": "repository",
-                    "name": image.repository_name,
-                    "actions": ["pull"],
-                }
-            ]
-        )
-
     try:
-        _tlsverify = False
-        if registry_secure:
-            _tlsverify = registry_ca
-            if _tlsverify == "True":
-                _tlsverify = True
-        client = DXF(
-            host=registry,
-            repo=image.repository_name,
-            auth=auth,
-            insecure=(not registry_secure),
-            tlsverify=_tlsverify,
+        pushed_image = bke.verify_registry_tag(
+            image.repository_name, f"image-{image.version}"
         )
-        pushed_image = client.get_digest(f"image-{image.version}")
     except Exception as exc:
         raise BuildError(f"Image push failed: {exc}")
 
@@ -1101,6 +1106,427 @@ def build_image_buildkit(image=None):
         "processes": processes,
         "dockerfile": dockerfile_body,
         "procfile": procfile_body,
+        "dockerfile_env_vars": dockerfile_env_vars,
+    }
+
+
+def build_omnibus_buildkit(image, release):
+    """Build image and release in a single K8s Job.
+
+    Uses an init container for the image build and the main container for the
+    release build so the build-cache PVC is only mounted/unmounted once.
+    """
+    bke = BuildkitEnv(image.repository_name)
+    registry = bke.registry
+    buildkit_image = bke.buildkit_image
+    insecure_reg = bke.insecure_reg
+    dockerconfigjson = bke.dockerconfigjson
+    buildkitd_toml = bke.buildkitd_toml
+
+    access_token = _fetch_github_access_token(image.application)
+    source = _fetch_image_source(image, access_token)
+    git_ref = source["git_ref"]
+    dockerfile_name = source["dockerfile_name"]
+    processes = source["processes"]
+    dockerfile_env_vars = source["dockerfile_env_vars"]
+
+    # --- Image build args (init container) ---
+    buildctl_command = [
+        "buildctl-daemonless.sh",
+    ]
+    image_buildctl_args = [
+        "build",
+        "--progress=plain",
+        "--frontend",
+        "dockerfile.v0",
+        "--opt",
+        f"filename=./{dockerfile_name}",
+        "--opt",
+        (f"context={git_ref(image.application.github_repository, image.commit_sha)}"),
+        "--import-cache",
+        (
+            f"type=registry,ref={registry}/{image.repository_name}"
+            f":image-buildcache{insecure_reg}"
+        ),
+        "--export-cache",
+        (
+            f"type=registry,ref={registry}/{image.repository_name}"
+            f":image-buildcache{insecure_reg},mode=min"
+        ),
+        "--output",
+        (
+            f"type=image,name={registry}/{image.repository_name}"
+            f":image-{image.version},push=true{insecure_reg}"
+        ),
+    ]
+
+    image_buildctl_args.append("--opt")
+    image_buildctl_args.append(
+        shlex.quote(f"build-arg:SOURCE_COMMIT={image.commit_sha}")
+    )
+
+    for k, v in image.buildargs(config_writer).items():
+        image_buildctl_args.append("--opt")
+        image_buildctl_args.append(shlex.quote(f"build-arg:{k}={v}"))
+
+    image_buildctl_args += bke.tls_context_args()
+
+    if image.application.github_repository_is_private:
+        image_buildctl_args.append("--secret")
+        image_buildctl_args.append(
+            "id=GIT_AUTH_TOKEN,src=/home/user/.secret/github_access_token"
+        )
+
+    # --- Prepare release data ---
+    # Populate image.processes so that the release can generate its
+    # envconsul configurations before the K8s Job actually runs.
+    image.processes = processes
+    image.built = True
+    if image.image_metadata is None:
+        image.image_metadata = {"dockerfile_env_vars": dockerfile_env_vars}
+    else:
+        image.image_metadata["dockerfile_env_vars"] = dockerfile_env_vars
+    db.session.add(image)
+    db.session.commit()
+
+    # Update the release's image snapshot so envconsul_configurations
+    # can see the parsed processes.
+    release.image = image.asdict
+    db.session.add(release)
+    db.session.commit()
+
+    # Generate the release dockerfile and build context
+    process_commands = "\n".join(
+        [
+            (
+                f"COPY envconsul-{process_name}.hcl "
+                f"/etc/cabotage/envconsul-{process_name}.hcl"
+            )
+            for process_name in release.envconsul_configurations
+        ]
+    )
+    release.dockerfile = RELEASE_DOCKERFILE_TEMPLATE.format(
+        registry=registry,
+        image=release.image_snapshot,
+        process_commands=process_commands,
+    )
+    db.session.add(release)
+    db.session.commit()
+
+    # --- Release build args (main container) ---
+    release_buildctl_args = [
+        "build",
+        "--progress=plain",
+        "--frontend",
+        "dockerfile.v0",
+        "--output",
+        (
+            f"type=image,name={registry}/{release.repository_name}"
+            f":release-{release.version},push=true{insecure_reg}"
+        ),
+        "--local",
+        "dockerfile=/context",
+        "--local",
+        "context=/context",
+    ]
+
+    release_buildctl_args += bke.tls_context_args()
+
+    # --- Build the single K8s Job ---
+    if not current_app.config["KUBERNETES_ENABLED"]:
+        raise BuildError("Omnibus build requires KUBERNETES_ENABLED")
+
+    try:
+        api_client = kubernetes_ext.kubernetes_client
+        core_api_instance = kubernetes.client.CoreV1Api(api_client)
+        batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+        # Single PVC mount for both build steps
+        volume_claim = fetch_image_build_cache_volume_claim(core_api_instance, image)
+        docker_secret_object = kubernetes.client.V1Secret(
+            type="kubernetes.io/dockerconfigjson",
+            metadata=kubernetes.client.V1ObjectMeta(
+                name=f"buildkit-registry-auth-{image.build_job_id}",
+            ),
+            data={
+                ".dockerconfigjson": b64encode(dockerconfigjson.encode()).decode(),
+            },
+        )
+        github_secret_object = kubernetes.client.V1Secret(
+            metadata=kubernetes.client.V1ObjectMeta(
+                name=f"github-access-token-{image.build_job_id}",
+            ),
+            data={
+                "github_access_token": b64encode(str(access_token).encode()).decode(),
+            },
+        )
+        buildkitd_toml_configmap_object = kubernetes.client.V1ConfigMap(
+            metadata=kubernetes.client.V1ObjectMeta(
+                name=f"buildkitd-toml-{image.build_job_id}",
+            ),
+            data={
+                "buildkitd.toml": buildkitd_toml,
+            },
+        )
+        context_configmap_object = release.release_build_context_configmap
+        # Override the configmap name to use image.build_job_id for consistency
+        context_configmap_object.metadata.name = f"build-context-{image.build_job_id}"
+
+        shared_env = [
+            kubernetes.client.V1EnvVar(
+                name="BUILDKITD_FLAGS",
+                value="--config /home/user/.config/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",  # noqa: E501
+            ),
+        ]
+        shared_security_context = kubernetes.client.V1SecurityContext(
+            seccomp_profile=kubernetes.client.V1SeccompProfile(
+                type="Unconfined",
+            ),
+            run_as_user=1000,
+            run_as_group=1000,
+        )
+        shared_volume_mounts = [
+            kubernetes.client.V1VolumeMount(
+                mount_path="/home/user/.local/share/buildkit",
+                name="build-cache",
+            ),
+            kubernetes.client.V1VolumeMount(
+                mount_path="/home/user/.config/buildkit",
+                name="buildkitd-toml",
+            ),
+            kubernetes.client.V1VolumeMount(
+                mount_path="/home/user/.docker",
+                name="buildkit-registry-auth",
+            ),
+        ]
+
+        # Init container: image build
+        image_build_container = kubernetes.client.V1Container(
+            name="image-build",
+            image=buildkit_image,
+            command=buildctl_command,
+            args=image_buildctl_args,
+            env=shared_env,
+            security_context=shared_security_context,
+            volume_mounts=shared_volume_mounts
+            + [
+                kubernetes.client.V1VolumeMount(
+                    mount_path="/home/user/.secret",
+                    name="build-secrets",
+                ),
+            ],
+        )
+
+        # Main container: release build
+        release_build_container = kubernetes.client.V1Container(
+            name="build",
+            image=buildkit_image,
+            command=buildctl_command,
+            args=release_buildctl_args,
+            env=shared_env,
+            security_context=shared_security_context,
+            volume_mounts=shared_volume_mounts
+            + [
+                kubernetes.client.V1VolumeMount(
+                    mount_path="/context/Dockerfile",
+                    sub_path="Dockerfile",
+                    name="build-context",
+                ),
+                kubernetes.client.V1VolumeMount(
+                    mount_path="/context/entrypoint.sh",
+                    sub_path="entrypoint.sh",
+                    name="build-context",
+                ),
+                *[
+                    kubernetes.client.V1VolumeMount(
+                        mount_path=f"/context/envconsul-{process_name}.hcl",
+                        sub_path=f"envconsul-{process_name}.hcl",
+                        name="build-context",
+                    )
+                    for process_name in release.envconsul_configurations
+                ],
+            ],
+        )
+
+        job_object = kubernetes.client.V1Job(
+            metadata=kubernetes.client.V1ObjectMeta(
+                name=f"omnibusbuild-{image.build_job_id}",
+                labels={
+                    "organization": image.application.project.organization.slug,
+                    "project": image.application.project.slug,
+                    "application": image.application.slug,
+                    "process": "build",
+                    "build_id": image.build_job_id,
+                    "resident-job.cabotage.io": "true",
+                },
+            ),
+            spec=kubernetes.client.V1JobSpec(
+                active_deadline_seconds=3600,
+                backoff_limit=0,
+                parallelism=1,
+                completions=1,
+                template=kubernetes.client.V1PodTemplateSpec(
+                    metadata=kubernetes.client.V1ObjectMeta(
+                        labels={
+                            "organization": image.application.project.organization.slug,  # noqa: E501
+                            "project": image.application.project.slug,
+                            "application": image.application.slug,
+                            "process": "build",
+                            "build_id": image.build_job_id,
+                            "ca-admission.cabotage.io": "true",
+                            "resident-pod.cabotage.io": "true",
+                        },
+                        annotations={
+                            "container.apparmor.security.beta.kubernetes.io/image-build": "unconfined",  # noqa: E501
+                            "container.apparmor.security.beta.kubernetes.io/build": "unconfined",  # noqa: E501
+                        },
+                    ),
+                    spec=kubernetes.client.V1PodSpec(
+                        restart_policy="Never",
+                        termination_grace_period_seconds=0,
+                        security_context=kubernetes.client.V1PodSecurityContext(
+                            fs_group=1000,
+                            fs_group_change_policy="OnRootMismatch",
+                        ),
+                        init_containers=[image_build_container],
+                        containers=[release_build_container],
+                        volumes=[
+                            kubernetes.client.V1Volume(
+                                name="build-cache",
+                                persistent_volume_claim=kubernetes.client.V1PersistentVolumeClaimVolumeSource(
+                                    claim_name=volume_claim.metadata.name
+                                ),
+                            ),
+                            kubernetes.client.V1Volume(
+                                name="buildkitd-toml",
+                                config_map=kubernetes.client.V1ConfigMapVolumeSource(
+                                    name=f"buildkitd-toml-{image.build_job_id}",
+                                    items=[
+                                        kubernetes.client.V1KeyToPath(
+                                            key="buildkitd.toml",
+                                            path="buildkitd.toml",
+                                        ),
+                                    ],
+                                ),
+                            ),
+                            kubernetes.client.V1Volume(
+                                name="buildkit-registry-auth",
+                                secret=kubernetes.client.V1SecretVolumeSource(
+                                    secret_name=f"buildkit-registry-auth-{image.build_job_id}",
+                                    items=[
+                                        kubernetes.client.V1KeyToPath(
+                                            key=".dockerconfigjson",
+                                            path="config.json",
+                                        ),
+                                    ],
+                                ),
+                            ),
+                            kubernetes.client.V1Volume(
+                                name="build-secrets",
+                                secret=kubernetes.client.V1SecretVolumeSource(
+                                    secret_name=f"github-access-token-{image.build_job_id}",
+                                    items=[
+                                        kubernetes.client.V1KeyToPath(
+                                            key="github_access_token",
+                                            path="github_access_token",
+                                        ),
+                                    ],
+                                ),
+                            ),
+                            kubernetes.client.V1Volume(
+                                name="build-context",
+                                config_map=kubernetes.client.V1ConfigMapVolumeSource(
+                                    name=f"build-context-{image.build_job_id}"
+                                ),
+                            ),
+                        ],
+                    ),
+                ),
+            ),
+        )
+
+        core_api_instance.create_namespaced_config_map(
+            "default", buildkitd_toml_configmap_object
+        )
+        core_api_instance.create_namespaced_config_map(
+            "default", context_configmap_object
+        )
+        core_api_instance.create_namespaced_secret("default", docker_secret_object)
+        core_api_instance.create_namespaced_secret("default", github_secret_object)
+
+        try:
+            redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
+            log_key = stream_key("omnibus", image.build_job_id)
+        except Exception:  # nosec B110
+            redis_client = None
+            log_key = None
+
+        try:
+            job_complete, job_logs = run_job(
+                core_api_instance,
+                batch_api_instance,
+                "default",
+                job_object,
+                redis_client=redis_client,
+                log_key=log_key,
+                heartbeat_type="omnibus_build",
+                heartbeat_id=str(image.id),
+            )
+            if redis_client and log_key:
+                try:
+                    publish_end(redis_client, log_key, error=not job_complete)
+                except Exception:  # nosec B110
+                    pass
+        finally:
+            core_api_instance.delete_namespaced_secret(
+                f"buildkit-registry-auth-{image.build_job_id}",
+                "default",
+                propagation_policy="Foreground",
+            )
+            core_api_instance.delete_namespaced_secret(
+                f"github-access-token-{image.build_job_id}",
+                "default",
+                propagation_policy="Foreground",
+            )
+            core_api_instance.delete_namespaced_config_map(
+                f"buildkitd-toml-{image.build_job_id}",
+                "default",
+                propagation_policy="Foreground",
+            )
+            core_api_instance.delete_namespaced_config_map(
+                f"build-context-{image.build_job_id}",
+                "default",
+                propagation_policy="Foreground",
+            )
+
+        db.session.refresh(image)
+        image.image_build_log = job_logs
+        db.session.commit()
+        db.session.refresh(release)
+        release.release_build_log = job_logs
+        db.session.commit()
+        if not job_complete:
+            raise BuildError("Omnibus build failed!")
+    except BuildError:
+        raise
+    except Exception as exc:
+        raise BuildError(f"Build failed: {exc}")
+
+    try:
+        pushed_image = bke.verify_registry_tag(
+            image.repository_name, f"image-{image.version}"
+        )
+        pushed_release = bke.verify_registry_tag(
+            release.repository_name, f"release-{release.version}"
+        )
+    except Exception as exc:
+        raise BuildError(f"Registry verification failed: {exc}")
+
+    return {
+        "image_id": pushed_image,
+        "release_id": pushed_release,
+        "processes": processes,
+        "dockerfile": source["dockerfile_body"],
+        "procfile": source["procfile_body"],
         "dockerfile_env_vars": dockerfile_env_vars,
     }
 
@@ -1462,3 +1888,237 @@ def run_release_build(release_id=None):
             release.error_detail = "Release build failed due to an internal error"
             db.session.commit()
         raise
+
+
+@shared_task()
+def run_omnibus_build(image_id=None):
+    """Build image + release in a single K8s Job for auto-deploys.
+
+    Avoids mounting the build cache volume twice by combining both build
+    steps into one pod (init container for image, main container for release).
+    """
+    from cabotage.utils.config_templates import TemplateResolutionError
+
+    current_app.config["REGISTRY_AUTH_SECRET"]
+    current_app.config["REGISTRY_BUILD"]
+    image = Image.query.filter_by(id=image_id).first()
+    if image is None:
+        raise KeyError(f"Image with ID {image_id} not found!")
+
+    image.build_job_id = secrets.token_hex(4)
+
+    # Create a GitHub check run at the start of the pipeline
+    application = image.application
+    check = CheckRun(None, None, application)
+    if (
+        image.image_metadata
+        and "installation_id" in image.image_metadata
+        and "sha" in image.image_metadata
+        and application.github_repository
+    ):
+        access_token = github_app.fetch_installation_access_token(
+            image.image_metadata["installation_id"]
+        )
+        app_env = image.application_environment
+        env_slug = app_env.environment.slug
+        project_slug = application.project.slug
+        org_slug = application.project.organization.slug
+        check_name = f"deploy - {github_app.slug} / {org_slug} / {project_slug} / {application.slug} ({env_slug})"
+        check = CheckRun.create(
+            access_token,
+            application.github_repository,
+            image.image_metadata["sha"],
+            check_name,
+            application,
+            details_url=cabotage_url(application, f"images/{image.id}"),
+            app_env=app_env,
+        )
+        if check.check_run_id:
+            metadata = dict(image.image_metadata or {})
+            metadata["check_run_id"] = check.check_run_id
+            image.image_metadata = metadata
+
+    check.progress(
+        "Building image...",
+        details_url=cabotage_url(application, f"images/{image.id}"),
+        Image=f"images/{image.id}",
+    )
+
+    db.session.add(image)
+    db.session.commit()
+
+    try:
+        redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
+        refresh_heartbeat(redis_client, "omnibus_build", str(image.id))
+    except Exception:  # nosec B110
+        pass
+
+    release = None
+    app_env = image.application_environment
+    try:
+        try:
+            # Create the release record upfront so build_omnibus_buildkit
+            # can generate its build context.  Image processes will be
+            # populated inside build_omnibus_buildkit before generating the
+            # release dockerfile.
+            release = Release(
+                application_id=application.id,
+                application_environment_id=app_env.id,
+                image={},  # placeholder, updated inside build_omnibus_buildkit
+                _repository_name=application.registry_repository_name(app_env),
+                configuration=application._resolved_configuration(app_env),
+                image_changes={},
+                configuration_changes={},
+                ingresses={ing.name: ing.asdict for ing in app_env.ingresses},
+                platform=application.platform,
+                health_check_path=app_env.effective_health_check_path,
+                health_check_host=app_env.effective_health_check_host,
+            )
+            release.release_metadata = image.image_metadata
+            db.session.add(release)
+            db.session.flush()
+
+            release.build_job_id = image.build_job_id
+
+            activity = Activity(
+                verb="create",
+                object=release,
+                data={
+                    "user_id": "automation",
+                    "deployment_id": image.image_metadata.get("id", None),
+                    "description": image.image_metadata.get("description", None),
+                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                },
+            )
+            db.session.add(activity)
+            db.session.commit()
+
+            build_metadata = build_omnibus_buildkit(image, release)
+
+            if (
+                image.image_metadata
+                and "installation_id" in image.image_metadata
+                and "statuses_url" in image.image_metadata
+                and not image.image_metadata.get("branch_deploy")
+            ):
+                access_token = github_app.fetch_installation_access_token(
+                    image.image_metadata["installation_id"]
+                )
+                post_deployment_status_update(
+                    access_token,
+                    image.image_metadata["statuses_url"],
+                    "in_progress",
+                    "Release built, Deployment commencing.",
+                )
+        except (BuildError, TemplateResolutionError) as exc:
+            db.session.rollback()
+            db.session.add(image)
+            image.error = True
+            image.error_detail = str(exc)
+            if release is not None:
+                db.session.add(release)
+                release.error = True
+                release.error_detail = str(exc)
+            db.session.commit()
+            if (
+                image.image_metadata
+                and "installation_id" in image.image_metadata
+                and "statuses_url" in image.image_metadata
+                and not image.image_metadata.get("branch_deploy")
+            ):
+                access_token = github_app.fetch_installation_access_token(
+                    image.image_metadata["installation_id"]
+                )
+                post_deployment_status_update(
+                    access_token,
+                    image.image_metadata["statuses_url"],
+                    "failure",
+                    "Build failed.",
+                )
+            raise
+    except Exception:
+        try:
+            log_key = stream_key("omnibus", image.build_job_id)
+            redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
+            publish_end(redis_client, log_key, error=True)
+        except Exception:  # nosec B110
+            pass
+        db.session.rollback()
+        db.session.add(image)
+        if not image.error:
+            image.error = True
+            image.error_detail = "Build failed due to an internal error"
+        if release is not None:
+            db.session.add(release)
+            if not release.error:
+                release.error = True
+                release.error_detail = "Build failed due to an internal error"
+        db.session.commit()
+        check.fail(
+            "Build failed",
+            detail=image.error_detail or "Build failed",
+            details_url=cabotage_url(application, f"images/{image.id}"),
+            Image=f"images/{image.id}",
+        )
+        raise
+
+    # Update image record with registry digest
+    db.session.add(image)
+    image.image_id = build_metadata["image_id"]
+    db.session.commit()
+
+    # Update release with image snapshot and registry digest
+    db.session.refresh(release)
+    release.image = image.asdict
+    release.release_id = build_metadata["release_id"]
+    release.built = True
+    db.session.add(release)
+    db.session.commit()
+
+    check.progress(
+        "Release built",
+        detail="Release built successfully. Deploying.",
+        details_url=cabotage_url(application, f"releases/{release.id}"),
+        Image=f"images/{image.id}",
+        Release=f"releases/{release.id}",
+    )
+
+    # Auto-deploy: create deployment
+    deployment = Deployment(
+        application_id=application.id,
+        application_environment_id=app_env.id,
+        release=release.asdict,
+        deploy_metadata=release.release_metadata,
+    )
+    db.session.add(deployment)
+    db.session.flush()
+    activity = Activity(
+        verb="create",
+        object=deployment,
+        data={
+            "user_id": "automation",
+            "deployment_id": image.image_metadata.get("id", None),
+            "description": image.image_metadata.get("description", None),
+            "timestamp": datetime.datetime.utcnow().isoformat(),
+        },
+    )
+    db.session.add(activity)
+    db.session.commit()
+    if current_app.config["KUBERNETES_ENABLED"]:
+        run_deploy.delay(deployment_id=deployment.id)
+    else:
+        from cabotage.celery.tasks.deploy import fake_deploy_release
+
+        fake_deploy_release(deployment)
+        deployment.complete = True
+        db.session.commit()
+        CheckRun.from_metadata(
+            release.release_metadata, release.application_environment
+        ).succeed(
+            details_url=cabotage_url(
+                application,
+                f"deployments/{deployment.id}",
+            ),
+            Deployment=f"deployments/{deployment.id}",
+            Release=f"releases/{release.id}",
+        )
