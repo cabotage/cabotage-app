@@ -1,17 +1,17 @@
 name: Publish
 on:
-  push:
-    branches:
-      - 'main'
-    tags:
-      - '*'
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
 permissions:
   contents: write
   packages: write
 jobs:
   release-to-ghcr:
+    if: github.event.workflow_run.conclusion == 'success'
     concurrency:
-      group: release-to-ghcr-${{ matrix.config.arch }}-${{ github.ref }}
+      group: release-to-ghcr-${{ matrix.config.arch }}-${{ github.event.workflow_run.head_sha }}
       cancel-in-progress: false
     runs-on: ${{ matrix.config.os }}
     strategy:
@@ -20,9 +20,10 @@ jobs:
           - { os: ubuntu-24.04, arch: amd64 }
           - { os: ubuntu-24.04-arm, arch: arm64 }
     steps:
-      # Checkout push-to-registry action github repository
       - name: Checkout Push to Registry action
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Login To GHCR
@@ -34,11 +35,13 @@ jobs:
       - name: Determine tags
         id: tags
         run: |
-          TAGS="ghcr.io/cabotage/cabotage-app:${{ github.sha }}-${{ matrix.config.arch }}"
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            TAGS="${TAGS},ghcr.io/cabotage/cabotage-app:${{ github.ref_name }}-${{ matrix.config.arch }}"
+          SHA="${{ github.event.workflow_run.head_sha }}"
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+          TAGS="ghcr.io/cabotage/cabotage-app:${SHA}-${{ matrix.config.arch }}"
+          if [[ "$BRANCH" == "refs/tags/"* ]] || [[ "${{ github.event.workflow_run.event }}" == "push" && "$BRANCH" != "main" ]]; then
+            TAGS="${TAGS},ghcr.io/cabotage/cabotage-app:${BRANCH}-${{ matrix.config.arch }}"
           fi
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          if [[ "$BRANCH" == "main" ]]; then
             TAGS="${TAGS},ghcr.io/cabotage/cabotage-app:latest-${{ matrix.config.arch }}"
           fi
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
@@ -56,6 +59,8 @@ jobs:
     steps:
     - name: Checkout Push to Registry action
       uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.workflow_run.head_sha }}
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
     - name: Login To GHCR
@@ -66,21 +71,23 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     - name: Create SHA manifest and push
       run: |
+        SHA="${{ github.event.workflow_run.head_sha }}"
         docker buildx imagetools create \
-          --tag ghcr.io/cabotage/cabotage-app:${{ github.sha }} \
-          ghcr.io/cabotage/cabotage-app:${{ github.sha }}-amd64 \
-          ghcr.io/cabotage/cabotage-app:${{ github.sha }}-arm64
+          --tag ghcr.io/cabotage/cabotage-app:${SHA} \
+          ghcr.io/cabotage/cabotage-app:${SHA}-amd64 \
+          ghcr.io/cabotage/cabotage-app:${SHA}-arm64
 
     - name: Create tag manifest and push
-      if: github.ref_type == 'tag'
+      if: github.event.workflow_run.head_branch != 'main'
       run: |
+        BRANCH="${{ github.event.workflow_run.head_branch }}"
         docker buildx imagetools create \
-          --tag ghcr.io/cabotage/cabotage-app:${{ github.ref_name }} \
-          ghcr.io/cabotage/cabotage-app:${{ github.ref_name }}-amd64 \
-          ghcr.io/cabotage/cabotage-app:${{ github.ref_name }}-arm64
+          --tag ghcr.io/cabotage/cabotage-app:${BRANCH} \
+          ghcr.io/cabotage/cabotage-app:${BRANCH}-amd64 \
+          ghcr.io/cabotage/cabotage-app:${BRANCH}-arm64
 
     - name: Create latest manifest and push
-      if: github.ref == 'refs/heads/main'
+      if: github.event.workflow_run.head_branch == 'main'
       run: |
         docker buildx imagetools create \
           --tag ghcr.io/cabotage/cabotage-app:latest \
