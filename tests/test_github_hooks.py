@@ -156,6 +156,8 @@ def _mock_github_responses(
     required_checks=None,
     check_runs=None,
     statuses=None,
+    branch_rules=None,
+    legacy_protection_status=200,
 ):
     if required_checks is None:
         required_checks = []
@@ -163,6 +165,8 @@ def _mock_github_responses(
         check_runs = []
     if statuses is None:
         statuses = []
+    if branch_rules is None:
+        branch_rules = []
 
     def mock_get(url, **kwargs):
         resp = MagicMock()
@@ -171,10 +175,17 @@ def _mock_github_responses(
         resp.text = "{}"
 
         if "/protection/required_status_checks" in url:
-            resp.json.return_value = {
-                "checks": required_checks,
-                "contexts": [c["context"] for c in required_checks],
-            }
+            resp.status_code = legacy_protection_status
+            if legacy_protection_status == 404:
+                resp.text = "Not Found"
+                resp.json.return_value = {}
+            else:
+                resp.json.return_value = {
+                    "checks": required_checks,
+                    "contexts": [c["context"] for c in required_checks],
+                }
+        elif "/rules/branches/" in url:
+            resp.json.return_value = branch_rules
         elif "/check-runs" in url:
             resp.json.return_value = {"check_runs": check_runs}
         elif "/status" in url:
@@ -224,19 +235,26 @@ class TestRequiredContextsForBranch:
     @patch("cabotage.celery.tasks.github.github_session")
     def test_filters_own_app_checks(self, mock_session, mock_gh_app, app):
         mock_gh_app.app_id = OWN_APP_ID
-        resp = MagicMock()
-        resp.status_code = 200
-        resp.text = "{}"
-        resp.raise_for_status = MagicMock()
-        resp.json.return_value = {
-            "checks": [
-                {"context": "Tests", "app_id": 15368},
-                {"context": "Lint", "app_id": 15368},
-                {"context": "cabotage-deploy", "app_id": int(OWN_APP_ID)},
-            ],
-            "contexts": ["Tests", "Lint", "cabotage-deploy"],
-        }
-        mock_session.get.return_value = resp
+
+        def mock_get(url, **kwargs):
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.text = "{}"
+            resp.raise_for_status = MagicMock()
+            if "/protection/required_status_checks" in url:
+                resp.json.return_value = {
+                    "checks": [
+                        {"context": "Tests", "app_id": 15368},
+                        {"context": "Lint", "app_id": 15368},
+                        {"context": "cabotage-deploy", "app_id": int(OWN_APP_ID)},
+                    ],
+                    "contexts": ["Tests", "Lint", "cabotage-deploy"],
+                }
+            elif "/rules/branches/" in url:
+                resp.json.return_value = []
+            return resp
+
+        mock_session.get.side_effect = mock_get
 
         from cabotage.celery.tasks.github import _required_contexts_for_branch
 
@@ -245,12 +263,20 @@ class TestRequiredContextsForBranch:
 
     @patch("cabotage.celery.tasks.github.github_app")
     @patch("cabotage.celery.tasks.github.github_session")
-    def test_returns_empty_on_404(self, mock_session, mock_gh_app, app):
+    def test_returns_empty_when_both_apis_empty(self, mock_session, mock_gh_app, app):
         mock_gh_app.app_id = OWN_APP_ID
-        resp = MagicMock()
-        resp.status_code = 404
-        resp.text = "Not Found"
-        mock_session.get.return_value = resp
+
+        def mock_get(url, **kwargs):
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            resp.text = "Not Found"
+            if "/protection/required_status_checks" in url:
+                resp.status_code = 404
+            elif "/rules/branches/" in url:
+                resp.status_code = 404
+            return resp
+
+        mock_session.get.side_effect = mock_get
 
         from cabotage.celery.tasks.github import _required_contexts_for_branch
 
@@ -261,20 +287,139 @@ class TestRequiredContextsForBranch:
     @patch("cabotage.celery.tasks.github.github_session")
     def test_falls_back_to_legacy_contexts(self, mock_session, mock_gh_app, app):
         mock_gh_app.app_id = OWN_APP_ID
-        resp = MagicMock()
-        resp.status_code = 200
-        resp.text = "{}"
-        resp.raise_for_status = MagicMock()
-        resp.json.return_value = {
-            "checks": [],
-            "contexts": ["ci/tests", "ci/lint"],
-        }
-        mock_session.get.return_value = resp
+
+        def mock_get(url, **kwargs):
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.text = "{}"
+            resp.raise_for_status = MagicMock()
+            if "/protection/required_status_checks" in url:
+                resp.json.return_value = {
+                    "checks": [],
+                    "contexts": ["ci/tests", "ci/lint"],
+                }
+            elif "/rules/branches/" in url:
+                resp.json.return_value = []
+            return resp
+
+        mock_session.get.side_effect = mock_get
 
         from cabotage.celery.tasks.github import _required_contexts_for_branch
 
         result = _required_contexts_for_branch({"token": "t"}, REPO, BRANCH)
         assert result == ["ci/tests", "ci/lint"]
+
+    @patch("cabotage.celery.tasks.github.github_app")
+    @patch("cabotage.celery.tasks.github.github_session")
+    def test_ruleset_checks_when_legacy_404(self, mock_session, mock_gh_app, app):
+        """When legacy branch protection returns 404 but rulesets have required
+        checks, the checks from rulesets should be returned."""
+        mock_gh_app.app_id = OWN_APP_ID
+
+        def mock_get(url, **kwargs):
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            resp.text = "{}"
+            if "/protection/required_status_checks" in url:
+                resp.status_code = 404
+                resp.text = "Not Found"
+            elif "/rules/branches/" in url:
+                resp.status_code = 200
+                resp.json.return_value = [
+                    {
+                        "type": "required_status_checks",
+                        "parameters": {
+                            "required_status_checks": [
+                                {"context": "test", "integration_id": 15368},
+                                {"context": "lint", "integration_id": 15368},
+                                {"context": "migrations", "integration_id": 15368},
+                            ],
+                        },
+                    },
+                    {"type": "pull_request", "parameters": {}},
+                ]
+            return resp
+
+        mock_session.get.side_effect = mock_get
+
+        from cabotage.celery.tasks.github import _required_contexts_for_branch
+
+        result = _required_contexts_for_branch({"token": "t"}, REPO, BRANCH)
+        assert result == ["test", "lint", "migrations"]
+
+    @patch("cabotage.celery.tasks.github.github_app")
+    @patch("cabotage.celery.tasks.github.github_session")
+    def test_ruleset_filters_own_app(self, mock_session, mock_gh_app, app):
+        mock_gh_app.app_id = OWN_APP_ID
+
+        def mock_get(url, **kwargs):
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            resp.text = "{}"
+            if "/protection/required_status_checks" in url:
+                resp.status_code = 404
+                resp.text = "Not Found"
+            elif "/rules/branches/" in url:
+                resp.status_code = 200
+                resp.json.return_value = [
+                    {
+                        "type": "required_status_checks",
+                        "parameters": {
+                            "required_status_checks": [
+                                {"context": "test", "integration_id": 15368},
+                                {
+                                    "context": "cabotage-deploy",
+                                    "integration_id": int(OWN_APP_ID),
+                                },
+                            ],
+                        },
+                    },
+                ]
+            return resp
+
+        mock_session.get.side_effect = mock_get
+
+        from cabotage.celery.tasks.github import _required_contexts_for_branch
+
+        result = _required_contexts_for_branch({"token": "t"}, REPO, BRANCH)
+        assert result == ["test"]
+
+    @patch("cabotage.celery.tasks.github.github_app")
+    @patch("cabotage.celery.tasks.github.github_session")
+    def test_merges_legacy_and_ruleset_checks(self, mock_session, mock_gh_app, app):
+        """When both legacy and rulesets have checks, results are merged without duplicates."""
+        mock_gh_app.app_id = OWN_APP_ID
+
+        def mock_get(url, **kwargs):
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.text = "{}"
+            resp.raise_for_status = MagicMock()
+            if "/protection/required_status_checks" in url:
+                resp.json.return_value = {
+                    "checks": [{"context": "Tests", "app_id": 15368}],
+                    "contexts": ["Tests"],
+                }
+            elif "/rules/branches/" in url:
+                resp.json.return_value = [
+                    {
+                        "type": "required_status_checks",
+                        "parameters": {
+                            "required_status_checks": [
+                                {"context": "Tests", "integration_id": 15368},
+                                {"context": "lint", "integration_id": 15368},
+                            ],
+                        },
+                    },
+                ]
+            return resp
+
+        mock_session.get.side_effect = mock_get
+
+        from cabotage.celery.tasks.github import _required_contexts_for_branch
+
+        result = _required_contexts_for_branch({"token": "t"}, REPO, BRANCH)
+        assert result == ["Tests", "lint"]
 
 
 # ---------------------------------------------------------------------------
@@ -593,6 +738,48 @@ class TestProcessPushHook:
 
         assert _count_deployment_posts(mock_session) == 1
 
+    @patch("cabotage.celery.tasks.github.github_session")
+    @patch("cabotage.celery.tasks.github.github_app")
+    def test_skip_ci_passes_empty_required_contexts(
+        self,
+        mock_gh_app,
+        mock_session,
+        db_session,
+        project,
+        environment,
+        installation_id,
+    ):
+        """Skip-CI deploys must pass required_contexts=[] so GitHub doesn't
+        enforce branch protection checks (which haven't run yet at push time)."""
+        application = _make_app(project, installation_id, "skipci2")
+        _make_app_env(application, environment, wait_for_ci=False)
+        hook = _make_push_hook(installation_id)
+
+        mock_gh_app.bearer_token = "bt"
+        mock_get, mock_post = _mock_github_responses()
+        mock_session.get.side_effect = mock_get
+        mock_session.post.side_effect = mock_post
+
+        from cabotage.celery.tasks.github import process_push_hook
+
+        process_push_hook(hook)
+
+        for c in mock_session.post.call_args_list:
+            url = c[0][0] if c[0] else ""
+            if (
+                "/deployments" in url
+                and "/access_tokens" not in url
+                and "/statuses" not in url
+            ):
+                payload = c[1].get("json", {})
+                assert payload["required_contexts"] == [], (
+                    "skip-CI deployments must send required_contexts=[] "
+                    "to bypass branch protection check enforcement"
+                )
+                break
+        else:
+            pytest.fail("No deployment POST call found")
+
 
 # ---------------------------------------------------------------------------
 # process_check_suite_hook
@@ -795,7 +982,7 @@ class TestProcessCheckSuiteHook:
         installation_id,
         commit_sha,
     ):
-        """No branch protection (404) → no required checks → deploys on first suite success."""
+        """No branch protection or rulesets → no required checks → deploys on first suite success."""
         application = _make_app(project, installation_id, "app7")
         _make_app_env(application, environment, wait_for_ci=True)
         _make_push_hook(installation_id, commit_sha=commit_sha)
@@ -804,16 +991,20 @@ class TestProcessCheckSuiteHook:
         mock_gh_app.app_id = OWN_APP_ID
         mock_gh_app.bearer_token = "bt"
 
-        protection_resp = MagicMock()
-        protection_resp.status_code = 404
-        protection_resp.text = "Not Found"
-
         def mock_get(url, **kwargs):
-            if "/protection/required_status_checks" in url:
-                return protection_resp
             resp = MagicMock()
             resp.raise_for_status = MagicMock()
-            resp.json.return_value = {"check_runs": []}
+            if "/protection/required_status_checks" in url:
+                resp.status_code = 404
+                resp.text = "Not Found"
+            elif "/rules/branches/" in url:
+                resp.status_code = 200
+                resp.text = "[]"
+                resp.json.return_value = []
+            else:
+                resp.status_code = 200
+                resp.text = "{}"
+                resp.json.return_value = {"check_runs": []}
             return resp
 
         _, mock_post = _mock_github_responses()
@@ -1051,6 +1242,114 @@ class TestProcessCheckSuiteHook:
         else:
             pytest.fail("No deployment POST call found")
 
+    @patch("cabotage.celery.tasks.github.github_session")
+    @patch("cabotage.celery.tasks.github.github_app")
+    def test_ruleset_checks_block_premature_deploy(
+        self,
+        mock_gh_app,
+        mock_session,
+        db_session,
+        project,
+        environment,
+        installation_id,
+        commit_sha,
+    ):
+        """When required checks come from rulesets (not legacy branch protection),
+        deployment should be blocked until those checks pass."""
+        application = _make_app(project, installation_id, "app_ruleset")
+        _make_app_env(application, environment, wait_for_ci=True)
+        push_hook = _make_push_hook(installation_id, commit_sha=commit_sha)
+        hook = _make_check_suite_hook(installation_id, commit_sha)
+
+        mock_gh_app.app_id = OWN_APP_ID
+        mock_gh_app.bearer_token = "bt"
+
+        mock_get, mock_post = _mock_github_responses(
+            # Legacy branch protection returns 404 (checks are in rulesets)
+            legacy_protection_status=404,
+            branch_rules=[
+                {
+                    "type": "required_status_checks",
+                    "parameters": {
+                        "required_status_checks": [
+                            {"context": "test", "integration_id": 15368},
+                            {"context": "lint", "integration_id": 15368},
+                            {"context": "migrations", "integration_id": 15368},
+                        ],
+                    },
+                },
+            ],
+            # Only "test" has passed so far; "lint" and "migrations" still running
+            check_runs=[
+                {"name": "test", "conclusion": "success"},
+                {"name": "lint", "conclusion": None},
+                {"name": "migrations", "conclusion": None},
+            ],
+        )
+        mock_session.get.side_effect = mock_get
+        mock_session.post.side_effect = mock_post
+
+        from cabotage.celery.tasks.github import process_check_suite_hook
+
+        result = process_check_suite_hook(hook)
+        assert result is False
+
+        db.session.refresh(push_hook)
+        assert push_hook.deployed is not True
+        assert _count_deployment_posts(mock_session) == 0
+
+    @patch("cabotage.celery.tasks.github.github_session")
+    @patch("cabotage.celery.tasks.github.github_app")
+    def test_ruleset_checks_deploy_when_all_passed(
+        self,
+        mock_gh_app,
+        mock_session,
+        db_session,
+        project,
+        environment,
+        installation_id,
+        commit_sha,
+    ):
+        """When all ruleset-required checks have passed, deployment should proceed."""
+        application = _make_app(project, installation_id, "app_ruleset2")
+        _make_app_env(application, environment, wait_for_ci=True)
+        push_hook = _make_push_hook(installation_id, commit_sha=commit_sha)
+        hook = _make_check_suite_hook(installation_id, commit_sha)
+
+        mock_gh_app.app_id = OWN_APP_ID
+        mock_gh_app.bearer_token = "bt"
+
+        mock_get, mock_post = _mock_github_responses(
+            legacy_protection_status=404,
+            branch_rules=[
+                {
+                    "type": "required_status_checks",
+                    "parameters": {
+                        "required_status_checks": [
+                            {"context": "test", "integration_id": 15368},
+                            {"context": "lint", "integration_id": 15368},
+                            {"context": "migrations", "integration_id": 15368},
+                        ],
+                    },
+                },
+            ],
+            check_runs=[
+                {"name": "test", "conclusion": "success"},
+                {"name": "lint", "conclusion": "success"},
+                {"name": "migrations", "conclusion": "success"},
+            ],
+        )
+        mock_session.get.side_effect = mock_get
+        mock_session.post.side_effect = mock_post
+
+        from cabotage.celery.tasks.github import process_check_suite_hook
+
+        process_check_suite_hook(hook)
+
+        assert _count_deployment_posts(mock_session) == 1
+        db.session.refresh(push_hook)
+        assert push_hook.deployed is True
+
 
 # ---------------------------------------------------------------------------
 # create_deployment
@@ -1184,3 +1483,42 @@ class TestCreateDeployment:
         payload = deploy_call[1].get("json", {})
         assert payload["required_contexts"] == []
         assert payload["transient_environment"] is True
+
+    @patch("cabotage.celery.tasks.github.github_session")
+    @patch("cabotage.celery.tasks.github.github_app")
+    def test_required_contexts_without_branch(
+        self,
+        mock_gh_app,
+        mock_session,
+        db_session,
+        project,
+        environment,
+        installation_id,
+    ):
+        """When required_contexts is passed without branch, it should still be
+        included in the deployment payload (skip-CI path)."""
+        application = _make_app(project, installation_id, "app15")
+        app_env = _make_app_env(application, environment)
+
+        mock_gh_app.app_id = OWN_APP_ID
+
+        deploy_resp = MagicMock()
+        deploy_resp.raise_for_status = MagicMock()
+        deploy_resp.json.return_value = {"statuses_url": "https://api.github.com/s/1"}
+        status_resp = MagicMock()
+        mock_session.post.side_effect = [deploy_resp, status_resp]
+
+        from cabotage.celery.tasks.github import create_deployment
+
+        create_deployment(
+            access_token={"token": "t"},
+            application=application,
+            repository_name=REPO,
+            ref=COMMIT_SHA,
+            app_env=app_env,
+            required_contexts=[],
+        )
+
+        deploy_call = mock_session.post.call_args_list[0]
+        payload = deploy_call[1].get("json", {})
+        assert payload["required_contexts"] == []
