@@ -2067,7 +2067,7 @@ def render_cronjob(
         )
     process_counts = app_env.process_counts or {}
     suspended = process_counts.get(process_name, 0) == 0
-    pod_labels = {
+    common_labels = {
         "organization": release.application.project.organization.slug,
         "project": release.application.project.slug,
         "application": release.application.slug,
@@ -2076,6 +2076,14 @@ def render_cronjob(
         "environment": env_slug,
         "release": str(release.version),
         "deployment": str(deployment_id),
+    }
+    job_labels = {
+        **common_labels,
+        "ca-admission.cabotage.io": "true",
+        "resident-job.cabotage.io": "true",
+    }
+    pod_labels = {
+        **common_labels,
         "ca-admission.cabotage.io": "true",
         "resident-pod.cabotage.io": "true",
     }
@@ -2098,7 +2106,7 @@ def render_cronjob(
             successful_jobs_history_limit=_history_limit_for_schedule(schedule),
             failed_jobs_history_limit=_history_limit_for_schedule(schedule),
             job_template=kubernetes.client.V1JobTemplateSpec(
-                metadata=kubernetes.client.V1ObjectMeta(labels=pod_labels),
+                metadata=kubernetes.client.V1ObjectMeta(labels=job_labels),
                 spec=kubernetes.client.V1JobSpec(
                     active_deadline_seconds=3600,
                     backoff_limit=0,
