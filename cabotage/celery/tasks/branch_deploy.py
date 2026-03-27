@@ -403,10 +403,14 @@ def _build_images_for_app_envs(app_envs, commit_sha, installation_id):
         images.append(image)
     db.session.commit()
 
-    from cabotage.celery.tasks import run_image_build
+    from flask import current_app
+    from cabotage.celery.tasks import run_image_build, run_omnibus_build
 
     for image in images:
-        run_image_build.delay(image_id=image.id)
+        if current_app.config.get("CABOTAGE_OMNIBUS_BUILDS"):
+            run_omnibus_build.delay(image_id=image.id)
+        else:
+            run_image_build.delay(image_id=image.id)
 
 
 def _app_env_status(app_env):
