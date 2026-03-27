@@ -1345,6 +1345,38 @@ details[open] summary .collapse-icon {
   }
 }
 
+/* Header action disabled popover (JS-positioned, fixed to escape overflow clip) */
+.hdr-action-disabled { display: inline-flex; cursor: default; }
+.hdr-action-tip {
+  display: none; position: fixed; z-index: 50;
+  width: max-content; max-width: 16rem;
+  padding: 0.625rem 0.75rem;
+  background: var(--color-base-300); color: var(--color-base-content);
+  border: 1px solid var(--border-color); border-radius: 0.5rem;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12); white-space: normal;
+}
+.hdr-action-tip::before {
+  content: ''; position: absolute; top: -5px; right: 1.25rem;
+  width: 8px; height: 8px; background: var(--color-base-300);
+  border-top: 1px solid var(--border-color); border-left: 1px solid var(--border-color);
+  transform: rotate(45deg);
+}
+.hdr-action-tip p { margin: 0; }
+.hdr-action-tip p:first-child {
+  display: flex; align-items: center; gap: 0.375rem;
+  font-size: 0.75rem; font-weight: 600; margin-bottom: 0.25rem;
+}
+.hdr-action-tip p + p {
+  font-size: 0.6875rem; line-height: 1.45;
+  color: color-mix(in srgb, var(--color-base-content) 55%, transparent);
+}
+.hdr-action-tip a {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  font-size: 0.6875rem; font-weight: 500; margin-top: 0.5rem;
+  color: oklch(var(--a)); text-decoration: none;
+}
+.hdr-action-tip a:hover { color: oklch(var(--af)); }
+
 /* Page Header */
 .page-header {
   display: flex;

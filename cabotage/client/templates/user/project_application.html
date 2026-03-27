@@ -189,10 +189,23 @@
                   type="submit">{{ icon('deploy', 'w-3.5 h-3.5') }} Deploy</button>
         </form>
       {% else %}
-        <div class="tooltip"
-             data-tip="Configure a deploy branch in Settings to enable">
+        <div class="hdr-action-disabled" tabindex="0">
           <button class="btn btn-ghost btn-sm gap-1.5 btn-disabled text-base-content/20"
                   disabled>{{ icon('deploy', 'w-3.5 h-3.5') }} Deploy</button>
+          <div class="hdr-action-tip">
+            {% if not application.github_repository %}
+              <p>{{ icon('alert-circle', 'w-3.5 h-3.5 text-warning') }} No repository connected</p>
+              <p>Connect a GitHub repository to enable deployments.</p>
+              <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}">{{ icon('settings', 'w-3 h-3') }} Go to Settings</a>
+            {% elif not app_env %}
+              <p>{{ icon('alert-circle', 'w-3.5 h-3.5 text-warning') }} No environment</p>
+              <p>Add this application to an environment first.</p>
+            {% else %}
+              <p>{{ icon('alert-circle', 'w-3.5 h-3.5 text-warning') }} No deploy branch configured</p>
+              <p>Set an auto-deploy branch in settings to enable one-click deploys.</p>
+              <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}">{{ icon('settings', 'w-3 h-3') }} Go to Settings</a>
+            {% endif %}
+          </div>
         </div>
       {% endif %}
 
