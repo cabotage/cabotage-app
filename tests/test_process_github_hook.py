@@ -25,6 +25,7 @@ BOT_LOGIN = "mybot[bot]"
 def app():
     _app.config["TESTING"] = True
     _app.config["WTF_CSRF_ENABLED"] = False
+    _app.config["CABOTAGE_OMNIBUS_BUILDS"] = False
     with _app.app_context():
         yield _app
 
@@ -355,6 +356,7 @@ class TestProcessDeploymentHook:
         result = process_deployment_hook(hook)
         assert result is False
 
+    @patch("cabotage.celery.tasks.github.run_omnibus_build")
     @patch("cabotage.celery.tasks.github.run_image_build")
     @patch("cabotage.celery.tasks.github.post_deployment_status_update")
     @patch("cabotage.celery.tasks.github.github_session")
@@ -365,6 +367,7 @@ class TestProcessDeploymentHook:
         mock_session,
         mock_post_status,
         mock_build,
+        mock_omnibus_build,
         db_session,
         project,
         environment,
