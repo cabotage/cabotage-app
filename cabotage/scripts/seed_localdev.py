@@ -9,7 +9,28 @@ realistic data so the UI is fully populated:
 
 import datetime
 
+from sqlalchemy import text as sa_text
+
 from cabotage.server import create_app, db
+
+# Deferred timestamp fixups — applied via raw SQL after final commit
+# so SQLAlchemy's onupdate handlers don't overwrite them.
+_timestamp_fixups = []
+
+
+def _defer_timestamps(table, row_id, created, updated):
+    """Queue a raw SQL timestamp update for after the final commit."""
+    _timestamp_fixups.append((table, row_id, created, updated))
+
+
+def _apply_timestamp_fixups():
+    """Execute all deferred timestamp updates via raw SQL."""
+    for table, row_id, created, updated in _timestamp_fixups:
+        db.session.execute(sa_text(
+            f"UPDATE {table} SET created = :created, updated = :updated WHERE id = :id"
+        ), {"created": created, "updated": updated, "id": str(row_id)})
+    db.session.commit()
+    _timestamp_fixups.clear()
 from cabotage.server.models import Organization, User
 from cabotage.server.models.projects import (
     Application,
@@ -62,8 +83,8 @@ def _make_image(app, app_env, *, build_ref="main", processes=None, built=True,
     )
     db.session.add(img)
     db.session.flush()
-    img.created = created
-    img.updated = created + datetime.timedelta(seconds=duration_secs)
+    _defer_timestamps("project_app_images", img.id, created,
+                      created + datetime.timedelta(seconds=duration_secs))
     return img
 
 
@@ -96,8 +117,8 @@ def _make_release(app, app_env, image, configs, *, built=True,
     )
     db.session.add(release)
     db.session.flush()
-    release.created = created
-    release.updated = created + datetime.timedelta(seconds=duration_secs)
+    _defer_timestamps("project_app_releases", release.id, created,
+                      created + datetime.timedelta(seconds=duration_secs))
     return release
 
 
@@ -114,8 +135,8 @@ def _make_deployment(app, app_env, release, *, complete=True,
     )
     db.session.add(dep)
     db.session.flush()
-    dep.created = created
-    dep.updated = created + datetime.timedelta(seconds=duration_secs)
+    _defer_timestamps("deployments", dep.id, created,
+                      created + datetime.timedelta(seconds=duration_secs))
     return dep
 
 
@@ -563,6 +584,7 @@ def seed():
 
         # ── Commit everything ─────────────────────────────────────────
         db.session.commit()
+        _apply_timestamp_fixups()
         print()
         print("Seed complete!")
         print("  Organizations: 1 (Acme Corp)")
