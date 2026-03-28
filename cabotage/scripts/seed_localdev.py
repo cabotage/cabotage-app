@@ -26,9 +26,12 @@ def _defer_timestamps(table, row_id, created, updated):
 def _apply_timestamp_fixups():
     """Execute all deferred timestamp updates via raw SQL."""
     for table, row_id, created, updated in _timestamp_fixups:
-        db.session.execute(sa_text(
-            f"UPDATE {table} SET created = :created, updated = :updated WHERE id = :id"
-        ), {"created": created, "updated": updated, "id": str(row_id)})
+        db.session.execute(
+            sa_text(
+                f"UPDATE {table} SET created = :created, updated = :updated WHERE id = :id"
+            ),
+            {"created": created, "updated": updated, "id": str(row_id)},
+        )
     db.session.commit()
     _timestamp_fixups.clear()
 from cabotage.server.models import Organization, User
@@ -608,7 +611,10 @@ def seed():
         print("  Images / Releases / Deployments created")
         print("  Ingress: api.acme.corp, docs.acme.corp")
         print()
-        print("Login at http://localhost:5000 with admin/admin or dev/dev")
+        print(
+            "Login at http://localhost:8000"
+            " with ad@min.com / admin or dev@acme.corp / dev"
+        )
 
 
 if __name__ == "__main__":
