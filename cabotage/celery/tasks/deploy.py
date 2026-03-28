@@ -1229,7 +1229,10 @@ def render_image_pull_secrets(release):
             ".dockerconfigjson": b64encode(
                 release.image_pull_secrets(
                     registry_auth_secret,
-                    registry_urls=[current_app.config["REGISTRY_PULL"]],
+                    registry_urls=[
+                        current_app.config.get("REGISTRY_PULL_K8S")
+                        or current_app.config["REGISTRY_PULL"]
+                    ],
                 ).encode()
             ).decode(),
         },
@@ -1468,11 +1471,14 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
 def render_process_container(
     release, process_name, datadog_tags, with_tls=True, unix=True
 ):
-    volume_mounts = [
-        kubernetes.client.V1VolumeMount(
-            name="vault-secrets", mount_path="/var/run/secrets/vault"
-        ),
-    ]
+    testing = current_app.config.get("TESTING")
+    volume_mounts = []
+    if not testing:
+        volume_mounts.append(
+            kubernetes.client.V1VolumeMount(
+                name="vault-secrets", mount_path="/var/run/secrets/vault"
+            ),
+        )
     if unix:
         volume_mounts.append(
             kubernetes.client.V1VolumeMount(
@@ -1484,11 +1490,24 @@ def render_process_container(
         process_name, DEFAULT_POD_CLASS
     )
     pod_class = pod_classes[process_pod_cls]
-    return kubernetes.client.V1Container(
-        name=process_name,
-        image=f'{current_app.config["REGISTRY_PULL"]}/{release.repository_name}:release-{release.version}',
-        image_pull_policy="Always",
-        env=[
+
+    registry = (
+        current_app.config.get("REGISTRY_PULL_K8S")
+        or current_app.config["REGISTRY_PULL"]
+    )
+
+    if testing:
+        # TESTING mode: use default CMD, no envconsul, no vault/consul env
+        env = [
+            kubernetes.client.V1EnvVar(
+                name="DATADOG_TAGS",
+                value=",".join([f"{k}:{v}" for k, v in datadog_tags.items()]),
+            ),
+            kubernetes.client.V1EnvVar(name="SOURCE_COMMIT", value=release.commit_sha),
+        ]
+        args = None
+    else:
+        env = [
             kubernetes.client.V1EnvVar(
                 name="VAULT_ADDR", value="https://vault.cabotage.svc.cluster.local"
             ),
@@ -1507,12 +1526,19 @@ def render_process_container(
                 value=",".join([f"{k}:{v}" for k, v in datadog_tags.items()]),
             ),
             kubernetes.client.V1EnvVar(name="SOURCE_COMMIT", value=release.commit_sha),
-        ],
-        args=[
+        ]
+        args = [
             "envconsul",
             "-kill-signal=SIGTERM",
             f"-config=/etc/cabotage/envconsul-{process_name}.hcl",
-        ],
+        ]
+
+    return kubernetes.client.V1Container(
+        name=process_name,
+        image=f"{registry}/{release.repository_name}:release-{release.version}",
+        image_pull_policy="Always",
+        env=env,
+        args=args,
         resources=kubernetes.client.V1ResourceRequirements(
             limits={
                 "memory": pod_class["memory"]["limits"],
@@ -1523,7 +1549,7 @@ def render_process_container(
                 "cpu": pod_class["cpu"]["requests"],
             },
         ),
-        volume_mounts=volume_mounts,
+        volume_mounts=volume_mounts or None,
     )
 
 
@@ -1596,6 +1622,7 @@ def render_datadog_container(dd_api_key, datadog_tags):
 
 
 def render_podspec(release, process_name, service_account_name):
+    testing = current_app.config.get("TESTING")
     datadog_tags = {
         "organization": release.application.project.organization.slug,
         "project": release.application.project.slug,
@@ -1604,112 +1631,145 @@ def render_podspec(release, process_name, service_account_name):
         "app": k8s_label_value(release),
         "release": str(release.version),
     }
-    volumes = [
-        kubernetes.client.V1Volume(
-            name="vault-secrets",
-            empty_dir=kubernetes.client.V1EmptyDirVolumeSource(
-                medium="Memory", size_limit="1M"
-            ),
-        ),
-    ]
+    volumes = []
     init_containers = []
     containers = []
     restart_policy = None
 
-    if process_name.startswith("web"):
+    if testing:
+        # TESTING mode: skip all sidecar/enroller/TLS init containers
+        unix = process_name.startswith("web")
+        if unix:
+            volumes.append(
+                kubernetes.client.V1Volume(
+                    name="cabotage-sock",
+                    empty_dir=kubernetes.client.V1EmptyDirVolumeSource(
+                        medium="Memory", size_limit="1M"
+                    ),
+                )
+            )
+        containers.append(
+            render_process_container(
+                release, process_name, datadog_tags, with_tls=False, unix=unix
+            )
+        )
+        if process_name.startswith("release") or process_name.startswith("postdeploy"):
+            restart_policy = "Never"
+    else:
         volumes.append(
             kubernetes.client.V1Volume(
-                name="cabotage-sock",
+                name="vault-secrets",
                 empty_dir=kubernetes.client.V1EmptyDirVolumeSource(
                     medium="Memory", size_limit="1M"
                 ),
-            )
-        )
-        init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=True)
-        )
-        init_containers.append(
-            render_cabotage_sidecar_container(release, with_tls=True)
-        )
-        init_containers.append(
-            render_cabotage_sidecar_tls_container(release, unix=True)
-        )
-        containers.append(
-            render_process_container(
-                release, process_name, datadog_tags, with_tls=True, unix=True
-            )
-        )
-    elif process_name.startswith("tcp"):
-        init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=True)
-        )
-        init_containers.append(
-            render_cabotage_sidecar_container(release, with_tls=True)
-        )
-        init_containers.append(
-            render_cabotage_sidecar_tls_container(release, unix=False, tcp=True)
-        )
-        containers.append(
-            render_process_container(
-                release, process_name, datadog_tags, with_tls=True, unix=False
-            )
-        )
-    elif process_name.startswith("worker"):
-        init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=False)
-        )
-        init_containers.append(
-            render_cabotage_sidecar_container(release, with_tls=False)
-        )
-        containers.append(
-            render_process_container(
-                release, process_name, datadog_tags, with_tls=False, unix=False
-            )
-        )
-    elif process_name.startswith("release"):
-        init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=False)
-        )
-        containers.append(
-            render_process_container(
-                release, process_name, datadog_tags, with_tls=False, unix=False
-            )
-        )
-        restart_policy = "Never"
-    elif process_name.startswith("postdeploy"):
-        init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=False)
-        )
-        containers.append(
-            render_process_container(
-                release, process_name, datadog_tags, with_tls=False, unix=False
-            )
-        )
-        restart_policy = "Never"
-    else:
-        init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=False)
-        )
-        containers.append(
-            render_process_container(
-                release, process_name, datadog_tags, with_tls=False
-            )
+            ),
         )
 
-    if (
-        not (
-            process_name.startswith("release") or process_name.startswith("postdeploy")
-        )
-        and "DD_API_KEY" in release.configuration_objects
-    ):
-        try:
-            dd_api_key = release.configuration_objects["DD_API_KEY"].read_value(
-                config_writer
+        if process_name.startswith("web"):
+            volumes.append(
+                kubernetes.client.V1Volume(
+                    name="cabotage-sock",
+                    empty_dir=kubernetes.client.V1EmptyDirVolumeSource(
+                        medium="Memory", size_limit="1M"
+                    ),
+                )
             )
-        except KeyError:
-            print("unable to read DD_API_KEY")
-        if dd_api_key:
-            init_containers.append(render_datadog_container(dd_api_key, datadog_tags))
+            init_containers.append(
+                render_cabotage_enroller_container(release, process_name, with_tls=True)
+            )
+            init_containers.append(
+                render_cabotage_sidecar_container(release, with_tls=True)
+            )
+            init_containers.append(
+                render_cabotage_sidecar_tls_container(release, unix=True)
+            )
+            containers.append(
+                render_process_container(
+                    release, process_name, datadog_tags, with_tls=True, unix=True
+                )
+            )
+        elif process_name.startswith("tcp"):
+            init_containers.append(
+                render_cabotage_enroller_container(release, process_name, with_tls=True)
+            )
+            init_containers.append(
+                render_cabotage_sidecar_container(release, with_tls=True)
+            )
+            init_containers.append(
+                render_cabotage_sidecar_tls_container(release, unix=False, tcp=True)
+            )
+            containers.append(
+                render_process_container(
+                    release, process_name, datadog_tags, with_tls=True, unix=False
+                )
+            )
+        elif process_name.startswith("worker"):
+            init_containers.append(
+                render_cabotage_enroller_container(
+                    release, process_name, with_tls=False
+                )
+            )
+            init_containers.append(
+                render_cabotage_sidecar_container(release, with_tls=False)
+            )
+            containers.append(
+                render_process_container(
+                    release, process_name, datadog_tags, with_tls=False, unix=False
+                )
+            )
+        elif process_name.startswith("release"):
+            init_containers.append(
+                render_cabotage_enroller_container(
+                    release, process_name, with_tls=False
+                )
+            )
+            containers.append(
+                render_process_container(
+                    release, process_name, datadog_tags, with_tls=False, unix=False
+                )
+            )
+            restart_policy = "Never"
+        elif process_name.startswith("postdeploy"):
+            init_containers.append(
+                render_cabotage_enroller_container(
+                    release, process_name, with_tls=False
+                )
+            )
+            containers.append(
+                render_process_container(
+                    release, process_name, datadog_tags, with_tls=False, unix=False
+                )
+            )
+            restart_policy = "Never"
+        else:
+            init_containers.append(
+                render_cabotage_enroller_container(
+                    release, process_name, with_tls=False
+                )
+            )
+            containers.append(
+                render_process_container(
+                    release, process_name, datadog_tags, with_tls=False
+                )
+            )
+
+        if (
+            not (
+                process_name.startswith("release")
+                or process_name.startswith("postdeploy")
+            )
+            and "DD_API_KEY" in release.configuration_objects
+        ):
+            try:
+                dd_api_key = release.configuration_objects["DD_API_KEY"].read_value(
+                    config_writer
+                )
+            except KeyError:
+                print("unable to read DD_API_KEY")
+            if dd_api_key:
+                init_containers.append(
+                    render_datadog_container(dd_api_key, datadog_tags)
+                )
 
     app_env = release.application_environment
     env = app_env.environment if app_env.k8s_identifier is not None else None
@@ -1735,9 +1795,9 @@ def render_podspec(release, process_name, service_account_name):
         service_account_name=service_account_name,
         node_selector=node_selector,
         tolerations=tolerations,
-        init_containers=init_containers,
+        init_containers=init_containers or None,
         containers=containers,
-        volumes=volumes,
+        volumes=volumes or None,
         restart_policy=restart_policy,
     )
 
@@ -2568,6 +2628,9 @@ def deploy_release(deployment):
                 pass
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
+        from cabotage.celery.metrics import record_deploy_metrics
+
+        record_deploy_metrics(deployment)
         check.fail(
             "Deployment failed",
             detail=str(exc),
@@ -2600,6 +2663,9 @@ def deploy_release(deployment):
                 pass
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
+        from cabotage.celery.metrics import record_deploy_metrics
+
+        record_deploy_metrics(deployment)
         check.fail(
             "Deployment failed",
             detail=str(exc),
@@ -2614,6 +2680,10 @@ def deploy_release(deployment):
             pass
     deployment.deploy_log = "\n".join(deploy_log)
     db.session.commit()
+
+    from cabotage.celery.metrics import record_deploy_metrics
+
+    record_deploy_metrics(deployment)
 
     # Resolve preview URL — only furnish it if TLS cert is ready
     app_env = deployment.application_environment
@@ -2793,7 +2863,13 @@ def fake_deploy_release(deployment):
         )
         deploy_log.append(yaml.dump(remove_none(deployment_object.to_dict())))
     deployment.deploy_log = "\n".join(deploy_log)
+    deployment.complete = True
     db.session.commit()
+
+    from cabotage.celery.metrics import record_deploy_metrics
+
+    record_deploy_metrics(deployment)
+
     if (
         deployment.deploy_metadata
         and "installation_id" in deployment.deploy_metadata

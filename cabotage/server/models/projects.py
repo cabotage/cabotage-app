@@ -758,6 +758,19 @@ class Deployment(Model, Timestamp):
     __mapper_args__ = {"version_id_col": version_id}
 
     @property
+    def duration_seconds(self):
+        if (self.complete or self.error) and self.created and self.updated:
+            return (self.updated - self.created).total_seconds()
+        return None
+
+    @property
+    def trigger_type(self):
+        meta = self.deploy_metadata or {}
+        if meta.get("auto_deploy"):
+            return "auto"
+        return "manual"
+
+    @property
     def release_object(self):
         return Release.query.filter_by(id=self.release.get("id", None)).first()
 
@@ -855,6 +868,19 @@ class Release(Model, Timestamp):
     )
 
     __mapper_args__ = {"version_id_col": version_id}
+
+    @property
+    def duration_seconds(self):
+        if (self.built or self.error) and self.created and self.updated:
+            return (self.updated - self.created).total_seconds()
+        return None
+
+    @property
+    def trigger_type(self):
+        meta = self.release_metadata or {}
+        if meta.get("auto_deploy"):
+            return "auto"
+        return "manual"
 
     @property
     def valid(self):
@@ -1455,6 +1481,19 @@ class Image(Model, Timestamp):
             name="image_has_build_target",
         ),
     )
+
+    @property
+    def duration_seconds(self):
+        if (self.built or self.error) and self.created and self.updated:
+            return (self.updated - self.created).total_seconds()
+        return None
+
+    @property
+    def trigger_type(self):
+        meta = self.image_metadata or {}
+        if meta.get("auto_deploy"):
+            return "auto"
+        return "manual"
 
     @property
     def repository_name(self):
