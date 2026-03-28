@@ -729,6 +729,7 @@ class Deployment(Model, Timestamp):
         postgresql.UUID(as_uuid=True),
         db.ForeignKey("project_applications.id"),
         nullable=False,
+        index=True,
     )
     application_environment_id = db.Column(
         postgresql.UUID(as_uuid=True),
@@ -784,6 +785,7 @@ class Release(Model, Timestamp):
         postgresql.UUID(as_uuid=True),
         db.ForeignKey("project_applications.id"),
         nullable=False,
+        index=True,
     )
     application_environment_id = db.Column(
         postgresql.UUID(as_uuid=True),
@@ -1111,6 +1113,7 @@ class Configuration(Model, Timestamp):
         postgresql.UUID(as_uuid=True),
         db.ForeignKey("project_applications.id"),
         nullable=False,
+        index=True,
     )
     application_environment_id = db.Column(
         postgresql.UUID(as_uuid=True),
@@ -1384,6 +1387,7 @@ class Image(Model, Timestamp):
         postgresql.UUID(as_uuid=True),
         db.ForeignKey("project_applications.id"),
         nullable=False,
+        index=True,
     )
     application_environment_id = db.Column(
         postgresql.UUID(as_uuid=True),
