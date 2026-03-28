@@ -1616,9 +1616,6 @@ def run_image_build(image_id=None, buildkit=False):
             image.error = True
             image.error_detail = str(exc)
             db.session.commit()
-            from cabotage.celery.metrics import record_image_metrics
-
-            record_image_metrics(image)
             if (
                 image.image_metadata
                 and "installation_id" in image.image_metadata
@@ -1648,9 +1645,6 @@ def run_image_build(image_id=None, buildkit=False):
             image.error = True
             image.error_detail = "Image build failed due to an internal error"
             db.session.commit()
-        from cabotage.celery.metrics import record_image_metrics
-
-        record_image_metrics(image)
         check.fail(
             "Image build failed",
             detail=image.error_detail or "Image build failed",
@@ -1671,10 +1665,6 @@ def run_image_build(image_id=None, buildkit=False):
 
     db.session.add(image)
     db.session.commit()
-
-    from cabotage.celery.metrics import record_image_metrics
-
-    record_image_metrics(image)
 
     check.progress(
         "Image built",
@@ -1784,9 +1774,6 @@ def run_release_build(release_id=None):
                     "failure",
                     "Release build failed.",
                 )
-            from cabotage.celery.metrics import record_release_metrics
-
-            record_release_metrics(release)
             CheckRun.from_metadata(
                 release.release_metadata, release.application_environment
             ).fail(
@@ -1821,9 +1808,6 @@ def run_release_build(release_id=None):
                     "error",
                     "Release build failed.",
                 )
-            from cabotage.celery.metrics import record_release_metrics
-
-            record_release_metrics(release)
             CheckRun.from_metadata(
                 release.release_metadata, release.application_environment
             ).fail(
@@ -1836,11 +1820,6 @@ def run_release_build(release_id=None):
 
         db.session.add(release)
         db.session.commit()
-
-        if not release.error:
-            from cabotage.celery.metrics import record_release_metrics
-
-            record_release_metrics(release)
 
         image_id = release.image.get("id") if release.image else None
         release_links = {"Release": f"releases/{release.id}"}

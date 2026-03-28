@@ -2628,9 +2628,6 @@ def deploy_release(deployment):
                 pass
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
-        from cabotage.celery.metrics import record_deploy_metrics
-
-        record_deploy_metrics(deployment)
         check.fail(
             "Deployment failed",
             detail=str(exc),
@@ -2663,9 +2660,6 @@ def deploy_release(deployment):
                 pass
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
-        from cabotage.celery.metrics import record_deploy_metrics
-
-        record_deploy_metrics(deployment)
         check.fail(
             "Deployment failed",
             detail=str(exc),
@@ -2680,10 +2674,6 @@ def deploy_release(deployment):
             pass
     deployment.deploy_log = "\n".join(deploy_log)
     db.session.commit()
-
-    from cabotage.celery.metrics import record_deploy_metrics
-
-    record_deploy_metrics(deployment)
 
     # Resolve preview URL — only furnish it if TLS cert is ready
     app_env = deployment.application_environment
@@ -2865,10 +2855,6 @@ def fake_deploy_release(deployment):
     deployment.deploy_log = "\n".join(deploy_log)
     deployment.complete = True
     db.session.commit()
-
-    from cabotage.celery.metrics import record_deploy_metrics
-
-    record_deploy_metrics(deployment)
 
     if (
         deployment.deploy_metadata
