@@ -7,6 +7,10 @@ realistic data so the UI is fully populated:
   - Configurations, images, releases, deployments, ingress rules
 """
 
+import datetime
+
+from sqlalchemy import text as sa_text
+
 from cabotage.server import create_app, db
 from cabotage.server.models import Organization, User
 from cabotage.server.models.projects import (
@@ -20,8 +24,7 @@ from cabotage.server.models.projects import (
     IngressHost,
     IngressPath,
     Project,
-    Release,
-)
+    Release)
 
 
 def _make_config(app, app_env, name, value, *, secret=False):
@@ -32,8 +35,7 @@ def _make_config(app, app_env, name, value, *, secret=False):
         name=name,
         value=value,
         secret=secret,
-        key_slug=f"consul:cabotage/seed/{app.slug}/{name}",
-    )
+        key_slug=f"consul:cabotage/seed/{app.slug}/{name}")
     db.session.add(cfg)
     return cfg
 
@@ -44,8 +46,7 @@ def _make_image(app, app_env, *, build_ref="main", processes=None, built=True):
         app.project.organization.k8s_identifier,
         app.project.k8s_identifier,
         app.k8s_identifier,
-        app_env.k8s_identifier,
-    )
+        app_env.k8s_identifier)
     img = Image(
         application_id=app.id,
         application_environment_id=app_env.id,
@@ -53,8 +54,7 @@ def _make_image(app, app_env, *, build_ref="main", processes=None, built=True):
         build_ref=build_ref,
         built=built,
         processes=processes or {},
-        image_metadata={"sha": "abc123deadbeef"},
-    )
+        image_metadata={"sha": "abc123deadbeef"})
     db.session.add(img)
     db.session.flush()
     return img
@@ -66,8 +66,7 @@ def _make_release(app, app_env, image, configs, *, built=True):
         app.project.organization.k8s_identifier,
         app.project.k8s_identifier,
         app.k8s_identifier,
-        app_env.k8s_identifier,
-    )
+        app_env.k8s_identifier)
     release = Release(
         application_id=app.id,
         application_environment_id=app_env.id,
@@ -82,8 +81,7 @@ def _make_release(app, app_env, image, configs, *, built=True):
             "unchanged": [],
         },
         platform=app.platform,
-        built=built,
-    )
+        built=built)
     db.session.add(release)
     db.session.flush()
     return release
@@ -95,8 +93,7 @@ def _make_deployment(app, app_env, release, *, complete=True):
         application_id=app.id,
         application_environment_id=app_env.id,
         release=release.asdict,
-        complete=complete,
-    )
+        complete=complete)
     db.session.add(dep)
     db.session.flush()
     return dep
@@ -106,22 +103,19 @@ def _make_ingress(app_env, hostname, path="/", target_process="web"):
     """Create Ingress + IngressHost + IngressPath."""
     ingress = Ingress(
         application_environment_id=app_env.id,
-        name="default",
-    )
+        name="default")
     db.session.add(ingress)
     db.session.flush()
 
     host = IngressHost(
         ingress_id=ingress.id,
-        hostname=hostname,
-    )
+        hostname=hostname)
     db.session.add(host)
 
     ing_path = IngressPath(
         ingress_id=ingress.id,
         path=path,
-        target_process_name=target_process,
-    )
+        target_process_name=target_process)
     db.session.add(ing_path)
     db.session.flush()
     return ingress
@@ -132,8 +126,7 @@ def _enroll_app(app, env):
     app_env = ApplicationEnvironment(
         application_id=app.id,
         environment_id=env.id,
-        k8s_identifier=env.k8s_identifier,
-    )
+        k8s_identifier=env.k8s_identifier)
     db.session.add(app_env)
     db.session.flush()
     db.session.refresh(app_env)
@@ -182,8 +175,7 @@ def seed():
                 username="admin",
                 admin=True,
                 active=True,
-                fs_uniquifier="admin",
-            )
+                fs_uniquifier="admin")
             db.session.add(admin)
             db.session.flush()
 
@@ -208,8 +200,7 @@ def seed():
                 username="dev",
                 admin=False,
                 active=True,
-                fs_uniquifier="dev",
-            )
+                fs_uniquifier="dev")
             db.session.add(dev_user)
             db.session.flush()
             org.add_user(dev_user, admin=False)
@@ -227,8 +218,7 @@ def seed():
                 name="My API",
                 slug="my-api",
                 organization_id=org.id,
-                environments_enabled=True,
-            )
+                environments_enabled=True)
             db.session.add(proj_api)
             db.session.flush()
             db.session.refresh(proj_api)
@@ -243,8 +233,7 @@ def seed():
                 slug="production",
                 project_id=proj_api.id,
                 is_default=True,
-                sort_order=100,
-            )
+                sort_order=100)
             db.session.add(env_prod)
             db.session.flush()
             db.session.refresh(env_prod)
@@ -258,8 +247,7 @@ def seed():
                 slug="staging",
                 project_id=proj_api.id,
                 is_default=False,
-                sort_order=50,
-            )
+                sort_order=50)
             db.session.add(env_staging)
             db.session.flush()
             db.session.refresh(env_staging)
@@ -299,8 +287,7 @@ def seed():
                     web_prod,
                     "SECRET_KEY",
                     "super-secret-prod-key",
-                    secret=True,
-                ),
+                    secret=True),
                 _make_config(app_web, web_prod, "LOG_LEVEL", "warning"),
                 _make_config(app_web, web_prod, "CABOTAGE_SENTINEL", "1"),
             ]
@@ -315,8 +302,7 @@ def seed():
                     app_web,
                     web_staging,
                     "DATABASE_URL",
-                    "postgresql://db:5432/myapi_staging",
-                ),
+                    "postgresql://db:5432/myapi_staging"),
                 _make_config(
                     app_web, web_staging, "SECRET_KEY", "staging-secret", secret=True
                 ),
@@ -327,36 +313,34 @@ def seed():
         else:
             configs_web_staging = list(web_staging.configurations)
 
-        # Images for Web/Production (3 images)
+        # Pipeline runs for Web/Production — 15 deploys spread over 90 days
         if web_prod.images.count() == 0:
-            _make_image(app_web, web_prod, build_ref="main", processes=WEB_PROCESSES)
-            _make_image(app_web, web_prod, build_ref="main", processes=WEB_PROCESSES)
-            latest_web_prod_img = _make_image(
-                app_web, web_prod, build_ref="main", processes=WEB_PROCESSES
-            )
-        else:
-            latest_web_prod_img = (
-                web_prod.images.filter_by(built=True)
-                .order_by(Image.version.desc())
-                .first()
-            )
-
-        # Releases for Web/Production (2 releases)
-        if web_prod.releases.count() == 0:
-            _make_release(app_web, web_prod, latest_web_prod_img, configs_web_prod)
-            latest_web_prod_rel = _make_release(
-                app_web, web_prod, latest_web_prod_img, configs_web_prod
-            )
-        else:
-            latest_web_prod_rel = (
-                web_prod.releases.filter_by(built=True)
-                .order_by(Release.version.desc())
-                .first()
-            )
-
-        # Deployment for Web/Production
-        if web_prod.deployments.count() == 0:
-            _make_deployment(app_web, web_prod, latest_web_prod_rel, complete=True)
+            _pipeline_runs = [
+                # (age_days, img_dur, rel_dur, dep_dur, error)
+                (85, 72, 14, 32, False),
+                (75, 68, 12, 28, False),
+                (65, 58, 11, 25, True),  # failed deploy
+                (55, 61, 13, 30, False),
+                (45, 55, 10, 22, False),
+                (38, 50, 9, 27, False),
+                (30, 48, 11, 24, False),
+                (22, 45, 8, 20, False),
+                (18, 52, 12, 26, True),  # failed deploy
+                (14, 42, 9, 21, False),
+                (10, 40, 8, 19, False),
+                (7, 44, 10, 23, False),
+                (4, 39, 7, 18, False),
+                (2, 41, 9, 20, False),
+                (0.25, 38, 8, 17, False),  # 6 hours ago
+            ]
+            for age_d, i_dur, r_dur, d_dur, err in _pipeline_runs:
+                img = _make_image(
+                    app_web, web_prod, build_ref="main", processes=WEB_PROCESSES)
+                rel = _make_release(app_web, web_prod, img, configs_web_prod)
+                dep = _make_deployment(app_web, web_prod, rel, complete=not err)
+                if err:
+                    dep.error = True
+                    dep.error_detail = "Readiness probe failed"
 
         # Process counts for Web/Production
         web_prod.process_counts = {"web": 2, "worker": 1}
@@ -368,8 +352,10 @@ def seed():
         # Images for Web/Staging (1 image)
         if web_staging.images.count() == 0:
             staging_img = _make_image(
-                app_web, web_staging, build_ref="develop", processes=WEB_PROCESSES
-            )
+                app_web,
+                web_staging,
+                build_ref="develop",
+                processes=WEB_PROCESSES)
         else:
             staging_img = (
                 web_staging.images.filter_by(built=True)
@@ -380,9 +366,15 @@ def seed():
         # Release + Deployment for Web/Staging
         if web_staging.releases.count() == 0:
             staging_rel = _make_release(
-                app_web, web_staging, staging_img, configs_web_staging
-            )
-            _make_deployment(app_web, web_staging, staging_rel, complete=True)
+                app_web,
+                web_staging,
+                staging_img,
+                configs_web_staging)
+            _make_deployment(
+                app_web,
+                web_staging,
+                staging_rel,
+                complete=True)
 
         web_staging.process_counts = {"web": 1, "worker": 1}
 
@@ -412,8 +404,7 @@ def seed():
                     app_worker,
                     worker_prod,
                     "DATABASE_URL",
-                    "postgresql://db:5432/myapi",
-                ),
+                    "postgresql://db:5432/myapi"),
                 _make_config(
                     app_worker, worker_prod, "REDIS_URL", "redis://redis:6379/0"
                 ),
@@ -426,8 +417,10 @@ def seed():
         # Image, Release, Deployment for Worker/Production
         if worker_prod.images.count() == 0:
             worker_img = _make_image(
-                app_worker, worker_prod, build_ref="main", processes=WORKER_PROCESSES
-            )
+                app_worker,
+                worker_prod,
+                build_ref="main",
+                processes=WORKER_PROCESSES)
         else:
             worker_img = (
                 worker_prod.images.filter_by(built=True)
@@ -437,9 +430,15 @@ def seed():
 
         if worker_prod.releases.count() == 0:
             worker_rel = _make_release(
-                app_worker, worker_prod, worker_img, configs_worker_prod
-            )
-            _make_deployment(app_worker, worker_prod, worker_rel, complete=True)
+                app_worker,
+                worker_prod,
+                worker_img,
+                configs_worker_prod)
+            _make_deployment(
+                app_worker,
+                worker_prod,
+                worker_rel,
+                complete=True)
 
         worker_prod.process_counts = {"worker": 2}
 
@@ -452,8 +451,7 @@ def seed():
                 name="Docs Site",
                 slug="docs",
                 organization_id=org.id,
-                environments_enabled=False,
-            )
+                environments_enabled=False)
             db.session.add(proj_docs)
             db.session.flush()
             db.session.refresh(proj_docs)
@@ -467,8 +465,7 @@ def seed():
                 name="Default",
                 slug="default",
                 project_id=proj_docs.id,
-                is_default=True,
-            )
+                is_default=True)
             db.session.add(env_docs_default)
             db.session.flush()
             db.session.refresh(env_docs_default)
@@ -491,8 +488,7 @@ def seed():
             site_env = ApplicationEnvironment(
                 application_id=app_site.id,
                 environment_id=env_docs_default.id,
-                k8s_identifier=None,
-            )
+                k8s_identifier=None)
             db.session.add(site_env)
             db.session.flush()
             db.session.refresh(site_env)
@@ -510,8 +506,10 @@ def seed():
         # Image, Release, Deployment for Site
         if site_env.images.count() == 0:
             site_img = _make_image(
-                app_site, site_env, build_ref="main", processes=DOCS_PROCESSES
-            )
+                app_site,
+                site_env,
+                build_ref="main",
+                processes=DOCS_PROCESSES)
         else:
             site_img = (
                 site_env.images.filter_by(built=True)
@@ -520,8 +518,16 @@ def seed():
             )
 
         if site_env.releases.count() == 0:
-            site_rel = _make_release(app_site, site_env, site_img, configs_site)
-            _make_deployment(app_site, site_env, site_rel, complete=True)
+            site_rel = _make_release(
+                app_site,
+                site_env,
+                site_img,
+                configs_site)
+            _make_deployment(
+                app_site,
+                site_env,
+                site_rel,
+                complete=True)
 
         site_env.process_counts = {"web": 1}
 
@@ -531,6 +537,72 @@ def seed():
 
         # ── Commit everything ─────────────────────────────────────────
         db.session.commit()
+
+        # ── Backdate timestamps for pipeline dashboard ────────────────
+        # SQLAlchemy's onupdate sets updated=now() on commit, so we
+        # overwrite via raw SQL after the ORM is done.
+        _PIPELINE_RUNS = [
+            # (age_days, img_dur_s, rel_dur_s, dep_dur_s)
+            (85, 72, 14, 32),
+            (75, 68, 12, 28),
+            (65, 58, 11, 25),
+            (55, 61, 13, 30),
+            (45, 55, 10, 22),
+            (38, 50, 9, 27),
+            (30, 48, 11, 24),
+            (22, 45, 8, 20),
+            (18, 52, 12, 26),
+            (14, 42, 9, 21),
+            (10, 40, 8, 19),
+            (7, 44, 10, 23),
+            (4, 39, 7, 18),
+            (2, 41, 9, 20),
+            (0.25, 38, 8, 17),
+        ]
+        now = datetime.datetime.utcnow()
+        images = (
+            Image.query.join(ApplicationEnvironment)
+            .filter(ApplicationEnvironment.application_id == app_web.id)
+            .filter(ApplicationEnvironment.environment_id == env_prod.id)
+            .order_by(Image.version.asc())
+            .all()
+        )
+        releases = (
+            Release.query.join(ApplicationEnvironment)
+            .filter(ApplicationEnvironment.application_id == app_web.id)
+            .filter(ApplicationEnvironment.environment_id == env_prod.id)
+            .order_by(Release.version.asc())
+            .all()
+        )
+        deployments = (
+            Deployment.query.join(ApplicationEnvironment)
+            .filter(ApplicationEnvironment.application_id == app_web.id)
+            .filter(ApplicationEnvironment.environment_id == env_prod.id)
+            .order_by(Deployment.created.asc())
+            .all()
+        )
+        for i, (age_d, i_dur, r_dur, d_dur) in enumerate(_PIPELINE_RUNS):
+            if i >= len(images) or i >= len(releases) or i >= len(deployments):
+                break
+            t = now - datetime.timedelta(days=age_d)
+            for table, row, dur in [
+                ("project_app_images", images[i], i_dur),
+                ("project_app_releases", releases[i], r_dur),
+                ("deployments", deployments[i], d_dur),
+            ]:
+                db.session.execute(
+                    sa_text(  # nosec B608
+                        f"UPDATE {table}"
+                        " SET created = :created, updated = :updated"
+                        " WHERE id = :id"
+                    ),
+                    {
+                        "created": t,
+                        "updated": t + datetime.timedelta(seconds=dur),
+                        "id": str(row.id),
+                    },
+                )
+        db.session.commit()
         print()
         print("Seed complete!")
         print("  Organizations: 1 (Acme Corp)")
@@ -539,7 +611,10 @@ def seed():
         print("  Images / Releases / Deployments created")
         print("  Ingress: api.acme.corp, docs.acme.corp")
         print()
-        print("Login at http://localhost:5000 with admin/admin or dev/dev")
+        print(
+            "Login at http://localhost:8000"
+            " with ad@min.com / admin or dev@acme.corp / dev"
+        )
 
 
 if __name__ == "__main__":

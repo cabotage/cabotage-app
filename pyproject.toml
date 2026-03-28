@@ -80,7 +80,7 @@ show_missing = true
 skip_empty = true
 
 [tool.bandit]
-exclude_dirs = ["bin", "lib", "tests"]
+exclude_dirs = ["bin", "lib", "tests", "cabotage/scripts"]
 
 [tool.mypy]
 ignore_missing_imports = true

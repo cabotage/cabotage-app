@@ -28,7 +28,7 @@ import kubernetes
 from dxf import DXF
 import requests as requests_lib
 from requests.exceptions import HTTPError
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, text as sa_text
 from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import joinedload, subqueryload
 from sqlalchemy.orm.attributes import flag_modified
@@ -6718,3 +6718,379 @@ def project_logs_query(org_slug, project_slug):
     process_names = sorted(process_names_set)
 
     return _loki_query_response(selectors, process_names)
+
+
+# ---------------------------------------------------------------------------
+# Pipeline Stats
+# ---------------------------------------------------------------------------
+
+_RANGE_DAYS = {"7d": 7, "30d": 30, "90d": 90}
+
+
+def _pipeline_range_start(range_param):
+    """Parse range query param into a start datetime."""
+    days = _RANGE_DAYS.get(range_param, 30)
+    return datetime.datetime.utcnow() - datetime.timedelta(days=days)
+
+
+def _terminal_condition(table):
+    """SQL condition for rows in a terminal state (built/complete or error)."""
+    if table == "deployments":
+        return "(complete = true OR error = true)"
+    return "(built = true OR error = true)"
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/pipeline",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/pipeline",
+    defaults={"env_slug": None},
+)
+@login_required
+def project_application_pipeline(org_slug, project_slug, app_slug, env_slug=None):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=False
+    )
+    environment = app_env.environment if app_env else None
+
+    return render_template(
+        "user/project_application_pipeline.html",
+        application=application,
+        environment=environment,
+        app_env=app_env,
+        current_range=request.args.get("range", "30d"),
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/pipeline/stats",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/pipeline/stats",
+    defaults={"env_slug": None},
+)
+@login_required
+def project_application_pipeline_stats(org_slug, project_slug, app_slug, env_slug=None):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=True
+    )
+
+    ae_id = str(app_env.id)
+    start = _pipeline_range_start(request.args.get("range", "30d"))
+
+    # -- Throughput by day --
+    throughput_rows = db.session.execute(
+        sa_text(
+            "SELECT date_trunc('day', updated) AS day,"
+            " count(*) FILTER (WHERE complete = true) AS success,"
+            " count(*) FILTER (WHERE error = true) AS failure"
+            " FROM deployments"
+            " WHERE application_environment_id = :ae_id"
+            "   AND (complete = true OR error = true)"
+            "   AND updated >= :start"
+            " GROUP BY day ORDER BY day"
+        ),
+        {"ae_id": ae_id, "start": start},
+    ).fetchall()
+
+    throughput = [
+        {
+            "date": row[0].isoformat() if row[0] else None,
+            "success": row[1],
+            "failure": row[2],
+        }
+        for row in throughput_rows
+    ]
+
+    # -- Duration percentiles per stage --
+    def _duration_percentiles(table):
+        return db.session.execute(
+            sa_text(
+                f"SELECT date_trunc('day', updated) AS day,"
+                f" percentile_cont(0.5) WITHIN GROUP"
+                f"   (ORDER BY extract(epoch FROM updated - created)) AS p50,"
+                f" percentile_cont(0.95) WITHIN GROUP"
+                f"   (ORDER BY extract(epoch FROM updated - created)) AS p95,"
+                f" avg(extract(epoch FROM updated - created)) AS avg_dur"
+                f" FROM {table}"  # nosec B608 — table from hardcoded list
+                f" WHERE application_environment_id = :ae_id"
+                f"   AND {_terminal_condition(table)}"
+                f"   AND updated >= :start"
+                f" GROUP BY day ORDER BY day"
+            ),
+            {"ae_id": ae_id, "start": start},
+        ).fetchall()
+
+    image_perc = _duration_percentiles("project_app_images")
+    release_perc = _duration_percentiles("project_app_releases")
+    deploy_perc = _duration_percentiles("deployments")
+
+    # Merge into unified daily trend
+    trend_map = {}
+    for row in image_perc:
+        key = row[0].isoformat() if row[0] else None
+        trend_map.setdefault(key, {})
+        trend_map[key]["p50_image"] = (
+            float(round(row[1], 2)) if row[1] is not None else None
+        )
+        trend_map[key]["p95_image"] = (
+            float(round(row[2], 2)) if row[2] is not None else None
+        )
+        trend_map[key]["avg_image"] = (
+            float(round(row[3], 2)) if row[3] is not None else None
+        )
+    for row in release_perc:
+        key = row[0].isoformat() if row[0] else None
+        trend_map.setdefault(key, {})
+        trend_map[key]["p50_release"] = (
+            float(round(row[1], 2)) if row[1] is not None else None
+        )
+        trend_map[key]["p95_release"] = (
+            float(round(row[2], 2)) if row[2] is not None else None
+        )
+        trend_map[key]["avg_release"] = (
+            float(round(row[3], 2)) if row[3] is not None else None
+        )
+    for row in deploy_perc:
+        key = row[0].isoformat() if row[0] else None
+        trend_map.setdefault(key, {})
+        trend_map[key]["p50_deploy"] = (
+            float(round(row[1], 2)) if row[1] is not None else None
+        )
+        trend_map[key]["p95_deploy"] = (
+            float(round(row[2], 2)) if row[2] is not None else None
+        )
+        trend_map[key]["avg_deploy"] = (
+            float(round(row[3], 2)) if row[3] is not None else None
+        )
+
+    duration_trend = [{"date": k, **v} for k, v in sorted(trend_map.items())]
+
+    # -- Success rate over time --
+    success_rate = []
+    for t in throughput:
+        total = t["success"] + t["failure"]
+        rate = round(t["success"] / total * 100, 1) if total else 0
+        success_rate.append({"date": t["date"], "rate": rate})
+
+    # -- Stage duration (avg per day) --
+    stage_duration = [
+        {
+            "date": d["date"],
+            "avg_image": d.get("avg_image"),
+            "avg_release": d.get("avg_release"),
+            "avg_deploy": d.get("avg_deploy"),
+        }
+        for d in duration_trend
+    ]
+
+    # -- Summary (whole-range query for correct percentiles) --
+    total_deploys = sum(t["success"] + t["failure"] for t in throughput)
+    total_success = sum(t["success"] for t in throughput)
+    overall_rate = round(total_success / total_deploys * 100, 1) if total_deploys else 0
+
+    summary_row = db.session.execute(
+        sa_text(
+            "SELECT"
+            " avg(extract(epoch FROM updated - created)) AS avg_dur,"
+            " percentile_cont(0.5) WITHIN GROUP"
+            "   (ORDER BY extract(epoch FROM updated - created)) AS p50,"
+            " percentile_cont(0.95) WITHIN GROUP"
+            "   (ORDER BY extract(epoch FROM updated - created)) AS p95"
+            " FROM deployments"
+            " WHERE application_environment_id = :ae_id"
+            "   AND (complete = true OR error = true)"
+            "   AND updated >= :start"
+        ),
+        {"ae_id": ae_id, "start": start},
+    ).fetchone()
+
+    summary = {
+        "total": total_deploys,
+        "success_rate": overall_rate,
+        "avg_duration": (
+            float(round(summary_row[0], 2))
+            if summary_row and summary_row[0] is not None
+            else None
+        ),
+        "p50": (
+            float(round(summary_row[1], 2))
+            if summary_row and summary_row[1] is not None
+            else None
+        ),
+        "p95": (
+            float(round(summary_row[2], 2))
+            if summary_row and summary_row[2] is not None
+            else None
+        ),
+    }
+
+    return jsonify(
+        {
+            "summary": summary,
+            "throughput": throughput,
+            "duration_trend": duration_trend,
+            "success_rate": success_rate,
+            "stage_duration": stage_duration,
+        }
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/pipeline/runs",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/pipeline/runs",
+    defaults={"env_slug": None},
+)
+@login_required
+def project_application_pipeline_runs(org_slug, project_slug, app_slug, env_slug=None):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=True
+    )
+
+    limit = min(int(request.args.get("limit", 20)), 200)
+    offset = max(int(request.args.get("offset", 0)), 0)
+
+    query = Deployment.query.filter_by(application_environment_id=app_env.id).order_by(
+        desc(Deployment.created)
+    )
+
+    total_count = query.count()
+
+    deployments = query.offset(offset).limit(limit).all()
+
+    # Batch-fetch releases and images to avoid N+1 queries
+    release_ids = {d.release.get("id") for d in deployments if d.release}
+    release_ids.discard(None)
+    releases = (
+        Release.query.filter(Release.id.in_(release_ids)).all() if release_ids else []
+    )
+
+    image_ids = {r.image.get("id") for r in releases if r.image}
+    image_ids.discard(None)
+    images = Image.query.filter(Image.id.in_(image_ids)).all() if image_ids else []
+
+    resolver = RelatedObjectResolver(images=images, releases=releases)
+    resolver.warm_caches(deployments, releases)
+    release_by_id, image_by_id = resolver.build_lookup_dicts()
+
+    runs = []
+    for d in deployments:
+        rel_id = d.release.get("id") if d.release else None
+        rel = release_by_id.get(rel_id) if rel_id else None
+        img_id = rel.image.get("id") if rel and rel.image else None
+        img = image_by_id.get(img_id) if img_id else None
+
+        total = None
+        if img and img.created and d.updated and (d.complete or d.error):
+            total = round((d.updated - img.created).total_seconds(), 2)
+
+        runs.append(
+            {
+                "image_id": img_id,
+                "image_duration": (
+                    round(img.duration_seconds, 2)
+                    if img and img.duration_seconds
+                    else None
+                ),
+                "image_status": (
+                    "error"
+                    if img and img.error
+                    else ("success" if img and img.built else "pending")
+                ),
+                "release_id": rel_id,
+                "release_duration": (
+                    round(rel.duration_seconds, 2)
+                    if rel and rel.duration_seconds
+                    else None
+                ),
+                "release_status": (
+                    "error"
+                    if rel and rel.error
+                    else ("success" if rel and rel.built else "pending")
+                ),
+                "deploy_id": str(d.id),
+                "deploy_duration": (
+                    round(d.duration_seconds, 2) if d.duration_seconds else None
+                ),
+                "deploy_status": (
+                    "error" if d.error else ("success" if d.complete else "pending")
+                ),
+                "total_duration": total,
+                "trigger_type": d.trigger_type,
+                "sha": img.commit_sha if img else None,
+                "created": d.created.isoformat() if d.created else None,
+            }
+        )
+
+    return jsonify(
+        {
+            "runs": runs,
+            "total": total_count,
+            "offset": offset,
+            "limit": limit,
+        }
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/pipeline/slowest",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/pipeline/slowest",
+    defaults={"env_slug": None},
+)
+@login_required
+def project_application_pipeline_slowest(
+    org_slug, project_slug, app_slug, env_slug=None
+):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=True
+    )
+
+    stage = request.args.get("stage", "image")
+    start = _pipeline_range_start(request.args.get("range", "30d"))
+
+    model_map = {
+        "image": Image,
+        "release": Release,
+        "deploy": Deployment,
+    }
+    model = model_map.get(stage, Image)
+
+    terminal = (
+        (model.complete == True) | (model.error == True)  # noqa: E712
+        if model is Deployment
+        else (model.built == True) | (model.error == True)  # noqa: E712
+    )
+    rows = (
+        model.query.filter(
+            model.application_environment_id == app_env.id,
+            terminal,
+            model.updated >= start,
+        )
+        .order_by(desc(model.updated - model.created))
+        .limit(10)
+        .all()
+    )
+
+    items = []
+    for r in rows:
+        item = {
+            "id": str(r.id),
+            "duration": round(r.duration_seconds, 2) if r.duration_seconds else None,
+            "created": r.created.isoformat() if r.created else None,
+        }
+        if hasattr(r, "commit_sha"):
+            item["sha"] = r.commit_sha
+        if hasattr(r, "trigger_type"):
+            item["trigger"] = r.trigger_type
+        items.append(item)
+
+    return jsonify({"stage": stage, "items": items})
