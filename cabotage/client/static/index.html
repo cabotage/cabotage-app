@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0f0f17" />
+    <title>Cabotage - Platform as a Service</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      :root {
+        --color-base-100: #0f0f17;
+        --color-base-200: #16161f;
+        --color-base-300: #1e1e2a;
+        --color-base-content: #e2e2e9;
+        --color-primary: #7c3aed;
+        --color-primary-content: #ffffff;
+        --border-color: rgba(255,255,255,0.06);
+        --text-muted: rgba(226, 226, 233, 0.5);
+        --text-faint: rgba(226, 226, 233, 0.4);
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --color-base-100: #fafafe;
+          --color-base-200: #f0f0f4;
+          --color-base-300: #e4e4ea;
+          --color-base-content: #1a1a2e;
+          --color-primary: #7c3aed;
+          --color-primary-content: #ffffff;
+          --border-color: rgba(0,0,0,0.12);
+          --text-muted: #52525b;
+          --text-faint: #71717a;
+        }
+      }
+
+      html { color-scheme: dark; }
+      @media (prefers-color-scheme: light) { html { color-scheme: light; } }
+
+      body {
+        font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+        background: var(--color-base-100);
+        color: var(--color-base-content);
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      a { color: var(--color-primary); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        background: color-mix(in srgb, var(--color-base-100) 85%, transparent);
+        border-bottom: 1px solid var(--border-color);
+        padding: 0.75rem 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+      .topbar-logo {
+        width: 1.5rem;
+        height: 1.5rem;
+        color: var(--color-primary);
+      }
+      .topbar-title {
+        font-size: 0.875rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+
+      .hero {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 4rem 1.5rem;
+        background: radial-gradient(ellipse at 50% 0%, rgba(124, 58, 237, 0.12) 0%, transparent 60%);
+      }
+      .hero-icon {
+        padding: 0.75rem;
+        border-radius: 1rem;
+        background: rgba(124, 58, 237, 0.1);
+        color: var(--color-primary);
+        margin-bottom: 1.5rem;
+      }
+      .hero-icon svg {
+        width: 5rem;
+        height: 5rem;
+        display: block;
+      }
+      .hero h1 {
+        font-size: clamp(2.25rem, 5vw, 3rem);
+        font-weight: 700;
+        margin-bottom: 1rem;
+        letter-spacing: -0.025em;
+      }
+      .hero p {
+        font-size: 1.125rem;
+        color: var(--text-muted);
+        max-width: 32rem;
+        line-height: 1.625;
+        margin-bottom: 2rem;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.625rem 1.25rem;
+        font-size: 0.875rem;
+        font-weight: 500;
+        border-radius: 0.5rem;
+        border: none;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        text-decoration: none;
+      }
+      .btn-primary {
+        background: var(--color-primary);
+        color: var(--color-primary-content);
+      }
+      .btn-primary:hover {
+        opacity: 0.9;
+        text-decoration: none;
+      }
+      .btn-ghost {
+        background: transparent;
+        color: var(--color-base-content);
+        border: 1px solid var(--border-color);
+      }
+      .btn-ghost:hover {
+        background: rgba(124, 58, 237, 0.05);
+        text-decoration: none;
+      }
+      .btn-group {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+
+      .features {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+        gap: 1.5rem;
+        max-width: 56rem;
+        width: 100%;
+        margin: 0 auto;
+        padding: 0 1.5rem 4rem;
+      }
+      .feature-card {
+        background: var(--color-base-200);
+        border: 1px solid var(--border-color);
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+      }
+      .feature-card h3 {
+        font-size: 0.875rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+      }
+      .feature-card p {
+        font-size: 0.8125rem;
+        color: var(--text-faint);
+        line-height: 1.5;
+      }
+
+      footer {
+        border-top: 1px solid var(--border-color);
+        padding: 1.5rem;
+        text-align: center;
+        font-size: 0.75rem;
+        color: var(--text-faint);
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="topbar">
+      <svg class="topbar-logo" viewBox="0 0 898.75 784.46" fill="currentColor"><rect x="354" y="339.34" width="65.92" height="284.96"/><rect x="431.75" y="636.17" width="459.77" height="40.58"/><rect x="354" y="636.17" width="65.92" height="40.59"/><path d="M256.58,173.01l122.32,54.54c4.37,21.26,12.59,40.92,23.79,58.35h0s-48.68,0-48.68,0v41.55h65.92v-19.07c3.76,4.14,7.7,8.1,11.83,11.85v7.21h8.5c5.39,4.29,11.03,8.26,16.9,11.87h-25.4v284.96h459.77v-284.96h-255.41c5.87-3.61,11.48-7.59,16.85-11.87h238.56v-41.55h-200.93c17.36-26.89,27.48-58.89,27.48-93.24,0-94.85-76.9-172.02-171.42-172.02-82.94,0-152.77,58.34-168.16,139.55h-119.21c-3.15,0-5.87,2.21-6.53,5.31-.65,3.09.94,6.22,3.82,7.51ZM716.24,378.28h137.16v173.95h-137.16v-173.95ZM384.1,173.6c3.29,0,6.09-2.4,6.59-5.66,12.13-77.59,77.72-133.9,155.96-133.9,87.16,0,158.08,71.16,158.08,158.62s-70.91,158.63-158.08,158.63c-76.17,0-141.49-54.53-155.32-129.66-.4-2.17-1.84-4.01-3.85-4.9l-96.75-43.14h93.37Z"/><path d="M504.94,244.38l16.3,16.36c2.16,2.16,5.15,3.37,8.15,3.37s5.98-1.2,8.15-3.37l16.3-16.36,86.76-87.07c2.16-2.16,3.36-5.17,3.36-8.18h0c0-3-1.2-6.01-3.36-8.17l-16.3-16.36c-2.16-2.16-5.15-3.37-8.15-3.37s-5.99,1.2-8.15,3.37l-78.61,79.02-35.24-35.48c-2.15-2.16-5.15-3.37-8.14-3.37s-5.99,1.2-8.15,3.37l-16.3,16.35c-2.16,2.16-3.36,5.17-3.36,8.18s1.2,6.01,3.36,8.18l43.39,43.53Z"/><path d="M73.78,316.08v75.26l112.46-179.39c-29.91-14.4-63.08-13-92.27,4.23C29.03,254.51-5.81,337.84.8,476.46c.64,13.24,12.02,23.46,25.44,22.84,13.42-.61,23.78-11.86,23.16-25.09h0c-3.06-64.46,3.33-99.27,18.49-142.9,1.83-5.29,3.8-10.37,5.9-15.23Z"/><path d="M205.75,223.92l-131.97,210.5v.32h140.03v-120.73c2.51,5.6,4.84,11.5,7.02,17.68,15.31,43.69,21.79,78.38,18.77,142.55-.63,13.23,9.74,24.49,23.16,25.09.4.02.77.04,1.16.04,12.92,0,23.68-10.05,24.28-22.89h0c6.18-130.02-24.47-208.82-82.45-252.55Z"/><path d="M898.47,762.9h-57.38v-52.59h50.43v-15.63h-441.6s0,0,0,0h-95.92v83.84h543.84c1.14-5.1,1.05-10.41.64-15.62ZM480.48,762.9h-79.16v-52.59h30.43s48.73,0,48.73,0v52.59ZM627.07,762.9h-79.16v-52.59h79.16v52.59ZM773.66,762.9h-79.16v-52.59h79.16v52.59Z"/><path d="M73.79,505.01h.21v250.18c0,16.06,13.21,29.08,29.48,29.08s29.48-13.02,29.48-29.08v-250.18h21.68v250.37c0,16.05,13.21,29.08,29.5,29.08s29.48-13.03,29.48-29.08v-250.37h.19v-47.34H73.79v47.34Z"/><polygon points="211.52 55.57 248.86 0 61.96 10.04 71.97 55.57 211.52 55.57"/><path d="M84.95,77.72h-12.98v40.64c0,38.73,31.3,70.14,69.92,70.14s69.92-31.41,69.92-70.14v-7.39h33.72s-37.05-33.24-37.05-33.24h-123.52Z"/></svg>
+      <span class="topbar-title">Cabotage</span>
+    </nav>
+
+    <main class="hero">
+      <div class="hero-icon">
+        <svg viewBox="0 0 898.75 784.46" fill="currentColor"><rect x="354" y="339.34" width="65.92" height="284.96"/><rect x="431.75" y="636.17" width="459.77" height="40.58"/><rect x="354" y="636.17" width="65.92" height="40.59"/><path d="M256.58,173.01l122.32,54.54c4.37,21.26,12.59,40.92,23.79,58.35h0s-48.68,0-48.68,0v41.55h65.92v-19.07c3.76,4.14,7.7,8.1,11.83,11.85v7.21h8.5c5.39,4.29,11.03,8.26,16.9,11.87h-25.4v284.96h459.77v-284.96h-255.41c5.87-3.61,11.48-7.59,16.85-11.87h238.56v-41.55h-200.93c17.36-26.89,27.48-58.89,27.48-93.24,0-94.85-76.9-172.02-171.42-172.02-82.94,0-152.77,58.34-168.16,139.55h-119.21c-3.15,0-5.87,2.21-6.53,5.31-.65,3.09.94,6.22,3.82,7.51ZM716.24,378.28h137.16v173.95h-137.16v-173.95ZM384.1,173.6c3.29,0,6.09-2.4,6.59-5.66,12.13-77.59,77.72-133.9,155.96-133.9,87.16,0,158.08,71.16,158.08,158.62s-70.91,158.63-158.08,158.63c-76.17,0-141.49-54.53-155.32-129.66-.4-2.17-1.84-4.01-3.85-4.9l-96.75-43.14h93.37Z"/><path d="M504.94,244.38l16.3,16.36c2.16,2.16,5.15,3.37,8.15,3.37s5.98-1.2,8.15-3.37l16.3-16.36,86.76-87.07c2.16-2.16,3.36-5.17,3.36-8.18h0c0-3-1.2-6.01-3.36-8.17l-16.3-16.36c-2.16-2.16-5.15-3.37-8.15-3.37s-5.99,1.2-8.15,3.37l-78.61,79.02-35.24-35.48c-2.15-2.16-5.15-3.37-8.14-3.37s-5.99,1.2-8.15,3.37l-16.3,16.35c-2.16,2.16-3.36,5.17-3.36,8.18s1.2,6.01,3.36,8.18l43.39,43.53Z"/><path d="M73.78,316.08v75.26l112.46-179.39c-29.91-14.4-63.08-13-92.27,4.23C29.03,254.51-5.81,337.84.8,476.46c.64,13.24,12.02,23.46,25.44,22.84,13.42-.61,23.78-11.86,23.16-25.09h0c-3.06-64.46,3.33-99.27,18.49-142.9,1.83-5.29,3.8-10.37,5.9-15.23Z"/><path d="M205.75,223.92l-131.97,210.5v.32h140.03v-120.73c2.51,5.6,4.84,11.5,7.02,17.68,15.31,43.69,21.79,78.38,18.77,142.55-.63,13.23,9.74,24.49,23.16,25.09.4.02.77.04,1.16.04,12.92,0,23.68-10.05,24.28-22.89h0c6.18-130.02-24.47-208.82-82.45-252.55Z"/><path d="M898.47,762.9h-57.38v-52.59h50.43v-15.63h-441.6s0,0,0,0h-95.92v83.84h543.84c1.14-5.1,1.05-10.41.64-15.62ZM480.48,762.9h-79.16v-52.59h30.43s48.73,0,48.73,0v52.59ZM627.07,762.9h-79.16v-52.59h79.16v52.59ZM773.66,762.9h-79.16v-52.59h79.16v52.59Z"/><path d="M73.79,505.01h.21v250.18c0,16.06,13.21,29.08,29.48,29.08s29.48-13.02,29.48-29.08v-250.18h21.68v250.37c0,16.05,13.21,29.08,29.5,29.08s29.48-13.03,29.48-29.08v-250.37h.19v-47.34H73.79v47.34Z"/><polygon points="211.52 55.57 248.86 0 61.96 10.04 71.97 55.57 211.52 55.57"/><path d="M84.95,77.72h-12.98v40.64c0,38.73,31.3,70.14,69.92,70.14s69.92-31.41,69.92-70.14v-7.39h33.72s-37.05-33.24-37.05-33.24h-123.52Z"/></svg>
+      </div>
+      <h1>Cabotage</h1>
+      <p>Platform as a Service. Build, deploy, and manage your applications with ease.</p>
+    </main>
+
+
+    <footer>Cabotage Deploys, LLC</footer>
+  </body>
+</html>

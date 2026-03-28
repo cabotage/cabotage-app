@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import render_field_compact, icon, resource_path, danger_zone_delete %}
+{% from "_macros.html" import render_field_compact, icon, resource_path, app_tab_nav, app_resource_path, danger_zone_delete %}
 
 {% set org_slug = application.project.organization.slug %}
 {% set project_slug = application.project.slug %}
@@ -11,23 +11,18 @@
 {% endblock title %}
 
 {% block resource_path %}
-  {{ resource_path([
-    {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug) },
-    {'label': project_slug, 'url': url_for('user.project', org_slug=org_slug, project_slug=project_slug)},
-    {'label': env_slug, 'url': url_for('user.project_environment', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug)},
-    {'label': app_slug, 'url': url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug)},
-    {'label': 'Settings'}
-  ]) }}
+  {{ app_resource_path(application, 'Environment Settings', env=environment) }}
 {% endblock resource_path %}
+
+{% block tab_bar %}
+  {{ app_tab_nav(application, 'env_settings', env=environment) }}
+{% endblock tab_bar %}
 
 {% block content %}
   <div class="settings-page">
 
     <div class="flex items-center justify-between mb-6">
       <div class="flex items-center gap-3">
-        <a href="#"
-           onclick="history.back();return false"
-           class="btn btn-ghost btn-sm btn-circle">{{ icon('arrow-left', 'w-4 h-4') }}</a>
         <div>
           <h1 class="text-xl font-semibold text-base-content">Environment Settings</h1>
           <p class="text-sm text-base-content/40">

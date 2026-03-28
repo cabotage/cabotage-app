@@ -83,6 +83,7 @@ from cabotage.server.query_helpers import (
     compute_app_status_sets,
     compute_ae_status_sets,
     compute_process_counts,
+    compute_release_change_details,
     extract_latest_variants,
     RelatedObjectResolver,
     split_image_processes,
@@ -2175,46 +2176,6 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     scale_form = ApplicationScaleForm()
     scale_form.application_id.data = str(application.id)
 
-    config_create_form = CreateConfigurationForm()
-    config_create_form.application_id.data = str(application.id)
-    if environment:
-        config_create_form.environment_id.data = str(environment.id)
-
-    sibling_references = []
-    sibling_tcp_references = []
-    if app_env:
-        for ae in app_env.environment.active_application_environments:
-            ingress_list = []
-            for ing in ae.ingresses:
-                if not ing.enabled:
-                    continue
-                hosts = ing.hosts
-                non_auto = [h for h in hosts if not h.is_auto_generated]
-                host = non_auto[0] if non_auto else (hosts[0] if hosts else None)
-                if host:
-                    ingress_list.append(
-                        {
-                            "name": ing.name,
-                            "hostname": host.hostname,
-                            "tls": host.tls_enabled,
-                        }
-                    )
-            if ingress_list:
-                sibling_references.append(
-                    {
-                        "slug": ae.application.slug,
-                        "ingresses": ingress_list,
-                    }
-                )
-            tcp_processes = sorted(p for p in ae.process_counts if p.startswith("tcp"))
-            if tcp_processes:
-                sibling_tcp_references.append(
-                    {
-                        "slug": ae.application.slug,
-                        "processes": tcp_processes,
-                    }
-                )
-
     # Pre-fetch all data from dynamic relationships once to avoid
     # repeated per-access queries in the template (~50+ calls to
     # src.latest_* each triggering a fresh DB query).
@@ -2246,7 +2207,6 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     latest_release_release_commands = {}
     release_by_id = {}
     image_by_id = {}
-    release_proc_counts = {}
 
     if app_env is not None:
         # 3 queries: fetch recent items, extract latest_* variants in Python
@@ -2287,7 +2247,6 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         # Batch-warm caches for template loops
         resolver.warm_caches(all_deployments, all_releases)
         release_by_id, image_by_id = resolver.build_lookup_dicts()
-        release_proc_counts = compute_process_counts(releases, resolver)
 
         # Compute ready_for_deployment diffs inline (avoids re-querying
         # latest_release and latest_image_built inside the model method)
@@ -2305,18 +2264,18 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
             platform=application.platform,
         ).asdict
         image_diff = DictDiffer(
-            candidate.get("image", {}),
-            current.get("image", {}),
+            candidate.get("image") or {},
+            current.get("image") or {},
             ignored_keys=["id", "version_id", "commit_sha"],
         )
         config_diff = DictDiffer(
-            candidate.get("configuration", {}),
-            current.get("configuration", {}),
+            candidate.get("configuration") or {},
+            current.get("configuration") or {},
             ignored_keys=["id"],
         )
         ingress_diff = DictDiffer(
-            candidate.get("ingresses", {}),
-            current.get("ingresses", {}),
+            candidate.get("ingresses") or {},
+            current.get("ingresses") or {},
             ignored_keys=["id"],
         )
 
@@ -2385,11 +2344,6 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         .query.filter_by(application_id=application.id)
         .order_by(desc(version_class(Release).version_id))
         .limit(5),
-        config_create_form=config_create_form,
-        config_edit_form=EditConfigurationForm(),
-        config_delete_form=DeleteConfigurationForm(),
-        sibling_references=sibling_references,
-        sibling_tcp_references=sibling_tcp_references,
         releases=releases,
         images=images,
         deployments=deployments,
@@ -2419,7 +2373,6 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         latest_release_release_commands=latest_release_release_commands,
         release_by_id=release_by_id,
         image_by_id=image_by_id,
-        release_proc_counts=release_proc_counts,
         env_configs=_eager_env_configs(project, environment),
         subscribed_env_config_ids=(
             {
@@ -2429,7 +2382,6 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
             if app_env
             else set()
         ),
-        config_count=_config_count(app_env, environment),
     )
 
 
@@ -2713,6 +2665,66 @@ def project_applications(org_slug, project_slug):
     if not ViewProjectPermission(project.id).can():
         abort(403)
     return render_template("user/project_applications.html", project=project)
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/config"
+)
+@login_required
+def application_config(org_slug, project_slug, app_slug):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    env_slug = request.args.get("env_slug")
+    app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
+    environment = app_env.environment if app_env else None
+
+    # Sibling references for service linking
+    sibling_references = []
+    sibling_tcp_references = []
+    if app_env:
+        for ae in app_env.environment.active_application_environments:
+            ingress_list = []
+            for ing in ae.ingresses:
+                if not ing.enabled:
+                    continue
+                hosts = ing.hosts
+                non_auto = [h for h in hosts if not h.is_auto_generated]
+                host = non_auto[0] if non_auto else (hosts[0] if hosts else None)
+                if host:
+                    ingress_list.append(
+                        {
+                            "name": ing.name,
+                            "hostname": host.hostname,
+                            "tls": host.tls_enabled,
+                        }
+                    )
+            if ingress_list:
+                sibling_references.append(
+                    {"slug": ae.application.slug, "ingresses": ingress_list}
+                )
+            tcp_processes = sorted(p for p in ae.process_counts if p.startswith("tcp"))
+            if tcp_processes:
+                sibling_tcp_references.append(
+                    {"slug": ae.application.slug, "processes": tcp_processes}
+                )
+
+    return render_template(
+        "user/application_config.html",
+        application=application,
+        app_env=app_env,
+        environment=environment,
+        config_create_form=CreateConfigurationForm(),
+        sibling_references=sibling_references,
+        sibling_tcp_references=sibling_tcp_references,
+        env_configs=_eager_env_configs(project, environment),
+        subscribed_env_config_ids=(
+            {
+                sub.environment_configuration_id
+                for sub in app_env.environment_config_subscriptions
+            }
+            if app_env
+            else set()
+        ),
+    )
 
 
 @user_blueprint.route(
@@ -3674,7 +3686,9 @@ def application_images(org_slug, project_slug, app_slug):
     page = request.args.get("page", 1, type=int)
     env_slug = request.args.get("env_slug")
     app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
-    images = app_env.images.order_by(Image.version.desc()).paginate(page, 20, False)
+    images = app_env.images.order_by(Image.version.desc()).paginate(
+        page=page, per_page=20, error_out=False
+    )
     return render_template(
         "user/application_images.html",
         page=page,
@@ -3815,7 +3829,7 @@ def application_releases(org_slug, project_slug, app_slug):
     env_slug = request.args.get("env_slug")
     app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
     releases = app_env.releases.order_by(Release.version.desc()).paginate(
-        page, 20, False
+        page=page, per_page=20, error_out=False
     )
 
     # Pre-resolve Image objects to avoid N+1 on release.image_object per row
@@ -3823,6 +3837,25 @@ def application_releases(org_slug, project_slug, app_slug):
     resolver.warm_caches([], releases.items)
     _, image_by_id = resolver.build_lookup_dicts()
     release_proc_counts = compute_process_counts(releases.items, resolver)
+
+    # Fetch one predecessor release so the last item on the page can diff
+    items_for_diff = list(releases.items)
+    if items_for_diff:
+        last = items_for_diff[-1]
+        prev = (
+            app_env.releases.filter(Release.version < last.version)
+            .order_by(Release.version.desc())
+            .first()
+        )
+        if prev:
+            items_for_diff.append(prev)
+    # Fetch recent deployments for finding the deployed baseline
+    recent_deployments = (
+        app_env.deployments.order_by(Deployment.created.desc()).limit(50).all()
+    )
+    release_change_details = compute_release_change_details(
+        items_for_diff, recent_deployments
+    )
 
     return render_template(
         "user/application_releases.html",
@@ -3833,6 +3866,7 @@ def application_releases(org_slug, project_slug, app_slug):
         app_env=app_env,
         image_by_id=image_by_id,
         release_proc_counts=release_proc_counts,
+        release_change_details=release_change_details,
     )
 
 
@@ -3850,6 +3884,68 @@ def application_releases_legacy(application_id):
             app_slug=application.slug,
         ),
         code=301,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/deployments"
+)
+@login_required
+def application_deployments(org_slug, project_slug, app_slug):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    page = request.args.get("page", 1, type=int)
+    env_slug = request.args.get("env_slug")
+    app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
+    deployments = app_env.deployments.order_by(Deployment.created.desc()).paginate(
+        page=page, per_page=20, error_out=False
+    )
+
+    # Batch-load Release objects referenced by deployment JSONB
+    release_ids = [
+        d.release.get("id")
+        for d in deployments.items
+        if d.release and d.release.get("id")
+    ]
+    all_releases = (
+        Release.query.filter(Release.id.in_(release_ids)).all() if release_ids else []
+    )
+
+    # Batch-load Image objects referenced by those releases
+    image_ids = [
+        r.image.get("id") for r in all_releases if r.image and r.image.get("id")
+    ]
+    all_images = Image.query.filter(Image.id.in_(image_ids)).all() if image_ids else []
+
+    resolver = RelatedObjectResolver(images=all_images, releases=all_releases)
+    resolver.warm_caches(deployments.items, all_releases)
+    release_by_id, image_by_id = resolver.build_lookup_dicts()
+
+    # Compute change details: sort releases by version desc, fetch predecessor
+    sorted_releases = sorted(all_releases, key=lambda r: r.version, reverse=True)
+    if sorted_releases:
+        last = sorted_releases[-1]
+        prev = (
+            app_env.releases.filter(Release.version < last.version)
+            .order_by(Release.version.desc())
+            .first()
+        )
+        if prev:
+            sorted_releases.append(prev)
+    release_change_details = compute_release_change_details(
+        sorted_releases, deployments.items
+    )
+
+    return render_template(
+        "user/application_deployments.html",
+        page=page,
+        application=application,
+        deployments=deployments.items,
+        environment=app_env.environment if project.environments_enabled else None,
+        app_env=app_env,
+        deploy_form=ReleaseDeployForm(),
+        release_by_id=release_by_id,
+        image_by_id=image_by_id,
+        release_change_details=release_change_details,
     )
 
 

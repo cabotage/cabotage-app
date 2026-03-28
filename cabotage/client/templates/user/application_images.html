@@ -89,11 +89,11 @@
               {% if image.built %}<span class="dpl-row-dur">{{ image|duration }}</span>{% endif %}
               {% if is_latest %}<span class="dpl-badge dpl-badge-latest">Latest</span>{% endif %}
               {% if img_trigger.startswith('manual') %}
-                <span class="dpl-badge dpl-badge-manual tooltip tooltip-top"
-                      data-tip="by {{ (image.image_metadata or {}).get('triggered_by', '?') }}">{{ icon('user', 'w-2.5 h-2.5') }} Manual</span>
+                <span class="dpl-badge dpl-badge-manual"
+                      title="by {{ (image.image_metadata or {}).get('triggered_by', '?') }}">{{ icon('user', 'w-2.5 h-2.5') }} Manual</span>
               {% elif img_auto %}
-                <span class="dpl-badge dpl-badge-auto tooltip tooltip-top"
-                      data-tip="Triggered by CI or a deploy-all action">{{ icon('zap', 'w-2.5 h-2.5') }} Auto</span>
+                <span class="dpl-badge dpl-badge-auto"
+                      title="Triggered by CI or a deploy-all action">{{ icon('zap', 'w-2.5 h-2.5') }} Auto</span>
               {% endif %}
             </div>
             <div class="dpl-row-meta">
@@ -138,13 +138,13 @@
 
     <div class="flex items-center justify-between mt-4">
       {% if page > 1 %}
-        <a href="?page={{ page - 1 }}" class="btn btn-ghost btn-sm gap-1">{{ icon('arrow-left', 'w-3.5 h-3.5') }} Previous</a>
+        <a href="?page={{ page - 1 }}" class="btn btn-ghost btn-sm gap-1">{{ icon('arrow-left', 'w-3.5 h-3.5') }} Newer</a>
       {% else %}
         <span></span>
       {% endif %}
       <span class="text-xs text-base-content/40">Page {{ page }}</span>
       {% if images|length == 20 %}
-        <a href="?page={{ page + 1 }}" class="btn btn-ghost btn-sm gap-1">Next {{ icon('chevron-right', 'w-3.5 h-3.5') }}</a>
+        <a href="?page={{ page + 1 }}" class="btn btn-ghost btn-sm gap-1">Older {{ icon('chevron-right', 'w-3.5 h-3.5') }}</a>
       {% else %}
         <span></span>
       {% endif %}

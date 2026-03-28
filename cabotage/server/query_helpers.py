@@ -334,6 +334,188 @@ def compute_process_counts(releases, resolver):
     return release_proc_counts
 
 
+_INGRESS_SETTING_KEYS = {
+    "enabled",
+    "ingress_class_name",
+    "backend_protocol",
+    "proxy_connect_timeout",
+    "proxy_read_timeout",
+    "proxy_send_timeout",
+    "proxy_body_size",
+    "client_body_buffer_size",
+    "proxy_request_buffering",
+    "session_affinity",
+    "use_regex",
+    "allow_annotations",
+    "extra_annotations",
+    "cluster_issuer",
+    "force_ssl_redirect",
+    "service_upstream",
+    "tailscale_hostname",
+    "tailscale_funnel",
+    "tailscale_tags",
+}
+
+
+def _diff_config_item(old, new):
+    """Return list of human-readable descriptions for a changed config entry."""
+    changes = []
+    if old.get("version_id") != new.get("version_id"):
+        changes.append("value changed")
+    if old.get("secret") != new.get("secret"):
+        changes.append("marked secret" if new.get("secret") else "unmarked secret")
+    if old.get("buildtime") != new.get("buildtime"):
+        changes.append(
+            "marked buildtime" if new.get("buildtime") else "unmarked buildtime"
+        )
+    return changes
+
+
+def _strip_id(d):
+    """Return a dict copy without the 'id' key (for comparing snapshots)."""
+    return {k: v for k, v in d.items() if k != "id"}
+
+
+def _diff_ingress_item(old, new):
+    """Return list of human-readable descriptions for a changed ingress entry."""
+    parts = []
+
+    # --- Hosts: added, removed, and property changes on existing hosts ---
+    old_hosts_by_name = {h["hostname"]: h for h in old.get("hosts", [])}
+    new_hosts_by_name = {h["hostname"]: h for h in new.get("hosts", [])}
+    h_added = sorted(set(new_hosts_by_name) - set(old_hosts_by_name))
+    h_removed = sorted(set(old_hosts_by_name) - set(new_hosts_by_name))
+    if h_added:
+        parts.append("hosts added: " + ", ".join(h_added))
+    if h_removed:
+        parts.append("hosts removed: " + ", ".join(h_removed))
+    # Check property changes on hosts that exist in both
+    h_changed = []
+    for hostname in sorted(set(old_hosts_by_name) & set(new_hosts_by_name)):
+        oh = _strip_id(old_hosts_by_name[hostname])
+        nh = _strip_id(new_hosts_by_name[hostname])
+        if oh != nh:
+            diffs = [
+                f"{k}: {oh.get(k)} → {nh.get(k)}" for k in nh if oh.get(k) != nh.get(k)
+            ]
+            h_changed.append(f"{hostname} ({', '.join(diffs)})")
+    if h_changed:
+        parts.append("hosts changed: " + ", ".join(h_changed))
+
+    # --- Paths: added, removed, and property changes on existing paths ---
+    old_paths_by_path = {p["path"]: p for p in old.get("paths", [])}
+    new_paths_by_path = {p["path"]: p for p in new.get("paths", [])}
+    p_added = sorted(set(new_paths_by_path) - set(old_paths_by_path))
+    p_removed = sorted(set(old_paths_by_path) - set(new_paths_by_path))
+    if p_added:
+        parts.append(
+            "paths added: "
+            + ", ".join(
+                f"{p} → {new_paths_by_path[p].get('target_process_name', '')}"
+                for p in p_added
+            )
+        )
+    if p_removed:
+        parts.append(
+            "paths removed: "
+            + ", ".join(
+                f"{p} → {old_paths_by_path[p].get('target_process_name', '')}"
+                for p in p_removed
+            )
+        )
+    p_changed = []
+    for path in sorted(set(old_paths_by_path) & set(new_paths_by_path)):
+        op = _strip_id(old_paths_by_path[path])
+        np = _strip_id(new_paths_by_path[path])
+        if op != np:
+            diffs = [
+                f"{k}: {op.get(k)} → {np.get(k)}" for k in np if op.get(k) != np.get(k)
+            ]
+            p_changed.append(f"{path} ({', '.join(diffs)})")
+    if p_changed:
+        parts.append("paths changed: " + ", ".join(p_changed))
+
+    # --- Top-level settings ---
+    changed_settings = sorted(
+        k for k in _INGRESS_SETTING_KEYS if old.get(k) != new.get(k)
+    )
+    if changed_settings:
+        parts.append("settings: " + ", ".join(changed_settings))
+    return parts
+
+
+def compute_release_change_details(releases, deployments=None):
+    """Compute granular change descriptions for a list of releases.
+
+    For each release that has config or ingress changes, diffs the release's
+    snapshot against the last successfully deployed release to describe what
+    specifically changed.  This mirrors what ``create_release`` compared
+    against (the ``latest_deployment_completed`` at creation time).
+
+    Falls back to the previous built release if deployment data isn't
+    available.
+
+    Takes releases sorted newest-first and an optional list of deployments
+    (sorted newest-first) for finding the deployed baseline.
+
+    Returns:
+        {str(release_id): {"config": {name: [descriptions]},
+                           "ingress": {name: [descriptions]}}}
+    """
+    # Build a map of release_id → Release for deployed releases
+    deployed_release_by_id = {}
+    if deployments:
+        for d in deployments:
+            if d.complete and not d.error and d.release:
+                rid = d.release.get("id")
+                if rid:
+                    deployed_release_by_id[str(rid)] = d
+
+    result = {}
+    for i, rel in enumerate(releases):
+        cfg_ch = rel.configuration_changes or {}
+        ing_ch = rel.ingress_changes or {}
+        cfg_changed = cfg_ch.get("changed", [])
+        ing_changed = ing_ch.get("changed", [])
+        if not cfg_changed and not ing_changed:
+            continue
+
+        # Find the baseline: walk backwards through releases to find
+        # the most recent one that was successfully deployed.  This
+        # matches what create_release compared against (the
+        # latest_deployment_completed at creation time).
+        prev_rel = None
+        for j in range(i + 1, len(releases)):
+            candidate = releases[j]
+            if str(candidate.id) in deployed_release_by_id:
+                prev_rel = candidate
+                break
+        # Fall back to immediate predecessor if no deployed release found
+        if prev_rel is None and i + 1 < len(releases):
+            prev_rel = releases[i + 1]
+
+        prev_cfg = (prev_rel.configuration or {}) if prev_rel else {}
+        prev_ing = (prev_rel.ingresses or {}) if prev_rel else {}
+        cur_cfg = rel.configuration or {}
+        cur_ing = rel.ingresses or {}
+        details = {"config": {}, "ingress": {}}
+
+        for name in cfg_changed:
+            field_changes = _diff_config_item(
+                prev_cfg.get(name, {}), cur_cfg.get(name, {})
+            )
+            if field_changes:
+                details["config"][name] = field_changes
+
+        for name in ing_changed:
+            parts = _diff_ingress_item(prev_ing.get(name, {}), cur_ing.get(name, {}))
+            if parts:
+                details["ingress"][name] = parts
+
+        result[str(rel.id)] = details
+    return result
+
+
 def split_image_processes(image):
     """Split image.processes into (service_procs, release_cmds, postdeploy_cmds).
 

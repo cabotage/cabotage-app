@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, status_badge, app_tab_nav, app_resource_path %}
+{% from "_macros.html" import icon, resource_path, status_badge, app_tab_nav, app_resource_path, release_changes %}
 
 {% set app = application %}
 {% set org_slug = app.project.organization.slug %}
@@ -49,9 +49,10 @@
         {% if is_active %}
           {% set ns.found_active = true %}
         {% endif %}
-        {% set dep_rel = deployment.release_object %}
-        {% set dep_img = dep_rel.image_object if dep_rel else none %}
-        {% set dep_sha = dep_rel.commit_sha if dep_rel and dep_rel.commit_sha and dep_rel.commit_sha != 'null' else none %}
+        {% set dep_rel = release_by_id.get(deployment.release.get('id', '')|string) if deployment.release else none %}
+        {% set dep_img = image_by_id.get(dep_rel.image.get('id', '')|string) if dep_rel else none %}
+        {% set dep_sha = (dep_rel.release_metadata or {}).get('sha') or (dep_img.commit_sha if dep_img else none) if dep_rel else none %}
+        {% set dep_sha = dep_sha if dep_sha and dep_sha != 'null' else none %}
         {% set dep_ref = "" %}
         {% if dep_rel %}
           {% set dep_ref = (dep_rel.release_metadata or {}).get('ref', '') %}
@@ -98,11 +99,11 @@
               {% if deployment.complete or deployment.error %}<span class="dpl-row-dur">{{ deployment|duration }}</span>{% endif %}
               {% if is_active %}<span class="dpl-badge dpl-badge-active">Active</span>{% endif %}
               {% if dep_trigger.startswith('manual') %}
-                <span class="dpl-badge dpl-badge-manual tooltip tooltip-top"
-                      data-tip="by {{ (deployment.deploy_metadata or {}).get('triggered_by', '?') }}">{{ icon('user', 'w-2.5 h-2.5') }} Manual</span>
+                <span class="dpl-badge dpl-badge-manual"
+                      title="by {{ (deployment.deploy_metadata or {}).get('triggered_by', '?') }}">{{ icon('user', 'w-2.5 h-2.5') }} Manual</span>
               {% elif dep_auto %}
-                <span class="dpl-badge dpl-badge-auto tooltip tooltip-top"
-                      data-tip="Triggered by CI or a deploy-all action">{{ icon('zap', 'w-2.5 h-2.5') }} Auto</span>
+                <span class="dpl-badge dpl-badge-auto"
+                      title="Triggered by CI or a deploy-all action">{{ icon('zap', 'w-2.5 h-2.5') }} Auto</span>
               {% endif %}
             </div>
             <div class="dpl-row-meta">
@@ -139,22 +140,29 @@
             {% if deployment.error and deployment.error_detail %}
               <div class="dpl-row-error-detail">{{ deployment.error_detail[:140] }}</div>
             {% endif %}
+
+            {# --- What changed --- #}
+            {% if dep_rel %}
+              {{ release_changes(dep_rel, img=dep_img, org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, change_details=release_change_details.get(dep_rel.id|string, {})) }}
+            {% endif %}
           </div>
 
-          <span class="dpl-row-time"><time data-timestamp="{{ deployment.updated|isoformat_utc }}">{{ deployment.updated|humanize }}</time></span>
+          <div class="dpl-row-right">
+            <span class="dpl-row-time"><time data-timestamp="{{ deployment.updated|isoformat_utc }}">{{ deployment.updated|humanize }}</time></span>
+          </div>
         </a>
       {% endfor %}
     </div>
 
     <div class="flex items-center justify-between mt-4">
       {% if page > 1 %}
-        <a href="?page={{ page - 1 }}" class="btn btn-ghost btn-sm gap-1">{{ icon('arrow-left', 'w-3.5 h-3.5') }} Previous</a>
+        <a href="?page={{ page - 1 }}" class="btn btn-ghost btn-sm gap-1">{{ icon('arrow-left', 'w-3.5 h-3.5') }} Newer</a>
       {% else %}
         <span></span>
       {% endif %}
       <span class="text-xs text-base-content/40">Page {{ page }}</span>
       {% if deployments|length == 20 %}
-        <a href="?page={{ page + 1 }}" class="btn btn-ghost btn-sm gap-1">Next {{ icon('chevron-right', 'w-3.5 h-3.5') }}</a>
+        <a href="?page={{ page + 1 }}" class="btn btn-ghost btn-sm gap-1">Older {{ icon('chevron-right', 'w-3.5 h-3.5') }}</a>
       {% else %}
         <span></span>
       {% endif %}
