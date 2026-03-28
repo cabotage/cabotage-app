@@ -110,5 +110,3 @@ class Config(metaclass=MetaFlaskEnv):
     LOKI_URL = None
     LOKI_VERIFY = None
     PROXY_FIX_NUM_PROXIES = 1
-    REGISTRY_PULL_K8S = None
-    TESTING = False
