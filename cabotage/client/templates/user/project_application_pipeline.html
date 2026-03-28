@@ -406,7 +406,7 @@
       axes: [
         { stroke: AXIS_STROKE, grid: { stroke: GRID_STROKE }, ticks: { stroke: GRID_STROKE } },
         { stroke: AXIS_STROKE, grid: { stroke: GRID_STROKE }, ticks: { stroke: GRID_STROKE },
-          size: 50, values: function(u, vals) { return vals.map(valueFmt); } }
+          size: 62, values: function(u, vals) { return vals.map(valueFmt); } }
       ],
       plugins: [tooltipPlugin(valueFmt)],
       cursor: { points: { size: 6, fill: function(u, i) { return u.series[i].stroke; }, stroke: 'transparent' } },
