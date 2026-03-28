@@ -367,6 +367,7 @@ html:not([data-theme-pref]) .theme-icon-system {
 .tab-item:hover {
   color: var(--text-bright);
   background: var(--hover-overlay);
+  cursor: pointer;
 }
 
 .tab-item.tab-active {
