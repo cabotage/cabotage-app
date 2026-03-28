@@ -1091,3 +1091,159 @@ class TestRunOmnibusBuild:
                         run_omnibus_build(image_id=image.id)
 
         mock_release.delay.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Tests: git_ref fallback for manual builds without commit SHA
+# ---------------------------------------------------------------------------
+
+
+class TestGitRefFallback:
+    """Tests that builds without a resolved commit SHA use build_ref instead of #null."""
+
+    @pytest.fixture
+    def no_github_app(self, db_session, application):
+        """Remove github_app_installation_id so builds don't try to authenticate."""
+        application.github_app_installation_id = None
+        db_session.flush()
+        return application
+
+    @pytest.fixture
+    def manual_image(self, db_session, no_github_app, app_env):
+        """An image created by a manual build — no SHA, just a branch ref."""
+        img = Image(
+            application_id=no_github_app.id,
+            application_environment_id=app_env.id,
+            _repository_name=REPOSITORY_NAME,
+            image_metadata={
+                "trigger": "manual_build",
+                "triggered_by": "testuser",
+            },
+            build_ref="develop",
+        )
+        db_session.add(img)
+        db_session.flush()
+        return img
+
+    @patch("cabotage.celery.tasks.build.run_job")
+    @patch("cabotage.celery.tasks.build.fetch_image_build_cache_volume_claim")
+    @patch("cabotage.celery.tasks.build.kubernetes_ext")
+    @patch("cabotage.celery.tasks.build._fetch_github_file")
+    @patch("cabotage.celery.tasks.build._fetch_commit_sha_for_ref")
+    def test_manual_build_uses_branch_ref_when_sha_unresolved(
+        self,
+        mock_fetch_sha,
+        mock_fetch_file,
+        mock_k8s_ext,
+        mock_fetch_pvc,
+        mock_run_job,
+        app,
+        db_session,
+        manual_image,
+    ):
+        """When _fetch_commit_sha_for_ref returns None, buildctl uses build_ref."""
+        from cabotage.celery.tasks.build import build_image_buildkit
+
+        # SHA resolution fails (returns None)
+        mock_fetch_sha.return_value = None
+
+        mock_fetch_file.side_effect = [
+            None,  # Dockerfile.cabotage
+            DOCKERFILE_BODY,  # Dockerfile
+            None,  # Procfile.cabotage
+            PROCFILE_BODY,  # Procfile
+        ]
+
+        mock_k8s_ext.kubernetes_client = MagicMock()
+        pvc = MagicMock()
+        pvc.metadata.name = "build-cache-pvc"
+        mock_fetch_pvc.return_value = pvc
+        mock_run_job.return_value = (True, "build logs")
+
+        with patch("cabotage.celery.tasks.build.DXF") as mock_dxf_cls:
+            mock_dxf = MagicMock()
+            mock_dxf.get_digest.return_value = "sha256:manual-digest"
+            mock_dxf_cls.return_value = mock_dxf
+
+            with patch(
+                "cabotage.celery.tasks.build.get_redis_client",
+                side_effect=Exception,
+            ):
+                manual_image.build_job_id = "manual1234"
+                build_image_buildkit(manual_image)
+
+        # Check the buildctl args passed to run_job — job_object is 4th positional arg
+        run_job_call = mock_run_job.call_args
+        job_object = run_job_call[0][3]
+        containers = job_object.spec.template.spec.containers
+        args = containers[0].args
+        context_arg = [a for a in args if "context=" in a][0]
+
+        # Should use branch ref "develop", NOT "#null"
+        assert "#null" not in context_arg, (
+            f"Build context should not contain #null, got: {context_arg}"
+        )
+        assert "#develop" in context_arg, (
+            f"Build context should use branch ref 'develop', got: {context_arg}"
+        )
+
+    @patch("cabotage.celery.tasks.build._fetch_github_file")
+    @patch("cabotage.celery.tasks.build._fetch_commit_sha_for_ref")
+    def test_fetch_image_source_resolves_sha_into_metadata(
+        self,
+        mock_fetch_sha,
+        mock_fetch_file,
+        app,
+        db_session,
+        manual_image,
+    ):
+        """When SHA resolution succeeds, the SHA is stored in image_metadata."""
+        from cabotage.celery.tasks.build import _fetch_image_source
+
+        resolved_sha = "abc123def456abc123def456abc123def456abc1"
+        mock_fetch_sha.return_value = resolved_sha
+
+        mock_fetch_file.side_effect = [
+            None,
+            DOCKERFILE_BODY,
+            None,
+            PROCFILE_BODY,
+        ]
+
+        _fetch_image_source(manual_image, access_token=None)
+
+        assert manual_image.image_metadata["sha"] == resolved_sha
+        assert manual_image.commit_sha == resolved_sha
+
+    @patch("cabotage.celery.tasks.build._fetch_github_file")
+    @patch("cabotage.celery.tasks.build._fetch_commit_sha_for_ref")
+    def test_fetch_commit_sha_called_with_build_ref(
+        self,
+        mock_fetch_sha,
+        mock_fetch_file,
+        app,
+        db_session,
+        manual_image,
+    ):
+        """Manual image with no SHA triggers _fetch_commit_sha_for_ref with build_ref."""
+        from cabotage.celery.tasks.build import _fetch_image_source
+
+        mock_fetch_sha.return_value = None
+
+        mock_fetch_file.side_effect = [
+            None,
+            DOCKERFILE_BODY,
+            None,
+            PROCFILE_BODY,
+        ]
+
+        _fetch_image_source(manual_image, access_token=None)
+
+        mock_fetch_sha.assert_called_once_with(
+            REPO, "develop", access_token=None
+        )
+
+    def test_manual_image_commit_sha_is_null(self, manual_image):
+        """A manual image without a SHA in metadata reports commit_sha as 'null'."""
+        assert manual_image.commit_sha == "null"
+        assert manual_image.build_ref == "develop"
