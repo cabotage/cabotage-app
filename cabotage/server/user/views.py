@@ -2431,6 +2431,24 @@ def project_application_shell(org_slug, project_slug, app_slug, env_slug=None):
     )
 
 
+def _shell_exec_command() -> list[str]:
+    """Build the k8s exec command for an interactive shell session.
+
+    Prefers bash for readline support (history, tab completion),
+    falls back to /bin/sh for minimal container images.
+    """
+    return [
+        "/bin/sh",
+        "-c",
+        (
+            "export CONSUL_TOKEN=$(cat /var/run/secrets/vault/consul-token) && "
+            "export VAULT_TOKEN=$(cat /var/run/secrets/vault/vault-token) && "
+            "SHELL=$(command -v bash || echo /bin/sh) && "
+            "envconsul -config /etc/cabotage/envconsul-shell.hcl $SHELL"
+        ),
+    ]
+
+
 def _shell_socket(ws, org_slug, project_slug, app_slug, env_slug=None):
     if not current_app.config.get("SHELLZ_ENABLED", False):
         abort(404)
