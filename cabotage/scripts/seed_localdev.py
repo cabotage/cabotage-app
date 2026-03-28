@@ -365,42 +365,57 @@ def seed():
         else:
             configs_web_staging = list(web_staging.configurations)
 
-        # Images for Web/Production (3 images, spread over 72h)
+        # Pipeline runs for Web/Production — 15 deploys spread over 90 days
         if web_prod.images.count() == 0:
-            _make_image(app_web, web_prod, build_ref="main", processes=WEB_PROCESSES,
-                        age_hours=72, duration_secs=65)
-            _make_image(app_web, web_prod, build_ref="main", processes=WEB_PROCESSES,
-                        age_hours=48, duration_secs=52)
-            latest_web_prod_img = _make_image(
-                app_web, web_prod, build_ref="main", processes=WEB_PROCESSES,
-                age_hours=6, duration_secs=38,
-            )
+            _pipeline_runs = [
+                # (age_days, img_dur, rel_dur, dep_dur, error)
+                (85, 72, 14, 32, False),
+                (75, 68, 12, 28, False),
+                (65, 58, 11, 25, True),   # failed deploy
+                (55, 61, 13, 30, False),
+                (45, 55, 10, 22, False),
+                (38, 50, 9, 27, False),
+                (30, 48, 11, 24, False),
+                (22, 45, 8, 20, False),
+                (18, 52, 12, 26, True),   # failed deploy
+                (14, 42, 9, 21, False),
+                (10, 40, 8, 19, False),
+                (7, 44, 10, 23, False),
+                (4, 39, 7, 18, False),
+                (2, 41, 9, 20, False),
+                (0.25, 38, 8, 17, False),  # 6 hours ago
+            ]
+            for age_d, i_dur, r_dur, d_dur, err in _pipeline_runs:
+                age_h = age_d * 24
+                img = _make_image(app_web, web_prod, build_ref="main",
+                                  processes=WEB_PROCESSES,
+                                  age_hours=age_h, duration_secs=i_dur)
+                rel = _make_release(app_web, web_prod, img, configs_web_prod,
+                                    age_hours=age_h - 0.5, duration_secs=r_dur)
+                _make_deployment(app_web, web_prod, rel,
+                                 complete=not err, age_hours=age_h - 1,
+                                 duration_secs=d_dur)
+                if err:
+                    # Mark the deployment as errored
+                    dep = web_prod.deployments.order_by(
+                        Deployment.created.desc()).first()
+                    dep.error = True
+                    dep.error_detail = "Readiness probe failed"
+            latest_web_prod_img = web_prod.images.filter_by(built=True).order_by(
+                Image.version.desc()).first()
+            latest_web_prod_rel = web_prod.releases.filter_by(built=True).order_by(
+                Release.version.desc()).first()
         else:
             latest_web_prod_img = (
                 web_prod.images.filter_by(built=True)
                 .order_by(Image.version.desc())
                 .first()
             )
-
-        # Releases for Web/Production (2 releases)
-        if web_prod.releases.count() == 0:
-            _make_release(app_web, web_prod, latest_web_prod_img, configs_web_prod,
-                          age_hours=47, duration_secs=15)
-            latest_web_prod_rel = _make_release(
-                app_web, web_prod, latest_web_prod_img, configs_web_prod,
-                age_hours=5, duration_secs=10,
-            )
-        else:
             latest_web_prod_rel = (
                 web_prod.releases.filter_by(built=True)
                 .order_by(Release.version.desc())
                 .first()
             )
-
-        # Deployment for Web/Production
-        if web_prod.deployments.count() == 0:
-            _make_deployment(app_web, web_prod, latest_web_prod_rel, complete=True,
-                             age_hours=5, duration_secs=25)
 
         # Process counts for Web/Production
         web_prod.process_counts = {"web": 2, "worker": 1}
