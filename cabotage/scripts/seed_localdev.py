@@ -9,33 +9,7 @@ realistic data so the UI is fully populated:
 
 import datetime
 
-from sqlalchemy import text as sa_text
-
 from cabotage.server import create_app, db
-
-# Deferred timestamp fixups — applied via raw SQL after final commit
-# so SQLAlchemy's onupdate handlers don't overwrite them.
-_timestamp_fixups = []
-
-
-def _defer_timestamps(table, row_id, created, updated):
-    """Queue a raw SQL timestamp update for after the final commit."""
-    _timestamp_fixups.append((table, row_id, created, updated))
-
-
-def _apply_timestamp_fixups():
-    """Execute all deferred timestamp updates via raw SQL."""
-    for table, row_id, created, updated in _timestamp_fixups:
-        db.session.execute(
-            sa_text(
-                f"UPDATE {table} SET created = :created, updated = :updated WHERE id = :id"
-            ),
-            {"created": created, "updated": updated, "id": str(row_id)},
-        )
-    db.session.commit()
-    _timestamp_fixups.clear()
-
-
 from cabotage.server.models import Organization, User
 from cabotage.server.models.projects import (
     Application,
@@ -445,27 +419,6 @@ def seed():
                     ).first()
                     dep.error = True
                     dep.error_detail = "Readiness probe failed"
-            latest_web_prod_img = (
-                web_prod.images.filter_by(built=True)
-                .order_by(Image.version.desc())
-                .first()
-            )
-            latest_web_prod_rel = (
-                web_prod.releases.filter_by(built=True)
-                .order_by(Release.version.desc())
-                .first()
-            )
-        else:
-            latest_web_prod_img = (
-                web_prod.images.filter_by(built=True)
-                .order_by(Image.version.desc())
-                .first()
-            )
-            latest_web_prod_rel = (
-                web_prod.releases.filter_by(built=True)
-                .order_by(Release.version.desc())
-                .first()
-            )
 
         # Process counts for Web/Production
         web_prod.process_counts = {"web": 2, "worker": 1}
