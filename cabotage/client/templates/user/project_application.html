@@ -984,7 +984,7 @@
                       {% endif %}
                       <code class="text-xs text-accent/70">#{{ img.version }}</code>
                       {% if img.image_metadata and img.image_metadata.get('trigger', '').startswith('manual') %}
-                        <span class="dpl-badge dpl-badge-manual tooltip tooltip-top" data-tip="by {{ img.image_metadata.get('triggered_by', '?') }}">{{ icon('user', 'w-2 h-2') }} manual</span>
+                        <span class="dpl-badge dpl-badge-manual" title="by {{ img.image_metadata.get('triggered_by', '?') }}">{{ icon('user', 'w-2 h-2') }} manual</span>
                       {% endif %}
                     <span class="text-xs text-base-content/25 ml-auto"><time data-timestamp="{{ img.updated|isoformat_utc }}">{{ img.updated|humanize }}</time>
                     {% if img.built %}<span class="text-base-content/15">({{ img|duration }})</span>{% endif %}
@@ -1017,7 +1017,7 @@
                   {% endif %}
                   <code class="text-xs text-accent/70">v{{ rel.version }}</code>
                   {% if rel.release_metadata and rel.release_metadata.get('trigger', '').startswith('manual') %}
-                    <span class="dpl-badge dpl-badge-manual tooltip tooltip-top" data-tip="by {{ rel.release_metadata.get('triggered_by', '?') }}">{{ icon('user', 'w-2 h-2') }} manual</span>
+                    <span class="dpl-badge dpl-badge-manual" title="by {{ rel.release_metadata.get('triggered_by', '?') }}">{{ icon('user', 'w-2 h-2') }} manual</span>
                   {% endif %}
                 <span class="text-xs text-base-content/25 ml-auto"><time data-timestamp="{{ rel.updated|isoformat_utc }}">{{ rel.updated|humanize }}</time>
                 {% if rel.built %}<span class="text-base-content/15">({{ rel|duration }})</span>{% endif %}
@@ -1050,7 +1050,7 @@
               {% endif %}
               <code class="text-xs text-accent/70">v{{ release_by_id.get(dep.release.get('id', '')|string).version if release_by_id.get(dep.release.get('id', '')|string) else '?' }}</code>
               {% if dep.deploy_metadata and dep.deploy_metadata.get('trigger', '').startswith('manual') %}
-                <span class="dpl-badge dpl-badge-manual tooltip tooltip-top" data-tip="by {{ dep.deploy_metadata.get('triggered_by', '?') }}">{{ icon('user', 'w-2 h-2') }} manual</span>
+                <span class="dpl-badge dpl-badge-manual" title="by {{ dep.deploy_metadata.get('triggered_by', '?') }}">{{ icon('user', 'w-2 h-2') }} manual</span>
               {% endif %}
             <span class="text-xs text-base-content/25 ml-auto"><time data-timestamp="{{ dep.updated|isoformat_utc }}">{{ dep.updated|humanize }}</time>
             {% if dep.complete %}<span class="text-base-content/15">({{ dep|duration }})</span>{% endif %}
