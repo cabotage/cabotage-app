@@ -202,9 +202,15 @@
 
   function isLive() { return windowEnd === null; }
 
-  // Axis colors
-  var AXIS_STROKE = 'rgba(0,0,0,0.5)';
-  var GRID_STROKE = 'rgba(0,0,0,0.08)';
+  // Axis colors — re-read from theme each time a chart is created
+  function getAxisStroke() {
+    return document.documentElement.getAttribute('data-theme') !== 'light'
+      ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)';
+  }
+  function getGridStroke() {
+    return document.documentElement.getAttribute('data-theme') !== 'light'
+      ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  }
 
   var COLORS = [
     '#8b5cf6', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b',
@@ -337,10 +343,10 @@
       height: height,
       series: series,
       axes: [
-        { stroke: AXIS_STROKE, grid: { stroke: GRID_STROKE } },
+        { stroke: getAxisStroke(), grid: { stroke: getGridStroke() } },
         {
-          stroke: AXIS_STROKE,
-          grid: { stroke: GRID_STROKE },
+          stroke: getAxisStroke(),
+          grid: { stroke: getGridStroke() },
           size: 70,
           values: function(u, vals) { return vals.map(valueFmt); }
         }
@@ -407,10 +413,10 @@
       series: series,
       bands: bands,
       axes: [
-        { stroke: AXIS_STROKE, grid: { stroke: GRID_STROKE } },
+        { stroke: getAxisStroke(), grid: { stroke: getGridStroke() } },
         {
-          stroke: AXIS_STROKE,
-          grid: { stroke: GRID_STROKE },
+          stroke: getAxisStroke(),
+          grid: { stroke: getGridStroke() },
           size: 70,
           values: function(u, vals) { return vals.map(valueFmt); }
         }
@@ -505,10 +511,10 @@
       height: height,
       series: series,
       axes: [
-        { stroke: AXIS_STROKE, grid: { stroke: GRID_STROKE } },
+        { stroke: getAxisStroke(), grid: { stroke: getGridStroke() } },
         {
-          stroke: AXIS_STROKE,
-          grid: { stroke: GRID_STROKE },
+          stroke: getAxisStroke(),
+          grid: { stroke: getGridStroke() },
           size: 70,
           values: function(u, vals) { return vals.map(absFmt); }
         }
@@ -603,6 +609,35 @@
     network:  { labelKey: 'direction', fmt: fmtBytes, type: 'mirror', short: false, colors: { 'tx': '#8b5cf6', 'rx': '#3b82f6' } }
   };
 
+  // Cache last fetched data per metric so theme switches can re-render without refetch
+  var _panelCache = {};
+
+  function renderPanel(metric, result) {
+    var panel = panels[metric];
+    var el = document.getElementById('chart-' + metric);
+    var group = panelGroups[metric] || 'total';
+    var labelKey = panel.labelKey;
+    var chartType = panel.type;
+    if (metric === 'cpu' || metric === 'memory' || metric === 'network') {
+      if (group === 'total') labelKey = '__total__';
+      else if (group === 'process') labelKey = 'process';
+      else if (group === 'application') labelKey = 'application';
+      else if (group === 'environment') labelKey = 'environment';
+      else if (group === 'project') labelKey = 'project';
+      else labelKey = 'pod';
+    } else if (metric === 'errors') {
+      if (group === 'status') labelKey = 'label';
+    }
+    var short = (group === 'pod');
+    if (chartType === 'bar') {
+      makeBarChart(el, result, labelKey, panel.fmt, panel.colors);
+    } else if (chartType === 'mirror') {
+      makeMirrorChart(el, result, labelKey, panel.fmt, short, panel.colors);
+    } else {
+      makeLineChart(el, result, labelKey, panel.fmt, short, panel.colors);
+    }
+  }
+
   function fetchAndRender(metric) {
     var panel = panels[metric];
     var el = document.getElementById('chart-' + metric);
@@ -637,27 +672,8 @@
           el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/30 text-sm">No data</div>';
           return;
         }
-        // Determine label key and chart type based on group
-        var labelKey = panel.labelKey;
-        var chartType = panel.type;
-        if (metric === 'cpu' || metric === 'memory' || metric === 'network') {
-          if (group === 'total') labelKey = '__total__';
-          else if (group === 'process') labelKey = 'process';
-          else if (group === 'application') labelKey = 'application';
-          else if (group === 'environment') labelKey = 'environment';
-          else if (group === 'project') labelKey = 'project';
-          else labelKey = 'pod';
-        } else if (metric === 'errors') {
-          if (group === 'status') labelKey = 'label';
-        }
-        var short = (group === 'pod');
-        if (chartType === 'bar') {
-          makeBarChart(el, data.result, labelKey, panel.fmt, panel.colors);
-        } else if (chartType === 'mirror') {
-          makeMirrorChart(el, data.result, labelKey, panel.fmt, short, panel.colors);
-        } else {
-          makeLineChart(el, data.result, labelKey, panel.fmt, short, panel.colors);
-        }
+        _panelCache[metric] = data.result;
+        renderPanel(metric, data.result);
       })
       .catch(function() {
         el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/30 text-sm">Unavailable</div>';
@@ -928,6 +944,13 @@
 
   // Initial load all panels
   Object.keys(panels).forEach(fetchAndRender);
+
+  // Re-render charts from cache when theme changes so axis/grid colors update
+  new MutationObserver(function() {
+    Object.keys(panels).forEach(function(metric) {
+      if (_panelCache[metric]) renderPanel(metric, _panelCache[metric]);
+    });
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
   // Auto-refresh (restarts when range changes)
   var refreshTimer = setInterval(function() {

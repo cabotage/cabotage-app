@@ -3881,13 +3881,14 @@ a.obs-pod-link:hover {
   position: absolute;
   pointer-events: none;
   z-index: 10;
-  background: var(--b1, #fff);
-  border: 1px solid rgba(0,0,0,0.15);
+  background: var(--surface-card, #fff);
+  color: var(--text-bright, #18181b);
+  border: 1px solid var(--border-color, rgba(0,0,0,0.15));
   border-radius: 6px;
   padding: 6px 10px;
   font-size: 12px;
   line-height: 1.6;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  box-shadow: 0 2px 8px var(--shadow-card, rgba(0,0,0,0.12));
   white-space: nowrap;
 }
 .chart-tip-time {
@@ -3906,7 +3907,7 @@ a.obs-pod-link:hover {
   flex-shrink: 0;
 }
 .chart-tip-label {
-  color: rgba(0,0,0,0.5);
+  color: var(--text-muted, rgba(0,0,0,0.5));
   min-width: 40px;
 }
 .chart-tip-value {
@@ -3914,9 +3915,17 @@ a.obs-pod-link:hover {
   font-weight: 600;
 }
 .chart-tip-total {
-  border-top: 1px solid rgba(0,0,0,0.1);
+  border-top: 1px solid var(--border-color-subtle, rgba(0,0,0,0.1));
   margin-top: 3px;
   padding-top: 3px;
+}
+
+/* uPlot legend text — theme-aware */
+.u-legend .u-series td {
+  color: var(--text-muted, #52525b);
+}
+.u-legend .u-series .u-label {
+  color: var(--text-bright, #18181b);
 }
 
 /* Responsive Utils */
