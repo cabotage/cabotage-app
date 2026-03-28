@@ -1156,6 +1156,7 @@ class Configuration(Model, Timestamp):
             "name": self.name,
             "version_id": self.version_id,
             "secret": self.secret,
+            "buildtime": self.buildtime,
         }
 
     @property
@@ -1198,6 +1199,7 @@ class ConfigurationSnapshot:
         self.name = data["name"]
         self.version_id = data["version_id"]
         self.secret = data["secret"]
+        self.buildtime = data.get("buildtime", False)
 
 
 class EnvironmentConfiguration(Model, Timestamp):
@@ -1267,6 +1269,7 @@ class EnvironmentConfiguration(Model, Timestamp):
             "name": self.name,
             "version_id": self.version_id,
             "secret": self.secret,
+            "buildtime": self.buildtime,
         }
 
     @property
