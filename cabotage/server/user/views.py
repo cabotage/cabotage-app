@@ -2491,7 +2491,8 @@ def _shell_socket(ws, org_slug, project_slug, app_slug, env_slug=None):
             (
                 "export CONSUL_TOKEN=$(cat /var/run/secrets/vault/consul-token) && "
                 "export VAULT_TOKEN=$(cat /var/run/secrets/vault/vault-token) && "
-                "envconsul -config /etc/cabotage/envconsul-shell.hcl /bin/sh"
+                "SHELL=$(command -v bash || echo /bin/sh) && "
+                "envconsul -config /etc/cabotage/envconsul-shell.hcl $SHELL"
             ),
         ],
         container=process_name,
