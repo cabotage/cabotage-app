@@ -620,8 +620,8 @@
               '<div class="pipe-slowest-bar" style="width:' + barW + '%;background:' + color + '"></div>' +
               '<span style="font-weight:700;font-family:JetBrains Mono,monospace;font-size:0.75rem;color:var(--text-bright);white-space:nowrap">' + fmtDur(item.duration) + '</span>' +
             '</div>' +
-            '<span style="font-family:JetBrains Mono,monospace;font-size:0.6875rem;color:var(--text-faint)">' + sha + '</span>' +
-            '<span style="font-size:0.6875rem;color:var(--text-faintest)">' + relTime(item.created) + '</span></div>';
+            '<span style="font-family:JetBrains Mono,monospace;font-size:0.6875rem;color:var(--text-faint);text-align:right">' + sha + '</span>' +
+            '<span style="font-size:0.6875rem;color:var(--text-faintest);text-align:right">' + relTime(item.created) + '</span></div>';
         }).join('');
       });
   }
