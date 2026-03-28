@@ -876,13 +876,6 @@ class Release(Model, Timestamp):
         return None
 
     @property
-    def trigger_type(self):
-        meta = self.release_metadata or {}
-        if meta.get("auto_deploy"):
-            return "auto"
-        return "manual"
-
-    @property
     def valid(self):
         return (self.image_object is not None) and all(
             v is not None for v in self.configuration_objects.values()
@@ -1487,13 +1480,6 @@ class Image(Model, Timestamp):
         if (self.built or self.error) and self.created and self.updated:
             return (self.updated - self.created).total_seconds()
         return None
-
-    @property
-    def trigger_type(self):
-        meta = self.image_metadata or {}
-        if meta.get("auto_deploy"):
-            return "auto"
-        return "manual"
 
     @property
     def repository_name(self):
