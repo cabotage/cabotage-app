@@ -2503,16 +2503,7 @@ def _shell_socket(ws, org_slug, project_slug, app_slug, env_slug=None):
         core_api_instance.connect_get_namespaced_pod_exec,
         pod.metadata.name,
         namespace=pod.metadata.namespace,
-        command=[
-            "/bin/sh",
-            "-c",
-            (
-                "export CONSUL_TOKEN=$(cat /var/run/secrets/vault/consul-token) && "
-                "export VAULT_TOKEN=$(cat /var/run/secrets/vault/vault-token) && "
-                "SHELL=$(command -v bash || echo /bin/sh) && "
-                "envconsul -config /etc/cabotage/envconsul-shell.hcl $SHELL"
-            ),
-        ],
+        command=_shell_exec_command(),
         container=process_name,
         stderr=True,
         stdin=True,
