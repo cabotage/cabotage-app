@@ -91,7 +91,7 @@
   {% set env_slug = env.slug if env else none %}
   {% set overview_url = url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) %}
   <div class="app-content-padded !py-0">
-    <div class="tab-bar">
+    <div class="tab-bar" data-tabs>
       <a href="{{ overview_url }}"
          title="Overview"
          class="tab-item
