@@ -1180,12 +1180,12 @@ class TestGitRefFallback:
         context_arg = [a for a in args if "context=" in a][0]
 
         # Should use branch ref "develop", NOT "#null"
-        assert "#null" not in context_arg, (
-            f"Build context should not contain #null, got: {context_arg}"
-        )
-        assert "#develop" in context_arg, (
-            f"Build context should use branch ref 'develop', got: {context_arg}"
-        )
+        assert (
+            "#null" not in context_arg
+        ), f"Build context should not contain #null, got: {context_arg}"
+        assert (
+            "#develop" in context_arg
+        ), f"Build context should use branch ref 'develop', got: {context_arg}"
 
     @patch("cabotage.celery.tasks.build._fetch_github_file")
     @patch("cabotage.celery.tasks.build._fetch_commit_sha_for_ref")
@@ -1239,9 +1239,7 @@ class TestGitRefFallback:
 
         _fetch_image_source(manual_image, access_token=None)
 
-        mock_fetch_sha.assert_called_once_with(
-            REPO, "develop", access_token=None
-        )
+        mock_fetch_sha.assert_called_once_with(REPO, "develop", access_token=None)
 
     def test_manual_image_commit_sha_is_null(self, manual_image):
         """A manual image without a SHA in metadata reports commit_sha as 'null'."""
