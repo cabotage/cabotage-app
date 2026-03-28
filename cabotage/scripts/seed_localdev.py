@@ -7,6 +7,8 @@ realistic data so the UI is fully populated:
   - Configurations, images, releases, deployments, ingress rules
 """
 
+import datetime
+
 from cabotage.server import create_app, db
 from cabotage.server.models import Organization, User
 from cabotage.server.models.projects import (
@@ -38,7 +40,8 @@ def _make_config(app, app_env, name, value, *, secret=False):
     return cfg
 
 
-def _make_image(app, app_env, *, build_ref="main", processes=None, built=True):
+def _make_image(app, app_env, *, build_ref="main", processes=None, built=True,
+                age_hours=0, duration_secs=45):
     """Create an Image row.  version is auto-set by the before_insert listener."""
     repo = Image._build_repository_name(
         app.project.organization.k8s_identifier,
@@ -46,6 +49,8 @@ def _make_image(app, app_env, *, build_ref="main", processes=None, built=True):
         app.k8s_identifier,
         app_env.k8s_identifier,
     )
+    now = datetime.datetime.utcnow()
+    created = now - datetime.timedelta(hours=age_hours)
     img = Image(
         application_id=app.id,
         application_environment_id=app_env.id,
@@ -57,10 +62,13 @@ def _make_image(app, app_env, *, build_ref="main", processes=None, built=True):
     )
     db.session.add(img)
     db.session.flush()
+    img.created = created
+    img.updated = created + datetime.timedelta(seconds=duration_secs)
     return img
 
 
-def _make_release(app, app_env, image, configs, *, built=True):
+def _make_release(app, app_env, image, configs, *, built=True,
+                  age_hours=0, duration_secs=12):
     """Create a Release with image/configuration JSONB snapshots."""
     repo = Image._build_repository_name(
         app.project.organization.k8s_identifier,
@@ -68,6 +76,8 @@ def _make_release(app, app_env, image, configs, *, built=True):
         app.k8s_identifier,
         app_env.k8s_identifier,
     )
+    now = datetime.datetime.utcnow()
+    created = now - datetime.timedelta(hours=age_hours)
     release = Release(
         application_id=app.id,
         application_environment_id=app_env.id,
@@ -86,11 +96,16 @@ def _make_release(app, app_env, image, configs, *, built=True):
     )
     db.session.add(release)
     db.session.flush()
+    release.created = created
+    release.updated = created + datetime.timedelta(seconds=duration_secs)
     return release
 
 
-def _make_deployment(app, app_env, release, *, complete=True):
+def _make_deployment(app, app_env, release, *, complete=True,
+                     age_hours=0, duration_secs=30):
     """Create a Deployment row from a Release snapshot."""
+    now = datetime.datetime.utcnow()
+    created = now - datetime.timedelta(hours=age_hours)
     dep = Deployment(
         application_id=app.id,
         application_environment_id=app_env.id,
@@ -99,6 +114,8 @@ def _make_deployment(app, app_env, release, *, complete=True):
     )
     db.session.add(dep)
     db.session.flush()
+    dep.created = created
+    dep.updated = created + datetime.timedelta(seconds=duration_secs)
     return dep
 
 
@@ -327,12 +344,15 @@ def seed():
         else:
             configs_web_staging = list(web_staging.configurations)
 
-        # Images for Web/Production (3 images)
+        # Images for Web/Production (3 images, spread over 72h)
         if web_prod.images.count() == 0:
-            _make_image(app_web, web_prod, build_ref="main", processes=WEB_PROCESSES)
-            _make_image(app_web, web_prod, build_ref="main", processes=WEB_PROCESSES)
+            _make_image(app_web, web_prod, build_ref="main", processes=WEB_PROCESSES,
+                        age_hours=72, duration_secs=65)
+            _make_image(app_web, web_prod, build_ref="main", processes=WEB_PROCESSES,
+                        age_hours=48, duration_secs=52)
             latest_web_prod_img = _make_image(
-                app_web, web_prod, build_ref="main", processes=WEB_PROCESSES
+                app_web, web_prod, build_ref="main", processes=WEB_PROCESSES,
+                age_hours=6, duration_secs=38,
             )
         else:
             latest_web_prod_img = (
@@ -343,9 +363,11 @@ def seed():
 
         # Releases for Web/Production (2 releases)
         if web_prod.releases.count() == 0:
-            _make_release(app_web, web_prod, latest_web_prod_img, configs_web_prod)
+            _make_release(app_web, web_prod, latest_web_prod_img, configs_web_prod,
+                          age_hours=47, duration_secs=15)
             latest_web_prod_rel = _make_release(
-                app_web, web_prod, latest_web_prod_img, configs_web_prod
+                app_web, web_prod, latest_web_prod_img, configs_web_prod,
+                age_hours=5, duration_secs=10,
             )
         else:
             latest_web_prod_rel = (
@@ -356,7 +378,8 @@ def seed():
 
         # Deployment for Web/Production
         if web_prod.deployments.count() == 0:
-            _make_deployment(app_web, web_prod, latest_web_prod_rel, complete=True)
+            _make_deployment(app_web, web_prod, latest_web_prod_rel, complete=True,
+                             age_hours=5, duration_secs=25)
 
         # Process counts for Web/Production
         web_prod.process_counts = {"web": 2, "worker": 1}
@@ -368,7 +391,8 @@ def seed():
         # Images for Web/Staging (1 image)
         if web_staging.images.count() == 0:
             staging_img = _make_image(
-                app_web, web_staging, build_ref="develop", processes=WEB_PROCESSES
+                app_web, web_staging, build_ref="develop", processes=WEB_PROCESSES,
+                age_hours=2, duration_secs=42,
             )
         else:
             staging_img = (
@@ -380,9 +404,11 @@ def seed():
         # Release + Deployment for Web/Staging
         if web_staging.releases.count() == 0:
             staging_rel = _make_release(
-                app_web, web_staging, staging_img, configs_web_staging
+                app_web, web_staging, staging_img, configs_web_staging,
+                age_hours=2, duration_secs=8,
             )
-            _make_deployment(app_web, web_staging, staging_rel, complete=True)
+            _make_deployment(app_web, web_staging, staging_rel, complete=True,
+                             age_hours=2, duration_secs=18)
 
         web_staging.process_counts = {"web": 1, "worker": 1}
 
@@ -426,7 +452,8 @@ def seed():
         # Image, Release, Deployment for Worker/Production
         if worker_prod.images.count() == 0:
             worker_img = _make_image(
-                app_worker, worker_prod, build_ref="main", processes=WORKER_PROCESSES
+                app_worker, worker_prod, build_ref="main", processes=WORKER_PROCESSES,
+                age_hours=24, duration_secs=55,
             )
         else:
             worker_img = (
@@ -437,9 +464,11 @@ def seed():
 
         if worker_prod.releases.count() == 0:
             worker_rel = _make_release(
-                app_worker, worker_prod, worker_img, configs_worker_prod
+                app_worker, worker_prod, worker_img, configs_worker_prod,
+                age_hours=23, duration_secs=9,
             )
-            _make_deployment(app_worker, worker_prod, worker_rel, complete=True)
+            _make_deployment(app_worker, worker_prod, worker_rel, complete=True,
+                             age_hours=23, duration_secs=20)
 
         worker_prod.process_counts = {"worker": 2}
 
@@ -510,7 +539,8 @@ def seed():
         # Image, Release, Deployment for Site
         if site_env.images.count() == 0:
             site_img = _make_image(
-                app_site, site_env, build_ref="main", processes=DOCS_PROCESSES
+                app_site, site_env, build_ref="main", processes=DOCS_PROCESSES,
+                age_hours=12, duration_secs=30,
             )
         else:
             site_img = (
@@ -520,8 +550,10 @@ def seed():
             )
 
         if site_env.releases.count() == 0:
-            site_rel = _make_release(app_site, site_env, site_img, configs_site)
-            _make_deployment(app_site, site_env, site_rel, complete=True)
+            site_rel = _make_release(app_site, site_env, site_img, configs_site,
+                                     age_hours=11, duration_secs=7)
+            _make_deployment(app_site, site_env, site_rel, complete=True,
+                             age_hours=11, duration_secs=15)
 
         site_env.process_counts = {"web": 1}
 
