@@ -621,18 +621,18 @@ class Application(Model, Timestamp):
             current = latest_deployed.release
         candidate = self.release_candidate_for_env(app_env)
         configuration_diff = DictDiffer(
-            candidate.get("configuration", {}),
-            current.get("configuration", {}),
+            candidate.get("configuration") or {},
+            current.get("configuration") or {},
             ignored_keys=["id"],
         )
         image_diff = DictDiffer(
-            candidate.get("image", {}),
-            current.get("image", {}),
+            candidate.get("image") or {},
+            current.get("image") or {},
             ignored_keys=["id", "commit_sha"],
         )
         ingress_diff = DictDiffer(
-            candidate.get("ingresses", {}),
-            current.get("ingresses", {}),
+            candidate.get("ingresses") or {},
+            current.get("ingresses") or {},
             ignored_keys=["id"],
         )
         return image_diff, configuration_diff, ingress_diff

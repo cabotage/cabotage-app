@@ -2305,18 +2305,18 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
             platform=application.platform,
         ).asdict
         image_diff = DictDiffer(
-            candidate.get("image", {}),
-            current.get("image", {}),
+            candidate.get("image") or {},
+            current.get("image") or {},
             ignored_keys=["id", "version_id", "commit_sha"],
         )
         config_diff = DictDiffer(
-            candidate.get("configuration", {}),
-            current.get("configuration", {}),
+            candidate.get("configuration") or {},
+            current.get("configuration") or {},
             ignored_keys=["id"],
         )
         ingress_diff = DictDiffer(
-            candidate.get("ingresses", {}),
-            current.get("ingresses", {}),
+            candidate.get("ingresses") or {},
+            current.get("ingresses") or {},
             ignored_keys=["id"],
         )
 
