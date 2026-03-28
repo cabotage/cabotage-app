@@ -52,7 +52,8 @@
         {% if not img_ref and image.build_ref %}
           {% set img_ref = image.build_ref %}
         {% endif %}
-        {% set img_auto = image.image_metadata and image.image_metadata.get('auto_deploy') %}
+        {% set img_trigger = image.image_metadata.get('trigger', '') if image.image_metadata else '' %}
+        {% set img_auto = img_trigger == '' and image.image_metadata and image.image_metadata.get('auto_deploy') %}
         {% set img_creator = ((image.image_metadata or {}).get('creator', {}) or {}).get('login', '') %}
         {% set is_latest = latest_built_image and image.id == latest_built_image.id %}
 
@@ -87,7 +88,10 @@
               {% endif %}
               {% if image.built %}<span class="dpl-row-dur">{{ image|duration }}</span>{% endif %}
               {% if is_latest %}<span class="dpl-badge dpl-badge-latest">Latest</span>{% endif %}
-              {% if img_auto %}
+              {% if img_trigger.startswith('manual') %}
+                <span class="dpl-badge dpl-badge-manual"
+                      title="by {{ (image.image_metadata or {}).get('triggered_by', '?') }}">{{ icon('user', 'w-2.5 h-2.5') }} Manual</span>
+              {% elif img_auto %}
                 <span class="dpl-badge dpl-badge-auto"
                       title="Triggered by CI or a deploy-all action">{{ icon('zap', 'w-2.5 h-2.5') }} Auto</span>
               {% endif %}

@@ -54,7 +54,8 @@
         {% if not rel_ref and rel_img %}
           {% set rel_ref = (rel_img.image_metadata or {}).get('ref', '') %}
         {% endif %}
-        {% set rel_auto = release.release_metadata and release.release_metadata.get('auto_deploy') %}
+        {% set rel_trigger = release.release_metadata.get('trigger', '') if release.release_metadata else '' %}
+        {% set rel_auto = rel_trigger == '' and release.release_metadata and release.release_metadata.get('auto_deploy') %}
         {% set is_latest = latest_built_release and release.id == latest_built_release.id %}
         {% set cfg_count = release.configuration|length if release.configuration else 0 %}
         {% set proc_count = release_proc_counts.get(release.id|string, 0) %}
@@ -90,7 +91,10 @@
               {% endif %}
               {% if release.built %}<span class="dpl-row-dur">{{ release|duration }}</span>{% endif %}
               {% if is_latest %}<span class="dpl-badge dpl-badge-latest">Latest</span>{% endif %}
-              {% if rel_auto %}
+              {% if rel_trigger.startswith('manual') %}
+                <span class="dpl-badge dpl-badge-manual"
+                      title="by {{ (release.release_metadata or {}).get('triggered_by', '?') }}">{{ icon('user', 'w-2.5 h-2.5') }} Manual</span>
+              {% elif rel_auto %}
                 <span class="dpl-badge dpl-badge-auto"
                       title="Triggered by CI or a deploy-all action">{{ icon('zap', 'w-2.5 h-2.5') }} Auto</span>
               {% endif %}

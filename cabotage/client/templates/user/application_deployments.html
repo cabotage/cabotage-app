@@ -60,7 +60,8 @@
             {% set dep_ref = (dep_img.image_metadata or {}).get('ref', '') %}
           {% endif %}
         {% endif %}
-        {% set dep_auto = dep_rel and dep_rel.release_metadata and dep_rel.release_metadata.get('auto_deploy') %}
+        {% set dep_trigger = deployment.deploy_metadata.get('trigger', '') if deployment.deploy_metadata else '' %}
+        {% set dep_auto = dep_trigger == '' and dep_rel and dep_rel.release_metadata and dep_rel.release_metadata.get('auto_deploy') %}
 
         <a href="{{ url_for('user.deployment_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id=deployment.id) }}"
            class="dpl-row {{ 'dpl-row-active' if is_active }} {{ 'dpl-row-error' if deployment.error }} {{ 'dpl-row-deploying' if not deployment.complete and not deployment.error }}">
@@ -97,7 +98,10 @@
               {% endif %}
               {% if deployment.complete or deployment.error %}<span class="dpl-row-dur">{{ deployment|duration }}</span>{% endif %}
               {% if is_active %}<span class="dpl-badge dpl-badge-active">Active</span>{% endif %}
-              {% if dep_auto %}
+              {% if dep_trigger.startswith('manual') %}
+                <span class="dpl-badge dpl-badge-manual"
+                      title="by {{ (deployment.deploy_metadata or {}).get('triggered_by', '?') }}">{{ icon('user', 'w-2.5 h-2.5') }} Manual</span>
+              {% elif dep_auto %}
                 <span class="dpl-badge dpl-badge-auto"
                       title="Triggered by CI or a deploy-all action">{{ icon('zap', 'w-2.5 h-2.5') }} Auto</span>
               {% endif %}

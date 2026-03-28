@@ -181,13 +181,14 @@ def _fetch_image_source(image, access_token):
             image.build_ref,
             access_token=access_token,
         )
-        if image.image_metadata is None:
-            image.image_metadata = {"sha": commit_sha}
-        else:
-            image.image_metadata["sha"] = commit_sha
+        # Reassign the whole dict so SQLAlchemy detects the JSONB mutation
+        image.image_metadata = {**(image.image_metadata or {}), "sha": commit_sha}
 
     def git_ref(repository, sha):
-        ref = f"https://x-access-token@github.com/{image.application.github_repository}.git#{image.commit_sha}"
+        git_sha = image.commit_sha
+        if git_sha == "null":
+            git_sha = image.build_ref or "main"
+        ref = f"https://x-access-token@github.com/{image.application.github_repository}.git#{git_sha}"
         if image.application.subdirectory:
             return f"{ref}:{image.application.subdirectory}"
         return ref
@@ -1656,14 +1657,10 @@ def run_image_build(image_id=None, buildkit=False):
     image.image_id = build_metadata["image_id"]
     image.processes = build_metadata["processes"]
     image.built = True
-    if image.image_metadata is None:
-        image.image_metadata = {
-            "dockerfile_env_vars": build_metadata["dockerfile_env_vars"]
-        }
-    else:
-        image.image_metadata["dockerfile_env_vars"] = build_metadata[
-            "dockerfile_env_vars"
-        ]
+    image.image_metadata = {
+        **(image.image_metadata or {}),
+        "dockerfile_env_vars": build_metadata["dockerfile_env_vars"],
+    }
 
     db.session.add(image)
     db.session.commit()

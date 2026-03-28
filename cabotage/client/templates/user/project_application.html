@@ -154,11 +154,37 @@
       </span>
     </div>
     <div class="app-header-actions">
-      <div class="tooltip"
-           data-tip="Configure a deploy branch in Settings to enable">
-        <button class="btn btn-ghost btn-sm gap-1.5 btn-disabled text-base-content/20"
-                disabled>{{ icon('deploy', 'w-3.5 h-3.5') }} Deploy</button>
-      </div>
+      {% if app_env and application.github_repository and app_env.effective_auto_deploy_branch %}
+        <form action="{{ url_for('user.application_images_build_fromsource', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+              method="post"
+              class="inline"
+              data-full-deploy-form>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+          <input type="hidden" name="auto_deploy" value="true">
+          {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}">{% endif %}
+          <button class="btn btn-ghost btn-sm gap-1.5"
+                  type="submit">{{ icon('deploy', 'w-3.5 h-3.5') }} Deploy</button>
+        </form>
+      {% else %}
+        <div class="hdr-action-disabled" tabindex="0">
+          <button class="btn btn-ghost btn-sm gap-1.5 btn-disabled text-base-content/20"
+                  disabled>{{ icon('deploy', 'w-3.5 h-3.5') }} Deploy</button>
+          <div class="hdr-action-tip">
+            {% if not application.github_repository %}
+              <p>{{ icon('alert-circle', 'w-3.5 h-3.5 text-warning') }} No repository connected</p>
+              <p>Connect a GitHub repository to enable deployments.</p>
+              <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}">{{ icon('settings', 'w-3 h-3') }} Go to Settings</a>
+            {% elif not app_env %}
+              <p>{{ icon('alert-circle', 'w-3.5 h-3.5 text-warning') }} No environment</p>
+              <p>Add this application to an environment first.</p>
+            {% else %}
+              <p>{{ icon('alert-circle', 'w-3.5 h-3.5 text-warning') }} No deploy branch configured</p>
+              <p>Set an auto-deploy branch in settings to enable one-click deploys.</p>
+              <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}">{{ icon('settings', 'w-3 h-3') }} Go to Settings</a>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
 
       <form action="{{ url_for('user.application_clear_cache', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
             method="post"
@@ -759,8 +785,8 @@
           {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
           <div class="process-grid">
             {% for process_name in latest_release_processes %}
-              {% set count = src.process_counts.get(process_name, 0) %}
-              {% set pod_class = src.process_pod_classes.get(process_name, DEFAULT_POD_CLASS) %}
+              {% set count = app_env.process_counts.get(process_name, 0) %}
+              {% set pod_class = app_env.process_pod_classes.get(process_name, DEFAULT_POD_CLASS) %}
               <div class="process-card {{ 'process-card-active' if count > 0 else 'process-card-idle' }}">
                 <div class="process-name">
                   {% if count > 0 %}
@@ -957,6 +983,9 @@
                                      height:5px"></span>
                       {% endif %}
                       <code class="text-xs text-accent/70">#{{ img.version }}</code>
+                      {% if img.image_metadata and img.image_metadata.get('trigger', '').startswith('manual') %}
+                        <span class="dpl-badge dpl-badge-manual" title="by {{ img.image_metadata.get('triggered_by', '?') }}">{{ icon('user', 'w-2 h-2') }} manual</span>
+                      {% endif %}
                     <span class="text-xs text-base-content/25 ml-auto"><time data-timestamp="{{ img.updated|isoformat_utc }}">{{ img.updated|humanize }}</time>
                     {% if img.built %}<span class="text-base-content/15">({{ img|duration }})</span>{% endif %}
                   </span>
@@ -987,6 +1016,9 @@
                                  height:5px"></span>
                   {% endif %}
                   <code class="text-xs text-accent/70">v{{ rel.version }}</code>
+                  {% if rel.release_metadata and rel.release_metadata.get('trigger', '').startswith('manual') %}
+                    <span class="dpl-badge dpl-badge-manual" title="by {{ rel.release_metadata.get('triggered_by', '?') }}">{{ icon('user', 'w-2 h-2') }} manual</span>
+                  {% endif %}
                 <span class="text-xs text-base-content/25 ml-auto"><time data-timestamp="{{ rel.updated|isoformat_utc }}">{{ rel.updated|humanize }}</time>
                 {% if rel.built %}<span class="text-base-content/15">({{ rel|duration }})</span>{% endif %}
               </span>
@@ -1017,6 +1049,9 @@
                              height:5px"></span>
               {% endif %}
               <code class="text-xs text-accent/70">v{{ release_by_id.get(dep.release.get('id', '')|string).version if release_by_id.get(dep.release.get('id', '')|string) else '?' }}</code>
+              {% if dep.deploy_metadata and dep.deploy_metadata.get('trigger', '').startswith('manual') %}
+                <span class="dpl-badge dpl-badge-manual" title="by {{ dep.deploy_metadata.get('triggered_by', '?') }}">{{ icon('user', 'w-2 h-2') }} manual</span>
+              {% endif %}
             <span class="text-xs text-base-content/25 ml-auto"><time data-timestamp="{{ dep.updated|isoformat_utc }}">{{ dep.updated|humanize }}</time>
             {% if dep.complete %}<span class="text-base-content/15">({{ dep|duration }})</span>{% endif %}
           </span>
@@ -1288,6 +1323,7 @@
     <span>→</span>
   </a>
 </div>
+
 
 
   {% endif %}{# end if app_env #}

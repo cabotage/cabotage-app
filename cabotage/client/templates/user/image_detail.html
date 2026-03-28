@@ -46,8 +46,11 @@
             <h1 class="text-xl font-semibold text-base-content">
               Build <span class="font-mono text-accent">#{{ image.version }}</span>
             </h1>
-            {% if image.image_metadata and image.image_metadata.get('auto_deploy') %}
-              <span class="badge badge-sm badge-ghost text-accent/70 border-accent/20 gap-1">{{ icon('zap', 'w-3 h-3') }} auto</span>
+            {% set _trigger = (image.image_metadata or {}).get('trigger', '') %}
+            {% if _trigger.startswith('manual') %}
+              <span class="dpl-badge dpl-badge-manual tooltip tooltip-bottom" data-tip="by {{ (image.image_metadata or {}).get('triggered_by', '?') }}">{{ icon('user', 'w-2.5 h-2.5') }} Manual</span>
+            {% elif image.image_metadata and image.image_metadata.get('auto_deploy') %}
+              <span class="dpl-badge dpl-badge-auto tooltip tooltip-bottom" data-tip="Triggered by CI or a deploy-all action">{{ icon('zap', 'w-2.5 h-2.5') }} Auto</span>
             {% endif %}
           </div>
           <p class="text-sm text-base-content/40 font-mono mt-0.5">{{ image.repository_name }}</p>

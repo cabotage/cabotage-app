@@ -2582,11 +2582,32 @@ document.addEventListener('DOMContentLoaded', function () {
   initConfirmDialogs();
   initTfSelect();
   initSecuritySettings();
+  initHdrActionTips();
   window.addEventListener('resize', function () {
     autoExpandCollapsibleCards();
     syncDetailLogHeight();
   });
 });
+
+/* Header action disabled popovers — fixed-positioned to escape overflow clip */
+function initHdrActionTips() {
+  document.querySelectorAll('.hdr-action-disabled').forEach(function (el) {
+    var tip = el.querySelector('.hdr-action-tip'), t;
+    if (!tip) return;
+    function show() {
+      clearTimeout(t);
+      var r = el.getBoundingClientRect();
+      tip.style.cssText = 'display:block;top:' + (r.bottom + 8) + 'px;right:' + (window.innerWidth - r.right) + 'px';
+    }
+    function hide() { t = setTimeout(function () { tip.style.display = ''; }, 80); }
+    [el, tip].forEach(function (n) {
+      n.addEventListener('mouseenter', show);
+      n.addEventListener('mouseleave', hide);
+    });
+    el.addEventListener('focusin', show);
+    el.addEventListener('focusout', hide);
+  });
+}
 
 /* Ingress: dynamic annotation key/value tables */
 function initAnnotationTables() {
