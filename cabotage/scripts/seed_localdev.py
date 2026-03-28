@@ -70,12 +70,8 @@ def _make_image(
     )
     db.session.add(img)
     db.session.flush()
-    _defer_timestamps(
-        "project_app_images",
-        img.id,
-        created,
-        created + datetime.timedelta(seconds=duration_secs),
-    )
+    img.created = created
+    img.updated = created + datetime.timedelta(seconds=duration_secs)
     return img
 
 
@@ -109,12 +105,8 @@ def _make_release(
     )
     db.session.add(release)
     db.session.flush()
-    _defer_timestamps(
-        "project_app_releases",
-        release.id,
-        created,
-        created + datetime.timedelta(seconds=duration_secs),
-    )
+    release.created = created
+    release.updated = created + datetime.timedelta(seconds=duration_secs)
     return release
 
 
@@ -132,12 +124,8 @@ def _make_deployment(
     )
     db.session.add(dep)
     db.session.flush()
-    _defer_timestamps(
-        "deployments",
-        dep.id,
-        created,
-        created + datetime.timedelta(seconds=duration_secs),
-    )
+    dep.created = created
+    dep.updated = created + datetime.timedelta(seconds=duration_secs)
     return dep
 
 
@@ -646,7 +634,6 @@ def seed():
 
         # ── Commit everything ─────────────────────────────────────────
         db.session.commit()
-        _apply_timestamp_fixups()
         print()
         print("Seed complete!")
         print("  Organizations: 1 (Acme Corp)")
