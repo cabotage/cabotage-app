@@ -96,57 +96,213 @@
          title="Overview"
          class="tab-item
                 {% if active == 'overview' %}tab-active{% endif %}">{{ icon('activity', 'w-4 h-4') }} <span class="tab-label">Overview</span></a>
-      {% if config.MIMIR_URL %}
-      <a href="{{ url_for('user.project_application_observe', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
-         title="Observe"
-         class="tab-item
-                {% if active == 'observe' %}tab-active{% endif %}">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></a>
-      {% else %}
-      <span class="tab-item tab-disabled" title="Observe">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></span>
-      {% endif %}
-      {% if config.LOKI_URL %}
-      <a href="{{ url_for('user.project_application_logs_view', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
-         title="Logs"
-         class="tab-item
-                {% if active == 'logs' %}tab-active{% endif %}">{{ icon('file-text', 'w-4 h-4') }} <span class="tab-label">Logs</span></a>
-      {% else %}
-      <span class="tab-item tab-disabled" title="Logs">{{ icon('file-text', 'w-4 h-4') }} <span class="tab-label">Logs</span></span>
-      {% endif %}
-      <a href="{{ overview_url }}#config"
-         title="Config"
-         class="tab-item
-                {% if active == 'config' %}tab-active{% endif %}">
-        {{ icon('key', 'w-4 h-4') }} <span class="tab-label">Config</span>
-        {% if env %}
-          {% set app_env = application.active_application_environments|selectattr('environment_id', 'equalto', env.id)|first %}
-          {% set configs = app_env.configurations if app_env else [] %}
-        {% else %}
-          {% set configs = application.configurations %}
-        {% endif %}
-        {% set config_count = configs|rejectattr('name', 'equalto', 'CABOTAGE_SENTINEL')|list|length %}
-        {% if config_count %}<span class="badge badge-sm badge-neutral ml-1">{{ config_count }}</span>{% endif %}
-      </a>
+      <div class="dropdown">
+        <div tabindex="0" role="button"
+             class="tab-item {% if active in ('observe', 'logs', 'pipeline') %}tab-active{% endif %}">
+          {{ icon('search', 'w-4 h-4') }}
+          <span class="tab-label">Observe {{ icon('chevron-down', 'w-3 h-3 opacity-40') }}</span>
+        </div>
+        <ul tabindex="0" class="menu menu-md dropdown-content bg-base-100 rounded-box z-50 mt-1 w-48 p-2 shadow-lg border border-base-300">
+          {% if config.MIMIR_URL %}
+          <li><a href="{{ url_for('user.project_application_observe', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
+                 class="{% if active == 'observe' %}active{% endif %}">{{ icon('bar-chart', 'w-3.5 h-3.5') }} Metrics</a></li>
+          {% else %}
+          <li class="disabled opacity-30"><span>{{ icon('bar-chart', 'w-3.5 h-3.5') }} Metrics</span></li>
+          {% endif %}
+          {% if config.LOKI_URL %}
+          <li><a href="{{ url_for('user.project_application_logs_view', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
+                 class="{% if active == 'logs' %}active{% endif %}">{{ icon('file-text', 'w-3.5 h-3.5') }} Logs</a></li>
+          {% else %}
+          <li class="disabled opacity-30"><span>{{ icon('file-text', 'w-3.5 h-3.5') }} Logs</span></li>
+          {% endif %}
+          <li class="disabled opacity-30"><span>{{ icon('bar-chart-2', 'w-3.5 h-3.5') }} Pipeline <span class="text-[0.6rem] opacity-40">(Soon)</span></span></li>
+        </ul>
+      </div>
       <a href="{{ url_for('user.application_images', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
          title="Images"
          class="tab-item
                 {% if active == 'images' %}tab-active{% endif %}">{{ icon('image', 'w-4 h-4') }} <span class="tab-label">Images</span></a>
+      <div class="dropdown">
+        <div tabindex="0" role="button"
+             class="tab-item {% if active in ('config', 'ingress') %}tab-active{% endif %}">
+          {{ icon('tool', 'w-4 h-4') }}
+          <span class="tab-label">Config {{ icon('chevron-down', 'w-3 h-3 opacity-40') }}</span>
+        </div>
+        <ul tabindex="0" class="menu menu-md dropdown-content bg-base-100 rounded-box z-50 mt-1 w-48 p-2 shadow-lg border border-base-300">
+          <li><a href="{{ url_for('user.application_config', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
+                 class="{% if active == 'config' %}active{% endif %}">{{ icon('key', 'w-3.5 h-3.5') }} Variables</a></li>
+          {% if config.INGRESS_DOMAIN or (application and application.project.organization.tailscale_integration) %}
+          <li><a href="{{ url_for('user.project_application_ingress', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
+                 class="{% if active == 'ingress' %}active{% endif %}">{{ icon('globe', 'w-3.5 h-3.5') }} Ingress</a></li>
+          {% else %}
+          <li class="disabled opacity-30"><span>{{ icon('globe', 'w-3.5 h-3.5') }} Ingress</span></li>
+          {% endif %}
+        </ul>
+      </div>
       <a href="{{ url_for('user.application_releases', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
          title="Releases"
          class="tab-item
                 {% if active == 'releases' %}tab-active{% endif %}">{{ icon('layers', 'w-4 h-4') }} <span class="tab-label">Releases</span></a>
-      <span class="tab-item tab-disabled" title="Pipeline">{{ icon('bar-chart-2', 'w-4 h-4') }} <span class="tab-label">Pipeline <span class="text-[0.6rem] opacity-50">(Soon)</span></span></span>
-      {% if config.INGRESS_DOMAIN or (application and application.project.organization.tailscale_integration) %}
-      <a href="{{ url_for('user.project_application_ingress', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
-         title="Ingress"
+      <a href="{{ url_for('user.application_deployments', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
+         title="Deploys"
          class="tab-item
-                {% if active == 'ingress' %}tab-active{% endif %}">{{ icon('globe', 'w-4 h-4') }} <span class="tab-label">Ingress</span></a>
-      {% endif %}
+                {% if active == 'deployments' %}tab-active{% endif %}">{{ icon('upload', 'w-4 h-4') }} <span class="tab-label">Deploys</span></a>
+      {% if application.project.environments_enabled and env %}
+      <div class="dropdown dropdown-end">
+        <div tabindex="0" role="button"
+             class="tab-item {% if active in ('settings', 'env_settings') %}tab-active{% endif %}">
+          {{ icon('settings', 'w-4 h-4') }}
+          <span class="tab-label">Settings {{ icon('chevron-down', 'w-3 h-3 opacity-40') }}</span>
+        </div>
+        <ul tabindex="0" class="menu menu-md dropdown-content bg-base-100 rounded-box z-50 mt-1 w-52 p-2 shadow-lg border border-base-300">
+          <li><a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+                 class="{% if active == 'settings' %}active{% endif %}">{{ icon('box', 'w-3.5 h-3.5') }} Application</a></li>
+          <li><a href="{{ url_for('user.project_application_environment_settings', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug, app_slug=app_slug) }}"
+                 class="{% if active == 'env_settings' %}active{% endif %}">{{ icon('layers', 'w-3.5 h-3.5') }} Environment</a></li>
+        </ul>
+      </div>
+      {% else %}
       <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
          title="Settings"
          class="tab-item
                 {% if active == 'settings' %}tab-active{% endif %}">{{ icon('settings', 'w-4 h-4') }} <span class="tab-label">Settings</span></a>
+      {% endif %}
     </div>
   </div>
+  <script>document.addEventListener('keydown',function(e){if(e.key==='Escape')document.activeElement.blur()})</script>
+{% endmacro %}
+
+{% macro release_changes(rel, img=none, org_slug='', project_slug='', app_slug='', change_details=none) %}
+  {#- Renders the "what changed" pills + expandable detail for a release.
+      rel: Release object with image_changes, configuration_changes, ingress_changes,
+           configuration (snapshot dict), ingresses (snapshot dict).
+      img: resolved Image object (for linking), or none.
+      change_details: optional dict with "config" and "ingress" sub-dicts mapping
+                      item names to lists of change descriptions.
+  -#}
+  {% set img_ch = rel.image_changes or {} %}
+  {% set cfg_ch = rel.configuration_changes or {} %}
+  {% set ing_ch = rel.ingress_changes or {} %}
+  {% set img_added   = img_ch.get('added', []) %}
+  {% set img_changed = img_ch.get('changed', []) %}
+  {% set img_removed = img_ch.get('removed', []) %}
+  {% set cfg_added   = cfg_ch.get('added', []) %}
+  {% set cfg_changed = cfg_ch.get('changed', []) %}
+  {% set cfg_removed = cfg_ch.get('removed', []) %}
+  {% set ing_added   = ing_ch.get('added', []) %}
+  {% set ing_changed = ing_ch.get('changed', []) %}
+  {% set ing_removed = ing_ch.get('removed', []) %}
+  {% set img_total = img_added|length + img_changed|length + img_removed|length %}
+  {% set cfg_total = cfg_added|length + cfg_changed|length + cfg_removed|length %}
+  {% set ing_total = ing_added|length + ing_changed|length + ing_removed|length %}
+  {% set cfg_snapshot = rel.configuration or {} %}
+  {% set ing_snapshot = rel.ingresses or {} %}
+  {% if img_total + cfg_total + ing_total > 0 %}
+    <div class="changes-summary text-xs mt-1.5">
+      <div class="flex items-center gap-2 flex-wrap">
+        {% if img_total > 0 %}
+          <span class="change-pill change-pill-image"
+                {% if img %}data-href="{{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id=img.id) }}"{% endif %}
+                onclick="{% if img %}event.preventDefault(); event.stopPropagation(); window.location=this.dataset.href{% endif %}">
+            {{ icon('image', 'w-3 h-3') }}
+            new image{% if img %} #{{ img.version }}{% endif %}
+          </span>
+        {% endif %}
+        {% if cfg_total > 0 %}
+          <span class="change-pill change-pill-config">
+            {{ icon('key', 'w-3 h-3') }}
+            {{ cfg_total }} config {{ 'variable' if cfg_total == 1 else 'variables' }}
+          </span>
+        {% endif %}
+        {% if ing_total > 0 %}
+          <span class="change-pill change-pill-config">
+            {{ icon('globe', 'w-3 h-3') }}
+            {{ ing_total }} {{ 'ingress' if ing_total == 1 else 'ingresses' }}
+          </span>
+        {% endif %}
+        {% if cfg_total + ing_total > 0 %}
+          <button class="change-details-toggle"
+                  onclick="event.preventDefault(); event.stopPropagation(); var d=this.closest('.changes-summary').querySelector('.change-details'); d.classList.toggle('change-details-open'); this.querySelector('span').textContent = d.classList.contains('change-details-open') ? 'hide details' : 'show details'">
+            {{ icon('chevron-right', 'w-3 h-3 change-details-chevron') }}
+            <span>show details</span>
+          </button>
+        {% endif %}
+      </div>
+
+      <div class="change-details">
+        <div class="change-details-inner">
+          {% set cd = change_details or {} %}
+          {% if cfg_total > 0 %}
+            <div class="change-group">
+              <span class="change-group-label">Config</span>
+              {% for item in cfg_added %}
+                {% set snap = cfg_snapshot.get(item, {}) %}
+                <span class="change-item change-item-added">
+                  <code>{{ item }}</code> <em>added</em>
+                  {% if snap.get('secret') %}<span class="change-tag change-tag-secret">SECRET</span>{% endif %}
+                  {% if snap.get('buildtime') %}<span class="change-tag change-tag-build">BUILD</span>{% endif %}
+                </span>
+              {% endfor %}
+              {% for item in cfg_changed %}
+                {% set snap = cfg_snapshot.get(item, {}) %}
+                {% set field_descs = cd.get('config', {}).get(item, []) %}
+                <span class="change-item change-item-updated">
+                  <code>{{ item }}</code>
+                  {% if field_descs %}
+                    <em>{{ field_descs|join(', ') }}</em>
+                  {% else %}
+                    <em>updated</em>
+                  {% endif %}
+                  {% if snap.get('secret') %}<span class="change-tag change-tag-secret">SECRET</span>{% endif %}
+                  {% if snap.get('buildtime') %}<span class="change-tag change-tag-build">BUILD</span>{% endif %}
+                </span>
+              {% endfor %}
+              {% for item in cfg_removed %}
+                <span class="change-item change-item-removed"><code>{{ item }}</code> <em>removed</em></span>
+              {% endfor %}
+            </div>
+          {% endif %}
+          {% if ing_total > 0 %}
+            <div class="change-group">
+              <span class="change-group-label">Ingress</span>
+              {% for item in ing_added %}
+                {% set snap = ing_snapshot.get(item, {}) %}
+                <div class="change-item change-item-added">
+                  <code>{{ item }}</code> <em>added</em>
+                  {% if snap.get('ingress_class_name') and snap.get('ingress_class_name') != 'nginx' %}
+                    <span class="change-tag">{{ snap.get('ingress_class_name') }}</span>
+                  {% endif %}
+                  {% if snap.get('hosts') %}
+                    <div class="change-sub-details">
+                      {% for h in snap.get('hosts', []) %}
+                        <span class="change-sub-item">{{ icon('globe', 'w-2.5 h-2.5') }} {{ h.hostname }}</span>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+                </div>
+              {% endfor %}
+              {% for item in ing_changed %}
+                {% set detail_parts = cd.get('ingress', {}).get(item, []) %}
+                <div class="change-item change-item-updated">
+                  <code>{{ item }}</code> <em>updated</em>
+                  {% if detail_parts %}
+                    <div class="change-sub-details">
+                      {% for part in detail_parts %}
+                        <span class="change-sub-item">{{ part }}</span>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+                </div>
+              {% endfor %}
+              {% for item in ing_removed %}
+                <span class="change-item change-item-removed"><code>{{ item }}</code> <em>removed</em></span>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
 {% endmacro %}
 
 {% macro service_card(name, slug, url, status='', meta_items=[], color='accent', icon_name='box', github_repo='', github_branch='', app_hosts=[]) %}
@@ -522,6 +678,16 @@
          stroke-linejoin="round">
       <polyline points="3 6 5 6 21 6" />
       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    </svg>
+  {% elif name == 'tool' %}
+    <svg class="{{ size }}"
+         viewBox="0 0 24 24"
+         fill="none"
+         stroke="currentColor"
+         stroke-width="2"
+         stroke-linecap="round"
+         stroke-linejoin="round">
+      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
     </svg>
   {% elif name == 'settings' %}
     <svg class="{{ size }}"

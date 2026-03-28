@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, status_badge, app_tab_nav, app_resource_path %}
+{% from "_macros.html" import icon, resource_path, status_badge, app_tab_nav, app_resource_path, release_changes %}
 
 {% set app = application %}
 {% set org_slug = app.project.organization.slug %}
@@ -91,8 +91,8 @@
               {% if release.built %}<span class="dpl-row-dur">{{ release|duration }}</span>{% endif %}
               {% if is_latest %}<span class="dpl-badge dpl-badge-latest">Latest</span>{% endif %}
               {% if rel_auto %}
-                <span class="dpl-badge dpl-badge-auto tooltip tooltip-top"
-                      data-tip="Triggered by CI or a deploy-all action">{{ icon('zap', 'w-2.5 h-2.5') }} Auto</span>
+                <span class="dpl-badge dpl-badge-auto"
+                      title="Triggered by CI or a deploy-all action">{{ icon('zap', 'w-2.5 h-2.5') }} Auto</span>
               {% endif %}
             </div>
             <div class="dpl-row-meta">
@@ -141,6 +141,8 @@
             {% if release.error and release.error_detail %}
               <div class="dpl-row-error-detail">{{ release.error_detail[:140] }}</div>
             {% endif %}
+
+            {{ release_changes(release, img=rel_img, org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, change_details=release_change_details.get(release.id|string, {})) }}
           </div>
 
           <span class="dpl-row-time"><time data-timestamp="{{ release.updated|isoformat_utc }}">{{ release.updated|humanize }}</time></span>
@@ -150,13 +152,13 @@
 
     <div class="flex items-center justify-between mt-4">
       {% if page > 1 %}
-        <a href="?page={{ page - 1 }}" class="btn btn-ghost btn-sm gap-1">{{ icon('arrow-left', 'w-3.5 h-3.5') }} Previous</a>
+        <a href="?page={{ page - 1 }}" class="btn btn-ghost btn-sm gap-1">{{ icon('arrow-left', 'w-3.5 h-3.5') }} Newer</a>
       {% else %}
         <span></span>
       {% endif %}
       <span class="text-xs text-base-content/40">Page {{ page }}</span>
       {% if releases|length == 20 %}
-        <a href="?page={{ page + 1 }}" class="btn btn-ghost btn-sm gap-1">Next {{ icon('chevron-right', 'w-3.5 h-3.5') }}</a>
+        <a href="?page={{ page + 1 }}" class="btn btn-ghost btn-sm gap-1">Older {{ icon('chevron-right', 'w-3.5 h-3.5') }}</a>
       {% else %}
         <span></span>
       {% endif %}

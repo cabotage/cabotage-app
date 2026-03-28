@@ -158,13 +158,12 @@ html:not([data-theme-pref]) .theme-icon-system {
   transition:
     grid-template-rows 0.35s cubic-bezier(0.4, 0, 0.2, 1),
     opacity 0.25s ease;
-  overflow: hidden;
 }
 [data-tab-bar-wrapper]:not(:has(.tab-bar)) {
   display: none;
 }
 [data-tab-bar-wrapper] > * {
-  overflow: hidden;
+  overflow: visible;
 }
 .topbar-compact [data-tab-bar-wrapper] {
   grid-template-rows: 0fr;
@@ -346,12 +345,8 @@ html:not([data-theme-pref]) .theme-icon-system {
   display: flex;
   gap: 0;
   border-bottom: 1px solid var(--border-color);
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-}
-.tab-bar::-webkit-scrollbar {
-  display: none;
+  overflow: visible;
+  flex-wrap: wrap;
 }
 
 .tab-item {
@@ -384,7 +379,7 @@ html:not([data-theme-pref]) .theme-icon-system {
   pointer-events: none;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 810px) {
   .tab-item {
     font-size: 0;
     gap: 0;
@@ -2087,6 +2082,42 @@ a.pipeline-stage-body:hover {
   color: rgba(239, 68, 68, 0.8);
   text-decoration: line-through;
   text-decoration-color: rgba(239, 68, 68, 0.25);
+}
+.change-tag {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.2rem;
+  vertical-align: middle;
+  margin-left: 0.15rem;
+}
+.change-tag-secret {
+  background: rgba(239, 68, 68, 0.1);
+  color: rgba(239, 68, 68, 0.7);
+}
+.change-tag-build {
+  background: rgba(245, 158, 11, 0.1);
+  color: rgba(245, 158, 11, 0.7);
+}
+.change-sub-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+  padding-left: 0.25rem;
+  width: 100%;
+}
+.change-sub-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.7rem;
+  opacity: 0.65;
+}
+.change-sub-item code {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  font-size: inherit;
 }
 
 /* Expand Button */
@@ -4000,7 +4031,7 @@ a.obs-pod-link:hover {
 }
 
 .dpl-list .tooltip {
-  z-index: 50;
+  z-index: 10;
 }
 .dpl-list .tooltip::before {
   font-size: 0.6875rem;
@@ -4044,6 +4075,8 @@ a.obs-pod-link:hover {
 
 /* List container */
 .dpl-list {
+  position: relative;
+  z-index: 0;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border-color);
