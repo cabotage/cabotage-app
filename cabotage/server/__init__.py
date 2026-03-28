@@ -218,6 +218,11 @@ def create_app():
     db.init_app(app)
     principal.init_app(app)
     identity_loaded.connect(cabotage_on_identity_loaded, app)
+
+    from cabotage.server.audit import init_audit
+
+    init_audit(app)
+
     mail.init_app(app)
     migrate.init_app(app, db)
     nav.init_app(app)

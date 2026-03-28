@@ -646,6 +646,16 @@ def organization_settings(org_slug):
 
     if request.method == "POST" and action == "save_org" and form.validate_on_submit():
         organization.name = form.name.data
+        db.session.flush()
+        activity = Activity(
+            verb="edit",
+            object=organization,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            },
+        )
+        db.session.add(activity)
         db.session.commit()
         flash("Organization settings saved.", "success")
         return redirect(
@@ -732,11 +742,25 @@ def organization_settings(org_slug):
                 default_tags=default_tags,
             )
             db.session.add(ts_integration)
+            ts_verb = "create"
         else:
             ts_integration.client_id = client_id
             ts_integration.tailnet = tailnet_name
             ts_integration.default_tags = default_tags
             ts_integration.operator_state = "pending"
+            ts_verb = "edit"
+        db.session.flush()
+        activity = Activity(
+            verb=ts_verb,
+            object=organization,
+            data={
+                "user_id": str(current_user.id),
+                "action": f"tailscale_{ts_verb}",
+                "tailnet": tailnet_name,
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            },
+        )
+        db.session.add(activity)
         db.session.commit()
         deploy_tailscale_operator.delay(str(organization.id))
         flash(
@@ -752,6 +776,17 @@ def organization_settings(org_slug):
     if request.method == "POST" and action == "delete_tailscale":
         if ts_integration:
             ts_integration.operator_state = "removing"
+            db.session.flush()
+            activity = Activity(
+                verb="delete",
+                object=organization,
+                data={
+                    "user_id": str(current_user.id),
+                    "action": "tailscale_delete",
+                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                },
+            )
+            db.session.add(activity)
             db.session.commit()
             teardown_tailscale_operator.delay(str(organization.id))
             flash("Tailscale integration removal in progress.", "success")
@@ -1384,6 +1419,16 @@ def project_environment_settings(org_slug, project_slug, env_slug):
     if form.validate_on_submit():
         environment.name = form.name.data
         db.session.add(environment)
+        db.session.flush()
+        activity = Activity(
+            verb="edit",
+            object=environment,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            },
+        )
+        db.session.add(activity)
         db.session.commit()
         return redirect(
             url_for(
@@ -1458,6 +1503,15 @@ def project_environment_delete(org_slug, project_slug, env_slug):
         )
     if form.validate_on_submit():
         _soft_delete_environment(environment, organization)
+        activity = Activity(
+            verb="delete",
+            object=environment,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            },
+        )
+        db.session.add(activity)
         db.session.commit()
         flash(f"Environment {environment.name} deleted.", "success")
         return redirect(
@@ -1932,6 +1986,17 @@ def project_application_env_config_subscribe(
             environment_configuration_id=env_config.id,
         )
         db.session.add(sub)
+        db.session.flush()
+        activity = Activity(
+            verb="create",
+            object=sub,
+            data={
+                "user_id": str(current_user.id),
+                "env_config_name": env_config.name,
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            },
+        )
+        db.session.add(activity)
         db.session.commit()
         flash(f"Subscribed to {env_config.name}.", "success")
     else:
@@ -1982,6 +2047,16 @@ def project_application_env_config_unsubscribe(
     ).first()
 
     if existing is not None:
+        activity = Activity(
+            verb="delete",
+            object=existing,
+            data={
+                "user_id": str(current_user.id),
+                "env_config_name": env_config.name,
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            },
+        )
+        db.session.add(activity)
         db.session.delete(existing)
         db.session.commit()
         flash(f"Unsubscribed from {env_config.name}.", "success")
@@ -2024,6 +2099,15 @@ def project_application_delete(org_slug, project_slug, app_slug):
     form = DeleteApplicationForm()
     if form.validate_on_submit():
         _soft_delete_application(application, organization)
+        activity = Activity(
+            verb="delete",
+            object=application,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            },
+        )
+        db.session.add(activity)
         db.session.commit()
         flash(f"Application {application.name} deleted.", "success")
         return redirect(
@@ -2057,6 +2141,15 @@ def project_delete(org_slug, project_slug):
     form = DeleteProjectForm()
     if form.validate_on_submit():
         _soft_delete_project(project, organization)
+        activity = Activity(
+            verb="delete",
+            object=project,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            },
+        )
+        db.session.add(activity)
         db.session.commit()
         flash(f"Project {project.name} deleted.", "success")
         return redirect(url_for("user.organization", org_slug=org_slug))
@@ -2087,6 +2180,15 @@ def organization_delete(org_slug):
                 _soft_delete_project(project, organization)
         organization.deleted_at = datetime.datetime.now(datetime.timezone.utc)
         organization.slug = f"{organization.slug}--deleted-{uuid.uuid4().hex[:12]}"
+        activity = Activity(
+            verb="delete",
+            object=organization,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            },
+        )
+        db.session.add(activity)
         db.session.commit()
         flash(f"Organization {organization.name} deleted.", "success")
         return redirect(url_for("user.organizations"))
@@ -4344,6 +4446,17 @@ def account_security_verify_recovery_code():
     # Burn the code
     codes.remove(matched)
     current_user.mf_recovery_codes = codes
+    db.session.flush()
+    activity = Activity(
+        verb="edit",
+        object=current_user._get_current_object(),
+        data={
+            "user_id": str(current_user.id),
+            "action": "recovery_code_used",
+            "timestamp": datetime.datetime.utcnow().isoformat(),
+        },
+    )
+    db.session.add(activity)
     db.session.commit()
 
     from flask import session as _session
@@ -4883,6 +4996,18 @@ def organization_add_user(org_slug):
                 flash("User is already a member of this organization.", "warning")
             else:
                 organization.add_user(user)
+                db.session.flush()
+                activity = Activity(
+                    verb="create",
+                    object=organization,
+                    data={
+                        "user_id": str(current_user.id),
+                        "member_email": user.email,
+                        "action": "add_member",
+                        "timestamp": datetime.datetime.utcnow().isoformat(),
+                    },
+                )
+                db.session.add(activity)
                 db.session.commit()
                 flash("User has been added to the organization.", "success")
         else:
@@ -4913,6 +5038,18 @@ def organization_remove_user(org_slug):
             )
         else:
             organization.remove_user(user)
+            db.session.flush()
+            activity = Activity(
+                verb="edit",
+                object=organization,
+                data={
+                    "user_id": str(current_user.id),
+                    "member_email": user.email,
+                    "action": "remove_member",
+                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                },
+            )
+            db.session.add(activity)
             db.session.commit()
             flash(
                 f"User {user.email} removed from organization {organization.name}.",
@@ -4936,6 +5073,18 @@ def organization_promote_user(org_slug):
             user_id=user.id, organization_id=organization.id
         ).first():
             member.admin = True
+            db.session.flush()
+            activity = Activity(
+                verb="edit",
+                object=organization,
+                data={
+                    "user_id": str(current_user.id),
+                    "member_email": user.email,
+                    "action": "promote_member",
+                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                },
+            )
+            db.session.add(activity)
             db.session.commit()
             flash(
                 f"User {user.email} promoted to admin in {organization.name}.",
@@ -4959,6 +5108,18 @@ def organization_demote_user(org_slug):
             user_id=user.id, organization_id=organization.id
         ).first():
             member.admin = False
+            db.session.flush()
+            activity = Activity(
+                verb="edit",
+                object=organization,
+                data={
+                    "user_id": str(current_user.id),
+                    "member_email": user.email,
+                    "action": "demote_member",
+                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                },
+            )
+            db.session.add(activity)
             db.session.commit()
             flash(
                 f"User {user.email} demoted to member in {organization.name}.",
