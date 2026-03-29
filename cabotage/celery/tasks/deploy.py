@@ -154,7 +154,7 @@ def _preview_url_for_app_env(app_env):
     return None
 
 
-def _retry_on_404(fn, *args, retries=3, delay=2, **kwargs):
+def _retry_on_404(fn, *args, retries=5, delay=2, **kwargs):
     """Retry a kubernetes API call if it returns a 404, with backoff."""
     for attempt in range(retries):
         try:

@@ -26,6 +26,8 @@ from github.GithubException import GithubException, UnknownObjectException
 from github.GithubIntegration import GithubIntegration
 
 from cabotage.celery.tasks.deploy import run_deploy, run_job
+from cabotage.server.models.utils import safe_k8s_name
+
 
 from cabotage.server import (
     db,
@@ -60,6 +62,15 @@ from cabotage.utils.github import (
     post_deployment_status_update,
 )
 from cabotage.utils import procfile
+
+
+def _build_namespace(app_env):
+    """Compute the k8s namespace for a build from its application environment."""
+    org_k8s = app_env.application.project.organization.k8s_identifier
+    if app_env.k8s_identifier is not None:
+        return safe_k8s_name(org_k8s, app_env.environment.k8s_identifier)
+    return org_k8s
+
 
 Activity = activity_plugin.activity_cls
 
@@ -368,7 +379,7 @@ def build_release_buildkit(release):
                         "application": release.application.slug,
                         "process": "build",
                         "build_id": release.build_job_id,
-                        "resident-job.cabotage.io": "true",
+                        "build-job.cabotage.io": "true",
                     },
                 ),
                 spec=kubernetes.client.V1JobSpec(
@@ -494,13 +505,16 @@ def build_release_buildkit(release):
                 ),
             )
 
+            build_namespace = _build_namespace(release.application_environment)
             core_api_instance.create_namespaced_config_map(
-                "default", context_configmap_object
+                build_namespace, context_configmap_object
             )
             core_api_instance.create_namespaced_config_map(
-                "default", buildkitd_toml_configmap_object
+                build_namespace, buildkitd_toml_configmap_object
             )
-            core_api_instance.create_namespaced_secret("default", docker_secret_object)
+            core_api_instance.create_namespaced_secret(
+                build_namespace, docker_secret_object
+            )
 
             try:
                 redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
@@ -513,7 +527,7 @@ def build_release_buildkit(release):
                 job_complete, job_logs = run_job(
                     core_api_instance,
                     batch_api_instance,
-                    "default",
+                    build_namespace,
                     job_object,
                     redis_client=redis_client,
                     log_key=log_key,
@@ -528,17 +542,17 @@ def build_release_buildkit(release):
             finally:
                 core_api_instance.delete_namespaced_secret(
                     f"buildkit-registry-auth-{release.build_job_id}",
-                    "default",
+                    build_namespace,
                     propagation_policy="Foreground",
                 )
                 core_api_instance.delete_namespaced_config_map(
                     f"buildkitd-toml-{release.build_job_id}",
-                    "default",
+                    build_namespace,
                     propagation_policy="Foreground",
                 )
                 core_api_instance.delete_namespaced_config_map(
                     f"build-context-{release.build_job_id}",
-                    "default",
+                    build_namespace,
                     propagation_policy="Foreground",
                 )
 
@@ -719,15 +733,16 @@ def build_cache_pvc_name(app_env):
 
 
 def fetch_image_build_cache_volume_claim(core_api_instance, buildable):
+    namespace = _build_namespace(buildable.application_environment)
     volume_claim_name = build_cache_pvc_name(buildable.application_environment)
     try:
         volume_claim = core_api_instance.read_namespaced_persistent_volume_claim(
-            volume_claim_name, "default"
+            volume_claim_name, namespace
         )
     except ApiException as exc:
         if exc.status == 404:
             volume_claim = core_api_instance.create_namespaced_persistent_volume_claim(
-                "default",
+                namespace,
                 kubernetes.client.V1PersistentVolumeClaim(
                     metadata=kubernetes.client.V1ObjectMeta(
                         name=volume_claim_name,
@@ -852,7 +867,7 @@ def build_image_buildkit(image=None):
                         "application": image.application.slug,
                         "process": "build",
                         "build_id": image.build_job_id,
-                        "resident-job.cabotage.io": "true",
+                        "build-job.cabotage.io": "true",
                     },
                 ),
                 spec=kubernetes.client.V1JobSpec(
@@ -970,11 +985,16 @@ def build_image_buildkit(image=None):
                 ),
             )
 
+            build_namespace = _build_namespace(image.application_environment)
             core_api_instance.create_namespaced_config_map(
-                "default", buildkitd_toml_configmap_object
+                build_namespace, buildkitd_toml_configmap_object
             )
-            core_api_instance.create_namespaced_secret("default", docker_secret_object)
-            core_api_instance.create_namespaced_secret("default", github_secret_object)
+            core_api_instance.create_namespaced_secret(
+                build_namespace, docker_secret_object
+            )
+            core_api_instance.create_namespaced_secret(
+                build_namespace, github_secret_object
+            )
 
             try:
                 redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
@@ -987,7 +1007,7 @@ def build_image_buildkit(image=None):
                 job_complete, job_logs = run_job(
                     core_api_instance,
                     batch_api_instance,
-                    "default",
+                    build_namespace,
                     job_object,
                     redis_client=redis_client,
                     log_key=log_key,
@@ -1002,17 +1022,17 @@ def build_image_buildkit(image=None):
             finally:
                 core_api_instance.delete_namespaced_secret(
                     f"buildkit-registry-auth-{image.build_job_id}",
-                    "default",
+                    build_namespace,
                     propagation_policy="Foreground",
                 )
                 core_api_instance.delete_namespaced_secret(
                     f"github-access-token-{image.build_job_id}",
-                    "default",
+                    build_namespace,
                     propagation_policy="Foreground",
                 )
                 core_api_instance.delete_namespaced_config_map(
                     f"buildkitd-toml-{image.build_job_id}",
-                    "default",
+                    build_namespace,
                     propagation_policy="Foreground",
                 )
 
@@ -1365,7 +1385,7 @@ def build_omnibus_buildkit(image, release):
                     "application": image.application.slug,
                     "process": "build",
                     "build_id": image.build_job_id,
-                    "resident-job.cabotage.io": "true",
+                    "build-job.cabotage.io": "true",
                 },
             ),
             spec=kubernetes.client.V1JobSpec(
@@ -1453,14 +1473,19 @@ def build_omnibus_buildkit(image, release):
             ),
         )
 
+        build_namespace = _build_namespace(image.application_environment)
         core_api_instance.create_namespaced_config_map(
-            "default", buildkitd_toml_configmap_object
+            build_namespace, buildkitd_toml_configmap_object
         )
         core_api_instance.create_namespaced_config_map(
-            "default", context_configmap_object
+            build_namespace, context_configmap_object
         )
-        core_api_instance.create_namespaced_secret("default", docker_secret_object)
-        core_api_instance.create_namespaced_secret("default", github_secret_object)
+        core_api_instance.create_namespaced_secret(
+            build_namespace, docker_secret_object
+        )
+        core_api_instance.create_namespaced_secret(
+            build_namespace, github_secret_object
+        )
 
         try:
             redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
@@ -1473,7 +1498,7 @@ def build_omnibus_buildkit(image, release):
             job_complete, job_logs = run_job(
                 core_api_instance,
                 batch_api_instance,
-                "default",
+                build_namespace,
                 job_object,
                 redis_client=redis_client,
                 log_key=log_key,
@@ -1488,22 +1513,22 @@ def build_omnibus_buildkit(image, release):
         finally:
             core_api_instance.delete_namespaced_secret(
                 f"buildkit-registry-auth-{image.build_job_id}",
-                "default",
+                build_namespace,
                 propagation_policy="Foreground",
             )
             core_api_instance.delete_namespaced_secret(
                 f"github-access-token-{image.build_job_id}",
-                "default",
+                build_namespace,
                 propagation_policy="Foreground",
             )
             core_api_instance.delete_namespaced_config_map(
                 f"buildkitd-toml-{image.build_job_id}",
-                "default",
+                build_namespace,
                 propagation_policy="Foreground",
             )
             core_api_instance.delete_namespaced_config_map(
                 f"build-context-{image.build_job_id}",
-                "default",
+                build_namespace,
                 propagation_policy="Foreground",
             )
 
