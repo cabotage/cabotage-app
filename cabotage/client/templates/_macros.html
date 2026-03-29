@@ -305,7 +305,7 @@
   {% endif %}
 {% endmacro %}
 
-{% macro service_card(name, slug, url, status='', meta_items=[], color='accent', icon_name='box', github_repo='', github_branch='', app_hosts=[]) %}
+{% macro service_card(name, slug, url, status='', meta_items=[], color='accent', icon_name='box', github_repo='', github_branch='', github_pr_number='', app_hosts=[]) %}
   <a href="{{ url }}"
      class="service-card card-interactive block no-underline">
     <div class="service-card-header">
@@ -321,9 +321,18 @@
         <span class="text-xs text-base-content/40 font-mono">{{ slug }}</span>
       </div>
       {% if github_repo %}
-        <span class="text-base-content/30 hover:text-base-content/60 transition-colors flex-shrink-0 flex items-center gap-1"
-              onclick="event.preventDefault(); event.stopPropagation(); window.open('https://github.com/{{ github_repo }}{% if github_branch %}/tree/{{ github_branch }}{% endif %}', '_blank')"
-              title="View on GitHub">{{ icon('github', 'w-4 h-4') }}{% if github_branch %}<span class="text-xs font-mono truncate max-w-[8rem]">{{ github_branch }}</span>{% endif %}</span>
+        {% if github_pr_number %}
+          <span class="text-base-content/30 hover:text-base-content/60 transition-colors flex-shrink-0 flex flex-col items-end gap-0.5"
+                onclick="event.preventDefault(); event.stopPropagation(); window.open('https://github.com/{{ github_repo }}/pull/{{ github_pr_number }}', '_blank')"
+                title="View PR on GitHub">
+            <span class="flex items-center gap-1">{{ icon('github', 'w-4 h-4') }}<span class="text-xs font-mono">{{ github_repo }} #{{ github_pr_number }}</span></span>
+            {% if github_branch %}<span class="text-xs font-mono truncate max-w-[8rem] text-base-content/20">{{ github_branch }}</span>{% endif %}
+          </span>
+        {% else %}
+          <span class="text-base-content/30 hover:text-base-content/60 transition-colors flex-shrink-0 flex items-center gap-1"
+                onclick="event.preventDefault(); event.stopPropagation(); window.open('https://github.com/{{ github_repo }}{% if github_branch %}/tree/{{ github_branch }}{% endif %}', '_blank')"
+                title="View on GitHub">{{ icon('github', 'w-4 h-4') }}{% if github_branch %}<span class="text-xs font-mono truncate max-w-[8rem]">{{ github_branch }}</span>{% endif %}</span>
+        {% endif %}
       {% endif %}
       <svg class="w-4 h-4 text-base-content/20 flex-shrink-0"
            viewBox="0 0 24 24"
