@@ -1352,6 +1352,120 @@ class TestProcessCheckSuiteHook:
 
 
 # ---------------------------------------------------------------------------
+# Multiple push hooks for same SHA
+# ---------------------------------------------------------------------------
+
+
+class TestMultiplePushHooks:
+    @patch("cabotage.celery.tasks.github.github_session")
+    @patch("cabotage.celery.tasks.github.github_app")
+    def test_multiple_push_hooks_does_not_crash(
+        self,
+        mock_gh_app,
+        mock_session,
+        db_session,
+        project,
+        environment,
+        installation_id,
+        commit_sha,
+    ):
+        """Two push hooks for the same SHA should not raise MultipleResultsFound."""
+        application = _make_app(project, installation_id, "multi-push-1")
+        _make_app_env(application, environment, wait_for_ci=True)
+        _make_push_hook(installation_id, commit_sha=commit_sha)
+        _make_push_hook(installation_id, commit_sha=commit_sha)
+        hook = _make_check_suite_hook(installation_id, commit_sha)
+
+        mock_gh_app.app_id = OWN_APP_ID
+        mock_gh_app.bearer_token = "bt"
+
+        mock_get, mock_post = _mock_github_responses()
+        mock_session.get.side_effect = mock_get
+        mock_session.post.side_effect = mock_post
+
+        from cabotage.celery.tasks.github import process_check_suite_hook
+
+        # Should not raise MultipleResultsFound
+        process_check_suite_hook(hook)
+
+        assert _count_deployment_posts(mock_session) == 1
+
+    @patch("cabotage.celery.tasks.github.github_session")
+    @patch("cabotage.celery.tasks.github.github_app")
+    def test_multiple_push_hooks_picks_latest(
+        self,
+        mock_gh_app,
+        mock_session,
+        db_session,
+        project,
+        environment,
+        installation_id,
+        commit_sha,
+    ):
+        """With multiple push hooks, the most recent one gets marked deployed."""
+        application = _make_app(project, installation_id, "multi-push-2")
+        _make_app_env(application, environment, wait_for_ci=True)
+        old_hook = _make_push_hook(
+            installation_id,
+            commit_sha=commit_sha,
+            commits=[{"added": ["old.py"], "modified": [], "removed": []}],
+        )
+        new_hook = _make_push_hook(
+            installation_id,
+            commit_sha=commit_sha,
+            commits=[{"added": ["new.py"], "modified": [], "removed": []}],
+        )
+        hook = _make_check_suite_hook(installation_id, commit_sha)
+
+        mock_gh_app.app_id = OWN_APP_ID
+        mock_gh_app.bearer_token = "bt"
+
+        mock_get, mock_post = _mock_github_responses()
+        mock_session.get.side_effect = mock_get
+        mock_session.post.side_effect = mock_post
+
+        from cabotage.celery.tasks.github import process_check_suite_hook
+
+        process_check_suite_hook(hook)
+
+        db.session.refresh(new_hook)
+        db.session.refresh(old_hook)
+        assert new_hook.deployed is True
+        assert old_hook.deployed is not True
+
+    @patch("cabotage.celery.tasks.github.github_session")
+    @patch("cabotage.celery.tasks.github.github_app")
+    def test_multiple_push_hooks_skips_when_latest_deployed(
+        self,
+        mock_gh_app,
+        mock_session,
+        db_session,
+        project,
+        environment,
+        installation_id,
+        commit_sha,
+    ):
+        """If the most recent push hook is already deployed, skip."""
+        application = _make_app(project, installation_id, "multi-push-3")
+        _make_app_env(application, environment, wait_for_ci=True)
+        _make_push_hook(installation_id, commit_sha=commit_sha)
+        _make_push_hook(installation_id, commit_sha=commit_sha, deployed=True)
+        hook = _make_check_suite_hook(installation_id, commit_sha)
+
+        mock_gh_app.app_id = OWN_APP_ID
+        mock_gh_app.bearer_token = "bt"
+
+        mock_get, mock_post = _mock_github_responses()
+        mock_session.get.side_effect = mock_get
+        mock_session.post.side_effect = mock_post
+
+        from cabotage.celery.tasks.github import process_check_suite_hook
+
+        result = process_check_suite_hook(hook)
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
 # create_deployment
 # ---------------------------------------------------------------------------
 

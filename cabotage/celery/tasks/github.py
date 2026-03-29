@@ -616,13 +616,13 @@ def process_check_suite_hook(hook):
 
         access_token = access_token_response.json()
 
-        try:
-            push_event = (
-                Hook.query.filter(Hook.commit_sha == commit_sha)
-                .filter(Hook.headers.op("->>")("X-Github-Event") == "push")
-                .one()
-            )
-        except NoResultFound:
+        push_event = (
+            Hook.query.filter(Hook.commit_sha == commit_sha)
+            .filter(Hook.headers.op("->>")("X-Github-Event") == "push")
+            .order_by(Hook.created.desc())
+            .first()
+        )
+        if push_event is None:
             print(
                 f"ignoring check_suite without push for {repository_name}@{commit_sha}"
             )
