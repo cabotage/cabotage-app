@@ -240,20 +240,8 @@ function initThemeToggle() {
   var cycleThemes = ['light', 'dark', 'system'];
 
   document.querySelectorAll('.theme-toggle-wrap').forEach(function (wrap) {
-    var btn = wrap.querySelector('button');
+    var btn = wrap.querySelector('[role="button"]');
     var dropdown = wrap.querySelector('.theme-dropdown');
-    var hideTimer = null;
-
-    function show() {
-      clearTimeout(hideTimer);
-      dropdown.classList.remove('hidden');
-    }
-    function hide() {
-      dropdown.classList.add('hidden');
-    }
-    function hideDelayed() {
-      hideTimer = setTimeout(hide, 200);
-    }
 
     function cycleTheme() {
       var current = localStorage.getItem('theme-pref') || 'system';
@@ -264,24 +252,15 @@ function initThemeToggle() {
 
     btn.addEventListener('click', function (e) {
       e.stopPropagation();
-      hide();
+      btn.blur();
       cycleTheme();
-    });
-
-    wrap.addEventListener('mouseenter', show);
-    wrap.addEventListener('mouseleave', hideDelayed);
-
-    document.addEventListener('click', function (e) {
-      if (!wrap.contains(e.target)) {
-        hide();
-      }
     });
 
     dropdown.querySelectorAll('.theme-opt').forEach(function (opt) {
       opt.addEventListener('click', function (e) {
         e.stopPropagation();
         applyPref(opt.getAttribute('data-theme-val'));
-        hide();
+        btn.blur();
       });
     });
   });
