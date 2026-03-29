@@ -829,7 +829,35 @@
           </div>
 
           {% if latest_release_job_processes %}
-          <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mt-4 mb-2">Jobs</h2>
+          <div class="flex items-center gap-1.5 mt-4 mb-2">
+            <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Jobs</h2>
+            <div class="info-popup-anchor">
+              {{ icon('info', 'w-3 h-3 text-base-content/25 cursor-help') }}
+              <div class="info-popup">
+                <div class="info-popup-header">
+                  {{ icon('clock', 'w-3 h-3 info-popup-header-icon') }}
+                  <span class="info-popup-header-text">Scheduled Jobs</span>
+                </div>
+                <div class="info-popup-body">
+                  <div class="info-popup-row">
+                    <code class="info-popup-type">job-*</code>
+                    <span class="info-popup-desc">Runs on a cron schedule as a Kubernetes CronJob. Define with a <code>job-</code> prefix in your Procfile.</span>
+                  </div>
+                  <div class="info-popup-row">
+                    <code class="info-popup-type">SCHEDULE</code>
+                    <span class="info-popup-desc">Required per-process env var, set inline in the Procfile (e.g. <code>env SCHEDULE="0 */6 * * *"</code>).</span>
+                  </div>
+                  <div class="info-popup-row">
+                    <code class="info-popup-type">Controls</code>
+                    <span class="info-popup-desc">Use the toggle to suspend/resume and the dropdown to change pod size. Overlapping runs are forbidden; no retries on failure; 1-hour timeout.</span>
+                  </div>
+                </div>
+                <div class="info-popup-footer">
+                  <a href="{{ url_for('user.guide') }}#jobs" class="info-popup-link">Learn more in the Guide →</a>
+                </div>
+              </div>
+            </div>
+          </div>
           <div class="process-grid">
             {% for process_name, proc in latest_release_job_processes.items() %}
               {% set count = src.process_counts.get(process_name, 0) %}
