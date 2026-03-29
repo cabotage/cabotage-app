@@ -1320,12 +1320,14 @@ def fetch_image_pull_secrets(core_api_instance, release):
     return secret
 
 
-def render_cabotage_sidecar_container(release, process_name, with_tls=True):
+def render_cabotage_sidecar_container(
+    release, process_name, with_tls=True, run_once=False
+):
     role_name = k8s_role_name(release)
     resource_prefix = k8s_resource_prefix(release)
 
     args = [
-        "kube-login-and-maintain",
+        "kube-login" if run_once else "kube-login-and-maintain",
         "--namespace=$(NAMESPACE)",
         f"--vault-auth-kubernetes-role={role_name}",
         "--fetch-consul-token",
@@ -1371,6 +1373,18 @@ def render_cabotage_sidecar_container(release, process_name, with_tls=True):
             ),
         ],
         args=args,
+        startup_probe=kubernetes.client.V1Probe(
+            _exec=kubernetes.client.V1ExecAction(
+                command=[
+                    "sh",
+                    "-c",
+                    "test -f /var/run/secrets/vault/vault-token && "
+                    "test -f /var/run/secrets/vault/consul-token",
+                ],
+            ),
+            period_seconds=1,
+            failure_threshold=30,
+        ),
         volume_mounts=[
             kubernetes.client.V1VolumeMount(
                 name="vault-secrets", mount_path="/var/run/secrets/vault"
@@ -1696,7 +1710,9 @@ def render_podspec(release, process_name, service_account_name):
         )
     elif process_name.startswith("job"):
         init_containers.append(
-            render_cabotage_sidecar_container(release, process_name, with_tls=False)
+            render_cabotage_sidecar_container(
+                release, process_name, with_tls=False, run_once=True
+            )
         )
         containers.append(
             render_process_container(
@@ -1706,7 +1722,9 @@ def render_podspec(release, process_name, service_account_name):
         restart_policy = "OnFailure"
     elif process_name.startswith("release"):
         init_containers.append(
-            render_cabotage_sidecar_container(release, process_name, with_tls=False)
+            render_cabotage_sidecar_container(
+                release, process_name, with_tls=False, run_once=True
+            )
         )
         containers.append(
             render_process_container(
@@ -1716,7 +1734,9 @@ def render_podspec(release, process_name, service_account_name):
         restart_policy = "Never"
     elif process_name.startswith("postdeploy"):
         init_containers.append(
-            render_cabotage_sidecar_container(release, process_name, with_tls=False)
+            render_cabotage_sidecar_container(
+                release, process_name, with_tls=False, run_once=True
+            )
         )
         containers.append(
             render_process_container(
