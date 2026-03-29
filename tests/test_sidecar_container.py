@@ -1,4 +1,4 @@
-"""Tests for render_cabotage_sidecar_container: startup probe, run_once, TLS."""
+"""Tests for render_cabotage_sidecar_container: startup probe, TLS, restart policy."""
 
 from unittest.mock import MagicMock, patch
 
@@ -29,13 +29,13 @@ def _make_release():
     return release
 
 
-def _render(release=None, process_name="web", with_tls=True, run_once=False):
+def _render(release=None, process_name="web", with_tls=True):
     release = release or _make_release()
     mock_app = MagicMock()
     mock_app.config = {"SIDECAR_IMAGE": "ghcr.io/cabotage/containers/sidecar-rs:1.0"}
     with patch.object(deploy_module, "current_app", mock_app):
         return deploy_module.render_cabotage_sidecar_container(
-            release, process_name, with_tls=with_tls, run_once=run_once
+            release, process_name, with_tls=with_tls
         )
 
 
@@ -51,31 +51,19 @@ class TestStartupProbe:
         assert "vault-token" in cmd[2]
         assert "consul-token" in cmd[2]
 
-    def test_startup_probe_present_for_run_once(self):
-        container = _render(run_once=True)
-        assert container.startup_probe is not None
-
     def test_startup_probe_period_and_threshold(self):
         container = _render()
         assert container.startup_probe.period_seconds == 1
         assert container.startup_probe.failure_threshold == 30
 
 
-class TestRunOnce:
-    def test_run_once_uses_kube_login(self):
-        container = _render(run_once=True)
-        assert container.args[0] == "kube-login"
-
-    def test_run_once_still_has_restart_always(self):
-        container = _render(run_once=True)
-        assert container.restart_policy == "Always"
-
-    def test_long_lived_uses_kube_login_and_maintain(self):
-        container = _render(run_once=False)
+class TestCommand:
+    def test_uses_kube_login_and_maintain(self):
+        container = _render()
         assert container.args[0] == "kube-login-and-maintain"
 
-    def test_long_lived_restart_policy_always(self):
-        container = _render(run_once=False)
+    def test_restart_policy_always(self):
+        container = _render()
         assert container.restart_policy == "Always"
 
 
@@ -92,7 +80,7 @@ class TestTLS:
 
 
 class TestPodspecIntegration:
-    """Verify render_podspec wires run_once correctly per process type."""
+    """Verify render_podspec uses kube-login-and-maintain for all process types."""
 
     _DEPLOY_MODULE = "cabotage.celery.tasks.deploy"
 
@@ -124,37 +112,27 @@ class TestPodspecIntegration:
                 return c
         return None
 
-    def test_web_uses_kube_login_and_maintain(self):
-        podspec = self._render_podspec("web")
-        sidecar = self._sidecar_init(podspec)
-        assert sidecar is not None
+    def test_web(self):
+        sidecar = self._sidecar_init(self._render_podspec("web"))
         assert sidecar.args[0] == "kube-login-and-maintain"
         assert sidecar.restart_policy == "Always"
 
-    def test_worker_uses_kube_login_and_maintain(self):
-        podspec = self._render_podspec("worker")
-        sidecar = self._sidecar_init(podspec)
-        assert sidecar is not None
+    def test_worker(self):
+        sidecar = self._sidecar_init(self._render_podspec("worker"))
         assert sidecar.args[0] == "kube-login-and-maintain"
         assert sidecar.restart_policy == "Always"
 
-    def test_release_uses_kube_login(self):
-        podspec = self._render_podspec("release")
-        sidecar = self._sidecar_init(podspec)
-        assert sidecar is not None
-        assert sidecar.args[0] == "kube-login"
+    def test_release(self):
+        sidecar = self._sidecar_init(self._render_podspec("release"))
+        assert sidecar.args[0] == "kube-login-and-maintain"
         assert sidecar.restart_policy == "Always"
 
-    def test_postdeploy_uses_kube_login(self):
-        podspec = self._render_podspec("postdeploy")
-        sidecar = self._sidecar_init(podspec)
-        assert sidecar is not None
-        assert sidecar.args[0] == "kube-login"
+    def test_postdeploy(self):
+        sidecar = self._sidecar_init(self._render_podspec("postdeploy"))
+        assert sidecar.args[0] == "kube-login-and-maintain"
         assert sidecar.restart_policy == "Always"
 
-    def test_job_uses_kube_login(self):
-        podspec = self._render_podspec("job-cleanup")
-        sidecar = self._sidecar_init(podspec)
-        assert sidecar is not None
-        assert sidecar.args[0] == "kube-login"
+    def test_job(self):
+        sidecar = self._sidecar_init(self._render_podspec("job-cleanup"))
+        assert sidecar.args[0] == "kube-login-and-maintain"
         assert sidecar.restart_policy == "Always"
