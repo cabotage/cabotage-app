@@ -280,6 +280,8 @@ def _teardown_environment(environment):
             db.session.delete(release)
         for deployment in app_env.deployments.all():
             db.session.delete(deployment)
+        for job_log in app_env.job_logs.all():
+            db.session.delete(job_log)
     db.session.flush()
     # Deleting the environment cascades to its application_environments
     db.session.delete(environment)
