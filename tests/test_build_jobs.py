@@ -147,13 +147,13 @@ def _run_image_build(image, mock_core, mock_run_job):
 
 
 class TestBuildNamespace:
-    def test_env_enabled(self):
+    def test_always_returns_tenant_builds_namespace(self):
         app_env = _make_app_env(org_k8s="myorg", env_k8s="staging", env_enabled=True)
-        assert _build_namespace(app_env) == "myorg-staging"
+        assert _build_namespace(app_env) == "cabotage-tenant-builds"
 
-    def test_env_disabled(self):
+    def test_env_disabled_still_returns_tenant_builds(self):
         app_env = _make_app_env(org_k8s="myorg", env_enabled=False)
-        assert _build_namespace(app_env) == "myorg"
+        assert _build_namespace(app_env) == "cabotage-tenant-builds"
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +201,7 @@ class TestBuildJobNamespace:
         _run_release_build(release, mock_core, mock_run_job)
 
         ns_arg = mock_run_job.call_args[0][2]
-        assert ns_arg == "myorg-prod"
+        assert ns_arg == "cabotage-tenant-builds"
 
     def test_release_build_creates_resources_in_tenant_namespace(self, mock_app):
         release = _make_release(org_k8s="myorg", env_k8s="prod")
@@ -211,9 +211,13 @@ class TestBuildJobNamespace:
         _run_release_build(release, mock_core, mock_run_job)
 
         for c in mock_core.create_namespaced_config_map.call_args_list:
-            assert c[0][0] == "myorg-prod", f"configmap created in wrong ns: {c}"
+            assert (
+                c[0][0] == "cabotage-tenant-builds"
+            ), f"configmap created in wrong ns: {c}"
         for c in mock_core.create_namespaced_secret.call_args_list:
-            assert c[0][0] == "myorg-prod", f"secret created in wrong ns: {c}"
+            assert (
+                c[0][0] == "cabotage-tenant-builds"
+            ), f"secret created in wrong ns: {c}"
 
     def test_release_build_cleans_up_in_tenant_namespace(self, mock_app):
         release = _make_release(org_k8s="myorg", env_k8s="prod")
@@ -223,9 +227,13 @@ class TestBuildJobNamespace:
         _run_release_build(release, mock_core, mock_run_job)
 
         for c in mock_core.delete_namespaced_secret.call_args_list:
-            assert c[0][1] == "myorg-prod", f"secret deleted in wrong ns: {c}"
+            assert (
+                c[0][1] == "cabotage-tenant-builds"
+            ), f"secret deleted in wrong ns: {c}"
         for c in mock_core.delete_namespaced_config_map.call_args_list:
-            assert c[0][1] == "myorg-prod", f"configmap deleted in wrong ns: {c}"
+            assert (
+                c[0][1] == "cabotage-tenant-builds"
+            ), f"configmap deleted in wrong ns: {c}"
 
     def test_image_build_runs_in_tenant_namespace(self, mock_app):
         image = _make_image(org_k8s="myorg", env_k8s="staging")
@@ -235,7 +243,7 @@ class TestBuildJobNamespace:
         _run_image_build(image, mock_core, mock_run_job)
 
         ns_arg = mock_run_job.call_args[0][2]
-        assert ns_arg == "myorg-staging"
+        assert ns_arg == "cabotage-tenant-builds"
 
     def test_image_build_cleans_up_in_tenant_namespace(self, mock_app):
         image = _make_image(org_k8s="myorg", env_k8s="staging")
@@ -245,11 +253,15 @@ class TestBuildJobNamespace:
         _run_image_build(image, mock_core, mock_run_job)
 
         for c in mock_core.delete_namespaced_secret.call_args_list:
-            assert c[0][1] == "myorg-staging", f"secret deleted in wrong ns: {c}"
+            assert (
+                c[0][1] == "cabotage-tenant-builds"
+            ), f"secret deleted in wrong ns: {c}"
         for c in mock_core.delete_namespaced_config_map.call_args_list:
-            assert c[0][1] == "myorg-staging", f"configmap deleted in wrong ns: {c}"
+            assert (
+                c[0][1] == "cabotage-tenant-builds"
+            ), f"configmap deleted in wrong ns: {c}"
 
-    def test_legacy_app_uses_org_namespace(self, mock_app):
+    def test_legacy_app_uses_tenant_builds_namespace(self, mock_app):
         release = _make_release(org_k8s="myorg", env_enabled=False)
         mock_core = MagicMock()
         mock_run_job = MagicMock(return_value=(True, "logs"))
@@ -257,7 +269,7 @@ class TestBuildJobNamespace:
         _run_release_build(release, mock_core, mock_run_job)
 
         ns_arg = mock_run_job.call_args[0][2]
-        assert ns_arg == "myorg"
+        assert ns_arg == "cabotage-tenant-builds"
 
 
 # ---------------------------------------------------------------------------
@@ -307,7 +319,7 @@ class TestBuildCachePVC:
         build_module.fetch_image_build_cache_volume_claim(mock_core, image)
 
         create_call = mock_core.create_namespaced_persistent_volume_claim.call_args
-        assert create_call[0][0] == "myorg-prod"
+        assert create_call[0][0] == "cabotage-tenant-builds"
 
     def test_pvc_read_in_tenant_namespace(self):
         image = _make_image(org_k8s="myorg", env_k8s="prod")
@@ -316,4 +328,4 @@ class TestBuildCachePVC:
         build_module.fetch_image_build_cache_volume_claim(mock_core, image)
 
         read_call = mock_core.read_namespaced_persistent_volume_claim.call_args
-        assert read_call[0][1] == "myorg-prod"
+        assert read_call[0][1] == "cabotage-tenant-builds"
