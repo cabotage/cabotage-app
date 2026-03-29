@@ -14,6 +14,8 @@
         resolved = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
       } else if (pref === 'terminal') {
         resolved = 'terminal';
+      } else if (pref === 'dracula') {
+        resolved = 'dracula';
       }
       document.documentElement.setAttribute('data-theme', resolved);
       document.documentElement.setAttribute('data-theme-pref', pref);
@@ -58,6 +60,18 @@
       window.__ACCENT_PRESETS = ACCENT_PRESETS;
 
       function applyAccent(name, theme) {
+        // Dracula has its own fixed accent — ignore user accent choice
+        if (theme === 'dracula') {
+          var s = document.documentElement.style;
+          s.setProperty('--color-primary', '#bd93f9');
+          s.setProperty('--color-primary-content', '#282a36');
+          s.setProperty('--color-accent', '#ff79c6');
+          s.setProperty('--accent-text', '#bd93f9');
+          s.setProperty('--hover-overlay', 'rgba(189, 147, 249, 0.06)');
+          s.setProperty('--hover-overlay-strong', 'rgba(189, 147, 249, 0.12)');
+          s.setProperty('--shadow-primary-glow', 'rgba(189, 147, 249, 0.25)');
+          return;
+        }
         var mode = theme === 'terminal' ? 'terminal' : theme === 'light' ? 'light' : 'dark';
         var preset = ACCENT_PRESETS[name];
         var p = preset && (preset[mode] || preset[mode === 'terminal' ? 'dark' : mode]);
@@ -218,6 +232,45 @@
       --shadow-primary-glow: rgba(51, 255, 51, 0.2);
       --accent-text: #33ff33;
     }
+    [data-theme="dracula"] {
+      color-scheme: dark;
+      --color-base-100: #282a36;
+      --color-base-200: #21222c;
+      --color-base-300: #44475a;
+      --color-base-content: #f8f8f2;
+      --color-primary: #bd93f9;
+      --color-primary-content: #282a36;
+      --color-secondary: #8be9fd;
+      --color-secondary-content: #282a36;
+      --color-accent: #ff79c6;
+      --color-accent-content: #282a36;
+      --color-neutral: #44475a;
+      --color-neutral-content: #f8f8f2;
+      --color-success: #50fa7b;
+      --color-error: #ff5555;
+      --color-warning: #f1fa8c;
+      --color-info: #8be9fd;
+      --topbar-bg: rgba(40, 42, 54, 0.92);
+      --border-color: rgba(248, 248, 242, 0.08);
+      --border-color-subtle: rgba(248, 248, 242, 0.05);
+      --text-muted: rgba(248, 248, 242, 0.55);
+      --text-faint: rgba(248, 248, 242, 0.4);
+      --text-faintest: rgba(248, 248, 242, 0.28);
+      --text-ghost: rgba(248, 248, 242, 0.15);
+      --text-dim: rgba(248, 248, 242, 0.1);
+      --text-bright: #f8f8f2;
+      --hover-overlay: rgba(189, 147, 249, 0.06);
+      --hover-overlay-strong: rgba(189, 147, 249, 0.12);
+      --surface-card: #21222c;
+      --surface-inset: #1a1b26;
+      --surface-input: #282a36;
+      --surface-neutral: #44475a;
+      --scrollbar-thumb: #44475a;
+      --scrollbar-thumb-hover: #6272a4;
+      --shadow-card: rgba(0, 0, 0, 0.4);
+      --shadow-primary-glow: rgba(189, 147, 249, 0.25);
+      --accent-text: #bd93f9;
+    }
     </style>
 
     {% if not config.DEBUG %}
@@ -300,6 +353,15 @@
                        stroke-linejoin="round">
                     <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
                   </svg>
+                  <svg class="w-4 h-4 theme-icon-dracula hidden"
+                       viewBox="0 0 24 24"
+                       fill="none"
+                       stroke="currentColor"
+                       stroke-width="2"
+                       stroke-linecap="round"
+                       stroke-linejoin="round">
+                    <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+                  </svg>
                 </button>
                 <div class="theme-dropdown hidden absolute right-0 top-full mt-1 z-[60] bg-base-300 rounded-lg border border-base-content/10 shadow-xl p-1 min-w-[140px]">
                   <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
@@ -354,6 +416,20 @@
                       <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
                     </svg>
                     Terminal
+                  </button>
+                  <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
+                          style="color: #bd93f9"
+                          data-theme-val="dracula">
+                    <svg class="w-3.5 h-3.5 shrink-0"
+                         viewBox="0 0 24 24"
+                         fill="none"
+                         stroke="currentColor"
+                         stroke-width="2"
+                         stroke-linecap="round"
+                         stroke-linejoin="round">
+                      <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+                    </svg>
+                    Dracula
                   </button>
                   <div class="border-t border-base-content/10 my-1"></div>
                   <div class="px-3 py-1.5">
@@ -490,6 +566,15 @@
                        stroke-linejoin="round">
                     <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
                   </svg>
+                  <svg class="w-4 h-4 theme-icon-dracula hidden"
+                       viewBox="0 0 24 24"
+                       fill="none"
+                       stroke="currentColor"
+                       stroke-width="2"
+                       stroke-linecap="round"
+                       stroke-linejoin="round">
+                    <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+                  </svg>
                 </button>
                 <div class="theme-dropdown hidden absolute right-0 top-full mt-1 z-[60] bg-base-300 rounded-lg border border-base-content/10 shadow-xl p-1 min-w-[140px]">
                   <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
@@ -544,6 +629,20 @@
                       <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
                     </svg>
                     Terminal
+                  </button>
+                  <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
+                          style="color: #bd93f9"
+                          data-theme-val="dracula">
+                    <svg class="w-3.5 h-3.5 shrink-0"
+                         viewBox="0 0 24 24"
+                         fill="none"
+                         stroke="currentColor"
+                         stroke-width="2"
+                         stroke-linecap="round"
+                         stroke-linejoin="round">
+                      <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+                    </svg>
+                    Dracula
                   </button>
                   <div class="border-t border-base-content/10 my-1"></div>
                   <div class="px-3 py-1.5">

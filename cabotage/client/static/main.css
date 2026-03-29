@@ -48,6 +48,9 @@ textarea {
 [data-theme-pref='terminal'] .theme-icon-terminal {
   display: block !important;
 }
+[data-theme-pref='dracula'] .theme-icon-dracula {
+  display: block !important;
+}
 [data-theme-pref='cb-protanopia'] .theme-icon-cb,
 [data-theme-pref='cb-deuteranopia'] .theme-icon-cb,
 html:not([data-theme-pref]) .theme-icon-system {
