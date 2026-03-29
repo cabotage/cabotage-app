@@ -26,7 +26,6 @@ from github.GithubException import GithubException, UnknownObjectException
 from github.GithubIntegration import GithubIntegration
 
 from cabotage.celery.tasks.deploy import run_deploy, run_job
-from cabotage.server.models.utils import safe_k8s_name
 
 
 from cabotage.server import (
@@ -65,11 +64,8 @@ from cabotage.utils import procfile
 
 
 def _build_namespace(app_env):
-    """Compute the k8s namespace for a build from its application environment."""
-    org_k8s = app_env.application.project.organization.k8s_identifier
-    if app_env.k8s_identifier is not None:
-        return safe_k8s_name(org_k8s, app_env.environment.k8s_identifier)
-    return org_k8s
+    """Return the namespace where build jobs run."""
+    return "cabotage-tenant-builds"
 
 
 Activity = activity_plugin.activity_cls
