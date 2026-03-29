@@ -154,6 +154,18 @@ def _preview_url_for_app_env(app_env):
     return None
 
 
+def _retry_on_404(fn, *args, retries=3, delay=2, **kwargs):
+    """Retry a kubernetes API call if it returns a 404, with backoff."""
+    for attempt in range(retries):
+        try:
+            return fn(*args, **kwargs)
+        except ApiException as exc:
+            if exc.status == 404 and attempt < retries - 1:
+                time.sleep(delay * (attempt + 1))
+            else:
+                raise
+
+
 def _wait_for_tls_secret(core_api, namespace, secret_name, timeout=120, log=None):
     """Poll until a TLS secret exists with cert data, or timeout."""
     deadline = time.time() + timeout
@@ -2305,8 +2317,10 @@ def run_job(
 
     try:
         while True:
-            job_status = batch_api_instance.read_namespaced_job_status(
-                job_object.metadata.name, namespace
+            job_status = _retry_on_404(
+                batch_api_instance.read_namespaced_job_status,
+                job_object.metadata.name,
+                namespace,
             )
             if job_status.status.failed and job_status.status.failed > 0:
                 job_logs = fetch_job_logs(core_api_instance, namespace, job_status)
@@ -2404,8 +2418,10 @@ def _run_job_streaming(
         # Poll for final job status — k8s may not have updated it yet
         succeeded = False
         for _ in range(30):
-            job_status = batch_api_instance.read_namespaced_job_status(
-                job_name, namespace
+            job_status = _retry_on_404(
+                batch_api_instance.read_namespaced_job_status,
+                job_name,
+                namespace,
             )
             if job_status.status.succeeded and job_status.status.succeeded > 0:
                 succeeded = True
