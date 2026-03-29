@@ -166,22 +166,30 @@ def _retry_on_404(fn, *args, retries=3, delay=2, **kwargs):
                 raise
 
 
-def _wait_for_tls_secret(core_api, namespace, secret_name, timeout=120, log=None):
-    """Poll until a TLS secret exists with cert data, or timeout."""
+def _wait_for_tls_certificate(api_client, namespace, cert_name, timeout=120, log=None):
+    """Poll until a cert-manager Certificate is Ready, or timeout."""
+    custom_api = kubernetes.client.CustomObjectsApi(api_client)
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            secret = core_api.read_namespaced_secret(secret_name, namespace)
-            if secret.data and "tls.crt" in secret.data:
-                if log:
-                    log(f"TLS secret {secret_name} is ready")
-                return True
+            cert = custom_api.get_namespaced_custom_object(
+                "cert-manager.io",
+                "v1",
+                namespace,
+                "certificates",
+                cert_name,
+            )
+            for cond in (cert.get("status") or {}).get("conditions", []):
+                if cond.get("type") == "Ready" and cond.get("status") == "True":
+                    if log:
+                        log(f"Certificate {cert_name} is ready")
+                    return True
         except ApiException as exc:
             if exc.status != 404:
                 raise
         time.sleep(5)
     if log:
-        log(f"TLS secret {secret_name} not ready after {timeout}s, proceeding anyway")
+        log(f"Certificate {cert_name} not ready after {timeout}s, proceeding anyway")
     return False
 
 
@@ -2874,12 +2882,12 @@ def deploy_release(deployment):
             if ing.enabled and any(
                 h.is_auto_generated and h.tls_enabled for h in ing.hosts
             ):
-                tls_secret = f"{resource_prefix}-{ing.name}-tls"
-                log(f"Waiting for TLS certificate ({tls_secret})")
-                tls_ready = _wait_for_tls_secret(
-                    core_api_instance,
+                cert_name = f"{resource_prefix}-{ing.name}-tls"
+                log(f"Waiting for TLS certificate ({cert_name})")
+                tls_ready = _wait_for_tls_certificate(
+                    api_client,
                     namespace.metadata.name,
-                    tls_secret,
+                    cert_name,
                     log=log,
                 )
                 break
