@@ -860,8 +860,8 @@
           </div>
           <div class="process-grid">
             {% for process_name, proc in latest_release_job_processes.items() %}
-              {% set count = src.process_counts.get(process_name, 0) %}
-              {% set pod_class = src.process_pod_classes.get(process_name, DEFAULT_POD_CLASS) %}
+              {% set count = app_env.process_counts.get(process_name, 0) %}
+              {% set pod_class = app_env.process_pod_classes.get(process_name, DEFAULT_POD_CLASS) %}
               {% set schedule = '' %}
               {% for key, value in proc.get('env', []) %}
                 {% if key == 'SCHEDULE' %}{% set schedule = value %}{% endif %}
