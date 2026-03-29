@@ -30,6 +30,7 @@ from cabotage.server.models.projects import (
     _ingress_hostname_pairs,
     pod_classes,
 )
+
 from cabotage.server.models.utils import (
     safe_k8s_name,
     compact_k8s_name,

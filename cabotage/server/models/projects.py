@@ -6,6 +6,7 @@ from sqlalchemy import CheckConstraint, text, UniqueConstraint
 from sqlalchemy.event import listens_for
 from sqlalchemy.dialects import postgresql
 from sqlalchemy_continuum import make_versioned
+from sqlalchemy_continuum.plugins import FlaskPlugin
 from sqlalchemy_utils.models import Timestamp
 
 from cabotage.server import db, Model
@@ -27,7 +28,8 @@ from cabotage.utils.release_build_context import (
 )
 
 activity_plugin = ActivityPlugin()
-make_versioned(plugins=[activity_plugin])
+flask_plugin = FlaskPlugin()
+make_versioned(plugins=[activity_plugin, flask_plugin])
 
 platform_version = postgresql.ENUM(
     "wind",
@@ -727,6 +729,7 @@ class Deployment(Model, Timestamp):
         postgresql.UUID(as_uuid=True),
         db.ForeignKey("project_applications.id"),
         nullable=False,
+        index=True,
     )
     application_environment_id = db.Column(
         postgresql.UUID(as_uuid=True),
@@ -782,6 +785,7 @@ class Release(Model, Timestamp):
         postgresql.UUID(as_uuid=True),
         db.ForeignKey("project_applications.id"),
         nullable=False,
+        index=True,
     )
     application_environment_id = db.Column(
         postgresql.UUID(as_uuid=True),
@@ -1109,6 +1113,7 @@ class Configuration(Model, Timestamp):
         postgresql.UUID(as_uuid=True),
         db.ForeignKey("project_applications.id"),
         nullable=False,
+        index=True,
     )
     application_environment_id = db.Column(
         postgresql.UUID(as_uuid=True),
@@ -1382,6 +1387,7 @@ class Image(Model, Timestamp):
         postgresql.UUID(as_uuid=True),
         db.ForeignKey("project_applications.id"),
         nullable=False,
+        index=True,
     )
     application_environment_id = db.Column(
         postgresql.UUID(as_uuid=True),
