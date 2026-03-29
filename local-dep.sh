@@ -24,14 +24,38 @@ docker build -t "${IMAGE_NAME}:local" -t "${REGISTRY}/${IMAGE_NAME}:${TAG}" .
 echo "==> Pushing ${REGISTRY}/${IMAGE_NAME}:${TAG}..."
 docker push "${REGISTRY}/${IMAGE_NAME}:${TAG}"
 
-declare -A CONTAINERS=(
-    ["cabotage-app-web"]="cabotage-app"
-    ["cabotage-app-worker"]="cabotage-app-worker"
-    ["cabotage-app-worker-beat"]="cabotage-app-worker-beat"
-)
+# Merge .env into the cabotage-config configmap
+ENV_FILE="$(cd "$(dirname "$0")" && pwd)/.env"
+if [ -f "${ENV_FILE}" ]; then
+    echo "==> Patching configmap/cabotage-config with ${ENV_FILE}..."
+    PATCH='{"data":{'
+    FIRST=true
+    while IFS= read -r line || [ -n "$line" ]; do
+        # Skip blank lines and comments
+        case "$line" in
+            ''|\#*) continue ;;
+        esac
+        KEY="${line%%=*}"
+        VALUE="${line#*=}"
+        if [ "$FIRST" = true ]; then
+            FIRST=false
+        else
+            PATCH="${PATCH},"
+        fi
+        # Escape double quotes in value for JSON
+        VALUE=$(printf '%s' "$VALUE" | sed 's/"/\\"/g')
+        PATCH="${PATCH}\"${KEY}\":\"${VALUE}\""
+    done < "${ENV_FILE}"
+    PATCH="${PATCH}}}"
+    kubectl --context minikube-cabotage -n "${NAMESPACE}" patch configmap/cabotage-config \
+        --type merge -p "${PATCH}"
+fi
 
 for DEPLOY in "${DEPLOYMENTS[@]}"; do
-    CONTAINER="${CONTAINERS[$DEPLOY]}"
+    case "${DEPLOY}" in
+        cabotage-app-web) CONTAINER="cabotage-app" ;;
+        *)                CONTAINER="${DEPLOY}" ;;
+    esac
     echo "==> Updating deployment/${DEPLOY} container ${CONTAINER} to ${REGISTRY}/${IMAGE_NAME}:${TAG}..."
     kubectl --context minikube-cabotage -n "${NAMESPACE}" set image "deployment/${DEPLOY}" \
         "${CONTAINER}=${REGISTRY}/${IMAGE_NAME}:${TAG}"
