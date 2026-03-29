@@ -4854,6 +4854,7 @@ def application_scale(org_slug, project_slug, app_slug):
 
             if current_app.config["KUBERNETES_ENABLED"]:
                 from cabotage.celery.tasks.deploy import k8s_namespace as _k8s_ns
+                from cabotage.celery.tasks.deploy import resize_cronjob
                 from cabotage.celery.tasks.deploy import suspend_cronjob
 
                 latest = app_env.latest_release_built
@@ -4867,6 +4868,13 @@ def application_scale(org_slug, project_slug, app_slug):
                                     latest,
                                     process_name,
                                     suspend=change["process_count"]["new_value"] == 0,
+                                )
+                            if "pod_class" in change:
+                                resize_cronjob(
+                                    namespace,
+                                    latest,
+                                    process_name,
+                                    change["pod_class"]["new_value"],
                                 )
                         else:
                             if "process_count" in change:

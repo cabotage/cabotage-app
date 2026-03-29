@@ -274,3 +274,54 @@ class TestRenderCronjob:
 
         assert cj.spec.job_template.spec.backoff_limit == 0
         assert cj.spec.job_template.spec.active_deadline_seconds == 3600
+
+
+class TestResizeCronjob:
+    def test_resize_cronjob_patches_resources(self, mock_app):
+        from cabotage.server.models.projects import pod_classes
+
+        release = _make_release()
+        mock_batch_api = MagicMock()
+        with (
+            patch(f"{_DEPLOY_MODULE}.kubernetes_ext"),
+            patch(
+                f"{_DEPLOY_MODULE}.kubernetes.client.BatchV1Api",
+                return_value=mock_batch_api,
+            ),
+            patch(f"{_DEPLOY_MODULE}.k8s_resource_prefix", return_value="proj-app"),
+        ):
+            deploy_module.resize_cronjob("test-ns", release, "job-cleanup", "r1.large")
+
+        mock_batch_api.read_namespaced_cron_job.assert_called_once_with(
+            "proj-app-job-cleanup", "test-ns"
+        )
+        patch_call = mock_batch_api.patch_namespaced_cron_job.call_args
+        assert patch_call[0][0] == "proj-app-job-cleanup"
+        assert patch_call[0][1] == "test-ns"
+        body = patch_call[0][2]
+        resources = body["spec"]["jobTemplate"]["spec"]["template"]["spec"][
+            "containers"
+        ][0]["resources"]
+        expected = pod_classes["r1.large"]
+        assert resources["requests"]["cpu"] == expected["cpu"]["requests"]
+        assert resources["requests"]["memory"] == expected["memory"]["requests"]
+        assert resources["limits"]["cpu"] == expected["cpu"]["limits"]
+        assert resources["limits"]["memory"] == expected["memory"]["limits"]
+
+    def test_resize_cronjob_noop_on_404(self, mock_app):
+        from kubernetes.client.rest import ApiException
+
+        release = _make_release()
+        mock_batch_api = MagicMock()
+        mock_batch_api.read_namespaced_cron_job.side_effect = ApiException(status=404)
+        with (
+            patch(f"{_DEPLOY_MODULE}.kubernetes_ext"),
+            patch(
+                f"{_DEPLOY_MODULE}.kubernetes.client.BatchV1Api",
+                return_value=mock_batch_api,
+            ),
+            patch(f"{_DEPLOY_MODULE}.k8s_resource_prefix", return_value="proj-app"),
+        ):
+            deploy_module.resize_cronjob("test-ns", release, "job-cleanup", "r1.large")
+
+        mock_batch_api.patch_namespaced_cron_job.assert_not_called()

@@ -2182,6 +2182,48 @@ def suspend_cronjob(namespace, release, process_name, suspend):
     batch_api_instance.patch_namespaced_cron_job(cronjob_name, namespace, patch)
 
 
+def resize_cronjob(namespace, release, process_name, pod_class_name):
+    """Patch a CronJob's container resources to match a new pod class."""
+    pod_class = pod_classes[pod_class_name]
+    api_client = kubernetes_ext.kubernetes_client
+    batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+    cronjob_name = f"{k8s_resource_prefix(release)}-{process_name}"
+    try:
+        batch_api_instance.read_namespaced_cron_job(cronjob_name, namespace)
+    except ApiException as exc:
+        if exc.status == 404:
+            return
+        raise
+    patch = {
+        "spec": {
+            "jobTemplate": {
+                "spec": {
+                    "template": {
+                        "spec": {
+                            "containers": [
+                                {
+                                    "name": process_name,
+                                    "resources": {
+                                        "limits": {
+                                            "cpu": pod_class["cpu"]["limits"],
+                                            "memory": pod_class["memory"]["limits"],
+                                        },
+                                        "requests": {
+                                            "cpu": pod_class["cpu"]["requests"],
+                                            "memory": pod_class["memory"]["requests"],
+                                        },
+                                    },
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    }
+    batch_api_instance.patch_namespaced_cron_job(cronjob_name, namespace, patch)
+
+
 def fetch_job_logs(core_api_instance, namespace, job_object):
     label_selector = ",".join(
         [f"{k}={v}" for k, v in job_object.spec.template.metadata.labels.items()]
