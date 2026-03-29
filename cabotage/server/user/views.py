@@ -6214,9 +6214,9 @@ def project_observe_metric(org_slug, project_slug):
         if env:
             ns_label = f'namespace="{safe_k8s_name(org_k8s, env.k8s_identifier)}"'
         else:
-            ns_label = f'namespace=~"{escaped_org_k8s}-.*"'
+            ns_label = f'namespace=~"{escaped_org_k8s}(-.*)?$"'
     else:
-        ns_label = f'namespace=~"{escaped_org_k8s}-.*"'
+        ns_label = f'namespace=~"{escaped_org_k8s}(-.*)?$"'
 
     # Determine pod selector
     if app_filter:
@@ -6333,7 +6333,7 @@ def organization_observe_metric(org_slug):
         )
 
     # Determine namespace selector
-    ns_label = f'namespace=~"{escaped_org_k8s}-.*"'
+    ns_label = f'namespace=~"{escaped_org_k8s}(-.*)?$"'
     if filtered_proj and env_filter:
         env = (
             Environment.query.filter_by(project_id=filtered_proj.id, slug=env_filter)
