@@ -1379,6 +1379,7 @@ class EnvironmentConfiguration(Model, Timestamp):
 
 
 class EnvironmentConfigSubscription(Model, Timestamp):
+    __versioned__: dict = {}
     __tablename__ = "environment_config_subscriptions"
 
     id = db.Column(
