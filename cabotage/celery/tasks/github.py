@@ -804,6 +804,12 @@ def process_pull_request_hook(hook):
             )
             .all()
         )
+        # Teardown doesn't depend on branch validation — always honor
+        # closed events so stacked PRs closed out of order get cleaned up.
+        if action == "closed":
+            teardown_branch_deploy(project, pr_number)
+            continue
+
         auto_deploy_branches = {ae.effective_auto_deploy_branch for ae in base_app_envs}
         if base_ref not in auto_deploy_branches:
             # base_ref is not a direct auto-deploy branch; check if it
@@ -844,8 +850,6 @@ def process_pull_request_hook(hook):
             )
         elif action == "synchronize":
             sync_branch_deploy(project, pr_number, head_sha, installation_id)
-        elif action == "closed":
-            teardown_branch_deploy(project, pr_number)
 
 
 @shared_task()
