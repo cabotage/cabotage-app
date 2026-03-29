@@ -1312,12 +1312,12 @@ def fetch_image_pull_secrets(core_api_instance, release):
     return secret
 
 
-def render_cabotage_enroller_container(release, process_name, with_tls=True):
+def render_cabotage_sidecar_container(release, process_name, with_tls=True):
     role_name = k8s_role_name(release)
     resource_prefix = k8s_resource_prefix(release)
 
     args = [
-        "kube-login",
+        "kube-login-and-maintain",
         "--namespace=$(NAMESPACE)",
         f"--vault-auth-kubernetes-role={role_name}",
         "--fetch-consul-token",
@@ -1332,7 +1332,8 @@ def render_cabotage_enroller_container(release, process_name, with_tls=True):
         args.append(f"--service-names={resource_prefix}-{process_name}")
 
     return kubernetes.client.V1Container(
-        name="cabotage-enroller",
+        name="cabotage-sidecar",
+        restart_policy="Always",
         image=current_app.config["SIDECAR_IMAGE"],
         image_pull_policy="IfNotPresent",
         env=[
@@ -1361,25 +1362,6 @@ def render_cabotage_enroller_container(release, process_name, with_tls=True):
                 ),
             ),
         ],
-        args=args,
-        volume_mounts=[
-            kubernetes.client.V1VolumeMount(
-                name="vault-secrets", mount_path="/var/run/secrets/vault"
-            ),
-        ],
-    )
-
-
-def render_cabotage_sidecar_container(release, with_tls=True):
-    role_name = k8s_role_name(release)
-    args = ["maintain"]
-    if with_tls:
-        args.append(f"--vault-pki-role={role_name}")
-    return kubernetes.client.V1Container(
-        name="cabotage-sidecar",
-        restart_policy="Always",
-        image=current_app.config["SIDECAR_IMAGE"],
-        image_pull_policy="IfNotPresent",
         args=args,
         volume_mounts=[
             kubernetes.client.V1VolumeMount(
@@ -1673,10 +1655,7 @@ def render_podspec(release, process_name, service_account_name):
             )
         )
         init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=True)
-        )
-        init_containers.append(
-            render_cabotage_sidecar_container(release, with_tls=True)
+            render_cabotage_sidecar_container(release, process_name, with_tls=True)
         )
         init_containers.append(
             render_cabotage_sidecar_tls_container(release, unix=True)
@@ -1688,10 +1667,7 @@ def render_podspec(release, process_name, service_account_name):
         )
     elif process_name.startswith("tcp"):
         init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=True)
-        )
-        init_containers.append(
-            render_cabotage_sidecar_container(release, with_tls=True)
+            render_cabotage_sidecar_container(release, process_name, with_tls=True)
         )
         init_containers.append(
             render_cabotage_sidecar_tls_container(release, unix=False, tcp=True)
@@ -1703,10 +1679,7 @@ def render_podspec(release, process_name, service_account_name):
         )
     elif process_name.startswith("worker"):
         init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=False)
-        )
-        init_containers.append(
-            render_cabotage_sidecar_container(release, with_tls=False)
+            render_cabotage_sidecar_container(release, process_name, with_tls=False)
         )
         containers.append(
             render_process_container(
@@ -1715,7 +1688,7 @@ def render_podspec(release, process_name, service_account_name):
         )
     elif process_name.startswith("job"):
         init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=False)
+            render_cabotage_sidecar_container(release, process_name, with_tls=False)
         )
         containers.append(
             render_process_container(
@@ -1725,7 +1698,7 @@ def render_podspec(release, process_name, service_account_name):
         restart_policy = "OnFailure"
     elif process_name.startswith("release"):
         init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=False)
+            render_cabotage_sidecar_container(release, process_name, with_tls=False)
         )
         containers.append(
             render_process_container(
@@ -1735,7 +1708,7 @@ def render_podspec(release, process_name, service_account_name):
         restart_policy = "Never"
     elif process_name.startswith("postdeploy"):
         init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=False)
+            render_cabotage_sidecar_container(release, process_name, with_tls=False)
         )
         containers.append(
             render_process_container(
@@ -1745,7 +1718,7 @@ def render_podspec(release, process_name, service_account_name):
         restart_policy = "Never"
     else:
         init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=False)
+            render_cabotage_sidecar_container(release, process_name, with_tls=False)
         )
         containers.append(
             render_process_container(

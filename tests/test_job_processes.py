@@ -17,7 +17,6 @@ from cabotage.celery.tasks.deploy import (
 
 _DEPLOY_MODULE = "cabotage.celery.tasks.deploy"
 _PATCHES = [
-    f"{_DEPLOY_MODULE}.render_cabotage_enroller_container",
     f"{_DEPLOY_MODULE}.render_cabotage_sidecar_container",
     f"{_DEPLOY_MODULE}.render_cabotage_sidecar_tls_container",
     f"{_DEPLOY_MODULE}.render_process_container",

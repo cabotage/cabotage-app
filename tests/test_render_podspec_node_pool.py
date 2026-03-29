@@ -44,7 +44,6 @@ def _make_release(ephemeral=False, has_dd_key=False):
 
 _DEPLOY_MODULE = "cabotage.celery.tasks.deploy"
 _PATCHES = [
-    f"{_DEPLOY_MODULE}.render_cabotage_enroller_container",
     f"{_DEPLOY_MODULE}.render_cabotage_sidecar_container",
     f"{_DEPLOY_MODULE}.render_cabotage_sidecar_tls_container",
     f"{_DEPLOY_MODULE}.render_process_container",
