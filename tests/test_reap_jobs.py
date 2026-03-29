@@ -165,7 +165,7 @@ class TestExtractResources:
         }
 
     def test_skips_non_matching_containers(self):
-        init = _make_container("cabotage-enroller")
+        init = _make_container("cabotage-sidecar")
         process = _make_container(
             "job-cleanup",
             requests={"cpu": "250m", "memory": "512Mi"},

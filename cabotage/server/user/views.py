@@ -2005,12 +2005,11 @@ def project_application_env_config_subscribe(
 
     return redirect(
         url_for(
-            "user.project_application",
+            "user.application_config",
             org_slug=organization.slug,
             project_slug=project.slug,
             app_slug=application.slug,
             env_slug=env_slug,
-            _anchor="config",
         )
     )
 
@@ -2064,12 +2063,11 @@ def project_application_env_config_unsubscribe(
 
     return redirect(
         url_for(
-            "user.project_application",
+            "user.application_config",
             org_slug=organization.slug,
             project_slug=project.slug,
             app_slug=application.slug,
             env_slug=env_slug,
-            _anchor="config",
         )
     )
 
@@ -2969,14 +2967,13 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
         db.session.commit()
         return redirect(
             url_for(
-                "user.project_application",
+                "user.application_config",
                 org_slug=organization.slug,
                 project_slug=project.slug,
                 app_slug=application.slug,
                 env_slug=(
                     app_env.environment.slug if project.environments_enabled else None
                 ),
-                _anchor="config",
             )
         )
     return render_template(
@@ -3092,12 +3089,11 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
         )
         return redirect(
             url_for(
-                "user.project_application",
+                "user.application_config",
                 org_slug=organization.slug,
                 project_slug=project.slug,
                 app_slug=application.slug,
                 env_slug=_redirect_env_slug,
-                _anchor="config",
             )
         )
 
@@ -3793,12 +3789,11 @@ def project_application_configuration_delete(
         #     raise
         return redirect(
             url_for(
-                "user.project_application",
+                "user.application_config",
                 org_slug=organization.slug,
                 project_slug=project.slug,
                 app_slug=application.slug,
                 env_slug=env_slug,
-                _anchor="config",
             )
         )
     return render_template(
@@ -6219,9 +6214,9 @@ def project_observe_metric(org_slug, project_slug):
         if env:
             ns_label = f'namespace="{safe_k8s_name(org_k8s, env.k8s_identifier)}"'
         else:
-            ns_label = f'namespace=~"{escaped_org_k8s}-.*"'
+            ns_label = f'namespace=~"{escaped_org_k8s}(-.*)?$"'
     else:
-        ns_label = f'namespace=~"{escaped_org_k8s}-.*"'
+        ns_label = f'namespace=~"{escaped_org_k8s}(-.*)?$"'
 
     # Determine pod selector
     if app_filter:
@@ -6338,7 +6333,7 @@ def organization_observe_metric(org_slug):
         )
 
     # Determine namespace selector
-    ns_label = f'namespace=~"{escaped_org_k8s}-.*"'
+    ns_label = f'namespace=~"{escaped_org_k8s}(-.*)?$"'
     if filtered_proj and env_filter:
         env = (
             Environment.query.filter_by(project_id=filtered_proj.id, slug=env_filter)

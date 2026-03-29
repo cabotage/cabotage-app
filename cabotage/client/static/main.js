@@ -240,20 +240,8 @@ function initThemeToggle() {
   var cycleThemes = ['light', 'dark', 'system'];
 
   document.querySelectorAll('.theme-toggle-wrap').forEach(function (wrap) {
-    var btn = wrap.querySelector('button');
+    var btn = wrap.querySelector('[role="button"]');
     var dropdown = wrap.querySelector('.theme-dropdown');
-    var hideTimer = null;
-
-    function show() {
-      clearTimeout(hideTimer);
-      dropdown.classList.remove('hidden');
-    }
-    function hide() {
-      dropdown.classList.add('hidden');
-    }
-    function hideDelayed() {
-      hideTimer = setTimeout(hide, 200);
-    }
 
     function cycleTheme() {
       var current = localStorage.getItem('theme-pref') || 'system';
@@ -264,24 +252,15 @@ function initThemeToggle() {
 
     btn.addEventListener('click', function (e) {
       e.stopPropagation();
-      hide();
+      btn.blur();
       cycleTheme();
-    });
-
-    wrap.addEventListener('mouseenter', show);
-    wrap.addEventListener('mouseleave', hideDelayed);
-
-    document.addEventListener('click', function (e) {
-      if (!wrap.contains(e.target)) {
-        hide();
-      }
     });
 
     dropdown.querySelectorAll('.theme-opt').forEach(function (opt) {
       opt.addEventListener('click', function (e) {
         e.stopPropagation();
         applyPref(opt.getAttribute('data-theme-val'));
-        hide();
+        btn.blur();
       });
     });
   });
@@ -2410,70 +2389,16 @@ function initCompactTopbar() {
 
   if (!topbar || !tabBarWrapper || !inlineTabs || !tabBar) return;
 
-  var sourceTabs = tabBar.querySelectorAll('[data-tab]');
-  sourceTabs.forEach(function (tab) {
-    var isDisabled = tab.classList.contains('tab-disabled');
-    var href = tab.tagName === 'A' ? tab.getAttribute('href') : null;
-    var clone = document.createElement(href && !isDisabled ? 'a' : 'button');
-    clone.className = 'topbar-inline-tab';
-    if (href && !isDisabled) clone.setAttribute('href', href);
-    if (isDisabled) clone.classList.add('tab-disabled');
-    clone.setAttribute('data-inline-tab', tab.getAttribute('data-tab'));
-    if (tab.classList.contains('tab-active')) {
-      clone.classList.add('tab-active');
-    }
-    var svg = tab.querySelector('svg');
-    if (svg) clone.appendChild(svg.cloneNode(true));
-    var label = tab.childNodes;
-    for (var i = 0; i < label.length; i++) {
-      if (label[i].nodeType === 3 && label[i].textContent.trim()) {
-        var text = label[i].textContent.trim();
-        clone.setAttribute('title', text);
-        var soonMatch = text.match(/^(.+?)\s*\(([^)]+)\)$/);
-        if (soonMatch) {
-          var labelWrap = document.createElement('span');
-          labelWrap.className = 'topbar-inline-tab-label';
-          labelWrap.appendChild(document.createTextNode(soonMatch[1]));
-          var sub = document.createElement('span');
-          sub.className = 'topbar-inline-tab-sub';
-          sub.textContent = soonMatch[2];
-          labelWrap.appendChild(sub);
-          clone.appendChild(labelWrap);
-        } else {
-          clone.appendChild(document.createTextNode(text));
-        }
-        break;
-      }
-    }
-    var badge = tab.querySelector('.badge');
-    if (badge) clone.appendChild(badge.cloneNode(true));
-    inlineTabs.appendChild(clone);
-  });
+  // The tab bar's parent inside the wrapper (e.g. .app-content-padded)
+  var tabBarParent = tabBar.parentNode;
 
-  inlineTabs.addEventListener('click', function (e) {
-    var btn = e.target.closest('[data-inline-tab]');
-    if (!btn) return;
-    if (btn.classList.contains('tab-disabled')) {
-      e.preventDefault();
-      return;
+  function moveTabBar(compact) {
+    if (compact) {
+      inlineTabs.appendChild(tabBar);
+    } else if (tabBar.parentNode !== tabBarParent) {
+      tabBarParent.appendChild(tabBar);
     }
-    var tabId = btn.getAttribute('data-inline-tab');
-    var realTab = tabBar.querySelector('[data-tab="' + tabId + '"]');
-    if (realTab) realTab.click();
-  });
-
-  var observer = new MutationObserver(function () {
-    sourceTabs.forEach(function (tab) {
-      var id = tab.getAttribute('data-tab');
-      var inline = inlineTabs.querySelector('[data-inline-tab="' + id + '"]');
-      if (inline) {
-        inline.classList.toggle('tab-active', tab.classList.contains('tab-active'));
-      }
-    });
-  });
-  sourceTabs.forEach(function (tab) {
-    observer.observe(tab, { attributes: true, attributeFilter: ['class'] });
-  });
+  }
 
   var THRESHOLD = 20;
   var isCompact = false;
@@ -2487,6 +2412,7 @@ function initCompactTopbar() {
     if (compact !== isCompact) {
       isCompact = compact;
       topbar.classList.toggle('topbar-compact', isCompact);
+      moveTabBar(isCompact);
     }
   }
 

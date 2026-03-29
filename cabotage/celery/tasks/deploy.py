@@ -154,22 +154,42 @@ def _preview_url_for_app_env(app_env):
     return None
 
 
-def _wait_for_tls_secret(core_api, namespace, secret_name, timeout=120, log=None):
-    """Poll until a TLS secret exists with cert data, or timeout."""
+def _retry_on_404(fn, *args, retries=3, delay=2, **kwargs):
+    """Retry a kubernetes API call if it returns a 404, with backoff."""
+    for attempt in range(retries):
+        try:
+            return fn(*args, **kwargs)
+        except ApiException as exc:
+            if exc.status == 404 and attempt < retries - 1:
+                time.sleep(delay * (attempt + 1))
+            else:
+                raise
+
+
+def _wait_for_tls_certificate(api_client, namespace, cert_name, timeout=120, log=None):
+    """Poll until a cert-manager Certificate is Ready, or timeout."""
+    custom_api = kubernetes.client.CustomObjectsApi(api_client)
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            secret = core_api.read_namespaced_secret(secret_name, namespace)
-            if secret.data and "tls.crt" in secret.data:
-                if log:
-                    log(f"TLS secret {secret_name} is ready")
-                return True
+            cert = custom_api.get_namespaced_custom_object(
+                "cert-manager.io",
+                "v1",
+                namespace,
+                "certificates",
+                cert_name,
+            )
+            for cond in (cert.get("status") or {}).get("conditions", []):
+                if cond.get("type") == "Ready" and cond.get("status") == "True":
+                    if log:
+                        log(f"Certificate {cert_name} is ready")
+                    return True
         except ApiException as exc:
             if exc.status != 404:
                 raise
         time.sleep(5)
     if log:
-        log(f"TLS secret {secret_name} not ready after {timeout}s, proceeding anyway")
+        log(f"Certificate {cert_name} not ready after {timeout}s, proceeding anyway")
     return False
 
 
@@ -1300,12 +1320,12 @@ def fetch_image_pull_secrets(core_api_instance, release):
     return secret
 
 
-def render_cabotage_enroller_container(release, process_name, with_tls=True):
+def render_cabotage_sidecar_container(release, process_name, with_tls=True):
     role_name = k8s_role_name(release)
     resource_prefix = k8s_resource_prefix(release)
 
     args = [
-        "kube-login",
+        "kube-login-and-maintain",
         "--namespace=$(NAMESPACE)",
         f"--vault-auth-kubernetes-role={role_name}",
         "--fetch-consul-token",
@@ -1320,7 +1340,8 @@ def render_cabotage_enroller_container(release, process_name, with_tls=True):
         args.append(f"--service-names={resource_prefix}-{process_name}")
 
     return kubernetes.client.V1Container(
-        name="cabotage-enroller",
+        name="cabotage-sidecar",
+        restart_policy="Always",
         image=current_app.config["SIDECAR_IMAGE"],
         image_pull_policy="IfNotPresent",
         env=[
@@ -1349,25 +1370,6 @@ def render_cabotage_enroller_container(release, process_name, with_tls=True):
                 ),
             ),
         ],
-        args=args,
-        volume_mounts=[
-            kubernetes.client.V1VolumeMount(
-                name="vault-secrets", mount_path="/var/run/secrets/vault"
-            ),
-        ],
-    )
-
-
-def render_cabotage_sidecar_container(release, with_tls=True):
-    role_name = k8s_role_name(release)
-    args = ["maintain"]
-    if with_tls:
-        args.append(f"--vault-pki-role={role_name}")
-    return kubernetes.client.V1Container(
-        name="cabotage-sidecar",
-        restart_policy="Always",
-        image=current_app.config["SIDECAR_IMAGE"],
-        image_pull_policy="IfNotPresent",
         args=args,
         volume_mounts=[
             kubernetes.client.V1VolumeMount(
@@ -1661,10 +1663,7 @@ def render_podspec(release, process_name, service_account_name):
             )
         )
         init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=True)
-        )
-        init_containers.append(
-            render_cabotage_sidecar_container(release, with_tls=True)
+            render_cabotage_sidecar_container(release, process_name, with_tls=True)
         )
         init_containers.append(
             render_cabotage_sidecar_tls_container(release, unix=True)
@@ -1676,10 +1675,7 @@ def render_podspec(release, process_name, service_account_name):
         )
     elif process_name.startswith("tcp"):
         init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=True)
-        )
-        init_containers.append(
-            render_cabotage_sidecar_container(release, with_tls=True)
+            render_cabotage_sidecar_container(release, process_name, with_tls=True)
         )
         init_containers.append(
             render_cabotage_sidecar_tls_container(release, unix=False, tcp=True)
@@ -1691,10 +1687,7 @@ def render_podspec(release, process_name, service_account_name):
         )
     elif process_name.startswith("worker"):
         init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=False)
-        )
-        init_containers.append(
-            render_cabotage_sidecar_container(release, with_tls=False)
+            render_cabotage_sidecar_container(release, process_name, with_tls=False)
         )
         containers.append(
             render_process_container(
@@ -1703,7 +1696,7 @@ def render_podspec(release, process_name, service_account_name):
         )
     elif process_name.startswith("job"):
         init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=False)
+            render_cabotage_sidecar_container(release, process_name, with_tls=False)
         )
         containers.append(
             render_process_container(
@@ -1713,7 +1706,7 @@ def render_podspec(release, process_name, service_account_name):
         restart_policy = "OnFailure"
     elif process_name.startswith("release"):
         init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=False)
+            render_cabotage_sidecar_container(release, process_name, with_tls=False)
         )
         containers.append(
             render_process_container(
@@ -1723,7 +1716,7 @@ def render_podspec(release, process_name, service_account_name):
         restart_policy = "Never"
     elif process_name.startswith("postdeploy"):
         init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=False)
+            render_cabotage_sidecar_container(release, process_name, with_tls=False)
         )
         containers.append(
             render_process_container(
@@ -1733,7 +1726,7 @@ def render_podspec(release, process_name, service_account_name):
         restart_policy = "Never"
     else:
         init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=False)
+            render_cabotage_sidecar_container(release, process_name, with_tls=False)
         )
         containers.append(
             render_process_container(
@@ -2305,8 +2298,10 @@ def run_job(
 
     try:
         while True:
-            job_status = batch_api_instance.read_namespaced_job_status(
-                job_object.metadata.name, namespace
+            job_status = _retry_on_404(
+                batch_api_instance.read_namespaced_job_status,
+                job_object.metadata.name,
+                namespace,
             )
             if job_status.status.failed and job_status.status.failed > 0:
                 job_logs = fetch_job_logs(core_api_instance, namespace, job_status)
@@ -2404,8 +2399,10 @@ def _run_job_streaming(
         # Poll for final job status — k8s may not have updated it yet
         succeeded = False
         for _ in range(30):
-            job_status = batch_api_instance.read_namespaced_job_status(
-                job_name, namespace
+            job_status = _retry_on_404(
+                batch_api_instance.read_namespaced_job_status,
+                job_name,
+                namespace,
             )
             if job_status.status.succeeded and job_status.status.succeeded > 0:
                 succeeded = True
@@ -2885,12 +2882,12 @@ def deploy_release(deployment):
             if ing.enabled and any(
                 h.is_auto_generated and h.tls_enabled for h in ing.hosts
             ):
-                tls_secret = f"{resource_prefix}-{ing.name}-tls"
-                log(f"Waiting for TLS certificate ({tls_secret})")
-                tls_ready = _wait_for_tls_secret(
-                    core_api_instance,
+                cert_name = f"{resource_prefix}-{ing.name}-tls"
+                log(f"Waiting for TLS certificate ({cert_name})")
+                tls_ready = _wait_for_tls_certificate(
+                    api_client,
                     namespace.metadata.name,
-                    tls_secret,
+                    cert_name,
                     log=log,
                 )
                 break

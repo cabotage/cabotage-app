@@ -259,11 +259,11 @@
                 <a href="{{ url_for('user.guide') }}"
                    class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Guide</a>
               </nav>
-              <div class="theme-toggle-wrap relative">
-                <button id="theme-toggle"
-                        class="btn btn-ghost btn-sm btn-circle"
-                        aria-label="Toggle theme"
-                        title="Toggle theme">
+              <div class="dropdown dropdown-hover dropdown-end theme-toggle-wrap">
+                <div tabindex="0" role="button" id="theme-toggle"
+                     class="btn btn-ghost btn-sm btn-circle"
+                     aria-label="Toggle theme"
+                     title="Toggle theme">
                   <svg class="w-4 h-4 theme-icon-light hidden"
                        viewBox="0 0 24 24"
                        fill="none"
@@ -300,8 +300,8 @@
                        stroke-linejoin="round">
                     <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
                   </svg>
-                </button>
-                <div class="theme-dropdown hidden absolute right-0 top-full mt-1 z-[60] bg-base-300 rounded-lg border border-base-content/10 shadow-xl p-1 min-w-[140px]">
+                </div>
+                <div tabindex="0" class="theme-dropdown dropdown-content z-[60] bg-base-300 rounded-lg border border-base-content/10 shadow-xl p-1 min-w-[140px] mt-2">
                   <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
                           data-theme-val="light">
                     <svg class="w-3.5 h-3.5 shrink-0"
@@ -404,7 +404,7 @@
                   </div>
                 </div>
               </div>
-              <div class="dropdown dropdown-end">
+              <div class="dropdown dropdown-hover dropdown-end">
                 <div tabindex="0" role="button" class="btn btn-ghost btn-sm btn-circle">
                   <svg class="w-4 h-4"
                        viewBox="0 0 24 24"
@@ -417,24 +417,21 @@
                     <circle cx="12" cy="7" r="4" />
                   </svg>
                 </div>
-                <ul tabindex="0"
-                    class="dropdown-content menu bg-base-300 rounded-lg z-[60] w-52 p-2 shadow-xl border border-base-content/10 mt-2">
-                  <li class="menu-title text-xs text-base-content/40 px-2 pb-1"><span class="flex items-center gap-1.5">{% if current_user.github_identity %}{{ icon('github', 'w-3.5 h-3.5 shrink-0') }}{% endif %}{{ (current_user.username or current_user.email) | display_username }}</span></li>
+                <div tabindex="0"
+                     class="dropdown-content bg-base-300 rounded-lg z-[60] p-1 shadow-xl border border-base-content/10 mt-2 min-w-[160px]">
+                  <div class="flex items-center gap-1.5 px-3 py-1.5 text-xs text-base-content/40">{% if current_user.github_identity %}{{ icon('github', 'w-3.5 h-3.5 shrink-0') }}{% endif %}{{ (current_user.username or current_user.email) | display_username }}</div>
                   {% if security.changeable and not current_user.github_identity %}
-                  <li>
-                    <a href="{{ url_for('security.change_password') }}" class="text-sm">Change Password</a>
-                  </li>
+                  <a href="{{ url_for('security.change_password') }}"
+                     class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors">Change Password</a>
                   {% endif %}
                   {% if security.two_factor or security.webauthn %}
-                  <li>
-                    <a href="{{ url_for('user.account_security') }}" class="text-sm">Two-Factor Auth</a>
-                  </li>
+                  <a href="{{ url_for('user.account_security') }}"
+                     class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors">Two-Factor Auth</a>
                   {% endif %}
-                  <div class="divider my-1"></div>
-                  <li>
-                    <a href="{{ url_for('security.logout') }}" class="text-sm text-error">Sign Out</a>
-                  </li>
-                </ul>
+                  <div class="border-t border-base-content/10 my-1"></div>
+                  <a href="{{ url_for('security.logout') }}"
+                     class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors text-error">Sign Out</a>
+                </div>
               </div>
 
               <button id="mobile-nav-toggle"
@@ -449,11 +446,11 @@
                 </svg>
               </button>
             {% else %}
-              <div class="theme-toggle-wrap relative">
-                <button id="theme-toggle-unauth"
-                        class="btn btn-ghost btn-sm btn-circle theme-toggle-btn"
-                        aria-label="Toggle theme"
-                        title="Toggle theme">
+              <div class="dropdown dropdown-hover dropdown-end theme-toggle-wrap">
+                <div tabindex="0" role="button" id="theme-toggle-unauth"
+                     class="btn btn-ghost btn-sm btn-circle theme-toggle-btn"
+                     aria-label="Toggle theme"
+                     title="Toggle theme">
                   <svg class="w-4 h-4 theme-icon-light hidden"
                        viewBox="0 0 24 24"
                        fill="none"
@@ -490,8 +487,8 @@
                        stroke-linejoin="round">
                     <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
                   </svg>
-                </button>
-                <div class="theme-dropdown hidden absolute right-0 top-full mt-1 z-[60] bg-base-300 rounded-lg border border-base-content/10 shadow-xl p-1 min-w-[140px]">
+                </div>
+                <div tabindex="0" class="theme-dropdown dropdown-content z-[60] bg-base-300 rounded-lg border border-base-content/10 shadow-xl p-1 min-w-[140px] mt-2">
                   <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
                           data-theme-val="light">
                     <svg class="w-3.5 h-3.5 shrink-0"

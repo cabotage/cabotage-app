@@ -96,7 +96,7 @@
          title="Overview"
          class="tab-item
                 {% if active == 'overview' %}tab-active{% endif %}">{{ icon('activity', 'w-4 h-4') }} <span class="tab-label">Overview</span></a>
-      <div class="dropdown">
+      <div class="dropdown dropdown-hover">
         <div tabindex="0" role="button"
              class="tab-item {% if active in ('observe', 'logs', 'pipeline') %}tab-active{% endif %}">
           {{ icon('search', 'w-4 h-4') }}
@@ -122,7 +122,7 @@
          title="Images"
          class="tab-item
                 {% if active == 'images' %}tab-active{% endif %}">{{ icon('image', 'w-4 h-4') }} <span class="tab-label">Images</span></a>
-      <div class="dropdown">
+      <div class="dropdown dropdown-hover">
         <div tabindex="0" role="button"
              class="tab-item {% if active in ('config', 'ingress') %}tab-active{% endif %}">
           {{ icon('tool', 'w-4 h-4') }}
@@ -148,7 +148,7 @@
          class="tab-item
                 {% if active == 'deployments' %}tab-active{% endif %}">{{ icon('upload', 'w-4 h-4') }} <span class="tab-label">Deploys</span></a>
       {% if application.project.environments_enabled and env %}
-      <div class="dropdown dropdown-end">
+      <div class="dropdown dropdown-hover dropdown-end">
         <div tabindex="0" role="button"
              class="tab-item {% if active in ('settings', 'env_settings') %}tab-active{% endif %}">
           {{ icon('settings', 'w-4 h-4') }}
