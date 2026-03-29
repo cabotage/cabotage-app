@@ -771,6 +771,66 @@ class Deployment(Model, Timestamp):
         return None
 
 
+class JobLog(Model, Timestamp):
+    __tablename__ = "job_logs"
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True,
+    )
+    application_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("project_applications.id"),
+        nullable=False,
+        index=True,
+    )
+    application_environment_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("application_environments.id"),
+        nullable=False,
+        index=True,
+    )
+    process_name = db.Column(db.String(64), nullable=False)
+    job_name = db.Column(db.String(253), nullable=False)
+    namespace = db.Column(db.String(253), nullable=False)
+    schedule_timestamp = db.Column(db.DateTime, nullable=True)
+    start_time = db.Column(db.DateTime, nullable=True)
+    completion_time = db.Column(db.DateTime, nullable=True)
+    duration_seconds = db.Column(db.Integer, nullable=True)
+    succeeded = db.Column(db.Boolean, nullable=False)
+    pods_active = db.Column(db.Integer, nullable=False, default=0)
+    pods_succeeded = db.Column(db.Integer, nullable=False, default=0)
+    pods_failed = db.Column(db.Integer, nullable=False, default=0)
+    release_version = db.Column(db.Integer, nullable=True)
+    deployment_id = db.Column(db.String(64), nullable=True)
+    labels = db.Column(postgresql.JSONB(), nullable=True)
+    resources = db.Column(postgresql.JSONB(), nullable=True)
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "job_name", "namespace", name="uq_job_logs_job_name_namespace"
+        ),
+        db.Index(
+            "ix_job_logs_app_env_process_completion",
+            "application_id",
+            "application_environment_id",
+            "process_name",
+            completion_time.desc(),
+        ),
+    )
+
+    application = db.relationship(
+        "Application",
+        backref=db.backref("job_logs", lazy="dynamic"),
+    )
+    application_environment = db.relationship(
+        "ApplicationEnvironment",
+        backref=db.backref("job_logs", lazy="dynamic"),
+    )
+
+
 class Release(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_app_releases"
@@ -1011,7 +1071,11 @@ class Release(Model, Timestamp):
         return {
             k: v
             for k, v in self.image_snapshot.processes.items()
-            if not (k.startswith("release") or k.startswith("postdeploy"))
+            if not (
+                k.startswith("release")
+                or k.startswith("postdeploy")
+                or k.startswith("job")
+            )
         }
 
     @property
@@ -1032,6 +1096,16 @@ class Release(Model, Timestamp):
             k: v
             for k, v in self.image_snapshot.processes.items()
             if k.startswith("postdeploy")
+        }
+
+    @property
+    def job_processes(self):
+        if not self.image_snapshot:
+            return {}
+        return {
+            k: v
+            for k, v in self.image_snapshot.processes.items()
+            if k.startswith("job")
         }
 
     @property
@@ -1801,7 +1875,11 @@ class ReleaseSnapshot:
         return {
             k: v
             for k, v in self.image_snapshot.processes.items()
-            if not (k.startswith("release") or k.startswith("postdeploy"))
+            if not (
+                k.startswith("release")
+                or k.startswith("postdeploy")
+                or k.startswith("job")
+            )
         }
 
     @property
@@ -1822,6 +1900,16 @@ class ReleaseSnapshot:
             k: v
             for k, v in self.image_snapshot.processes.items()
             if k.startswith("postdeploy")
+        }
+
+    @property
+    def job_processes(self):
+        if not self.image_snapshot:
+            return {}
+        return {
+            k: v
+            for k, v in self.image_snapshot.processes.items()
+            if k.startswith("job")
         }
 
     @property

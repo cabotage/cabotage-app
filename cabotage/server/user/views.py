@@ -70,6 +70,7 @@ from cabotage.server.models.projects import (
     Hook,
     Image,
     Ingress,
+    JobLog,
     IngressHost,
     IngressPath,
     Project,
@@ -2307,6 +2308,8 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     latest_release_image = None
     latest_release_processes = {}
     latest_release_release_commands = {}
+    latest_release_job_processes = {}
+    last_job_logs = {}
     release_by_id = {}
     image_by_id = {}
 
@@ -2342,9 +2345,26 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         latest_deploy_release = resolver.get_release(latest_deployment)
         latest_release_image = resolver.get_image_for_release(latest_release)
 
-        latest_release_processes, latest_release_release_commands, _ = (
-            split_image_processes(latest_release_image)
-        )
+        (
+            latest_release_processes,
+            latest_release_release_commands,
+            _,
+            latest_release_job_processes,
+        ) = split_image_processes(latest_release_image)
+
+        # Fetch most recent job log per job process for the "last ran" display
+        for proc_name in latest_release_job_processes:
+            last_log = (
+                JobLog.query.filter_by(
+                    application_id=application.id,
+                    application_environment_id=app_env.id,
+                    process_name=proc_name,
+                )
+                .order_by(JobLog.completion_time.desc())
+                .first()
+            )
+            if last_log is not None:
+                last_job_logs[proc_name] = last_log
 
         # Batch-warm caches for template loops
         resolver.warm_caches(all_deployments, all_releases)
@@ -2473,6 +2493,8 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         latest_release_image=latest_release_image,
         latest_release_processes=latest_release_processes,
         latest_release_release_commands=latest_release_release_commands,
+        latest_release_job_processes=latest_release_job_processes,
+        last_job_logs=last_job_logs,
         release_by_id=release_by_id,
         image_by_id=image_by_id,
         env_configs=_eager_env_configs(project, environment),
@@ -4832,25 +4854,43 @@ def application_scale(org_slug, project_slug, app_slug):
 
             if current_app.config["KUBERNETES_ENABLED"]:
                 from cabotage.celery.tasks.deploy import k8s_namespace as _k8s_ns
+                from cabotage.celery.tasks.deploy import resize_cronjob
+                from cabotage.celery.tasks.deploy import suspend_cronjob
 
                 latest = app_env.latest_release_built
                 if latest:
                     namespace = _k8s_ns(latest)
                     for process_name, change in scaled.items():
-                        if "process_count" in change:
-                            scale_deployment(
-                                namespace,
-                                latest,
-                                process_name,
-                                change["process_count"]["new_value"],
-                            )
-                        if "pod_class" in change:
-                            resize_deployment(
-                                namespace,
-                                latest,
-                                process_name,
-                                change["pod_class"]["new_value"],
-                            )
+                        if process_name.startswith("job"):
+                            if "process_count" in change:
+                                suspend_cronjob(
+                                    namespace,
+                                    latest,
+                                    process_name,
+                                    suspend=change["process_count"]["new_value"] == 0,
+                                )
+                            if "pod_class" in change:
+                                resize_cronjob(
+                                    namespace,
+                                    latest,
+                                    process_name,
+                                    change["pod_class"]["new_value"],
+                                )
+                        else:
+                            if "process_count" in change:
+                                scale_deployment(
+                                    namespace,
+                                    latest,
+                                    process_name,
+                                    change["process_count"]["new_value"],
+                                )
+                            if "pod_class" in change:
+                                resize_deployment(
+                                    namespace,
+                                    latest,
+                                    process_name,
+                                    change["pod_class"]["new_value"],
+                                )
     else:
         return jsonify(form.errors), 400
     return redirect(
@@ -6464,6 +6504,9 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
             if pod.metadata.deletion_timestamp is not None:
                 continue
             phase = pod.status.phase or "Unknown"
+            # Skip completed/failed pods (e.g. finished Job runs)
+            if phase in ("Succeeded", "Failed", "Completed"):
+                continue
             pods_by_phase[phase] = pods_by_phase.get(phase, 0) + 1
             pods_total += 1
             if phase == "Running":
@@ -6663,6 +6706,7 @@ def _loki_query_response(selectors, process_names):
 
     search = request.args.get("search", "").strip()
     process = request.args.get("process", "").strip()
+    job_name = request.args.get("job_name", "").strip()
     time_range = request.args.get("range", "1h")
     limit = min(request.args.get("limit", 500, type=int), 5000)
     end_ns = request.args.get("end", None)
@@ -6689,6 +6733,8 @@ def _loki_query_response(selectors, process_names):
 
     # Build LogQL query — filter to user process containers
     all_selectors = list(selectors)
+    if job_name:
+        all_selectors.append(f'pod_name=~"{job_name}.*"')
     if process:
         all_selectors.append(f'pod_container_name="{process}"')
     elif process_names:
@@ -6760,6 +6806,45 @@ def _loki_query_response(selectors, process_names):
     entries = entries[:limit]
 
     return jsonify({"entries": entries})
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/jobs/<process_name>/history",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/jobs/<process_name>/history",
+    defaults={"env_slug": None},
+)
+@login_required
+def job_history(org_slug, project_slug, app_slug, process_name, env_slug=None):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=False
+    )
+    environment = app_env.environment if app_env else None
+
+    logs = []
+    if app_env:
+        logs = (
+            JobLog.query.filter_by(
+                application_id=application.id,
+                application_environment_id=app_env.id,
+                process_name=process_name,
+            )
+            .order_by(JobLog.completion_time.desc())
+            .limit(100)
+            .all()
+        )
+
+    return render_template(
+        "user/job_history.html",
+        application=application,
+        environment=environment,
+        app_env=app_env,
+        project=project,
+        process_name=process_name,
+        job_logs=logs,
+    )
 
 
 @user_blueprint.route(

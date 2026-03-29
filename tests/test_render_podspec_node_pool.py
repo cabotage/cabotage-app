@@ -119,7 +119,7 @@ class TestRenderPodspecNodePoolConfigured:
         """Verify node_selector is set regardless of process type."""
         mock_app.config["STANDARD_POOL"] = "standard"
 
-        for proc in ["web", "worker", "release", "postdeploy", "tcp", "other"]:
+        for proc in ["web", "worker", "release", "postdeploy", "tcp", "job", "other"]:
             release = _make_release(ephemeral=False)
             pod_spec = deploy_module.render_podspec(release, proc, "sa-name")
             assert pod_spec.node_selector == {

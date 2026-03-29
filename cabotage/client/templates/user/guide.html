@@ -257,6 +257,104 @@
     </div>
   </div>
 
+  <div class="mb-10" id="jobs">
+    <div class="flex items-center gap-2 mb-4">
+      {{ icon('clock', 'w-4 h-4 text-primary') }}
+      <h2 class="text-base font-semibold text-base-content">Scheduled Jobs</h2>
+    </div>
+    <p class="text-sm text-base-content/50 mb-5">
+      Jobs are cron-scheduled tasks that run as Kubernetes CronJobs. Define them in your Procfile with a <code class="text-accent/60 bg-transparent p-0">job-</code> prefix and set the <code class="text-accent/60 bg-transparent p-0">SCHEDULE</code> env var inline with a cron expression.
+    </p>
+
+    <div class="card bg-base-200 border border-base-300 mb-4">
+      <div class="card-body !p-5">
+        <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">How Jobs Work</h3>
+        <div class="flex flex-col gap-3">
+          <div class="flex items-start gap-3">
+            <code class="text-sm text-accent font-medium min-w-[7rem] pt-0.5">job-*</code>
+            <div class="flex-1">
+              <p class="text-sm text-base-content/60 leading-relaxed">
+                Any process in your Procfile with a <code class="text-accent/60 bg-transparent p-0">job-</code> prefix is treated as a scheduled job. Each job runs independently as a Kubernetes CronJob on its own schedule.
+              </p>
+            </div>
+          </div>
+          <div class="border-t border-base-content/5"></div>
+          <div class="flex items-start gap-3">
+            <code class="text-sm text-accent font-medium min-w-[7rem] pt-0.5">SCHEDULE</code>
+            <div class="flex-1">
+              <p class="text-sm text-base-content/60 leading-relaxed">
+                Each job process requires a <code class="text-accent/60 bg-transparent p-0">SCHEDULE</code> env var set to a standard cron expression, defined inline in the Procfile.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card bg-base-200 border border-base-300 mb-4">
+      <div class="card-body !p-5">
+        <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Behavior</h3>
+        <div class="flex flex-col gap-3">
+          <div class="flex items-start gap-3">
+            <code class="text-sm text-accent font-medium min-w-[7rem] pt-0.5">Concurrency</code>
+            <div class="flex-1">
+              <p class="text-sm text-base-content/60 leading-relaxed">
+                Overlapping runs are forbidden. If a job is still running when the next scheduled invocation arrives, the new run is skipped.
+              </p>
+            </div>
+          </div>
+          <div class="border-t border-base-content/5"></div>
+          <div class="flex items-start gap-3">
+            <code class="text-sm text-accent font-medium min-w-[7rem] pt-0.5">Timeout</code>
+            <div class="flex-1">
+              <p class="text-sm text-base-content/60 leading-relaxed">
+                Each run has a 1-hour active deadline. Jobs that exceed this are terminated.
+              </p>
+            </div>
+          </div>
+          <div class="border-t border-base-content/5"></div>
+          <div class="flex items-start gap-3">
+            <code class="text-sm text-accent font-medium min-w-[7rem] pt-0.5">Retries</code>
+            <div class="flex-1">
+              <p class="text-sm text-base-content/60 leading-relaxed">
+                Jobs do not retry on failure. A failed run is recorded and the next invocation runs on the normal schedule.
+              </p>
+            </div>
+          </div>
+          <div class="border-t border-base-content/5"></div>
+          <div class="flex items-start gap-3">
+            <code class="text-sm text-accent font-medium min-w-[7rem] pt-0.5">Controls</code>
+            <div class="flex-1">
+              <p class="text-sm text-base-content/60 leading-relaxed">
+                On the Overview tab you can suspend/resume jobs with the toggle and change pod size from the dropdown. Both take effect immediately.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card bg-base-200 border border-base-300 mb-4">
+      <div class="card-body !p-5">
+        <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Example</h3>
+        <div class="code-block !text-xs !leading-snug !py-2.5 !px-3">
+          <div class="procfile-line">
+            <span class="procfile-service">job-cleanup</span><span class="procfile-sep">:</span> <span class="procfile-command">env SCHEDULE="0 */6 * * *" python manage.py cleanup_stale_sessions</span>
+          </div>
+          <div class="procfile-line">
+            <span class="procfile-service">job-reports</span><span class="procfile-sep">:</span> <span class="procfile-command">env SCHEDULE="0 2 * * *" python manage.py generate_daily_report</span>
+          </div>
+        </div>
+        <div class="flex items-start gap-2 p-3 mt-3 rounded-lg bg-base-300/50 border border-base-content/5">
+          {{ icon('info', 'w-3.5 h-3.5 text-info/50 mt-0.5 flex-shrink-0') }}
+          <p class="text-xs text-base-content/40 leading-relaxed">
+            The <code class="text-accent/60 bg-transparent p-0">SCHEDULE</code> env var is set inline in the Procfile using <code class="text-accent/60 bg-transparent p-0">env SCHEDULE="&lt;cron expression&gt;"</code> before the command. Each job gets its own independent schedule.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="mb-10" id="release-build-commands">
     <div class="flex items-center gap-2 mb-4">
       {{ icon('zap', 'w-4 h-4 text-primary') }}
