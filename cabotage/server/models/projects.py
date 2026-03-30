@@ -1842,3 +1842,93 @@ def create_default_ingresses(app_env, process_names=None):
             )
         )
     db.session.flush()
+
+
+class Alert(Model, Timestamp):
+    __versioned__: dict = {}
+    __tablename__ = "alerts"
+
+    id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        nullable=False,
+        primary_key=True,
+    )
+    fingerprint = db.Column(
+        db.String(256),
+        nullable=False,
+        index=True,
+    )
+    status = db.Column(
+        db.String(32),
+        nullable=False,
+    )
+    alertname = db.Column(
+        db.String(256),
+        nullable=False,
+        index=True,
+    )
+    labels = db.Column(
+        postgresql.JSONB(),
+        nullable=False,
+    )
+    annotations = db.Column(
+        postgresql.JSONB(),
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+    starts_at = db.Column(
+        db.DateTime,
+        nullable=False,
+        index=True,
+    )
+    ends_at = db.Column(
+        db.DateTime,
+        nullable=True,
+    )
+    generator_url = db.Column(
+        db.Text(),
+        nullable=True,
+    )
+    group_key = db.Column(
+        db.Text(),
+        nullable=True,
+    )
+    receiver = db.Column(
+        db.String(256),
+        nullable=True,
+    )
+    application_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("project_applications.id"),
+        nullable=True,
+        index=True,
+    )
+    application_environment_id = db.Column(
+        postgresql.UUID(as_uuid=True),
+        db.ForeignKey("application_environments.id"),
+        nullable=True,
+        index=True,
+    )
+    version_id = db.Column(db.Integer, nullable=False)
+
+    application = db.relationship("Application", backref="alerts")
+    application_environment = db.relationship(
+        "ApplicationEnvironment", backref="alerts"
+    )
+
+    __table_args__ = (
+        db.Index(
+            "ix_alerts_fingerprint_status",
+            fingerprint,
+            status,
+        ),
+        db.Index(
+            "ix_alerts_fingerprint_starts_at",
+            fingerprint,
+            starts_at,
+            unique=True,
+        ),
+    )
+
+    __mapper_args__ = {"version_id_col": version_id}

@@ -300,14 +300,18 @@ def create_app():
     from cabotage.server.main.views import main_blueprint
     from cabotage.server.oidc.views import oidc_blueprint
     from cabotage.server.registry_auth.views import registry_auth_blueprint
+    from cabotage.server.alerting.views import alerting_blueprint
 
     app.register_blueprint(user_blueprint)
     app.register_blueprint(main_blueprint)
     app.register_blueprint(oidc_blueprint)
     app.register_blueprint(registry_auth_blueprint)
+    app.register_blueprint(alerting_blueprint)
 
     # GitHub webhook uses HMAC validation, not CSRF tokens
     csrf.exempt("cabotage.server.user.views.github_hooks")
+    # Alertmanager webhook uses bearer token auth, not CSRF tokens
+    csrf.exempt("cabotage.server.alerting.views.alertmanager_webhook")
 
     from cabotage.server.mfa import register_mfa_guards
 
@@ -343,6 +347,7 @@ def create_app():
         Release,
         Deployment,
         Hook,
+        Alert,
     )
 
     admin.add_view(AdminModelView(Role, db.session))
@@ -358,6 +363,7 @@ def create_app():
     admin.add_view(AdminModelView(Release, db.session))
     admin.add_view(AdminModelView(Deployment, db.session))
     admin.add_view(AdminModelView(Hook, db.session))
+    admin.add_view(AdminModelView(Alert, db.session))
     admin.add_view(AdminModelView(User, db.session))
 
     num_proxies = app.config.get("PROXY_FIX_NUM_PROXIES", 1)
