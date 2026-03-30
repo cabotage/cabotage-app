@@ -2839,12 +2839,17 @@ def application_config(org_slug, project_slug, app_slug):
                     {"slug": ae.application.slug, "processes": tcp_processes}
                 )
 
+    config_create_form = CreateConfigurationForm()
+    config_create_form.application_id.data = str(application.id)
+    if environment:
+        config_create_form.environment_id.data = str(environment.id)
+
     return render_template(
         "user/application_config.html",
         application=application,
         app_env=app_env,
         environment=environment,
-        config_create_form=CreateConfigurationForm(),
+        config_create_form=config_create_form,
         sibling_references=sibling_references,
         sibling_tcp_references=sibling_tcp_references,
         env_configs=_eager_env_configs(project, environment),
