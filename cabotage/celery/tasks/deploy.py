@@ -1920,11 +1920,26 @@ def create_deployment(
             )
     else:
         try:
-            return apps_api_instance.patch_namespaced_deployment(
-                deployment_object.metadata.name,
-                namespace,
-                deployment_object,
-                field_validation="Ignore",
+            # Use call_api directly to force application/merge-patch+json.
+            # The default patch method uses strategic merge patch, which
+            # merges container lists by name and never removes containers
+            # absent from the new spec. JSON merge patch (RFC 7386) replaces
+            # arrays entirely, ensuring stale initContainers are cleared.
+            body = apps_api_instance.api_client.sanitize_for_serialization(
+                deployment_object
+            )
+            return apps_api_instance.api_client.call_api(
+                "/apis/apps/v1/namespaces/{namespace}/deployments/{name}",
+                "PATCH",
+                path_params={"namespace": namespace, "name": deployment_object.metadata.name},
+                body=body,
+                header_params={
+                    "Content-Type": "application/merge-patch+json",
+                    "Accept": "application/json",
+                },
+                response_type="V1Deployment",
+                auth_settings=["BearerToken"],
+                _return_http_data_only=True,
             )
         except Exception as exc:
             raise DeployError(
