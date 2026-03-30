@@ -1924,14 +1924,18 @@ def create_deployment(
             # The default patch method uses strategic merge patch, which
             # merges container lists by name and never removes containers
             # absent from the new spec. JSON merge patch (RFC 7386) replaces
-            # arrays entirely, ensuring stale initContainers are cleared.
+            # arrays entirely, ensuring stale containers/initContainers are
+            # cleared.
             body = apps_api_instance.api_client.sanitize_for_serialization(
                 deployment_object
             )
             return apps_api_instance.api_client.call_api(
                 "/apis/apps/v1/namespaces/{namespace}/deployments/{name}",
                 "PATCH",
-                path_params={"namespace": namespace, "name": deployment_object.metadata.name},
+                path_params={
+                    "namespace": namespace,
+                    "name": deployment_object.metadata.name,
+                },
                 body=body,
                 header_params={
                     "Content-Type": "application/merge-patch+json",
