@@ -1,4 +1,5 @@
 import datetime
+import json
 import os
 import re
 import secrets
@@ -91,13 +92,27 @@ class BuildkitEnv:
             self.insecure_reg = ",registry.insecure=true"
             registry_url = f"http://{self.registry}/v2"
 
-        self.dockerconfigjson = generate_kubernetes_imagepullsecrets(
-            secret=self.secret,
-            registry_urls=[registry_url],
-            resource_type="repository",
-            resource_name=repository_name,
-            resource_actions=["push", "pull"],
+        docker_config = json.loads(
+            generate_kubernetes_imagepullsecrets(
+                secret=self.secret,
+                registry_urls=[registry_url],
+                resource_type="repository",
+                resource_name=repository_name,
+                resource_actions=["push", "pull"],
+            )
         )
+        # Optional Docker Hub pull auth to avoid rate limits.  This is
+        # safe because the docker config is mounted on the *host*
+        # container, not inside the OCI rootfs that RUN steps execute in.
+        dockerhub_username = current_app.config.get("DOCKERHUB_USERNAME")
+        dockerhub_token = current_app.config.get("DOCKERHUB_TOKEN")
+        if dockerhub_username and dockerhub_token:
+            docker_config["auths"]["https://index.docker.io/v1/"] = {
+                "auth": b64encode(
+                    f"{dockerhub_username}:{dockerhub_token}".encode()
+                ).decode(),
+            }
+        self.dockerconfigjson = json.dumps(docker_config)
         buildkitd_config = {
             "registry": {
                 self.registry: {
