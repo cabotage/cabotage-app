@@ -112,4 +112,5 @@ class Config(metaclass=MetaFlaskEnv):
     MIMIR_TIMEOUT = 5
     LOKI_URL = None
     LOKI_VERIFY = None
+    ALERTMANAGER_WEBHOOK_SECRET = None
     PROXY_FIX_NUM_PROXIES = 1
