@@ -3821,24 +3821,32 @@ def application_audit_log(org_slug, project_slug, app_slug):
     env_slug = request.args.get("env_slug")
     app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
 
-    verb_filter = request.args.get("verb")
-    type_filter = request.args.get("type")
+    verb_filter = [v for v in request.args.get("verb", "").split(",") if v]
+    type_filter = [t for t in request.args.get("type", "").split(",") if t]
 
     from cabotage.server.models.audit import AuditLog
 
     q = AuditLog.query.filter(AuditLog.application_id == application.id)
     if verb_filter:
-        q = q.filter(AuditLog.verb == verb_filter)
+        q = q.filter(AuditLog.verb.in_(verb_filter))
     if type_filter:
-        q = q.filter(AuditLog.object_type == type_filter)
+        q = q.filter(AuditLog.object_type.in_(type_filter))
 
     entries = q.order_by(AuditLog.id.desc()).paginate(
         page=page, per_page=30, error_out=False
     )
 
-    # Available filter values
-    available_verbs = sorted({e.verb for e in entries.items if e.verb})
-    available_types = sorted({e.object_type for e in entries.items if e.object_type})
+    # Available filter values — scoped by the OTHER active filter so you
+    # can't select a combination that returns zero results.
+    verb_q = AuditLog.query.filter(AuditLog.application_id == application.id)
+    type_q = AuditLog.query.filter(AuditLog.application_id == application.id)
+    if type_filter:
+        verb_q = verb_q.filter(AuditLog.object_type.in_(type_filter))
+    if verb_filter:
+        type_q = type_q.filter(AuditLog.verb.in_(verb_filter))
+
+    all_verbs = sorted(r[0] for r in verb_q.with_entities(AuditLog.verb).distinct() if r[0])
+    all_types = sorted(r[0] for r in type_q.with_entities(AuditLog.object_type).distinct() if r[0])
 
     return render_template(
         "user/application_audit_log.html",
@@ -3850,10 +3858,10 @@ def application_audit_log(org_slug, project_slug, app_slug):
         entries=entries.items,
         page=page,
         has_more=len(entries.items) == 30,
-        verb_filter=verb_filter or "",
-        type_filter=type_filter or "",
-        available_verbs=available_verbs,
-        available_types=available_types,
+        verb_filter=verb_filter,
+        type_filter=type_filter,
+        all_verbs=all_verbs,
+        all_types=all_types,
     )
 
 

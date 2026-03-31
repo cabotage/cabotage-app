@@ -25,27 +25,90 @@
     <h2 class="text-base font-medium text-base-content">Audit Log</h2>
   </div>
 
-  {# Filters #}
-  <form method="get" class="flex items-center gap-2 mb-4 flex-wrap">
-    {% if env_slug %}<input type="hidden" name="env_slug" value="{{ env_slug }}">{% endif %}
-    <select name="verb" class="select select-bordered select-sm bg-base-100 text-sm">
-      <option value="">All actions</option>
-      {% for v in available_verbs %}
-        <option value="{{ v }}" {{ 'selected' if verb_filter == v }}>{{ v }}</option>
+  {# Filters — multi-select with pills, auto-submit on change #}
+  <div class="audit-filters" data-audit-filters>
+    {# Active filter pills #}
+    <div class="audit-filter-pills">
+      {% for t in type_filter %}
+        <span class="audit-filter-pill audit-filter-pill-type" data-filter-type="type" data-filter-value="{{ t }}">
+          {{ t }} <button type="button" class="audit-filter-remove">{{ icon('x', 'w-2.5 h-2.5') }}</button>
+        </span>
       {% endfor %}
-    </select>
-    <select name="type" class="select select-bordered select-sm bg-base-100 text-sm">
-      <option value="">All types</option>
-      {% for t in available_types %}
-        <option value="{{ t }}" {{ 'selected' if type_filter == t }}>{{ t }}</option>
+      {% for v in verb_filter %}
+        <span class="audit-filter-pill audit-filter-pill-verb" data-filter-type="verb" data-filter-value="{{ v }}">
+          {{ v }} <button type="button" class="audit-filter-remove">{{ icon('x', 'w-2.5 h-2.5') }}</button>
+        </span>
       {% endfor %}
-    </select>
-    <button type="submit" class="btn btn-ghost btn-sm gap-1">{{ icon('filter', 'w-3.5 h-3.5') }} Filter</button>
-    {% if verb_filter or type_filter %}
-      <a href="{{ url_for('user.application_audit_log', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
-         class="btn btn-ghost btn-sm gap-1 text-error">{{ icon('x', 'w-3.5 h-3.5') }} Clear</a>
-    {% endif %}
-  </form>
+
+      {# Add filter dropdowns #}
+      <div class="dropdown">
+        <div tabindex="0" role="button" class="audit-filter-add">{{ icon('plus', 'w-3 h-3') }} Type</div>
+        <ul tabindex="0" class="menu menu-sm dropdown-content bg-base-100 rounded-box z-50 mt-1 w-48 p-1 shadow-lg border border-base-300">
+          {% for t in all_types %}
+            <li><a class="{% if t in type_filter %}active{% endif %}" data-filter-toggle="type" data-filter-value="{{ t }}">{{ t }}</a></li>
+          {% endfor %}
+        </ul>
+      </div>
+
+      <div class="dropdown">
+        <div tabindex="0" role="button" class="audit-filter-add">{{ icon('plus', 'w-3 h-3') }} Action</div>
+        <ul tabindex="0" class="menu menu-sm dropdown-content bg-base-100 rounded-box z-50 mt-1 w-40 p-1 shadow-lg border border-base-300">
+          {% for v in all_verbs %}
+            <li><a class="{% if v in verb_filter %}active{% endif %}" data-filter-toggle="verb" data-filter-value="{{ v }}">{{ v }}</a></li>
+          {% endfor %}
+        </ul>
+      </div>
+
+      {% if verb_filter or type_filter %}
+        <a href="{{ url_for('user.application_audit_log', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
+           class="audit-filter-clear">clear all</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <script>
+  (function() {
+    var base = '{{ url_for("user.application_audit_log", org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}';
+    var verbs = {{ verb_filter|tojson }};
+    var types = {{ type_filter|tojson }};
+    var envSlug = {{ (env_slug or '')|tojson }};
+
+    function navigate() {
+      var params = [];
+      if (envSlug) params.push('env_slug=' + encodeURIComponent(envSlug));
+      if (verbs.length) params.push('verb=' + verbs.join(','));
+      if (types.length) params.push('type=' + types.join(','));
+      window.location = base + (params.length ? '?' + params.join('&') : '');
+    }
+
+    // Toggle filter from dropdown
+    document.querySelectorAll('[data-filter-toggle]').forEach(function(el) {
+      el.addEventListener('click', function(e) {
+        e.preventDefault();
+        var filterType = el.dataset.filterToggle;
+        var value = el.dataset.filterValue;
+        var arr = filterType === 'verb' ? verbs : types;
+        var idx = arr.indexOf(value);
+        if (idx >= 0) arr.splice(idx, 1);
+        else arr.push(value);
+        navigate();
+      });
+    });
+
+    // Remove pill
+    document.querySelectorAll('.audit-filter-remove').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var pill = btn.closest('[data-filter-type]');
+        var filterType = pill.dataset.filterType;
+        var value = pill.dataset.filterValue;
+        var arr = filterType === 'verb' ? verbs : types;
+        var idx = arr.indexOf(value);
+        if (idx >= 0) arr.splice(idx, 1);
+        navigate();
+      });
+    });
+  })();
+  </script>
 
   {% if entries|length > 0 %}
     <div class="audit-list">
@@ -136,14 +199,14 @@
 
     <div class="flex items-center justify-between mt-4">
       {% if page > 1 %}
-        <a href="?page={{ page - 1 }}{% if verb_filter %}&verb={{ verb_filter }}{% endif %}{% if type_filter %}&type={{ type_filter }}{% endif %}{% if env_slug %}&env_slug={{ env_slug }}{% endif %}"
+        <a href="?page={{ page - 1 }}{% if verb_filter %}&verb={{ verb_filter|join(',') }}{% endif %}{% if type_filter %}&type={{ type_filter|join(',') }}{% endif %}{% if env_slug %}&env_slug={{ env_slug }}{% endif %}"
            class="btn btn-ghost btn-sm gap-1">{{ icon('arrow-left', 'w-3.5 h-3.5') }} Newer</a>
       {% else %}
         <span></span>
       {% endif %}
       <span class="text-xs text-base-content/40">Page {{ page }}</span>
       {% if has_more %}
-        <a href="?page={{ page + 1 }}{% if verb_filter %}&verb={{ verb_filter }}{% endif %}{% if type_filter %}&type={{ type_filter }}{% endif %}{% if env_slug %}&env_slug={{ env_slug }}{% endif %}"
+        <a href="?page={{ page + 1 }}{% if verb_filter %}&verb={{ verb_filter|join(',') }}{% endif %}{% if type_filter %}&type={{ type_filter|join(',') }}{% endif %}{% if env_slug %}&env_slug={{ env_slug }}{% endif %}"
            class="btn btn-ghost btn-sm gap-1">Older {{ icon('chevron-right', 'w-3.5 h-3.5') }}</a>
       {% else %}
         <span></span>
