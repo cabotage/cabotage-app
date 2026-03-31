@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import render_field_compact, icon, resource_path, danger_zone_delete %}
+{% from "_macros.html" import render_field_compact, icon, resource_path, danger_zone_delete, project_tab_nav %}
 
 {% set org_slug = project.organization.slug %}
 {% set project_slug = project.slug %}
@@ -15,6 +15,10 @@
   {'label': 'Settings'}
   ]) }}
 {% endblock resource_path %}
+
+{% block tab_bar %}
+  {{ project_tab_nav(project, 'settings') }}
+{% endblock tab_bar %}
 
 {% block content %}
   <div class="settings-page">

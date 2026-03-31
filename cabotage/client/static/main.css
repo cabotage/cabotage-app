@@ -2213,6 +2213,11 @@ a.pipeline-stage-body:hover {
   color: oklch(var(--bc) / 0.4);
   font-size: 0.75rem;
 }
+.audit-context {
+  font-size: 0.7rem;
+  color: oklch(var(--bc) / 0.3);
+  font-style: italic;
+}
 .audit-detail-code {
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
   font-size: 0.75rem;

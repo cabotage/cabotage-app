@@ -24,6 +24,12 @@ class AuditLog(Model):
     # Scoping
     application_id = Column(postgresql.UUID(as_uuid=True))
     application_environment_id = Column(postgresql.UUID(as_uuid=True))
+    project_id = Column(postgresql.UUID(as_uuid=True))
+    organization_id = Column(postgresql.UUID(as_uuid=True))
+
+    # Context (names for display at broader scopes)
+    app_name = Column(String)
+    project_name = Column(String)
 
     # Actor
     actor_username = Column(String)

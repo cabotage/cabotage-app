@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, app_tab_nav, app_resource_path %}
+{% from "_macros.html" import icon, resource_path, app_tab_nav, app_resource_path, org_tab_nav, project_tab_nav, env_tab_nav %}
 
 {# ── Level-specific slugs ── #}
 {% set org_slug = organization.slug %}
@@ -45,38 +45,11 @@
   {% if observe_level == 'app' %}
     {{ app_tab_nav(application, 'observe', env=environment|default(none)) }}
   {% elif observe_level == 'environment' %}
-    <div class="app-content-padded !py-0">
-      <div class="tab-bar">
-        <a href="{{ url_for('user.project_environment', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug) }}"
-           class="tab-item">{{ icon('activity', 'w-4 h-4') }} <span class="tab-label">Overview</span></a>
-        <a href="{{ url_for('user.environment_observe', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug) }}"
-           class="tab-item tab-active">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></a>
-      </div>
-    </div>
+    {{ env_tab_nav(project, environment, 'observe') }}
   {% elif observe_level == 'project' %}
-    <div class="app-content-padded !py-0">
-      <div class="tab-bar">
-        <a href="{{ url_for('user.project', org_slug=org_slug, project_slug=project_slug) }}"
-           class="tab-item">{{ icon('activity', 'w-4 h-4') }} <span class="tab-label">Overview</span></a>
-        <a href="{{ url_for('user.project_observe', org_slug=org_slug, project_slug=project_slug) }}"
-           class="tab-item tab-active">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></a>
-      </div>
-    </div>
+    {{ project_tab_nav(project, 'observe') }}
   {% elif observe_level == 'organization' %}
-    <div class="app-content-padded !py-0">
-      {% set proj_count = organization.active_projects|length %}
-      {% set member_count = organization.members|length %}
-      <div class="tab-bar">
-        <a href="{{ url_for('user.organization', org_slug=org_slug) }}"
-           class="tab-item" data-tab="projects">{{ icon('folder', 'w-4 h-4') }} Projects
-          <span class="badge badge-sm badge-neutral ml-1">{{ proj_count }}</span></a>
-        <a href="{{ url_for('user.organization', org_slug=org_slug) }}#members"
-           class="tab-item" data-tab="members">{{ icon('users', 'w-4 h-4') }} Members
-          <span class="badge badge-sm badge-neutral ml-1">{{ member_count }}</span></a>
-        <a href="{{ url_for('user.organization_observe', org_slug=org_slug) }}"
-           class="tab-item tab-active" data-tab="observe">{{ icon('bar-chart', 'w-4 h-4') }} Observe</a>
-      </div>
-    </div>
+    {{ org_tab_nav(organization, 'observe') }}
   {% endif %}
 {% endblock tab_bar %}
 

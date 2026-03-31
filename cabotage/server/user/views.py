@@ -28,7 +28,7 @@ import kubernetes
 from dxf import DXF
 import requests as requests_lib
 from requests.exceptions import HTTPError
-from sqlalchemy import desc, func, or_
+from sqlalchemy import and_, desc, func, or_
 from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import joinedload, subqueryload
 from sqlalchemy.orm.attributes import flag_modified
@@ -607,12 +607,6 @@ def organization(org_slug):
 
     is_admin = AdministerOrganizationPermission(organization.id).can()
 
-    add_member_form = None
-    remove_member_form = None
-    if is_admin:
-        add_member_form = AddOrganizationUserForm()
-        remove_member_form = FlaskForm()
-
     return render_template(
         "user/organization.html",
         organization=organization,
@@ -623,6 +617,34 @@ def organization(org_slug):
         errored_app_ids=errored_app_ids,
         building_app_ids=building_app_ids,
         last_deploy_ts=last_deploy_ts,
+        is_admin=is_admin,
+    )
+
+
+@user_blueprint.route("/organizations/<org_slug>/members")
+@login_required
+def organization_members(org_slug):
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .options(
+            joinedload(Organization.members).joinedload(OrganizationMember.user),
+        )
+        .first_or_404()
+    )
+    if not ViewOrganizationPermission(organization.id).can():
+        abort(403)
+
+    is_admin = AdministerOrganizationPermission(organization.id).can()
+    add_member_form = None
+    remove_member_form = None
+    if is_admin:
+        add_member_form = AddOrganizationUserForm()
+        remove_member_form = FlaskForm()
+
+    return render_template(
+        "user/organization_members.html",
+        organization=organization,
         is_admin=is_admin,
         add_member_form=add_member_form,
         remove_member_form=remove_member_form,
@@ -3811,38 +3833,27 @@ def project_application_configuration_delete(
     )
 
 
-@user_blueprint.route(
-    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/audit"
-)
-@login_required
-def application_audit_log(org_slug, project_slug, app_slug):
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
-    env_slug = request.args.get("env_slug")
-    app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
+def _render_audit_log(scope_filter, template_context):
+    """Core audit log rendering shared across org/project/app scopes.
+
+    scope_filter: a SQLAlchemy filter expression for scoping (e.g. by org, project, app)
+    template_context: dict of extra template variables (application, org, etc.)
+    """
+    from cabotage.server.models.audit import AuditLog
+
     before = request.args.get("before", type=int)
     after = request.args.get("after", type=int)
     per_page = 30
-
     verb_filter = [v for v in request.args.get("verb", "").split(",") if v]
     type_filter = [t for t in request.args.get("type", "").split(",") if t]
 
-    from cabotage.server.models.audit import AuditLog
-
-    q = AuditLog.query.filter(AuditLog.application_id == application.id)
-    if app_env:
-        q = q.filter(
-            or_(
-                AuditLog.application_environment_id == app_env.id,
-                AuditLog.application_environment_id.is_(None),
-            )
-        )
+    q = AuditLog.query.filter(scope_filter)
     if verb_filter:
         q = q.filter(AuditLog.verb.in_(verb_filter))
     if type_filter:
         q = q.filter(AuditLog.object_type.in_(type_filter))
 
     if after:
-        # Going newer: get entries with id > after, ordered ascending, then reverse
         entries = (
             q.filter(AuditLog.id > after)
             .order_by(AuditLog.id.asc())
@@ -3851,29 +3862,19 @@ def application_audit_log(org_slug, project_slug, app_slug):
         )
         has_newer = len(entries) > per_page
         entries = entries[:per_page]
-        entries.reverse()  # back to newest-first
-        has_older = True  # we came from an older page
+        entries.reverse()
+        has_older = True
     else:
         if before:
             q = q.filter(AuditLog.id < before)
         entries = q.order_by(AuditLog.id.desc()).limit(per_page + 1).all()
         has_older = len(entries) > per_page
         entries = entries[:per_page]
-        # Check if there are newer entries (i.e. we're not at the top)
         has_newer = before is not None
 
-    # Available filter values — scoped by the OTHER active filter so you
-    # can't select a combination that returns zero results.
-    env_scope = (
-        or_(
-            AuditLog.application_environment_id == app_env.id,
-            AuditLog.application_environment_id.is_(None),
-        )
-        if app_env
-        else True
-    )
-    verb_q = AuditLog.query.filter(AuditLog.application_id == application.id, env_scope)
-    type_q = AuditLog.query.filter(AuditLog.application_id == application.id, env_scope)
+    # Available filter values — scoped by the OTHER active filter
+    verb_q = AuditLog.query.filter(scope_filter)
+    type_q = AuditLog.query.filter(scope_filter)
     if type_filter:
         verb_q = verb_q.filter(AuditLog.object_type.in_(type_filter))
     if verb_filter:
@@ -3887,12 +3888,7 @@ def application_audit_log(org_slug, project_slug, app_slug):
     )
 
     return render_template(
-        "user/application_audit_log.html",
-        application=application,
-        app_env=app_env,
-        environment=(
-            app_env.environment if app_env and project.environments_enabled else None
-        ),
+        "user/audit_log.html",
         entries=entries,
         has_newer=has_newer,
         has_older=has_older,
@@ -3902,6 +3898,145 @@ def application_audit_log(org_slug, project_slug, app_slug):
         type_filter=type_filter,
         all_verbs=all_verbs,
         all_types=all_types,
+        **template_context,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/audit"
+)
+@login_required
+def application_audit_log(org_slug, project_slug, app_slug):
+    from cabotage.server.models.audit import AuditLog
+
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    env_slug = request.args.get("env_slug")
+    app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
+
+    scope = AuditLog.application_id == application.id
+    if app_env:
+        scope = and_(
+            scope,
+            or_(
+                AuditLog.application_environment_id == app_env.id,
+                AuditLog.application_environment_id.is_(None),
+            ),
+        )
+
+    environment = (
+        app_env.environment if app_env and project.environments_enabled else None
+    )
+    return _render_audit_log(
+        scope,
+        {
+            "application": application,
+            "app_env": app_env,
+            "environment": environment,
+            "scope_type": "application",
+            "audit_url": url_for(
+                "user.application_audit_log",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                app_slug=app_slug,
+            ),
+        },
+    )
+
+
+@user_blueprint.route("/projects/<org_slug>/<project_slug>/audit")
+@login_required
+def project_audit_log(org_slug, project_slug):
+    from cabotage.server.models.audit import AuditLog
+
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not ViewProjectPermission(project.id).can():
+        abort(403)
+
+    return _render_audit_log(
+        AuditLog.project_id == project.id,
+        {
+            "organization": organization,
+            "project": project,
+            "scope_type": "project",
+            "audit_url": url_for(
+                "user.project_audit_log", org_slug=org_slug, project_slug=project_slug
+            ),
+        },
+    )
+
+
+@user_blueprint.route("/projects/<org_slug>/<project_slug>/env/<env_slug>/audit")
+@login_required
+def environment_audit_log(org_slug, project_slug, env_slug):
+    from cabotage.server.models.audit import AuditLog
+
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not ViewProjectPermission(project.id).can():
+        abort(403)
+    environment = Environment.query.filter_by(
+        project_id=project.id, slug=env_slug
+    ).first_or_404()
+
+    # Get all app_env IDs for this environment
+    env_ae_ids = [ae.id for ae in environment.active_application_environments]
+
+    scope = and_(
+        AuditLog.project_id == project.id,
+        or_(
+            (
+                AuditLog.application_environment_id.in_(env_ae_ids)
+                if env_ae_ids
+                else False
+            ),
+            AuditLog.application_environment_id.is_(None),
+        ),
+    )
+
+    return _render_audit_log(
+        scope,
+        {
+            "organization": organization,
+            "project": project,
+            "environment": environment,
+            "scope_type": "environment",
+            "audit_url": url_for(
+                "user.environment_audit_log",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                env_slug=env_slug,
+            ),
+        },
+    )
+
+
+@user_blueprint.route("/organizations/<org_slug>/audit")
+@login_required
+def organization_audit_log(org_slug):
+    from cabotage.server.models.audit import AuditLog
+
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    if not ViewOrganizationPermission(organization.id).can():
+        abort(403)
+
+    return _render_audit_log(
+        or_(
+            AuditLog.organization_id == organization.id,
+            and_(
+                AuditLog.object_type == "Organization",
+                AuditLog.object_id == organization.id,
+            ),
+        ),
+        {
+            "organization": organization,
+            "scope_type": "organization",
+            "audit_url": url_for("user.organization_audit_log", org_slug=org_slug),
+        },
     )
 
 
