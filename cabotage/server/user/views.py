@@ -28,7 +28,7 @@ import kubernetes
 from dxf import DXF
 import requests as requests_lib
 from requests.exceptions import HTTPError
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, or_
 from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import joinedload, subqueryload
 from sqlalchemy.orm.attributes import flag_modified
@@ -3817,9 +3817,11 @@ def project_application_configuration_delete(
 @login_required
 def application_audit_log(org_slug, project_slug, app_slug):
     org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
-    page = request.args.get("page", 1, type=int)
     env_slug = request.args.get("env_slug")
     app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
+    before = request.args.get("before", type=int)
+    after = request.args.get("after", type=int)
+    per_page = 30
 
     verb_filter = [v for v in request.args.get("verb", "").split(",") if v]
     type_filter = [t for t in request.args.get("type", "").split(",") if t]
@@ -3827,26 +3829,62 @@ def application_audit_log(org_slug, project_slug, app_slug):
     from cabotage.server.models.audit import AuditLog
 
     q = AuditLog.query.filter(AuditLog.application_id == application.id)
+    if app_env:
+        q = q.filter(
+            or_(
+                AuditLog.application_environment_id == app_env.id,
+                AuditLog.application_environment_id.is_(None),
+            )
+        )
     if verb_filter:
         q = q.filter(AuditLog.verb.in_(verb_filter))
     if type_filter:
         q = q.filter(AuditLog.object_type.in_(type_filter))
 
-    entries = q.order_by(AuditLog.id.desc()).paginate(
-        page=page, per_page=30, error_out=False
-    )
+    if after:
+        # Going newer: get entries with id > after, ordered ascending, then reverse
+        entries = (
+            q.filter(AuditLog.id > after)
+            .order_by(AuditLog.id.asc())
+            .limit(per_page + 1)
+            .all()
+        )
+        has_newer = len(entries) > per_page
+        entries = entries[:per_page]
+        entries.reverse()  # back to newest-first
+        has_older = True  # we came from an older page
+    else:
+        if before:
+            q = q.filter(AuditLog.id < before)
+        entries = q.order_by(AuditLog.id.desc()).limit(per_page + 1).all()
+        has_older = len(entries) > per_page
+        entries = entries[:per_page]
+        # Check if there are newer entries (i.e. we're not at the top)
+        has_newer = before is not None
 
     # Available filter values — scoped by the OTHER active filter so you
     # can't select a combination that returns zero results.
-    verb_q = AuditLog.query.filter(AuditLog.application_id == application.id)
-    type_q = AuditLog.query.filter(AuditLog.application_id == application.id)
+    env_scope = (
+        or_(
+            AuditLog.application_environment_id == app_env.id,
+            AuditLog.application_environment_id.is_(None),
+        )
+        if app_env
+        else True
+    )
+    verb_q = AuditLog.query.filter(AuditLog.application_id == application.id, env_scope)
+    type_q = AuditLog.query.filter(AuditLog.application_id == application.id, env_scope)
     if type_filter:
         verb_q = verb_q.filter(AuditLog.object_type.in_(type_filter))
     if verb_filter:
         type_q = type_q.filter(AuditLog.verb.in_(verb_filter))
 
-    all_verbs = sorted(r[0] for r in verb_q.with_entities(AuditLog.verb).distinct() if r[0])
-    all_types = sorted(r[0] for r in type_q.with_entities(AuditLog.object_type).distinct() if r[0])
+    all_verbs = sorted(
+        r[0] for r in verb_q.with_entities(AuditLog.verb).distinct() if r[0]
+    )
+    all_types = sorted(
+        r[0] for r in type_q.with_entities(AuditLog.object_type).distinct() if r[0]
+    )
 
     return render_template(
         "user/application_audit_log.html",
@@ -3855,9 +3893,11 @@ def application_audit_log(org_slug, project_slug, app_slug):
         environment=(
             app_env.environment if app_env and project.environments_enabled else None
         ),
-        entries=entries.items,
-        page=page,
-        has_more=len(entries.items) == 30,
+        entries=entries,
+        has_newer=has_newer,
+        has_older=has_older,
+        newer_after=entries[0].id if entries and has_newer else None,
+        older_before=entries[-1].id if entries and has_older else None,
         verb_filter=verb_filter,
         type_filter=type_filter,
         all_verbs=all_verbs,

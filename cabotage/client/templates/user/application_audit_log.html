@@ -30,19 +30,21 @@
     {# Active filter pills #}
     <div class="audit-filter-pills">
       {% for t in type_filter %}
-        <span class="audit-filter-pill audit-filter-pill-type" data-filter-type="type" data-filter-value="{{ t }}">
-          {{ t }} <button type="button" class="audit-filter-remove">{{ icon('x', 'w-2.5 h-2.5') }}</button>
+        <span class="badge badge-secondary gap-1" data-filter-type="type" data-filter-value="{{ t }}">
+          {{ t }}
+          <button type="button" class="audit-filter-remove">{{ icon('x', 'w-2.5 h-2.5') }}</button>
         </span>
       {% endfor %}
       {% for v in verb_filter %}
-        <span class="audit-filter-pill audit-filter-pill-verb" data-filter-type="verb" data-filter-value="{{ v }}">
-          {{ v }} <button type="button" class="audit-filter-remove">{{ icon('x', 'w-2.5 h-2.5') }}</button>
+        <span class="badge badge-primary gap-1" data-filter-type="verb" data-filter-value="{{ v }}">
+          {{ v }}
+          <button type="button" class="audit-filter-remove">{{ icon('x', 'w-2.5 h-2.5') }}</button>
         </span>
       {% endfor %}
 
       {# Add filter dropdowns #}
       <div class="dropdown">
-        <div tabindex="0" role="button" class="audit-filter-add">{{ icon('plus', 'w-3 h-3') }} Type</div>
+        <div tabindex="0" role="button" class="btn btn-ghost btn-xs gap-1">{{ icon('plus', 'w-3 h-3') }} Type</div>
         <ul tabindex="0" class="menu menu-sm dropdown-content bg-base-100 rounded-box z-50 mt-1 w-48 p-1 shadow-lg border border-base-300">
           {% for t in all_types %}
             <li><a class="{% if t in type_filter %}active{% endif %}" data-filter-toggle="type" data-filter-value="{{ t }}">{{ t }}</a></li>
@@ -51,7 +53,7 @@
       </div>
 
       <div class="dropdown">
-        <div tabindex="0" role="button" class="audit-filter-add">{{ icon('plus', 'w-3 h-3') }} Action</div>
+        <div tabindex="0" role="button" class="btn btn-ghost btn-xs gap-1">{{ icon('plus', 'w-3 h-3') }} Action</div>
         <ul tabindex="0" class="menu menu-sm dropdown-content bg-base-100 rounded-box z-50 mt-1 w-40 p-1 shadow-lg border border-base-300">
           {% for v in all_verbs %}
             <li><a class="{% if v in verb_filter %}active{% endif %}" data-filter-toggle="verb" data-filter-value="{{ v }}">{{ v }}</a></li>
@@ -60,8 +62,8 @@
       </div>
 
       {% if verb_filter or type_filter %}
-        <a href="{{ url_for('user.application_audit_log', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
-           class="audit-filter-clear">clear all</a>
+        <a href="{{ url_for('user.application_audit_log', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}{% if env_slug %}?env_slug={{ env_slug }}{% endif %}"
+           class="btn btn-ghost btn-xs text-error gap-1">{{ icon('x', 'w-2.5 h-2.5') }} clear</a>
       {% endif %}
     </div>
   </div>
@@ -72,10 +74,12 @@
     var verbs = {{ verb_filter|tojson }};
     var types = {{ type_filter|tojson }};
     var envSlug = {{ (env_slug or '')|tojson }};
+    var before = {{ ((entries[0].id + 1)|tojson) if entries else 'null' }};
 
     function navigate() {
       var params = [];
       if (envSlug) params.push('env_slug=' + encodeURIComponent(envSlug));
+      if (before) params.push('before=' + before);
       if (verbs.length) params.push('verb=' + verbs.join(','));
       if (types.length) params.push('type=' + types.join(','));
       window.location = base + (params.length ? '?' + params.join('&') : '');
@@ -113,25 +117,32 @@
   {% if entries|length > 0 %}
     <div class="audit-list">
       {% for e in entries %}
+        {% set verb = e.verb %}
+        {% if e.object_type == 'Deployment' and verb == 'create' %}{% set verb = 'deploy' %}
+        {% elif e.object_type == 'Release' and verb == 'edit' %}{% set verb = 'create' %}
+        {% elif e.object_type == 'Image' and verb in ('submit', 'fromsource') %}{% set verb = 'build' %}
+        {% endif %}
         <div class="audit-row">
           <div class="audit-row-icon">
-            {% if e.verb == 'create' %}
+            {% if verb == 'create' and e.object_type == 'Release' %}
+              <span class="audit-verb audit-verb-create">{{ icon('layers', 'w-3 h-3') }}</span>
+            {% elif verb == 'create' and e.object_type == 'Image' %}
+              <span class="audit-verb audit-verb-create">{{ icon('image', 'w-3 h-3') }}</span>
+            {% elif verb == 'create' %}
               <span class="audit-verb audit-verb-create">{{ icon('plus', 'w-3 h-3') }}</span>
-            {% elif e.verb == 'edit' %}
+            {% elif verb == 'edit' %}
               <span class="audit-verb audit-verb-edit">{{ icon('edit', 'w-3 h-3') }}</span>
-            {% elif e.verb == 'delete' %}
+            {% elif verb == 'delete' %}
               <span class="audit-verb audit-verb-delete">{{ icon('trash', 'w-3 h-3') }}</span>
-            {% elif e.verb == 'deploy' %}
+            {% elif verb == 'deploy' %}
               <span class="audit-verb audit-verb-deploy">{{ icon('upload', 'w-3 h-3') }}</span>
-            {% elif e.verb == 'scale' %}
+            {% elif verb == 'scale' %}
               <span class="audit-verb audit-verb-edit">{{ icon('sliders', 'w-3 h-3') }}</span>
-            {% elif e.verb == 'fromsource' %}
-              <span class="audit-verb audit-verb-create">{{ icon('play', 'w-3 h-3') }}</span>
-            {% elif e.verb == 'submit' %}
-              <span class="audit-verb audit-verb-create">{{ icon('git-commit', 'w-3 h-3') }}</span>
-            {% elif e.verb == 'login' %}
+            {% elif verb == 'build' %}
+              <span class="audit-verb audit-verb-create">{{ icon('image', 'w-3 h-3') }}</span>
+            {% elif verb == 'login' %}
               <span class="audit-verb audit-verb-create">{{ icon('log-in', 'w-3 h-3') }}</span>
-            {% elif e.verb == 'logout' %}
+            {% elif verb == 'logout' %}
               <span class="audit-verb">{{ icon('log-out', 'w-3 h-3') }}</span>
             {% else %}
               <span class="audit-verb">{{ icon('activity', 'w-3 h-3') }}</span>
@@ -149,7 +160,7 @@
                   <strong>automation</strong>
                 {% endif %}
               </span>
-              <span class="audit-action">{{ e.verb }}</span>
+              <span class="audit-action">{{ verb }}</span>
               <span class="audit-object-type">{{ e.object_type }}</span>
               {% if e.object_name %}
                 <code class="audit-detail-code">{% if e.object_type == 'Image' and not e.object_name.startswith('#') %}#{% endif %}{% if e.object_type == 'Release' and not e.object_name.startswith('v') %}v{% endif %}{{ e.object_name }}</code>
@@ -172,7 +183,7 @@
                 {% if e.config_version %}
                   <span class="audit-meta-item">v{{ e.config_version }}</span>
                 {% endif %}
-                {% if e.image_ref %}
+                {% if e.image_ref and e.image_ref|length < 30 %}
                   <span class="audit-meta-item">{{ icon('git-branch', 'w-2.5 h-2.5') }} {{ e.image_ref }}</span>
                 {% endif %}
                 {% if e.image_sha %}
@@ -197,21 +208,22 @@
       {% endfor %}
     </div>
 
-    <div class="flex items-center justify-between mt-4">
-      {% if page > 1 %}
-        <a href="?page={{ page - 1 }}{% if verb_filter %}&verb={{ verb_filter|join(',') }}{% endif %}{% if type_filter %}&type={{ type_filter|join(',') }}{% endif %}{% if env_slug %}&env_slug={{ env_slug }}{% endif %}"
-           class="btn btn-ghost btn-sm gap-1">{{ icon('arrow-left', 'w-3.5 h-3.5') }} Newer</a>
-      {% else %}
-        <span></span>
-      {% endif %}
-      <span class="text-xs text-base-content/40">Page {{ page }}</span>
-      {% if has_more %}
-        <a href="?page={{ page + 1 }}{% if verb_filter %}&verb={{ verb_filter|join(',') }}{% endif %}{% if type_filter %}&type={{ type_filter|join(',') }}{% endif %}{% if env_slug %}&env_slug={{ env_slug }}{% endif %}"
-           class="btn btn-ghost btn-sm gap-1">Older {{ icon('chevron-right', 'w-3.5 h-3.5') }}</a>
-      {% else %}
-        <span></span>
-      {% endif %}
-    </div>
+    {% if has_newer or has_older %}
+      <div class="flex items-center justify-between mt-4">
+        {% if has_newer %}
+          <a href="?after={{ newer_after }}{% if verb_filter %}&verb={{ verb_filter|join(',') }}{% endif %}{% if type_filter %}&type={{ type_filter|join(',') }}{% endif %}{% if env_slug %}&env_slug={{ env_slug }}{% endif %}"
+             class="btn btn-ghost btn-sm gap-1">{{ icon('arrow-left', 'w-3.5 h-3.5') }} Newer</a>
+        {% else %}
+          <span></span>
+        {% endif %}
+        {% if has_older %}
+          <a href="?before={{ older_before }}{% if verb_filter %}&verb={{ verb_filter|join(',') }}{% endif %}{% if type_filter %}&type={{ type_filter|join(',') }}{% endif %}{% if env_slug %}&env_slug={{ env_slug }}{% endif %}"
+             class="btn btn-ghost btn-sm gap-1">Older {{ icon('chevron-right', 'w-3.5 h-3.5') }}</a>
+        {% else %}
+          <span></span>
+        {% endif %}
+      </div>
+    {% endif %}
 
   {% else %}
     <div class="card bg-base-200 border border-base-300">
