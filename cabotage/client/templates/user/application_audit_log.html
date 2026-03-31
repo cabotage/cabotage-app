@@ -1,0 +1,150 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, resource_path, app_tab_nav, app_resource_path %}
+
+{% set app = application %}
+{% set org_slug = app.project.organization.slug %}
+{% set project_slug = app.project.slug %}
+{% set app_slug = app.slug %}
+{% set env_slug = environment.slug if environment else none %}
+
+{% block title %}
+  Audit Log - {{ app_slug }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ app_resource_path(application, 'Audit Log', env=environment|default(none)) }}
+{% endblock resource_path %}
+
+{% block tab_bar %}
+  {{ app_tab_nav(application, 'audit', env=environment) }}
+{% endblock tab_bar %}
+
+{% block content %}
+
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-base font-medium text-base-content">Audit Log</h2>
+  </div>
+
+  {# Filters #}
+  <form method="get" class="flex items-center gap-2 mb-4 flex-wrap">
+    {% if env_slug %}<input type="hidden" name="env_slug" value="{{ env_slug }}">{% endif %}
+    <select name="verb" class="select select-bordered select-sm bg-base-100 text-sm">
+      <option value="">All actions</option>
+      {% for v in available_verbs %}
+        <option value="{{ v }}" {{ 'selected' if verb_filter == v }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+    <select name="type" class="select select-bordered select-sm bg-base-100 text-sm">
+      <option value="">All types</option>
+      {% for t in available_types %}
+        <option value="{{ t }}" {{ 'selected' if type_filter == t }}>{{ t }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-ghost btn-sm gap-1">{{ icon('filter', 'w-3.5 h-3.5') }} Filter</button>
+    {% if verb_filter or type_filter %}
+      <a href="{{ url_for('user.application_audit_log', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
+         class="btn btn-ghost btn-sm gap-1 text-error">{{ icon('x', 'w-3.5 h-3.5') }} Clear</a>
+    {% endif %}
+  </form>
+
+  {% if activities|length > 0 %}
+    <div class="audit-list">
+      {% for activity in activities %}
+        {% set d = diffs.get(activity.id, {}) %}
+        {% set actor_uid = (activity.data or {}).get('user_id', '') %}
+        {% set actor_info = user_map.get(actor_uid, {}) %}
+        {% set actor_name = actor_info.get('username') or (activity.data or {}).get('triggered_by') or (activity.data or {}).get('member_email') or ((activity.data or {}).get('sender', {}) or {}).get('login') or actor_uid %}
+        {% set is_automation = actor_uid == 'automation' %}
+        {% set display_verb = 'create' if d.get('is_creation') else activity.verb %}
+        {% set obj_name = d.get('name') %}
+        {% set changes = d.get('changes', []) %}
+        {% set timestamp = (activity.data or {}).get('timestamp', '') %}
+
+        <div class="audit-row">
+          <div class="audit-row-icon">
+            {% if display_verb == 'create' %}
+              <span class="audit-verb audit-verb-create">{{ icon('plus', 'w-3 h-3') }}</span>
+            {% elif display_verb == 'edit' %}
+              <span class="audit-verb audit-verb-edit">{{ icon('edit', 'w-3 h-3') }}</span>
+            {% elif display_verb == 'delete' %}
+              <span class="audit-verb audit-verb-delete">{{ icon('trash', 'w-3 h-3') }}</span>
+            {% elif display_verb == 'deploy' %}
+              <span class="audit-verb audit-verb-deploy">{{ icon('upload', 'w-3 h-3') }}</span>
+            {% elif display_verb == 'scale' %}
+              <span class="audit-verb audit-verb-edit">{{ icon('sliders', 'w-3 h-3') }}</span>
+            {% elif display_verb == 'fromsource' %}
+              <span class="audit-verb audit-verb-create">{{ icon('play', 'w-3 h-3') }}</span>
+            {% elif display_verb == 'submit' %}
+              <span class="audit-verb audit-verb-create">{{ icon('git-commit', 'w-3 h-3') }}</span>
+            {% elif display_verb == 'complete' %}
+              <span class="audit-verb audit-verb-complete">{{ icon('check', 'w-3 h-3') }}</span>
+            {% else %}
+              <span class="audit-verb">{{ icon('activity', 'w-3 h-3') }}</span>
+            {% endif %}
+          </div>
+
+          <div class="audit-row-body">
+            <div class="audit-row-primary">
+              <span class="audit-actor">
+                {% if is_automation %}{{ icon('zap', 'w-3 h-3') }}{% else %}{{ icon('user', 'w-3 h-3') }}{% endif %}
+                <strong>{{ actor_name }}</strong>
+              </span>
+              <span class="audit-action">{{ display_verb }}</span>
+              <span class="audit-object-type">{{ activity.object_type }}</span>
+              {% if obj_name %}
+                <code class="audit-detail-code">{% if activity.object_type == 'Image' %}#{% elif activity.object_type == 'Release' %}v{% endif %}{{ obj_name }}</code>
+              {% endif %}
+              {% set action = (activity.data or {}).get('action') %}
+              {% if action %}
+                <span class="audit-detail">({{ action|replace('_', ' ') }})</span>
+              {% endif %}
+            </div>
+            {% if changes %}<pre class="audit-diff">
+{%- for c in changes -%}
+{%- if c.type == 'add' %}
+<span class="audit-diff-add">+ {{ c.text }}</span>
+{%- elif c.type == 'remove' %}
+<span class="audit-diff-rm">- {{ c.text }}</span>
+{%- elif c.type == 'secret' %}
+<span class="audit-diff-field">{{ c.text }}</span> <span class="change-tag change-tag-secret">SECRET</span>
+{%- endif -%}
+{%- endfor %}</pre>{% endif %}
+            {% if timestamp %}
+              <div class="audit-row-time">
+                <time data-timestamp="{{ timestamp }}">{{ timestamp[:19] }}</time>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="flex items-center justify-between mt-4">
+      {% if page > 1 %}
+        <a href="?page={{ page - 1 }}{% if verb_filter %}&verb={{ verb_filter }}{% endif %}{% if type_filter %}&type={{ type_filter }}{% endif %}{% if env_slug %}&env_slug={{ env_slug }}{% endif %}"
+           class="btn btn-ghost btn-sm gap-1">{{ icon('arrow-left', 'w-3.5 h-3.5') }} Newer</a>
+      {% else %}
+        <span></span>
+      {% endif %}
+      <span class="text-xs text-base-content/40">Page {{ page }}</span>
+      {% if has_more %}
+        <a href="?page={{ page + 1 }}{% if verb_filter %}&verb={{ verb_filter }}{% endif %}{% if type_filter %}&type={{ type_filter }}{% endif %}{% if env_slug %}&env_slug={{ env_slug }}{% endif %}"
+           class="btn btn-ghost btn-sm gap-1">Older {{ icon('chevron-right', 'w-3.5 h-3.5') }}</a>
+      {% else %}
+        <span></span>
+      {% endif %}
+    </div>
+
+  {% else %}
+    <div class="card bg-base-200 border border-base-300">
+      <div class="card-body">
+        <div class="empty-state !py-12">
+          <div class="text-base-content/15 mb-4">{{ icon('activity', 'w-12 h-12') }}</div>
+          <h3 class="text-base font-medium text-base-content/60 mb-1">No activity recorded</h3>
+          <p class="text-sm text-base-content/40 max-w-sm">Activity will appear here as changes are made.</p>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+{% endblock content %}

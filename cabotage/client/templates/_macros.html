@@ -116,6 +116,8 @@
           <li class="disabled opacity-30"><span>{{ icon('file-text', 'w-3.5 h-3.5') }} Logs</span></li>
           {% endif %}
           <li class="disabled opacity-30"><span>{{ icon('bar-chart-2', 'w-3.5 h-3.5') }} Pipeline <span class="text-[0.6rem] opacity-40">(Soon)</span></span></li>
+          <li><a href="{{ url_for('user.application_audit_log', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
+                 class="{% if active == 'audit' %}active{% endif %}">{{ icon('clock', 'w-3.5 h-3.5') }} Audit Log</a></li>
         </ul>
       </div>
       <a href="{{ url_for('user.application_images', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"

@@ -81,11 +81,13 @@ from cabotage.server.models.projects import (
 from cabotage.server.models.projects import activity_plugin
 
 from cabotage.server.query_helpers import (
+    compute_activity_diffs,
     compute_app_status_sets,
     compute_ae_status_sets,
     compute_process_counts,
     compute_release_change_details,
     extract_latest_variants,
+    query_app_activities,
     RelatedObjectResolver,
     split_image_processes,
 )
@@ -3808,6 +3810,78 @@ def project_application_configuration_delete(
         project_slug=project.slug,
         app_slug=application.slug,
         configuration=configuration,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/audit"
+)
+@login_required
+def application_audit_log(org_slug, project_slug, app_slug):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    page = request.args.get("page", 1, type=int)
+    env_slug = request.args.get("env_slug")
+    app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
+
+    verb_filter = request.args.get("verb")
+    type_filter = request.args.get("type")
+
+    activities = query_app_activities(
+        application,
+        app_env,
+        verb=verb_filter,
+        object_type=type_filter,
+        page=page,
+        per_page=30,
+    )
+
+    # Compute diffs and resolve actors
+    diffs = compute_activity_diffs(activities.items)
+
+    # Filter out no-op edits (diffs returns nothing for them)
+    visible = [a for a in activities.items if a.id in diffs or a.verb != "edit"]
+
+    # Resolve user IDs to usernames
+    user_ids = set()
+    for a in visible:
+        uid = (a.data or {}).get("user_id")
+        if uid and uid != "automation":
+            try:
+                uuid.UUID(uid)
+                user_ids.add(uid)
+            except (ValueError, AttributeError):
+                pass
+    user_map = {}
+    if user_ids:
+        rows = (
+            db.session.query(User.id, User.username, User.email)
+            .filter(User.id.in_([uuid.UUID(u) for u in user_ids]))
+            .all()
+        )
+        user_map = {
+            str(uid): {"username": uname, "email": email} for uid, uname, email in rows
+        }
+
+    # Available filter values from the current page
+    available_verbs = sorted({a.verb for a in activities.items})
+    available_types = sorted({a.object_type for a in activities.items})
+
+    return render_template(
+        "user/application_audit_log.html",
+        application=application,
+        app_env=app_env,
+        environment=(
+            app_env.environment if app_env and project.environments_enabled else None
+        ),
+        activities=visible,
+        page=page,
+        has_more=len(activities.items) == 30,
+        user_map=user_map,
+        verb_filter=verb_filter or "",
+        type_filter=type_filter or "",
+        available_verbs=available_verbs,
+        available_types=available_types,
+        diffs=diffs,
     )
 
 

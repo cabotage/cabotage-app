@@ -9,12 +9,25 @@ import uuid as _uuid
 from sqlalchemy import and_, case, func, or_
 
 from cabotage.server import db
+from cabotage.server.models.auth import Organization, User
+from sqlalchemy_continuum import version_class
+
 from cabotage.server.models.projects import (
+    Application,
     ApplicationEnvironment,
+    Configuration,
     Deployment,
+    Environment,
+    EnvironmentConfiguration,
     Image,
+    Ingress,
+    IngressHost,
+    IngressPath,
     Release,
+    activity_plugin,
 )
+
+Activity = activity_plugin.activity_cls
 
 
 def compute_app_status_sets(app_ids):
@@ -516,6 +529,545 @@ def compute_release_change_details(releases, deployments=None):
     return result
 
 
+def query_app_activities(
+    application, app_env, verb=None, object_type=None, page=1, per_page=30
+):
+    """Query Activity records related to an application and its app_env.
+
+    Uses subqueries to find activities for all related objects (configs,
+    ingresses, images, releases, deployments) including deleted ones,
+    without building a huge IN clause in Python.
+
+    Returns a paginated result.
+    """
+    filters = [
+        Activity.object_type == "Application",
+        Activity.object_id == str(application.id),
+    ]
+
+    if app_env:
+        ae_id = str(app_env.id)
+        app_id = str(application.id)
+
+        # Subqueries for related object IDs, scoped to this app_env.
+        # For configs, use application_id + UNION with app_env filter since
+        # old version records have NULL application_environment_id.
+        ConfigVersion = version_class(Configuration)
+        cfg_ids = (
+            db.session.query(Configuration.id)
+            .filter_by(application_environment_id=app_env.id)
+            .union(
+                db.session.query(ConfigVersion.id).filter(
+                    ConfigVersion.application_id == application.id,
+                    ConfigVersion.application_environment_id == app_env.id,
+                )
+            )
+        )
+        ing_ids = (
+            db.session.query(version_class(Ingress).id)
+            .filter_by(application_environment_id=app_env.id)
+            .distinct()
+        )
+        img_ids = db.session.query(Image.id).filter_by(
+            application_environment_id=app_env.id
+        )
+        rel_ids = db.session.query(Release.id).filter_by(
+            application_environment_id=app_env.id
+        )
+        dep_ids = db.session.query(Deployment.id).filter_by(
+            application_environment_id=app_env.id
+        )
+
+        filters = [
+            or_(
+                and_(
+                    Activity.object_type == "Application", Activity.object_id == app_id
+                ),
+                and_(
+                    Activity.object_type == "ApplicationEnvironment",
+                    Activity.object_id == ae_id,
+                ),
+                and_(
+                    Activity.object_type.in_(
+                        ["Configuration", "EnvironmentConfiguration"]
+                    ),
+                    Activity.object_id.in_(cfg_ids),
+                ),
+                and_(
+                    Activity.object_type == "Ingress", Activity.object_id.in_(ing_ids)
+                ),
+                and_(Activity.object_type == "Image", Activity.object_id.in_(img_ids)),
+                and_(
+                    Activity.object_type == "Release", Activity.object_id.in_(rel_ids)
+                ),
+                and_(
+                    Activity.object_type == "Deployment",
+                    Activity.object_id.in_(dep_ids),
+                ),
+            )
+        ]
+
+    if verb:
+        filters.append(Activity.verb == verb)
+    if object_type:
+        filters.append(Activity.object_type == object_type)
+
+    return (
+        db.session.query(Activity)
+        .filter(*filters)
+        .order_by(Activity.id.desc())
+        .paginate(page=page, per_page=per_page, error_out=False)
+    )
+
+
+# ---------------------------------------------------------------------------
+# Audit log diff computation
+# ---------------------------------------------------------------------------
+
+_VERSION_MODEL_MAP = {
+    "Configuration": Configuration,
+    "EnvironmentConfiguration": EnvironmentConfiguration,
+    "Image": Image,
+    "Release": Release,
+    "Deployment": Deployment,
+    "Ingress": Ingress,
+    "Application": Application,
+    "ApplicationEnvironment": ApplicationEnvironment,
+    "Organization": Organization,
+    "Environment": Environment,
+}
+
+_DIFF_FIELDS = {
+    "Configuration": [],  # handled specially
+    "EnvironmentConfiguration": [],
+    "Image": ["build_ref"],
+    "Release": [],
+    "Deployment": [],
+    "Ingress": [
+        "enabled",
+        "ingress_class_name",
+        "backend_protocol",
+        "proxy_connect_timeout",
+        "proxy_read_timeout",
+        "proxy_send_timeout",
+        "proxy_body_size",
+        "client_body_buffer_size",
+        "proxy_request_buffering",
+        "session_affinity",
+        "use_regex",
+        "allow_annotations",
+        "extra_annotations",
+        "cluster_issuer",
+        "force_ssl_redirect",
+        "service_upstream",
+        "tailscale_hostname",
+        "tailscale_funnel",
+        "tailscale_tags",
+    ],
+    "Application": [
+        "name",
+        "slug",
+        "github_repository",
+        "auto_deploy_branch",
+        "github_environment_name",
+        "health_check_path",
+        "health_check_host",
+        "deployment_timeout",
+        "privileged",
+        "subdirectory",
+        "dockerfile_path",
+        "platform",
+        "github_repository_is_private",
+        "process_counts",
+        "process_pod_classes",
+        "branch_deploy_watch_paths",
+    ],
+    "ApplicationEnvironment": [
+        "process_counts",
+        "process_pod_classes",
+        "deployment_timeout",
+        "health_check_path",
+        "health_check_host",
+        "auto_deploy_branch",
+        "github_environment_name",
+        "auto_deploy_wait_for_ci",
+    ],
+    "Organization": ["name"],
+    "Environment": ["name"],
+}
+
+_NAME_FIELD = {
+    "Configuration": "name",
+    "EnvironmentConfiguration": "name",
+    "Image": "version",
+    "Release": "version",
+    "Ingress": "name",
+    "Application": "name",
+    "Organization": "name",
+    "Environment": "name",
+}
+
+
+def _diff_fields(current, previous, fields):
+    """Compare fields between two version records, expanding dicts/lists."""
+    changes = []
+    for field in fields:
+        new_val = getattr(current, field, None)
+        old_val = getattr(previous, field, None) if previous else None
+        if previous is None:
+            if new_val is not None and new_val != "":
+                changes.append({"type": "add", "text": f"{field} {new_val}"})
+        elif old_val != new_val:
+            if isinstance(new_val, dict) and isinstance(old_val, dict):
+                for k in sorted(set(list(old_val.keys()) + list(new_val.keys()))):
+                    ov, nv = old_val.get(k), new_val.get(k)
+                    if ov != nv:
+                        label = f"{field}.{k}"
+                        if ov is None:
+                            changes.append({"type": "add", "text": f"{label} {nv}"})
+                        elif nv is None:
+                            changes.append({"type": "remove", "text": f"{label} {ov}"})
+                        else:
+                            changes.append({"type": "remove", "text": f"{label} {ov}"})
+                            changes.append({"type": "add", "text": f"{label} {nv}"})
+            elif isinstance(new_val, list) and isinstance(old_val, list):
+                old_str = ", ".join(str(x) for x in old_val) or "(empty)"
+                new_str = ", ".join(str(x) for x in new_val) or "(empty)"
+                changes.append({"type": "remove", "text": f"{field} {old_str}"})
+                changes.append({"type": "add", "text": f"{field} {new_str}"})
+            else:
+                old_str = str(old_val) if old_val is not None else ""
+                new_str = str(new_val) if new_val is not None else ""
+                changes.append({"type": "remove", "text": f"{field} {old_str}"})
+                changes.append({"type": "add", "text": f"{field} {new_str}"})
+    return changes
+
+
+def _diff_config(current, previous, name):
+    """Produce diff lines for a Configuration version record."""
+    changes = []
+    is_secret = getattr(current, "secret", False)
+
+    if previous is None:
+        # Creation
+        if is_secret:
+            changes.append({"type": "add", "text": f"{name}=••••••••"})
+            changes.append({"type": "add", "text": "secret True"})
+        else:
+            val = getattr(current, "value", "")
+            changes.append({"type": "add", "text": f"{name}={val}"})
+        if getattr(current, "buildtime", False):
+            changes.append({"type": "add", "text": "buildtime True"})
+    else:
+        # Edit
+        old_secret = getattr(previous, "secret", False)
+        old_bt = getattr(previous, "buildtime", False)
+        new_bt = getattr(current, "buildtime", False)
+
+        if is_secret:
+            if getattr(current, "version_id", None) != getattr(
+                previous, "version_id", None
+            ):
+                changes.append({"type": "secret", "text": f"{name} rotated"})
+        else:
+            old_val = getattr(previous, "value", "")
+            new_val = getattr(current, "value", "")
+            if old_val != new_val:
+                changes.append({"type": "remove", "text": f"{name}={old_val}"})
+                changes.append({"type": "add", "text": f"{name}={new_val}"})
+
+        if old_secret != is_secret:
+            changes.append({"type": "remove", "text": f"secret {old_secret}"})
+            changes.append({"type": "add", "text": f"secret {is_secret}"})
+        if old_bt != new_bt:
+            changes.append({"type": "remove", "text": f"buildtime {old_bt}"})
+            changes.append({"type": "add", "text": f"buildtime {new_bt}"})
+
+    return changes
+
+
+def _diff_ingress_hosts_paths(tx_id):
+    """Produce diff lines for host/path version records in a transaction."""
+    changes = []
+    IngressHostVersion = version_class(IngressHost)
+    IngressPathVersion = version_class(IngressPath)
+
+    for hv in (
+        db.session.query(IngressHostVersion).filter_by(transaction_id=tx_id).all()
+    ):
+        prev = (
+            db.session.query(IngressHostVersion)
+            .filter_by(id=hv.id, end_transaction_id=tx_id)
+            .first()
+        )
+        if hv.operation_type == 0 or (hv.operation_type == 1 and not prev):
+            changes.append({"type": "add", "text": f"host {hv.hostname}"})
+        elif hv.operation_type == 2:
+            changes.append({"type": "remove", "text": f"host {hv.hostname}"})
+        elif prev:
+            for hf in ("tls_enabled", "is_auto_generated"):
+                ov, nv = getattr(prev, hf, None), getattr(hv, hf, None)
+                if ov != nv:
+                    changes.append(
+                        {"type": "remove", "text": f"{hv.hostname} {hf} {ov}"}
+                    )
+                    changes.append({"type": "add", "text": f"{hv.hostname} {hf} {nv}"})
+
+    for pv in (
+        db.session.query(IngressPathVersion).filter_by(transaction_id=tx_id).all()
+    ):
+        prev = (
+            db.session.query(IngressPathVersion)
+            .filter_by(id=pv.id, end_transaction_id=tx_id)
+            .first()
+        )
+        if pv.operation_type == 0 or (pv.operation_type == 1 and not prev):
+            changes.append(
+                {"type": "add", "text": f"path {pv.path} → {pv.target_process_name}"}
+            )
+        elif pv.operation_type == 2:
+            changes.append(
+                {"type": "remove", "text": f"path {pv.path} → {pv.target_process_name}"}
+            )
+        elif prev:
+            for pf in ("path", "path_type", "target_process_name"):
+                ov, nv = getattr(prev, pf, None), getattr(pv, pf, None)
+                if ov != nv:
+                    changes.append({"type": "remove", "text": f"{pf} {ov}"})
+                    changes.append({"type": "add", "text": f"{pf} {nv}"})
+
+    return changes
+
+
+def compute_activity_diffs(activities):
+    """Compute field-level diffs for a list of Activity records.
+
+    Batch-loads version records to minimize queries (typically ~10 queries
+    total regardless of page size, instead of 2-3 per activity).
+
+    Returns {activity_id: {
+        "name": str or None,
+        "is_creation": bool,
+        "changes": [{"type": "add"|"remove"|"secret", "text": str}]
+    }}
+    """
+    if not activities:
+        return {}
+
+    # Group activities by object_type for batch loading
+    by_type = {}
+    for a in activities:
+        by_type.setdefault(a.object_type, []).append(a)
+
+    # Batch-load current + previous version records per type (2 queries per type)
+    current_versions = {}  # (object_type, object_id, tx_id) → version record
+    previous_versions = {}  # same key → previous version record
+
+    for obj_type, type_activities in by_type.items():
+        model_cls = _VERSION_MODEL_MAP.get(obj_type)
+        if not model_cls:
+            continue
+        try:
+            VersionCls = version_class(model_cls)
+        except Exception:
+            continue
+
+        # Batch-load current versions
+        tx_pairs = [(a.object_id, a.object_tx_id) for a in type_activities]
+        if tx_pairs:
+            current_rows = (
+                db.session.query(VersionCls)
+                .filter(
+                    or_(
+                        *[
+                            and_(VersionCls.id == oid, VersionCls.transaction_id == tid)
+                            for oid, tid in tx_pairs
+                        ]
+                    )
+                )
+                .all()
+            )
+            for row in current_rows:
+                current_versions[(obj_type, row.id, row.transaction_id)] = row
+
+            # Batch-load previous versions
+            prev_rows = (
+                db.session.query(VersionCls)
+                .filter(
+                    or_(
+                        *[
+                            and_(
+                                VersionCls.id == oid,
+                                VersionCls.end_transaction_id == tid,
+                            )
+                            for oid, tid in tx_pairs
+                        ]
+                    )
+                )
+                .all()
+            )
+            for row in prev_rows:
+                previous_versions[(obj_type, row.id, row.end_transaction_id)] = row
+
+    # Batch-load ingress host/path versions for all ingress transactions
+    ingress_tx_ids = [a.object_tx_id for a in by_type.get("Ingress", [])]
+    host_versions_by_tx = {}
+    path_versions_by_tx = {}
+    host_prev_by_id = {}
+    path_prev_by_id = {}
+
+    if ingress_tx_ids:
+        IngressHostVersion = version_class(IngressHost)
+        IngressPathVersion = version_class(IngressPath)
+
+        all_hvs = (
+            db.session.query(IngressHostVersion)
+            .filter(IngressHostVersion.transaction_id.in_(ingress_tx_ids))
+            .all()
+        )
+        for hv in all_hvs:
+            host_versions_by_tx.setdefault(hv.transaction_id, []).append(hv)
+
+        # Previous host versions
+        hv_prev_filters = [
+            and_(
+                IngressHostVersion.id == hv.id,
+                IngressHostVersion.end_transaction_id == hv.transaction_id,
+            )
+            for hv in all_hvs
+        ]
+        if hv_prev_filters:
+            for row in (
+                db.session.query(IngressHostVersion).filter(or_(*hv_prev_filters)).all()
+            ):
+                host_prev_by_id[(row.id, row.end_transaction_id)] = row
+
+        all_pvs = (
+            db.session.query(IngressPathVersion)
+            .filter(IngressPathVersion.transaction_id.in_(ingress_tx_ids))
+            .all()
+        )
+        for pv in all_pvs:
+            path_versions_by_tx.setdefault(pv.transaction_id, []).append(pv)
+
+        pv_prev_filters = [
+            and_(
+                IngressPathVersion.id == pv.id,
+                IngressPathVersion.end_transaction_id == pv.transaction_id,
+            )
+            for pv in all_pvs
+        ]
+        if pv_prev_filters:
+            for row in (
+                db.session.query(IngressPathVersion).filter(or_(*pv_prev_filters)).all()
+            ):
+                path_prev_by_id[(row.id, row.end_transaction_id)] = row
+
+    # Batch-load release versions for deployment activities
+    deploy_release_ids = set()
+    for a in by_type.get("Deployment", []):
+        current = current_versions.get((a.object_type, a.object_id, a.object_tx_id))
+        if current:
+            rel_data = getattr(current, "release", None)
+            if isinstance(rel_data, dict) and rel_data.get("id"):
+                deploy_release_ids.add(rel_data["id"])
+    release_version_map = {}
+    if deploy_release_ids:
+        for rel in Release.query.filter(Release.id.in_(deploy_release_ids)).all():
+            release_version_map[str(rel.id)] = rel.version
+
+    # Now compute diffs using pre-loaded data
+    result = {}
+    for a in activities:
+        current = current_versions.get((a.object_type, a.object_id, a.object_tx_id))
+        if not current:
+            continue
+
+        previous = previous_versions.get((a.object_type, a.object_id, a.object_tx_id))
+
+        name_field = _NAME_FIELD.get(a.object_type)
+        name = getattr(current, name_field, None) if name_field else None
+
+        is_creation = previous is None
+        is_config = a.object_type in ("Configuration", "EnvironmentConfiguration")
+
+        if is_config:
+            changes = _diff_config(current, previous, name or "")
+        else:
+            fields = _DIFF_FIELDS.get(a.object_type, [])
+            changes = _diff_fields(current, previous, fields)
+
+            if a.object_type == "Ingress":
+                # Use pre-loaded host/path versions
+                for hv in host_versions_by_tx.get(a.object_tx_id, []):
+                    prev_hv = host_prev_by_id.get((hv.id, hv.transaction_id))
+                    if hv.operation_type == 0 or (
+                        hv.operation_type == 1 and not prev_hv
+                    ):
+                        changes.append({"type": "add", "text": f"host {hv.hostname}"})
+                    elif hv.operation_type == 2:
+                        changes.append(
+                            {"type": "remove", "text": f"host {hv.hostname}"}
+                        )
+                    elif prev_hv:
+                        for hf in ("tls_enabled", "is_auto_generated"):
+                            ov, nv = getattr(prev_hv, hf, None), getattr(hv, hf, None)
+                            if ov != nv:
+                                changes.append(
+                                    {
+                                        "type": "remove",
+                                        "text": f"{hv.hostname} {hf} {ov}",
+                                    }
+                                )
+                                changes.append(
+                                    {"type": "add", "text": f"{hv.hostname} {hf} {nv}"}
+                                )
+
+                for pv in path_versions_by_tx.get(a.object_tx_id, []):
+                    prev_pv = path_prev_by_id.get((pv.id, pv.transaction_id))
+                    if pv.operation_type == 0 or (
+                        pv.operation_type == 1 and not prev_pv
+                    ):
+                        changes.append(
+                            {
+                                "type": "add",
+                                "text": f"path {pv.path} → {pv.target_process_name}",
+                            }
+                        )
+                    elif pv.operation_type == 2:
+                        changes.append(
+                            {
+                                "type": "remove",
+                                "text": f"path {pv.path} → {pv.target_process_name}",
+                            }
+                        )
+                    elif prev_pv:
+                        for pf in ("path", "path_type", "target_process_name"):
+                            ov, nv = getattr(prev_pv, pf, None), getattr(pv, pf, None)
+                            if ov != nv:
+                                changes.append({"type": "remove", "text": f"{pf} {ov}"})
+                                changes.append({"type": "add", "text": f"{pf} {nv}"})
+
+            elif a.object_type == "Deployment":
+                rel_data = getattr(current, "release", None)
+                if isinstance(rel_data, dict) and rel_data.get("id"):
+                    rel_ver = release_version_map.get(str(rel_data["id"]))
+                    if rel_ver:
+                        changes.append({"type": "add", "text": f"release v{rel_ver}"})
+
+        # Skip no-op edits
+        if a.verb == "edit" and not is_creation and not changes:
+            continue
+
+        result[a.id] = {
+            "name": name,
+            "is_creation": is_creation,
+            "changes": changes,
+        }
+
+    return result
+
+
 def split_image_processes(image):
     """Split image.processes into (service_procs, release_cmds, postdeploy_cmds, job_procs).
 
@@ -536,3 +1088,4 @@ def split_image_processes(image):
     postdeploy_cmds = {k: v for k, v in all_procs.items() if k.startswith("postdeploy")}
     job_procs = {k: v for k, v in all_procs.items() if k.startswith("job")}
     return service_procs, release_cmds, postdeploy_cmds, job_procs
+

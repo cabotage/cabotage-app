@@ -2133,6 +2133,109 @@ a.pipeline-stage-body:hover {
   font-size: inherit;
 }
 
+/* Audit Log */
+.audit-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-color);
+  border-radius: var(--rounded-box, 0.5rem);
+  overflow: hidden;
+}
+.audit-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.8125rem;
+}
+.audit-row:last-child { border-bottom: none; }
+.audit-row-icon { flex-shrink: 0; padding-top: 0.125rem; }
+.audit-verb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: oklch(var(--bc) / 0.06);
+  color: oklch(var(--bc) / 0.4);
+}
+.audit-verb-create { background: rgba(34, 197, 94, 0.1); color: rgba(34, 197, 94, 0.7); }
+.audit-verb-edit { background: rgba(59, 130, 246, 0.1); color: rgba(59, 130, 246, 0.7); }
+.audit-verb-delete { background: rgba(239, 68, 68, 0.1); color: rgba(239, 68, 68, 0.7); }
+.audit-verb-deploy { background: rgba(124, 58, 237, 0.1); color: rgba(124, 58, 237, 0.7); }
+.audit-verb-complete { background: rgba(34, 197, 94, 0.1); color: rgba(34, 197, 94, 0.7); }
+.audit-row-body { flex: 1; min-width: 0; }
+.audit-row-primary {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+}
+.audit-actor {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+.audit-actor strong { font-weight: 600; }
+.audit-action {
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.25rem;
+  background: oklch(var(--bc) / 0.06);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: oklch(var(--bc) / 0.6);
+}
+.audit-object-type {
+  font-weight: 500;
+  color: oklch(var(--bc) / 0.5);
+}
+.audit-detail {
+  color: oklch(var(--bc) / 0.4);
+  font-size: 0.75rem;
+}
+.audit-detail-code {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  font-size: 0.75rem;
+  color: oklch(var(--a));
+  background: oklch(var(--a) / 0.06);
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.2rem;
+}
+.audit-row-time {
+  font-size: 0.6875rem;
+  color: oklch(var(--bc) / 0.3);
+  margin-top: 0.125rem;
+}
+.audit-diff {
+  margin: 0.375rem 0 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.375rem;
+  background: oklch(var(--bc) / 0.03);
+  border: 1px solid var(--border-color);
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  font-size: 0.75rem;
+  line-height: 1.6;
+  white-space: pre;
+  overflow-x: auto;
+  color: oklch(var(--bc) / 0.5);
+}
+.audit-diff-rm {
+  color: oklch(var(--bc) / 0.6);
+  background: rgba(239, 68, 68, 0.06);
+}
+.audit-diff-add {
+  color: oklch(var(--bc) / 0.6);
+  background: rgba(34, 197, 94, 0.06);
+}
+.audit-diff-field {
+  font-weight: 600;
+  color: oklch(var(--bc) / 0.45);
+}
+
 /* Expand Button */
 .expand-btn {
   display: inline-flex;
