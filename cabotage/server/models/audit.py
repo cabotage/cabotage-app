@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, Integer, DateTime
+from sqlalchemy import BigInteger, Column, String, Boolean, Integer, DateTime
 from sqlalchemy.dialects import postgresql
 
 from cabotage.server import Model
@@ -13,6 +13,10 @@ class AuditLog(Model):
     # Identity
     id = Column(Integer, primary_key=True)
     timestamp = Column(DateTime)
+
+    # Version lookup (for computing diffs from version tables)
+    object_tx_id = Column(BigInteger)
+    transaction_id = Column(BigInteger)
 
     # Event
     verb = Column(String)

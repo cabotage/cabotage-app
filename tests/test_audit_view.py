@@ -89,6 +89,8 @@ class TestAuditViewExists:
         expected = [
             "id",
             "timestamp",
+            "object_tx_id",
+            "transaction_id",
             "verb",
             "detail",
             "object_type",

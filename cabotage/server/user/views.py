@@ -3887,9 +3887,14 @@ def _render_audit_log(scope_filter, template_context):
         r[0] for r in type_q.with_entities(AuditLog.object_type).distinct() if r[0]
     )
 
+    from cabotage.server.audit_helpers import compute_audit_changes
+
+    entry_changes = compute_audit_changes(entries)
+
     return render_template(
         "user/audit_log.html",
         entries=entries,
+        entry_changes=entry_changes,
         has_newer=has_newer,
         has_older=has_older,
         newer_after=entries[0].id if entries and has_newer else None,

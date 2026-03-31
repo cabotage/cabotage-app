@@ -243,9 +243,25 @@
               </div>
             {% endif %}
 
+            {# What changed — field-level diffs #}
+            {% if entry_changes.get(e.id) %}
+              <div class="audit-diff">
+                {%- for ch in entry_changes[e.id] %}
+                {% if ch.old is not none and ch.new is not none %}
+                <span class="audit-diff-line"><span class="audit-diff-rm">- <span class="audit-diff-field">{{ ch.field }}:</span> {{ ch.old }}</span></span>
+                <span class="audit-diff-line"><span class="audit-diff-add">+ <span class="audit-diff-field">{{ ch.field }}:</span> {{ ch.new }}</span></span>
+                {% elif ch.old is not none %}
+                <span class="audit-diff-line"><span class="audit-diff-rm">- <span class="audit-diff-field">{{ ch.field }}:</span> {{ ch.old }}</span></span>
+                {% elif ch.new is not none %}
+                <span class="audit-diff-line"><span class="audit-diff-add">+ <span class="audit-diff-field">{{ ch.field }}:</span> {{ ch.new }}</span></span>
+                {% endif %}
+                {%- endfor %}
+              </div>
+            {% endif %}
+
             {% if e.timestamp %}
               <div class="audit-row-time">
-                <time data-timestamp="{{ e.timestamp|isoformat_utc }}">{{ e.timestamp|humanize }}</time>
+                <time data-timestamp="{{ e.timestamp|isoformat_utc }}">{{ e.timestamp|timeago }}</time>
                 {% if e.remote_addr %}
                   <span class="audit-remote-addr">{{ e.remote_addr }}</span>
                 {% endif %}
