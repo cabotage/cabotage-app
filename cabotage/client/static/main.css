@@ -147,7 +147,14 @@ html:not([data-theme-pref]) .theme-icon-system {
 }
 [data-topbar-left] {
   min-width: 0;
+  overflow: visible;
+}
+/* Truncate breadcrumb path without clipping dropdown menus */
+.resource-path {
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 /* Topbar Compact (scroll collapse) */
@@ -200,8 +207,7 @@ html:not([data-theme-pref]) .theme-icon-system {
 }
 .topbar-compact .topbar-inline-tabs {
   max-width: 100vw;
-  overflow-x: auto;
-  scrollbar-width: none;
+  overflow: visible;
   opacity: 1;
   pointer-events: auto;
 }
@@ -273,6 +279,16 @@ html:not([data-theme-pref]) .theme-icon-system {
   border-bottom: 1px solid var(--border-color);
   overflow: visible;
   flex-wrap: wrap;
+}
+/* Bridge the gap between dropdown trigger and menu so hover/focus isn't lost */
+.dropdown .dropdown-content::before {
+  content: '';
+  display: block;
+  position: absolute;
+  top: -12px;
+  left: 0;
+  right: 0;
+  height: 12px;
 }
 
 .tab-item {
