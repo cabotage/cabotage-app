@@ -7,7 +7,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-03-25T11:07:41.652785Z"
+exclude-newer = "2026-03-25T11:12:20.896292048Z"
 exclude-newer-span = "P1W"
 
 [[package]]
@@ -291,11 +291,11 @@ requires-dist = [
     { name = "flask-sqlalchemy" },
     { name = "gunicorn" },
     { name = "humanize" },
-    { name = "hvac", specifier = ">=2.3.0" },
+    { name = "hvac" },
     { name = "kubernetes", specifier = ">=30.1.0" },
     { name = "pathspec" },
     { name = "psycopg2-binary" },
-    { name = "py-consul", specifier = ">=1.5.1" },
+    { name = "py-consul" },
     { name = "pygithub", specifier = ">=1.59.1" },
     { name = "pyjwt" },
     { name = "python-dxf" },
@@ -974,14 +974,14 @@ wheels = [
 
 [[package]]
 name = "hvac"
-version = "2.3.0"
+version = "2.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/48/a4/c0b698a7250b7a5c2956427406560701862215c646e079a7907846608f44/hvac-2.3.0.tar.gz", hash = "sha256:1b85e3320e8642dd82f234db63253cda169a817589e823713dc5fca83119b1e2", size = 332660, upload-time = "2024-06-18T14:46:09.748Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e2/57/b46c397fb3842cfb02a44609aa834c887f38dd75f290c2fc5a34da4b2fee/hvac-2.4.0.tar.gz", hash = "sha256:e0056ad9064e7923e874e6769015b032580b639e29246f5ab1044f7959c1c7e0", size = 332543, upload-time = "2025-10-30T12:57:47.512Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0b/34/56facf52e2ea14ce640f434ccf00311af6f3a1df0019d4682ba28ea09948/hvac-2.3.0-py3-none-any.whl", hash = "sha256:a3afc5710760b6ee9b3571769df87a0333da45da05a5f9f963e1d3925a84be7d", size = 155860, upload-time = "2024-06-18T14:46:05.399Z" },
+    { url = "https://files.pythonhosted.org/packages/55/33/71e45a6bd6875f44a26f99da31c63b6840123e88bedf2c0b1ce429b8be12/hvac-2.4.0-py3-none-any.whl", hash = "sha256:008db5efd8c2f77bd37d2368ea5f713edceae1c65f11fd608393179478649e0f", size = 155921, upload-time = "2025-10-30T12:57:46.253Z" },
 ]
 
 [[package]]
@@ -1227,14 +1227,14 @@ wheels = [
 
 [[package]]
 name = "py-consul"
-version = "1.5.1"
+version = "1.7.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5b/c4/d66de91e91462490fa21a6a1e53ab631b41af17d7009060550f4622cc75d/py_consul-1.5.1.tar.gz", hash = "sha256:e67b81a84b7d4bae34297ecaf82e064dda3286aea784da43055ad44cef8418af", size = 33167, upload-time = "2024-05-23T13:59:12.422Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/97/93/86604f8fd9bbbfe60ea80a2d17d4dfb2fd3e32c7af736d789cf72587e1f6/py_consul-1.7.1.tar.gz", hash = "sha256:a0b3912a0af449e1cd09c4aa710e53d1149c5edb3512a1becbe6475ed395761a", size = 36436, upload-time = "2025-11-24T11:37:25.978Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/56/13/781eef6b5c5341d3fc3c1d62ff56ca66cbd01124dec85fd075a121dd251c/py_consul-1.5.1-py2.py3-none-any.whl", hash = "sha256:c48d420957d5b59db12ee9b506a20b01ee76d4ebe9cfb2c6fb8a0081a41c6bcf", size = 35228, upload-time = "2024-05-23T13:59:10.435Z" },
+    { url = "https://files.pythonhosted.org/packages/fb/c9/e8ed59e6d24c0972aa8be9e2a288ba096c7e7fc21739a296b624da7a4aa6/py_consul-1.7.1-py2.py3-none-any.whl", hash = "sha256:016fe49c65c68426e1c0353de2243865fd58e3c7a940413b6202c2becf3cfb04", size = 38736, upload-time = "2025-11-24T11:37:25.057Z" },
 ]
 
 [[package]]
