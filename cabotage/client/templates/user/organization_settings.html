@@ -206,12 +206,14 @@
           <p>Workspace: <strong>{{ slack_integration.team_name or slack_integration.team_id }}</strong></p>
           {% if slack_integration.default_channel_name %}
             <p>Default channel: <strong>#{{ slack_integration.default_channel_name }}</strong></p>
-          {% else %}
-            <p class="text-warning">No default channel configured.</p>
           {% endif %}
         </div>
 
-        <div class="mt-4 flex gap-2">
+        <div class="mt-3 flex gap-2">
+          <a href="{{ url_for('slack_oauth.connect', org_slug=organization.slug) }}" class="btn btn-outline btn-sm gap-2">
+            {{ icon('refresh-cw', 'w-4 h-4') }}
+            Reauthorize
+          </a>
           <form method="POST" action="{{ url_for('slack_oauth.disconnect', org_slug=organization.slug) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-error btn-outline btn-sm gap-2"
@@ -221,6 +223,52 @@
             </button>
           </form>
         </div>
+
+        <form method="POST" action="{{ url_for('slack_oauth.update_channel', org_slug=organization.slug) }}" class="mt-3" id="slack-channel-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="flex items-end gap-2">
+            <div class="form-control flex-1">
+              <label class="label">
+                <span class="label-text text-xs">Default Channel</span>
+                <span class="label-text-alt text-xs opacity-50">Only channels the bot has been invited to will appear</span>
+              </label>
+              <select name="channel_id" id="slack-channel-select" class="select select-bordered select-sm w-full" disabled
+                      onchange="this.form.channel_name.value = this.options[this.selectedIndex].dataset.name || ''">
+                <option value="">Loading channels...</option>
+              </select>
+              <input type="hidden" name="channel_name" value="">
+            </div>
+            <button type="submit" id="slack-channel-save" class="btn btn-primary btn-sm gap-1" disabled>
+              {{ icon('check', 'w-4 h-4') }}
+              Save
+            </button>
+          </div>
+        </form>
+        <script>
+          (function() {
+            const select = document.getElementById('slack-channel-select');
+            const saveBtn = document.getElementById('slack-channel-save');
+            const currentId = {{ slack_integration.default_channel_id | tojson }};
+            fetch({{ url_for('slack_oauth.list_channels', org_slug=organization.slug) | tojson }})
+              .then(r => r.json())
+              .then(data => {
+                select.innerHTML = '<option value="">No Default</option>';
+                (data.channels || []).forEach(ch => {
+                  const opt = document.createElement('option');
+                  opt.value = ch.id;
+                  opt.dataset.name = ch.name;
+                  opt.textContent = '#' + ch.name;
+                  if (ch.id === currentId) opt.selected = true;
+                  select.appendChild(opt);
+                });
+                select.disabled = false;
+                saveBtn.disabled = false;
+              })
+              .catch(() => {
+                select.innerHTML = '<option value="">Failed to load channels</option>';
+              });
+          })();
+        </script>
       {% else %}
         <p class="text-sm opacity-80 mb-4">Connect a Slack workspace to receive alert notifications in your channels.</p>
         <a href="{{ url_for('slack_oauth.connect', org_slug=organization.slug) }}" class="btn btn-primary btn-sm gap-2">
@@ -248,12 +296,14 @@
           <p>Server: <strong>{{ discord_integration.guild_name or discord_integration.guild_id }}</strong></p>
           {% if discord_integration.default_channel_name %}
             <p>Default channel: <strong>#{{ discord_integration.default_channel_name }}</strong></p>
-          {% else %}
-            <p class="text-warning">No default channel configured.</p>
           {% endif %}
         </div>
 
-        <div class="mt-4 flex gap-2">
+        <div class="mt-3 flex gap-2">
+          <a href="{{ url_for('discord_oauth.connect', org_slug=organization.slug) }}" class="btn btn-outline btn-sm gap-2">
+            {{ icon('refresh-cw', 'w-4 h-4') }}
+            Reauthorize
+          </a>
           <form method="POST" action="{{ url_for('discord_oauth.disconnect', org_slug=organization.slug) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-error btn-outline btn-sm gap-2"
@@ -263,6 +313,52 @@
             </button>
           </form>
         </div>
+
+        <form method="POST" action="{{ url_for('discord_oauth.update_channel', org_slug=organization.slug) }}" class="mt-3" id="discord-channel-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="flex items-end gap-2">
+            <div class="form-control flex-1">
+              <label class="label">
+                <span class="label-text text-xs">Default Channel</span>
+                <span class="label-text-alt text-xs opacity-50">Only channels the bot can access will appear</span>
+              </label>
+              <select name="channel_id" id="discord-channel-select" class="select select-bordered select-sm w-full" disabled
+                      onchange="this.form.channel_name.value = this.options[this.selectedIndex].dataset.name || ''">
+                <option value="">Loading channels...</option>
+              </select>
+              <input type="hidden" name="channel_name" value="">
+            </div>
+            <button type="submit" id="discord-channel-save" class="btn btn-primary btn-sm gap-1" disabled>
+              {{ icon('check', 'w-4 h-4') }}
+              Save
+            </button>
+          </div>
+        </form>
+        <script>
+          (function() {
+            const select = document.getElementById('discord-channel-select');
+            const saveBtn = document.getElementById('discord-channel-save');
+            const currentId = {{ discord_integration.default_channel_id | tojson }};
+            fetch({{ url_for('discord_oauth.list_channels', org_slug=organization.slug) | tojson }})
+              .then(r => r.json())
+              .then(data => {
+                select.innerHTML = '<option value="">No Default</option>';
+                (data.channels || []).forEach(ch => {
+                  const opt = document.createElement('option');
+                  opt.value = ch.id;
+                  opt.dataset.name = ch.name;
+                  opt.textContent = '#' + ch.name;
+                  if (ch.id === currentId) opt.selected = true;
+                  select.appendChild(opt);
+                });
+                select.disabled = false;
+                saveBtn.disabled = false;
+              })
+              .catch(() => {
+                select.innerHTML = '<option value="">Failed to load channels</option>';
+              });
+          })();
+        </script>
       {% else %}
         <p class="text-sm opacity-80 mb-4">Connect a Discord server to receive alert notifications in your channels.</p>
         <a href="{{ url_for('discord_oauth.connect', org_slug=organization.slug) }}" class="btn btn-primary btn-sm gap-2">

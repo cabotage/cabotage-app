@@ -211,9 +211,7 @@ class TestSlackCallback:
         )
         assert resp.status_code == 302
 
-        integration = SlackIntegration.query.filter_by(
-            organization_id=org.id
-        ).first()
+        integration = SlackIntegration.query.filter_by(organization_id=org.id).first()
         assert integration is not None
         assert integration.team_id == "T12345"
         assert integration.team_name == "Test Workspace"
@@ -241,17 +239,17 @@ class TestSlackCallback:
             sess["slack_oauth_state"] = state
             sess["slack_oauth_org_slug"] = org.slug
 
-        resp = client.get(
-            f"/integrations/slack/callback?state={state}&code=bad-code"
-        )
+        resp = client.get(f"/integrations/slack/callback?state={state}&code=bad-code")
         assert resp.status_code == 302
         assert SlackIntegration.query.filter_by(organization_id=org.id).first() is None
 
 
 class TestSlackDisconnect:
+    @patch("cabotage.server.integrations.slack_oauth._slack_leave_channel")
+    @patch("cabotage.server.integrations.slack_oauth._send_slack_message")
     @patch("cabotage.server.integrations.slack_oauth.vault")
     def test_disconnect_removes_integration(
-        self, mock_vault, client, admin_user, org
+        self, mock_vault, mock_send, mock_leave, client, admin_user, org
     ):
         mock_vault.vault_connection = MagicMock()
 
@@ -260,6 +258,8 @@ class TestSlackDisconnect:
             team_id="T12345",
             team_name="Test Workspace",
             access_token_vault_path="cabotage-secrets/integrations/slack/test",
+            default_channel_id="C001",
+            default_channel_name="alerts",
             installed_by_user_id=admin_user.id,
         )
         db.session.add(integration)
@@ -270,6 +270,9 @@ class TestSlackDisconnect:
         assert resp.status_code == 302
         assert SlackIntegration.query.filter_by(organization_id=org.id).first() is None
         mock_vault.vault_connection.delete.assert_called_once()
+        mock_send.assert_called_once()
+        assert "disconnected" in mock_send.call_args[0][2]
+        mock_leave.assert_called_once()
 
     def test_disconnect_requires_admin(self, client, non_admin_user, org):
         _login(client, non_admin_user)
@@ -278,7 +281,12 @@ class TestSlackDisconnect:
 
 
 class TestSlackUpdateChannel:
-    def test_update_channel(self, client, admin_user, org):
+    @patch("cabotage.server.integrations.slack_oauth._slack_leave_channel")
+    @patch("cabotage.server.integrations.slack_oauth._slack_join_channel")
+    @patch("cabotage.server.integrations.slack_oauth._send_slack_message")
+    def test_update_channel(
+        self, mock_send, mock_join, mock_leave, client, admin_user, org
+    ):
         integration = SlackIntegration(
             organization_id=org.id,
             team_id="T12345",
@@ -298,6 +306,42 @@ class TestSlackUpdateChannel:
         db.session.refresh(integration)
         assert integration.default_channel_id == "C99999"
         assert integration.default_channel_name == "alerts"
+        mock_send.assert_called_once()
+        assert "default notification channel" in mock_send.call_args[0][2]
+        mock_join.assert_called_once()
+        mock_leave.assert_not_called()
+
+    @patch("cabotage.server.integrations.slack_oauth._slack_leave_channel")
+    @patch("cabotage.server.integrations.slack_oauth._slack_join_channel")
+    @patch("cabotage.server.integrations.slack_oauth._send_slack_message")
+    def test_update_channel_sends_move_message(
+        self, mock_send, mock_join, mock_leave, client, admin_user, org
+    ):
+        integration = SlackIntegration(
+            organization_id=org.id,
+            team_id="T12345",
+            team_name="Test Workspace",
+            default_channel_id="C00001",
+            default_channel_name="old-channel",
+            installed_by_user_id=admin_user.id,
+        )
+        db.session.add(integration)
+        db.session.commit()
+
+        _login(client, admin_user)
+        resp = client.post(
+            f"/integrations/slack/channel/{org.slug}",
+            data={"channel_id": "C99999", "channel_name": "alerts"},
+        )
+        assert resp.status_code == 302
+        # Two messages: one to old channel (moved), one to new channel (delivered)
+        assert mock_send.call_count == 2
+        old_msg = mock_send.call_args_list[0][0][2]
+        new_msg = mock_send.call_args_list[1][0][2]
+        assert "moved" in old_msg
+        assert "default notification channel" in new_msg
+        mock_join.assert_called_once()
+        mock_leave.assert_called_once()
 
     def test_update_channel_no_integration(self, client, admin_user, org):
         _login(client, admin_user)
@@ -305,6 +349,53 @@ class TestSlackUpdateChannel:
             f"/integrations/slack/channel/{org.slug}",
             data={"channel_id": "C99999", "channel_name": "alerts"},
         )
+        assert resp.status_code == 302
+
+
+class TestSlackListChannels:
+    @patch("cabotage.server.integrations.slack_oauth.get_slack_channels")
+    def test_list_channels_returns_json(
+        self, mock_get_channels, client, admin_user, org
+    ):
+        integration = SlackIntegration(
+            organization_id=org.id,
+            team_id="T12345",
+            team_name="Test Workspace",
+            installed_by_user_id=admin_user.id,
+        )
+        db.session.add(integration)
+        db.session.commit()
+
+        mock_get_channels.return_value = [
+            {"id": "C001", "name": "general"},
+            {"id": "C002", "name": "alerts"},
+        ]
+
+        _login(client, admin_user)
+        resp = client.get(f"/integrations/slack/channels/{org.slug}")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert len(data["channels"]) == 2
+        assert data["channels"][0]["name"] == "general"
+        assert data["channels"][1]["id"] == "C002"
+
+    @patch("cabotage.server.integrations.slack_oauth.get_slack_channels")
+    def test_list_channels_empty_when_no_integration(
+        self, mock_get_channels, client, admin_user, org
+    ):
+        mock_get_channels.return_value = []
+        _login(client, admin_user)
+        resp = client.get(f"/integrations/slack/channels/{org.slug}")
+        assert resp.status_code == 200
+        assert resp.get_json()["channels"] == []
+
+    def test_list_channels_requires_admin(self, client, non_admin_user, org):
+        _login(client, non_admin_user)
+        resp = client.get(f"/integrations/slack/channels/{org.slug}")
+        assert resp.status_code == 403
+
+    def test_list_channels_requires_login(self, client, org):
+        resp = client.get(f"/integrations/slack/channels/{org.slug}")
         assert resp.status_code == 302
 
 
@@ -368,9 +459,7 @@ class TestDiscordCallback:
         )
         assert resp.status_code == 302
 
-        integration = DiscordIntegration.query.filter_by(
-            organization_id=org.id
-        ).first()
+        integration = DiscordIntegration.query.filter_by(organization_id=org.id).first()
         assert integration is not None
         assert integration.guild_id == "G12345"
         assert integration.guild_name == "Test Server"
@@ -395,13 +484,10 @@ class TestDiscordCallback:
             sess["discord_oauth_state"] = state
             sess["discord_oauth_org_slug"] = org.slug
 
-        resp = client.get(
-            f"/integrations/discord/callback?state={state}&code=bad-code"
-        )
+        resp = client.get(f"/integrations/discord/callback?state={state}&code=bad-code")
         assert resp.status_code == 302
         assert (
-            DiscordIntegration.query.filter_by(organization_id=org.id).first()
-            is None
+            DiscordIntegration.query.filter_by(organization_id=org.id).first() is None
         )
 
     @patch("cabotage.server.integrations.discord_oauth._fetch_guild_name")
@@ -431,20 +517,21 @@ class TestDiscordCallback:
         )
         assert resp.status_code == 302
 
-        integration = DiscordIntegration.query.filter_by(
-            organization_id=org.id
-        ).first()
+        integration = DiscordIntegration.query.filter_by(organization_id=org.id).first()
         assert integration is not None
         assert integration.guild_id == "G99999"
         assert integration.guild_name == "Fetched Server"
 
 
 class TestDiscordDisconnect:
-    def test_disconnect_removes_integration(self, client, admin_user, org):
+    @patch("cabotage.server.integrations.discord_oauth._send_discord_message")
+    def test_disconnect_removes_integration(self, mock_send, client, admin_user, org):
         integration = DiscordIntegration(
             organization_id=org.id,
             guild_id="G12345",
             guild_name="Test Server",
+            default_channel_id="C001",
+            default_channel_name="alerts",
             installed_by_user_id=admin_user.id,
         )
         db.session.add(integration)
@@ -454,9 +541,10 @@ class TestDiscordDisconnect:
         resp = client.post(f"/integrations/discord/disconnect/{org.slug}")
         assert resp.status_code == 302
         assert (
-            DiscordIntegration.query.filter_by(organization_id=org.id).first()
-            is None
+            DiscordIntegration.query.filter_by(organization_id=org.id).first() is None
         )
+        mock_send.assert_called_once()
+        assert "disconnected" in mock_send.call_args[0][1]
 
     def test_disconnect_requires_admin(self, client, non_admin_user, org):
         _login(client, non_admin_user)
@@ -465,7 +553,8 @@ class TestDiscordDisconnect:
 
 
 class TestDiscordUpdateChannel:
-    def test_update_channel(self, client, admin_user, org):
+    @patch("cabotage.server.integrations.discord_oauth._send_discord_message")
+    def test_update_channel(self, mock_send, client, admin_user, org):
         integration = DiscordIntegration(
             organization_id=org.id,
             guild_id="G12345",
@@ -485,3 +574,79 @@ class TestDiscordUpdateChannel:
         db.session.refresh(integration)
         assert integration.default_channel_id == "C99999"
         assert integration.default_channel_name == "alerts"
+        mock_send.assert_called_once()
+        assert "default notification channel" in mock_send.call_args[0][1]
+
+    @patch("cabotage.server.integrations.discord_oauth._send_discord_message")
+    def test_update_channel_sends_move_message(
+        self, mock_send, client, admin_user, org
+    ):
+        integration = DiscordIntegration(
+            organization_id=org.id,
+            guild_id="G12345",
+            guild_name="Test Server",
+            default_channel_id="C00001",
+            default_channel_name="old-channel",
+            installed_by_user_id=admin_user.id,
+        )
+        db.session.add(integration)
+        db.session.commit()
+
+        _login(client, admin_user)
+        resp = client.post(
+            f"/integrations/discord/channel/{org.slug}",
+            data={"channel_id": "C99999", "channel_name": "alerts"},
+        )
+        assert resp.status_code == 302
+        assert mock_send.call_count == 2
+        old_msg = mock_send.call_args_list[0][0][1]
+        new_msg = mock_send.call_args_list[1][0][1]
+        assert "moved" in old_msg
+        assert "default notification channel" in new_msg
+
+
+class TestDiscordListChannels:
+    @patch("cabotage.server.integrations.discord_oauth.get_discord_channels")
+    def test_list_channels_returns_json(
+        self, mock_get_channels, client, admin_user, org
+    ):
+        integration = DiscordIntegration(
+            organization_id=org.id,
+            guild_id="G12345",
+            guild_name="Test Server",
+            installed_by_user_id=admin_user.id,
+        )
+        db.session.add(integration)
+        db.session.commit()
+
+        mock_get_channels.return_value = [
+            {"id": "C001", "name": "general"},
+            {"id": "C002", "name": "alerts"},
+        ]
+
+        _login(client, admin_user)
+        resp = client.get(f"/integrations/discord/channels/{org.slug}")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert len(data["channels"]) == 2
+        assert data["channels"][0]["name"] == "general"
+        assert data["channels"][1]["id"] == "C002"
+
+    @patch("cabotage.server.integrations.discord_oauth.get_discord_channels")
+    def test_list_channels_empty_when_no_integration(
+        self, mock_get_channels, client, admin_user, org
+    ):
+        mock_get_channels.return_value = []
+        _login(client, admin_user)
+        resp = client.get(f"/integrations/discord/channels/{org.slug}")
+        assert resp.status_code == 200
+        assert resp.get_json()["channels"] == []
+
+    def test_list_channels_requires_admin(self, client, non_admin_user, org):
+        _login(client, non_admin_user)
+        resp = client.get(f"/integrations/discord/channels/{org.slug}")
+        assert resp.status_code == 403
+
+    def test_list_channels_requires_login(self, client, org):
+        resp = client.get(f"/integrations/discord/channels/{org.slug}")
+        assert resp.status_code == 302
