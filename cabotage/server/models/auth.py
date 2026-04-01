@@ -1,6 +1,5 @@
 import datetime
 
-from citext import CIText
 from flask_security.models.fsqla_v3 import (
     FsModels,
     FsRoleMixin,
@@ -192,7 +191,7 @@ class Organization(Model):
         primary_key=True,
     )
     name = db.Column(db.Text(), nullable=False)
-    slug = db.Column(CIText(), nullable=False, unique=True)
+    slug = db.Column(postgresql.CITEXT(), nullable=False, unique=True)
     k8s_identifier = db.Column(db.String(64), unique=True, nullable=False)
     deleted_at = db.Column(db.DateTime, nullable=True, index=True)
 

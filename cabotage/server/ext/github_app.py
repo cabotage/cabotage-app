@@ -63,7 +63,7 @@ class GitHubApp(object):
             payload = {
                 "iat": issued,
                 "exp": issued + 599,
-                "iss": self.app_id,
+                "iss": str(self.app_id),
             }
             self._bearer_token = jwt.encode(
                 payload, self.app_private_key_pem, algorithm="RS256"
