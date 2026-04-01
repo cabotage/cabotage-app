@@ -145,18 +145,18 @@ class Project(Model, Timestamp):
     )
     deleted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, index=True)
 
-    organization: Mapped["Organization"] = relationship(
+    organization: Mapped[Organization] = relationship(
         "Organization", back_populates="projects"
     )
 
     branch_deploy_base_environment: Mapped[Environment | None] = relationship(
         "Environment", foreign_keys=[branch_deploy_base_environment_id]
     )
-    project_applications: Mapped[list["Application"]] = relationship(
+    project_applications: Mapped[list[Application]] = relationship(
         back_populates="project",
         cascade="all, delete-orphan",
     )
-    project_environments: Mapped[list["Environment"]] = relationship(
+    project_environments: Mapped[list[Environment]] = relationship(
         back_populates="project",
         cascade="all, delete-orphan",
         order_by="Environment.sort_order",
@@ -214,7 +214,7 @@ class Environment(Model, Timestamp):
     )
     version_id: Mapped[int] = mapped_column(Integer)
 
-    project: Mapped["Project"] = relationship(
+    project: Mapped[Project] = relationship(
         back_populates="project_environments", foreign_keys=[project_id]
     )
     forked_from_environment: Mapped[Environment | None] = relationship(
@@ -222,11 +222,11 @@ class Environment(Model, Timestamp):
         remote_side="Environment.id",
         foreign_keys=[forked_from_environment_id],
     )
-    application_environments: Mapped[list["ApplicationEnvironment"]] = relationship(
+    application_environments: Mapped[list[ApplicationEnvironment]] = relationship(
         back_populates="environment",
         cascade="all, delete-orphan",
     )
-    environment_configurations: Mapped[list["EnvironmentConfiguration"]] = relationship(
+    environment_configurations: Mapped[list[EnvironmentConfiguration]] = relationship(
         back_populates="environment",
         cascade="all, delete-orphan",
         order_by="EnvironmentConfiguration.name",
@@ -291,39 +291,39 @@ class ApplicationEnvironment(Model, Timestamp):
     deleted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, index=True)
     version_id: Mapped[int] = mapped_column(Integer)
 
-    application: Mapped["Application"] = relationship(
+    application: Mapped[Application] = relationship(
         back_populates="application_environments"
     )
-    environment: Mapped["Environment"] = relationship(
+    environment: Mapped[Environment] = relationship(
         back_populates="application_environments"
     )
-    configurations: Mapped[list["Configuration"]] = relationship(
+    configurations: Mapped[list[Configuration]] = relationship(
         back_populates="application_environment",
         foreign_keys="Configuration.application_environment_id",
         order_by="Configuration.name",
     )
-    environment_config_subscriptions: Mapped[list["EnvironmentConfigSubscription"]] = (
+    environment_config_subscriptions: Mapped[list[EnvironmentConfigSubscription]] = (
         relationship(
             back_populates="application_environment",
             cascade="all, delete-orphan",
         )
     )
-    images: DynamicMapped["Image"] = relationship(
+    images: DynamicMapped[Image] = relationship(
         back_populates="application_environment",
         foreign_keys="Image.application_environment_id",
         lazy="dynamic",
     )
-    releases: DynamicMapped["Release"] = relationship(
+    releases: DynamicMapped[Release] = relationship(
         back_populates="application_environment",
         foreign_keys="Release.application_environment_id",
         lazy="dynamic",
     )
-    deployments: DynamicMapped["Deployment"] = relationship(
+    deployments: DynamicMapped[Deployment] = relationship(
         back_populates="application_environment",
         foreign_keys="Deployment.application_environment_id",
         lazy="dynamic",
     )
-    ingresses: Mapped[list["Ingress"]] = relationship(
+    ingresses: Mapped[list[Ingress]] = relationship(
         back_populates="application_environment",
         foreign_keys="Ingress.application_environment_id",
         cascade="all, delete-orphan",
@@ -475,28 +475,28 @@ class Application(Model, Timestamp):
     )
     deleted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, index=True)
 
-    project: Mapped["Project"] = relationship(back_populates="project_applications")
-    images: DynamicMapped["Image"] = relationship(
+    project: Mapped[Project] = relationship(back_populates="project_applications")
+    images: DynamicMapped[Image] = relationship(
         back_populates="application",
         cascade="all, delete-orphan",
         lazy="dynamic",
     )
-    configurations: Mapped[list["Configuration"]] = relationship(
+    configurations: Mapped[list[Configuration]] = relationship(
         back_populates="application",
         cascade="all, delete-orphan",
         order_by="Configuration.name",
     )
-    releases: DynamicMapped["Release"] = relationship(
+    releases: DynamicMapped[Release] = relationship(
         back_populates="application",
         cascade="all, delete-orphan",
         lazy="dynamic",
     )
-    deployments: DynamicMapped["Deployment"] = relationship(
+    deployments: DynamicMapped[Deployment] = relationship(
         back_populates="application",
         cascade="all, delete-orphan",
         lazy="dynamic",
     )
-    application_environments: Mapped[list["ApplicationEnvironment"]] = relationship(
+    application_environments: Mapped[list[ApplicationEnvironment]] = relationship(
         back_populates="application",
         cascade="all, delete-orphan",
     )
@@ -710,8 +710,8 @@ class Deployment(Model, Timestamp):
     deploy_log: Mapped[str | None] = mapped_column(Text())
     job_id: Mapped[str | None] = mapped_column(String(64))
 
-    application: Mapped["Application"] = relationship(back_populates="deployments")
-    application_environment: Mapped["ApplicationEnvironment"] = relationship(
+    application: Mapped[Application] = relationship(back_populates="deployments")
+    application_environment: Mapped[ApplicationEnvironment] = relationship(
         back_populates="deployments", foreign_keys=[application_environment_id]
     )
 
@@ -775,10 +775,10 @@ class JobLog(Model, Timestamp):
         ),
     )
 
-    application: Mapped["Application"] = relationship(
+    application: Mapped[Application] = relationship(
         backref=backref("job_logs", lazy="dynamic"),
     )
-    application_environment: Mapped["ApplicationEnvironment"] = relationship(
+    application_environment: Mapped[ApplicationEnvironment] = relationship(
         backref=backref("job_logs", lazy="dynamic"),
     )
 
@@ -841,8 +841,8 @@ class Release(Model, Timestamp):
         server_default=None,
     )
 
-    application: Mapped["Application"] = relationship(back_populates="releases")
-    application_environment: Mapped["ApplicationEnvironment"] = relationship(
+    application: Mapped[Application] = relationship(back_populates="releases")
+    application_environment: Mapped[ApplicationEnvironment] = relationship(
         back_populates="releases", foreign_keys=[application_environment_id]
     )
 
@@ -1130,8 +1130,8 @@ class Configuration(Model, Timestamp):
     secret: Mapped[bool] = mapped_column(Boolean, default=False)
     buildtime: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    application: Mapped["Application"] = relationship(back_populates="configurations")
-    application_environment: Mapped["ApplicationEnvironment"] = relationship(
+    application: Mapped[Application] = relationship(back_populates="configurations")
+    application_environment: Mapped[ApplicationEnvironment] = relationship(
         back_populates="configurations", foreign_keys=[application_environment_id]
     )
 
@@ -1227,10 +1227,10 @@ class EnvironmentConfiguration(Model, Timestamp):
     secret: Mapped[bool] = mapped_column(Boolean, default=False)
     buildtime: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    environment: Mapped["Environment"] = relationship(
+    environment: Mapped[Environment] = relationship(
         back_populates="environment_configurations"
     )
-    subscriptions: Mapped[list["EnvironmentConfigSubscription"]] = relationship(
+    subscriptions: Mapped[list[EnvironmentConfigSubscription]] = relationship(
         back_populates="environment_configuration",
         cascade="all, delete-orphan",
     )
@@ -1303,10 +1303,10 @@ class EnvironmentConfigSubscription(Model, Timestamp):
         index=True,
     )
 
-    application_environment: Mapped["ApplicationEnvironment"] = relationship(
+    application_environment: Mapped[ApplicationEnvironment] = relationship(
         back_populates="environment_config_subscriptions"
     )
-    environment_configuration: Mapped["EnvironmentConfiguration"] = relationship(
+    environment_configuration: Mapped[EnvironmentConfiguration] = relationship(
         back_populates="subscriptions"
     )
 
@@ -1361,8 +1361,8 @@ class Image(Model, Timestamp):
         index=True,
     )
 
-    application: Mapped["Application"] = relationship(back_populates="images")
-    application_environment: Mapped["ApplicationEnvironment"] = relationship(
+    application: Mapped[Application] = relationship(back_populates="images")
+    application_environment: Mapped[ApplicationEnvironment] = relationship(
         back_populates="images", foreign_keys=[application_environment_id]
     )
 
@@ -1530,15 +1530,15 @@ class Ingress(Model, Timestamp):
     tailscale_tags: Mapped[str | None] = mapped_column(String(512))
     version_id: Mapped[int] = mapped_column(Integer)
 
-    application_environment: Mapped["ApplicationEnvironment"] = relationship(
+    application_environment: Mapped[ApplicationEnvironment] = relationship(
         back_populates="ingresses", foreign_keys=[application_environment_id]
     )
-    hosts: Mapped[list["IngressHost"]] = relationship(
+    hosts: Mapped[list[IngressHost]] = relationship(
         backref="ingress",
         cascade="all, delete-orphan",
         order_by="IngressHost.hostname",
     )
-    paths: Mapped[list["IngressPath"]] = relationship(
+    paths: Mapped[list[IngressPath]] = relationship(
         backref="ingress",
         cascade="all, delete-orphan",
         order_by="IngressPath.path",
