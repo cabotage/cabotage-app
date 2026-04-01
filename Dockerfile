@@ -46,14 +46,17 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-install-project --no-editable \
     $(if [ "$DEVEL" != "yes" ]; then echo '--no-dev'; fi)
 
-COPY . /opt/cabotage-app/src/
-
 # Build and minify static assets for production
 COPY --from=oven/bun:1-slim /usr/local/bin/bun /usr/local/bin/bun
+COPY package.json bun.lock /opt/cabotage-app/src/
+COPY cabotage/ /opt/cabotage-app/src/cabotage/
 RUN if [ "$DEVEL" != "yes" ]; then \
     cd /opt/cabotage-app/src && \
     bun install --frozen-lockfile && \
     bun run build && \
     rm -rf node_modules; \
     fi
+
+COPY migrations/ /opt/cabotage-app/src/migrations/
+COPY gunicorn.conf.py /opt/cabotage-app/src/
 
