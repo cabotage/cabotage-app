@@ -1,6 +1,6 @@
 import uuid
 
-from flask_security.forms import ConfirmRegisterForm, LoginForm, RegisterForm
+from flask_security.forms import LoginForm, RegisterFormV2
 
 from flask_wtf import FlaskForm
 
@@ -37,21 +37,7 @@ class ExtendedLoginForm(LoginForm):
     email = StringField("Username or Email Address", [InputRequired()])
 
 
-class ExtendedRegisterForm(RegisterForm):
-    username = StringField(
-        "Username",
-        validators=[
-            InputRequired(),
-            Length(min=1, max=64),
-            Regexp(
-                r"^[^:]+$",
-                message="Usernames cannot contain colons.",
-            ),
-        ],
-    )
-
-
-class ExtendedConfirmRegisterForm(ConfirmRegisterForm):
+class ExtendedRegisterForm(RegisterFormV2):
     username = StringField(
         "Username",
         validators=[
