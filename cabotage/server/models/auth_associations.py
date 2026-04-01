@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import uuid
 from typing import TYPE_CHECKING
 
@@ -24,8 +26,8 @@ class OrganizationMember(Model):
     )
     admin: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    user: Mapped["User"] = relationship(back_populates="organizations")
-    organization: Mapped["Organization"] = relationship(back_populates="members")
+    user: Mapped[User] = relationship(back_populates="organizations")
+    organization: Mapped[Organization] = relationship(back_populates="members")
 
 
 class OrganizationTeam(Model):
@@ -40,8 +42,8 @@ class OrganizationTeam(Model):
         postgresql.UUID(as_uuid=True), ForeignKey("teams.id"), primary_key=True
     )
 
-    organization: Mapped["Organization"] = relationship(back_populates="teams")
-    team: Mapped["Team"] = relationship(back_populates="organizations")
+    organization: Mapped[Organization] = relationship(back_populates="teams")
+    team: Mapped[Team] = relationship(back_populates="organizations")
 
 
 class TeamMember(Model):
@@ -55,5 +57,5 @@ class TeamMember(Model):
     )
     admin: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    user: Mapped["User"] = relationship(back_populates="teams")
-    team: Mapped["Team"] = relationship(back_populates="members")
+    user: Mapped[User] = relationship(back_populates="teams")
+    team: Mapped[Team] = relationship(back_populates="members")
