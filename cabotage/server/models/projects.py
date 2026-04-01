@@ -1,7 +1,12 @@
+from __future__ import annotations
+
 import datetime
 import json
 import uuid
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from cabotage.server.models.auth import Organization
 
 from flask import current_app
 from sqlalchemy import (
@@ -18,7 +23,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.event import listens_for
-from sqlalchemy.orm import Mapped, mapped_column, relationship, backref
+from sqlalchemy.orm import DynamicMapped, Mapped, mapped_column, relationship, backref
 from sqlalchemy_continuum import make_versioned
 from sqlalchemy_continuum.plugins import FlaskPlugin
 from sqlalchemy_utils.models import Timestamp
@@ -142,15 +147,19 @@ class Project(Model, Timestamp):
         DateTime, index=True
     )
 
+    organization: Mapped["Organization"] = relationship(
+        "Organization", back_populates="projects"
+    )
+
     branch_deploy_base_environment: Mapped[Optional["Environment"]] = relationship(
         "Environment", foreign_keys=[branch_deploy_base_environment_id]
     )
     project_applications: Mapped[list["Application"]] = relationship(
-        backref="project",
+        back_populates="project",
         cascade="all, delete-orphan",
     )
     project_environments: Mapped[list["Environment"]] = relationship(
-        backref="project",
+        back_populates="project",
         cascade="all, delete-orphan",
         order_by="Environment.sort_order",
         foreign_keys="Environment.project_id",
@@ -209,17 +218,20 @@ class Environment(Model, Timestamp):
     )
     version_id: Mapped[int] = mapped_column(Integer)
 
+    project: Mapped["Project"] = relationship(
+        back_populates="project_environments", foreign_keys=[project_id]
+    )
     forked_from_environment: Mapped[Optional["Environment"]] = relationship(
         "Environment",
         remote_side="Environment.id",
         foreign_keys=[forked_from_environment_id],
     )
     application_environments: Mapped[list["ApplicationEnvironment"]] = relationship(
-        backref="environment",
+        back_populates="environment",
         cascade="all, delete-orphan",
     )
     environment_configurations: Mapped[list["EnvironmentConfiguration"]] = relationship(
-        backref="environment",
+        back_populates="environment",
         cascade="all, delete-orphan",
         order_by="EnvironmentConfiguration.name",
     )
@@ -285,34 +297,40 @@ class ApplicationEnvironment(Model, Timestamp):
     )
     version_id: Mapped[int] = mapped_column(Integer)
 
+    application: Mapped["Application"] = relationship(
+        back_populates="application_environments"
+    )
+    environment: Mapped["Environment"] = relationship(
+        back_populates="application_environments"
+    )
     configurations: Mapped[list["Configuration"]] = relationship(
-        backref="application_environment",
+        back_populates="application_environment",
         foreign_keys="Configuration.application_environment_id",
         order_by="Configuration.name",
     )
     environment_config_subscriptions: Mapped[list["EnvironmentConfigSubscription"]] = (
         relationship(
-            backref="application_environment",
+            back_populates="application_environment",
             cascade="all, delete-orphan",
         )
     )
-    images: Mapped[list["Image"]] = relationship(
-        backref="application_environment",
+    images: DynamicMapped["Image"] = relationship(
+        back_populates="application_environment",
         foreign_keys="Image.application_environment_id",
         lazy="dynamic",
     )
-    releases: Mapped[list["Release"]] = relationship(
-        backref="application_environment",
+    releases: DynamicMapped["Release"] = relationship(
+        back_populates="application_environment",
         foreign_keys="Release.application_environment_id",
         lazy="dynamic",
     )
-    deployments: Mapped[list["Deployment"]] = relationship(
-        backref="application_environment",
+    deployments: DynamicMapped["Deployment"] = relationship(
+        back_populates="application_environment",
         foreign_keys="Deployment.application_environment_id",
         lazy="dynamic",
     )
     ingresses: Mapped[list["Ingress"]] = relationship(
-        backref="application_environment",
+        back_populates="application_environment",
         foreign_keys="Ingress.application_environment_id",
         cascade="all, delete-orphan",
     )
@@ -465,28 +483,29 @@ class Application(Model, Timestamp):
         DateTime, index=True
     )
 
-    images: Mapped[list["Image"]] = relationship(
-        backref="application",
+    project: Mapped["Project"] = relationship(back_populates="project_applications")
+    images: DynamicMapped["Image"] = relationship(
+        back_populates="application",
         cascade="all, delete-orphan",
         lazy="dynamic",
     )
     configurations: Mapped[list["Configuration"]] = relationship(
-        backref="application",
+        back_populates="application",
         cascade="all, delete-orphan",
         order_by="Configuration.name",
     )
-    releases: Mapped[list["Release"]] = relationship(
-        backref="application",
+    releases: DynamicMapped["Release"] = relationship(
+        back_populates="application",
         cascade="all, delete-orphan",
         lazy="dynamic",
     )
-    deployments: Mapped[list["Deployment"]] = relationship(
-        backref="application",
+    deployments: DynamicMapped["Deployment"] = relationship(
+        back_populates="application",
         cascade="all, delete-orphan",
         lazy="dynamic",
     )
     application_environments: Mapped[list["ApplicationEnvironment"]] = relationship(
-        backref="application",
+        back_populates="application",
         cascade="all, delete-orphan",
     )
 
@@ -699,6 +718,11 @@ class Deployment(Model, Timestamp):
     deploy_log: Mapped[Optional[str]] = mapped_column(Text())
     job_id: Mapped[Optional[str]] = mapped_column(String(64))
 
+    application: Mapped["Application"] = relationship(back_populates="deployments")
+    application_environment: Mapped["ApplicationEnvironment"] = relationship(
+        back_populates="deployments", foreign_keys=[application_environment_id]
+    )
+
     __mapper_args__ = {"version_id_col": version_id}
 
     @property
@@ -823,6 +847,11 @@ class Release(Model, Timestamp):
     health_check_host: Mapped[Optional[str]] = mapped_column(
         String(256),
         server_default=None,
+    )
+
+    application: Mapped["Application"] = relationship(back_populates="releases")
+    application_environment: Mapped["ApplicationEnvironment"] = relationship(
+        back_populates="releases", foreign_keys=[application_environment_id]
     )
 
     __mapper_args__ = {"version_id_col": version_id}
@@ -1109,6 +1138,11 @@ class Configuration(Model, Timestamp):
     secret: Mapped[bool] = mapped_column(Boolean, default=False)
     buildtime: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    application: Mapped["Application"] = relationship(back_populates="configurations")
+    application_environment: Mapped["ApplicationEnvironment"] = relationship(
+        back_populates="configurations", foreign_keys=[application_environment_id]
+    )
+
     __table_args__ = (
         UniqueConstraint(
             application_id,
@@ -1201,8 +1235,11 @@ class EnvironmentConfiguration(Model, Timestamp):
     secret: Mapped[bool] = mapped_column(Boolean, default=False)
     buildtime: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    environment: Mapped["Environment"] = relationship(
+        back_populates="environment_configurations"
+    )
     subscriptions: Mapped[list["EnvironmentConfigSubscription"]] = relationship(
-        backref="environment_configuration",
+        back_populates="environment_configuration",
         cascade="all, delete-orphan",
     )
 
@@ -1274,6 +1311,13 @@ class EnvironmentConfigSubscription(Model, Timestamp):
         index=True,
     )
 
+    application_environment: Mapped["ApplicationEnvironment"] = relationship(
+        back_populates="environment_config_subscriptions"
+    )
+    environment_configuration: Mapped["EnvironmentConfiguration"] = relationship(
+        back_populates="subscriptions"
+    )
+
     __table_args__ = (
         UniqueConstraint(
             application_environment_id,
@@ -1323,6 +1367,11 @@ class Image(Model, Timestamp):
         postgresql.UUID(as_uuid=True),
         ForeignKey("application_environments.id"),
         index=True,
+    )
+
+    application: Mapped["Application"] = relationship(back_populates="images")
+    application_environment: Mapped["ApplicationEnvironment"] = relationship(
+        back_populates="images", foreign_keys=[application_environment_id]
     )
 
     _repository_name: Mapped[str] = mapped_column(
@@ -1489,6 +1538,9 @@ class Ingress(Model, Timestamp):
     tailscale_tags: Mapped[Optional[str]] = mapped_column(String(512))
     version_id: Mapped[int] = mapped_column(Integer)
 
+    application_environment: Mapped["ApplicationEnvironment"] = relationship(
+        back_populates="ingresses", foreign_keys=[application_environment_id]
+    )
     hosts: Mapped[list["IngressHost"]] = relationship(
         backref="ingress",
         cascade="all, delete-orphan",
