@@ -208,7 +208,7 @@ class Organization(Model):
         back_populates="organization"
     )
 
-    projects: Mapped[list["Project"]] = relationship(backref="organization")
+    projects: Mapped[list["Project"]] = relationship(back_populates="organization")
 
     @property
     def active_projects(self):
