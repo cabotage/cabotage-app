@@ -328,6 +328,7 @@ class ApplicationEnvironment(Model, Timestamp):
         foreign_keys="Ingress.application_environment_id",
         cascade="all, delete-orphan",
     )
+    alerts: Mapped[list[Alert]] = relationship(back_populates="application_environment")
 
     __table_args__ = (
         Index(
@@ -500,6 +501,7 @@ class Application(Model, Timestamp):
         back_populates="application",
         cascade="all, delete-orphan",
     )
+    alerts: Mapped[list[Alert]] = relationship(back_populates="application")
 
     @property
     def active_application_environments(self):
@@ -1848,85 +1850,52 @@ class Alert(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "alerts"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    fingerprint = db.Column(
-        db.String(256),
-        nullable=False,
-        index=True,
+    fingerprint: Mapped[str] = mapped_column(String(256), index=True)
+    status: Mapped[str] = mapped_column(String(32))
+    alertname: Mapped[str] = mapped_column(String(256), index=True)
+    labels: Mapped[Any] = mapped_column(postgresql.JSONB())
+    annotations: Mapped[Any] = mapped_column(
+        postgresql.JSONB(), server_default=text("'{}'::jsonb")
     )
-    status = db.Column(
-        db.String(32),
-        nullable=False,
-    )
-    alertname = db.Column(
-        db.String(256),
-        nullable=False,
-        index=True,
-    )
-    labels = db.Column(
-        postgresql.JSONB(),
-        nullable=False,
-    )
-    annotations = db.Column(
-        postgresql.JSONB(),
-        nullable=False,
-        server_default=text("'{}'::jsonb"),
-    )
-    starts_at = db.Column(
-        db.DateTime,
-        nullable=False,
-        index=True,
-    )
-    ends_at = db.Column(
-        db.DateTime,
-        nullable=True,
-    )
-    generator_url = db.Column(
-        db.Text(),
-        nullable=True,
-    )
-    group_key = db.Column(
-        db.Text(),
-        nullable=True,
-    )
-    receiver = db.Column(
-        db.String(256),
-        nullable=True,
-    )
-    application_id = db.Column(
+    starts_at: Mapped[datetime.datetime] = mapped_column(DateTime, index=True)
+    ends_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    generator_url: Mapped[str | None] = mapped_column(Text())
+    group_key: Mapped[str | None] = mapped_column(Text())
+    receiver: Mapped[str | None] = mapped_column(String(256))
+    application_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("project_applications.id"),
-        nullable=True,
+        ForeignKey("project_applications.id"),
         index=True,
     )
-    application_environment_id = db.Column(
+    application_environment_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("application_environments.id"),
-        nullable=True,
+        ForeignKey("application_environments.id"),
         index=True,
     )
-    version_id = db.Column(db.Integer, nullable=False)
+    version_id: Mapped[int] = mapped_column(Integer)
 
-    application = db.relationship("Application", backref="alerts")
-    application_environment = db.relationship(
-        "ApplicationEnvironment", backref="alerts"
+    application: Mapped[Application | None] = relationship(
+        back_populates="alerts",
+    )
+    application_environment: Mapped[ApplicationEnvironment | None] = relationship(
+        back_populates="alerts",
     )
 
     __table_args__ = (
-        db.Index(
+        Index(
             "ix_alerts_fingerprint_status",
-            fingerprint,
-            status,
+            "fingerprint",
+            "status",
         ),
-        db.Index(
+        Index(
             "ix_alerts_fingerprint_starts_at",
-            fingerprint,
-            starts_at,
+            "fingerprint",
+            "starts_at",
             unique=True,
         ),
     )
