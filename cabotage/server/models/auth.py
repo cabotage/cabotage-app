@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import datetime
 import uuid
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from flask_security.models.fsqla_v3 import (
     FsModels,
@@ -50,8 +52,8 @@ class Role(Model, FsRoleMixin):
         server_default=text("gen_random_uuid()"),
         primary_key=True,
     )
-    name: Mapped[Optional[str]] = mapped_column(String(80), unique=True)
-    description: Mapped[Optional[str]] = mapped_column(String(255))
+    name: Mapped[str | None] = mapped_column(String(80), unique=True)
+    description: Mapped[str | None] = mapped_column(String(255))
 
     def __str__(self):
         return self.name
@@ -117,7 +119,7 @@ class GitHubIdentity(Model):
     )
     github_id: Mapped[int] = mapped_column(BigInteger, unique=True)
     github_username: Mapped[str] = mapped_column(String(255))
-    github_access_token: Mapped[Optional[str]] = mapped_column(String(255))
+    github_access_token: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, default=datetime.datetime.now
     )
@@ -156,11 +158,11 @@ class TailscaleIntegration(Model):
         index=True,
     )
     client_id: Mapped[str] = mapped_column(String(255))
-    client_secret_vault_path: Mapped[Optional[str]] = mapped_column(String(512))
-    tailnet: Mapped[Optional[str]] = mapped_column(String(255))
-    default_tags: Mapped[Optional[str]] = mapped_column(String(512))
+    client_secret_vault_path: Mapped[str | None] = mapped_column(String(512))
+    tailnet: Mapped[str | None] = mapped_column(String(255))
+    default_tags: Mapped[str | None] = mapped_column(String(512))
     operator_state: Mapped[str] = mapped_column(String(32), default="pending")
-    operator_version: Mapped[Optional[str]] = mapped_column(String(64))
+    operator_version: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, default=datetime.datetime.now
     )
@@ -197,9 +199,7 @@ class Organization(Model):
     name: Mapped[str] = mapped_column(Text())
     slug: Mapped[str] = mapped_column(postgresql.CITEXT(), unique=True)
     k8s_identifier: Mapped[str] = mapped_column(String(64), unique=True)
-    deleted_at: Mapped[Optional[datetime.datetime]] = mapped_column(
-        DateTime, index=True
-    )
+    deleted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, index=True)
 
     members: Mapped[list["OrganizationMember"]] = relationship(
         back_populates="organization"
