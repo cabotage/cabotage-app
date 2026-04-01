@@ -613,9 +613,7 @@ def build_release_buildkit(release):
                         "done\n"
                         f'buildctl --addr={sock_addr} "$@"\n'
                     )
-                os.chmod(
-                    wrapper, 0o755
-                )  # nosec B103 — wrapper script must be executable
+                os.chmod(wrapper, 0o755)  # nosec B103 — wrapper script must be executable
                 buildctl_command = [wrapper]
 
                 try:
@@ -1096,9 +1094,7 @@ def build_image_buildkit(image=None):
                         "done\n"
                         f'buildctl --addr={sock_addr} "$@"\n'
                     )
-                os.chmod(
-                    wrapper, 0o755
-                )  # nosec B103 — wrapper script must be executable
+                os.chmod(wrapper, 0o755)  # nosec B103 — wrapper script must be executable
                 buildctl_command = [wrapper]
 
                 try:

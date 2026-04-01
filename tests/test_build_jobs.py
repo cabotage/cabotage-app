@@ -211,13 +211,13 @@ class TestBuildJobNamespace:
         _run_release_build(release, mock_core, mock_run_job)
 
         for c in mock_core.create_namespaced_config_map.call_args_list:
-            assert (
-                c[0][0] == "cabotage-tenant-builds"
-            ), f"configmap created in wrong ns: {c}"
+            assert c[0][0] == "cabotage-tenant-builds", (
+                f"configmap created in wrong ns: {c}"
+            )
         for c in mock_core.create_namespaced_secret.call_args_list:
-            assert (
-                c[0][0] == "cabotage-tenant-builds"
-            ), f"secret created in wrong ns: {c}"
+            assert c[0][0] == "cabotage-tenant-builds", (
+                f"secret created in wrong ns: {c}"
+            )
 
     def test_release_build_cleans_up_in_tenant_namespace(self, mock_app):
         release = _make_release(org_k8s="myorg", env_k8s="prod")
@@ -227,13 +227,13 @@ class TestBuildJobNamespace:
         _run_release_build(release, mock_core, mock_run_job)
 
         for c in mock_core.delete_namespaced_secret.call_args_list:
-            assert (
-                c[0][1] == "cabotage-tenant-builds"
-            ), f"secret deleted in wrong ns: {c}"
+            assert c[0][1] == "cabotage-tenant-builds", (
+                f"secret deleted in wrong ns: {c}"
+            )
         for c in mock_core.delete_namespaced_config_map.call_args_list:
-            assert (
-                c[0][1] == "cabotage-tenant-builds"
-            ), f"configmap deleted in wrong ns: {c}"
+            assert c[0][1] == "cabotage-tenant-builds", (
+                f"configmap deleted in wrong ns: {c}"
+            )
 
     def test_image_build_runs_in_tenant_namespace(self, mock_app):
         image = _make_image(org_k8s="myorg", env_k8s="staging")
@@ -253,13 +253,13 @@ class TestBuildJobNamespace:
         _run_image_build(image, mock_core, mock_run_job)
 
         for c in mock_core.delete_namespaced_secret.call_args_list:
-            assert (
-                c[0][1] == "cabotage-tenant-builds"
-            ), f"secret deleted in wrong ns: {c}"
+            assert c[0][1] == "cabotage-tenant-builds", (
+                f"secret deleted in wrong ns: {c}"
+            )
         for c in mock_core.delete_namespaced_config_map.call_args_list:
-            assert (
-                c[0][1] == "cabotage-tenant-builds"
-            ), f"configmap deleted in wrong ns: {c}"
+            assert c[0][1] == "cabotage-tenant-builds", (
+                f"configmap deleted in wrong ns: {c}"
+            )
 
     def test_legacy_app_uses_tenant_builds_namespace(self, mock_app):
         release = _make_release(org_k8s="myorg", env_enabled=False)

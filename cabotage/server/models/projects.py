@@ -934,7 +934,7 @@ class Release(Model, Timestamp):
         reasons = []
         if self.image_object is None:
             reasons.append(
-                f'<code>Image {self.image["repository"]}:{self.image["tag"]} '
+                f"<code>Image {self.image['repository']}:{self.image['tag']} "
                 "no longer exists!</code>"
             )
         for configuration, configuration_serialized in self.configuration.items():
@@ -1021,13 +1021,13 @@ class Release(Model, Timestamp):
                     statements.append(stmt)
         environment_statements = "\n".join(statements)
 
-        exec_statement = "exec {\n" '  command = "/bin/sh"\n'
+        exec_statement = 'exec {\n  command = "/bin/sh"\n'
         if not self.application.privileged:
             exec_statement += "  env = {\n"
             if resolved_template_env:
                 exec_statement += f"    custom = {json.dumps(resolved_template_env)}\n"
             exec_statement += (
-                '    denylist = ["CONSUL_*", "VAULT_*", "KUBERNETES_*"]\n' "  }\n"
+                '    denylist = ["CONSUL_*", "VAULT_*", "KUBERNETES_*"]\n  }\n'
             )
         exec_statement += "}"
         configurations["shell"] = "\n".join([exec_statement, environment_statements])
@@ -1035,7 +1035,7 @@ class Release(Model, Timestamp):
             proc_env = [f"{key}={value}" for key, value in proc["env"]]
             proc_env.extend(resolved_template_env)
             custom_env = json.dumps(proc_env)
-            exec_statement = "exec {\n" f'  command = {json.dumps(proc["cmd"])}\n'
+            exec_statement = f"exec {{\n  command = {json.dumps(proc['cmd'])}\n"
             if not self.application.privileged:
                 exec_statement += (
                     "  env = {\n"
@@ -1247,7 +1247,7 @@ class Configuration(Model, Timestamp):
             return None
         directive = "secret" if self.secret else "prefix"
         path = self.key_slug.split(":", 1)[1]
-        return f"{directive} {{\n" "  no_prefix = true\n" f'  path = "{path}"\n' "}"
+        return f'{directive} {{\n  no_prefix = true\n  path = "{path}"\n}}'
 
     def read_value(self, reader):
         from cabotage.utils.config_templates import (
@@ -1360,7 +1360,7 @@ class EnvironmentConfiguration(Model, Timestamp):
             return None
         directive = "secret" if self.secret else "prefix"
         path = self.key_slug.split(":", 1)[1]
-        return f"{directive} {{\n" "  no_prefix = true\n" f'  path = "{path}"\n' "}"
+        return f'{directive} {{\n  no_prefix = true\n  path = "{path}"\n}}'
 
     def read_value(self, reader):
         from cabotage.utils.config_templates import has_template_variables
@@ -1969,8 +1969,7 @@ def create_default_ingresses(app_env, process_names=None):
         db.session.add(ingress_obj)
         db.session.flush()
         auto_hostname = (
-            f"{readable_k8s_hostname(*hostname_pairs)}"
-            f"-{process_name}.{ingress_domain}"
+            f"{readable_k8s_hostname(*hostname_pairs)}-{process_name}.{ingress_domain}"
         )
         db.session.add(
             IngressHost(

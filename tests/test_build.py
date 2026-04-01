@@ -1180,12 +1180,12 @@ class TestGitRefFallback:
         context_arg = [a for a in args if "context=" in a][0]
 
         # Should use branch ref "develop", NOT "#null"
-        assert (
-            "#null" not in context_arg
-        ), f"Build context should not contain #null, got: {context_arg}"
-        assert (
-            "#develop" in context_arg
-        ), f"Build context should use branch ref 'develop', got: {context_arg}"
+        assert "#null" not in context_arg, (
+            f"Build context should not contain #null, got: {context_arg}"
+        )
+        assert "#develop" in context_arg, (
+            f"Build context should use branch ref 'develop', got: {context_arg}"
+        )
 
     @patch("cabotage.celery.tasks.build._fetch_github_file")
     @patch("cabotage.celery.tasks.build._fetch_commit_sha_for_ref")

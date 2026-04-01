@@ -78,7 +78,8 @@ _INGRESS_DATA_CTE = """
 
 def upgrade():
     # 1. Backfill commit_sha onto release image JSONB
-    op.execute(sa.text("""
+    op.execute(
+        sa.text("""
         UPDATE project_app_releases r
         SET image = r.image || jsonb_build_object(
             'commit_sha',
@@ -87,23 +88,27 @@ def upgrade():
         FROM project_app_images i
         WHERE i.id = (r.image->>'id')::uuid
           AND r.image->>'commit_sha' IS NULL
-    """))
+    """)
+    )
 
     # 2. Backfill ingresses on releases
-    op.execute(sa.text(f"""
+    op.execute(
+        sa.text(f"""
         WITH {_INGRESS_DATA_CTE}
         UPDATE project_app_releases r
         SET ingresses = id.data
         FROM ingress_data id
         WHERE id.application_environment_id = r.application_environment_id
           AND r.ingresses = '{{}}'::jsonb
-    """))  # nosec B608 - _INGRESS_DATA_CTE is a hardcoded constant, not user input
+    """)
+    )  # nosec B608 - _INGRESS_DATA_CTE is a hardcoded constant, not user input
 
     # 3. Backfill ingresses onto the latest completed deployment per app_env.
     #    Only backfill the one we actually diff against; older deployments
     #    keep their original (empty) data since we can't reconstruct what
     #    was live at the time.
-    op.execute(sa.text(f"""
+    op.execute(
+        sa.text(f"""
         WITH {_INGRESS_DATA_CTE},
         latest_completed AS (
             SELECT DISTINCT ON (application_environment_id) id
@@ -118,10 +123,12 @@ def upgrade():
           AND id.application_environment_id = d.application_environment_id
           AND (d.release->'ingresses' IS NULL
                OR d.release->'ingresses' = '{{}}'::jsonb)
-    """))  # nosec B608 - _INGRESS_DATA_CTE is a hardcoded constant, not user input
+    """)
+    )  # nosec B608 - _INGRESS_DATA_CTE is a hardcoded constant, not user input
 
     # 4. Backfill commit_sha onto the latest completed deployment per app_env
-    op.execute(sa.text("""
+    op.execute(
+        sa.text("""
         WITH latest_completed AS (
             SELECT DISTINCT ON (application_environment_id) id
             FROM deployments
@@ -139,31 +146,39 @@ def upgrade():
           AND i.id = (d.release->'image'->>'id')::uuid
           AND d.release->'image'->>'commit_sha' IS NULL
           AND d.release->'image' IS NOT NULL
-    """))
+    """)
+    )
 
 
 def downgrade():
     # Undo commit_sha on releases
-    op.execute(sa.text("""
+    op.execute(
+        sa.text("""
         UPDATE project_app_releases
         SET image = image - 'commit_sha'
         WHERE image ? 'commit_sha'
-    """))
+    """)
+    )
 
     # Undo ingresses on releases
-    op.execute(sa.text("""
+    op.execute(
+        sa.text("""
         UPDATE project_app_releases
         SET ingresses = '{}'::jsonb
-    """))
+    """)
+    )
 
     # Undo ingresses on deployments
-    op.execute(sa.text("""
+    op.execute(
+        sa.text("""
         UPDATE deployments
         SET release = release - 'ingresses'
-    """))
+    """)
+    )
 
     # Undo commit_sha on deployments
-    op.execute(sa.text("""
+    op.execute(
+        sa.text("""
         UPDATE deployments
         SET release = jsonb_set(
             release,
@@ -171,4 +186,5 @@ def downgrade():
             (release->'image') - 'commit_sha'
         )
         WHERE release->'image'->>'commit_sha' IS NOT NULL
-    """))
+    """)
+    )
