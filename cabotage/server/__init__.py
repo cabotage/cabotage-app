@@ -1,7 +1,7 @@
 import hashlib
 import os
 from html import escape
-from typing import Any
+from typing import Any, ClassVar, TYPE_CHECKING
 
 import sentry_sdk
 
@@ -69,7 +69,15 @@ class Base(DeclarativeBase):
 
 db: SQLAlchemy = SQLAlchemy(model_class=Base, engine_options={"pool_pre_ping": True})
 
-Model = db.Model
+if TYPE_CHECKING:
+
+    class Model(Base):
+        """Type-checking stub: at runtime this is db.Model which adds query etc."""
+
+        query: ClassVar[Any]
+        query_class: ClassVar[type]
+else:
+    Model = db.Model
 
 principal = Principal()
 mail = Mail()
