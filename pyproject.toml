@@ -56,6 +56,7 @@ dev = [
     "ty",
     "types-croniter",
     "types-pyyaml",
+    "types-pygments",
     "types-redis",
     "types-requests",
     "types-toml",
@@ -78,9 +79,6 @@ skip_empty = true
 
 [tool.bandit]
 exclude_dirs = ["bin", "lib", "tests"]
-
-[tool.mypy]
-ignore_missing_imports = true
 
 [tool.uv]
 exclude-newer = "1 week"

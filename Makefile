@@ -69,4 +69,4 @@ security-check: .state/docker-build-base
 	docker compose run --rm base bandit -c pyproject.toml -r .
 
 type-check: .state/docker-build-base
-	docker compose run --rm base mypy --config-file pyproject.toml .
+	docker compose run --rm base ty check cabotage

@@ -30,7 +30,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv python install 3.13
       - run: uv sync --frozen
-      - run: uv run mypy --config-file pyproject.toml .
+      - run: uv run ty check cabotage
 
   security-check:
     runs-on: ubuntu-24.04-arm
