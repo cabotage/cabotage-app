@@ -12,6 +12,7 @@ from cabotage.server.models.projects import (
     Project,
     activity_plugin,
 )
+from cabotage.server.models.utils import safe_k8s_name
 from cabotage.server.wsgi import app as _app
 
 Activity = activity_plugin.activity_cls
@@ -924,3 +925,182 @@ class TestActivityRecording:
         ).all()
         firing_activities = [a for a in activities if a.verb == "firing"]
         assert len(firing_activities) == 1
+
+
+# --- Environment-aware resolution ---
+
+
+@pytest.fixture
+def staging_environment(db_session, project):
+    e = Environment(name="staging", project_id=project.id, ephemeral=False)
+    db_session.add(e)
+    db_session.flush()
+    return e
+
+
+@pytest.fixture
+def production_environment(db_session, project):
+    e = Environment(name="production", project_id=project.id, ephemeral=False)
+    db_session.add(e)
+    db_session.flush()
+    return e
+
+
+@pytest.fixture
+def staging_app_env(db_session, application, staging_environment):
+    ae = ApplicationEnvironment(
+        application_id=application.id,
+        environment_id=staging_environment.id,
+        k8s_identifier=staging_environment.k8s_identifier,
+    )
+    db_session.add(ae)
+    db_session.flush()
+    return ae
+
+
+@pytest.fixture
+def production_app_env(db_session, application, production_environment):
+    ae = ApplicationEnvironment(
+        application_id=application.id,
+        environment_id=production_environment.id,
+        k8s_identifier=production_environment.k8s_identifier,
+    )
+    db_session.add(ae)
+    db_session.flush()
+    return ae
+
+
+class TestEnvironmentAwareResolution:
+    def test_deployment_resolves_to_staging_env(
+        self,
+        client,
+        db_session,
+        org,
+        project,
+        application,
+        staging_environment,
+        staging_app_env,
+        production_environment,
+        production_app_env,
+    ):
+        deployment_name = f"{project.k8s_identifier}-{application.k8s_identifier}"
+        namespace = safe_k8s_name(
+            org.k8s_identifier, staging_environment.k8s_identifier
+        )
+        alert_data = _oom_alert(deployment=deployment_name, namespace=namespace)
+        resp = client.post(
+            "/alertmanager/webhooks",
+            json=_alertmanager_payload([alert_data]),
+            headers=_auth_headers(),
+        )
+        assert resp.status_code == 200
+        alert = Alert.query.filter_by(fingerprint=alert_data["fingerprint"]).first()
+        assert alert.application_id == application.id
+        assert alert.application_environment_id == staging_app_env.id
+
+    def test_deployment_resolves_to_production_env(
+        self,
+        client,
+        db_session,
+        org,
+        project,
+        application,
+        staging_environment,
+        staging_app_env,
+        production_environment,
+        production_app_env,
+    ):
+        deployment_name = f"{project.k8s_identifier}-{application.k8s_identifier}"
+        namespace = safe_k8s_name(
+            org.k8s_identifier, production_environment.k8s_identifier
+        )
+        alert_data = _oom_alert(deployment=deployment_name, namespace=namespace)
+        resp = client.post(
+            "/alertmanager/webhooks",
+            json=_alertmanager_payload([alert_data]),
+            headers=_auth_headers(),
+        )
+        assert resp.status_code == 200
+        alert = Alert.query.filter_by(fingerprint=alert_data["fingerprint"]).first()
+        assert alert.application_id == application.id
+        assert alert.application_environment_id == production_app_env.id
+
+    def test_deployment_falls_back_to_default_for_org_namespace(
+        self,
+        client,
+        db_session,
+        org,
+        project,
+        application,
+        app_env,
+        staging_environment,
+        staging_app_env,
+    ):
+        """When namespace matches org.k8s_identifier exactly, use default_app_env."""
+        deployment_name = f"{project.k8s_identifier}-{application.k8s_identifier}"
+        alert_data = _oom_alert(
+            deployment=deployment_name, namespace=org.k8s_identifier
+        )
+        resp = client.post(
+            "/alertmanager/webhooks",
+            json=_alertmanager_payload([alert_data]),
+            headers=_auth_headers(),
+        )
+        assert resp.status_code == 200
+        alert = Alert.query.filter_by(fingerprint=alert_data["fingerprint"]).first()
+        assert alert.application_id == application.id
+        assert alert.application_environment_id == app_env.id
+
+    def test_slug_labels_resolve_to_env_via_namespace(
+        self,
+        client,
+        db_session,
+        org,
+        project,
+        application,
+        staging_environment,
+        staging_app_env,
+        production_environment,
+        production_app_env,
+    ):
+        namespace = safe_k8s_name(
+            org.k8s_identifier, production_environment.k8s_identifier
+        )
+        alert_data = _slug_label_alert(org.slug, project.slug, application.slug)
+        alert_data["labels"]["namespace"] = namespace
+        resp = client.post(
+            "/alertmanager/webhooks",
+            json=_alertmanager_payload([alert_data]),
+            headers=_auth_headers(),
+        )
+        assert resp.status_code == 200
+        alert = Alert.query.filter_by(fingerprint=alert_data["fingerprint"]).first()
+        assert alert.application_id == application.id
+        assert alert.application_environment_id == production_app_env.id
+
+    def test_traefik_resolves_to_env_via_namespace(
+        self,
+        client,
+        db_session,
+        org,
+        project,
+        application,
+        staging_environment,
+        staging_app_env,
+    ):
+        resource_prefix = f"{project.k8s_identifier}-{application.k8s_identifier}"
+        namespace = safe_k8s_name(
+            org.k8s_identifier, staging_environment.k8s_identifier
+        )
+        service = f"{namespace}-{resource_prefix}-web-somehostname-web-https@kubernetesingressnginx"
+        alert_data = _traefik_alert(service=service)
+        alert_data["labels"]["namespace"] = namespace
+        resp = client.post(
+            "/alertmanager/webhooks",
+            json=_alertmanager_payload([alert_data]),
+            headers=_auth_headers(),
+        )
+        assert resp.status_code == 200
+        alert = Alert.query.filter_by(fingerprint=alert_data["fingerprint"]).first()
+        assert alert.application_id == application.id
+        assert alert.application_environment_id == staging_app_env.id

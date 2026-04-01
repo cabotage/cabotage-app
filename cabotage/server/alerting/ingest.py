@@ -12,6 +12,7 @@ from cabotage.server.models.projects import (
     activity_plugin,
 )
 from cabotage.server.models.auth import Organization
+from cabotage.server.models.utils import safe_k8s_name
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +58,37 @@ def parse_alertmanager_timestamp(ts):
         return None
 
 
+def _resolve_app_env_from_namespace(application, namespace):
+    """Try to resolve a specific ApplicationEnvironment from the namespace.
+
+    Environment-enabled apps use safe_k8s_name(org.k8s_identifier,
+    env.k8s_identifier) as their namespace. If the namespace matches that
+    pattern for one of the app's environments, return that AppEnv. Otherwise
+    fall back to default_app_env.
+
+    Returns (app_env, matched) where matched is True if the namespace was
+    positively matched (org-only or org-env), False if we fell through.
+    """
+    if not namespace:
+        return application.default_app_env, False
+
+    org_k8s = application.project.organization.k8s_identifier
+
+    # Simple case: namespace is just the org identifier
+    if namespace == org_k8s:
+        return application.default_app_env, True
+
+    # Check each active app env to see if its environment produces this namespace
+    for app_env in application.active_application_environments:
+        if app_env.k8s_identifier is None:
+            continue
+        env_namespace = safe_k8s_name(org_k8s, app_env.environment.k8s_identifier)
+        if namespace == env_namespace:
+            return app_env, True
+
+    return application.default_app_env, False
+
+
 def _resolve_by_slug_labels(labels):
     """Resolve via explicit label_organization/label_project/label_application
     labels injected by the cabotage:resident_deployment_pod recording rule."""
@@ -79,7 +111,9 @@ def _resolve_by_slug_labels(labels):
         .first()
     )
     if application:
-        return application, application.default_app_env
+        namespace = labels.get("namespace")
+        app_env, _matched = _resolve_app_env_from_namespace(application, namespace)
+        return application, app_env
     return None, None
 
 
@@ -87,7 +121,8 @@ def _resolve_by_deployment(labels):
     """Resolve via deployment + namespace labels (pod-level alerts).
 
     deployment = safe_k8s_name(project.k8s_identifier, app.k8s_identifier)
-    namespace  = org.k8s_identifier (or org-env for environment-enabled)
+    namespace  = org.k8s_identifier (or safe_k8s_name(org, env) for
+                 environment-enabled apps)
     """
     deployment_name = labels.get("deployment")
     namespace = labels.get("namespace")
@@ -103,8 +138,14 @@ def _resolve_by_deployment(labels):
             == deployment_name,
         )
     )
+
     if namespace:
-        query = query.filter(Organization.k8s_identifier == namespace)
+        # Try each matching application and see if the namespace resolves
+        for application in query.all():
+            app_env, matched = _resolve_app_env_from_namespace(application, namespace)
+            if matched:
+                return application, app_env
+        return None, None
 
     application = query.first()
     if application:
@@ -142,7 +183,9 @@ def _resolve_by_traefik_service(labels):
         .first()
     )
     if application:
-        return application, application.default_app_env
+        namespace = labels.get("namespace")
+        app_env, _matched = _resolve_app_env_from_namespace(application, namespace)
+        return application, app_env
     return None, None
 
 
