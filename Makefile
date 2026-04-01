@@ -54,7 +54,7 @@ test: .state/docker-build-base
 		docker compose exec db psql -U postgres -c "CREATE DATABASE cabotage_test" && \
 		docker compose exec db psql -U postgres -d cabotage_test -c "CREATE EXTENSION IF NOT EXISTS citext; CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 	docker compose run --rm \
-		-e CABOTAGE_SQLALCHEMY_DATABASE_URI=postgresql://postgres@db/cabotage_test \
+		-e CABOTAGE_SQLALCHEMY_DATABASE_URI=postgresql+psycopg://postgres@db/cabotage_test \
 		-e CABOTAGE_TESTING=True \
 		-e FLASK_APP=cabotage.server.wsgi \
 		base sh -c "python3 -m flask db upgrade && python3 -m pytest tests/ -v $(ARGS)"

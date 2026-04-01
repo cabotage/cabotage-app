@@ -28,7 +28,7 @@ dependencies = [
     "hvac",
     "kubernetes",
     "pathspec",
-    "psycopg2-binary",
+    "psycopg[binary]",
     "py-consul",
     "pygithub",
     "pyjwt",
