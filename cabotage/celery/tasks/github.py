@@ -225,7 +225,7 @@ def process_deployment_hook(hook):
             object=image,
             data={
                 "sender": sender,
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)

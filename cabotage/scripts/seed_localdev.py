@@ -547,7 +547,7 @@ def seed():
             application_environment_id=web_prod.id,
         ).count()
         if existing_job_logs == 0:
-            now = datetime.datetime.utcnow()
+            now = datetime.datetime.now(datetime.timezone.utc)
             for proc_name, interval_min, count in [
                 ("job-cleanup", 360, 12),
                 ("job-reports", 1440, 7),

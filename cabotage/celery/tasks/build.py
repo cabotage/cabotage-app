@@ -1729,7 +1729,7 @@ def run_image_build(image_id=None, buildkit=False):
                 "user_id": "automation",
                 "deployment_id": image.image_metadata.get("id", None),
                 "description": image.image_metadata.get("description", None),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -1893,7 +1893,9 @@ def run_release_build(release_id=None):
                     "user_id": "automation",
                     "deployment_id": release.release_metadata.get("id", None),
                     "description": release.release_metadata.get("description", None),
-                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                    "timestamp": datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -2024,7 +2026,9 @@ def run_omnibus_build(image_id=None):
                     "user_id": "automation",
                     "deployment_id": image.image_metadata.get("id", None),
                     "description": image.image_metadata.get("description", None),
-                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                    "timestamp": datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -2136,7 +2140,7 @@ def run_omnibus_build(image_id=None):
             "user_id": "automation",
             "deployment_id": image.image_metadata.get("id", None),
             "description": image.image_metadata.get("description", None),
-            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         },
     )
     db.session.add(activity)
