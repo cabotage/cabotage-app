@@ -41,6 +41,9 @@ def app():
     from cabotage.server.integrations.slack_oauth import slack_oauth_bp
     from cabotage.server.integrations.discord_oauth import discord_oauth_bp
 
+    # Reset first-request flag so blueprints can be registered after other
+    # test modules have already made requests on the shared app object.
+    _app._got_first_request = False
     if "slack_oauth" not in _app.blueprints:
         _app.register_blueprint(slack_oauth_bp)
     if "discord_oauth" not in _app.blueprints:

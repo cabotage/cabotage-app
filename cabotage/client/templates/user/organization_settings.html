@@ -234,7 +234,7 @@
             <div class="form-control flex-1">
               <label class="label">
                 <span class="label-text text-xs">Default Channel</span>
-                <span class="label-text-alt text-xs opacity-50">Only channels the bot has been invited to will appear</span>
+                <span class="label-text-alt text-xs opacity-50">Alerts without a matching routing rule are sent here</span>
               </label>
               <select name="channel_id" id="slack-channel-select" class="select select-bordered select-sm w-full" disabled
                       onchange="this.form.channel_name.value = this.options[this.selectedIndex].dataset.name || ''">
@@ -248,31 +248,7 @@
             </button>
           </div>
         </form>
-        <script>
-          (function() {
-            const select = document.getElementById('slack-channel-select');
-            const saveBtn = document.getElementById('slack-channel-save');
-            const currentId = {{ slack_integration.default_channel_id | tojson }};
-            fetch({{ url_for('slack_oauth.list_channels', org_slug=organization.slug) | tojson }})
-              .then(r => r.json())
-              .then(data => {
-                select.innerHTML = '<option value="">No Default</option>';
-                (data.channels || []).forEach(ch => {
-                  const opt = document.createElement('option');
-                  opt.value = ch.id;
-                  opt.dataset.name = ch.name;
-                  opt.textContent = '#' + ch.name;
-                  if (ch.id === currentId) opt.selected = true;
-                  select.appendChild(opt);
-                });
-                select.disabled = false;
-                saveBtn.disabled = false;
-              })
-              .catch(() => {
-                select.innerHTML = '<option value="">Failed to load channels</option>';
-              });
-          })();
-        </script>
+        {# Channel list loaded by shared script at bottom of page #}
       {% else %}
         <p class="text-sm opacity-80 mb-4">Connect a Slack workspace to receive alert notifications in your channels.</p>
         <a href="{{ url_for('slack_oauth.connect', org_slug=organization.slug) }}" class="btn btn-primary btn-sm gap-2">
@@ -324,7 +300,7 @@
             <div class="form-control flex-1">
               <label class="label">
                 <span class="label-text text-xs">Default Channel</span>
-                <span class="label-text-alt text-xs opacity-50">Only channels the bot can access will appear</span>
+                <span class="label-text-alt text-xs opacity-50">Alerts without a matching routing rule are sent here</span>
               </label>
               <select name="channel_id" id="discord-channel-select" class="select select-bordered select-sm w-full" disabled
                       onchange="this.form.channel_name.value = this.options[this.selectedIndex].dataset.name || ''">
@@ -338,31 +314,7 @@
             </button>
           </div>
         </form>
-        <script>
-          (function() {
-            const select = document.getElementById('discord-channel-select');
-            const saveBtn = document.getElementById('discord-channel-save');
-            const currentId = {{ discord_integration.default_channel_id | tojson }};
-            fetch({{ url_for('discord_oauth.list_channels', org_slug=organization.slug) | tojson }})
-              .then(r => r.json())
-              .then(data => {
-                select.innerHTML = '<option value="">No Default</option>';
-                (data.channels || []).forEach(ch => {
-                  const opt = document.createElement('option');
-                  opt.value = ch.id;
-                  opt.dataset.name = ch.name;
-                  opt.textContent = '#' + ch.name;
-                  if (ch.id === currentId) opt.selected = true;
-                  select.appendChild(opt);
-                });
-                select.disabled = false;
-                saveBtn.disabled = false;
-              })
-              .catch(() => {
-                select.innerHTML = '<option value="">Failed to load channels</option>';
-              });
-          })();
-        </script>
+        {# Channel list loaded by shared script at bottom of page #}
       {% else %}
         <p class="text-sm opacity-80 mb-4">Connect a Discord server to receive alert notifications in your channels.</p>
         <a href="{{ url_for('discord_oauth.connect', org_slug=organization.slug) }}" class="btn btn-primary btn-sm gap-2">
@@ -372,6 +324,617 @@
       {% endif %}
     </div>
   </div>
+  {% endif %}
+
+  {# Notification Routing — only show if at least one integration is connected #}
+  {% if slack_integration or discord_integration %}
+  <div class="card bg-base-200/50 border border-base-300/50 max-w-2xl mt-6" id="notification-routing">
+    <div class="card-body">
+      <h2 class="card-title text-lg">Notification Routing</h2>
+      <p class="text-sm opacity-60">Route notification types to specific channels. Types without a rule use the default channel.</p>
+
+      {# Rules list — loaded and managed via JS #}
+      <div id="routes-list" class="mt-3 space-y-2">
+        <p class="text-sm opacity-50">Loading...</p>
+      </div>
+
+      <button type="button" class="btn btn-sm btn-outline gap-1 mt-3" onclick="showAddForm()">
+        {{ icon('plus', 'w-4 h-4') }}
+        Add Rule
+      </button>
+    </div>
+  </div>
+
+  {# Route add/edit modal #}
+  <dialog id="route-modal" class="modal">
+    <div class="modal-box max-w-2xl">
+      <h3 class="text-lg font-bold" id="route-modal-title">Add Rule</h3>
+      <input type="hidden" id="rf-id" value="">
+
+      {# Unscoped notification types (org-level) #}
+      {% set has_unscoped = notification_categories.values() | selectattr('scoped', 'false') | list | length > 0 %}
+      {% if has_unscoped %}
+      <div class="bg-base-300/30 rounded-lg p-3 mt-3">
+        <span class="text-xs font-semibold opacity-70">Unscoped</span>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-1 pl-2">
+          {% for cat_key, cat in notification_categories.items() %}
+          {% if not cat.scoped %}
+          <div>
+            <span class="text-xs font-semibold">{{ cat.label }}</span>
+            <div class="flex flex-col gap-0.5 mt-1">
+              {% if cat.types | length > 1 %}
+              <label class="label cursor-pointer justify-start gap-1.5 py-0">
+                <input type="checkbox" class="checkbox checkbox-xs checkbox-primary cat-all-toggle" data-cat="{{ cat_key }}">
+                <span class="text-xs font-semibold">All</span>
+              </label>
+              {% endif %}
+              {% for type_key, type_label in cat.types.items() %}
+              <label class="label cursor-pointer justify-start gap-1.5 py-0 cat-item-label" data-cat="{{ cat_key }}">
+                <input type="checkbox" class="checkbox checkbox-xs checkbox-primary rf-ntype" value="{{ cat_key }}.{{ type_key }}" data-cat="{{ cat_key }}">
+                <span class="text-xs">{{ type_label }}</span>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {# Scoped notification types + scope selectors #}
+      <div class="bg-base-300/30 rounded-lg p-3 mt-3">
+        <span class="text-xs font-semibold opacity-70">Scoped</span>
+        {# sm:grid-cols-2 sm:grid-cols-3 sm:grid-cols-4 — keep for Tailwind purge #}
+        {% set scoped_count = notification_categories.values() | selectattr('scoped') | list | length %}
+        {% if scoped_count <= 2 %}{% set grid_cls = "sm:grid-cols-2" %}
+        {% elif scoped_count == 3 %}{% set grid_cls = "sm:grid-cols-3" %}
+        {% else %}{% set grid_cls = "sm:grid-cols-4" %}
+        {% endif %}
+        <div class="grid grid-cols-2 {{ grid_cls }} gap-3 mt-1 pl-2">
+          {% for cat_key, cat in notification_categories.items() %}
+          {% if cat.scoped %}
+          <div>
+            <span class="text-xs font-semibold">{{ cat.label }}</span>
+            <div class="flex flex-col gap-0.5 mt-1">
+              {% if cat.types | length > 1 %}
+              <label class="label cursor-pointer justify-start gap-1.5 py-0">
+                <input type="checkbox" class="checkbox checkbox-xs checkbox-primary cat-all-toggle" data-cat="{{ cat_key }}">
+                <span class="text-xs font-semibold">All</span>
+              </label>
+              {% endif %}
+              {% for type_key, type_label in cat.types.items() %}
+              <label class="label cursor-pointer justify-start gap-1.5 py-0 cat-item-label" data-cat="{{ cat_key }}">
+                <input type="checkbox" class="checkbox checkbox-xs checkbox-primary rf-ntype" value="{{ cat_key }}.{{ type_key }}" data-cat="{{ cat_key }}">
+                <span class="text-xs">{{ type_label }}</span>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+          {% endfor %}
+        </div>
+
+        <div class="divider my-2"></div>
+
+        <span class="text-xs font-semibold opacity-70">Scope</span>
+        <div class="grid grid-cols-3 gap-2 mt-1 pl-2" id="rf-scope-section">
+          <div>
+            <span class="text-xs font-semibold">Projects</span>
+            <div class="flex flex-col gap-0.5 mt-1" id="rf-projects"></div>
+          </div>
+          <div>
+            <span class="text-xs font-semibold">Envs</span>
+            <div class="flex flex-col gap-0.5 mt-1" id="rf-environments"></div>
+          </div>
+          <div>
+            <span class="text-xs font-semibold">Apps</span>
+            <div class="flex flex-col gap-0.5 mt-1" id="rf-applications"></div>
+          </div>
+        </div>
+      </div>
+
+      {# Target — integration + channel + enabled #}
+      <div class="bg-base-300/30 rounded-lg p-3 mt-3">
+        <div class="flex items-end gap-2">
+          <span class="text-xs font-semibold self-center">Target:</span>
+          <div class="form-control flex-1">
+            <select id="rf-integration" class="select select-bordered select-xs w-full" onchange="onRfIntegrationChange()">
+              {% if slack_integration and discord_integration %}
+              <option value="">Select...</option>
+              {% endif %}
+              {% if slack_integration %}
+              <option value="slack">Slack ({{ slack_integration.team_name or slack_integration.team_id }})</option>
+              {% endif %}
+              {% if discord_integration %}
+              <option value="discord">Discord ({{ discord_integration.guild_name or discord_integration.guild_id }})</option>
+              {% endif %}
+            </select>
+          </div>
+          <div class="form-control flex-1">
+            <select id="rf-channel" class="select select-bordered select-xs w-full" disabled>
+              <option value="">Select channel</option>
+            </select>
+          </div>
+          <label class="label cursor-pointer gap-1.5 py-0">
+            <input type="checkbox" id="rf-enabled" class="checkbox checkbox-primary checkbox-xs" checked>
+            <span class="label-text text-xs">Enabled</span>
+          </label>
+        </div>
+      </div>
+
+      {# Actions #}
+      <div class="modal-action">
+        <div class="flex-1" id="rf-delete-section" style="display:none">
+          <button type="button" class="btn btn-error btn-outline btn-sm gap-1" onclick="confirmDelete()">
+            {{ icon('trash-2', 'w-4 h-4') }}
+            Delete
+          </button>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="hideForm()">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm gap-1" id="rf-save" onclick="saveRoute()" disabled>
+          {{ icon('check', 'w-4 h-4') }}
+          Save
+        </button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
+
+  {# Delete confirmation modal #}
+  <dialog id="delete-route-modal" class="modal">
+    <div class="modal-box">
+      <h3 class="text-lg font-bold">Delete Routing Rule</h3>
+      <p class="py-4 text-sm">Are you sure you want to delete this routing rule? This cannot be undone.</p>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('delete-route-modal').close()">Cancel</button>
+        <button type="button" class="btn btn-error btn-sm gap-1" id="confirm-delete-btn" onclick="doDelete()">
+          {{ icon('trash-2', 'w-4 h-4') }}
+          Delete
+        </button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
+
+  <script>
+    (function() {
+      const orgSlug = {{ organization.slug | tojson }};
+      const csrfToken = {{ csrf_token() | tojson }};
+      const categories = {{ notification_categories | tojson }};
+      const channelData = {};
+      let scopesData = [];
+      window.allRoutes = [];
+
+      // --- Channel loading (shared with default channel selectors) ---
+
+      {% if slack_integration %}
+      fetch({{ url_for('slack_oauth.list_channels', org_slug=organization.slug) | tojson }})
+        .then(r => r.json()).then(data => {
+          channelData.slack = data.channels || [];
+          const defSel = document.getElementById('slack-channel-select');
+          if (defSel) {
+            const currentId = {{ slack_integration.default_channel_id | tojson }};
+            defSel.innerHTML = '<option value="">No Default</option>';
+            channelData.slack.forEach(ch => {
+              const opt = document.createElement('option');
+              opt.value = ch.id;
+              opt.dataset.name = ch.name;
+              opt.textContent = '#' + ch.name;
+              if (ch.id === currentId) opt.selected = true;
+              defSel.appendChild(opt);
+            });
+            defSel.disabled = false;
+            document.getElementById('slack-channel-save').disabled = false;
+          }
+          onChannelDataReady();
+        });
+      {% endif %}
+
+      {% if discord_integration %}
+      fetch({{ url_for('discord_oauth.list_channels', org_slug=organization.slug) | tojson }})
+        .then(r => r.json()).then(data => {
+          channelData.discord = data.channels || [];
+          const defSel = document.getElementById('discord-channel-select');
+          if (defSel) {
+            const currentId = {{ discord_integration.default_channel_id | tojson }};
+            defSel.innerHTML = '<option value="">No Default</option>';
+            channelData.discord.forEach(ch => {
+              const opt = document.createElement('option');
+              opt.value = ch.id;
+              opt.dataset.name = ch.name;
+              opt.textContent = '#' + ch.name;
+              if (ch.id === currentId) opt.selected = true;
+              defSel.appendChild(opt);
+            });
+            defSel.disabled = false;
+            document.getElementById('discord-channel-save').disabled = false;
+          }
+          onChannelDataReady();
+        });
+      {% endif %}
+
+      function onChannelDataReady() {
+        // Update the channel dropdown in the form if integration is already selected
+        onRfIntegrationChange();
+      }
+
+      // --- Scopes ---
+
+      fetch(`/integrations/notifications/${orgSlug}/scopes`)
+        .then(r => r.json()).then(data => {
+          scopesData = data.projects || [];
+          buildScopeCheckboxes();
+        });
+
+      function buildScopeCheckboxes() {
+        ['rf-projects', 'rf-environments', 'rf-applications'].forEach(id => {
+          const container = document.getElementById(id);
+          container.innerHTML = '';
+        });
+
+        const pC = document.getElementById('rf-projects');
+        const eC = document.getElementById('rf-environments');
+        const aC = document.getElementById('rf-applications');
+
+        // "All" toggles
+        pC.innerHTML = scopeAllToggle('rf-proj');
+        eC.innerHTML = scopeAllToggle('rf-env');
+        aC.innerHTML = scopeAllToggle('rf-app');
+
+        scopesData.forEach(p => {
+          pC.innerHTML += scopeCheckbox('rf-proj', p.id, p.slug);
+          (p.environments || []).forEach(e => {
+            eC.innerHTML += scopeCheckbox('rf-env', e.id, e.slug);
+          });
+          (p.applications || []).forEach(a => {
+            aC.innerHTML += scopeCheckbox('rf-app', a.id, a.slug);
+          });
+        });
+
+        // Wire up "All" toggles
+        document.querySelectorAll('.scope-all-toggle').forEach(cb => {
+          cb.addEventListener('change', function() {
+            const cls = this.dataset.cls;
+            document.querySelectorAll('.' + cls).forEach(c => c.checked = false);
+            this.checked = true;
+            updateScopeStyles(cls);
+          });
+        });
+
+        // When any individual scope checkbox changes, uncheck "All" if something is selected
+        document.querySelectorAll('.rf-proj, .rf-env, .rf-app').forEach(cb => {
+          cb.addEventListener('change', function() {
+            const cls = this.className.split(' ').find(c => c.startsWith('rf-'));
+            const allCb = document.querySelector(`.scope-all-toggle[data-cls="${cls}"]`);
+            const anyChecked = document.querySelectorAll('.' + cls + ':checked').length > 0;
+            if (allCb) allCb.checked = !anyChecked;
+            updateScopeStyles(cls);
+          });
+        });
+
+        // Initial styling
+        ['rf-proj', 'rf-env', 'rf-app'].forEach(updateScopeStyles);
+      }
+
+      function scopeAllToggle(cls) {
+        return `<label class="label cursor-pointer justify-start gap-1.5 py-0">
+          <input type="checkbox" class="checkbox checkbox-xs checkbox-primary scope-all-toggle" data-cls="${cls}" checked>
+          <span class="text-xs font-semibold">All</span>
+        </label>`;
+      }
+
+      function scopeCheckbox(cls, value, label) {
+        return `<label class="label cursor-pointer justify-start gap-1.5 py-0 scope-item-label" data-cls="${cls}">
+          <input type="checkbox" class="checkbox checkbox-xs ${cls} scope-item" value="${value}">
+          <span class="text-xs opacity-40">${esc(label)}</span>
+        </label>`;
+      }
+
+      function updateScopeStyles(cls) {
+        const allCb = document.querySelector(`.scope-all-toggle[data-cls="${cls}"]`);
+        const isAll = allCb && allCb.checked;
+        document.querySelectorAll(`.scope-item-label[data-cls="${cls}"]`).forEach(label => {
+          const cb = label.querySelector('.scope-item');
+          const span = label.querySelector('span');
+          if (isAll) {
+            cb.checked = false;
+            cb.classList.remove('checkbox-primary');
+            cb.classList.add('checkbox-ghost');
+            cb.indeterminate = true;
+            span.classList.add('opacity-40');
+            span.classList.remove('opacity-100');
+          } else {
+            cb.classList.add('checkbox-primary');
+            cb.classList.remove('checkbox-ghost');
+            cb.indeterminate = false;
+            if (cb.checked) {
+              span.classList.remove('opacity-40');
+              span.classList.add('opacity-100');
+            } else {
+              span.classList.add('opacity-40');
+              span.classList.remove('opacity-100');
+            }
+          }
+        });
+      }
+
+      // --- Route form ---
+
+      function validateForm() {
+        const hasTypes = document.querySelectorAll('.rf-ntype:checked').length > 0;
+        const hasIntegration = !!document.getElementById('rf-integration').value;
+        const hasChannel = !!document.getElementById('rf-channel').value;
+        document.getElementById('rf-save').disabled = !(hasTypes && hasIntegration && hasChannel);
+      }
+
+      // Category "All" styles — same pattern as scope "All"
+      function updateCatStyles(cat) {
+        const allCb = document.querySelector(`.cat-all-toggle[data-cat="${cat}"]`);
+        if (!allCb) return;
+        const isAll = allCb.checked;
+        document.querySelectorAll(`.cat-item-label[data-cat="${cat}"]`).forEach(label => {
+          const cb = label.querySelector('.rf-ntype');
+          const span = label.querySelector('span');
+          if (isAll) {
+            cb.checked = true;
+            cb.classList.remove('checkbox-primary');
+            cb.classList.add('checkbox-ghost');
+            cb.indeterminate = true;
+            span.classList.add('opacity-40');
+            span.classList.remove('opacity-100');
+          } else {
+            cb.classList.add('checkbox-primary');
+            cb.classList.remove('checkbox-ghost');
+            cb.indeterminate = false;
+            if (cb.checked) {
+              span.classList.remove('opacity-40');
+              span.classList.add('opacity-100');
+            } else {
+              span.classList.add('opacity-40');
+              span.classList.remove('opacity-100');
+            }
+          }
+        });
+      }
+
+      // Category "All" toggles
+      document.querySelectorAll('.cat-all-toggle').forEach(toggle => {
+        toggle.addEventListener('change', function() {
+          const cat = this.dataset.cat;
+          document.querySelectorAll(`.rf-ntype[data-cat="${cat}"]`).forEach(cb => {
+            cb.checked = toggle.checked;
+          });
+          updateCatStyles(cat);
+          validateForm();
+        });
+      });
+
+      // Individual type checkbox — update category "All" toggle state
+      document.querySelectorAll('.rf-ntype').forEach(cb => {
+        cb.addEventListener('change', function() {
+          const cat = this.dataset.cat;
+          const allToggle = document.querySelector(`.cat-all-toggle[data-cat="${cat}"]`);
+          if (allToggle) {
+            const siblings = document.querySelectorAll(`.rf-ntype[data-cat="${cat}"]`);
+            const allChecked = [...siblings].every(s => s.checked);
+            const noneChecked = [...siblings].every(s => !s.checked);
+            allToggle.checked = allChecked;
+          }
+          updateCatStyles(cat);
+          validateForm();
+        });
+      });
+
+      window.onRfIntegrationChange = function() {
+        const intg = document.getElementById('rf-integration').value;
+        const sel = document.getElementById('rf-channel');
+        if (!intg) {
+          sel.innerHTML = '<option value="">Select channel</option>';
+          sel.disabled = true;
+          validateForm();
+          return;
+        }
+        const channels = channelData[intg] || [];
+        sel.innerHTML = '<option value="">Select channel</option>';
+        channels.forEach(ch => {
+          sel.innerHTML += `<option value="${ch.id}" data-name="${ch.name}">#${esc(ch.name)}</option>`;
+        });
+        sel.disabled = channels.length === 0;
+        sel.onchange = validateForm;
+        validateForm();
+      };
+
+      window.showAddForm = function() {
+        document.getElementById('rf-id').value = '';
+        document.getElementById('route-modal-title').textContent = 'Add Rule';
+        document.querySelectorAll('.rf-ntype').forEach(cb => cb.checked = false);
+        document.getElementById('rf-enabled').checked = true;
+        document.getElementById('rf-channel').value = '';
+        document.getElementById('rf-save').disabled = true;
+        document.getElementById('rf-delete-section').style.display = 'none';
+        document.querySelectorAll('.rf-proj, .rf-env, .rf-app').forEach(cb => cb.checked = false);
+        document.querySelectorAll('.scope-all-toggle').forEach(cb => cb.checked = true);
+        ['rf-proj', 'rf-env', 'rf-app'].forEach(updateScopeStyles);
+        Object.keys(categories).forEach(updateCatStyles);
+        const intgSel = document.getElementById('rf-integration');
+        intgSel.selectedIndex = 0;
+        onRfIntegrationChange();
+        document.getElementById('route-modal').showModal();
+      };
+
+      window.hideForm = function() {
+        document.getElementById('route-modal').close();
+      };
+
+      window.editRoute = function(route) {
+        document.getElementById('rf-id').value = route.id;
+        document.getElementById('route-modal-title').textContent = 'Edit Rule';
+        document.getElementById('rf-delete-section').style.display = '';
+        // Set notification type checkboxes + "All" toggle state
+        const ntypes = route.notification_types || [];
+        document.querySelectorAll('.rf-ntype').forEach(cb => cb.checked = ntypes.includes(cb.value));
+        document.querySelectorAll('.cat-all-toggle').forEach(toggle => {
+          const cat = toggle.dataset.cat;
+          const siblings = document.querySelectorAll(`.rf-ntype[data-cat="${cat}"]`);
+          toggle.checked = [...siblings].every(s => s.checked);
+        });
+        Object.keys(categories).forEach(updateCatStyles);
+        document.getElementById('rf-integration').value = route.integration;
+        document.getElementById('rf-enabled').checked = route.enabled;
+        onRfIntegrationChange();
+        setTimeout(() => {
+          const chSel = document.getElementById('rf-channel');
+          chSel.value = route.channel_id;
+          validateForm();
+        }, 0);
+        // Set scope checkboxes
+        const pids = route.project_ids || [];
+        const eids = route.environment_ids || [];
+        const aids = route.application_ids || [];
+        document.querySelectorAll('.rf-proj').forEach(cb => cb.checked = pids.includes(cb.value));
+        document.querySelectorAll('.rf-env').forEach(cb => cb.checked = eids.includes(cb.value));
+        document.querySelectorAll('.rf-app').forEach(cb => cb.checked = aids.includes(cb.value));
+        document.querySelector('.scope-all-toggle[data-cls="rf-proj"]').checked = !pids.length;
+        document.querySelector('.scope-all-toggle[data-cls="rf-env"]').checked = !eids.length;
+        document.querySelector('.scope-all-toggle[data-cls="rf-app"]').checked = !aids.length;
+        ['rf-proj', 'rf-env', 'rf-app'].forEach(updateScopeStyles);
+        document.getElementById('route-modal').showModal();
+      }
+
+      window.saveRoute = function() {
+        const chSel = document.getElementById('rf-channel');
+        const chOpt = chSel.options[chSel.selectedIndex];
+        const body = {
+          notification_types: [...document.querySelectorAll('.rf-ntype:checked')].map(cb => cb.value),
+          integration: document.getElementById('rf-integration').value,
+          channel_id: chSel.value,
+          channel_name: chOpt ? chOpt.dataset.name : null,
+          enabled: document.getElementById('rf-enabled').checked,
+          project_ids: [...document.querySelectorAll('.rf-proj:checked')].map(cb => cb.value),
+          environment_ids: [...document.querySelectorAll('.rf-env:checked')].map(cb => cb.value),
+          application_ids: [...document.querySelectorAll('.rf-app:checked')].map(cb => cb.value),
+        };
+        const routeId = document.getElementById('rf-id').value;
+        if (routeId) body.id = routeId;
+
+        fetch(`/integrations/notifications/${orgSlug}/routes`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
+          body: JSON.stringify(body),
+        }).then(r => {
+          if (r.ok) { hideForm(); loadAllRoutes(); }
+        });
+      };
+
+      window.confirmDelete = function() {
+        document.getElementById('route-modal').close();
+        document.getElementById('delete-route-modal').showModal();
+      };
+
+      window.doDelete = function() {
+        const routeId = document.getElementById('rf-id').value;
+        if (!routeId) return;
+        fetch(`/integrations/notifications/${orgSlug}/routes/${routeId}`, {
+          method: 'DELETE',
+          headers: {'X-CSRFToken': csrfToken},
+        }).then(r => {
+          if (r.ok) {
+            document.getElementById('delete-route-modal').close();
+            loadAllRoutes();
+          }
+        });
+      };
+
+      // --- Route list ---
+
+      function loadAllRoutes() {
+        // Load all routes (no category filter)
+        fetch(`/integrations/notifications/${orgSlug}/routes`)
+          .then(r => r.json()).then(data => {
+            allRoutes = data.routes || [];
+            renderRoutes();
+          });
+      }
+
+      function renderRoutes() {
+        const container = document.getElementById('routes-list');
+        if (!allRoutes.length) {
+          container.innerHTML = '<p class="text-sm opacity-50 py-2">No routing rules. All notifications use the default channel.</p>';
+          return;
+        }
+
+        let html = '<div class="overflow-x-auto"><table class="table table-xs"><thead><tr class="text-base-content/50 text-xs uppercase tracking-wider"><th>Types</th><th>Scope</th><th>Target</th><th>Status</th><th class="w-20"></th></tr></thead><tbody>';
+
+        allRoutes.forEach((route, idx) => {
+          const typeLabels = (route.notification_types || []).map(ntype => {
+            const parts = ntype.split('.');
+            const cat = categories[parts[0]];
+            return cat ? `${cat.types[parts[1]] || parts[1]}` : ntype;
+          });
+          const scope = formatScope(route);
+          const target = `${route.integration === 'slack' ? 'Slack' : 'Discord'}: #${esc(route.channel_name || route.channel_id)}`;
+          const status = route.enabled
+            ? '<span class="badge badge-success badge-xs">on</span>'
+            : '<span class="badge badge-error badge-xs">off</span>';
+
+          html += `<tr>
+            <td class="text-xs font-medium">${typeLabels.map(t => esc(t)).join(', ')}</td>
+            <td class="text-xs">${scope}</td>
+            <td class="text-xs">${target}</td>
+            <td>${status}</td>
+            <td class="text-right">
+              <button class="btn btn-ghost btn-xs" data-route-idx="${idx}" onclick="editRoute(window.allRoutes[this.dataset.routeIdx])">Edit</button>
+            </td>
+          </tr>`;
+        });
+
+        html += '</tbody></table></div>';
+        container.innerHTML = html;
+      }
+
+      function formatScope(route) {
+        const parts = [];
+        if (route.project_ids && route.project_ids.length) {
+          const names = route.project_ids.map(id => {
+            const p = scopesData.find(s => s.id === id);
+            return p ? p.slug : id.slice(0, 8);
+          });
+          parts.push(names.join(', '));
+        }
+        if (route.environment_ids && route.environment_ids.length) {
+          const names = route.environment_ids.map(id => {
+            for (const p of scopesData) {
+              const e = (p.environments || []).find(e => e.id === id);
+              if (e) return e.slug;
+            }
+            return id.slice(0, 8);
+          });
+          parts.push(names.join(', '));
+        }
+        if (route.application_ids && route.application_ids.length) {
+          const names = route.application_ids.map(id => {
+            for (const p of scopesData) {
+              const a = (p.applications || []).find(a => a.id === id);
+              if (a) return a.slug;
+            }
+            return id.slice(0, 8);
+          });
+          parts.push(names.join(', '));
+        }
+        return parts.length ? esc(parts.join(' / ')) : '<span class="opacity-40">all</span>';
+      }
+
+      function esc(s) {
+        const d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+      }
+
+      // Initial load
+      loadAllRoutes();
+    })();
+  </script>
   {% endif %}
 
   <div class="max-w-2xl">

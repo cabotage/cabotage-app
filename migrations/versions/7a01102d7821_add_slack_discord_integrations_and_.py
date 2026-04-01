@@ -1,17 +1,17 @@
-"""add slack and discord integration tables
+"""add slack discord integrations and notification routes
 
-Revision ID: 9a29026aa850
+Revision ID: 7a01102d7821
 Revises: 5056d1ae059f
-Create Date: 2026-04-01 19:03:39.458609
+Create Date: 2026-04-01 20:57:33.461251
 
 """
 
 from alembic import op
 import sqlalchemy as sa
-
+from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = "9a29026aa850"
+revision = "7a01102d7821"
 down_revision = "5056d1ae059f"
 branch_labels = None
 depends_on = None
@@ -49,6 +49,56 @@ def upgrade():
             batch_op.f("ix_discord_integrations_organization_id"),
             ["organization_id"],
             unique=True,
+        )
+
+    op.create_table(
+        "notification_routes",
+        sa.Column(
+            "id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False
+        ),
+        sa.Column("organization_id", sa.UUID(), nullable=False),
+        sa.Column(
+            "notification_types",
+            postgresql.JSONB(astext_type=sa.Text()),
+            server_default=sa.text("'[]'::jsonb"),
+            nullable=False,
+        ),
+        sa.Column(
+            "project_ids",
+            postgresql.JSONB(astext_type=sa.Text()),
+            server_default=sa.text("'[]'::jsonb"),
+            nullable=False,
+        ),
+        sa.Column(
+            "environment_ids",
+            postgresql.JSONB(astext_type=sa.Text()),
+            server_default=sa.text("'[]'::jsonb"),
+            nullable=False,
+        ),
+        sa.Column(
+            "application_ids",
+            postgresql.JSONB(astext_type=sa.Text()),
+            server_default=sa.text("'[]'::jsonb"),
+            nullable=False,
+        ),
+        sa.Column("integration", sa.String(length=32), nullable=False),
+        sa.Column("channel_id", sa.String(length=64), nullable=False),
+        sa.Column("channel_name", sa.String(length=255), nullable=True),
+        sa.Column("enabled", sa.Boolean(), nullable=False),
+        sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["organization_id"],
+            ["organizations.id"],
+            name=op.f("fk_notification_routes_organization_id_organizations"),
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_notification_routes")),
+    )
+    with op.batch_alter_table("notification_routes", schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f("ix_notification_routes_organization_id"),
+            ["organization_id"],
+            unique=False,
         )
 
     op.create_table(
@@ -94,6 +144,10 @@ def downgrade():
         batch_op.drop_index(batch_op.f("ix_slack_integrations_organization_id"))
 
     op.drop_table("slack_integrations")
+    with op.batch_alter_table("notification_routes", schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f("ix_notification_routes_organization_id"))
+
+    op.drop_table("notification_routes")
     with op.batch_alter_table("discord_integrations", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_discord_integrations_organization_id"))
 

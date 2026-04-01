@@ -848,6 +848,8 @@ def organization_settings(org_slug):
         ],
     )
 
+    from cabotage.server.models.notifications import NOTIFICATION_CATEGORIES
+
     return render_template(
         "user/organization_settings.html",
         organization=organization,
@@ -859,6 +861,7 @@ def organization_settings(org_slug):
         oidc_issuer_url=oidc.issuer_url(),
         slack_integration=organization.slack_integration,
         discord_integration=organization.discord_integration,
+        notification_categories=NOTIFICATION_CATEGORIES,
     )
 
 
