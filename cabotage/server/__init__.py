@@ -240,10 +240,14 @@ def create_app():
     from cabotage.server.user.github_oauth import init_github_oauth
     from cabotage.server.integrations.slack_oauth import init_slack_oauth
     from cabotage.server.integrations.discord_oauth import init_discord_oauth
+    from cabotage.server.integrations.notification_routing import (
+        init_notification_routing,
+    )
 
     init_github_oauth(app)
     init_slack_oauth(app)
     init_discord_oauth(app)
+    init_notification_routing(app)
     vault_db_creds.init_app(app)
     db.init_app(app)
     principal.init_app(app)
