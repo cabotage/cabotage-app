@@ -1,6 +1,6 @@
 FROM python:3.13-slim-trixie
 
-ARG DEVEL=no
+ARG DEVEL no
 
 # By default, Docker has special steps to avoid keeping APT caches in the layers, which
 # is good, but in our case, we're going to mount a special cache volume (kept between
@@ -33,7 +33,7 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/cabotage-app \
     UV_LINK_MODE=copy
 ENV PATH="/opt/cabotage-app/bin:${PATH}"
 
-COPY --from=ghcr.io/astral-sh/uv:0.7 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11.2 /uv /usr/local/bin/uv
 
 RUN uv venv /opt/cabotage-app
 

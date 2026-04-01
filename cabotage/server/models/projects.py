@@ -1,6 +1,5 @@
 import json
 
-from citext import CIText
 from flask import current_app
 from sqlalchemy import CheckConstraint, text, UniqueConstraint
 from sqlalchemy.event import listens_for
@@ -113,7 +112,7 @@ class Project(Model, Timestamp):
         db.ForeignKey("organizations.id"),
     )
     name = db.Column(db.Text(), nullable=False)
-    slug = db.Column(CIText(), nullable=False)
+    slug = db.Column(postgresql.CITEXT(), nullable=False)
     k8s_identifier = db.Column(db.String(64), nullable=False)
     environments_enabled = db.Column(
         db.Boolean, nullable=False, default=False, server_default="false"
@@ -184,7 +183,7 @@ class Environment(Model, Timestamp):
         index=True,
     )
     name = db.Column(db.Text(), nullable=False)
-    slug = db.Column(CIText(), nullable=False)
+    slug = db.Column(postgresql.CITEXT(), nullable=False)
     k8s_identifier = db.Column(db.String(64), nullable=False)
     sort_order = db.Column(db.Integer, nullable=False, default=100)
     ephemeral = db.Column(db.Boolean, nullable=False, default=False)
@@ -469,7 +468,7 @@ class Application(Model, Timestamp):
         nullable=False,
     )
     name = db.Column(db.Text(), nullable=False)
-    slug = db.Column(CIText(), nullable=False)
+    slug = db.Column(postgresql.CITEXT(), nullable=False)
     k8s_identifier = db.Column(db.String(64), nullable=False)
     platform = db.Column(platform_version, nullable=False, default="wind")
     process_counts = db.Column(
@@ -1197,7 +1196,7 @@ class Configuration(Model, Timestamp):
     )
 
     name = db.Column(
-        CIText(),
+        postgresql.CITEXT(),
         nullable=False,
     )
     value = db.Column(
@@ -1304,7 +1303,7 @@ class EnvironmentConfiguration(Model, Timestamp):
         index=True,
     )
     name = db.Column(
-        CIText(),
+        postgresql.CITEXT(),
         nullable=False,
     )
     value = db.Column(

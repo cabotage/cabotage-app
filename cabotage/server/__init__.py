@@ -19,7 +19,6 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_admin import Admin
 from flask_babel import Babel
 from flask_bcrypt import Bcrypt
-from flask_bootstrap import Bootstrap
 from flask_debugtoolbar import DebugToolbarExtension
 import humanize as humanize_lib
 from flask_mail import Mail
@@ -39,7 +38,6 @@ from sentry_sdk.integrations.flask import FlaskIntegration
 from sqlalchemy import MetaData
 
 from cabotage.server.acl import cabotage_on_identity_loaded
-from cabotage.server.nav import nav
 
 from cabotage.server.ext.consul import Consul
 from cabotage.server.ext.vault import Vault
@@ -52,7 +50,6 @@ from cabotage.server.mfa import CabotageWebauthnUtil
 # instantiate the extensions
 bcrypt = Bcrypt()
 toolbar = DebugToolbarExtension()
-bootstrap = Bootstrap()
 
 security = Security(webauthn_util_cls=CabotageWebauthnUtil)
 
@@ -145,7 +142,7 @@ def create_app():
     from cabotage.server.models.admin import AdminIndexView
 
     admin = Admin(
-        name="cabotage_admin", index_view=AdminIndexView(), template_mode="bootstrap3"
+        name="cabotage_admin", index_view=AdminIndexView()
     )
 
     from cabotage.server.models.auth import User, Role, WebAuthn
@@ -208,7 +205,6 @@ def create_app():
     admin.init_app(app)
     bcrypt.init_app(app)
     toolbar.init_app(app)
-    bootstrap.init_app(app)
     security.init_app(
         app,
         user_datastore,
@@ -230,7 +226,6 @@ def create_app():
 
     mail.init_app(app)
     migrate.init_app(app, db)
-    nav.init_app(app)
 
     @app.template_filter("display_username")
     def display_username_filter(value):
