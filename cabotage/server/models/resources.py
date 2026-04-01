@@ -1,5 +1,6 @@
+from __future__ import annotations
+
 import uuid
-from typing import Optional
 
 from sqlalchemy import ForeignKey, Integer, String, text
 from sqlalchemy.dialects import postgresql
@@ -18,7 +19,7 @@ class Resource(Model, Timestamp):
         server_default=text("gen_random_uuid()"),
         primary_key=True,
     )
-    type: Mapped[Optional[str]] = mapped_column(String(50))
+    type: Mapped[str | None] = mapped_column(String(50))
     application_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         ForeignKey("project_applications.id"),
