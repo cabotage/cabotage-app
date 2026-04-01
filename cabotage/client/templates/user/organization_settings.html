@@ -194,6 +194,90 @@
   </div>
   {% endif %}
 
+  {# Slack Integration #}
+  {% if slack_oauth_enabled is defined and slack_oauth_enabled %}
+  <div class="card bg-base-200/50 border border-base-300/50 max-w-2xl mt-6">
+    <div class="card-body">
+      <div class="flex items-center justify-between">
+        <h2 class="card-title text-lg">Slack Integration</h2>
+        {% if slack_integration %}
+          <span class="badge badge-sm badge-success">Connected</span>
+        {% endif %}
+      </div>
+
+      {% if slack_integration %}
+        <div class="text-sm opacity-80 space-y-1">
+          <p>Workspace: <strong>{{ slack_integration.team_name or slack_integration.team_id }}</strong></p>
+          {% if slack_integration.default_channel_name %}
+            <p>Default channel: <strong>#{{ slack_integration.default_channel_name }}</strong></p>
+          {% else %}
+            <p class="text-warning">No default channel configured.</p>
+          {% endif %}
+        </div>
+
+        <div class="mt-4 flex gap-2">
+          <form method="POST" action="{{ url_for('slack_oauth.disconnect', org_slug=organization.slug) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-error btn-outline btn-sm gap-2"
+                    onclick="return confirm('Disconnect Slack? Alert notifications to this workspace will stop.')">
+              {{ icon('trash-2', 'w-4 h-4') }}
+              Disconnect
+            </button>
+          </form>
+        </div>
+      {% else %}
+        <p class="text-sm opacity-80 mb-4">Connect a Slack workspace to receive alert notifications in your channels.</p>
+        <a href="{{ url_for('slack_oauth.connect', org_slug=organization.slug) }}" class="btn btn-primary btn-sm gap-2">
+          {{ icon('link', 'w-4 h-4') }}
+          Connect with Slack
+        </a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# Discord Integration #}
+  {% if discord_oauth_enabled is defined and discord_oauth_enabled %}
+  <div class="card bg-base-200/50 border border-base-300/50 max-w-2xl mt-6">
+    <div class="card-body">
+      <div class="flex items-center justify-between">
+        <h2 class="card-title text-lg">Discord Integration</h2>
+        {% if discord_integration %}
+          <span class="badge badge-sm badge-success">Connected</span>
+        {% endif %}
+      </div>
+
+      {% if discord_integration %}
+        <div class="text-sm opacity-80 space-y-1">
+          <p>Server: <strong>{{ discord_integration.guild_name or discord_integration.guild_id }}</strong></p>
+          {% if discord_integration.default_channel_name %}
+            <p>Default channel: <strong>#{{ discord_integration.default_channel_name }}</strong></p>
+          {% else %}
+            <p class="text-warning">No default channel configured.</p>
+          {% endif %}
+        </div>
+
+        <div class="mt-4 flex gap-2">
+          <form method="POST" action="{{ url_for('discord_oauth.disconnect', org_slug=organization.slug) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-error btn-outline btn-sm gap-2"
+                    onclick="return confirm('Disconnect Discord? Alert notifications to this server will stop.')">
+              {{ icon('trash-2', 'w-4 h-4') }}
+              Disconnect
+            </button>
+          </form>
+        </div>
+      {% else %}
+        <p class="text-sm opacity-80 mb-4">Connect a Discord server to receive alert notifications in your channels.</p>
+        <a href="{{ url_for('discord_oauth.connect', org_slug=organization.slug) }}" class="btn btn-primary btn-sm gap-2">
+          {{ icon('link', 'w-4 h-4') }}
+          Connect with Discord
+        </a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   <div class="max-w-2xl">
     {{ danger_zone_delete(
       modal_id='delete-org-modal',

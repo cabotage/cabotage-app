@@ -178,6 +178,92 @@ class TailscaleIntegration(Model):
         return f"<TailscaleIntegration {self.id} org={self.organization_id}>"
 
 
+class SlackIntegration(Model):
+    __tablename__ = "slack_integrations"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        primary_key=True,
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("organizations.id"),
+        unique=True,
+        index=True,
+    )
+    team_id: Mapped[str] = mapped_column(String(64))
+    team_name: Mapped[str | None] = mapped_column(String(255))
+    bot_user_id: Mapped[str | None] = mapped_column(String(64))
+    access_token_vault_path: Mapped[str | None] = mapped_column(String(512))
+    default_channel_id: Mapped[str | None] = mapped_column(String(64))
+    default_channel_name: Mapped[str | None] = mapped_column(String(255))
+    installed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("users.id"),
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime,
+        default=datetime.datetime.now,
+        onupdate=datetime.datetime.now,
+    )
+
+    organization: Mapped[Organization] = relationship(
+        backref=backref("slack_integration", uselist=False),
+    )
+    installed_by: Mapped[User | None] = relationship(
+        foreign_keys=[installed_by_user_id]
+    )
+
+    def __repr__(self):
+        return f"<SlackIntegration {self.id} org={self.organization_id} team={self.team_id}>"
+
+
+class DiscordIntegration(Model):
+    __tablename__ = "discord_integrations"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        primary_key=True,
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("organizations.id"),
+        unique=True,
+        index=True,
+    )
+    guild_id: Mapped[str] = mapped_column(String(64))
+    guild_name: Mapped[str | None] = mapped_column(String(255))
+    default_channel_id: Mapped[str | None] = mapped_column(String(64))
+    default_channel_name: Mapped[str | None] = mapped_column(String(255))
+    installed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("users.id"),
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime,
+        default=datetime.datetime.now,
+        onupdate=datetime.datetime.now,
+    )
+
+    organization: Mapped[Organization] = relationship(
+        backref=backref("discord_integration", uselist=False),
+    )
+    installed_by: Mapped[User | None] = relationship(
+        foreign_keys=[installed_by_user_id]
+    )
+
+    def __repr__(self):
+        return f"<DiscordIntegration {self.id} org={self.organization_id} guild={self.guild_id}>"
+
+
 class Organization(Model):
     __versioned__: dict = {}
     __tablename__ = "organizations"
