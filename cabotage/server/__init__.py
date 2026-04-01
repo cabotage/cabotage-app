@@ -156,7 +156,6 @@ def create_app():
     user_datastore = SQLAlchemyUserDatastore(db, User, Role, webauthn_model=WebAuthn)
 
     from cabotage.server.user.forms import (
-        ExtendedConfirmRegisterForm,
         ExtendedLoginForm,
         ExtendedRegisterForm,
     )
@@ -216,7 +215,6 @@ def create_app():
     security.init_app(
         app,
         user_datastore,
-        confirm_register_form=ExtendedConfirmRegisterForm,
         register_form=ExtendedRegisterForm,
         login_form=ExtendedLoginForm,
     )
