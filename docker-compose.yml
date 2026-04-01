@@ -118,7 +118,7 @@ services:
       - CABOTAGE_KUBERNETES_CONTEXT=minikube
       - CABOTAGE_KUBERNETES_ENABLED=False
       - CABOTAGE_SECURITY_CONFIRMABLE=False
-      - CABOTAGE_SQLALCHEMY_DATABASE_URI=postgresql://postgres@db/cabotage_dev
+      - CABOTAGE_SQLALCHEMY_DATABASE_URI=postgresql+psycopg://postgres@db/cabotage_dev
       - CABOTAGE_TESTING=True
       - CABOTAGE_VAULT_TOKEN=deadbeef-dead-beef-dead-beefdeadbeef
       - C_FORCE_ROOT=1

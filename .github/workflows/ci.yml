@@ -78,7 +78,7 @@ jobs:
       - name: Run migrations
         run: uv run flask db upgrade
         env:
-          CABOTAGE_SQLALCHEMY_DATABASE_URI: postgresql://postgres@localhost/cabotage_test
+          CABOTAGE_SQLALCHEMY_DATABASE_URI: postgresql+psycopg://postgres@localhost/cabotage_test
           FLASK_APP: cabotage.server.wsgi
       - name: Run tests
         run: uv run pytest tests/ -v
