@@ -225,7 +225,7 @@ def process_deployment_hook(hook):
             object=image,
             data={
                 "sender": sender,
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -273,6 +273,8 @@ def _required_contexts_for_branch(access_token, repository_name, branch):
 
     Returns a list of context names.
     """
+    if github_app.app_id is None:
+        raise HookError("GitHub App ID not configured")
     own_app_id = int(github_app.app_id)
     required = []
 
@@ -281,7 +283,7 @@ def _required_contexts_for_branch(access_token, repository_name, branch):
         f"https://api.github.com/repos/{repository_name}/branches/{branch}/protection/required_status_checks",
         headers={
             "Accept": "application/vnd.github+json",
-            "Authorization": f'token {access_token["token"]}',
+            "Authorization": f"token {access_token['token']}",
         },
         timeout=10,
     )
@@ -304,7 +306,7 @@ def _required_contexts_for_branch(access_token, repository_name, branch):
         f"https://api.github.com/repos/{repository_name}/rules/branches/{branch}",
         headers={
             "Accept": "application/vnd.github+json",
-            "Authorization": f'token {access_token["token"]}',
+            "Authorization": f"token {access_token['token']}",
         },
         timeout=10,
     )
@@ -355,7 +357,7 @@ def _all_required_checks_passed(
             f"https://api.github.com/repos/{repository_name}/commits/{commit_sha}/check-runs",
             headers={
                 "Accept": "application/vnd.github+json",
-                "Authorization": f'token {access_token["token"]}',
+                "Authorization": f"token {access_token['token']}",
             },
             params={"per_page": 100, "page": page},
             timeout=10,
@@ -374,7 +376,7 @@ def _all_required_checks_passed(
         f"https://api.github.com/repos/{repository_name}/commits/{commit_sha}/status",
         headers={
             "Accept": "application/vnd.github+json",
-            "Authorization": f'token {access_token["token"]}',
+            "Authorization": f"token {access_token['token']}",
         },
         timeout=10,
     )
@@ -396,21 +398,24 @@ def _all_required_checks_passed(
 
 
 def create_deployment(
-    access_token=None,
-    application=None,
-    repository_name=None,
-    ref=None,
-    app_env=None,
-    branch=None,
-    transient_environment=False,
-    environment_name=None,
-    payload=None,
-    required_contexts=None,
+    access_token: dict,
+    repository_name: str,
+    ref: str,
+    application: Application | None = None,
+    app_env: ApplicationEnvironment | None = None,
+    branch: str | None = None,
+    transient_environment: bool = False,
+    environment_name: str | None = None,
+    payload: dict | None = None,
+    required_contexts: list | None = None,
 ):
     try:
-        environment_string = (
-            environment_name or app_env.effective_github_environment_name
-        )
+        if environment_name:
+            environment_string = environment_name
+        elif app_env is not None:
+            environment_string = app_env.effective_github_environment_name
+        else:
+            raise ValueError("Either environment_name or app_env must be provided")
 
         deploy_payload = {
             "ref": ref,
@@ -439,7 +444,7 @@ def create_deployment(
             f"https://api.github.com/repos/{repository_name}/deployments",
             headers={
                 "Accept": "application/vnd.github.machine-man-preview+json",
-                "Authorization": f'token {access_token["token"]}',
+                "Authorization": f"token {access_token['token']}",
             },
             json=deploy_payload,
             timeout=10,
@@ -715,7 +720,7 @@ def _base_ref_chains_to_auto_deploy_branch(
             f"https://api.github.com/repos/{repository_name}/pulls",
             headers={
                 "Accept": "application/vnd.github+json",
-                "Authorization": f'token {access_token["token"]}',
+                "Authorization": f"token {access_token['token']}",
             },
             params={"state": "open", "head": f"{owner}:{current}"},
             timeout=10,

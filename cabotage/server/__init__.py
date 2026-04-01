@@ -1,6 +1,7 @@
 import hashlib
 import os
 from html import escape
+from typing import Any, ClassVar, TYPE_CHECKING
 
 import sentry_sdk
 
@@ -9,10 +10,10 @@ try:
     from pygments.formatters import HtmlFormatter
     from pygments.lexers import DockerLexer, TextLexer
 except ImportError:
-    highlight = None
-    HtmlFormatter = None
-    DockerLexer = None
-    TextLexer = None
+    highlight: Any = None
+    HtmlFormatter: Any = None
+    DockerLexer: Any = None
+    TextLexer: Any = None
 
 from flask import Flask, render_template, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -25,7 +26,6 @@ from flask_mail import Mail
 from flask_migrate import Migrate
 from flask_security import Security, SQLAlchemyUserDatastore
 from flask_principal import Principal, identity_loaded
-from typing import TYPE_CHECKING
 
 from flask_sqlalchemy import SQLAlchemy
 from flask_sock import Sock
@@ -36,6 +36,7 @@ from celery import Task
 from celery.schedules import crontab
 from sentry_sdk.integrations.flask import FlaskIntegration
 from sqlalchemy import MetaData
+from sqlalchemy.orm import DeclarativeBase
 
 from cabotage.server.acl import cabotage_on_identity_loaded
 
@@ -54,23 +55,30 @@ toolbar = DebugToolbarExtension()
 security = Security(webauthn_util_cls=CabotageWebauthnUtil)
 
 
-db_metadata = MetaData(
-    naming_convention={
-        "ix": "ix_%(column_0_label)s",
-        "uq": "uq_%(table_name)s_%(column_0_name)s",
-        "ck": "ck_%(table_name)s_%(constraint_name)s",
-        "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
-        "pk": "pk_%(table_name)s",
-    }
-)
-db: SQLAlchemy = SQLAlchemy(
-    metadata=db_metadata, engine_options={"pool_pre_ping": True}
-)
+class Base(DeclarativeBase):
+    metadata = MetaData(
+        naming_convention={
+            "ix": "ix_%(column_0_label)s",
+            "uq": "uq_%(table_name)s_%(column_0_name)s",
+            "ck": "ck_%(table_name)s_%(constraint_name)s",
+            "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+            "pk": "pk_%(table_name)s",
+        }
+    )
+
+
+db: SQLAlchemy = SQLAlchemy(model_class=Base, engine_options={"pool_pre_ping": True})
 
 if TYPE_CHECKING:
-    from flask_sqlalchemy.model import Model
+
+    class Model(Base):
+        """Type-checking stub: at runtime this is db.Model which adds query etc."""
+
+        query: ClassVar[Any]
+        query_class: ClassVar[type]
 else:
     Model = db.Model
+
 principal = Principal()
 mail = Mail()
 migrate = Migrate()
@@ -148,7 +156,6 @@ def create_app():
     user_datastore = SQLAlchemyUserDatastore(db, User, Role, webauthn_model=WebAuthn)
 
     from cabotage.server.user.forms import (
-        ExtendedConfirmRegisterForm,
         ExtendedLoginForm,
         ExtendedRegisterForm,
     )
@@ -178,6 +185,8 @@ def create_app():
 
     def _get_static_hash(filename):
         if filename not in _static_hashes:
+            if app.static_folder is None:
+                return None
             filepath = os.path.join(app.static_folder, filename)
             try:
                 with open(filepath, "rb") as f:
@@ -197,7 +206,7 @@ def create_app():
                     values["v"] = h
         return url_for(endpoint, **values)
 
-    app.jinja_env.globals["url_for"] = _hashed_url_for
+    app.jinja_env.globals.update(url_for=_hashed_url_for)  # ty: ignore[invalid-argument-type]  # Jinja infers globals as a narrow dict; should be dict[str, Any]
 
     # set up extensions
     admin.init_app(app)
@@ -206,7 +215,6 @@ def create_app():
     security.init_app(
         app,
         user_datastore,
-        confirm_register_form=ExtendedConfirmRegisterForm,
         register_form=ExtendedRegisterForm,
         login_form=ExtendedLoginForm,
     )
@@ -263,7 +271,12 @@ def create_app():
         text = "" if value is None else str(value)
         if not text or text == "None":
             return ""
-        if highlight is None:
+        if (
+            highlight is None
+            or DockerLexer is None
+            or TextLexer is None
+            or HtmlFormatter is None
+        ):
             return f"<pre>{escape(text)}</pre>"
         lexer = DockerLexer() if language == "dockerfile" else TextLexer()
         formatter = HtmlFormatter(nowrap=False, noclasses=False)
@@ -348,7 +361,7 @@ def create_app():
     admin.add_view(AdminModelView(User, db.session))
 
     num_proxies = app.config.get("PROXY_FIX_NUM_PROXIES", 1)
-    app.wsgi_app = ProxyFix(
+    app.wsgi_app = ProxyFix(  # ty: ignore[invalid-assignment]  # Flask types wsgi_app as a method but documents reassignment
         app.wsgi_app,
         x_for=num_proxies,
         x_proto=num_proxies,
@@ -371,6 +384,6 @@ def create_app():
 
         return original_wsgi(environ, _filtered_start_response)
 
-    app.wsgi_app = _static_cache_headers_middleware
+    app.wsgi_app = _static_cache_headers_middleware  # ty: ignore[invalid-assignment]  # Flask types wsgi_app as a method but documents reassignment
 
     return app

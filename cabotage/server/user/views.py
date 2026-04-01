@@ -24,6 +24,7 @@ from flask_security import (
 from flask_wtf import FlaskForm
 
 import kubernetes
+import kubernetes.stream.ws_client
 
 from dxf import DXF
 import requests as requests_lib
@@ -350,7 +351,7 @@ def _associate_app_with_environment(application, environment, organization, proj
         object=app_env,
         data={
             "user_id": str(current_user.id),
-            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         },
     )
     db.session.add(activity)
@@ -653,7 +654,7 @@ def organization_settings(org_slug):
             object=organization,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -758,7 +759,7 @@ def organization_settings(org_slug):
                 "user_id": str(current_user.id),
                 "action": f"tailscale_{ts_verb}",
                 "tailnet": tailnet_name,
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -784,7 +785,9 @@ def organization_settings(org_slug):
                 data={
                     "user_id": str(current_user.id),
                     "action": "tailscale_delete",
-                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                    "timestamp": datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -853,7 +856,7 @@ def organization_create():
             object=organization,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(org_create)
@@ -912,7 +915,7 @@ def organization_project_create(org_slug):
             object=project,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -1186,7 +1189,7 @@ def project_settings(org_slug, project_slug):
             object=project,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -1264,7 +1267,7 @@ def project_create():
             object=project,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -1332,7 +1335,7 @@ def project_environment_create(org_slug, project_slug):
             object=environment,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -1426,7 +1429,7 @@ def project_environment_settings(org_slug, project_slug, env_slug):
             object=environment,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -1509,7 +1512,7 @@ def project_environment_delete(org_slug, project_slug, env_slug):
             object=environment,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -1724,7 +1727,7 @@ def project_environment_configuration_create(org_slug, project_slug, env_slug):
             object=configuration,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -1854,7 +1857,7 @@ def project_environment_configuration_edit(org_slug, project_slug, env_slug, con
             object=configuration,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -1922,7 +1925,7 @@ def project_environment_configuration_delete(
             object=configuration,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -1994,7 +1997,7 @@ def project_application_env_config_subscribe(
             data={
                 "user_id": str(current_user.id),
                 "env_config_name": env_config.name,
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2053,7 +2056,7 @@ def project_application_env_config_unsubscribe(
             data={
                 "user_id": str(current_user.id),
                 "env_config_name": env_config.name,
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2103,7 +2106,7 @@ def project_application_delete(org_slug, project_slug, app_slug):
             object=application,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2145,7 +2148,7 @@ def project_delete(org_slug, project_slug):
             object=project,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2184,7 +2187,7 @@ def organization_delete(org_slug):
             object=organization,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2257,7 +2260,6 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     # Eagerly load subscriptions + env configs to avoid N+1 in
     # _resolved_configuration and template rendering
     if app_env:
-
         db.session.query(ApplicationEnvironment).filter_by(id=app_env.id).options(
             subqueryload(
                 ApplicationEnvironment.environment_config_subscriptions
@@ -2269,8 +2271,8 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     )
     for pod_class, parameters in pod_classes.items():
         pod_class_info += (
-            f'<tr><td>{pod_class}</td><td>{parameters["cpu"]["requests"]}</td>'
-            f'<td>{parameters["memory"]["requests"]}</td></tr>'
+            f"<tr><td>{pod_class}</td><td>{parameters['cpu']['requests']}</td>"
+            f"<td>{parameters['memory']['requests']}</td></tr>"
         )
     pod_class_info += "</table>"
 
@@ -2766,7 +2768,7 @@ def project_application_create(org_slug, project_slug):
             object=application,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2965,7 +2967,7 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
             object=configuration,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -3082,7 +3084,7 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
             object=configuration,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -3161,7 +3163,7 @@ def project_application_settings(org_slug, project_slug, app_slug):
             object=application,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -3258,7 +3260,7 @@ def project_application_environment_settings(
             object=app_env,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -3402,7 +3404,9 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                 # render_field_compact shows field.errors inline
                 return _render_ingress(ingress_errors=ingress_errors)
 
-            new_use_regex = form.use_regex.data if not is_tailscale else False
+            new_use_regex = (
+                form.use_regex.data if isinstance(form, IngressSettingsForm) else False
+            )
 
             # --- Validate everything before touching the session ---
 
@@ -3512,7 +3516,7 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                                     is_auto_generated=False,
                                 )
                             )
-                else:
+                elif isinstance(form, IngressSettingsForm):
                     ingress.proxy_connect_timeout = form.proxy_connect_timeout.data
                     ingress.proxy_read_timeout = form.proxy_read_timeout.data
                     ingress.proxy_send_timeout = form.proxy_send_timeout.data
@@ -3587,7 +3591,9 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                     object=ingress,
                     data={
                         "user_id": str(current_user.id),
-                        "timestamp": datetime.datetime.utcnow().isoformat(),
+                        "timestamp": datetime.datetime.now(
+                            datetime.timezone.utc
+                        ).isoformat(),
                     },
                 )
                 db.session.add(activity)
@@ -3618,7 +3624,9 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                 object=ingress,
                 data={
                     "user_id": str(current_user.id),
-                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                    "timestamp": datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -3716,7 +3724,9 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                         object=ingress,
                         data={
                             "user_id": str(current_user.id),
-                            "timestamp": datetime.datetime.utcnow().isoformat(),
+                            "timestamp": datetime.datetime.now(
+                                datetime.timezone.utc
+                            ).isoformat(),
                         },
                     )
                     db.session.add(activity)
@@ -3777,7 +3787,7 @@ def project_application_configuration_delete(
             object=configuration,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -4365,7 +4375,7 @@ def application_release_create(org_slug, project_slug, app_slug):
         object=release,
         data={
             "user_id": str(current_user.id),
-            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         },
     )
     db.session.add(activity)
@@ -4485,7 +4495,7 @@ def account_security_verify_recovery_code():
         data={
             "user_id": str(current_user.id),
             "action": "recovery_code_used",
-            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         },
     )
     db.session.add(activity)
@@ -4560,7 +4570,7 @@ def application_images_build_fromsource(org_slug, project_slug, app_slug):
         object=image,
         data={
             "user_id": str(current_user.id),
-            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         },
     )
     db.session.add(activity)
@@ -4844,7 +4854,9 @@ def application_scale(org_slug, project_slug, app_slug):
                 object=application,
                 data={
                     "user_id": str(current_user.id),
-                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                    "timestamp": datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat(),
                     "changes": scaled,
                 },
             )
@@ -4949,7 +4961,7 @@ def release_deploy(org_slug, project_slug, app_slug, release_id):
         object=deployment,
         data={
             "user_id": str(current_user.id),
-            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         },
     )
     db.session.add(activity)
@@ -5054,7 +5066,9 @@ def organization_add_user(org_slug):
                         "user_id": str(current_user.id),
                         "member_email": user.email,
                         "action": "add_member",
-                        "timestamp": datetime.datetime.utcnow().isoformat(),
+                        "timestamp": datetime.datetime.now(
+                            datetime.timezone.utc
+                        ).isoformat(),
                     },
                 )
                 db.session.add(activity)
@@ -5096,7 +5110,9 @@ def organization_remove_user(org_slug):
                     "user_id": str(current_user.id),
                     "member_email": user.email,
                     "action": "remove_member",
-                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                    "timestamp": datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -5131,7 +5147,9 @@ def organization_promote_user(org_slug):
                     "user_id": str(current_user.id),
                     "member_email": user.email,
                     "action": "promote_member",
-                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                    "timestamp": datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -5166,7 +5184,9 @@ def organization_demote_user(org_slug):
                     "user_id": str(current_user.id),
                     "member_email": user.email,
                     "action": "demote_member",
-                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                    "timestamp": datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -6484,9 +6504,7 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
     pods_ready = 0
     pods_by_phase = {}
     running_pod_names = []
-    processes = (
-        {}
-    )  # {process_name: {"total": N, "ready": N, "pending": N, "crashed": N}}
+    processes = {}  # {process_name: {"total": N, "ready": N, "pending": N, "crashed": N}}
     try:
         api_client = kubernetes_ext.kubernetes_client
         core_api = kubernetes.client.CoreV1Api(api_client)
@@ -6559,7 +6577,7 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
         ', container!="cabotage-enroller"'
     )
     cpu_series = _query_mimir_range(
-        f"sum(rate(container_cpu_usage_seconds_total" f"{{{app_labels}}}[{step}s]))",
+        f"sum(rate(container_cpu_usage_seconds_total{{{app_labels}}}[{step}s]))",
         start,
         end,
         step,
@@ -6569,7 +6587,7 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
             cpu_history.append([ts, round(float(val) * 1000, 1)])
 
     mem_series = _query_mimir_range(
-        f"sum(container_memory_working_set_bytes" f"{{{app_labels}}})",
+        f"sum(container_memory_working_set_bytes{{{app_labels}}})",
         start,
         end,
         step,

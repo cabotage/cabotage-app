@@ -118,7 +118,7 @@ services:
       - CABOTAGE_KUBERNETES_CONTEXT=minikube
       - CABOTAGE_KUBERNETES_ENABLED=False
       - CABOTAGE_SECURITY_CONFIRMABLE=False
-      - CABOTAGE_SQLALCHEMY_DATABASE_URI=postgresql://postgres@db/cabotage_dev
+      - CABOTAGE_SQLALCHEMY_DATABASE_URI=postgresql+psycopg://postgres@db/cabotage_dev
       - CABOTAGE_TESTING=True
       - CABOTAGE_VAULT_TOKEN=deadbeef-dead-beef-dead-beefdeadbeef
       - C_FORCE_ROOT=1
@@ -129,7 +129,7 @@ services:
 
   cabotage-app:
     image: cabotage-app:docker-compose
-    command: hupper -m gunicorn.app.wsgiapp -c gunicorn.conf -w 4 --threads 100 -b 0.0.0.0:8000 cabotage.server.wsgi:app
+    command: hupper -m gunicorn.app.wsgiapp -c gunicorn.conf.py -w 4 --threads 100 -b 0.0.0.0:8000 cabotage.server.wsgi:app
     environment: *base_environment
     env_file:
       - path: .env

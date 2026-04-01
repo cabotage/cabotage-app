@@ -1,4 +1,8 @@
+from __future__ import annotations
+
 import datetime
+import uuid
+from typing import TYPE_CHECKING
 
 from flask_security.models.fsqla_v3 import (
     FsModels,
@@ -6,8 +10,9 @@ from flask_security.models.fsqla_v3 import (
     FsUserMixin,
     FsWebAuthnMixin,
 )
-from sqlalchemy import text
+from sqlalchemy import Boolean, DateTime, BigInteger, ForeignKey, String, Text, text
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.orm import Mapped, mapped_column, relationship, backref
 from sqlalchemy_continuum import make_versioned
 
 from cabotage.server import db, Model
@@ -19,6 +24,9 @@ from .auth_associations import (
     OrganizationTeam,
     TeamMember,
 )
+
+if TYPE_CHECKING:
+    from cabotage.server.models.projects import Project
 
 # Must be set before model classes are defined — FsUserMixin uses
 # FsModels.db to create the webauthn relationship.
@@ -39,14 +47,13 @@ class Role(Model, FsRoleMixin):
     __versioned__: dict = {}
     __tablename__ = "roles"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    name = db.Column(db.String(80), unique=True)
-    description = db.Column(db.String(255))
+    name: Mapped[str | None] = mapped_column(String(80), unique=True)
+    description: Mapped[str | None] = mapped_column(String(255))
 
     def __str__(self):
         return self.name
@@ -61,26 +68,27 @@ class User(Model, FsUserMixin):
     }
     __tablename__ = "users"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    username = db.Column(db.String(255), unique=True, nullable=False)
-    password = db.Column(db.String(255), nullable=False)
+    username: Mapped[str] = mapped_column(String(255), unique=True)
+    password: Mapped[str] = mapped_column(String(255))
 
-    admin = db.Column(db.Boolean, nullable=False, default=False)
-    registered_at = db.Column(
-        db.DateTime, nullable=False, default=datetime.datetime.now
+    admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    registered_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
     )
 
-    roles = db.relationship(  # type: ignore[assignment]
-        "Role", secondary=roles_users, backref=db.backref("users", lazy="dynamic")
+    roles: Mapped[list[Role]] = relationship(  # type: ignore[assignment]
+        "Role", secondary=roles_users, backref=backref("users", lazy="dynamic")
     )
 
-    organizations = db.relationship("OrganizationMember", back_populates="user")
-    teams = db.relationship("TeamMember", back_populates="user")
+    organizations: Mapped[list[OrganizationMember]] = relationship(
+        back_populates="user"
+    )
+    teams: Mapped[list[TeamMember]] = relationship(back_populates="user")
 
     def __repr__(self):
         return "<User {0}>".format(self.username)
@@ -91,82 +99,79 @@ class User(Model, FsUserMixin):
         for organization in self.organizations:
             projects += organization.organization.projects
         for team in self.teams:
-            projects += team.team.projects
+            for org_team in team.team.organizations:
+                projects += org_team.organization.projects
         return projects
 
 
 class GitHubIdentity(Model):
     __tablename__ = "github_identities"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    user_id = db.Column(
+    user_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("users.id"),
-        nullable=False,
+        ForeignKey("users.id"),
         unique=True,
     )
-    github_id = db.Column(db.BigInteger, nullable=False, unique=True)
-    github_username = db.Column(db.String(255), nullable=False)
-    github_access_token = db.Column(db.String(255), nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.datetime.now)
+    github_id: Mapped[int] = mapped_column(BigInteger, unique=True)
+    github_username: Mapped[str] = mapped_column(String(255))
+    github_access_token: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
+    )
 
-    user = db.relationship("User", backref=db.backref("github_identity", uselist=False))
+    user: Mapped[User] = relationship(backref=backref("github_identity", uselist=False))
 
 
 class WebAuthn(Model, FsWebAuthnMixin):
     __tablename__ = "webauthn"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    user_id = db.Column(
+    user_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("users.id"),
-        nullable=False,
+        ForeignKey("users.id"),
     )
 
 
 class TailscaleIntegration(Model):
     __tablename__ = "tailscale_integrations"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    organization_id = db.Column(
+    organization_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("organizations.id"),
-        nullable=False,
+        ForeignKey("organizations.id"),
         unique=True,
         index=True,
     )
-    client_id = db.Column(db.String(255), nullable=False)
-    client_secret_vault_path = db.Column(db.String(512), nullable=True)
-    tailnet = db.Column(db.String(255), nullable=True)
-    default_tags = db.Column(db.String(512), nullable=True)
-    operator_state = db.Column(db.String(32), default="pending", nullable=False)
-    operator_version = db.Column(db.String(64), nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.datetime.now)
-    updated_at = db.Column(
-        db.DateTime,
-        nullable=False,
+    client_id: Mapped[str] = mapped_column(String(255))
+    client_secret_vault_path: Mapped[str | None] = mapped_column(String(512))
+    tailnet: Mapped[str | None] = mapped_column(String(255))
+    default_tags: Mapped[str | None] = mapped_column(String(512))
+    operator_state: Mapped[str] = mapped_column(String(32), default="pending")
+    operator_version: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime,
         default=datetime.datetime.now,
         onupdate=datetime.datetime.now,
     )
 
-    organization = db.relationship(
-        "Organization",
-        backref=db.backref("tailscale_integration", uselist=False),
+    organization: Mapped[Organization] = relationship(
+        backref=backref("tailscale_integration", uselist=False),
     )
 
     def __repr__(self):
@@ -184,21 +189,22 @@ class Organization(Model):
             kwargs["k8s_identifier"] = generate_k8s_identifier(kwargs["slug"])
         super().__init__(*args, **kwargs)
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    name = db.Column(db.Text(), nullable=False)
-    slug = db.Column(postgresql.CITEXT(), nullable=False, unique=True)
-    k8s_identifier = db.Column(db.String(64), unique=True, nullable=False)
-    deleted_at = db.Column(db.DateTime, nullable=True, index=True)
+    name: Mapped[str] = mapped_column(Text())
+    slug: Mapped[str] = mapped_column(postgresql.CITEXT(), unique=True)
+    k8s_identifier: Mapped[str] = mapped_column(String(64), unique=True)
+    deleted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, index=True)
 
-    members = db.relationship("OrganizationMember", back_populates="organization")
-    teams = db.relationship("OrganizationTeam", back_populates="organization")
+    members: Mapped[list[OrganizationMember]] = relationship(
+        back_populates="organization"
+    )
+    teams: Mapped[list[OrganizationTeam]] = relationship(back_populates="organization")
 
-    projects = db.relationship("Project", backref="organization")
+    projects: Mapped[list[Project]] = relationship(back_populates="organization")
 
     @property
     def active_projects(self):
@@ -233,18 +239,17 @@ class Team(Model):
             kwargs["slug"] = slugify(kwargs.get("name"))
         super().__init__(*args, **kwargs)
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
 
-    name = db.Column(db.String(64), nullable=False)
-    slug = db.Column(db.String(64), nullable=False)
+    name: Mapped[str] = mapped_column(String(64))
+    slug: Mapped[str] = mapped_column(String(64))
 
-    organizations = db.relationship("OrganizationTeam", back_populates="team")
-    members = db.relationship("TeamMember", back_populates="team")
+    organizations: Mapped[list[OrganizationTeam]] = relationship(back_populates="team")
+    members: Mapped[list[TeamMember]] = relationship(back_populates="team")
 
     def add_user(self, user, admin=False):
         association = TeamMember(admin=admin)

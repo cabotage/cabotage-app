@@ -117,7 +117,7 @@ def callback():
                 email=primary_email,
                 password="!",  # nosec B106 - unusable password for OAuth-only users
                 active=True,
-                confirmed_at=datetime.datetime.utcnow(),
+                confirmed_at=datetime.datetime.now(datetime.timezone.utc),
                 fs_uniquifier=uuid.uuid4().hex,
             )
             db.session.add(user)

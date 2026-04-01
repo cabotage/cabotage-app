@@ -3,6 +3,8 @@ name = "cabotage"
 version = "0.0.1"
 requires-python = ">=3.13"
 dependencies = [
+    "argon2-cffi",
+    "authlib",
     "backoff",
     "bleach",
     "celery",
@@ -10,8 +12,6 @@ dependencies = [
     "croniter",
     "cryptography",
     "dockerfile-parse",
-    "argon2-cffi",
-    "authlib",
     "flask",
     "flask-admin",
     "flask-babel",
@@ -28,13 +28,12 @@ dependencies = [
     "hvac",
     "kubernetes",
     "pathspec",
-    "psycopg2-binary",
+    "psycopg[binary]",
     "py-consul",
     "pygithub",
     "pyjwt",
     "python-dxf",
     "qrcode",
-    "webauthn",
     "redis",
     "sentry-sdk[flask]",
     "setuptools>=81.0.0,<82",
@@ -44,19 +43,20 @@ dependencies = [
     "toml",
     "unidecode",
     "urllib3",
+    "webauthn",
 ]
 
 [dependency-groups]
 dev = [
     "bandit",
-    "black",
     "hupper",
-    "mypy",
     "pytest",
     "pytest-cov",
     "ruff",
+    "ty",
     "types-croniter",
     "types-pyyaml",
+    "types-pygments",
     "types-redis",
     "types-requests",
     "types-toml",
@@ -79,9 +79,6 @@ skip_empty = true
 
 [tool.bandit]
 exclude_dirs = ["bin", "lib", "tests"]
-
-[tool.mypy]
-ignore_missing_imports = true
 
 [tool.uv]
 exclude-newer = "1 week"

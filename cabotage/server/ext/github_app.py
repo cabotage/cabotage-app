@@ -46,8 +46,11 @@ class GitHubApp(object):
     def validate_webhook(self):
         if self.webhook_secret is None:
             return True
+        signature = request.headers.get("X-Hub-Signature-256")
+        if signature is None:
+            return False
         return hmac.compare_digest(
-            request.headers.get("X-Hub-Signature-256").split("=")[1],
+            signature.split("=")[1],
             hmac.new(
                 self.webhook_secret.encode(), msg=request.data, digestmod=hashlib.sha256
             ).hexdigest(),
@@ -59,6 +62,8 @@ class GitHubApp(object):
     @property
     def bearer_token(self):
         if self._bearer_token is None or self._token_needs_renewed():
+            if self.app_private_key_pem is None:
+                raise RuntimeError("GitHub App private key not configured")
             issued = int(time.time())
             payload = {
                 "iat": issued,

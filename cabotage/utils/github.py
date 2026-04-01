@@ -351,7 +351,7 @@ def fetch_pr_changed_files(access_token, repo, pr_number):
 def matches_watch_paths(changed_files, watch_patterns):
     """Check if any changed file matches any watch pattern.
 
-    Uses pathspec with gitwildmatch (the same algorithm as .gitignore):
+    Uses pathspec with gitignore pattern matching:
     - ``*`` matches anything except ``/``
     - ``**`` matches any number of directories
     - ``src/*.py`` matches files directly in src/
@@ -365,5 +365,5 @@ def matches_watch_paths(changed_files, watch_patterns):
         return True
     import pathspec
 
-    spec = pathspec.PathSpec.from_lines("gitwildmatch", watch_patterns)
+    spec = pathspec.PathSpec.from_lines("gitignore", watch_patterns)
     return any(spec.match_file(f) for f in changed_files)
