@@ -791,7 +791,11 @@ class TestUpsert:
             "generatorURL": "/graph?g0.expr=test",
             "fingerprint": fingerprint,
         }
-        resolved = {**firing, "status": "resolved", "endsAt": "2026-03-30T18:10:00.000Z"}
+        resolved = {
+            **firing,
+            "status": "resolved",
+            "endsAt": "2026-03-30T18:10:00.000Z",
+        }
 
         # Fire, then resolve
         client.post(
