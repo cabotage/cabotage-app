@@ -249,11 +249,11 @@
       </div>
     </div>
 
-    {# ── BYOC ── #}
+    {# ── Business ── #}
     <div class="card bg-base-200/50 border border-base-300/50 relative overflow-hidden
                 hover:border-primary/20 transition-all duration-200
-                {% if current_plan == 'byoc' %}ring-2 ring-primary/40 border-primary/30{% endif %}">
-      {% if current_plan == 'byoc' %}
+                {% if current_plan == 'business' %}ring-2 ring-primary/40 border-primary/30{% endif %}">
+      {% if current_plan == 'business' %}
         <div class="absolute top-3 right-3">
           {% if is_canceling %}
             <span class="badge badge-outline badge-sm gap-1 border-warning/40 text-warning">{{ icon('clock', 'w-3 h-3') }} Canceling</span>
@@ -265,10 +265,10 @@
       <div class="card-body">
         <div class="mb-4">
           <div class="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center text-warning mb-3">
-            {{ icon('cloud', 'w-5 h-5') }}
+            {{ icon('briefcase', 'w-5 h-5') }}
           </div>
-          <h3 class="text-lg font-semibold text-base-content">BYOC</h3>
-          <p class="text-xs text-base-content/40 mt-1">Deploy into your own cloud account</p>
+          <h3 class="text-lg font-semibold text-base-content">Business</h3>
+          <p class="text-xs text-base-content/40 mt-1">SSO, audit logs, and priority support</p>
         </div>
 
         <div class="mb-5">
@@ -279,28 +279,28 @@
         <div class="flex flex-col gap-2 mb-6">
           <div class="flex items-center gap-2 text-sm text-base-content/60">
             <span class="text-success/70">{{ icon('check', 'w-3.5 h-3.5') }}</span>
-            Dedicated infrastructure
+            Everything in Team
           </div>
           <div class="flex items-center gap-2 text-sm text-base-content/60">
             <span class="text-success/70">{{ icon('check', 'w-3.5 h-3.5') }}</span>
-            Your cloud account
+            SSO / SAML
           </div>
           <div class="flex items-center gap-2 text-sm text-base-content/60">
             <span class="text-success/70">{{ icon('check', 'w-3.5 h-3.5') }}</span>
-            Custom usage terms
+            Advanced analytics
           </div>
           <div class="flex items-center gap-2 text-sm text-base-content/60">
             <span class="text-success/70">{{ icon('check', 'w-3.5 h-3.5') }}</span>
-            Dedicated support
+            Audit logs
           </div>
           <div class="flex items-center gap-2 text-sm text-base-content/60">
             <span class="text-success/70">{{ icon('shield', 'w-3.5 h-3.5') }}</span>
-            SLA included
+            Priority support
           </div>
         </div>
 
         <div class="mt-auto">
-          {% if current_plan == 'byoc' %}
+          {% if current_plan == 'business' %}
             {% if is_canceling %}
               <button type="button" class="btn btn-outline btn-sm w-full border-success/40 text-success hover:bg-success/10 hover:border-success/60 reactivate-btn">Reactivate</button>
             {% else %}
@@ -309,9 +309,9 @@
           {% else %}
             <button type="button"
                     class="btn btn-ghost btn-sm w-full plan-select-btn"
-                    data-plan="byoc"
+                    data-plan="business"
                     data-price="$250/mo">
-              {% if current_plan %}Switch to BYOC{% else %}Get Started{% endif %}
+              {% if current_plan %}Switch to Business{% else %}Get Started{% endif %}
             </button>
           {% endif %}
         </div>
@@ -416,7 +416,7 @@
     hobby: 'Cabotage Hobby',
     indie: 'Cabotage Indie',
     team: 'Cabotage Team',
-    byoc: 'Cabotage BYOC'
+    business: 'Cabotage Business'
   };
 
   var paymentSection = document.getElementById('payment-section');

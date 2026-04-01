@@ -72,9 +72,9 @@
   {% else %}
 
     {# ── Plan metadata (from DB, instant) ── #}
-    {% set plan_labels = {'hobby': 'Hobby', 'indie': 'Indie', 'team': 'Team', 'byoc': 'BYOC'} %}
-    {% set plan_prices = {'hobby': '$4/mo', 'indie': '$9/mo', 'team': '$29/mo', 'byoc': '$250/mo'} %}
-    {% set plan_credits = {'hobby': '$5.00', 'indie': '$12.00', 'team': '$30.00', 'byoc': 'Custom'} %}
+    {% set plan_labels = {'hobby': 'Hobby', 'indie': 'Indie', 'team': 'Team', 'business': 'Business'} %}
+    {% set plan_prices = {'hobby': '$4/mo', 'indie': '$9/mo', 'team': '$29/mo', 'business': '$250/mo'} %}
+    {% set plan_credits = {'hobby': '$5.00', 'indie': '$12.00', 'team': '$30.00', 'business': 'Custom'} %}
 
     {# ── Shared loading spinner ── #}
     {% macro billing_spinner() %}
@@ -120,7 +120,7 @@
           'hobby': ['5 services', '1 project', '1 seat', '$5 usage credit', 'Community support'],
           'indie': ['15 services', '3 projects', '3 seats', '$12 usage credit', 'Email support'],
           'team': ['Unlimited services', 'Unlimited projects', 'Unlimited seats', '$30 usage credit', 'Priority support', 'RBAC & teams'],
-          'byoc': ['Dedicated infrastructure', 'Your cloud account', 'Custom usage terms', 'Dedicated support', 'SLA included']
+          'business': ['Everything in Team', 'SSO / SAML', 'Advanced analytics', 'Audit logs', 'Priority support']
         } %}
         <div class="flex flex-col">
           <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Current Plan</h2>
@@ -368,7 +368,7 @@
 (function() {
   const ORG_SLUG = {{ org.slug|tojson }};
   const PLAN = {{ (org.billing.stripe_sub_plan or '')|tojson }};
-  const CREDIT_CENTS = {hobby: 500, indie: 1200, team: 3000, byoc: 0};
+  const CREDIT_CENTS = {hobby: 500, indie: 1200, team: 3000, business: 0};
   function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
   function svg(name, cls) {
