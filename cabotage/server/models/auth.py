@@ -81,14 +81,14 @@ class User(Model, FsUserMixin):
         DateTime, default=datetime.datetime.now
     )
 
-    roles: Mapped[list["Role"]] = relationship(  # type: ignore[assignment]
+    roles: Mapped[list[Role]] = relationship(  # type: ignore[assignment]
         "Role", secondary=roles_users, backref=backref("users", lazy="dynamic")
     )
 
-    organizations: Mapped[list["OrganizationMember"]] = relationship(
+    organizations: Mapped[list[OrganizationMember]] = relationship(
         back_populates="user"
     )
-    teams: Mapped[list["TeamMember"]] = relationship(back_populates="user")
+    teams: Mapped[list[TeamMember]] = relationship(back_populates="user")
 
     def __repr__(self):
         return "<User {0}>".format(self.username)
@@ -124,9 +124,7 @@ class GitHubIdentity(Model):
         DateTime, default=datetime.datetime.now
     )
 
-    user: Mapped["User"] = relationship(
-        backref=backref("github_identity", uselist=False)
-    )
+    user: Mapped[User] = relationship(backref=backref("github_identity", uselist=False))
 
 
 class WebAuthn(Model, FsWebAuthnMixin):
@@ -172,7 +170,7 @@ class TailscaleIntegration(Model):
         onupdate=datetime.datetime.now,
     )
 
-    organization: Mapped["Organization"] = relationship(
+    organization: Mapped[Organization] = relationship(
         backref=backref("tailscale_integration", uselist=False),
     )
 
@@ -201,14 +199,12 @@ class Organization(Model):
     k8s_identifier: Mapped[str] = mapped_column(String(64), unique=True)
     deleted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, index=True)
 
-    members: Mapped[list["OrganizationMember"]] = relationship(
+    members: Mapped[list[OrganizationMember]] = relationship(
         back_populates="organization"
     )
-    teams: Mapped[list["OrganizationTeam"]] = relationship(
-        back_populates="organization"
-    )
+    teams: Mapped[list[OrganizationTeam]] = relationship(back_populates="organization")
 
-    projects: Mapped[list["Project"]] = relationship(back_populates="organization")
+    projects: Mapped[list[Project]] = relationship(back_populates="organization")
 
     @property
     def active_projects(self):
@@ -252,10 +248,8 @@ class Team(Model):
     name: Mapped[str] = mapped_column(String(64))
     slug: Mapped[str] = mapped_column(String(64))
 
-    organizations: Mapped[list["OrganizationTeam"]] = relationship(
-        back_populates="team"
-    )
-    members: Mapped[list["TeamMember"]] = relationship(back_populates="team")
+    organizations: Mapped[list[OrganizationTeam]] = relationship(back_populates="team")
+    members: Mapped[list[TeamMember]] = relationship(back_populates="team")
 
     def add_user(self, user, admin=False):
         association = TeamMember(admin=admin)
