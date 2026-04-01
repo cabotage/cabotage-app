@@ -57,7 +57,7 @@ test: .state/docker-build-base
 		-e CABOTAGE_SQLALCHEMY_DATABASE_URI=postgresql://postgres@db/cabotage_test \
 		-e CABOTAGE_TESTING=True \
 		-e FLASK_APP=cabotage.server.wsgi \
-		base sh -c "uv pip install pytest && python3 -m flask db upgrade && python3 -m pytest tests/ -v $(ARGS)"
+		base sh -c "python3 -m flask db upgrade && python3 -m pytest tests/ -v $(ARGS)"
 
 reformat: .state/docker-build-base
 	docker compose run --rm base ruff format .
