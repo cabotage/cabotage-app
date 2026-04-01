@@ -14,8 +14,13 @@ default:
 	@echo
 	@exit 1
 
-start:
-	docker-compose up --build --detach
+.state/docker-build-base: Dockerfile uv.lock package.json
+	docker compose build --force-rm base
+	mkdir -p .state
+	touch .state/docker-build-base
+
+start: .state/docker-build-base
+	docker-compose up --detach
 	@$(MAKE) seed
 
 rebuild: start
@@ -44,7 +49,7 @@ routes:
 lock:
 	uv lock
 
-test:
+test: .state/docker-build-base
 	docker compose exec db psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'cabotage_test'" | grep -q 1 || \
 		docker compose exec db psql -U postgres -c "CREATE DATABASE cabotage_test" && \
 		docker compose exec db psql -U postgres -d cabotage_test -c "CREATE EXTENSION IF NOT EXISTS citext; CREATE EXTENSION IF NOT EXISTS pgcrypto;"
@@ -54,14 +59,14 @@ test:
 		-e FLASK_APP=cabotage.server.wsgi \
 		base sh -c "uv pip install pytest && python3 -m flask db upgrade && python3 -m pytest tests/ -v $(ARGS)"
 
-reformat:
-	docker compose run --build --rm base ruff format .
+reformat: .state/docker-build-base
+	docker compose run --rm base ruff format .
 
-lint:
-	docker compose run --build --rm base bin/lint
+lint: .state/docker-build-base
+	docker compose run --rm base bin/lint
 
-security-check:
-	docker compose run --build --rm base bandit -c pyproject.toml -r .
+security-check: .state/docker-build-base
+	docker compose run --rm base bandit -c pyproject.toml -r .
 
-type-check:
-	docker compose run --build --rm base mypy --config-file pyproject.toml .
+type-check: .state/docker-build-base
+	docker compose run --rm base mypy --config-file pyproject.toml .
