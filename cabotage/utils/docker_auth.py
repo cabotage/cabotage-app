@@ -10,6 +10,7 @@ from base64 import (
 )
 
 
+from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
     PublicFormat,
@@ -51,6 +52,8 @@ def generate_libcrypt_key_id(public_key_pem):
 def public_key_to_jwk(public_key_pem):
     """Convert a PEM-encoded EC public key to a JWK dict."""
     pub_key = load_pem_public_key(public_key_pem)
+    if not isinstance(pub_key, EllipticCurvePublicKey):
+        raise TypeError(f"Expected EC public key, got {type(pub_key).__name__}")
     numbers = pub_key.public_numbers()
     x_bytes = number_to_bytes(numbers.x, 32)
     y_bytes = number_to_bytes(numbers.y, 32)

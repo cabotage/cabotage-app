@@ -175,6 +175,8 @@ def _fetch_github_access_token(application):
         or application.github_app_installation_id
     ):
         try:
+            if github_app.app_id is None:
+                raise BuildError("GitHub App ID not configured")
             auth = GithubAppAuth(github_app.app_id, github_app.app_private_key_pem)
             gi = GithubIntegration(auth=auth)
             access_token = gi.get_access_token(
@@ -667,6 +669,10 @@ def _fetch_github_file(
     g = Github(access_token)
     try:
         content_file = g.get_repo(github_repository).get_contents(filename, ref=ref)
+        if isinstance(content_file, list):
+            raise BuildError(
+                f"Expected a file but got a directory listing for {filename}"
+            )
         if content_file.encoding == "base64":
             return b64decode(content_file.content).decode()
         return content_file.content
@@ -771,7 +777,7 @@ def fetch_image_build_cache_volume_claim(core_api_instance, buildable):
     return volume_claim
 
 
-def build_image_buildkit(image=None):
+def build_image_buildkit(image: Image):
     bke = BuildkitEnv(image.repository_name)
     registry = bke.registry
     buildkit_image = bke.buildkit_image
@@ -1573,7 +1579,7 @@ def build_omnibus_buildkit(image, release):
 
 
 @shared_task()
-def run_image_build(image_id=None, buildkit=False):
+def run_image_build(image_id: str, buildkit: bool = False):
     from cabotage.utils.config_templates import TemplateResolutionError
 
     current_app.config["REGISTRY_AUTH_SECRET"]
@@ -1745,7 +1751,7 @@ def run_image_build(image_id=None, buildkit=False):
 
 
 @shared_task()
-def run_release_build(release_id=None):
+def run_release_build(release_id: str):
     from cabotage.utils.config_templates import TemplateResolutionError
 
     release = None
@@ -1930,7 +1936,7 @@ def run_release_build(release_id=None):
 
 
 @shared_task()
-def run_omnibus_build(image_id=None):
+def run_omnibus_build(image_id: str):
     """Build image + release in a single K8s Job for auto-deploys.
 
     Avoids mounting the build cache volume twice by combining both build

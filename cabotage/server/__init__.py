@@ -1,6 +1,7 @@
 import hashlib
 import os
 from html import escape
+from typing import Any
 
 import sentry_sdk
 
@@ -9,10 +10,10 @@ try:
     from pygments.formatters import HtmlFormatter
     from pygments.lexers import DockerLexer, TextLexer
 except ImportError:
-    highlight = None
-    HtmlFormatter = None
-    DockerLexer = None
-    TextLexer = None
+    highlight: Any = None
+    HtmlFormatter: Any = None
+    DockerLexer: Any = None
+    TextLexer: Any = None
 
 from flask import Flask, render_template, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -177,6 +178,8 @@ def create_app():
 
     def _get_static_hash(filename):
         if filename not in _static_hashes:
+            if app.static_folder is None:
+                return None
             filepath = os.path.join(app.static_folder, filename)
             try:
                 with open(filepath, "rb") as f:
@@ -262,7 +265,12 @@ def create_app():
         text = "" if value is None else str(value)
         if not text or text == "None":
             return ""
-        if highlight is None:
+        if (
+            highlight is None
+            or DockerLexer is None
+            or TextLexer is None
+            or HtmlFormatter is None
+        ):
             return f"<pre>{escape(text)}</pre>"
         lexer = DockerLexer() if language == "dockerfile" else TextLexer()
         formatter = HtmlFormatter(nowrap=False, noclasses=False)
