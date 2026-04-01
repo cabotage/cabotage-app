@@ -25,7 +25,6 @@ from flask_mail import Mail
 from flask_migrate import Migrate
 from flask_security import Security, SQLAlchemyUserDatastore
 from flask_principal import Principal, identity_loaded
-from typing import TYPE_CHECKING
 
 from flask_sqlalchemy import SQLAlchemy
 from flask_sock import Sock
@@ -36,6 +35,7 @@ from celery import Task
 from celery.schedules import crontab
 from sentry_sdk.integrations.flask import FlaskIntegration
 from sqlalchemy import MetaData
+from sqlalchemy.orm import DeclarativeBase
 
 from cabotage.server.acl import cabotage_on_identity_loaded
 
@@ -54,23 +54,22 @@ toolbar = DebugToolbarExtension()
 security = Security(webauthn_util_cls=CabotageWebauthnUtil)
 
 
-db_metadata = MetaData(
-    naming_convention={
-        "ix": "ix_%(column_0_label)s",
-        "uq": "uq_%(table_name)s_%(column_0_name)s",
-        "ck": "ck_%(table_name)s_%(constraint_name)s",
-        "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
-        "pk": "pk_%(table_name)s",
-    }
-)
-db: SQLAlchemy = SQLAlchemy(
-    metadata=db_metadata, engine_options={"pool_pre_ping": True}
-)
+class Base(DeclarativeBase):
+    metadata = MetaData(
+        naming_convention={
+            "ix": "ix_%(column_0_label)s",
+            "uq": "uq_%(table_name)s_%(column_0_name)s",
+            "ck": "ck_%(table_name)s_%(constraint_name)s",
+            "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+            "pk": "pk_%(table_name)s",
+        }
+    )
 
-if TYPE_CHECKING:
-    from flask_sqlalchemy.model import Model
-else:
-    Model = db.Model
+
+db: SQLAlchemy = SQLAlchemy(model_class=Base, engine_options={"pool_pre_ping": True})
+
+Model = db.Model
+
 principal = Principal()
 mail = Mail()
 migrate = Migrate()
