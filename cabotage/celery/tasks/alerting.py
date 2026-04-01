@@ -14,10 +14,7 @@ from flask import current_app
 
 from cabotage.server import db
 from cabotage.server.models.projects import Alert
-from cabotage.server.alerting.views import (
-    _parse_alertmanager_timestamp,
-    _resolve_application,
-)
+from cabotage.server.alerting.ingest import parse_alertmanager_timestamp, upsert_alert
 
 log = logging.getLogger(__name__)
 
@@ -51,64 +48,37 @@ def reconcile_alerts():
 
     active_alerts = resp.json()
 
+    # Track which fingerprints are still active in Alertmanager
     seen_fingerprints = set()
 
     for alert_data in active_alerts:
         labels = alert_data.get("labels", {})
-        alertname = labels.get("alertname", "unknown")
         fingerprint = alert_data.get("fingerprint", "")
+
+        starts_at = parse_alertmanager_timestamp(alert_data.get("startsAt"))
+        if starts_at:
+            seen_fingerprints.add((fingerprint, starts_at))
+
+        # The v2 API nests status as {"state": "active|suppressed|..."}
         status = alert_data.get("status", {})
         if isinstance(status, dict):
             state = status.get("state", "active")
         else:
             state = status
-
-        starts_at = _parse_alertmanager_timestamp(alert_data.get("startsAt"))
-        ends_at = _parse_alertmanager_timestamp(alert_data.get("endsAt"))
-
-        if not starts_at:
-            continue
-
-        seen_fingerprints.add((fingerprint, starts_at))
-
-        application, app_env = _resolve_application(labels)
-        app_id = application.id if application else None
-        app_env_id = app_env.id if app_env else None
-
-        existing = Alert.query.filter_by(
-            fingerprint=fingerprint,
-            starts_at=starts_at,
-        ).first()
-
         am_status = "firing" if state == "active" else state
 
-        if existing:
-            if existing.status == "resolved":
-                continue
-            existing.status = am_status
-            existing.ends_at = ends_at
-            existing.labels = labels
-            existing.annotations = alert_data.get("annotations", {})
-            if app_id and not existing.application_id:
-                existing.application_id = app_id
-                existing.application_environment_id = app_env_id
-        else:
-            alert = Alert(
-                fingerprint=fingerprint,
-                status=am_status,
-                alertname=alertname,
-                labels=labels,
-                annotations=alert_data.get("annotations", {}),
-                starts_at=starts_at,
-                ends_at=ends_at,
-                generator_url=alert_data.get("generatorURL"),
-                group_key=None,
-                receiver=None,
-                application_id=app_id,
-                application_environment_id=app_env_id,
-            )
-            db.session.add(alert)
+        upsert_alert(
+            fingerprint=fingerprint,
+            status=am_status,
+            alertname=labels.get("alertname", "unknown"),
+            labels=labels,
+            annotations=alert_data.get("annotations", {}),
+            starts_at=starts_at,
+            ends_at=parse_alertmanager_timestamp(alert_data.get("endsAt")),
+            generator_url=alert_data.get("generatorURL"),
+        )
 
+    # Resolve any locally-firing alerts that are no longer in Alertmanager
     firing_alerts = Alert.query.filter_by(status="firing").all()
     now = datetime.now(UTC).replace(tzinfo=None)
     resolved_count = 0
