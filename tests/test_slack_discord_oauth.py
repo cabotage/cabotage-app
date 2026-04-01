@@ -15,7 +15,10 @@ from cabotage.server.models.auth import (
     User,
 )
 from cabotage.server.models.auth_associations import OrganizationMember
+from cabotage.server.models.projects import activity_plugin
 from cabotage.server.wsgi import app as _app
+
+Activity = activity_plugin.activity_cls
 
 
 SLACK_CLIENT_ID = "10818900810177.1079000000000"
@@ -223,6 +226,14 @@ class TestSlackCallback:
 
         mock_vault.vault_connection.write.assert_called_once()
 
+        # Verify Activity was recorded
+        activity = Activity.query.filter(
+            Activity.object_id == org.id,
+            Activity.verb == "connect",
+            Activity.data["action"].astext == "slack_connect",
+        ).first()
+        assert activity is not None
+
     @patch("cabotage.server.integrations.slack_oauth.http_requests")
     def test_callback_slack_error_flashes_message(
         self, mock_requests, client, admin_user, org
@@ -276,6 +287,14 @@ class TestSlackDisconnect:
         mock_send.assert_called_once()
         assert "disconnected" in mock_send.call_args[0][2]
         mock_leave.assert_called_once()
+
+        # Verify Activity was recorded
+        activity = Activity.query.filter(
+            Activity.object_id == org.id,
+            Activity.verb == "disconnect",
+            Activity.data["action"].astext == "slack_disconnect",
+        ).first()
+        assert activity is not None
 
     def test_disconnect_requires_admin(self, client, non_admin_user, org):
         _login(client, non_admin_user)
@@ -468,6 +487,14 @@ class TestDiscordCallback:
         assert integration.guild_name == "Test Server"
         assert integration.installed_by_user_id == admin_user.id
 
+        # Verify Activity was recorded
+        activity = Activity.query.filter(
+            Activity.object_id == org.id,
+            Activity.verb == "connect",
+            Activity.data["action"].astext == "discord_connect",
+        ).first()
+        assert activity is not None
+
     @patch("cabotage.server.integrations.discord_oauth.http_requests")
     def test_callback_discord_error_flashes_message(
         self, mock_requests, client, admin_user, org
@@ -548,6 +575,14 @@ class TestDiscordDisconnect:
         )
         mock_send.assert_called_once()
         assert "disconnected" in mock_send.call_args[0][1]
+
+        # Verify Activity was recorded
+        activity = Activity.query.filter(
+            Activity.object_id == org.id,
+            Activity.verb == "disconnect",
+            Activity.data["action"].astext == "discord_disconnect",
+        ).first()
+        assert activity is not None
 
     def test_disconnect_requires_admin(self, client, non_admin_user, org):
         _login(client, non_admin_user)

@@ -14,7 +14,11 @@ from flask import current_app
 
 from cabotage.server import db
 from cabotage.server.models.projects import Alert
-from cabotage.server.alerting.ingest import parse_alertmanager_timestamp, upsert_alert
+from cabotage.server.alerting.ingest import (
+    _record_activity,
+    parse_alertmanager_timestamp,
+    upsert_alert,
+)
 
 log = logging.getLogger(__name__)
 
@@ -86,6 +90,7 @@ def reconcile_alerts():
         if (alert.fingerprint, alert.starts_at) not in seen_fingerprints:
             alert.status = "resolved"
             alert.ends_at = now
+            _record_activity("resolved", alert, alert.application)
             resolved_count += 1
 
     db.session.commit()

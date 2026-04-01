@@ -10,7 +10,16 @@ from flask_security.models.fsqla_v3 import (
     FsUserMixin,
     FsWebAuthnMixin,
 )
-from sqlalchemy import Boolean, DateTime, BigInteger, ForeignKey, String, Text, text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    BigInteger,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column, relationship, backref
 from sqlalchemy_continuum import make_versioned
@@ -179,6 +188,7 @@ class TailscaleIntegration(Model):
 
 
 class SlackIntegration(Model):
+    __versioned__: dict = {}
     __tablename__ = "slack_integrations"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -211,6 +221,8 @@ class SlackIntegration(Model):
         onupdate=datetime.datetime.now,
     )
 
+    version_id: Mapped[int] = mapped_column(Integer)
+
     organization: Mapped[Organization] = relationship(
         backref=backref("slack_integration", uselist=False),
     )
@@ -218,11 +230,14 @@ class SlackIntegration(Model):
         foreign_keys=[installed_by_user_id]
     )
 
+    __mapper_args__ = {"version_id_col": version_id}
+
     def __repr__(self):
         return f"<SlackIntegration {self.id} org={self.organization_id} team={self.team_id}>"
 
 
 class DiscordIntegration(Model):
+    __versioned__: dict = {}
     __tablename__ = "discord_integrations"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -253,12 +268,16 @@ class DiscordIntegration(Model):
         onupdate=datetime.datetime.now,
     )
 
+    version_id: Mapped[int] = mapped_column(Integer)
+
     organization: Mapped[Organization] = relationship(
         backref=backref("discord_integration", uselist=False),
     )
     installed_by: Mapped[User | None] = relationship(
         foreign_keys=[installed_by_user_id]
     )
+
+    __mapper_args__ = {"version_id_col": version_id}
 
     def __repr__(self):
         return f"<DiscordIntegration {self.id} org={self.organization_id} guild={self.guild_id}>"
