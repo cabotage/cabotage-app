@@ -20,6 +20,7 @@ class ActivityBase(object):
     )
 
     verb = sa.Column(sa.Unicode(255))
+    transaction: Any = None  # set by sqlalchemy-continuum relationship
 
     @hybrid_property
     def actor(self):
