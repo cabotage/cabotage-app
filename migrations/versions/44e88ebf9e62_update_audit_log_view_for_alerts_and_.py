@@ -1,63 +1,24 @@
-from sqlalchemy import BigInteger, Column, String, Boolean, Integer, DateTime
-from sqlalchemy.dialects import postgresql
+"""update audit log view for alerts and integrations
 
-from cabotage.server import Model
+Revision ID: 44e88ebf9e62
+Revises: 28bcc1eb8707
+Create Date: 2026-04-01 21:25:04.069936
+
+"""
+
+from alembic import op
+import sqlalchemy as sa
 
 
-class AuditLog(Model):
-    """Read-only model backed by the audit_log SQL view."""
-
-    __tablename__ = "audit_log"
-    __table_args__ = {"info": {"is_view": True}}
-
-    # Identity
-    id = Column(Integer, primary_key=True)
-    timestamp = Column(DateTime)
-
-    # Version lookup (for computing diffs from version tables)
-    object_tx_id = Column(BigInteger)
-    transaction_id = Column(BigInteger)
-
-    # Event
-    verb = Column(String)
-    detail = Column(String)
-    object_type = Column(String)
-    object_id = Column(postgresql.UUID(as_uuid=True))
-    object_name = Column(String)
-
-    # Scoping
-    application_id = Column(postgresql.UUID(as_uuid=True))
-    application_environment_id = Column(postgresql.UUID(as_uuid=True))
-    project_id = Column(postgresql.UUID(as_uuid=True))
-    organization_id = Column(postgresql.UUID(as_uuid=True))
-
-    # Context (names for display at broader scopes)
-    app_name = Column(String)
-    project_name = Column(String)
-
-    # Actor
-    actor_username = Column(String)
-    actor_email = Column(String)
-    remote_addr = Column(String)
-
-    # Config-specific
-    config_secret = Column(Boolean)
-    config_buildtime = Column(Boolean)
-    config_version = Column(Integer)
-
-    # Image-specific
-    image_ref = Column(String)
-    image_sha = Column(String)
-
-    # Deployment-specific
-    deploy_release_version = Column(Integer)
-
-    # Raw
-    raw_data = Column(postgresql.JSONB)
+# revision identifiers, used by Alembic.
+revision = "44e88ebf9e62"
+down_revision = "28bcc1eb8707"
+branch_labels = None
+depends_on = None
 
 
 # fmt: off
-AUDIT_LOG_VIEW_SQL = """\
+_VIEW_SQL = """\
 CREATE OR REPLACE VIEW audit_log AS
 
 -- Configuration
@@ -206,3 +167,16 @@ LEFT JOIN users tx_u ON tx_u.id = t.user_id
 WHERE a.object_type IN ('ApplicationEnvironment', 'Organization', 'Environment', 'User', 'Project')
 """
 # fmt: on
+
+
+def upgrade():
+    from cabotage.server.models.audit import AUDIT_LOG_VIEW_SQL
+
+    op.execute(sa.text("DROP VIEW IF EXISTS audit_log"))
+    op.execute(sa.text(AUDIT_LOG_VIEW_SQL))
+
+
+def downgrade():
+    # Revert to previous version without Alert section
+    # The previous view is maintained in migration 14392342a190
+    op.execute(sa.text("DROP VIEW IF EXISTS audit_log"))

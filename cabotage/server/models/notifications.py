@@ -4,7 +4,7 @@ import datetime
 import uuid
 from typing import Any, TypedDict
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column, relationship, backref
 
@@ -63,6 +63,7 @@ NOTIFICATION_CATEGORIES: dict[str, NotificationCategory] = {
 
 
 class NotificationRoute(Model):
+    __versioned__: dict = {}
     __tablename__ = "notification_routes"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -100,10 +101,14 @@ class NotificationRoute(Model):
         onupdate=datetime.datetime.now,
     )
 
+    version_id: Mapped[int] = mapped_column(Integer)
+
     organization = relationship(
         "Organization",
         backref=backref("notification_routes", lazy="dynamic"),
     )
+
+    __mapper_args__ = {"version_id_col": version_id}
 
     def __repr__(self):
         return f"<NotificationRoute {self.id} types={self.notification_types} integration={self.integration}>"

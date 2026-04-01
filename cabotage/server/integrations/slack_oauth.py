@@ -1,3 +1,4 @@
+import datetime
 import logging
 import secrets
 
@@ -16,6 +17,9 @@ from flask_security import current_user, login_required
 from cabotage.server import db, vault
 from cabotage.server.acl import AdministerOrganizationPermission
 from cabotage.server.models.auth import Organization, SlackIntegration
+from cabotage.server.models.projects import activity_plugin
+
+Activity = activity_plugin.activity_cls
 
 log = logging.getLogger(__name__)
 
@@ -141,12 +145,14 @@ def callback():
     # Create or update integration record
     integration = organization.slack_integration
     if integration:
+        verb = "reauthorize"
         integration.team_id = team_id
         integration.team_name = team_name
         integration.bot_user_id = bot_user_id
         integration.access_token_vault_path = vault_path
         integration.installed_by_user_id = current_user.id
     else:
+        verb = "connect"
         integration = SlackIntegration(
             organization_id=organization.id,
             team_id=team_id,
@@ -157,6 +163,18 @@ def callback():
         )
         db.session.add(integration)
 
+    db.session.flush()
+    activity = Activity(
+        verb=verb,
+        object=organization,
+        data={
+            "user_id": str(current_user.id),
+            "action": f"slack_{verb}",
+            "team_name": team_name,
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        },
+    )
+    db.session.add(activity)
     db.session.commit()
     flash(
         f'Slack workspace "{team_name}" connected successfully.',
@@ -190,7 +208,20 @@ def disconnect(org_slug):
             except Exception:
                 log.warning("Failed to delete Slack token from Vault", exc_info=True)
 
+        team_name = integration.team_name
         db.session.delete(integration)
+        db.session.flush()
+        activity = Activity(
+            verb="disconnect",
+            object=organization,
+            data={
+                "user_id": str(current_user.id),
+                "action": "slack_disconnect",
+                "team_name": team_name,
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            },
+        )
+        db.session.add(activity)
         db.session.commit()
         flash("Slack integration removed.", "success")
 

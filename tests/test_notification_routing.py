@@ -10,8 +10,15 @@ from cabotage.server import db
 from cabotage.server.models.auth import Organization, User
 from cabotage.server.models.notifications import NotificationRoute
 from cabotage.server.models.auth_associations import OrganizationMember
-from cabotage.server.models.projects import Application, Environment, Project
+from cabotage.server.models.projects import (
+    Application,
+    Environment,
+    Project,
+    activity_plugin,
+)
 from cabotage.server.wsgi import app as _app
+
+Activity = activity_plugin.activity_cls
 
 
 @pytest.fixture
@@ -239,6 +246,14 @@ class TestSaveRoute:
         assert data["channel_id"] == "C001"
         assert data["project_ids"] == []
 
+        # Verify Activity was recorded
+        activity = Activity.query.filter(
+            Activity.object_id == org.id,
+            Activity.verb == "create",
+            Activity.data["action"].astext == "notification_route_create",
+        ).first()
+        assert activity is not None
+
     def test_create_with_multi_scope(
         self, client, admin_user, org, project, application
     ):
@@ -288,6 +303,14 @@ class TestSaveRoute:
         db.session.refresh(route)
         assert route.channel_id == "C999"
         assert route.enabled is False
+
+        # Verify Activity was recorded
+        activity = Activity.query.filter(
+            Activity.object_id == org.id,
+            Activity.verb == "edit",
+            Activity.data["action"].astext == "notification_route_edit",
+        ).first()
+        assert activity is not None
 
     def test_invalid_type(self, client, admin_user, org):
         _login(client, admin_user)
@@ -355,7 +378,15 @@ class TestDeleteRoute:
             f"/integrations/notifications/{org.slug}/routes/{route_id}"
         )
         assert resp.status_code == 200
-        assert NotificationRoute.query.get(route_id) is None
+        assert db.session.get(NotificationRoute, route_id) is None
+
+        # Verify Activity was recorded
+        activity = Activity.query.filter(
+            Activity.object_id == org.id,
+            Activity.verb == "delete",
+            Activity.data["action"].astext == "notification_route_delete",
+        ).first()
+        assert activity is not None
 
     def test_requires_admin(self, client, non_admin_user, org):
         route = NotificationRoute(

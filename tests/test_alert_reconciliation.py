@@ -12,8 +12,11 @@ from cabotage.server.models.projects import (
     ApplicationEnvironment,
     Environment,
     Project,
+    activity_plugin,
 )
 from cabotage.server.wsgi import app as _app
+
+Activity = activity_plugin.activity_cls
 
 
 @pytest.fixture
@@ -335,3 +338,43 @@ class TestReconcileAlerts:
 
         alert = Alert.query.filter_by(fingerprint=fingerprint).first()
         assert alert.status == "suppressed"
+
+    @patch("cabotage.celery.tasks.alerting.requests.get")
+    def test_reconcile_resolve_records_activity(self, mock_get, app, db_session):
+        fingerprint = uuid.uuid4().hex[:16]
+
+        existing = Alert(
+            fingerprint=fingerprint,
+            status="firing",
+            alertname="ResidentDeploymentOOMKilled",
+            labels={"alertname": "ResidentDeploymentOOMKilled"},
+            annotations={"summary": "OOM killed"},
+            starts_at=STARTS_AT,
+        )
+        db_session.add(existing)
+        db_session.commit()
+
+        mock_get.return_value = _mock_am_response([])
+
+        _run_reconcile(db_session)
+
+        alert = Alert.query.filter_by(fingerprint=fingerprint).first()
+        activities = Activity.query.filter_by(
+            object_type="Alert", object_id=alert.id
+        ).all()
+        assert any(a.verb == "resolved" for a in activities)
+
+    @patch("cabotage.celery.tasks.alerting.requests.get")
+    def test_reconcile_new_alert_records_firing_activity(
+        self, mock_get, app, db_session
+    ):
+        fingerprint = uuid.uuid4().hex[:16]
+        mock_get.return_value = _mock_am_response([_am_v2_alert(fingerprint)])
+
+        _run_reconcile(db_session)
+
+        alert = Alert.query.filter_by(fingerprint=fingerprint).first()
+        activities = Activity.query.filter_by(
+            object_type="Alert", object_id=alert.id
+        ).all()
+        assert any(a.verb == "firing" for a in activities)

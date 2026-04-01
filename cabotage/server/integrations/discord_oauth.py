@@ -1,3 +1,4 @@
+import datetime
 import logging
 import secrets
 from urllib.parse import urlencode
@@ -18,6 +19,9 @@ from flask_security import current_user, login_required
 from cabotage.server import db
 from cabotage.server.acl import AdministerOrganizationPermission
 from cabotage.server.models.auth import DiscordIntegration, Organization
+from cabotage.server.models.projects import activity_plugin
+
+Activity = activity_plugin.activity_cls
 
 log = logging.getLogger(__name__)
 
@@ -150,10 +154,12 @@ def callback():
     # Create or update integration record
     integration = organization.discord_integration
     if integration:
+        verb = "reauthorize"
         integration.guild_id = guild_id
         integration.guild_name = guild_name
         integration.installed_by_user_id = current_user.id
     else:
+        verb = "connect"
         integration = DiscordIntegration(
             organization_id=organization.id,
             guild_id=guild_id,
@@ -162,6 +168,18 @@ def callback():
         )
         db.session.add(integration)
 
+    db.session.flush()
+    activity = Activity(
+        verb=verb,
+        object=organization,
+        data={
+            "user_id": str(current_user.id),
+            "action": f"discord_{verb}",
+            "guild_name": guild_name,
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        },
+    )
+    db.session.add(activity)
     db.session.commit()
     flash(
         f'Discord server "{guild_name or guild_id}" connected successfully.',
@@ -185,7 +203,20 @@ def disconnect(org_slug):
                 f"Cabotage alert notifications for **{organization.name}** have been disconnected from this server.",
             )
 
+        guild_name = integration.guild_name
         db.session.delete(integration)
+        db.session.flush()
+        activity = Activity(
+            verb="disconnect",
+            object=organization,
+            data={
+                "user_id": str(current_user.id),
+                "action": "discord_disconnect",
+                "guild_name": guild_name,
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            },
+        )
+        db.session.add(activity)
         db.session.commit()
         flash("Discord integration removed.", "success")
 

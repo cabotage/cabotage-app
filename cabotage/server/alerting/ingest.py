@@ -2,17 +2,43 @@
 the reconciliation task."""
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 from cabotage.server import db
 from cabotage.server.models.projects import (
     Alert,
     Application,
     Project,
+    activity_plugin,
 )
 from cabotage.server.models.auth import Organization
 
 log = logging.getLogger(__name__)
+
+Activity = activity_plugin.activity_cls
+
+
+def _record_activity(verb, alert, application=None):
+    """Record an Activity entry for an alert state change."""
+    data = {
+        "action": f"alert_{verb}",
+        "alertname": alert.alertname,
+        "fingerprint": alert.fingerprint,
+        "status": alert.status,
+        "severity": alert.labels.get("severity", "unknown"),
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
+    summary = alert.annotations.get("summary")
+    if summary:
+        data["summary"] = summary
+
+    target = application or alert
+    activity = Activity(
+        verb=verb,
+        object=target,
+        data=data,
+    )
+    db.session.add(activity)
 
 
 def parse_alertmanager_timestamp(ts):
@@ -174,6 +200,7 @@ def upsert_alert(
     if existing:
         if existing.status == "resolved":
             return True
+        was_firing = existing.status == "firing"
         existing.status = status
         existing.ends_at = ends_at
         existing.labels = labels
@@ -181,6 +208,8 @@ def upsert_alert(
         if app_id and not existing.application_id:
             existing.application_id = app_id
             existing.application_environment_id = app_env_id
+        if was_firing and status == "resolved":
+            _record_activity("resolved", existing, application)
     else:
         alert = Alert(
             fingerprint=fingerprint,
@@ -197,5 +226,8 @@ def upsert_alert(
             application_environment_id=app_env_id,
         )
         db.session.add(alert)
+        if status == "firing":
+            db.session.flush()  # ensure alert has an id for generic_relationship
+            _record_activity("firing", alert, application)
 
     return True

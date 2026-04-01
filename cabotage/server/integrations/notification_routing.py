@@ -1,7 +1,8 @@
+import datetime
 import logging
 
 from flask import Blueprint, abort, jsonify, request
-from flask_security import login_required
+from flask_security import current_user, login_required
 from sqlalchemy import cast
 from sqlalchemy.dialects.postgresql import ARRAY, TEXT
 
@@ -12,6 +13,9 @@ from cabotage.server.models.notifications import (
     NOTIFICATION_CATEGORIES,
     NotificationRoute,
 )
+from cabotage.server.models.projects import activity_plugin
+
+Activity = activity_plugin.activity_cls
 
 log = logging.getLogger(__name__)
 
@@ -137,6 +141,21 @@ def save_route(org_slug):
         )
         db.session.add(route)
 
+    verb = "edit" if route_id else "create"
+    db.session.flush()
+    activity = Activity(
+        verb=verb,
+        object=organization,
+        data={
+            "user_id": str(current_user.id),
+            "action": f"notification_route_{verb}",
+            "notification_types": ntypes,
+            "integration": integration,
+            "channel_name": data.get("channel_name"),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        },
+    )
+    db.session.add(activity)
     db.session.commit()
     return jsonify(_route_to_dict(route)), 201
 
@@ -148,7 +167,22 @@ def delete_route(org_slug, route_id):
     route = NotificationRoute.query.filter_by(
         id=route_id, organization_id=organization.id
     ).first_or_404()
+    ntypes = route.notification_types
+    integration_name = route.integration
     db.session.delete(route)
+    db.session.flush()
+    activity = Activity(
+        verb="delete",
+        object=organization,
+        data={
+            "user_id": str(current_user.id),
+            "action": "notification_route_delete",
+            "notification_types": ntypes,
+            "integration": integration_name,
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        },
+    )
+    db.session.add(activity)
     db.session.commit()
     return jsonify({"status": "ok"})
 

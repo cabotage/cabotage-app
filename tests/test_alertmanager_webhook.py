@@ -10,8 +10,11 @@ from cabotage.server.models.projects import (
     ApplicationEnvironment,
     Environment,
     Project,
+    activity_plugin,
 )
 from cabotage.server.wsgi import app as _app
+
+Activity = activity_plugin.activity_cls
 
 WEBHOOK_SECRET = "test-alertmanager-secret"
 
@@ -820,3 +823,104 @@ class TestUpsert:
         alert = Alert.query.filter_by(fingerprint=fingerprint).first()
         assert alert.status == "resolved"
         assert Alert.query.filter_by(fingerprint=fingerprint).count() == 1
+
+
+# --- Activity recording ---
+
+
+class TestActivityRecording:
+    def test_firing_alert_records_activity(self, client, db_session):
+        alert_data = _oom_alert()
+        client.post(
+            "/alertmanager/webhooks",
+            json=_alertmanager_payload([alert_data]),
+            headers=_auth_headers(),
+        )
+        alert = Alert.query.filter_by(fingerprint=alert_data["fingerprint"]).first()
+        activities = Activity.query.filter_by(
+            object_type="Alert", object_id=alert.id
+        ).all()
+        assert len(activities) == 1
+        assert activities[0].verb == "firing"
+        assert activities[0].data["alertname"] == "ResidentDeploymentOOMKilled"
+
+    def test_resolved_alert_records_activity(self, client, db_session):
+        fingerprint = uuid.uuid4().hex[:16]
+        firing = {
+            "status": "firing",
+            "labels": {
+                "alertname": "ResidentDeploymentOOMKilled",
+                "severity": "critical",
+            },
+            "annotations": {"summary": "OOM killed"},
+            "startsAt": "2026-03-30T17:57:58.931Z",
+            "endsAt": "0001-01-01T00:00:00Z",
+            "generatorURL": "/graph?g0.expr=test",
+            "fingerprint": fingerprint,
+        }
+        resolved = {
+            **firing,
+            "status": "resolved",
+            "endsAt": "2026-03-30T18:10:00.000Z",
+        }
+
+        client.post(
+            "/alertmanager/webhooks",
+            json=_alertmanager_payload([firing]),
+            headers=_auth_headers(),
+        )
+        client.post(
+            "/alertmanager/webhooks",
+            json=_alertmanager_payload([resolved], status="resolved"),
+            headers=_auth_headers(),
+        )
+
+        alert = Alert.query.filter_by(fingerprint=fingerprint).first()
+        activities = Activity.query.filter_by(
+            object_type="Alert", object_id=alert.id
+        ).all()
+        verbs = [a.verb for a in activities]
+        assert "firing" in verbs
+        assert "resolved" in verbs
+
+    def test_firing_with_application_records_activity_on_application(
+        self, client, db_session, org, project, application, app_env
+    ):
+        deployment_name = f"{project.k8s_identifier}-{application.k8s_identifier}"
+        alert_data = _oom_alert(
+            deployment=deployment_name, namespace=org.k8s_identifier
+        )
+        client.post(
+            "/alertmanager/webhooks",
+            json=_alertmanager_payload([alert_data]),
+            headers=_auth_headers(),
+        )
+        activities = Activity.query.filter_by(
+            object_type="Application", object_id=application.id
+        ).all()
+        assert len(activities) == 1
+        assert activities[0].verb == "firing"
+        assert activities[0].data["alertname"] == "ResidentDeploymentOOMKilled"
+
+    def test_no_activity_on_refire(self, client, db_session):
+        """Re-firing the same alert should not create a second activity."""
+        alert_data = _oom_alert()
+        fingerprint = alert_data["fingerprint"]
+
+        client.post(
+            "/alertmanager/webhooks",
+            json=_alertmanager_payload([alert_data]),
+            headers=_auth_headers(),
+        )
+        client.post(
+            "/alertmanager/webhooks",
+            json=_alertmanager_payload([alert_data]),
+            headers=_auth_headers(),
+        )
+
+        alert = Alert.query.filter_by(fingerprint=fingerprint).first()
+        activities = Activity.query.filter_by(
+            object_type="Alert", object_id=alert.id
+        ).all()
+        firing_activities = [a for a in activities if a.verb == "firing"]
+        assert len(firing_activities) == 1
