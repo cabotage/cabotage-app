@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime
 import json
 import uuid
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from cabotage.server.models.auth import Organization
@@ -126,7 +126,7 @@ class Project(Model, Timestamp):
         server_default=text("gen_random_uuid()"),
         primary_key=True,
     )
-    organization_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True),
         ForeignKey("organizations.id"),
     )
@@ -139,19 +139,17 @@ class Project(Model, Timestamp):
     branch_deploys_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
-    branch_deploy_base_environment_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    branch_deploy_base_environment_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True),
         ForeignKey("project_environments.id"),
     )
-    deleted_at: Mapped[Optional[datetime.datetime]] = mapped_column(
-        DateTime, index=True
-    )
+    deleted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, index=True)
 
     organization: Mapped["Organization"] = relationship(
         "Organization", back_populates="projects"
     )
 
-    branch_deploy_base_environment: Mapped[Optional["Environment"]] = relationship(
+    branch_deploy_base_environment: Mapped[Environment | None] = relationship(
         "Environment", foreign_keys=[branch_deploy_base_environment_id]
     )
     project_applications: Mapped[list["Application"]] = relationship(
@@ -207,12 +205,10 @@ class Environment(Model, Timestamp):
     k8s_identifier: Mapped[str] = mapped_column(String(64))
     sort_order: Mapped[int] = mapped_column(Integer, default=100)
     ephemeral: Mapped[bool] = mapped_column(Boolean, default=False)
-    ttl_hours: Mapped[Optional[int]] = mapped_column(Integer)
+    ttl_hours: Mapped[int | None] = mapped_column(Integer)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
-    deleted_at: Mapped[Optional[datetime.datetime]] = mapped_column(
-        DateTime, index=True
-    )
-    forked_from_environment_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    deleted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, index=True)
+    forked_from_environment_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True),
         ForeignKey("project_environments.id"),
     )
@@ -221,7 +217,7 @@ class Environment(Model, Timestamp):
     project: Mapped["Project"] = relationship(
         back_populates="project_environments", foreign_keys=[project_id]
     )
-    forked_from_environment: Mapped[Optional["Environment"]] = relationship(
+    forked_from_environment: Mapped[Environment | None] = relationship(
         "Environment",
         remote_side="Environment.id",
         foreign_keys=[forked_from_environment_id],
@@ -275,26 +271,24 @@ class ApplicationEnvironment(Model, Timestamp):
         ForeignKey("project_environments.id"),
         index=True,
     )
-    process_counts: Mapped[Optional[Any]] = mapped_column(
+    process_counts: Mapped[Any | None] = mapped_column(
         postgresql.JSONB(), server_default=text("json_object('{}')")
     )
-    process_pod_classes: Mapped[Optional[Any]] = mapped_column(
+    process_pod_classes: Mapped[Any | None] = mapped_column(
         postgresql.JSONB(), server_default=text("json_object('{}')")
     )
-    deployment_timeout: Mapped[Optional[int]] = mapped_column(Integer)
-    health_check_path: Mapped[Optional[str]] = mapped_column(String(64))
-    health_check_host: Mapped[Optional[str]] = mapped_column(String(256))
-    auto_deploy_branch: Mapped[Optional[str]] = mapped_column(Text())
+    deployment_timeout: Mapped[int | None] = mapped_column(Integer)
+    health_check_path: Mapped[str | None] = mapped_column(String(64))
+    health_check_host: Mapped[str | None] = mapped_column(String(256))
+    auto_deploy_branch: Mapped[str | None] = mapped_column(Text())
     auto_deploy_wait_for_ci: Mapped[bool] = mapped_column(
         Boolean,
         default=True,
         server_default="true",
     )
-    github_environment_name: Mapped[Optional[str]] = mapped_column(Text())
-    k8s_identifier: Mapped[Optional[str]] = mapped_column(String(64))
-    deleted_at: Mapped[Optional[datetime.datetime]] = mapped_column(
-        DateTime, index=True
-    )
+    github_environment_name: Mapped[str | None] = mapped_column(Text())
+    k8s_identifier: Mapped[str | None] = mapped_column(String(64))
+    deleted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, index=True)
     version_id: Mapped[int] = mapped_column(Integer)
 
     application: Mapped["Application"] = relationship(
@@ -473,15 +467,13 @@ class Application(Model, Timestamp):
     slug: Mapped[str] = mapped_column(postgresql.CITEXT())
     k8s_identifier: Mapped[str] = mapped_column(String(64))
     platform: Mapped[str] = mapped_column(platform_version, default="wind")
-    process_counts: Mapped[Optional[Any]] = mapped_column(
+    process_counts: Mapped[Any | None] = mapped_column(
         postgresql.JSONB(), server_default=text("json_object('{}')")
     )
-    process_pod_classes: Mapped[Optional[Any]] = mapped_column(
+    process_pod_classes: Mapped[Any | None] = mapped_column(
         postgresql.JSONB(), server_default=text("json_object('{}')")
     )
-    deleted_at: Mapped[Optional[datetime.datetime]] = mapped_column(
-        DateTime, index=True
-    )
+    deleted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, index=True)
 
     project: Mapped["Project"] = relationship(back_populates="project_applications")
     images: DynamicMapped["Image"] = relationship(
@@ -515,23 +507,23 @@ class Application(Model, Timestamp):
 
     version_id: Mapped[int] = mapped_column(Integer)
 
-    github_app_installation_id: Mapped[Optional[int]] = mapped_column(Integer)
-    github_repository: Mapped[Optional[str]] = mapped_column(Text())
+    github_app_installation_id: Mapped[int | None] = mapped_column(Integer)
+    github_repository: Mapped[str | None] = mapped_column(Text())
     github_repository_is_private: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
     )
-    github_environment_name: Mapped[Optional[str]] = mapped_column(Text())
+    github_environment_name: Mapped[str | None] = mapped_column(Text())
 
-    subdirectory: Mapped[Optional[str]] = mapped_column(Text())
+    subdirectory: Mapped[str | None] = mapped_column(Text())
 
-    dockerfile_path: Mapped[Optional[str]] = mapped_column(Text())
-    branch_deploy_watch_paths: Mapped[Optional[Any]] = mapped_column(
+    dockerfile_path: Mapped[str | None] = mapped_column(Text())
+    branch_deploy_watch_paths: Mapped[Any | None] = mapped_column(
         postgresql.JSONB(),
     )
 
-    auto_deploy_branch: Mapped[Optional[str]] = mapped_column(Text())
-    deployment_timeout: Mapped[Optional[int]] = mapped_column(
+    auto_deploy_branch: Mapped[str | None] = mapped_column(Text())
+    deployment_timeout: Mapped[int | None] = mapped_column(
         Integer,
         server_default="180",
     )
@@ -540,7 +532,7 @@ class Application(Model, Timestamp):
         String(64),
         server_default="/_health/",
     )
-    health_check_host: Mapped[Optional[str]] = mapped_column(
+    health_check_host: Mapped[str | None] = mapped_column(
         String(256),
         server_default=None,
     )
@@ -713,10 +705,10 @@ class Deployment(Model, Timestamp):
     version_id: Mapped[int] = mapped_column(Integer)
     complete: Mapped[bool] = mapped_column(Boolean, default=False)
     error: Mapped[bool] = mapped_column(Boolean, default=False)
-    error_detail: Mapped[Optional[str]] = mapped_column(String(2048))
-    deploy_metadata: Mapped[Optional[Any]] = mapped_column(postgresql.JSONB())
-    deploy_log: Mapped[Optional[str]] = mapped_column(Text())
-    job_id: Mapped[Optional[str]] = mapped_column(String(64))
+    error_detail: Mapped[str | None] = mapped_column(String(2048))
+    deploy_metadata: Mapped[Any | None] = mapped_column(postgresql.JSONB())
+    deploy_log: Mapped[str | None] = mapped_column(Text())
+    job_id: Mapped[str | None] = mapped_column(String(64))
 
     application: Mapped["Application"] = relationship(back_populates="deployments")
     application_environment: Mapped["ApplicationEnvironment"] = relationship(
@@ -757,18 +749,18 @@ class JobLog(Model, Timestamp):
     process_name: Mapped[str] = mapped_column(String(64))
     job_name: Mapped[str] = mapped_column(String(253))
     namespace: Mapped[str] = mapped_column(String(253))
-    schedule_timestamp: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
-    start_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
-    completion_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
-    duration_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    schedule_timestamp: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    start_time: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    completion_time: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer)
     succeeded: Mapped[bool] = mapped_column(Boolean)
     pods_active: Mapped[int] = mapped_column(Integer, default=0)
     pods_succeeded: Mapped[int] = mapped_column(Integer, default=0)
     pods_failed: Mapped[int] = mapped_column(Integer, default=0)
-    release_version: Mapped[Optional[int]] = mapped_column(Integer)
-    deployment_id: Mapped[Optional[str]] = mapped_column(String(64))
-    labels: Mapped[Optional[Any]] = mapped_column(postgresql.JSONB())
-    resources: Mapped[Optional[Any]] = mapped_column(postgresql.JSONB())
+    release_version: Mapped[int | None] = mapped_column(Integer)
+    deployment_id: Mapped[str | None] = mapped_column(String(64))
+    labels: Mapped[Any | None] = mapped_column(postgresql.JSONB())
+    resources: Mapped[Any | None] = mapped_column(postgresql.JSONB())
 
     __table_args__ = (
         UniqueConstraint(
@@ -829,22 +821,22 @@ class Release(Model, Timestamp):
         "repository_name",
         String(256),
     )
-    release_id: Mapped[Optional[str]] = mapped_column(String(256))
+    release_id: Mapped[str | None] = mapped_column(String(256))
     version: Mapped[int] = mapped_column(Integer)
 
     built: Mapped[bool] = mapped_column(Boolean, default=False)
     error: Mapped[bool] = mapped_column(Boolean, default=False)
-    error_detail: Mapped[Optional[str]] = mapped_column(String(2048))
+    error_detail: Mapped[str | None] = mapped_column(String(2048))
     deleted: Mapped[bool] = mapped_column(Boolean, default=False)
-    dockerfile: Mapped[Optional[str]] = mapped_column(Text())
-    release_metadata: Mapped[Optional[Any]] = mapped_column(postgresql.JSONB())
-    release_build_log: Mapped[Optional[str]] = mapped_column(Text())
-    build_job_id: Mapped[Optional[str]] = mapped_column(String(64))
+    dockerfile: Mapped[str | None] = mapped_column(Text())
+    release_metadata: Mapped[Any | None] = mapped_column(postgresql.JSONB())
+    release_build_log: Mapped[str | None] = mapped_column(Text())
+    build_job_id: Mapped[str | None] = mapped_column(String(64))
     health_check_path: Mapped[str] = mapped_column(
         String(64),
         server_default="/_health/",
     )
-    health_check_host: Mapped[Optional[str]] = mapped_column(
+    health_check_host: Mapped[str | None] = mapped_column(
         String(256),
         server_default=None,
     )
@@ -1131,8 +1123,8 @@ class Configuration(Model, Timestamp):
 
     name: Mapped[str] = mapped_column(postgresql.CITEXT())
     value: Mapped[str] = mapped_column(String(2048))
-    key_slug: Mapped[Optional[str]] = mapped_column(Text())
-    build_key_slug: Mapped[Optional[str]] = mapped_column(Text())
+    key_slug: Mapped[str | None] = mapped_column(Text())
+    build_key_slug: Mapped[str | None] = mapped_column(Text())
     version_id: Mapped[int] = mapped_column(Integer)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     secret: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -1228,8 +1220,8 @@ class EnvironmentConfiguration(Model, Timestamp):
     )
     name: Mapped[str] = mapped_column(postgresql.CITEXT())
     value: Mapped[str] = mapped_column(String(2048))
-    key_slug: Mapped[Optional[str]] = mapped_column(Text())
-    build_key_slug: Mapped[Optional[str]] = mapped_column(Text())
+    key_slug: Mapped[str | None] = mapped_column(Text())
+    build_key_slug: Mapped[str | None] = mapped_column(Text())
     version_id: Mapped[int] = mapped_column(Integer)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     secret: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -1336,14 +1328,14 @@ class Hook(Model, Timestamp):
         server_default=text("gen_random_uuid()"),
         primary_key=True,
     )
-    commit_sha: Mapped[Optional[str]] = mapped_column(
+    commit_sha: Mapped[str | None] = mapped_column(
         String(256),
         index=True,
     )
     headers: Mapped[Any] = mapped_column(postgresql.JSONB())
     payload: Mapped[Any] = mapped_column(postgresql.JSONB())
     processed: Mapped[bool] = mapped_column(Boolean, default=False)
-    deployed: Mapped[Optional[bool]] = mapped_column(Boolean, default=None)
+    deployed: Mapped[bool | None] = mapped_column(Boolean, default=None)
     version_id: Mapped[int] = mapped_column(Integer)
 
     __mapper_args__ = {"version_id_col": version_id}
@@ -1378,22 +1370,22 @@ class Image(Model, Timestamp):
         "repository_name",
         String(256),
     )
-    image_id: Mapped[Optional[str]] = mapped_column(String(256))
+    image_id: Mapped[str | None] = mapped_column(String(256))
     version: Mapped[int] = mapped_column(Integer)
 
     version_id: Mapped[int] = mapped_column(Integer)
     built: Mapped[bool] = mapped_column(Boolean, default=False)
     error: Mapped[bool] = mapped_column(Boolean, default=False)
-    error_detail: Mapped[Optional[str]] = mapped_column(String(2048))
+    error_detail: Mapped[str | None] = mapped_column(String(2048))
     deleted: Mapped[bool] = mapped_column(Boolean, default=False)
-    build_slug: Mapped[Optional[str]] = mapped_column(String(1024))
-    build_ref: Mapped[Optional[str]] = mapped_column(String(1024))
-    dockerfile: Mapped[Optional[str]] = mapped_column(Text())
-    procfile: Mapped[Optional[str]] = mapped_column(Text())
-    processes: Mapped[Optional[Any]] = mapped_column(postgresql.JSONB())
-    image_metadata: Mapped[Optional[Any]] = mapped_column(postgresql.JSONB())
-    image_build_log: Mapped[Optional[str]] = mapped_column(Text())
-    build_job_id: Mapped[Optional[str]] = mapped_column(String(64))
+    build_slug: Mapped[str | None] = mapped_column(String(1024))
+    build_ref: Mapped[str | None] = mapped_column(String(1024))
+    dockerfile: Mapped[str | None] = mapped_column(Text())
+    procfile: Mapped[str | None] = mapped_column(Text())
+    processes: Mapped[Any | None] = mapped_column(postgresql.JSONB())
+    image_metadata: Mapped[Any | None] = mapped_column(postgresql.JSONB())
+    image_build_log: Mapped[str | None] = mapped_column(Text())
+    build_job_id: Mapped[str | None] = mapped_column(String(64))
 
     __mapper_args__ = {"version_id_col": version_id}
     __table_args__ = (
@@ -1506,22 +1498,22 @@ class Ingress(Model, Timestamp):
     enabled: Mapped[bool] = mapped_column(Boolean(), default=True)
     ingress_class_name: Mapped[str] = mapped_column(String(64), default="nginx")
     backend_protocol: Mapped[str] = mapped_column(String(16), default="HTTPS")
-    proxy_connect_timeout: Mapped[Optional[str]] = mapped_column(
+    proxy_connect_timeout: Mapped[str | None] = mapped_column(
         String(16), default="10s", server_default="10s"
     )
-    proxy_read_timeout: Mapped[Optional[str]] = mapped_column(
+    proxy_read_timeout: Mapped[str | None] = mapped_column(
         String(16), default="10s", server_default="10s"
     )
-    proxy_send_timeout: Mapped[Optional[str]] = mapped_column(
+    proxy_send_timeout: Mapped[str | None] = mapped_column(
         String(16), default="10s", server_default="10s"
     )
-    proxy_body_size: Mapped[Optional[str]] = mapped_column(
+    proxy_body_size: Mapped[str | None] = mapped_column(
         String(16), default="10M", server_default="10M"
     )
-    client_body_buffer_size: Mapped[Optional[str]] = mapped_column(
+    client_body_buffer_size: Mapped[str | None] = mapped_column(
         String(16), default="1M", server_default="1M"
     )
-    proxy_request_buffering: Mapped[Optional[str]] = mapped_column(
+    proxy_request_buffering: Mapped[str | None] = mapped_column(
         String(16), default="on", server_default="on"
     )
     session_affinity: Mapped[bool] = mapped_column(Boolean(), default=False)
@@ -1533,9 +1525,9 @@ class Ingress(Model, Timestamp):
     cluster_issuer: Mapped[str] = mapped_column(String(64), default="letsencrypt")
     force_ssl_redirect: Mapped[bool] = mapped_column(Boolean(), default=True)
     service_upstream: Mapped[bool] = mapped_column(Boolean(), default=True)
-    tailscale_hostname: Mapped[Optional[str]] = mapped_column(String(253))
+    tailscale_hostname: Mapped[str | None] = mapped_column(String(253))
     tailscale_funnel: Mapped[bool] = mapped_column(Boolean(), default=False)
-    tailscale_tags: Mapped[Optional[str]] = mapped_column(String(512))
+    tailscale_tags: Mapped[str | None] = mapped_column(String(512))
     version_id: Mapped[int] = mapped_column(Integer)
 
     application_environment: Mapped["ApplicationEnvironment"] = relationship(
