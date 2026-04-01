@@ -282,7 +282,7 @@ def _fetch_image_source(image, access_token):
         raise BuildError(f"error parsing Procfile: {exc}")
 
     for process_name, process_def in processes.items():
-        if re.search("\s", process_name) is not None:
+        if re.search(r"\s", process_name) is not None:
             raise BuildError(
                 f'Invalid process name: "{process_name}" in Procfile, '
                 "may not contain whitespace."
