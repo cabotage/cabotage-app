@@ -199,7 +199,7 @@ def create_app():
                     values["v"] = h
         return url_for(endpoint, **values)
 
-    app.jinja_env.globals["url_for"] = _hashed_url_for
+    app.jinja_env.globals.update(url_for=_hashed_url_for)  # ty: ignore[invalid-argument-type]  # Jinja infers globals as a narrow dict; should be dict[str, Any]
 
     # set up extensions
     admin.init_app(app)
@@ -355,7 +355,7 @@ def create_app():
     admin.add_view(AdminModelView(User, db.session))
 
     num_proxies = app.config.get("PROXY_FIX_NUM_PROXIES", 1)
-    app.wsgi_app = ProxyFix(
+    app.wsgi_app = ProxyFix(  # ty: ignore[invalid-assignment]  # Flask types wsgi_app as a method but documents reassignment
         app.wsgi_app,
         x_for=num_proxies,
         x_proto=num_proxies,
@@ -378,6 +378,6 @@ def create_app():
 
         return original_wsgi(environ, _filtered_start_response)
 
-    app.wsgi_app = _static_cache_headers_middleware
+    app.wsgi_app = _static_cache_headers_middleware  # ty: ignore[invalid-assignment]  # Flask types wsgi_app as a method but documents reassignment
 
     return app
