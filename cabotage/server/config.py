@@ -113,4 +113,6 @@ class Config(metaclass=MetaFlaskEnv):
     LOKI_URL = None
     LOKI_VERIFY = None
     ALERTMANAGER_WEBHOOK_SECRET = None
+    ALERTMANAGER_URL = None
+    ALERTMANAGER_VERIFY = None
     PROXY_FIX_NUM_PROXIES = 1

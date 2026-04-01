@@ -30,3 +30,5 @@ from .tailscale import (
     refresh_tailscale_oidc_tokens,  # noqa: F401
     teardown_tailscale_operator,  # noqa: F401
 )
+
+from .alerting import reconcile_alerts  # noqa: F401
