@@ -83,6 +83,8 @@ def reconcile_alerts():
         am_status = "firing" if state == "active" else state
 
         if existing:
+            if existing.status == "resolved":
+                continue
             existing.status = am_status
             existing.ends_at = ends_at
             existing.labels = labels

@@ -772,3 +772,47 @@ class TestUpsert:
         alert = Alert.query.filter_by(fingerprint=fingerprint).first()
         assert alert.status == "resolved"
         assert alert.application_id == application.id
+
+    def test_resolved_alert_cannot_return_to_firing(self, client, db_session):
+        """Once an alert is resolved, a new firing webhook with the same
+        fingerprint+startsAt must not flip it back to firing."""
+        fingerprint = uuid.uuid4().hex[:16]
+        firing = {
+            "status": "firing",
+            "labels": {
+                "alertname": "ResidentDeploymentOOMKilled",
+                "deployment": "test-app",
+                "namespace": "cabotage",
+                "severity": "critical",
+            },
+            "annotations": {"summary": "OOM killed"},
+            "startsAt": "2026-03-30T17:57:58.931Z",
+            "endsAt": "0001-01-01T00:00:00Z",
+            "generatorURL": "/graph?g0.expr=test",
+            "fingerprint": fingerprint,
+        }
+        resolved = {**firing, "status": "resolved", "endsAt": "2026-03-30T18:10:00.000Z"}
+
+        # Fire, then resolve
+        client.post(
+            "/alertmanager/webhooks",
+            json=_alertmanager_payload([firing]),
+            headers=_auth_headers(),
+        )
+        client.post(
+            "/alertmanager/webhooks",
+            json=_alertmanager_payload([resolved], status="resolved"),
+            headers=_auth_headers(),
+        )
+        alert = Alert.query.filter_by(fingerprint=fingerprint).first()
+        assert alert.status == "resolved"
+
+        # Try to re-fire — should be ignored
+        client.post(
+            "/alertmanager/webhooks",
+            json=_alertmanager_payload([firing]),
+            headers=_auth_headers(),
+        )
+        alert = Alert.query.filter_by(fingerprint=fingerprint).first()
+        assert alert.status == "resolved"
+        assert Alert.query.filter_by(fingerprint=fingerprint).count() == 1

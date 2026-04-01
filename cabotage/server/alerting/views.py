@@ -203,6 +203,10 @@ def alertmanager_webhook():
         ).first()
 
         if existing:
+            # Once resolved, the incident is closed — skip further updates
+            if existing.status == "resolved":
+                alerts_processed += 1
+                continue
             existing.status = status
             existing.ends_at = ends_at
             existing.labels = labels
