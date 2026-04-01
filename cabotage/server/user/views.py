@@ -2257,7 +2257,6 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     # Eagerly load subscriptions + env configs to avoid N+1 in
     # _resolved_configuration and template rendering
     if app_env:
-
         db.session.query(ApplicationEnvironment).filter_by(id=app_env.id).options(
             subqueryload(
                 ApplicationEnvironment.environment_config_subscriptions
@@ -2269,8 +2268,8 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     )
     for pod_class, parameters in pod_classes.items():
         pod_class_info += (
-            f'<tr><td>{pod_class}</td><td>{parameters["cpu"]["requests"]}</td>'
-            f'<td>{parameters["memory"]["requests"]}</td></tr>'
+            f"<tr><td>{pod_class}</td><td>{parameters['cpu']['requests']}</td>"
+            f"<td>{parameters['memory']['requests']}</td></tr>"
         )
     pod_class_info += "</table>"
 
@@ -6484,9 +6483,7 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
     pods_ready = 0
     pods_by_phase = {}
     running_pod_names = []
-    processes = (
-        {}
-    )  # {process_name: {"total": N, "ready": N, "pending": N, "crashed": N}}
+    processes = {}  # {process_name: {"total": N, "ready": N, "pending": N, "crashed": N}}
     try:
         api_client = kubernetes_ext.kubernetes_client
         core_api = kubernetes.client.CoreV1Api(api_client)
@@ -6559,7 +6556,7 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
         ', container!="cabotage-enroller"'
     )
     cpu_series = _query_mimir_range(
-        f"sum(rate(container_cpu_usage_seconds_total" f"{{{app_labels}}}[{step}s]))",
+        f"sum(rate(container_cpu_usage_seconds_total{{{app_labels}}}[{step}s]))",
         start,
         end,
         step,
@@ -6569,7 +6566,7 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
             cpu_history.append([ts, round(float(val) * 1000, 1)])
 
     mem_series = _query_mimir_range(
-        f"sum(container_memory_working_set_bytes" f"{{{app_labels}}})",
+        f"sum(container_memory_working_set_bytes{{{app_labels}}})",
         start,
         end,
         step,

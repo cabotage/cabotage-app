@@ -55,7 +55,7 @@ test:
 		base sh -c "uv pip install pytest && python3 -m flask db upgrade && python3 -m pytest tests/ -v $(ARGS)"
 
 reformat:
-	docker compose run --build --rm base black .
+	docker compose run --build --rm base ruff format .
 
 lint:
 	docker compose run --build --rm base bin/lint

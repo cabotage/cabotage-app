@@ -509,7 +509,7 @@ def _render_pr_comment_body(environment):
     base_url = f"{scheme}://{server}"
 
     lines = [
-        f"**Branch Deploy** for `{environment.slug}` " f"in **{project.name}**",
+        f"**Branch Deploy** for `{environment.slug}` in **{project.name}**",
         "",
         "| Service | Status | Preview | Updated (UTC) |",
         "| :--- | :--- | :--- | :--- |",

@@ -19,7 +19,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv python install 3.13
       - run: uv sync --frozen
-      - run: uv run black --check --diff .
+      - run: uv run ruff format --check --diff .
       - run: uv run ruff check .
 
   type-check:
