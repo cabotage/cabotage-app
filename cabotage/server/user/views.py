@@ -24,6 +24,7 @@ from flask_security import (
 from flask_wtf import FlaskForm
 
 import kubernetes
+import kubernetes.stream.ws_client
 
 from dxf import DXF
 import requests as requests_lib
@@ -3403,7 +3404,9 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                 # render_field_compact shows field.errors inline
                 return _render_ingress(ingress_errors=ingress_errors)
 
-            new_use_regex = form.use_regex.data if not is_tailscale else False
+            new_use_regex = (
+                form.use_regex.data if isinstance(form, IngressSettingsForm) else False
+            )
 
             # --- Validate everything before touching the session ---
 
@@ -3513,7 +3516,7 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                                     is_auto_generated=False,
                                 )
                             )
-                else:
+                elif isinstance(form, IngressSettingsForm):
                     ingress.proxy_connect_timeout = form.proxy_connect_timeout.data
                     ingress.proxy_read_timeout = form.proxy_read_timeout.data
                     ingress.proxy_send_timeout = form.proxy_send_timeout.data

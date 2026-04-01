@@ -1,4 +1,7 @@
+from typing import Any
+
 import sqlalchemy as sa
+import sqlalchemy.orm
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy_utils import JSONType, generic_relationship
@@ -53,7 +56,7 @@ class ActivityFactory(ModelFactory):
 
             def _calculate_tx_id(self, obj):
                 session = sa.orm.object_session(self)
-                if obj:
+                if obj and session is not None:
                     object_version = version_obj(session, obj)
                     if object_version:
                         return object_version.transaction_id

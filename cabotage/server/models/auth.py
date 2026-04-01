@@ -97,7 +97,8 @@ class User(Model, FsUserMixin):
         for organization in self.organizations:
             projects += organization.organization.projects
         for team in self.teams:
-            projects += team.team.projects
+            for org_team in team.team.organizations:
+                projects += org_team.organization.projects
         return projects
 
 
