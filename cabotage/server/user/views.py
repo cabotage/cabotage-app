@@ -835,6 +835,8 @@ def organization_settings(org_slug):
         ts_form=ts_form,
         ts_integration=ts_integration,
         oidc_issuer_url=oidc.issuer_url(),
+        slack_integration=organization.slack_integration,
+        discord_integration=organization.discord_integration,
     )
 
 

@@ -178,6 +178,20 @@ def create_app():
             int(k): v for k, v in json.loads(totp_secrets).items()
         }
 
+    # MetaFlaskEnv parses dotted strings as floats, which truncates IDs
+    # like Slack's "10818900810177.1079..." — re-read as raw strings.
+    _env_prefix = app.config.get("ENV_PREFIX", "CABOTAGE_")
+    for _key in (
+        "SLACK_CLIENT_ID",
+        "SLACK_CLIENT_SECRET",
+        "DISCORD_CLIENT_ID",
+        "DISCORD_CLIENT_SECRET",
+        "DISCORD_BOT_TOKEN",
+    ):
+        _raw = os.environ.get(f"{_env_prefix}{_key}")
+        if _raw is not None:
+            app.config[_key] = _raw
+
     if app.config.get("GITHUB_OAUTH_ONLY"):
         app.config["SECURITY_REGISTERABLE"] = False
         app.config["SECURITY_RECOVERABLE"] = False
@@ -224,8 +238,12 @@ def create_app():
         login_form=ExtendedLoginForm,
     )
     from cabotage.server.user.github_oauth import init_github_oauth
+    from cabotage.server.integrations.slack_oauth import init_slack_oauth
+    from cabotage.server.integrations.discord_oauth import init_discord_oauth
 
     init_github_oauth(app)
+    init_slack_oauth(app)
+    init_discord_oauth(app)
     vault_db_creds.init_app(app)
     db.init_app(app)
     principal.init_app(app)
