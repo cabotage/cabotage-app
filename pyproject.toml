@@ -26,7 +26,7 @@ dependencies = [
     "gunicorn",
     "humanize",
     "hvac",
-    "kubernetes>=30.1.0",
+    "kubernetes",
     "pathspec",
     "psycopg2-binary",
     "py-consul",
