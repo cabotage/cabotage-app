@@ -27,10 +27,10 @@ COPY --from=moby/buildkit:v0.28.0-rootless /usr/bin/fuse-overlayfs /usr/bin/fuse
 COPY --from=moby/buildkit:v0.28.0-rootless /usr/bin/newuidmap /usr/bin/newuidmap
 COPY --from=moby/buildkit:v0.28.0-rootless /usr/bin/newgidmap /usr/bin/newgidmap
 
-ENV PYTHONUNBUFFERED 1
-ENV UV_PROJECT_ENVIRONMENT=/opt/cabotage-app \
-    UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy
+ENV PYTHONUNBUFFERED=1
+ENV UV_PROJECT_ENVIRONMENT=/opt/cabotage-app
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
 ENV PATH="/opt/cabotage-app/bin:${PATH}"
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.2 /uv /usr/local/bin/uv
