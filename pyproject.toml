@@ -30,7 +30,7 @@ dependencies = [
     "pathspec",
     "psycopg2-binary",
     "py-consul",
-    "pygithub>=1.59.1",
+    "pygithub",
     "pyjwt",
     "python-dxf",
     "qrcode",
