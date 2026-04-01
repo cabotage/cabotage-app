@@ -166,7 +166,7 @@ def _create_app_env_for_branch_deploy(
     activity = Activity(
         verb="create",
         object=app_env,
-        data={"timestamp": datetime.datetime.utcnow().isoformat()},
+        data={"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()},
     )
     db.session.add(activity)
     return app_env
@@ -399,7 +399,9 @@ def _build_images_for_app_envs(app_envs, commit_sha, installation_id):
         activity = Activity(
             verb="submit",
             object=image,
-            data={"timestamp": datetime.datetime.utcnow().isoformat()},
+            data={
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            },
         )
         db.session.add(activity)
         images.append(image)
@@ -689,7 +691,7 @@ def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref
     activity = Activity(
         verb="create",
         object=environment,
-        data={"timestamp": datetime.datetime.utcnow().isoformat()},
+        data={"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()},
     )
     db.session.add(activity)
 

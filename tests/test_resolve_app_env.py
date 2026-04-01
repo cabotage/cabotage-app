@@ -132,10 +132,10 @@ class TestResolveAppEnvByGithubEnvironmentName:
     def test_ignores_deleted_application(
         self, db_session, project, environment, installation_id
     ):
-        from datetime import datetime
+        from datetime import datetime, timezone
 
         application = _make_app(project, installation_id)
-        application.deleted_at = datetime.utcnow()
+        application.deleted_at = datetime.now(timezone.utc)
         db.session.flush()
         _make_app_env(application, environment, github_environment_name="production")
 

@@ -2065,9 +2065,9 @@ def _get_job_schedule(process_def):
 def _history_limit_for_schedule(schedule, hours=12):
     """Estimate how many times a cron schedule fires in the given window."""
     from croniter import croniter
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     end = now + timedelta(hours=hours)
     it = croniter(schedule, now)
     count = 0

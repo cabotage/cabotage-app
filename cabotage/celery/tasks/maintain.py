@@ -20,7 +20,9 @@ from cabotage.utils.github import post_deployment_status_update
 def reap_stale_builds():
     """Find stuck image builds, release builds, and deploys with no heartbeat."""
     redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
-    cutoff = datetime.datetime.utcnow() - datetime.timedelta(seconds=90)
+    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
+        seconds=90
+    )
 
     # Images: built=False, error=False, updated < cutoff, no heartbeat
     stuck_images = Image.query.filter(
