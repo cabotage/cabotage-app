@@ -1149,7 +1149,7 @@ class Configuration(Model, Timestamp):
         )
 
         if self.secret:
-            if self.buildtime:
+            if self.buildtime and self.build_key_slug:
                 payload = reader.read(
                     self.build_key_slug.split(":", 1)[1], build=True, secret=True
                 )
@@ -1243,7 +1243,7 @@ class EnvironmentConfiguration(Model, Timestamp):
         from cabotage.utils.config_templates import has_template_variables
 
         if self.secret:
-            if self.buildtime:
+            if self.buildtime and self.build_key_slug:
                 payload = reader.read(
                     self.build_key_slug.split(":", 1)[1], build=True, secret=True
                 )
