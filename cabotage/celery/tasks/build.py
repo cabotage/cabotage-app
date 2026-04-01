@@ -273,9 +273,9 @@ def _fetch_image_source(image, access_token):
         os.chdir(tempdir)
         try:
             dockerfile_object.content = dockerfile_body
+            dockerfile_env_vars = list(dockerfile_object.envs.keys())
         finally:
             os.chdir(previous_dir)
-    dockerfile_env_vars = list(dockerfile_object.envs.keys())
     try:
         processes = procfile.loads(procfile_body)
     except ValueError as exc:
