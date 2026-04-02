@@ -224,12 +224,12 @@ def upsert_alert(
 ):
     """Upsert an alert by (fingerprint, starts_at).
 
-    Returns True if the alert was processed, False if skipped (e.g. missing starts_at).
-    Resolved alerts are never reopened.
+    Returns (processed, dispatch_id) where processed is True if the alert
+    was handled, and dispatch_id is the alert ID to notify (or None).
     """
     if not starts_at:
         log.warning("Alert missing startsAt, skipping: %s", fingerprint)
-        return False
+        return False, None
 
     application, app_env = resolve_application(labels)
     app_id = application.id if application else None
@@ -240,11 +240,9 @@ def upsert_alert(
         starts_at=starts_at,
     ).first()
 
-    dispatch_id = None
-
     if existing:
         if existing.status == "resolved":
-            return True
+            return True, None
         was_firing = existing.status == "firing"
         existing.status = status
         existing.ends_at = ends_at
@@ -255,7 +253,7 @@ def upsert_alert(
             existing.application_environment_id = app_env_id
         if was_firing and status == "resolved":
             _record_activity("resolved", existing, application)
-            dispatch_id = existing.id
+            return True, existing.id
     else:
         alert = Alert(
             fingerprint=fingerprint,
@@ -275,11 +273,6 @@ def upsert_alert(
         if status == "firing":
             db.session.flush()  # ensure alert has an id for generic_relationship
             _record_activity("firing", alert, application)
-            dispatch_id = alert.id
+            return True, alert.id
 
-    if dispatch_id:
-        from cabotage.celery.tasks.notify import dispatch_alert_notification
-
-        dispatch_alert_notification.delay(str(dispatch_id))
-
-    return True
+    return True, None

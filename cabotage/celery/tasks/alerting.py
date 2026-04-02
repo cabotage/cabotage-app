@@ -19,6 +19,7 @@ from cabotage.server.alerting.ingest import (
     parse_alertmanager_timestamp,
     upsert_alert,
 )
+from cabotage.celery.tasks.notify import dispatch_alert_notification
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ def reconcile_alerts():
 
     # Track which fingerprints are still active in Alertmanager
     seen_fingerprints = set()
+    dispatch_ids = []
 
     for alert_data in active_alerts:
         labels = alert_data.get("labels", {})
@@ -71,7 +73,7 @@ def reconcile_alerts():
             state = status
         am_status = "firing" if state == "active" else state
 
-        upsert_alert(
+        _processed, dispatch_id = upsert_alert(
             fingerprint=fingerprint,
             status=am_status,
             alertname=labels.get("alertname", "unknown"),
@@ -81,6 +83,8 @@ def reconcile_alerts():
             ends_at=parse_alertmanager_timestamp(alert_data.get("endsAt")),
             generator_url=alert_data.get("generatorURL"),
         )
+        if dispatch_id:
+            dispatch_ids.append(dispatch_id)
 
     # Resolve any locally-firing alerts that are no longer in Alertmanager
     firing_alerts = Alert.query.filter_by(status="firing").all()
@@ -91,9 +95,15 @@ def reconcile_alerts():
             alert.status = "resolved"
             alert.ends_at = now
             _record_activity("resolved", alert, alert.application)
+            dispatch_ids.append(alert.id)
             resolved_count += 1
 
     db.session.commit()
+
+    # Dispatch notifications after commit so workers can see the data
+    for alert_id in dispatch_ids:
+        dispatch_alert_notification.delay(str(alert_id))
+
     log.info(
         "Reconciled alerts: %d active from Alertmanager, %d resolved",
         len(active_alerts),
