@@ -25,7 +25,14 @@ from cabotage.server.models.notifications import (
     NotificationRoute,
     SentNotification,
 )
-from cabotage.server.models.projects import Alert, Application, ApplicationEnvironment
+from cabotage.server.models.projects import (
+    Alert,
+    Application,
+    ApplicationEnvironment,
+    Deployment,
+    Image,
+    Release,
+)
 from cabotage.utils.github import cabotage_url
 
 log = logging.getLogger(__name__)
@@ -716,3 +723,213 @@ def dispatch_pipeline_notification(
         complete=complete,
     )
     db.session.commit()
+
+
+# Minimum age before reconciler considers a notification stale (seconds).
+RECONCILE_STALE_THRESHOLD = 300  # 5 minutes
+
+# Map object_type → (model class, is_terminal, get_state)
+_TERMINAL_CHECKS = {
+    "Image": (
+        Image,
+        lambda obj: obj.built or obj.error,
+        lambda obj: "complete" if obj.built else ("error" if obj.error else None),
+    ),
+    "Release": (
+        Release,
+        lambda obj: obj.built or obj.error,
+        lambda obj: "complete" if obj.built else ("error" if obj.error else None),
+    ),
+    "Deployment": (
+        Deployment,
+        lambda obj: obj.complete or obj.error,
+        lambda obj: "complete" if obj.complete else ("error" if obj.error else None),
+    ),
+    "Alert": (
+        Alert,
+        lambda obj: obj.status == "resolved",
+        lambda obj: "resolved" if obj.status == "resolved" else None,
+    ),
+}
+
+
+@shared_task()
+def reconcile_notifications():
+    """Find stale notifications whose source objects have reached a terminal
+    state and re-dispatch to update the message.
+
+    Only touches notifications that haven't been updated in
+    RECONCILE_STALE_THRESHOLD seconds, to avoid stepping on in-flight workers.
+    """
+    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(
+        seconds=RECONCILE_STALE_THRESHOLD
+    )
+
+    stale = SentNotification.query.filter(
+        SentNotification.updated_at < cutoff,
+    ).all()
+
+    reconciled = 0
+    for sent in stale:
+        try:
+            if sent.object_type == "AutoDeploy":
+                if _reconcile_autodeploy_notification(sent):
+                    reconciled += 1
+            else:
+                if _reconcile_pipeline_notification(sent):
+                    reconciled += 1
+        except Exception:
+            log.warning("Failed to reconcile notification %s", sent.id, exc_info=True)
+
+    if reconciled:
+        db.session.commit()
+        log.info("Reconciled %d stale notification(s)", reconciled)
+
+
+def _reconcile_pipeline_notification(sent):
+    """Re-dispatch a pipeline/alert notification to its terminal state.
+
+    Returns True if a re-dispatch was sent.
+    """
+    check = _TERMINAL_CHECKS.get(sent.object_type)
+    if not check:
+        return False
+
+    model_cls, is_terminal, get_state = check
+    obj = model_cls.query.filter_by(id=sent.object_id).first()
+    if not obj or not is_terminal(obj):
+        return False
+
+    if isinstance(obj, Alert):
+        if obj.application:
+            message = format_alert_message(
+                obj, obj.application, obj.application_environment
+            )
+            send_notification.delay(
+                str(sent.organization_id),
+                sent.integration,
+                sent.channel_id,
+                sent.object_type,
+                str(sent.object_id),
+                sent.notification_type,
+                message,
+            )
+            return True
+        return False
+
+    application = obj.application
+    if not application:
+        return False
+
+    app_env = obj.application_environment
+    ntype = sent.notification_type
+    error = obj.error_detail if obj.error else None
+    complete = not obj.error
+
+    app_path = _format_app_path(application, app_env)
+    url = _detail_url(application, sent.object_type, sent.object_id)
+    message = format_pipeline_message(
+        ntype, app_path, detail=None, error=error, complete=complete, url=url
+    )
+    send_notification.delay(
+        str(sent.organization_id),
+        sent.integration,
+        sent.channel_id,
+        sent.object_type,
+        str(sent.object_id),
+        ntype,
+        message,
+    )
+    return True
+
+
+def _reconcile_autodeploy_notification(sent):
+    """Re-dispatch an auto-deploy notification to the correct terminal stage.
+
+    Walks the pipeline chain (image → release → deployment) to find the
+    furthest terminal state.
+
+    Returns True if a re-dispatch was sent.
+    """
+    image = Image.query.filter_by(id=sent.object_id).first()
+    if not image or not image.application:
+        return False
+
+    app = image.application
+    app_env = image.application_environment
+
+    if image.error:
+        dispatch_autodeploy_notification(
+            "image_failed",
+            image.id,
+            app,
+            app_env,
+            error=image.error_detail,
+            image_url=cabotage_url(app, f"images/{image.id}"),
+            image_metadata=image.image_metadata,
+        )
+        return True
+
+    if not image.built:
+        return False  # still in progress
+
+    # Image built — find the release
+    release = Release.query.filter(
+        Release.application_id == image.application_id,
+        Release.release_metadata["source_image_id"].astext == str(image.id),
+    ).first()
+
+    if not release:
+        return False  # release not created yet
+
+    if release.error:
+        dispatch_autodeploy_notification(
+            "release_failed",
+            image.id,
+            app,
+            app_env,
+            error=release.error_detail,
+            image_url=cabotage_url(app, f"images/{image.id}"),
+            release_url=cabotage_url(app, f"releases/{release.id}"),
+            image_metadata=image.image_metadata,
+        )
+        return True
+
+    if not release.built:
+        return False  # still building
+
+    # Release built — find the deployment
+    deployment = Deployment.query.filter(
+        Deployment.application_id == image.application_id,
+        Deployment.deploy_metadata["source_image_id"].astext == str(image.id),
+    ).first()
+
+    if not deployment:
+        return False  # deployment not created yet
+
+    if deployment.error:
+        dispatch_autodeploy_notification(
+            "deploy_failed",
+            image.id,
+            app,
+            app_env,
+            error=deployment.error_detail,
+            image_url=cabotage_url(app, f"images/{image.id}"),
+            deploy_url=cabotage_url(app, f"deployments/{deployment.id}"),
+            image_metadata=image.image_metadata,
+        )
+        return True
+
+    if deployment.complete:
+        dispatch_autodeploy_notification(
+            "complete",
+            image.id,
+            app,
+            app_env,
+            image_url=cabotage_url(app, f"images/{image.id}"),
+            deploy_url=cabotage_url(app, f"deployments/{deployment.id}"),
+            image_metadata=image.image_metadata,
+        )
+        return True
+
+    return False  # still deploying
