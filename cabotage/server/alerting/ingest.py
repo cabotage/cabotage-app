@@ -240,6 +240,8 @@ def upsert_alert(
         starts_at=starts_at,
     ).first()
 
+    dispatch_id = None
+
     if existing:
         if existing.status == "resolved":
             return True
@@ -253,6 +255,7 @@ def upsert_alert(
             existing.application_environment_id = app_env_id
         if was_firing and status == "resolved":
             _record_activity("resolved", existing, application)
+            dispatch_id = existing.id
     else:
         alert = Alert(
             fingerprint=fingerprint,
@@ -272,5 +275,11 @@ def upsert_alert(
         if status == "firing":
             db.session.flush()  # ensure alert has an id for generic_relationship
             _record_activity("firing", alert, application)
+            dispatch_id = alert.id
+
+    if dispatch_id:
+        from cabotage.celery.tasks.notify import dispatch_alert_notification
+
+        dispatch_alert_notification.delay(str(dispatch_id))
 
     return True

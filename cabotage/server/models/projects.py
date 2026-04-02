@@ -1877,6 +1877,7 @@ class Alert(Model, Timestamp):
         ForeignKey("application_environments.id"),
         index=True,
     )
+    last_notified_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
     version_id: Mapped[int] = mapped_column(Integer)
 
     application: Mapped[Application | None] = relationship(

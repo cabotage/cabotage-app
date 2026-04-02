@@ -180,7 +180,7 @@ class TailscaleIntegration(Model):
     )
 
     organization: Mapped[Organization] = relationship(
-        backref=backref("tailscale_integration", uselist=False),
+        back_populates="tailscale_integration",
     )
 
     def __repr__(self):
@@ -224,7 +224,7 @@ class SlackIntegration(Model):
     version_id: Mapped[int] = mapped_column(Integer)
 
     organization: Mapped[Organization] = relationship(
-        backref=backref("slack_integration", uselist=False),
+        back_populates="slack_integration",
     )
     installed_by: Mapped[User | None] = relationship(
         foreign_keys=[installed_by_user_id]
@@ -271,7 +271,7 @@ class DiscordIntegration(Model):
     version_id: Mapped[int] = mapped_column(Integer)
 
     organization: Mapped[Organization] = relationship(
-        backref=backref("discord_integration", uselist=False),
+        back_populates="discord_integration",
     )
     installed_by: Mapped[User | None] = relationship(
         foreign_keys=[installed_by_user_id]
@@ -310,6 +310,16 @@ class Organization(Model):
     teams: Mapped[list[OrganizationTeam]] = relationship(back_populates="organization")
 
     projects: Mapped[list[Project]] = relationship(back_populates="organization")
+
+    tailscale_integration: Mapped[TailscaleIntegration | None] = relationship(
+        back_populates="organization", uselist=False
+    )
+    slack_integration: Mapped[SlackIntegration | None] = relationship(
+        back_populates="organization", uselist=False
+    )
+    discord_integration: Mapped[DiscordIntegration | None] = relationship(
+        back_populates="organization", uselist=False
+    )
 
     @property
     def active_projects(self):
