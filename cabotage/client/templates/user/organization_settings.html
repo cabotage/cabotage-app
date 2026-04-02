@@ -334,13 +334,34 @@
         <p class="text-sm opacity-50">Loading...</p>
       </div>
 
-      <button type="button" class="btn btn-sm btn-outline gap-1 mt-3" onclick="showAddForm()">
-        {{ icon('plus', 'w-4 h-4') }}
-        Add Rule
-      </button>
+      <div class="flex items-center gap-2 mt-3">
+        <button type="button" class="btn btn-sm btn-outline gap-1" onclick="showAddForm()">
+          {{ icon('plus', 'w-4 h-4') }}
+          Add Rule
+        </button>
+        <button type="button" class="btn btn-sm btn-ghost gap-1" onclick="toggleCoveragePreview()">
+          {{ icon('eye', 'w-4 h-4') }}
+          Preview Coverage
+        </button>
+      </div>
+
     </div>
   </div>
 
+  {# Coverage preview modal #}
+  <dialog id="coverage-modal" class="modal">
+    <div class="modal-box max-w-2xl relative !overflow-visible p-0">
+      <div class="max-h-[80vh] overflow-y-auto p-6">
+        <h3 class="text-lg font-bold">Coverage Preview</h3>
+        <p class="text-sm opacity-60 mt-1">Routing coverage per environment. Types without a matching rule use the default channel.</p>
+        <div id="coverage-preview" class="mt-3"></div>
+        <div class="modal-action">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="closeCoverageModal()">Close</button>
+        </div>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
   {# Route add/edit modal #}
   <dialog id="route-modal" class="modal">
     <div class="modal-box max-w-2xl">
@@ -497,10 +518,20 @@
     (function() {
       const orgSlug = {{ organization.slug | tojson }};
       const csrfToken = {{ csrf_token() | tojson }};
+      const integrationIcon = {
+        slack: '<svg class="w-4 h-4 inline-block" viewBox="0 0 24 24" fill="currentColor"><path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.27 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.163 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.163 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.163 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.27a2.527 2.527 0 0 1-2.52-2.523 2.527 2.527 0 0 1 2.52-2.52h6.315A2.528 2.528 0 0 1 24 15.163a2.528 2.528 0 0 1-2.522 2.523h-6.315z"/></svg>',
+        discord: '<svg class="w-4 h-4 inline-block" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>',
+      };
       const categories = {{ notification_categories | tojson }};
+      const hasDefaultChannel = {{ (slack_integration and slack_integration.default_channel_id) or (discord_integration and discord_integration.default_channel_id) | tojson }};
       const channelData = {};
       let scopesData = [];
       window.allRoutes = [];
+      let dataReady = 0;
+      function onDataReady() {
+        dataReady++;
+        if (dataReady >= 2) checkHash();
+      }
 
       // --- Channel loading (shared with default channel selectors) ---
 
@@ -561,6 +592,8 @@
         .then(r => r.json()).then(data => {
           scopesData = data.projects || [];
           buildScopeCheckboxes();
+          if (allRoutes.length) renderRoutes();
+          onDataReady();
         });
 
       function buildScopeCheckboxes() {
@@ -616,7 +649,7 @@
       function scopeAllToggle(cls) {
         return `<label class="label cursor-pointer justify-start gap-1.5 py-0">
           <input type="checkbox" class="checkbox checkbox-xs checkbox-primary scope-all-toggle" data-cls="${cls}" checked>
-          <span class="text-xs font-semibold">All</span>
+          <span class="text-xs font-semibold">Any</span>
         </label>`;
       }
 
@@ -850,6 +883,7 @@
           .then(r => r.json()).then(data => {
             allRoutes = data.routes || [];
             renderRoutes();
+            onDataReady();
           });
       }
 
@@ -869,7 +903,7 @@
             return cat ? `${cat.types[parts[1]] || parts[1]}` : ntype;
           });
           const scope = formatScope(route);
-          const target = `${route.integration === 'slack' ? 'Slack' : 'Discord'}: #${esc(route.channel_name || route.channel_id)}`;
+          const target = `${integrationIcon[route.integration] || ''} #${esc(route.channel_name || route.channel_id)}`;
           const status = route.enabled
             ? '<span class="badge badge-success badge-xs">on</span>'
             : '<span class="badge badge-error badge-xs">off</span>';
@@ -918,7 +952,7 @@
           });
           parts.push(names.join(', '));
         }
-        return parts.length ? esc(parts.join(' / ')) : '<span class="opacity-40">all</span>';
+        return parts.length ? esc(parts.join(' / ')) : '<span class="opacity-40">any</span>';
       }
 
       function esc(s) {
@@ -926,6 +960,294 @@
         d.textContent = s;
         return d.innerHTML;
       }
+
+      // --- Coverage preview ---
+
+      const coverageModal = document.getElementById('coverage-modal');
+
+      function openCoverageModal() {
+        renderCoveragePreview();
+        coverageModal.showModal();
+        if (location.hash !== '#preview-alerting-routes') {
+          history.replaceState(null, '', '#preview-alerting-routes');
+        }
+      }
+
+      window.closeCoverageModal = function() {
+        coverageModal.close();
+        if (location.hash === '#preview-alerting-routes') {
+          history.replaceState(null, '', location.pathname + location.search);
+        }
+      }
+
+      coverageModal.addEventListener('close', function() {
+        if (location.hash === '#preview-alerting-routes') {
+          history.replaceState(null, '', location.pathname + location.search);
+        }
+      });
+
+      window.toggleCoveragePreview = openCoverageModal;
+
+      // Open on hash match (page load or back/forward)
+      function checkHash() {
+        if (location.hash === '#preview-alerting-routes') {
+          openCoverageModal();
+        }
+      }
+      window.addEventListener('hashchange', checkHash);
+
+      // Separate scoped vs unscoped categories
+      const scopedCats = Object.entries(categories).filter(([, c]) => c.scoped);
+      const unscopedCats = Object.entries(categories).filter(([, c]) => !c.scoped);
+
+      let activeCat = '_all';
+      let activeTypes = new Set();
+
+      function initActiveTypes() {
+        activeTypes = new Set();
+        if (activeCat === '_all') {
+          for (const [catKey, cat] of scopedCats) {
+            for (const typeKey of Object.keys(cat.types)) {
+              activeTypes.add(`${catKey}.${typeKey}`);
+            }
+          }
+        } else {
+          const cat = categories[activeCat];
+          if (!cat) return;
+          for (const typeKey of Object.keys(cat.types)) {
+            activeTypes.add(`${activeCat}.${typeKey}`);
+          }
+        }
+      }
+      initActiveTypes();
+
+      window.switchCategory = function(catKey) {
+        activeCat = catKey;
+        initActiveTypes();
+        renderScopedSection();
+      };
+
+      window.toggleType = function(ntype) {
+        if (activeTypes.has(ntype)) activeTypes.delete(ntype);
+        else activeTypes.add(ntype);
+        renderScopedSection();
+      };
+
+      // Pass null for a dimension to mean "only match routes that are
+      // unrestricted (wildcard) on this dimension"
+      function routeMatches(route, ntype, projectId, envId, appId) {
+        if (!route.enabled) return false;
+        if (!route.notification_types.includes(ntype)) return false;
+        if (projectId === null) { if (route.project_ids.length) return false; }
+        else if (route.project_ids.length && !route.project_ids.includes(projectId)) return false;
+        if (envId === null) { if (route.environment_ids.length) return false; }
+        else if (route.environment_ids.length && !route.environment_ids.includes(envId)) return false;
+        if (appId === null) { if (route.application_ids.length) return false; }
+        else if (route.application_ids.length && !route.application_ids.includes(appId)) return false;
+        return true;
+      }
+
+      function coverageRatio(projectId, envId, appId) {
+        if (!activeTypes.size) return 0;
+        let matched = 0;
+        for (const ntype of activeTypes) {
+          if (allRoutes.some(r => routeMatches(r, ntype, projectId, envId, appId))) matched++;
+        }
+        return matched / activeTypes.size;
+      }
+
+      function cellColor(ratio) {
+        if (ratio === 0) return 'transparent';
+        return `oklch(0.72 0.190 142.5 / ${ratio.toFixed(2)})`;
+      }
+
+      function renderOrgSection() {
+        let html = '';
+        for (const [catKey, cat] of unscopedCats) {
+          for (const [typeKey, typeLabel] of Object.entries(cat.types)) {
+            const ntype = `${catKey}.${typeKey}`;
+            const matching = allRoutes.filter(r => r.enabled && r.notification_types.includes(ntype));
+            const color = cellColor(matching.length ? 1 : 0);
+            html += `<div class="flex items-center gap-2 py-0.5">` +
+              `<div class="w-4 h-4 rounded" style="background:${color}"></div>` +
+              `<span class="text-xs font-medium">${esc(typeLabel)}</span>`;
+            if (matching.length) {
+              html += `<span class="text-xs opacity-60">&rarr;</span>` +
+                matching.map(r =>
+                  `<span class="text-xs opacity-60 flex items-center gap-1">${integrationIcon[r.integration] || ''} #${esc(r.channel_name || r.channel_id)}</span>`
+                ).join('<span class="text-xs opacity-30">,</span>');
+            } else if (hasDefaultChannel) {
+              html += `<span class="text-xs opacity-40">default channel</span>`;
+            } else {
+              html += `<span class="text-xs text-error flex items-center gap-1">&#10007; no default channel</span>`;
+            }
+            html += `</div>`;
+          }
+        }
+        return html;
+      }
+
+      function renderScopedSection() {
+        const el = document.getElementById('coverage-scoped');
+        if (!el) return;
+        let html = '';
+
+        // Category tabs with type toggles nested under each
+        html += '<div class="flex gap-4 mb-3">';
+        html += `<div class="flex flex-col"><button class="btn btn-xs mb-1 ${activeCat === '_all' ? 'btn-primary' : 'btn-ghost'}" onclick="switchCategory('_all')">All</button></div>`;
+        for (const [catKey, catDef] of scopedCats) {
+          const isActive = activeCat === '_all' || activeCat === catKey;
+          const isSolo = activeCat === catKey;
+          html += `<div class="flex flex-col">`;
+          html += `<button class="btn btn-xs mb-1 ${isSolo ? 'btn-primary' : isActive ? 'btn-soft' : 'btn-ghost'}" onclick="switchCategory('${isSolo ? '_all' : catKey}')">${esc(catDef.label)}</button>`;
+          if (isActive) {
+            for (const [typeKey, typeLabel] of Object.entries(catDef.types)) {
+              const ntype = `${catKey}.${typeKey}`;
+              const checked = activeTypes.has(ntype) ? 'checked' : '';
+              html += `<label class="label cursor-pointer gap-1.5 py-0">` +
+                `<input type="checkbox" class="checkbox checkbox-xs checkbox-primary" ${checked} onchange="toggleType('${ntype}')">` +
+                `<span class="text-xs">${esc(typeLabel)}</span>` +
+              `</label>`;
+            }
+          }
+          html += `</div>`;
+        }
+        html += '</div>';
+
+        // Scope grid
+        const tuples = [];
+        for (const project of scopesData) {
+          for (const env of (project.environments || [])) {
+            const envApps = (project.applications || []).filter(a =>
+              (a.environment_ids || []).includes(env.id)
+            );
+            for (const app of envApps) {
+              tuples.push({ project, env, app });
+            }
+          }
+        }
+
+        if (!tuples.length) {
+          html += '<p class="text-sm opacity-50">No applications found.</p>';
+        } else {
+          function buildTipHtml(projectId, envId, appId) {
+            // Scope header
+            const proj = scopesData.find(p => p.id === projectId);
+            const parts = [proj ? proj.slug : null];
+            if (envId) {
+              const env = proj && (proj.environments || []).find(e => e.id === envId);
+              parts.push(env ? env.slug : null);
+            }
+            if (appId) {
+              const app = proj && (proj.applications || []).find(a => a.id === appId);
+              parts.push(app ? app.slug : null);
+            }
+            let h = `<div class="font-mono font-semibold pb-1 mb-1 border-b border-base-300">${esc(parts.filter(Boolean).join(' / '))}</div>`;
+            let defaultCount = 0;
+            for (const ntype of activeTypes) {
+              const [catKey, typeKey] = ntype.split('.');
+              const tipCat = categories[catKey];
+              const label = `${tipCat ? tipCat.label : catKey}: ${(tipCat && tipCat.types[typeKey]) || typeKey}`;
+              const matching = allRoutes.filter(r => routeMatches(r, ntype, projectId, envId, appId));
+              if (matching.length) {
+                h += `<div class="flex items-start gap-1.5 py-0.5">` +
+                  `<span class="text-success">&#10003;</span>` +
+                  `<div><span class="font-medium">${esc(label)}</span>` +
+                  matching.map(r => {
+                    return `<div class="opacity-60 pl-2 flex items-center gap-1">&rarr; ${integrationIcon[r.integration] || ''} #${esc(r.channel_name || r.channel_id)}</div>`;
+                  }).join('') +
+                  `</div></div>`;
+              } else {
+                defaultCount++;
+              }
+            }
+            if (defaultCount) {
+              if (hasDefaultChannel) {
+                h += `<div class="opacity-40 pt-1">${defaultCount} type${defaultCount > 1 ? 's' : ''} → default channel</div>`;
+              } else {
+                h += `<div class="text-error pt-1">&#10007; ${defaultCount} type${defaultCount > 1 ? 's' : ''} — no default channel</div>`;
+              }
+            }
+            return h;
+          }
+
+          // Build tree: project → environment → [apps]
+          for (const project of scopesData) {
+            const projectTuples = tuples.filter(t => t.project.id === project.id);
+            if (!projectTuples.length) continue;
+
+            // Group by environment
+            const byEnv = {};
+            for (const t of projectTuples) {
+              if (!byEnv[t.env.id]) byEnv[t.env.id] = { env: t.env, apps: [] };
+              byEnv[t.env.id].apps.push(t);
+            }
+
+            const projectRatio = coverageRatio(project.id, null, null);
+            const projectTip = buildTipHtml(project.id, null, null);
+
+            html += `<div class="mb-3">`;
+            html += `<div class="tooltip tooltip-right"><div class="tooltip-content p-3 text-xs space-y-0.5 w-max max-w-xs">${projectTip}</div>` +
+              `<span class="font-mono text-xs font-semibold py-1 px-2 rounded cursor-help inline-block" style="background-color:${cellColor(projectRatio)}">${esc(project.slug)}</span></div>`;
+
+            for (const group of Object.values(byEnv)) {
+              const baseTag = group.env.id === project.branch_deploy_base_environment_id
+                ? ' <span class="badge badge-xs badge-outline">base</span>' : '';
+
+              const envRatio = coverageRatio(project.id, group.env.id, null);
+              const envTip = buildTipHtml(project.id, group.env.id, null);
+
+              html += `<div class="ml-4">`;
+              html += `<div class="tooltip tooltip-right"><div class="tooltip-content p-3 text-xs space-y-0.5 w-max max-w-xs">${envTip}</div>` +
+                `<span class="font-mono text-xs py-1 px-2 rounded cursor-help inline-block" style="background-color:${cellColor(envRatio)}">${esc(group.env.slug)}${baseTag}</span></div>`;
+
+              for (const t of group.apps) {
+                const ratio = coverageRatio(t.project.id, t.env.id, t.app.id);
+                const appTip = buildTipHtml(t.project.id, t.env.id, t.app.id);
+
+                html += `<div class="ml-4"><div class="tooltip tooltip-right"><div class="tooltip-content p-3 text-xs space-y-0.5 w-max max-w-xs">${appTip}</div>` +
+                  `<span class="rounded px-3 py-1 cursor-help font-mono text-xs inline-block" style="background-color:${cellColor(ratio)}">${esc(t.app.slug)}</span></div></div>`;
+              }
+
+              html += `</div>`;
+            }
+
+            html += `</div>`;
+          }
+        }
+
+        el.innerHTML = html;
+      }
+
+      function renderCoveragePreview() {
+        const el = document.getElementById('coverage-preview');
+        let html = '';
+
+        // Organization section
+        if (unscopedCats.length) {
+          html += `<div class="mb-4">`;
+          html += `<h4 class="text-sm font-semibold mb-2">Organization</h4>`;
+          html += renderOrgSection();
+          html += `</div>`;
+          html += `<div class="divider my-2"></div>`;
+        }
+
+        // Scoped section
+        html += `<div>`;
+        html += `<h4 class="text-sm font-semibold mb-2">Scoped</h4>`;
+        html += `<div id="coverage-scoped"></div>`;
+        html += `</div>`;
+
+        el.innerHTML = html;
+        renderScopedSection();
+      }
+
+      // Re-render coverage when routes change
+      const _origRenderRoutes = renderRoutes;
+      renderRoutes = function() {
+        _origRenderRoutes();
+        if (document.getElementById('coverage-modal').open) renderCoveragePreview();
+      };
 
       // Initial load
       loadAllRoutes();
