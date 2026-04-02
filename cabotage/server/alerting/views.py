@@ -42,9 +42,10 @@ def alertmanager_webhook():
     receiver = payload.get("receiver")
 
     alerts_processed = 0
+    dispatch_ids = []
     for alert_data in alerts_data:
         labels = alert_data.get("labels", {})
-        processed = upsert_alert(
+        processed, dispatch_id = upsert_alert(
             fingerprint=alert_data.get("fingerprint", ""),
             status=alert_data.get("status", "unknown"),
             alertname=labels.get("alertname", "unknown"),
@@ -58,8 +59,17 @@ def alertmanager_webhook():
         )
         if processed:
             alerts_processed += 1
+        if dispatch_id:
+            dispatch_ids.append(dispatch_id)
 
     db.session.commit()
+
+    # Dispatch notifications after commit so workers can see the data
+    from cabotage.celery.tasks.notify import dispatch_alert_notification
+
+    for alert_id in dispatch_ids:
+        dispatch_alert_notification.delay(str(alert_id))
+
     log.info(
         "Processed alertmanager webhook: %d alerts (%s)",
         alerts_processed,
