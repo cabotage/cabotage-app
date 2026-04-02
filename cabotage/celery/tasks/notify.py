@@ -588,11 +588,11 @@ def send_notification(
             return
         else:
             # API call returned no ID — transient failure, retry
-            raise RuntimeError(
-                f"Failed to send {integration} notification to {channel_id}"
+            raise self.retry(
+                exc=RuntimeError(
+                    f"Failed to send {integration} notification to {channel_id}"
+                )
             )
-    except RuntimeError:
-        raise  # re-raise so Celery retries
     except Exception as exc:
         raise self.retry(exc=exc)
 
