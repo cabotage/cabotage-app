@@ -17,6 +17,7 @@ from flask_security import current_user, login_required
 from cabotage.server import db, vault
 from cabotage.server.acl import AdministerOrganizationPermission
 from cabotage.server.models.auth import Organization, SlackIntegration
+from cabotage.server.models.notifications import NotificationRoute
 from cabotage.server.models.projects import activity_plugin
 
 Activity = activity_plugin.activity_cls
@@ -207,6 +208,12 @@ def disconnect(org_slug):
                 vault.vault_connection.delete(integration.access_token_vault_path)
             except Exception:
                 log.warning("Failed to delete Slack token from Vault", exc_info=True)
+
+        # Disable notification routes that targeted this integration
+        NotificationRoute.query.filter_by(
+            organization_id=organization.id,
+            integration="slack",
+        ).delete()
 
         team_name = integration.team_name
         db.session.delete(integration)
