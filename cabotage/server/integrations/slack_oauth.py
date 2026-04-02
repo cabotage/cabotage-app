@@ -322,23 +322,51 @@ def _slack_leave_channel(integration, channel_id):
         log.warning("Failed to leave Slack channel %s", channel_id, exc_info=True)
 
 
-def _send_slack_message(integration, channel_id, text):
-    """Send a message to a Slack channel. Best-effort — failures are logged."""
+def _send_slack_message(integration, channel_id, text, attachments=None):
+    """Send a message to a Slack channel. Returns the message ts on success."""
     token = _get_slack_token(integration)
     if not token:
-        return
+        return None
     try:
+        payload = {"channel": channel_id, "text": text}
+        if attachments:
+            payload["attachments"] = attachments
         resp = http_requests.post(
             "https://slack.com/api/chat.postMessage",
             headers={"Authorization": f"Bearer {token}"},
-            json={"channel": channel_id, "text": text},
+            json=payload,
             timeout=10,
         )
         data = resp.json()
         if not data.get("ok"):
             log.warning("Slack chat.postMessage failed: %s", data.get("error"))
+            return None
+        return data.get("ts")
     except http_requests.RequestException:
         log.warning("Failed to send Slack message", exc_info=True)
+        return None
+
+
+def _update_slack_message(integration, channel_id, ts, text, attachments=None):
+    """Update an existing Slack message."""
+    token = _get_slack_token(integration)
+    if not token:
+        return
+    try:
+        payload = {"channel": channel_id, "ts": ts, "text": text}
+        if attachments:
+            payload["attachments"] = attachments
+        resp = http_requests.post(
+            "https://slack.com/api/chat.update",
+            headers={"Authorization": f"Bearer {token}"},
+            json=payload,
+            timeout=10,
+        )
+        data = resp.json()
+        if not data.get("ok"):
+            log.warning("Slack chat.update failed: %s", data.get("error"))
+    except http_requests.RequestException:
+        log.warning("Failed to update Slack message", exc_info=True)
 
 
 def get_slack_channels(organization):

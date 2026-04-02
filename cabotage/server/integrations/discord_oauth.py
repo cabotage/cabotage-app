@@ -265,24 +265,59 @@ def update_channel(org_slug):
     return redirect(url_for("user.organization_settings", org_slug=org_slug))
 
 
-def _send_discord_message(channel_id, text):
-    """Send a message to a Discord channel. Best-effort — failures are logged."""
+def _send_discord_message(channel_id, text, embeds=None, components=None):
+    """Send a message to a Discord channel. Returns the message ID on success."""
     bot_token = current_app.config.get("DISCORD_BOT_TOKEN")
     if not bot_token:
-        return
+        return None
     try:
+        payload = {"content": text}
+        if embeds:
+            payload["embeds"] = embeds
+            payload["content"] = ""  # use embed only, no duplicate text
+        if components:
+            payload["components"] = components
         resp = http_requests.post(
             f"{DISCORD_API_BASE}/channels/{channel_id}/messages",
             headers={"Authorization": f"Bot {bot_token}"},
-            json={"content": text},
+            json=payload,
             timeout=10,
         )
         if resp.status_code not in (200, 201):
             log.warning(
                 "Discord message send failed: %s %s", resp.status_code, resp.text
             )
+            return None
+        return resp.json().get("id")
     except http_requests.RequestException:
         log.warning("Failed to send Discord message", exc_info=True)
+        return None
+
+
+def _update_discord_message(channel_id, message_id, text, embeds=None, components=None):
+    """Update an existing Discord message."""
+    bot_token = current_app.config.get("DISCORD_BOT_TOKEN")
+    if not bot_token:
+        return
+    try:
+        payload = {"content": text}
+        if embeds:
+            payload["embeds"] = embeds
+            payload["content"] = ""
+        if components:
+            payload["components"] = components
+        resp = http_requests.patch(
+            f"{DISCORD_API_BASE}/channels/{channel_id}/messages/{message_id}",
+            headers={"Authorization": f"Bot {bot_token}"},
+            json=payload,
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            log.warning(
+                "Discord message update failed: %s %s", resp.status_code, resp.text
+            )
+    except http_requests.RequestException:
+        log.warning("Failed to update Discord message", exc_info=True)
 
 
 def _fetch_guild_name(guild_id):

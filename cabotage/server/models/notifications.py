@@ -4,7 +4,7 @@ import datetime
 import uuid
 from typing import Any, TypedDict
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column, relationship, backref
 
@@ -112,3 +112,49 @@ class NotificationRoute(Model):
 
     def __repr__(self):
         return f"<NotificationRoute {self.id} types={self.notification_types} integration={self.integration}>"
+
+
+class SentNotification(Model):
+    """Tracks messages sent to external channels so they can be updated in place."""
+
+    __tablename__ = "notification_messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        primary_key=True,
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("organizations.id"),
+        index=True,
+    )
+    notification_type: Mapped[str] = mapped_column(String(64))
+    object_type: Mapped[str] = mapped_column(String(64))
+    object_id: Mapped[uuid.UUID] = mapped_column(postgresql.UUID(as_uuid=True))
+    integration: Mapped[str] = mapped_column(String(32))
+    channel_id: Mapped[str] = mapped_column(String(64))
+    external_message_id: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime,
+        default=datetime.datetime.now,
+        onupdate=datetime.datetime.now,
+    )
+
+    organization = relationship("Organization")
+
+    __table_args__ = (
+        Index(
+            "ix_notification_messages_object_lookup",
+            "object_type",
+            "object_id",
+            "integration",
+            "channel_id",
+        ),
+    )
+
+    def __repr__(self):
+        return f"<SentNotification {self.id} {self.object_type}:{self.object_id} {self.integration}>"

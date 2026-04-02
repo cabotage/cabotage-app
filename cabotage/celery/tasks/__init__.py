@@ -32,3 +32,9 @@ from .tailscale import (
 )
 
 from .alerting import reconcile_alerts  # noqa: F401
+
+from .notify import (
+    dispatch_alert_notification,  # noqa: F401
+    dispatch_pipeline_notification,  # noqa: F401
+    send_notification,  # noqa: F401
+)

@@ -130,12 +130,14 @@ from cabotage.utils.docker_auth import (
 from cabotage.celery.tasks import (
     cleanup_app_env_k8s,
     deploy_tailscale_operator,
+    dispatch_pipeline_notification,
     process_github_hook,
     run_deploy,
     run_image_build,
     run_release_build,
     teardown_tailscale_operator,
 )
+from cabotage.celery.tasks.notify import dispatch_autodeploy_notification
 
 from cabotage.celery.tasks.deploy import resize_deployment, scale_deployment
 from cabotage.utils.build_log_stream import (
@@ -4622,6 +4624,15 @@ def application_release_create(org_slug, project_slug, app_slug):
     db.session.add(activity)
     db.session.commit()
     run_release_build.delay(release_id=release.id)
+    dispatch_pipeline_notification.delay(
+        "pipeline.release",
+        "Release",
+        str(release.id),
+        str(org.id),
+        str(application.id),
+        str(app_env.id),
+        detail=f"Triggered by: {current_user.username}",
+    )
     return redirect(
         url_for(
             "user.release_detail",
@@ -4817,6 +4828,32 @@ def application_images_build_fromsource(org_slug, project_slug, app_slug):
     db.session.add(activity)
     db.session.commit()
     run_image_build.delay(image_id=image.id, buildkit=True)
+    if auto_deploy:
+        dispatch_autodeploy_notification(
+            "image_building",
+            image.id,
+            application,
+            app_env,
+            image_url=url_for(
+                "user.image_detail",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                app_slug=app_slug,
+                image_id=image.id,
+                _external=True,
+            ),
+            image_metadata=image.image_metadata,
+        )
+    else:
+        dispatch_pipeline_notification.delay(
+            "pipeline.image_build",
+            "Image",
+            str(image.id),
+            str(org.id),
+            str(application.id),
+            str(app_env.id),
+            detail=f"Triggered by: {current_user.username}",
+        )
     if auto_deploy:
         return redirect(
             url_for(
@@ -5207,6 +5244,17 @@ def release_deploy(org_slug, project_slug, app_slug, release_id):
     )
     db.session.add(activity)
     db.session.commit()
+    dispatch_pipeline_notification.delay(
+        "pipeline.deploy",
+        "Deployment",
+        str(deployment.id),
+        str(org.id),
+        str(application.id),
+        str(release.application_environment_id)
+        if release.application_environment_id
+        else None,
+        detail=f"Triggered by: {current_user.username}",
+    )
     if current_app.config["KUBERNETES_ENABLED"]:
         deployment_id = deployment.id
         run_deploy.delay(deployment_id=deployment.id)
