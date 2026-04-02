@@ -1,5 +1,6 @@
 import datetime
 import logging
+import re
 
 from flask import Blueprint, abort, jsonify, request
 from flask_security import current_user, login_required
@@ -109,6 +110,12 @@ def save_route(org_slug):
     channel_id = data.get("channel_id")
     if not channel_id:
         return jsonify({"error": "channel_id is required"}), 400
+
+    # Validate channel_id format to prevent URL path injection
+    # Slack: uppercase alphanumeric (e.g. C0APWH6CH0F)
+    # Discord: numeric snowflake (e.g. 1488983028155023360)
+    if not re.match(r"^[A-Za-z0-9]+$", channel_id):
+        return jsonify({"error": "Invalid channel_id format"}), 400
 
     project_ids = data.get("project_ids") or []
     environment_ids = data.get("environment_ids") or []
