@@ -101,27 +101,38 @@ def _cabotage_branding():
         return "", "", ""
 
 
-def _build_message(title, color_hex, color_int, body_parts, links=None, error=None):
-    """Build a rich notification payload.
+def _build_message(
+    title,
+    color_hex,
+    color_int,
+    body_parts,
+    links=None,
+    error=None,
+    slack_extra=None,
+    discord_extra=None,
+):
+    """Build a rich notification payload for Slack, Discord, and plain text.
 
     Args:
         title: Header line (e.g. "FIRING: OOMKilled")
         color_hex: Slack sidebar color
         color_int: Discord sidebar color (decimal int)
-        body_parts: List of body lines
-        links: Dict of {label: url} for action links
+        body_parts: List of body lines (shared across platforms)
+        links: Dict of {label: url} — rendered as Slack buttons / Discord button components
         error: Error string (rendered as code block)
-
-    Returns dict with text, slack_attachments, discord_embeds, discord_components.
+        slack_extra: Additional mrkdwn lines appended only to Slack body
+        discord_extra: Additional markdown lines appended only to Discord body
     """
     links = links or {}
 
     # --- Slack: attachment with color bar, buttons via actions block ---
     slack_parts = [f"*{title}*"] + list(body_parts)
+    if slack_extra:
+        slack_parts.extend(slack_extra)
     if error:
         slack_parts.append(f"```{error}```")
 
-    slack_blocks = [
+    slack_blocks: list[dict] = [
         {
             "type": "section",
             "text": {"type": "mrkdwn", "text": "\n".join(slack_parts)},
@@ -165,6 +176,8 @@ def _build_message(title, color_hex, color_int, body_parts, links=None, error=No
 
     # --- Discord: embed + button components ---
     discord_parts = list(body_parts)
+    if discord_extra:
+        discord_parts.extend(discord_extra)
     if error:
         discord_parts.append(f"```{error}```")
 
@@ -299,33 +312,23 @@ def format_autodeploy_message(
     else:
         color_hex, color_int = COLOR_BLUE, DISCORD_BLUE
 
-    # Build per-platform body since commit line has platform-specific link syntax
-    common = []
+    body_parts = []
     if app_path:
-        common.append(app_path)
+        body_parts.append(app_path)
     if initiator:
-        common.append(initiator)
+        body_parts.append(initiator)
 
-    slack_parts = [f"*{title}*"] + list(common)
-    discord_parts = list(common)
-    fallback_parts = [title] + list(common)
-
+    # Commit line uses platform-specific link syntax
+    slack_extra = None
+    discord_extra = None
     if repo and short_sha and commit_url:
-        slack_parts.append(f"<{commit_url}|{repo} @ {short_sha}>")
-        discord_parts.append(f"[{repo} @ {short_sha}]({commit_url})")
-        fallback_parts.append(f"{repo} @ {short_sha}")
+        slack_extra = [f"<{commit_url}|{repo} @ {short_sha}>"]
+        discord_extra = [f"[{repo} @ {short_sha}]({commit_url})"]
     elif repo and short_sha:
         line = f"{repo} @ {short_sha}"
-        slack_parts.append(line)
-        discord_parts.append(line)
-        fallback_parts.append(line)
+        slack_extra = [line]
+        discord_extra = [line]
 
-    if error:
-        slack_parts.append(f"```{error}```")
-        discord_parts.append(f"```{error}```")
-        fallback_parts.append(error)
-
-    # Build links for buttons
     links = {}
     if image_url:
         links["View Image"] = image_url
@@ -334,78 +337,16 @@ def format_autodeploy_message(
     if deploy_url:
         links["View Deploy"] = deploy_url
 
-    # Slack: buttons via actions block
-    slack_blocks = [
-        {
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": "\n".join(slack_parts)},
-        },
-    ]
-    if links:
-        slack_blocks.append(
-            {
-                "type": "actions",
-                "elements": [
-                    {
-                        "type": "button",
-                        "text": {"type": "plain_text", "text": label},
-                        "url": link_url,
-                    }
-                    for label, link_url in links.items()
-                ],
-            }
-        )
-    icon_url, server_name, base_url = _cabotage_branding()
-    if icon_url:
-        slack_blocks.append(
-            {
-                "type": "context",
-                "elements": [
-                    {
-                        "type": "image",
-                        "image_url": icon_url,
-                        "alt_text": "Cabotage",
-                    },
-                    {
-                        "type": "mrkdwn",
-                        "text": f"<{base_url}|{server_name}>",
-                    },
-                ],
-            }
-        )
-
-    slack_attachments = [{"color": color_hex, "blocks": slack_blocks}]
-
-    # Discord: embed + button components
-    discord_embeds = [
-        {
-            "title": title,
-            "description": "\n".join(discord_parts),
-            "color": color_int,
-            "footer": {
-                "text": server_name or "Cabotage",
-                "icon_url": icon_url or None,
-            },
-        }
-    ]
-    discord_components = None
-    if links:
-        discord_components = [
-            {
-                "type": 1,
-                "components": [
-                    {"type": 2, "style": 5, "label": label, "url": link_url}
-                    for label, link_url in links.items()
-                ],
-            }
-        ]
-
-    return {
-        "text": "\n".join(fallback_parts),
-        "slack_attachments": slack_attachments,
-        "discord_embeds": discord_embeds,
-        "discord_components": discord_components,
-    }
+    return _build_message(
+        title,
+        color_hex,
+        color_int,
+        body_parts,
+        links=links,
+        error=error,
+        slack_extra=slack_extra,
+        discord_extra=discord_extra,
+    )
 
 
 def dispatch_autodeploy_notification(
