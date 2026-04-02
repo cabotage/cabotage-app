@@ -1,7 +1,7 @@
 """add alerts table with versioning
 
 Revision ID: 5056d1ae059f
-Revises: 1f913a84ab35
+Revises: 16eacbf52ea4
 Create Date: 2026-03-30 21:11:44.838069
 
 """
@@ -12,7 +12,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = "5056d1ae059f"
-down_revision = "1f913a84ab35"
+down_revision = "16eacbf52ea4"
 branch_labels = None
 depends_on = None
 
