@@ -93,12 +93,19 @@ class NotificationRoute(Model):
     channel_name: Mapped[str | None] = mapped_column(String(255))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.now
+        DateTime,
+        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=datetime.datetime.now,
-        onupdate=datetime.datetime.now,
+        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
+        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
     )
 
     version_id: Mapped[int] = mapped_column(Integer)
@@ -136,12 +143,19 @@ class SentNotification(Model):
     channel_id: Mapped[str] = mapped_column(String(64))
     external_message_id: Mapped[str] = mapped_column(String(128))
     created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.now
+        DateTime,
+        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=datetime.datetime.now,
-        onupdate=datetime.datetime.now,
+        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
+        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
     )
 
     organization = relationship("Organization")
