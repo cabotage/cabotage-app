@@ -52,6 +52,14 @@ ALERTNAME_TYPE_MAP = {
     "TraefikHighLatency": "http.latency",
 }
 
+# Human-friendly display names for Alertmanager alertnames.
+ALERTNAME_DISPLAY = {
+    "ResidentDeploymentOOMKilled": "Out of Memory",
+    "ResidentDeploymentCrashLoop": "Crash Loop",
+    "TraefikHighErrorRate": "High Error Rate",
+    "TraefikHighLatency": "High Latency",
+}
+
 
 def _format_app_path(application, app_env):
     org = application.project.organization
@@ -226,12 +234,13 @@ def format_alert_message(alert, application, app_env):
     summary = alert.annotations.get("summary", "")
     app_path = _format_app_path(application, app_env) if application else None
     app_url = cabotage_url(application) if application else None
+    display_name = ALERTNAME_DISPLAY.get(alert.alertname, alert.alertname)
 
     if alert.status == "resolved":
-        title = f"\u2705 RESOLVED: {alert.alertname}"
+        title = f"\u2705 Resolved: {display_name}"
         color_hex, color_int = COLOR_GREEN, DISCORD_GREEN
     else:
-        title = f"\U0001f534 FIRING: {alert.alertname}"
+        title = f"\U0001f534 {display_name}"
         color_hex, color_int = COLOR_RED, DISCORD_RED
 
     body_parts = []

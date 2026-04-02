@@ -167,8 +167,7 @@ class TestFormatAlertMessage:
         assert "slack_attachments" in result
         assert "discord_embeds" in result
         text = result["text"]
-        assert "FIRING" in text
-        assert "ResidentDeploymentOOMKilled" in text
+        assert "Out of Memory" in text
         assert application.project.organization.slug in text
         # Slack attachment has color bar
         assert result["slack_attachments"][0]["color"] == "#e74c3c"
@@ -177,15 +176,14 @@ class TestFormatAlertMessage:
 
     def test_resolved_message(self, db_session, resolved_alert, application, app_env):
         result = format_alert_message(resolved_alert, application, app_env)
-        assert "RESOLVED" in result["text"]
+        assert "Resolved" in result["text"]
         assert "12m 34s" in result["text"]
         assert result["slack_attachments"][0]["color"] == "#2ecc71"
         assert result["discord_embeds"][0]["color"] == 0x2ECC71
 
     def test_message_without_application(self, db_session, firing_alert):
         result = format_alert_message(firing_alert, None, None)
-        assert "FIRING" in result["text"]
-        assert "ResidentDeploymentOOMKilled" in result["text"]
+        assert "Out of Memory" in result["text"]
 
 
 class TestFormatPipelineMessage:
@@ -548,7 +546,7 @@ class TestDispatchAlertNotification:
             assert args[1] == "discord"
             assert args[2] == "D001"
             message = args[6]
-            assert "FIRING" in message["text"]
+            assert "Out of Memory" in message["text"]
             assert message.get("discord_embeds")
 
     def test_skips_alert_without_application(self, db_session, org):
