@@ -207,12 +207,26 @@ def list_scopes(org_slug):
                 "id": str(project.id),
                 "name": project.name,
                 "slug": project.slug,
+                "branch_deploy_base_environment_id": (
+                    str(project.branch_deploy_base_environment_id)
+                    if project.branch_deploy_base_environment_id
+                    else None
+                ),
                 "environments": [
                     {"id": str(e.id), "name": e.name, "slug": e.slug}
                     for e in project.active_environments
+                    if not e.ephemeral
                 ],
                 "applications": [
-                    {"id": str(a.id), "name": a.name, "slug": a.slug}
+                    {
+                        "id": str(a.id),
+                        "name": a.name,
+                        "slug": a.slug,
+                        "environment_ids": [
+                            str(ae.environment_id)
+                            for ae in a.active_application_environments
+                        ],
+                    }
                     for a in project.active_applications
                 ],
             }
