@@ -425,6 +425,15 @@ def dispatch_autodeploy_notification(
 
     notification_type = "pipeline.deploy"
     targets = resolve_routes(organization, notification_type, application, app_env)
+    if error:
+        failed_targets = resolve_routes(
+            organization, "pipeline.deploy_failed", application, app_env
+        )
+        seen = set(targets)
+        for t in failed_targets:
+            if t not in seen:
+                targets.append(t)
+                seen.add(t)
 
     for integration, channel_id in targets:
         send_notification.delay(
@@ -695,6 +704,14 @@ def _dispatch_pipeline_notification_impl(
     )
 
     targets = resolve_routes(organization, notification_type, application, app_env)
+    if error:
+        failed_type = notification_type + "_failed"
+        failed_targets = resolve_routes(organization, failed_type, application, app_env)
+        seen = set(targets)
+        for t in failed_targets:
+            if t not in seen:
+                targets.append(t)
+                seen.add(t)
 
     for integration, channel_id in targets:
         send_notification.delay(
