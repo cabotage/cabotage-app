@@ -19,6 +19,7 @@ from flask_security import current_user, login_required
 from cabotage.server import db
 from cabotage.server.acl import AdministerOrganizationPermission
 from cabotage.server.models.auth import DiscordIntegration, Organization
+from cabotage.server.models.notifications import NotificationRoute
 from cabotage.server.models.projects import activity_plugin
 
 Activity = activity_plugin.activity_cls
@@ -202,6 +203,12 @@ def disconnect(org_slug):
                 integration.default_channel_id,
                 f"Cabotage alert notifications for **{organization.name}** have been disconnected from this server.",
             )
+
+        # Delete notification routes that targeted this integration
+        NotificationRoute.query.filter_by(
+            organization_id=organization.id,
+            integration="discord",
+        ).delete()
 
         guild_name = integration.guild_name
         db.session.delete(integration)
