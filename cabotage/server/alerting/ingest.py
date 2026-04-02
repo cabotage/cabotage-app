@@ -264,6 +264,8 @@ def upsert_alert(
         if was_firing and status == "resolved":
             _record_activity("resolved", existing, application)
             return True, existing.id
+        if was_firing and status == "firing" and not existing.last_notified_at:
+            return True, existing.id
     else:
         alert = Alert(
             fingerprint=fingerprint,
