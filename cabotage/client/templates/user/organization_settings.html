@@ -608,60 +608,70 @@
           <span class="text-xs font-semibold">All projects</span>
         </label>`;
 
+        html += `<table class="table table-xs w-full"><thead><tr>
+          <th class="text-[10px] uppercase tracking-wider opacity-40 font-normal pl-0">Project</th>
+          <th class="text-[10px] uppercase tracking-wider opacity-40 font-normal">Environments</th>
+          <th class="text-[10px] uppercase tracking-wider opacity-40 font-normal">Applications</th>
+        </tr></thead><tbody>`;
+
         scopesData.forEach(p => {
           const envs = p.environments || [];
           const apps = p.applications || [];
-          html += `<div class="scope-project-row ml-1 mb-1" data-project-id="${p.id}">`;
-          html += `<div class="flex items-start gap-3">`;
-          // Project checkbox
-          html += `<label class="label cursor-pointer justify-start gap-1.5 py-0 scope-item-label shrink-0" data-cls="rf-proj">
+          html += `<tr class="scope-project-row" data-project-id="${p.id}">`;
+          html += `<td class="align-top pl-0"><label class="cursor-pointer flex items-center gap-1.5 scope-item-label whitespace-nowrap" data-cls="rf-proj">
             <input type="checkbox" class="checkbox checkbox-xs rf-proj scope-item" value="${p.id}">
             <span class="text-xs font-semibold opacity-40">${esc(p.slug)}</span>
-          </label>`;
-          // Envs inline
-          if (envs.length) {
-            html += `<div class="flex items-center gap-0.5 flex-wrap">
-              <span class="text-[10px] uppercase tracking-wider opacity-30 mr-0.5">env:</span>`;
-            envs.forEach(e => {
-              html += `<label class="cursor-pointer flex items-center gap-0.5 scope-item-label" data-cls="rf-env">
-                <input type="checkbox" class="checkbox checkbox-xs rf-env scope-item" value="${e.id}">
-                <span class="text-xs opacity-40 mr-1.5">${esc(e.slug)}</span>
-              </label>`;
-            });
-            html += `</div>`;
-          }
-          // Apps inline
-          if (apps.length) {
-            html += `<div class="flex items-center gap-0.5 flex-wrap">
-              <span class="text-[10px] uppercase tracking-wider opacity-30 mr-0.5">app:</span>`;
-            apps.forEach(a => {
-              html += `<label class="cursor-pointer flex items-center gap-0.5 scope-item-label" data-cls="rf-app">
-                <input type="checkbox" class="checkbox checkbox-xs rf-app scope-item" value="${a.id}">
-                <span class="text-xs opacity-40 mr-1.5">${esc(a.slug)}</span>
-              </label>`;
-            });
-            html += `</div>`;
-          }
-          html += `</div></div>`;
+          </label></td>`;
+          html += `<td class="align-top"><div class="flex flex-wrap gap-x-2 gap-y-0.5">`;
+          envs.forEach(e => {
+            html += `<label class="cursor-pointer flex items-center gap-1 scope-item-label whitespace-nowrap" data-cls="rf-env">
+              <input type="checkbox" class="checkbox checkbox-xs rf-env scope-item" value="${e.id}">
+              <span class="text-xs opacity-40">${esc(e.slug)}</span>
+            </label>`;
+          });
+          html += `</div></td>`;
+          html += `<td class="align-top"><div class="flex flex-wrap gap-x-2 gap-y-0.5">`;
+          apps.forEach(a => {
+            html += `<label class="cursor-pointer flex items-center gap-1 scope-item-label whitespace-nowrap" data-cls="rf-app">
+              <input type="checkbox" class="checkbox checkbox-xs rf-app scope-item" value="${a.id}">
+              <span class="text-xs opacity-40">${esc(a.slug)}</span>
+            </label>`;
+          });
+          html += `</div></td></tr>`;
         });
+
+        html += `</tbody></table>`;
 
         container.innerHTML = html;
 
-        // "All projects" toggle: uncheck everything and reset
-        document.querySelectorAll('.scope-all-toggle').forEach(cb => {
+        // "All projects" toggle: clear everything
+        container.querySelector('.scope-all-toggle').addEventListener('change', function() {
+          document.querySelectorAll('.rf-proj, .rf-env, .rf-app').forEach(c => c.checked = false);
+          this.checked = true;
+          updateAllScopeStyles();
+        });
+
+        // Project checkbox: uncheck → clear children; check → uncheck "All"
+        document.querySelectorAll('.rf-proj').forEach(cb => {
           cb.addEventListener('change', function() {
-            document.querySelectorAll('.rf-proj, .rf-env, .rf-app').forEach(c => c.checked = false);
-            this.checked = true;
+            const row = this.closest('.scope-project-row');
+            if (!this.checked) {
+              row.querySelectorAll('.rf-env, .rf-app').forEach(c => c.checked = false);
+            }
+            syncAllToggle();
             updateAllScopeStyles();
           });
         });
 
-        // Individual checkbox: uncheck "All" when something is selected
-        document.querySelectorAll('.rf-proj, .rf-env, .rf-app').forEach(cb => {
+        // Child checkbox: auto-check parent project
+        document.querySelectorAll('.rf-env, .rf-app').forEach(cb => {
           cb.addEventListener('change', function() {
-            const allCb = document.querySelector('.scope-all-toggle[data-cls="rf-proj"]');
-            const anyChecked = document.querySelectorAll('.rf-proj:checked, .rf-env:checked, .rf-app:checked').length > 0;
-            if (allCb) allCb.checked = !anyChecked;
+            if (this.checked) {
+              const row = this.closest('.scope-project-row');
+              const projCb = row.querySelector('.rf-proj');
+              if (projCb && !projCb.checked) projCb.checked = true;
+            }
+            syncAllToggle();
             updateAllScopeStyles();
           });
         });
@@ -669,31 +679,64 @@
         updateAllScopeStyles();
       }
 
+      function syncAllToggle() {
+        const allCb = document.querySelector('.scope-all-toggle[data-cls="rf-proj"]');
+        const anyChecked = document.querySelectorAll('.rf-proj:checked, .rf-env:checked, .rf-app:checked').length > 0;
+        allCb.checked = !anyChecked;
+      }
+
       function updateAllScopeStyles() {
         const allCb = document.querySelector('.scope-all-toggle[data-cls="rf-proj"]');
         const isAll = allCb && allCb.checked;
-        document.querySelectorAll('.scope-item-label').forEach(label => {
-          const cb = label.querySelector('.scope-item');
-          const span = label.querySelector('span');
+
+        document.querySelectorAll('.scope-project-row').forEach(row => {
+          const projCb = row.querySelector('.rf-proj');
+          const projSpan = projCb.closest('label').querySelector('span');
+          const projActive = !isAll && projCb.checked;
+
+          // Style project checkbox
           if (isAll) {
-            cb.checked = false;
-            cb.classList.remove('checkbox-primary');
-            cb.classList.add('checkbox-ghost');
-            cb.indeterminate = true;
-            span.classList.add('opacity-40');
-            span.classList.remove('opacity-100');
+            projCb.classList.remove('checkbox-primary');
+            projCb.classList.add('checkbox-ghost');
+            projCb.indeterminate = true;
+            projSpan.classList.add('opacity-40');
+            projSpan.classList.remove('opacity-100');
           } else {
-            cb.classList.add('checkbox-primary');
-            cb.classList.remove('checkbox-ghost');
-            cb.indeterminate = false;
-            if (cb.checked) {
-              span.classList.remove('opacity-40');
-              span.classList.add('opacity-100');
-            } else {
-              span.classList.add('opacity-40');
-              span.classList.remove('opacity-100');
-            }
+            projCb.classList.add('checkbox-primary');
+            projCb.classList.remove('checkbox-ghost');
+            projCb.indeterminate = false;
+            projSpan.classList.toggle('opacity-40', !projCb.checked);
+            projSpan.classList.toggle('opacity-100', projCb.checked);
           }
+
+          // Style + enable/disable child checkboxes
+          row.querySelectorAll('.rf-env, .rf-app').forEach(childCb => {
+            const childSpan = childCb.closest('label').querySelector('span');
+            if (isAll) {
+              childCb.disabled = true;
+              childCb.checked = false;
+              childCb.classList.remove('checkbox-primary');
+              childCb.classList.add('checkbox-ghost');
+              childCb.indeterminate = true;
+              childSpan.classList.add('opacity-40');
+              childSpan.classList.remove('opacity-100');
+            } else if (!projActive) {
+              childCb.disabled = true;
+              childCb.checked = false;
+              childCb.classList.remove('checkbox-primary');
+              childCb.classList.add('checkbox-ghost');
+              childCb.indeterminate = false;
+              childSpan.classList.add('opacity-40');
+              childSpan.classList.remove('opacity-100');
+            } else {
+              childCb.disabled = false;
+              childCb.classList.add('checkbox-primary');
+              childCb.classList.remove('checkbox-ghost');
+              childCb.indeterminate = false;
+              childSpan.classList.toggle('opacity-40', !childCb.checked);
+              childSpan.classList.toggle('opacity-100', childCb.checked);
+            }
+          });
         });
       }
 
@@ -834,8 +877,12 @@
         document.querySelectorAll('.rf-proj').forEach(cb => cb.checked = pids.includes(cb.value));
         document.querySelectorAll('.rf-env').forEach(cb => cb.checked = eids.includes(cb.value));
         document.querySelectorAll('.rf-app').forEach(cb => cb.checked = aids.includes(cb.value));
-        const anyScoped = pids.length || eids.length || aids.length;
-        document.querySelector('.scope-all-toggle[data-cls="rf-proj"]').checked = !anyScoped;
+        // Auto-check parent projects for any selected envs/apps
+        document.querySelectorAll('.scope-project-row').forEach(row => {
+          const hasChild = row.querySelectorAll('.rf-env:checked, .rf-app:checked').length > 0;
+          if (hasChild) row.querySelector('.rf-proj').checked = true;
+        });
+        syncAllToggle();
         updateAllScopeStyles();
         document.getElementById('route-modal').showModal();
       }
