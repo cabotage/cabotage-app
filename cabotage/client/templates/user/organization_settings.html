@@ -611,38 +611,38 @@
         scopesData.forEach(p => {
           const envs = p.environments || [];
           const apps = p.applications || [];
-          html += `<div class="scope-project-row border-l-2 border-base-300 pl-3 mb-2 ml-1" data-project-id="${p.id}">`;
-          html += `<label class="label cursor-pointer justify-start gap-1.5 py-0 scope-item-label" data-cls="rf-proj">
+          html += `<div class="scope-project-row ml-1 mb-1" data-project-id="${p.id}">`;
+          html += `<div class="flex items-start gap-3">`;
+          // Project checkbox
+          html += `<label class="label cursor-pointer justify-start gap-1.5 py-0 scope-item-label shrink-0" data-cls="rf-proj">
             <input type="checkbox" class="checkbox checkbox-xs rf-proj scope-item" value="${p.id}">
             <span class="text-xs font-semibold opacity-40">${esc(p.slug)}</span>
           </label>`;
-          if (envs.length || apps.length) {
-            html += `<div class="grid grid-cols-2 gap-x-4 ml-5 mt-0.5">`;
-            if (envs.length) {
-              html += `<div class="flex flex-col gap-0.5">
-                <span class="text-[10px] uppercase tracking-wider opacity-40">Environments</span>`;
-              envs.forEach(e => {
-                html += `<label class="label cursor-pointer justify-start gap-1.5 py-0 scope-item-label" data-cls="rf-env">
-                  <input type="checkbox" class="checkbox checkbox-xs rf-env scope-item" value="${e.id}">
-                  <span class="text-xs opacity-40">${esc(e.slug)}</span>
-                </label>`;
-              });
-              html += `</div>`;
-            }
-            if (apps.length) {
-              html += `<div class="flex flex-col gap-0.5">
-                <span class="text-[10px] uppercase tracking-wider opacity-40">Applications</span>`;
-              apps.forEach(a => {
-                html += `<label class="label cursor-pointer justify-start gap-1.5 py-0 scope-item-label" data-cls="rf-app">
-                  <input type="checkbox" class="checkbox checkbox-xs rf-app scope-item" value="${a.id}">
-                  <span class="text-xs opacity-40">${esc(a.slug)}</span>
-                </label>`;
-              });
-              html += `</div>`;
-            }
+          // Envs inline
+          if (envs.length) {
+            html += `<div class="flex items-center gap-0.5 flex-wrap">
+              <span class="text-[10px] uppercase tracking-wider opacity-30 mr-0.5">env:</span>`;
+            envs.forEach(e => {
+              html += `<label class="cursor-pointer flex items-center gap-0.5 scope-item-label" data-cls="rf-env">
+                <input type="checkbox" class="checkbox checkbox-xs rf-env scope-item" value="${e.id}">
+                <span class="text-xs opacity-40 mr-1.5">${esc(e.slug)}</span>
+              </label>`;
+            });
             html += `</div>`;
           }
-          html += `</div>`;
+          // Apps inline
+          if (apps.length) {
+            html += `<div class="flex items-center gap-0.5 flex-wrap">
+              <span class="text-[10px] uppercase tracking-wider opacity-30 mr-0.5">app:</span>`;
+            apps.forEach(a => {
+              html += `<label class="cursor-pointer flex items-center gap-0.5 scope-item-label" data-cls="rf-app">
+                <input type="checkbox" class="checkbox checkbox-xs rf-app scope-item" value="${a.id}">
+                <span class="text-xs opacity-40 mr-1.5">${esc(a.slug)}</span>
+              </label>`;
+            });
+            html += `</div>`;
+          }
+          html += `</div></div>`;
         });
 
         container.innerHTML = html;
