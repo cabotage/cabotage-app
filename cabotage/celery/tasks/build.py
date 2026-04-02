@@ -1,5 +1,6 @@
 import datetime
 import json
+import logging
 import os
 import re
 import secrets
@@ -67,6 +68,8 @@ from cabotage.utils.github import (
 )
 from cabotage.utils import procfile
 
+log = logging.getLogger(__name__)
+
 
 def _dispatch_image_failure(image, error_detail):
     try:
@@ -94,7 +97,7 @@ def _dispatch_image_failure(image, error_detail):
                 error=error_detail,
             )
     except Exception:
-        pass
+        log.warning("Failed to dispatch image failure notification", exc_info=True)
 
 
 def _dispatch_release_failure(release, error_detail):
@@ -125,7 +128,7 @@ def _dispatch_release_failure(release, error_detail):
                 error=error_detail,
             )
     except Exception:
-        pass
+        log.warning("Failed to dispatch release failure notification", exc_info=True)
 
 
 def _build_namespace(app_env):
@@ -614,8 +617,11 @@ def build_release_buildkit(release):
                 if redis_client and log_key:
                     try:
                         publish_end(redis_client, log_key, error=not job_complete)
-                    except Exception:  # nosec B110
-                        pass
+                    except Exception:
+                        log.warning(
+                            "Failed to publish log stream end for release build",
+                            exc_info=True,
+                        )
             finally:
                 core_api_instance.delete_namespaced_secret(
                     f"buildkit-registry-auth-{release.build_job_id}",
@@ -870,7 +876,10 @@ def build_image_buildkit(image: Image):
                 image_metadata=image.image_metadata,
             )
         except Exception:
-            pass
+            log.warning(
+                "Failed to dispatch autodeploy image_building notification",
+                exc_info=True,
+            )
 
     buildctl_command = [
         "buildctl-daemonless.sh",
@@ -1110,8 +1119,11 @@ def build_image_buildkit(image: Image):
                 if redis_client and log_key:
                     try:
                         publish_end(redis_client, log_key, error=not job_complete)
-                    except Exception:  # nosec B110
-                        pass
+                    except Exception:
+                        log.warning(
+                            "Failed to publish log stream end for image build",
+                            exc_info=True,
+                        )
             finally:
                 core_api_instance.delete_namespaced_secret(
                     f"buildkit-registry-auth-{image.build_job_id}",
@@ -1262,7 +1274,10 @@ def build_omnibus_buildkit(image, release):
                 image_metadata=image.image_metadata,
             )
         except Exception:
-            pass
+            log.warning(
+                "Failed to dispatch autodeploy image_building notification",
+                exc_info=True,
+            )
 
     # --- Image build args (init container) ---
     buildctl_command = [
@@ -1613,8 +1628,11 @@ def build_omnibus_buildkit(image, release):
             if redis_client and log_key:
                 try:
                     publish_end(redis_client, log_key, error=not job_complete)
-                except Exception:  # nosec B110
-                    pass
+                except Exception:
+                    log.warning(
+                        "Failed to publish log stream end for omnibus build",
+                        exc_info=True,
+                    )
         finally:
             core_api_instance.delete_namespaced_secret(
                 f"buildkit-registry-auth-{image.build_job_id}",
@@ -1725,10 +1743,8 @@ def run_image_build(image_id: str, buildkit: bool = False):
     try:
         redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
         refresh_heartbeat(redis_client, "image_build", str(image.id))
-    except Exception:  # nosec B110
-        # blind capture any issues sending heartbeat to redis,
-        # we don't want to fail the build for this!
-        pass
+    except Exception:
+        log.warning("Failed to send image build heartbeat to redis", exc_info=True)
 
     try:
         try:
@@ -1776,8 +1792,10 @@ def run_image_build(image_id: str, buildkit: bool = False):
             log_key = stream_key("image", image.build_job_id)
             redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
             publish_end(redis_client, log_key, error=True)
-        except Exception:  # nosec B110
-            pass
+        except Exception:
+            log.warning(
+                "Failed to publish log stream end for image build error", exc_info=True
+            )
         db.session.rollback()
         db.session.add(image)
         if not image.error:
@@ -1856,7 +1874,10 @@ def run_image_build(image_id: str, buildkit: bool = False):
                 image_metadata=image.image_metadata,
             )
         except Exception:
-            pass
+            log.warning(
+                "Failed to dispatch autodeploy release_building notification",
+                exc_info=True,
+            )
 
 
 @shared_task()
@@ -1881,10 +1902,10 @@ def run_release_build(release_id: str):
         try:
             redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
             refresh_heartbeat(redis_client, "release_build", str(release.id))
-        except Exception:  # nosec B110
-            # blind capture any issues sending heartbeat to redis,
-            # we don't want to fail the build for this!
-            pass
+        except Exception:
+            log.warning(
+                "Failed to send release build heartbeat to redis", exc_info=True
+            )
 
         try:
             build_metadata = build_release_buildkit(release)
@@ -1912,8 +1933,11 @@ def run_release_build(release_id: str):
                 log_key = stream_key("release", release.build_job_id)
                 redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
                 publish_end(redis_client, log_key, error=True)
-            except Exception:  # nosec B110
-                pass
+            except Exception:
+                log.warning(
+                    "Failed to publish log stream end for release build error",
+                    exc_info=True,
+                )
             _dispatch_release_failure(release, str(exc))
             if (
                 "installation_id" in release.release_metadata
@@ -1943,8 +1967,11 @@ def run_release_build(release_id: str):
                 log_key = stream_key("release", release.build_job_id)
                 redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
                 publish_end(redis_client, log_key, error=True)
-            except Exception:  # nosec B110
-                pass
+            except Exception:
+                log.warning(
+                    "Failed to publish log stream end for release build error",
+                    exc_info=True,
+                )
             release.error = True
             release.error_detail = "Release build failed due to an internal error"
             db.session.add(release)
@@ -2038,7 +2065,10 @@ def run_release_build(release_id: str):
                     image_metadata=release.release_metadata,
                 )
             except Exception:
-                pass
+                log.warning(
+                    "Failed to dispatch autodeploy deploying notification",
+                    exc_info=True,
+                )
             if current_app.config["KUBERNETES_ENABLED"]:
                 deployment_id = deployment.id
                 run_deploy.delay(deployment_id=deployment.id)
@@ -2077,7 +2107,10 @@ def run_release_build(release_id: str):
                         image_metadata=release.release_metadata,
                     )
                 except Exception:
-                    pass
+                    log.warning(
+                        "Failed to dispatch autodeploy completion notification",
+                        exc_info=True,
+                    )
     except Exception:
         db.session.rollback()
         if release is not None and not release.error:
@@ -2147,8 +2180,8 @@ def run_omnibus_build(image_id: str):
     try:
         redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
         refresh_heartbeat(redis_client, "omnibus_build", str(image.id))
-    except Exception:  # nosec B110
-        pass
+    except Exception:
+        log.warning("Failed to send omnibus build heartbeat to redis", exc_info=True)
 
     release = None
     app_env = image.application_environment
@@ -2243,8 +2276,11 @@ def run_omnibus_build(image_id: str):
             log_key = stream_key("omnibus", image.build_job_id)
             redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
             publish_end(redis_client, log_key, error=True)
-        except Exception:  # nosec B110
-            pass
+        except Exception:
+            log.warning(
+                "Failed to publish log stream end for omnibus build error",
+                exc_info=True,
+            )
         db.session.rollback()
         db.session.add(image)
         if not image.error:

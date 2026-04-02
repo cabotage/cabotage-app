@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 slack_oauth_bp = Blueprint("slack_oauth", __name__, url_prefix="/integrations/slack")
 
 SLACK_AUTHORIZE_URL = "https://slack.com/oauth/v2/authorize"
-SLACK_TOKEN_URL = "https://slack.com/api/oauth.v2.access"
+SLACK_TOKEN_URL = "https://slack.com/api/oauth.v2.access"  # nosec B105
 
 
 @slack_oauth_bp.route("/connect/<org_slug>")

@@ -30,7 +30,7 @@ discord_oauth_bp = Blueprint(
 )
 
 DISCORD_AUTHORIZE_URL = "https://discord.com/api/oauth2/authorize"
-DISCORD_TOKEN_URL = "https://discord.com/api/v10/oauth2/token"
+DISCORD_TOKEN_URL = "https://discord.com/api/v10/oauth2/token"  # nosec B105
 DISCORD_API_BASE = "https://discord.com/api/v10"
 
 

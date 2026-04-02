@@ -55,6 +55,8 @@ from cabotage.celery.tasks.notify import (
     dispatch_pipeline_notification,
 )
 
+log = logging.getLogger(__name__)
+
 
 class DeployError(RuntimeError):
     pass
@@ -90,7 +92,7 @@ def _dispatch_deploy_failure(deployment, error_detail):
                 error=error_detail,
             )
     except Exception:
-        pass
+        log.warning("Failed to dispatch deploy failure notification", exc_info=True)
 
 
 @shared_task()
@@ -2526,8 +2528,10 @@ def deploy_release(deployment):
                 refresh_heartbeat(
                     redis_client, "deploy", deployment_id_str, ttl=heartbeat_ttl
                 )
-            except Exception:  # nosec B110
-                pass
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "Failed to publish deploy log line to redis", exc_info=True
+                )
 
     # Pick up check run from the build pipeline metadata
     check = CheckRun.from_metadata(
@@ -2891,8 +2895,10 @@ def deploy_release(deployment):
         if redis_client is not None and log_key is not None:
             try:
                 publish_end(redis_client, log_key, error=True)
-            except Exception:  # nosec B110
-                pass
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "Failed to publish deploy log stream end", exc_info=True
+                )
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
         _dispatch_deploy_failure(deployment, str(exc))
@@ -2924,8 +2930,10 @@ def deploy_release(deployment):
         if redis_client is not None and log_key is not None:
             try:
                 publish_end(redis_client, log_key, error=True)
-            except Exception:  # nosec B110
-                pass
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "Failed to publish deploy log stream end", exc_info=True
+                )
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
         _dispatch_deploy_failure(deployment, "Deploy failed due to an internal error")
@@ -2939,8 +2947,10 @@ def deploy_release(deployment):
     if redis_client is not None and log_key is not None:
         try:
             publish_end(redis_client, log_key, error=False)
-        except Exception:  # nosec B110
-            pass
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "Failed to publish deploy log stream end", exc_info=True
+            )
     deployment.deploy_log = "\n".join(deploy_log)
     db.session.commit()
 

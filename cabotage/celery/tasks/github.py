@@ -254,7 +254,10 @@ def process_deployment_hook(hook):
                 image_metadata=image.image_metadata,
             )
         except Exception:
-            pass
+            logger.warning(
+                "Failed to dispatch autodeploy image_building notification",
+                exc_info=True,
+            )
         return True
     except HookError as exc:
         if access_token and "token" in access_token:
