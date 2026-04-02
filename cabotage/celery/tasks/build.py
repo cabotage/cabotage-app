@@ -1830,6 +1830,30 @@ def run_image_build(image_id: str, buildkit: bool = False):
         Image=f"images/{image.id}",
     )
 
+    if not (
+        image.built
+        and image.image_metadata
+        and image.image_metadata.get("auto_deploy", False)
+    ):
+        # Non-auto-deploy: update the "Image build started" notification to complete
+        try:
+            dispatch_pipeline_notification.delay(
+                "pipeline.image_build",
+                "Image",
+                str(image.id),
+                str(application.project.organization_id),
+                str(application.id),
+                str(image.application_environment_id)
+                if image.application_environment_id
+                else None,
+                complete=True,
+            )
+        except Exception:
+            log.warning(
+                "Failed to dispatch image build completion notification",
+                exc_info=True,
+            )
+
     if (
         image.built
         and image.image_metadata
@@ -2018,6 +2042,29 @@ def run_release_build(release_id: str):
             details_url=cabotage_url(release.application, f"releases/{release.id}"),
             **release_links,
         )
+
+        if not (
+            release.built
+            and release.release_metadata
+            and release.release_metadata.get("auto_deploy", False)
+        ):
+            try:
+                dispatch_pipeline_notification.delay(
+                    "pipeline.release",
+                    "Release",
+                    str(release.id),
+                    str(release.application.project.organization_id),
+                    str(release.application.id),
+                    str(release.application_environment_id)
+                    if release.application_environment_id
+                    else None,
+                    complete=True,
+                )
+            except Exception:
+                log.warning(
+                    "Failed to dispatch release build completion notification",
+                    exc_info=True,
+                )
 
         if (
             release.built

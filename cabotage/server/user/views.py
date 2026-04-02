@@ -5244,18 +5244,18 @@ def release_deploy(org_slug, project_slug, app_slug, release_id):
     )
     db.session.add(activity)
     db.session.commit()
-    dispatch_pipeline_notification.delay(
-        "pipeline.deploy",
-        "Deployment",
-        str(deployment.id),
-        str(org.id),
-        str(application.id),
-        str(release.application_environment_id)
-        if release.application_environment_id
-        else None,
-        detail=f"Triggered by: {current_user.username}",
-    )
     if current_app.config["KUBERNETES_ENABLED"]:
+        dispatch_pipeline_notification.delay(
+            "pipeline.deploy",
+            "Deployment",
+            str(deployment.id),
+            str(org.id),
+            str(application.id),
+            str(release.application_environment_id)
+            if release.application_environment_id
+            else None,
+            detail=f"Triggered by: {current_user.username}",
+        )
         deployment_id = deployment.id
         run_deploy.delay(deployment_id=deployment.id)
         deployment = Deployment.query.filter_by(id=deployment_id).first_or_404()
@@ -5265,6 +5265,18 @@ def release_deploy(org_slug, project_slug, app_slug, release_id):
         fake_deploy_release(deployment)
         deployment.complete = True
         db.session.commit()
+        dispatch_pipeline_notification.delay(
+            "pipeline.deploy",
+            "Deployment",
+            str(deployment.id),
+            str(org.id),
+            str(application.id),
+            str(release.application_environment_id)
+            if release.application_environment_id
+            else None,
+            detail=f"Triggered by: {current_user.username}",
+            complete=True,
+        )
     return redirect(
         url_for(
             "user.deployment_detail",

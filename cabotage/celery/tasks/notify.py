@@ -248,20 +248,27 @@ def format_alert_message(alert, application, app_env):
 def format_pipeline_message(
     notification_type, app_path, detail, error=None, complete=False, url=None
 ):
-    type_labels = {
+    started_labels = {
         "pipeline.image_build": "Image build",
         "pipeline.release": "Release",
         "pipeline.deploy": "Deploy",
     }
-    label = type_labels.get(notification_type, notification_type)
+    complete_labels = {
+        "pipeline.image_build": "Image built",
+        "pipeline.release": "Release created",
+        "pipeline.deploy": "Deploy complete",
+    }
 
     if error:
+        label = started_labels.get(notification_type, notification_type)
         title = f"\u274c {label} failed"
         color_hex, color_int = COLOR_RED, DISCORD_RED
     elif complete:
-        title = f"\u2705 {label} complete"
+        label = complete_labels.get(notification_type, notification_type)
+        title = f"\u2705 {label}"
         color_hex, color_int = COLOR_GREEN, DISCORD_GREEN
     else:
+        label = started_labels.get(notification_type, notification_type)
         title = f"\U0001f527 {label} started"
         color_hex, color_int = COLOR_BLUE, DISCORD_BLUE
 
@@ -281,11 +288,11 @@ def format_pipeline_message(
 
 
 AUTODEPLOY_STAGES = {
-    "image_building": "\U0001f504 Auto-deploy: building image...",
+    "image_building": "\u26a1 Auto-deploy: building image...",
     "image_failed": "\u274c Auto-deploy: image build failed",
-    "release_building": "\U0001f504 Auto-deploy: building release...",
+    "release_building": "\u26a1 Auto-deploy: building release...",
     "release_failed": "\u274c Auto-deploy: release build failed",
-    "deploying": "\U0001f504 Auto-deploy: deploying...",
+    "deploying": "\u26a1 Auto-deploy: deploying...",
     "deploy_failed": "\u274c Auto-deploy: deploy failed",
     "complete": "\u2705 Auto-deploy: complete",
 }
