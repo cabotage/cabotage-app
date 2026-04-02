@@ -386,10 +386,18 @@
               </label>
               {% endif %}
               {% for type_key, type_label in cat.types.items() %}
+              {% if not type_key.endswith('_failed') %}
               <label class="label cursor-pointer justify-start gap-1.5 py-0 cat-item-label" data-cat="{{ cat_key }}">
                 <input type="checkbox" class="checkbox checkbox-xs checkbox-primary rf-ntype" value="{{ cat_key }}.{{ type_key }}" data-cat="{{ cat_key }}">
                 <span class="text-xs">{{ type_label }}</span>
               </label>
+              {% if type_key ~ '_failed' in cat.types %}
+              <label class="label cursor-pointer justify-start gap-1.5 py-0 cat-item-label ml-5" data-cat="{{ cat_key }}" data-failed-of="{{ cat_key }}.{{ type_key }}">
+                <input type="checkbox" class="checkbox checkbox-xs checkbox-primary rf-ntype" value="{{ cat_key }}.{{ type_key }}_failed" data-cat="{{ cat_key }}">
+                <span class="text-xs opacity-60">failures only</span>
+              </label>
+              {% endif %}
+              {% endif %}
               {% endfor %}
             </div>
           </div>
@@ -421,10 +429,18 @@
               </label>
               {% endif %}
               {% for type_key, type_label in cat.types.items() %}
+              {% if not type_key.endswith('_failed') %}
               <label class="label cursor-pointer justify-start gap-1.5 py-0 cat-item-label" data-cat="{{ cat_key }}">
                 <input type="checkbox" class="checkbox checkbox-xs checkbox-primary rf-ntype" value="{{ cat_key }}.{{ type_key }}" data-cat="{{ cat_key }}">
                 <span class="text-xs">{{ type_label }}</span>
               </label>
+              {% if type_key ~ '_failed' in cat.types %}
+              <label class="label cursor-pointer justify-start gap-1.5 py-0 cat-item-label ml-5" data-cat="{{ cat_key }}" data-failed-of="{{ cat_key }}.{{ type_key }}">
+                <input type="checkbox" class="checkbox checkbox-xs checkbox-primary rf-ntype" value="{{ cat_key }}.{{ type_key }}_failed" data-cat="{{ cat_key }}">
+                <span class="text-xs opacity-60">failures only</span>
+              </label>
+              {% endif %}
+              {% endif %}
               {% endfor %}
             </div>
           </div>
@@ -435,20 +451,7 @@
         <div class="divider my-2"></div>
 
         <span class="text-xs font-semibold opacity-70">Scope</span>
-        <div class="grid grid-cols-3 gap-2 mt-1 pl-2" id="rf-scope-section">
-          <div>
-            <span class="text-xs font-semibold">Projects</span>
-            <div class="flex flex-col gap-0.5 mt-1" id="rf-projects"></div>
-          </div>
-          <div>
-            <span class="text-xs font-semibold">Envs</span>
-            <div class="flex flex-col gap-0.5 mt-1" id="rf-environments"></div>
-          </div>
-          <div>
-            <span class="text-xs font-semibold">Apps</span>
-            <div class="flex flex-col gap-0.5 mt-1" id="rf-applications"></div>
-          </div>
-        </div>
+        <div class="mt-1 pl-2" id="rf-scope-section"></div>
       </div>
 
       {# Target — integration + channel + enabled #}
@@ -610,98 +613,165 @@
         });
 
       function buildScopeCheckboxes() {
-        ['rf-projects', 'rf-environments', 'rf-applications'].forEach(id => {
-          const container = document.getElementById(id);
-          container.innerHTML = '';
-        });
+        const container = document.getElementById('rf-scope-section');
 
-        const pC = document.getElementById('rf-projects');
-        const eC = document.getElementById('rf-environments');
-        const aC = document.getElementById('rf-applications');
+        let html = `<label class="label cursor-pointer justify-start gap-1.5 py-0 mb-1">
+          <input type="checkbox" class="checkbox checkbox-xs checkbox-primary scope-all-toggle" data-cls="rf-proj" checked>
+          <span class="text-xs font-semibold">All projects</span>
+        </label>`;
 
-        // "All" toggles
-        pC.innerHTML = scopeAllToggle('rf-proj');
-        eC.innerHTML = scopeAllToggle('rf-env');
-        aC.innerHTML = scopeAllToggle('rf-app');
+        html += `<table class="table table-xs w-full"><thead><tr>
+          <th class="text-[10px] uppercase tracking-wider opacity-40 font-normal pl-0">Project</th>
+          <th class="text-[10px] uppercase tracking-wider opacity-40 font-normal">Environments</th>
+          <th class="text-[10px] uppercase tracking-wider opacity-40 font-normal">Applications</th>
+        </tr></thead><tbody>`;
 
         scopesData.forEach(p => {
-          pC.innerHTML += scopeCheckbox('rf-proj', p.id, p.slug);
-          (p.environments || []).forEach(e => {
-            eC.innerHTML += scopeCheckbox('rf-env', e.id, e.slug);
+          const envs = p.environments || [];
+          const apps = p.applications || [];
+          html += `<tr class="scope-project-row" data-project-id="${p.id}">`;
+          html += `<td class="align-top pl-0"><label class="cursor-pointer flex items-center gap-1.5 scope-item-label whitespace-nowrap" data-cls="rf-proj">
+            <input type="checkbox" class="checkbox checkbox-xs rf-proj scope-item" value="${p.id}">
+            <span class="text-xs font-semibold opacity-40">${esc(p.slug)}</span>
+          </label></td>`;
+          html += `<td class="align-top"><div class="flex flex-wrap gap-x-2 gap-y-0.5">`;
+          envs.forEach(e => {
+            html += `<label class="cursor-pointer flex items-center gap-1 scope-item-label whitespace-nowrap" data-cls="rf-env">
+              <input type="checkbox" class="checkbox checkbox-xs rf-env scope-item" value="${e.id}">
+              <span class="text-xs opacity-40">${esc(e.slug)}</span>
+            </label>`;
           });
-          (p.applications || []).forEach(a => {
-            aC.innerHTML += scopeCheckbox('rf-app', a.id, a.slug);
+          html += `</div></td>`;
+          html += `<td class="align-top"><div class="flex flex-wrap gap-x-2 gap-y-0.5">`;
+          apps.forEach(a => {
+            html += `<label class="cursor-pointer flex items-center gap-1 scope-item-label whitespace-nowrap" data-cls="rf-app">
+              <input type="checkbox" class="checkbox checkbox-xs rf-app scope-item" value="${a.id}">
+              <span class="text-xs opacity-40">${esc(a.slug)}</span>
+            </label>`;
           });
+          html += `</div></td></tr>`;
         });
 
-        // Wire up "All" toggles
-        document.querySelectorAll('.scope-all-toggle').forEach(cb => {
+        html += `</tbody></table>`;
+
+        container.innerHTML = html;
+
+        // "All projects" toggle: clear everything
+        container.querySelector('.scope-all-toggle').addEventListener('change', function() {
+          document.querySelectorAll('.rf-proj, .rf-env, .rf-app').forEach(c => c.checked = false);
+          this.checked = true;
+          updateAllScopeStyles();
+        });
+
+        // Project checkbox: uncheck → clear children; check → uncheck "All"
+        document.querySelectorAll('.rf-proj').forEach(cb => {
           cb.addEventListener('change', function() {
-            const cls = this.dataset.cls;
-            document.querySelectorAll('.' + cls).forEach(c => c.checked = false);
-            this.checked = true;
-            updateScopeStyles(cls);
-          });
-        });
-
-        // When any individual scope checkbox changes, uncheck "All" if something is selected
-        document.querySelectorAll('.rf-proj, .rf-env, .rf-app').forEach(cb => {
-          cb.addEventListener('change', function() {
-            const cls = this.className.split(' ').find(c => c.startsWith('rf-'));
-            const allCb = document.querySelector(`.scope-all-toggle[data-cls="${cls}"]`);
-            const anyChecked = document.querySelectorAll('.' + cls + ':checked').length > 0;
-            if (allCb) allCb.checked = !anyChecked;
-            updateScopeStyles(cls);
-          });
-        });
-
-        // Initial styling
-        ['rf-proj', 'rf-env', 'rf-app'].forEach(updateScopeStyles);
-      }
-
-      function scopeAllToggle(cls) {
-        return `<label class="label cursor-pointer justify-start gap-1.5 py-0">
-          <input type="checkbox" class="checkbox checkbox-xs checkbox-primary scope-all-toggle" data-cls="${cls}" checked>
-          <span class="text-xs font-semibold">Any</span>
-        </label>`;
-      }
-
-      function scopeCheckbox(cls, value, label) {
-        return `<label class="label cursor-pointer justify-start gap-1.5 py-0 scope-item-label" data-cls="${cls}">
-          <input type="checkbox" class="checkbox checkbox-xs ${cls} scope-item" value="${value}">
-          <span class="text-xs opacity-40">${esc(label)}</span>
-        </label>`;
-      }
-
-      function updateScopeStyles(cls) {
-        const allCb = document.querySelector(`.scope-all-toggle[data-cls="${cls}"]`);
-        const isAll = allCb && allCb.checked;
-        document.querySelectorAll(`.scope-item-label[data-cls="${cls}"]`).forEach(label => {
-          const cb = label.querySelector('.scope-item');
-          const span = label.querySelector('span');
-          if (isAll) {
-            cb.checked = false;
-            cb.classList.remove('checkbox-primary');
-            cb.classList.add('checkbox-ghost');
-            cb.indeterminate = true;
-            span.classList.add('opacity-40');
-            span.classList.remove('opacity-100');
-          } else {
-            cb.classList.add('checkbox-primary');
-            cb.classList.remove('checkbox-ghost');
-            cb.indeterminate = false;
-            if (cb.checked) {
-              span.classList.remove('opacity-40');
-              span.classList.add('opacity-100');
-            } else {
-              span.classList.add('opacity-40');
-              span.classList.remove('opacity-100');
+            const row = this.closest('.scope-project-row');
+            if (!this.checked) {
+              row.querySelectorAll('.rf-env, .rf-app').forEach(c => c.checked = false);
             }
+            syncAllToggle();
+            updateAllScopeStyles();
+          });
+        });
+
+        // Child checkbox: auto-check parent project
+        document.querySelectorAll('.rf-env, .rf-app').forEach(cb => {
+          cb.addEventListener('change', function() {
+            if (this.checked) {
+              const row = this.closest('.scope-project-row');
+              const projCb = row.querySelector('.rf-proj');
+              if (projCb && !projCb.checked) projCb.checked = true;
+            }
+            syncAllToggle();
+            updateAllScopeStyles();
+          });
+        });
+
+        updateAllScopeStyles();
+      }
+
+      function syncAllToggle() {
+        const allCb = document.querySelector('.scope-all-toggle[data-cls="rf-proj"]');
+        const anyChecked = document.querySelectorAll('.rf-proj:checked, .rf-env:checked, .rf-app:checked').length > 0;
+        allCb.checked = !anyChecked;
+      }
+
+      function updateAllScopeStyles() {
+        const allCb = document.querySelector('.scope-all-toggle[data-cls="rf-proj"]');
+        const isAll = allCb && allCb.checked;
+
+        document.querySelectorAll('.scope-project-row').forEach(row => {
+          const projCb = row.querySelector('.rf-proj');
+          const projSpan = projCb.closest('label').querySelector('span');
+          const projActive = !isAll && projCb.checked;
+
+          // Style project checkbox
+          if (isAll) {
+            projCb.classList.remove('checkbox-primary');
+            projCb.classList.add('checkbox-ghost');
+            projCb.indeterminate = true;
+            projSpan.classList.add('opacity-40');
+            projSpan.classList.remove('opacity-100');
+          } else {
+            projCb.classList.add('checkbox-primary');
+            projCb.classList.remove('checkbox-ghost');
+            projCb.indeterminate = false;
+            projSpan.classList.toggle('opacity-40', !projCb.checked);
+            projSpan.classList.toggle('opacity-100', projCb.checked);
           }
+
+          // Style + enable/disable child checkboxes
+          row.querySelectorAll('.rf-env, .rf-app').forEach(childCb => {
+            const childSpan = childCb.closest('label').querySelector('span');
+            if (isAll) {
+              childCb.disabled = true;
+              childCb.checked = false;
+              childCb.classList.remove('checkbox-primary');
+              childCb.classList.add('checkbox-ghost');
+              childCb.indeterminate = true;
+              childSpan.classList.add('opacity-40');
+              childSpan.classList.remove('opacity-100');
+            } else if (!projActive) {
+              childCb.disabled = true;
+              childCb.checked = false;
+              childCb.classList.remove('checkbox-primary');
+              childCb.classList.add('checkbox-ghost');
+              childCb.indeterminate = false;
+              childSpan.classList.add('opacity-40');
+              childSpan.classList.remove('opacity-100');
+            } else {
+              childCb.disabled = false;
+              childCb.classList.add('checkbox-primary');
+              childCb.classList.remove('checkbox-ghost');
+              childCb.indeterminate = false;
+              childSpan.classList.toggle('opacity-40', !childCb.checked);
+              childSpan.classList.toggle('opacity-100', childCb.checked);
+            }
+          });
         });
       }
 
       // --- Route form ---
+
+      function updateFailedToggles() {
+        document.querySelectorAll('[data-failed-of]').forEach(label => {
+          const parentValue = label.dataset.failedOf;
+          const parentCb = document.querySelector(`.rf-ntype[value="${parentValue}"]`);
+          const failedCb = label.querySelector('.rf-ntype');
+          const span = label.querySelector('span');
+          if (parentCb && parentCb.checked) {
+            failedCb.checked = false;
+            failedCb.disabled = true;
+            span.textContent = 'failures only (included above)';
+            label.classList.add('opacity-40');
+          } else {
+            failedCb.disabled = false;
+            span.textContent = 'failures only';
+            label.classList.remove('opacity-40');
+          }
+        });
+      }
 
       function validateForm() {
         const hasTypes = document.querySelectorAll('.rf-ntype:checked').length > 0;
@@ -747,6 +817,7 @@
           document.querySelectorAll(`.rf-ntype[data-cat="${cat}"]`).forEach(cb => {
             cb.checked = toggle.checked;
           });
+          updateFailedToggles();
           updateCatStyles(cat);
           validateForm();
         });
@@ -759,10 +830,10 @@
           const allToggle = document.querySelector(`.cat-all-toggle[data-cat="${cat}"]`);
           if (allToggle) {
             const siblings = document.querySelectorAll(`.rf-ntype[data-cat="${cat}"]`);
-            const allChecked = [...siblings].every(s => s.checked);
-            const noneChecked = [...siblings].every(s => !s.checked);
+            const allChecked = [...siblings].every(s => s.checked || s.disabled);
             allToggle.checked = allChecked;
           }
+          updateFailedToggles();
           updateCatStyles(cat);
           validateForm();
         });
@@ -797,7 +868,9 @@
         document.getElementById('rf-delete-section').style.display = 'none';
         document.querySelectorAll('.rf-proj, .rf-env, .rf-app').forEach(cb => cb.checked = false);
         document.querySelectorAll('.scope-all-toggle').forEach(cb => cb.checked = true);
-        ['rf-proj', 'rf-env', 'rf-app'].forEach(updateScopeStyles);
+        document.querySelectorAll('.rf-proj, .rf-env, .rf-app').forEach(cb => cb.checked = false);
+        updateAllScopeStyles();
+        updateFailedToggles();
         Object.keys(categories).forEach(updateCatStyles);
         const intgSel = document.getElementById('rf-integration');
         intgSel.selectedIndex = 0;
@@ -816,10 +889,11 @@
         // Set notification type checkboxes + "All" toggle state
         const ntypes = route.notification_types || [];
         document.querySelectorAll('.rf-ntype').forEach(cb => cb.checked = ntypes.includes(cb.value));
+        updateFailedToggles();
         document.querySelectorAll('.cat-all-toggle').forEach(toggle => {
           const cat = toggle.dataset.cat;
           const siblings = document.querySelectorAll(`.rf-ntype[data-cat="${cat}"]`);
-          toggle.checked = [...siblings].every(s => s.checked);
+          toggle.checked = [...siblings].every(s => s.checked || s.disabled);
         });
         Object.keys(categories).forEach(updateCatStyles);
         document.getElementById('rf-integration').value = route.integration;
@@ -837,10 +911,13 @@
         document.querySelectorAll('.rf-proj').forEach(cb => cb.checked = pids.includes(cb.value));
         document.querySelectorAll('.rf-env').forEach(cb => cb.checked = eids.includes(cb.value));
         document.querySelectorAll('.rf-app').forEach(cb => cb.checked = aids.includes(cb.value));
-        document.querySelector('.scope-all-toggle[data-cls="rf-proj"]').checked = !pids.length;
-        document.querySelector('.scope-all-toggle[data-cls="rf-env"]').checked = !eids.length;
-        document.querySelector('.scope-all-toggle[data-cls="rf-app"]').checked = !aids.length;
-        ['rf-proj', 'rf-env', 'rf-app'].forEach(updateScopeStyles);
+        // Auto-check parent projects for any selected envs/apps
+        document.querySelectorAll('.scope-project-row').forEach(row => {
+          const hasChild = row.querySelectorAll('.rf-env:checked, .rf-app:checked').length > 0;
+          if (hasChild) row.querySelector('.rf-proj').checked = true;
+        });
+        syncAllToggle();
+        updateAllScopeStyles();
         document.getElementById('route-modal').showModal();
       }
 
