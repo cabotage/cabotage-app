@@ -553,7 +553,7 @@ def send_notification(
                     embeds=discord_embeds,
                     components=discord_components,
                 )
-            existing.updated_at = datetime.now()
+            existing.updated_at = datetime.now(UTC).replace(tzinfo=None)
             db.session.commit()
             return
 

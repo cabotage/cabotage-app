@@ -87,7 +87,10 @@ class User(Model, FsUserMixin):
 
     admin: Mapped[bool] = mapped_column(Boolean, default=False)
     registered_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.now
+        DateTime,
+        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
     )
 
     roles: Mapped[list[Role]] = relationship(  # type: ignore[assignment]
@@ -130,7 +133,10 @@ class GitHubIdentity(Model):
     github_username: Mapped[str] = mapped_column(String(255))
     github_access_token: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.now
+        DateTime,
+        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
     )
 
     user: Mapped[User] = relationship(backref=backref("github_identity", uselist=False))
@@ -171,12 +177,19 @@ class TailscaleIntegration(Model):
     operator_state: Mapped[str] = mapped_column(String(32), default="pending")
     operator_version: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.now
+        DateTime,
+        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=datetime.datetime.now,
-        onupdate=datetime.datetime.now,
+        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
+        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
     )
 
     organization: Mapped[Organization] = relationship(
@@ -213,12 +226,19 @@ class SlackIntegration(Model):
         ForeignKey("users.id"),
     )
     created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.now
+        DateTime,
+        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=datetime.datetime.now,
-        onupdate=datetime.datetime.now,
+        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
+        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
     )
 
     version_id: Mapped[int] = mapped_column(Integer)
@@ -260,12 +280,19 @@ class DiscordIntegration(Model):
         ForeignKey("users.id"),
     )
     created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.now
+        DateTime,
+        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=datetime.datetime.now,
-        onupdate=datetime.datetime.now,
+        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
+        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
     )
 
     version_id: Mapped[int] = mapped_column(Integer)
