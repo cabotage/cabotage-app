@@ -523,7 +523,18 @@
         discord: '<svg class="w-4 h-4 inline-block" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>',
       };
       const categories = {{ notification_categories | tojson }};
-      const hasDefaultChannel = {{ (slack_integration and slack_integration.default_channel_id) or (discord_integration and discord_integration.default_channel_id) | tojson }};
+      const slackDefault = {{ {'id': slack_integration.default_channel_id or '', 'name': slack_integration.default_channel_name or ''} | tojson if slack_integration else 'null' }};
+      const discordDefault = {{ {'id': discord_integration.default_channel_id or '', 'name': discord_integration.default_channel_name or ''} | tojson if discord_integration else 'null' }};
+      const defaultChannels = [
+        ...(slackDefault && slackDefault.id ? [{ integration: 'slack', channelName: slackDefault.name, channelId: slackDefault.id }] : []),
+        ...(discordDefault && discordDefault.id ? [{ integration: 'discord', channelName: discordDefault.name, channelId: discordDefault.id }] : []),
+      ];
+      const hasDefaultChannel = defaultChannels.length > 0;
+      function defaultChannelLabel(dc) {
+        const channels = channelData[dc.integration] || [];
+        const ch = channels.find(c => c.id === dc.channelId);
+        return ch ? ch.name : (dc.channelName || dc.channelId);
+      }
       const channelData = {};
       let scopesData = [];
       window.allRoutes = [];
@@ -584,6 +595,8 @@
       function onChannelDataReady() {
         // Update the channel dropdown in the form if integration is already selected
         onRfIntegrationChange();
+        // Re-render coverage preview if open, so default channel names resolve
+        if (document.getElementById('coverage-modal').open) renderCoveragePreview();
       }
 
       // --- Scopes ---
@@ -1049,11 +1062,15 @@
 
       function coverageRatio(projectId, envId, appId) {
         if (!activeTypes.size) return 0;
-        let matched = 0;
+        let score = 0;
         for (const ntype of activeTypes) {
-          if (allRoutes.some(r => routeMatches(r, ntype, projectId, envId, appId))) matched++;
+          if (allRoutes.some(r => routeMatches(r, ntype, projectId, envId, appId))) {
+            score += 1;
+          } else if (hasDefaultChannel) {
+            score += 0.5;
+          }
         }
-        return matched / activeTypes.size;
+        return score / activeTypes.size;
       }
 
       function cellColor(ratio) {
@@ -1067,21 +1084,28 @@
           for (const [typeKey, typeLabel] of Object.entries(cat.types)) {
             const ntype = `${catKey}.${typeKey}`;
             const matching = allRoutes.filter(r => r.enabled && r.notification_types.includes(ntype));
-            const color = cellColor(matching.length ? 1 : 0);
-            html += `<div class="flex items-center gap-2 py-0.5">` +
-              `<div class="w-4 h-4 rounded" style="background:${color}"></div>` +
-              `<span class="text-xs font-medium">${esc(typeLabel)}</span>`;
+            const color = cellColor(matching.length ? 1 : hasDefaultChannel ? 0.5 : 0);
+            html += `<div class="flex items-start gap-2 py-0.5">` +
+              `<div class="w-4 h-4 rounded shrink-0 mt-0.5" style="background:${color}"></div>` +
+              `<div><span class="text-xs font-medium">${esc(typeLabel)}</span>`;
             if (matching.length) {
-              html += `<span class="text-xs opacity-60">&rarr;</span>` +
-                matching.map(r =>
-                  `<span class="text-xs opacity-60 flex items-center gap-1">${integrationIcon[r.integration] || ''} #${esc(r.channel_name || r.channel_id)}</span>`
-                ).join('<span class="text-xs opacity-30">,</span>');
+              const routedIntegrations = new Set(matching.map(r => r.integration));
+              html += matching.map(r =>
+                `<div class="text-xs opacity-60 flex items-center gap-1">&rarr; ${integrationIcon[r.integration] || ''} #${esc(r.channel_name || r.channel_id)}</div>`
+              ).join('');
+              // Show default channels for integrations not covered by explicit routes
+              const uncoveredDefaults = defaultChannels.filter(dc => !routedIntegrations.has(dc.integration));
+              html += uncoveredDefaults.map(dc =>
+                `<div class="text-xs opacity-40 flex items-center gap-1">&rarr; ${integrationIcon[dc.integration] || ''} #${esc(defaultChannelLabel(dc))} <span class="italic">(default)</span></div>`
+              ).join('');
             } else if (hasDefaultChannel) {
-              html += `<span class="text-xs opacity-40">default channel</span>`;
+              html += defaultChannels.map(dc =>
+                `<div class="text-xs opacity-40 flex items-center gap-1">&rarr; ${integrationIcon[dc.integration] || ''} #${esc(defaultChannelLabel(dc))} <span class="italic">(default)</span></div>`
+              ).join('');
             } else {
-              html += `<span class="text-xs text-error flex items-center gap-1">&#10007; no default channel</span>`;
+              html += `<div class="text-xs text-error flex items-center gap-1">&#10007; no default channel</div>`;
             }
-            html += `</div>`;
+            html += `</div></div>`;
           }
         }
         return html;
@@ -1144,29 +1168,40 @@
             }
             let h = `<div class="font-mono font-semibold pb-1 mb-1 border-b border-base-300">${esc(parts.filter(Boolean).join(' / '))}</div>`;
             let defaultCount = 0;
+            let uncoveredCount = 0;
             for (const ntype of activeTypes) {
               const [catKey, typeKey] = ntype.split('.');
               const tipCat = categories[catKey];
               const label = `${tipCat ? tipCat.label : catKey}: ${(tipCat && tipCat.types[typeKey]) || typeKey}`;
               const matching = allRoutes.filter(r => routeMatches(r, ntype, projectId, envId, appId));
               if (matching.length) {
+                const routedIntegrations = new Set(matching.map(r => r.integration));
+                const uncoveredDefaults = defaultChannels.filter(dc => !routedIntegrations.has(dc.integration));
                 h += `<div class="flex items-start gap-1.5 py-0.5">` +
                   `<span class="text-success">&#10003;</span>` +
                   `<div><span class="font-medium">${esc(label)}</span>` +
                   matching.map(r => {
-                    return `<div class="opacity-60 pl-2 flex items-center gap-1">&rarr; ${integrationIcon[r.integration] || ''} #${esc(r.channel_name || r.channel_id)}</div>`;
+                    return `<div class="opacity-60 flex items-center gap-1">&rarr; ${integrationIcon[r.integration] || ''} #${esc(r.channel_name || r.channel_id)}</div>`;
                   }).join('') +
+                  uncoveredDefaults.map(dc =>
+                    `<div class="opacity-40 flex items-center gap-1">&rarr; ${integrationIcon[dc.integration] || ''} #${esc(defaultChannelLabel(dc))} <span class="italic">(default)</span></div>`
+                  ).join('') +
+                  `</div></div>`;
+              } else if (hasDefaultChannel) {
+                defaultCount++;
+                h += `<div class="flex items-start gap-1.5 py-0.5">` +
+                  `<span class="text-success opacity-50">&#10003;</span>` +
+                  `<div><span class="font-medium opacity-50">${esc(label)}</span>` +
+                  defaultChannels.map(dc =>
+                    `<div class="opacity-40 flex items-center gap-1">&rarr; ${integrationIcon[dc.integration] || ''} #${esc(defaultChannelLabel(dc))} <span class="italic">(default)</span></div>`
+                  ).join('') +
                   `</div></div>`;
               } else {
-                defaultCount++;
+                uncoveredCount++;
               }
             }
-            if (defaultCount) {
-              if (hasDefaultChannel) {
-                h += `<div class="opacity-40 pt-1">${defaultCount} type${defaultCount > 1 ? 's' : ''} → default channel</div>`;
-              } else {
-                h += `<div class="text-error pt-1">&#10007; ${defaultCount} type${defaultCount > 1 ? 's' : ''} — no default channel</div>`;
-              }
+            if (uncoveredCount) {
+              h += `<div class="text-error pt-1">&#10007; ${uncoveredCount} type${uncoveredCount > 1 ? 's' : ''} — no default channel</div>`;
             }
             return h;
           }
@@ -1187,7 +1222,7 @@
             const projectTip = buildTipHtml(project.id, null, null);
 
             html += `<div class="mb-3">`;
-            html += `<div class="tooltip tooltip-right"><div class="tooltip-content p-3 text-xs space-y-0.5 w-max max-w-xs">${projectTip}</div>` +
+            html += `<div class="tooltip tooltip-right"><div class="tooltip-content p-3 text-xs text-left space-y-0.5 w-max max-w-xs">${projectTip}</div>` +
               `<span class="font-mono text-xs font-semibold py-1 px-2 rounded cursor-help inline-block" style="background-color:${cellColor(projectRatio)}">${esc(project.slug)}</span></div>`;
 
             for (const group of Object.values(byEnv)) {
@@ -1198,14 +1233,14 @@
               const envTip = buildTipHtml(project.id, group.env.id, null);
 
               html += `<div class="ml-4">`;
-              html += `<div class="tooltip tooltip-right"><div class="tooltip-content p-3 text-xs space-y-0.5 w-max max-w-xs">${envTip}</div>` +
+              html += `<div class="tooltip tooltip-right"><div class="tooltip-content p-3 text-xs text-left space-y-0.5 w-max max-w-xs">${envTip}</div>` +
                 `<span class="font-mono text-xs py-1 px-2 rounded cursor-help inline-block" style="background-color:${cellColor(envRatio)}">${esc(group.env.slug)}${baseTag}</span></div>`;
 
               for (const t of group.apps) {
                 const ratio = coverageRatio(t.project.id, t.env.id, t.app.id);
                 const appTip = buildTipHtml(t.project.id, t.env.id, t.app.id);
 
-                html += `<div class="ml-4"><div class="tooltip tooltip-right"><div class="tooltip-content p-3 text-xs space-y-0.5 w-max max-w-xs">${appTip}</div>` +
+                html += `<div class="ml-4"><div class="tooltip tooltip-right"><div class="tooltip-content p-3 text-xs text-left space-y-0.5 w-max max-w-xs">${appTip}</div>` +
                   `<span class="rounded px-3 py-1 cursor-help font-mono text-xs inline-block" style="background-color:${cellColor(ratio)}">${esc(t.app.slug)}</span></div></div>`;
               }
 
