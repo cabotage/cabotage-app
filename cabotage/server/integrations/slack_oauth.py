@@ -390,19 +390,31 @@ def get_slack_channels(organization):
         return []
 
     try:
-        resp = http_requests.get(
-            "https://slack.com/api/conversations.list",
-            headers={"Authorization": f"Bearer {token}"},
-            params={"types": "public_channel,private_channel", "limit": 200},
-            timeout=10,
-        )
-        data = resp.json()
-        if data.get("ok"):
-            return [
-                {"id": ch["id"], "name": ch["name"]}
-                for ch in data.get("channels", [])
-                if not ch.get("is_archived")
-            ]
+        channels = []
+        cursor = None
+        while True:
+            params = {
+                "types": "public_channel,private_channel",
+                "limit": 200,
+            }
+            if cursor:
+                params["cursor"] = cursor
+            resp = http_requests.get(
+                "https://slack.com/api/conversations.list",
+                headers={"Authorization": f"Bearer {token}"},
+                params=params,
+                timeout=10,
+            )
+            data = resp.json()
+            if not data.get("ok"):
+                break
+            for ch in data.get("channels", []):
+                if not ch.get("is_archived"):
+                    channels.append({"id": ch["id"], "name": ch["name"]})
+            cursor = data.get("response_metadata", {}).get("next_cursor")
+            if not cursor:
+                break
+        return channels
     except http_requests.RequestException:
         log.warning("Failed to fetch Slack channels", exc_info=True)
 
