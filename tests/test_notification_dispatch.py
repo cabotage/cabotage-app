@@ -681,6 +681,151 @@ class TestDispatchPipelineNotification:
             assert "Release created" in msg["text"]
             assert msg["slack_attachments"][0]["color"] == "#2ecc71"
 
+    def test_failure_only_route_receives_errors(
+        self, db_session, org, project, application, app_env
+    ):
+        route = NotificationRoute(
+            organization_id=org.id,
+            notification_types=["pipeline.deploy_failed"],
+            integration="slack",
+            channel_id="C_FAILURES",
+            channel_name="#failures",
+            enabled=True,
+        )
+        db_session.add(route)
+        db_session.flush()
+
+        with patch.object(send_notification, "delay") as mock_delay:
+            _dispatch_pipeline_notification_impl(
+                "pipeline.deploy",
+                "Deployment",
+                str(uuid.uuid4()),
+                str(org.id),
+                str(application.id),
+                str(app_env.id),
+                error="Pod crash loop",
+            )
+            mock_delay.assert_called_once()
+            assert mock_delay.call_args[0][2] == "C_FAILURES"
+
+    def test_failure_only_route_skips_started(
+        self, db_session, org, project, application, app_env
+    ):
+        route = NotificationRoute(
+            organization_id=org.id,
+            notification_types=["pipeline.deploy_failed"],
+            integration="slack",
+            channel_id="C_FAILURES",
+            channel_name="#failures",
+            enabled=True,
+        )
+        db_session.add(route)
+        db_session.flush()
+
+        with patch.object(send_notification, "delay") as mock_delay:
+            _dispatch_pipeline_notification_impl(
+                "pipeline.deploy",
+                "Deployment",
+                str(uuid.uuid4()),
+                str(org.id),
+                str(application.id),
+                str(app_env.id),
+            )
+            mock_delay.assert_not_called()
+
+    def test_failure_only_route_skips_completion(
+        self, db_session, org, project, application, app_env
+    ):
+        route = NotificationRoute(
+            organization_id=org.id,
+            notification_types=["pipeline.deploy_failed"],
+            integration="slack",
+            channel_id="C_FAILURES",
+            channel_name="#failures",
+            enabled=True,
+        )
+        db_session.add(route)
+        db_session.flush()
+
+        with patch.object(send_notification, "delay") as mock_delay:
+            _dispatch_pipeline_notification_impl(
+                "pipeline.deploy",
+                "Deployment",
+                str(uuid.uuid4()),
+                str(org.id),
+                str(application.id),
+                str(app_env.id),
+                complete=True,
+            )
+            mock_delay.assert_not_called()
+
+    def test_failure_deduplicates_with_base_route(
+        self, db_session, org, project, application, app_env
+    ):
+        """A route matching both pipeline.deploy and pipeline.deploy_failed
+        should only produce one notification, not two."""
+        route = NotificationRoute(
+            organization_id=org.id,
+            notification_types=["pipeline.deploy", "pipeline.deploy_failed"],
+            integration="slack",
+            channel_id="C_ALL",
+            channel_name="#all",
+            enabled=True,
+        )
+        db_session.add(route)
+        db_session.flush()
+
+        with patch.object(send_notification, "delay") as mock_delay:
+            _dispatch_pipeline_notification_impl(
+                "pipeline.deploy",
+                "Deployment",
+                str(uuid.uuid4()),
+                str(org.id),
+                str(application.id),
+                str(app_env.id),
+                error="Timeout",
+            )
+            mock_delay.assert_called_once()
+
+    def test_failure_merges_separate_routes(
+        self, db_session, org, project, application, app_env
+    ):
+        """A base route to one channel and a failure route to another
+        should both fire on error."""
+        base_route = NotificationRoute(
+            organization_id=org.id,
+            notification_types=["pipeline.image_build"],
+            integration="slack",
+            channel_id="C_BUILDS",
+            channel_name="#builds",
+            enabled=True,
+        )
+        failure_route = NotificationRoute(
+            organization_id=org.id,
+            notification_types=["pipeline.image_build_failed"],
+            integration="slack",
+            channel_id="C_ONCALL",
+            channel_name="#oncall",
+            enabled=True,
+        )
+        db_session.add(base_route)
+        db_session.add(failure_route)
+        db_session.flush()
+
+        with patch.object(send_notification, "delay") as mock_delay:
+            _dispatch_pipeline_notification_impl(
+                "pipeline.image_build",
+                "Image",
+                str(uuid.uuid4()),
+                str(org.id),
+                str(application.id),
+                str(app_env.id),
+                error="Dockerfile not found",
+            )
+            assert mock_delay.call_count == 2
+            channels = {call.args[2] for call in mock_delay.call_args_list}
+            assert channels == {"C_BUILDS", "C_ONCALL"}
+
 
 # --- _format_duration ---
 
@@ -950,6 +1095,31 @@ class TestDispatchAutodeployNotification:
             assert "Triggered by: push" in msg["text"]
             slack_text = msg["slack_attachments"][0]["blocks"][0]["text"]["text"]
             assert "deadbee" in slack_text
+
+    def test_failure_route_receives_autodeploy_error(
+        self, db_session, org, project, application, app_env
+    ):
+        route = NotificationRoute(
+            organization_id=org.id,
+            notification_types=["pipeline.deploy_failed"],
+            integration="discord",
+            channel_id="D_ONCALL",
+            channel_name="oncall",
+            enabled=True,
+        )
+        db_session.add(route)
+        db_session.flush()
+
+        with patch.object(send_notification, "delay") as mock_delay:
+            dispatch_autodeploy_notification(
+                "image_failed",
+                "ae000000-0000-0000-0000-000000000099",
+                application,
+                app_env,
+                error="OOM during build",
+            )
+            mock_delay.assert_called_once()
+            assert mock_delay.call_args[0][2] == "D_ONCALL"
 
     def test_uses_autodeploy_object_type(
         self, db_session, org, project, application, app_env
