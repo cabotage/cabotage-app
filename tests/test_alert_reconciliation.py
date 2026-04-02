@@ -378,3 +378,60 @@ class TestReconcileAlerts:
             object_type="Alert", object_id=alert.id
         ).all()
         assert any(a.verb == "firing" for a in activities)
+
+    @patch("cabotage.celery.tasks.alerting.dispatch_alert_notification")
+    @patch("cabotage.celery.tasks.alerting.requests.get")
+    def test_dispatches_notification_for_missed_webhook(
+        self, mock_get, mock_dispatch, app, db_session
+    ):
+        """If an alert is firing but was never notified (last_notified_at is
+        None), the reconciler should dispatch a notification for it."""
+        fingerprint = uuid.uuid4().hex[:16]
+
+        existing = Alert(
+            fingerprint=fingerprint,
+            status="firing",
+            alertname="ResidentDeploymentOOMKilled",
+            labels={"alertname": "ResidentDeploymentOOMKilled", "severity": "critical"},
+            annotations={"summary": "OOM killed"},
+            starts_at=STARTS_AT,
+            last_notified_at=None,
+        )
+        db_session.add(existing)
+        db_session.commit()
+        alert_id = existing.id
+
+        mock_get.return_value = _mock_am_response([_am_v2_alert(fingerprint)])
+
+        _run_reconcile(db_session)
+
+        mock_dispatch.delay.assert_any_call(str(alert_id))
+
+    @patch("cabotage.celery.tasks.alerting.dispatch_alert_notification")
+    @patch("cabotage.celery.tasks.alerting.requests.get")
+    def test_skips_notification_when_already_notified(
+        self, mock_get, mock_dispatch, app, db_session
+    ):
+        """If a firing alert was already notified, the reconciler should NOT
+        re-dispatch when no state change occurred."""
+        fingerprint = uuid.uuid4().hex[:16]
+
+        existing = Alert(
+            fingerprint=fingerprint,
+            status="firing",
+            alertname="ResidentDeploymentOOMKilled",
+            labels={"alertname": "ResidentDeploymentOOMKilled", "severity": "critical"},
+            annotations={"summary": "OOM killed"},
+            starts_at=STARTS_AT,
+            last_notified_at=datetime(2026, 3, 30, 18, 0, 0),
+        )
+        db_session.add(existing)
+        db_session.commit()
+        alert_id = str(existing.id)
+
+        mock_get.return_value = _mock_am_response([_am_v2_alert(fingerprint)])
+
+        _run_reconcile(db_session)
+
+        dispatched_ids = [c.args[0] for c in mock_dispatch.delay.call_args_list]
+        assert alert_id not in dispatched_ids
