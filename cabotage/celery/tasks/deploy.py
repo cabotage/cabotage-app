@@ -3003,7 +3003,9 @@ def deploy_release(deployment):
                 image_metadata=deployment.deploy_metadata,
             )
         except Exception:
-            log.warning("Failed to dispatch autodeploy completion", exc_info=True)
+            logging.getLogger(__name__).warning(
+                "Failed to dispatch autodeploy completion", exc_info=True
+            )
 
 
 def fake_deploy_release(deployment):
