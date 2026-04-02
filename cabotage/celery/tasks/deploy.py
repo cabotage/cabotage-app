@@ -3016,6 +3016,23 @@ def deploy_release(deployment):
             logging.getLogger(__name__).warning(
                 "Failed to dispatch autodeploy completion", exc_info=True
             )
+    else:
+        try:
+            dispatch_pipeline_notification.delay(
+                "pipeline.deploy",
+                "Deployment",
+                str(deployment.id),
+                str(deployment.application.project.organization_id),
+                str(deployment.application.id),
+                str(deployment.application_environment_id)
+                if deployment.application_environment_id
+                else None,
+                complete=True,
+            )
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "Failed to dispatch deploy completion notification", exc_info=True
+            )
 
 
 def fake_deploy_release(deployment):

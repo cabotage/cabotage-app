@@ -21,9 +21,14 @@ from cabotage.server.wsgi import app as _app
 
 from cabotage.celery.tasks.notify import (
     ALERTNAME_TYPE_MAP,
+    AUTODEPLOY_STAGES,
+    _build_message,
     _dispatch_alert_notification_impl,
     _dispatch_pipeline_notification_impl,
+    _format_duration,
+    dispatch_autodeploy_notification,
     format_alert_message,
+    format_autodeploy_message,
     format_pipeline_message,
     resolve_routes,
     send_notification,
@@ -71,7 +76,12 @@ def environment(db_session, project):
 
 @pytest.fixture
 def application(db_session, project):
-    a = Application(name="webapp", slug="webapp", project_id=project.id)
+    a = Application(
+        name="webapp",
+        slug="webapp",
+        project_id=project.id,
+        github_repository="acme/webapp",
+    )
     db_session.add(a)
     db_session.flush()
     return a
@@ -205,7 +215,7 @@ class TestFormatPipelineMessage:
             "Triggered by: bob",
             complete=True,
         )
-        assert "Release complete" in result["text"]
+        assert "Release created" in result["text"]
         assert result["slack_attachments"][0]["color"] == "#2ecc71"
 
 
@@ -643,3 +653,329 @@ class TestDispatchPipelineNotification:
             )
             mock_delay.assert_called_once()
             assert "Deploy failed" in mock_delay.call_args[0][6]["text"]
+
+    def test_dispatches_pipeline_completion(
+        self, db_session, org, project, application, app_env
+    ):
+        route = NotificationRoute(
+            organization_id=org.id,
+            notification_types=["pipeline.release"],
+            integration="slack",
+            channel_id="C_BUILDS",
+            channel_name="#builds",
+            enabled=True,
+        )
+        db_session.add(route)
+        db_session.flush()
+
+        with patch.object(send_notification, "delay") as mock_delay:
+            _dispatch_pipeline_notification_impl(
+                "pipeline.release",
+                "Release",
+                str(uuid.uuid4()),
+                str(org.id),
+                str(application.id),
+                str(app_env.id),
+                complete=True,
+            )
+            mock_delay.assert_called_once()
+            msg = mock_delay.call_args[0][6]
+            assert "Release created" in msg["text"]
+            assert msg["slack_attachments"][0]["color"] == "#2ecc71"
+
+
+# --- _format_duration ---
+
+
+class TestFormatDuration:
+    def test_seconds_only(self):
+        assert (
+            _format_duration(
+                datetime(2026, 1, 1, 0, 0, 0), datetime(2026, 1, 1, 0, 0, 45)
+            )
+            == "45s"
+        )
+
+    def test_minutes_and_seconds(self):
+        assert (
+            _format_duration(
+                datetime(2026, 1, 1, 0, 0, 0), datetime(2026, 1, 1, 0, 12, 34)
+            )
+            == "12m 34s"
+        )
+
+    def test_hours_and_minutes(self):
+        assert (
+            _format_duration(
+                datetime(2026, 1, 1, 0, 0, 0), datetime(2026, 1, 1, 2, 15, 0)
+            )
+            == "2h 15m"
+        )
+
+
+# --- _build_message ---
+
+
+class TestBuildMessage:
+    def test_basic_message(self):
+        msg = _build_message("Title", "#ff0000", 0xFF0000, ["line1", "line2"])
+        assert "Title" in msg["text"]
+        assert "line1" in msg["text"]
+        assert msg["slack_attachments"][0]["color"] == "#ff0000"
+        assert msg["discord_embeds"][0]["color"] == 0xFF0000
+        assert msg["discord_components"] is None
+
+    def test_with_links(self):
+        msg = _build_message(
+            "Title",
+            "#ff0000",
+            0xFF0000,
+            ["body"],
+            links={"View": "https://example.com"},
+        )
+        # Slack: actions block with button
+        blocks = msg["slack_attachments"][0]["blocks"]
+        actions = [b for b in blocks if b["type"] == "actions"]
+        assert len(actions) == 1
+        assert actions[0]["elements"][0]["text"]["text"] == "View"
+        assert actions[0]["elements"][0]["url"] == "https://example.com"
+        # Discord: button component
+        assert msg["discord_components"] is not None
+        assert msg["discord_components"][0]["components"][0]["label"] == "View"
+
+    def test_with_multiple_links(self):
+        msg = _build_message(
+            "Title",
+            "#ff0000",
+            0xFF0000,
+            [],
+            links={"A": "https://a.com", "B": "https://b.com"},
+        )
+        actions = [
+            b for b in msg["slack_attachments"][0]["blocks"] if b["type"] == "actions"
+        ]
+        assert len(actions[0]["elements"]) == 2
+        assert len(msg["discord_components"][0]["components"]) == 2
+
+    def test_with_error(self):
+        msg = _build_message("Title", "#ff0000", 0xFF0000, [], error="something broke")
+        # Slack: code block
+        section = msg["slack_attachments"][0]["blocks"][0]
+        assert "```something broke```" in section["text"]["text"]
+        # Discord: code block
+        assert "```something broke```" in msg["discord_embeds"][0]["description"]
+        # Fallback: plain text
+        assert "something broke" in msg["text"]
+
+    def test_with_slack_extra(self):
+        msg = _build_message(
+            "Title",
+            "#ff0000",
+            0xFF0000,
+            ["shared"],
+            slack_extra=["slack only"],
+        )
+        section = msg["slack_attachments"][0]["blocks"][0]
+        assert "slack only" in section["text"]["text"]
+        assert "slack only" not in msg["discord_embeds"][0]["description"]
+
+    def test_with_discord_extra(self):
+        msg = _build_message(
+            "Title",
+            "#ff0000",
+            0xFF0000,
+            ["shared"],
+            discord_extra=["discord only"],
+        )
+        assert "discord only" in msg["discord_embeds"][0]["description"]
+        section = msg["slack_attachments"][0]["blocks"][0]
+        assert "discord only" not in section["text"]["text"]
+
+
+# --- Auto-deploy formatting ---
+
+
+class TestFormatAutodeployMessage:
+    def test_all_stages_have_titles(self):
+        for stage in AUTODEPLOY_STAGES:
+            msg = format_autodeploy_message(stage, "org / proj / app")
+            assert msg["text"]
+            assert msg["slack_attachments"]
+            assert msg["discord_embeds"]
+
+    def test_building_is_blue(self):
+        msg = format_autodeploy_message("image_building", "org / proj / app")
+        assert msg["slack_attachments"][0]["color"] == "#3498db"
+
+    def test_failed_is_red(self):
+        msg = format_autodeploy_message("image_failed", "org / proj / app", error="oom")
+        assert msg["slack_attachments"][0]["color"] == "#e74c3c"
+        assert "```oom```" in msg["slack_attachments"][0]["blocks"][0]["text"]["text"]
+
+    def test_complete_is_green(self):
+        msg = format_autodeploy_message("complete", "org / proj / app")
+        assert msg["slack_attachments"][0]["color"] == "#2ecc71"
+
+    def test_commit_link_per_platform(self):
+        msg = format_autodeploy_message(
+            "image_building",
+            "org / proj / app",
+            repo="owner/repo",
+            short_sha="abc1234",
+            commit_url="https://github.com/owner/repo/commit/abc1234full",
+        )
+        # Slack: mrkdwn link
+        slack_text = msg["slack_attachments"][0]["blocks"][0]["text"]["text"]
+        assert (
+            "<https://github.com/owner/repo/commit/abc1234full|owner/repo @ abc1234>"
+            in slack_text
+        )
+        # Discord: markdown link
+        assert (
+            "[owner/repo @ abc1234](https://github.com/owner/repo/commit/abc1234full)"
+            in msg["discord_embeds"][0]["description"]
+        )
+
+    def test_accumulated_buttons(self):
+        msg = format_autodeploy_message(
+            "deploying",
+            "org / proj / app",
+            image_url="https://example.com/images/1",
+            release_url="https://example.com/releases/1",
+            deploy_url="https://example.com/deployments/1",
+        )
+        # Slack: 3 buttons
+        actions = [
+            b for b in msg["slack_attachments"][0]["blocks"] if b["type"] == "actions"
+        ]
+        assert len(actions[0]["elements"]) == 3
+        labels = [e["text"]["text"] for e in actions[0]["elements"]]
+        assert labels == ["View Image", "View Release", "View Deploy"]
+        # Discord: 3 buttons
+        assert len(msg["discord_components"][0]["components"]) == 3
+
+    def test_image_only_button(self):
+        msg = format_autodeploy_message(
+            "image_building",
+            "org / proj / app",
+            image_url="https://example.com/images/1",
+        )
+        actions = [
+            b for b in msg["slack_attachments"][0]["blocks"] if b["type"] == "actions"
+        ]
+        assert len(actions[0]["elements"]) == 1
+        assert actions[0]["elements"][0]["text"]["text"] == "View Image"
+
+    def test_no_buttons_without_urls(self):
+        msg = format_autodeploy_message("image_building", "org / proj / app")
+        actions = [
+            b for b in msg["slack_attachments"][0]["blocks"] if b["type"] == "actions"
+        ]
+        assert len(actions) == 0
+        assert msg["discord_components"] is None
+
+    def test_initiator_in_body(self):
+        msg = format_autodeploy_message(
+            "image_building",
+            "org / proj / app",
+            initiator="Triggered by: alice",
+        )
+        assert "Triggered by: alice" in msg["text"]
+
+
+# --- dispatch_autodeploy_notification ---
+
+
+class TestDispatchAutodeployNotification:
+    def test_dispatches_with_metadata(
+        self, db_session, org, project, application, app_env
+    ):
+        from cabotage.server.models.auth import SlackIntegration
+
+        slack = SlackIntegration(
+            organization_id=org.id,
+            team_id="T001",
+            default_channel_id="C_DEFAULT",
+            default_channel_name="#general",
+        )
+        db_session.add(slack)
+        db_session.flush()
+
+        with patch.object(send_notification, "delay") as mock_delay:
+            dispatch_autodeploy_notification(
+                "image_building",
+                "ae000000-0000-0000-0000-000000000001",
+                application,
+                app_env,
+                image_url="https://example.com/images/1",
+                image_metadata={
+                    "auto_deploy": True,
+                    "triggered_by": "admin",
+                    "sha": "abc1234def5678",
+                },
+            )
+            assert mock_delay.called
+            msg = mock_delay.call_args[0][6]
+            assert "Triggered by: admin" in msg["text"]
+            # SHA is in platform-specific body, not plain text fallback
+            slack_text = msg["slack_attachments"][0]["blocks"][0]["text"]["text"]
+            assert "abc1234" in slack_text
+            assert "abc1234" in msg["discord_embeds"][0]["description"]
+
+    def test_dispatches_push_trigger(
+        self, db_session, org, project, application, app_env
+    ):
+        from cabotage.server.models.auth import SlackIntegration
+
+        slack = SlackIntegration(
+            organization_id=org.id,
+            team_id="T001",
+            default_channel_id="C_DEFAULT",
+            default_channel_name="#general",
+        )
+        db_session.add(slack)
+        db_session.flush()
+
+        with patch.object(send_notification, "delay") as mock_delay:
+            dispatch_autodeploy_notification(
+                "image_building",
+                "ae000000-0000-0000-0000-000000000002",
+                application,
+                app_env,
+                image_metadata={
+                    "auto_deploy": True,
+                    "sha": "deadbeef12345678",
+                },
+            )
+            assert mock_delay.called
+            msg = mock_delay.call_args[0][6]
+            assert "Triggered by: push" in msg["text"]
+            slack_text = msg["slack_attachments"][0]["blocks"][0]["text"]["text"]
+            assert "deadbee" in slack_text
+
+    def test_uses_autodeploy_object_type(
+        self, db_session, org, project, application, app_env
+    ):
+        from cabotage.server.models.auth import SlackIntegration
+
+        slack = SlackIntegration(
+            organization_id=org.id,
+            team_id="T001",
+            default_channel_id="C_DEFAULT",
+            default_channel_name="#general",
+        )
+        db_session.add(slack)
+        db_session.flush()
+
+        with patch.object(send_notification, "delay") as mock_delay:
+            dispatch_autodeploy_notification(
+                "deploying",
+                "ae000000-0000-0000-0000-000000000003",
+                application,
+                app_env,
+            )
+            assert mock_delay.called
+            # object_type should be "AutoDeploy"
+            assert mock_delay.call_args[0][3] == "AutoDeploy"
+            # object_id should be the image_id
+            assert mock_delay.call_args[0][4] == "ae000000-0000-0000-0000-000000000003"
