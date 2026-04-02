@@ -139,6 +139,11 @@ def celery_init_app(app):
             "schedule": 15.0,
             "args": None,
         },
+        "notification-reconciler": {
+            "task": "cabotage.celery.tasks.notify.reconcile_notifications",
+            "schedule": 15.0,
+            "args": None,
+        },
     }
     app.extensions["celery"] = celery_app
     return celery_app
