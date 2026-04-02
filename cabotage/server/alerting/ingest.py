@@ -129,27 +129,36 @@ def _resolve_by_deployment(labels):
     if not deployment_name:
         return None, None
 
-    query = (
-        Application.query.join(Project)
-        .join(Project.organization)
-        .filter(
-            Application.deleted_at.is_(None),
-            (Project.k8s_identifier + "-" + Application.k8s_identifier)
-            == deployment_name,
+    # Try each possible split of deployment_name into (project_k8s, app_k8s)
+    # and query with exact column equality (index-friendly). This avoids a
+    # SQL concat expression which prevents index usage.
+    parts = deployment_name.split("-")
+    for i in range(1, len(parts)):
+        proj_k8s = "-".join(parts[:i])
+        app_k8s = "-".join(parts[i:])
+
+        query = (
+            Application.query.join(Project)
+            .join(Project.organization)
+            .filter(
+                Application.deleted_at.is_(None),
+                Project.k8s_identifier == proj_k8s,
+                Application.k8s_identifier == app_k8s,
+            )
         )
-    )
 
-    if namespace:
-        # Try each matching application and see if the namespace resolves
-        for application in query.all():
-            app_env, matched = _resolve_app_env_from_namespace(application, namespace)
-            if matched:
-                return application, app_env
-        return None, None
+        if namespace:
+            for application in query.all():
+                app_env, matched = _resolve_app_env_from_namespace(
+                    application, namespace
+                )
+                if matched:
+                    return application, app_env
+        else:
+            application = query.first()
+            if application:
+                return application, application.default_app_env
 
-    application = query.first()
-    if application:
-        return application, application.default_app_env
     return None, None
 
 
