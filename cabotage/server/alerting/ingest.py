@@ -157,13 +157,12 @@ def _resolve_by_traefik_service(labels):
     """Resolve via Traefik service label (ingress-level alerts).
 
     Traefik router names follow the pattern:
-      {namespace}-{ingress_name}-{hostname_sanitized}-{port}@kubernetes{class}
+      {namespace}-{resource_prefix}-{ingress}-{resource_prefix}-{process}-{port}@kubernetes{class}
 
-    The ingress name is {resource_prefix}-{process_name}, and resource_prefix
-    is safe_k8s_name(project.k8s_identifier, app.k8s_identifier).
+    The resource_prefix is safe_k8s_name(project.k8s_identifier, app.k8s_identifier).
 
-    We match by checking that the service label contains the concatenation of
-    project.k8s_identifier-app.k8s_identifier (the resource prefix).
+    We match using hyphen-delimited boundaries to avoid false positives where
+    one app's k8s_identifier is a prefix of another's (e.g. "foo" vs "foobar").
     """
     service = labels.get("service", "")
     if not service or "@" not in service:
@@ -171,13 +170,15 @@ def _resolve_by_traefik_service(labels):
 
     router_name = service.split("@")[0]
 
+    # Wrap with delimiters so "proj-foo" won't match "proj-foobar"
+    resource_prefix = Project.k8s_identifier + "-" + Application.k8s_identifier
     application = (
         Application.query.join(Project)
         .join(Project.organization)
         .filter(
             Application.deleted_at.is_(None),
-            db.literal(router_name).contains(
-                Project.k8s_identifier + "-" + Application.k8s_identifier
+            db.literal(f"-{router_name}-").contains(
+                db.func.concat("-", resource_prefix, "-")
             ),
         )
         .first()
