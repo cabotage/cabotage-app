@@ -417,6 +417,7 @@ class TestSendNotification:
             patch("cabotage.celery.tasks.notify.Organization.query") as mock_org_q,
             patch("cabotage.celery.tasks.notify.SentNotification.query") as mock_sent_q,
             patch("cabotage.celery.tasks.notify.db.session.commit"),
+            patch("cabotage.celery.tasks.notify.db.session.execute"),
         ):
             mock_org_q.filter_by.return_value.first.return_value = org
             mock_sent_q.filter_by.return_value.first.return_value = sent

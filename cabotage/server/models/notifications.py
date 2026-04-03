@@ -170,6 +170,7 @@ class SentNotification(Model):
             "object_id",
             "integration",
             "channel_id",
+            unique=True,
         ),
     )
 
