@@ -5,7 +5,9 @@ pipeline events (image build, release, deploy). Messages are tracked
 via SentNotification so they can be edited in place as state changes.
 """
 
+import hashlib
 import logging
+import struct
 import uuid as _uuid
 from datetime import UTC, datetime, timedelta
 
@@ -549,7 +551,11 @@ def send_notification(
     # Advisory lock keyed on the notification identity. This serializes
     # concurrent workers for the same (object_type, object_id, integration,
     # channel_id) tuple so only one sends while others wait.
-    lock_key = hash((object_type, str(object_id), integration, channel_id)) % (2**63)
+    # Use SHA-256 (not Python hash()) for cross-process determinism.
+    lock_hash = hashlib.sha256(
+        f"{object_type}:{object_id}:{integration}:{channel_id}".encode()
+    ).digest()
+    lock_key = struct.unpack(">q", lock_hash[:8])[0]
     db.session.execute(sa.text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
 
     existing = SentNotification.query.filter_by(
