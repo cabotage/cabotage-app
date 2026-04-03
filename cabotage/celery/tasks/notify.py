@@ -5,11 +5,15 @@ pipeline events (image build, release, deploy). Messages are tracked
 via SentNotification so they can be edited in place as state changes.
 """
 
+import hashlib
 import logging
+import struct
 import uuid as _uuid
 from datetime import UTC, datetime, timedelta
 
 from celery import shared_task
+import sqlalchemy as sa
+from sqlalchemy.exc import IntegrityError
 
 from cabotage.server import db
 from cabotage.server.integrations.discord_oauth import (
@@ -544,6 +548,16 @@ def send_notification(
         log.warning("Organization %s not found for notification", organization_id)
         return
 
+    # Advisory lock keyed on the notification identity. This serializes
+    # concurrent workers for the same (object_type, object_id, integration,
+    # channel_id) tuple so only one sends while others wait.
+    # Use SHA-256 (not Python hash()) for cross-process determinism.
+    lock_hash = hashlib.sha256(
+        f"{object_type}:{object_id}:{integration}:{channel_id}".encode()
+    ).digest()
+    lock_key = struct.unpack(">q", lock_hash[:8])[0]
+    db.session.execute(sa.text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
+
     existing = SentNotification.query.filter_by(
         object_type=object_type,
         object_id=object_id,
@@ -598,7 +612,12 @@ def send_notification(
                 external_message_id=external_id,
             )
             db.session.add(sent)
-            db.session.commit()
+            try:
+                db.session.commit()
+            except IntegrityError:
+                # Should not happen with advisory lock, but guard against it
+                db.session.rollback()
+                return
         elif integration == "slack" and not organization.slack_integration:
             # Integration was removed between dispatch and send — don't retry
             return
@@ -611,6 +630,9 @@ def send_notification(
                     f"Failed to send {integration} notification to {channel_id}"
                 )
             )
+    except IntegrityError:
+        db.session.rollback()
+        return
     except Exception as exc:
         raise self.retry(exc=exc)
 
