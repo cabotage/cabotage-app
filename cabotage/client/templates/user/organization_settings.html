@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, render_field, danger_zone_delete %}
+{% from "_macros.html" import icon, resource_path, page_header, render_field, danger_zone_delete, org_tab_nav %}
 
 {% block title %}
   Settings - {{ organization.name }} - Cabotage
@@ -11,6 +11,10 @@
     {'label': 'settings'}
   ]) }}
 {% endblock resource_path %}
+
+{% block tab_bar %}
+  {{ org_tab_nav(organization, 'settings') }}
+{% endblock tab_bar %}
 
 {% block content %}
   {{ page_header('Organization Settings', organization.name) }}
