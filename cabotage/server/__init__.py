@@ -91,10 +91,28 @@ github_app = GitHubApp()
 sock = Sock()
 csrf = CSRFProtect()
 babel = Babel()
+
+
+def _sentry_before_send(event, hint):
+    """Filter out the StopIteration raised by flask-sock to signal
+    gunicorn that a WebSocket connection has closed (not an error)."""
+    exc_info = hint.get("exc_info")
+    if exc_info:
+        exc_type, exc_value, tb = exc_info
+        if exc_type is StopIteration and tb is not None:
+            # Walk to the innermost frame
+            while tb.tb_next:
+                tb = tb.tb_next
+            if "simple_websocket" in (tb.tb_frame.f_code.co_filename or ""):
+                return None
+    return event
+
+
 sentry_sdk.init(
     dsn=os.getenv("SENTRY_DSN"),
     integrations=[FlaskIntegration()],
     release=os.getenv("SOURCE_COMMIT"),
+    before_send=_sentry_before_send,
 )
 
 
