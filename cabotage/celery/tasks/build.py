@@ -26,7 +26,11 @@ from github.Auth import AppAuth as GithubAppAuth
 from github.GithubException import GithubException, UnknownObjectException
 from github.GithubIntegration import GithubIntegration
 
-from cabotage.celery.tasks.deploy import run_deploy, run_job
+from cabotage.celery.tasks.deploy import (
+    _safe_labels_from_application,
+    run_deploy,
+    run_job,
+)
 
 
 from cabotage.server import (
@@ -383,6 +387,7 @@ def build_release_buildkit(release):
                 },
             )
             context_configmap_object = release.release_build_context_configmap
+            safe_labels = _safe_labels_from_application(release.application)
             job_object = kubernetes.client.V1Job(
                 metadata=kubernetes.client.V1ObjectMeta(
                     name=f"releasebuild-{release.build_job_id}",
@@ -393,6 +398,7 @@ def build_release_buildkit(release):
                         "process": "build",
                         "build_id": release.build_job_id,
                         "build-job.cabotage.io": "true",
+                        **safe_labels,
                     },
                 ),
                 spec=kubernetes.client.V1JobSpec(
@@ -410,6 +416,7 @@ def build_release_buildkit(release):
                                 "build_id": release.build_job_id,
                                 "ca-admission.cabotage.io": "true",
                                 "resident-pod.cabotage.io": "true",
+                                **safe_labels,
                             },
                             annotations={
                                 "container.apparmor.security.beta.kubernetes.io/build": "unconfined",  # noqa: E501
@@ -873,6 +880,7 @@ def build_image_buildkit(image: Image):
                     "buildkitd.toml": buildkitd_toml,
                 },
             )
+            safe_labels = _safe_labels_from_application(image.application)
             job_object = kubernetes.client.V1Job(
                 metadata=kubernetes.client.V1ObjectMeta(
                     name=f"imagebuild-{image.build_job_id}",
@@ -883,6 +891,7 @@ def build_image_buildkit(image: Image):
                         "process": "build",
                         "build_id": image.build_job_id,
                         "build-job.cabotage.io": "true",
+                        **safe_labels,
                     },
                 ),
                 spec=kubernetes.client.V1JobSpec(
@@ -900,6 +909,7 @@ def build_image_buildkit(image: Image):
                                 "build_id": image.build_job_id,
                                 "ca-admission.cabotage.io": "true",
                                 "resident-pod.cabotage.io": "true",
+                                **safe_labels,
                             },
                             annotations={
                                 "container.apparmor.security.beta.kubernetes.io/build": "unconfined",  # noqa: E501
@@ -1389,6 +1399,7 @@ def build_omnibus_buildkit(image, release):
             ],
         )
 
+        safe_labels = _safe_labels_from_application(image.application)
         job_object = kubernetes.client.V1Job(
             metadata=kubernetes.client.V1ObjectMeta(
                 name=f"omnibusbuild-{image.build_job_id}",
@@ -1399,6 +1410,7 @@ def build_omnibus_buildkit(image, release):
                     "process": "build",
                     "build_id": image.build_job_id,
                     "build-job.cabotage.io": "true",
+                    **safe_labels,
                 },
             ),
             spec=kubernetes.client.V1JobSpec(
@@ -1416,6 +1428,7 @@ def build_omnibus_buildkit(image, release):
                             "build_id": image.build_job_id,
                             "ca-admission.cabotage.io": "true",
                             "resident-pod.cabotage.io": "true",
+                            **safe_labels,
                         },
                         annotations={
                             "container.apparmor.security.beta.kubernetes.io/image-build": "unconfined",  # noqa: E501

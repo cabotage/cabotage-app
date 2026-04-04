@@ -232,6 +232,37 @@ def k8s_label_value(release):
     return compact_k8s_name(*pairs)
 
 
+def _safe_labels_from_release(release):
+    """Build cabotage.io/-prefixed labels using k8s_identifiers.
+
+    These are collision-safe labels that sit alongside the legacy
+    slug-based labels.
+    """
+    org = release.application.project.organization
+    project = release.application.project
+    app = release.application
+    app_env = release.application_environment
+    labels = {
+        "cabotage.io/organization": org.k8s_identifier,
+        "cabotage.io/project": project.k8s_identifier,
+        "cabotage.io/application": app.k8s_identifier,
+    }
+    if app_env.k8s_identifier is not None:
+        labels["cabotage.io/environment"] = app_env.environment.k8s_identifier
+    return labels
+
+
+def _safe_labels_from_application(application):
+    """Build cabotage.io/-prefixed labels from an Application (for builds)."""
+    org = application.project.organization
+    project = application.project
+    return {
+        "cabotage.io/organization": org.k8s_identifier,
+        "cabotage.io/project": project.k8s_identifier,
+        "cabotage.io/application": application.k8s_identifier,
+    }
+
+
 def render_namespace(release):
     namespace_object = kubernetes.client.V1Namespace(
         metadata=kubernetes.client.V1ObjectMeta(
@@ -769,6 +800,7 @@ def render_service(release, process_name):
     resource_prefix = k8s_resource_prefix(release)
     service_name = f"{resource_prefix}-{process_name}"
     label_value = k8s_label_value(release)
+    safe_labels = _safe_labels_from_release(release)
     service_object = kubernetes.client.V1Service(
         metadata=kubernetes.client.V1ObjectMeta(
             name=service_name,
@@ -776,6 +808,7 @@ def render_service(release, process_name):
                 "resident-service.cabotage.io": "true",
                 "app": resource_prefix,
                 "process": process_name,
+                **safe_labels,
             },
         ),
         spec=kubernetes.client.V1ServiceSpec(
@@ -835,6 +868,7 @@ def render_ingress(release, ingress):
 
     Convenience wrapper that extracts naming context from a Release.
     """
+    safe_labels = _safe_labels_from_release(release)
     return render_ingress_object(
         ingress=ingress,
         resource_prefix=k8s_resource_prefix(release),
@@ -843,6 +877,7 @@ def render_ingress(release, ingress):
             "project": release.application.project.slug,
             "application": release.application.slug,
             "app": k8s_label_value(release),
+            **safe_labels,
         },
         org_k8s_identifier=release.application.project.organization.k8s_identifier,
         process_names=list(release.processes) if release.processes else [],
@@ -1802,6 +1837,7 @@ def render_deployment(
     app_env = release.application_environment
     env_slug = app_env.environment.slug if app_env.environment else ""
     process_counts = app_env.process_counts or {}
+    safe_labels = _safe_labels_from_release(release)
     pod_labels = {
         "organization": release.application.project.organization.slug,
         "project": release.application.project.slug,
@@ -1813,6 +1849,7 @@ def render_deployment(
         "deployment": str(deployment_id),
         "ca-admission.cabotage.io": "true",
         "resident-pod.cabotage.io": "true",
+        **safe_labels,
     }
     deployment_object = kubernetes.client.V1Deployment(
         metadata=kubernetes.client.V1ObjectMeta(
@@ -1824,6 +1861,7 @@ def render_deployment(
                 "process": process_name,
                 "app": label_value,
                 "resident-deployment.cabotage.io": "true",
+                **safe_labels,
             },
         ),
         spec=kubernetes.client.V1DeploymentSpec(
@@ -2015,6 +2053,7 @@ def resize_deployment(namespace, release, process_name, pod_class_name):
 
 def render_job(namespace, release, service_account_name, process_name, job_id):
     label_value = k8s_label_value(release)
+    safe_labels = _safe_labels_from_release(release)
     job_object = kubernetes.client.V1Job(
         metadata=kubernetes.client.V1ObjectMeta(
             name=f"deployment-{job_id}",
@@ -2027,6 +2066,7 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
                 "release": str(release.version),
                 "deployment": job_id,
                 "resident-job.cabotage.io": "true",
+                **safe_labels,
             },
         ),
         spec=kubernetes.client.V1JobSpec(
@@ -2045,6 +2085,7 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
                         "deployment": job_id,
                         "ca-admission.cabotage.io": "true",
                         "resident-pod.cabotage.io": "true",
+                        **safe_labels,
                     }
                 ),
                 spec=render_podspec(release, process_name, service_account_name),
@@ -2091,6 +2132,7 @@ def render_cronjob(
         )
     process_counts = app_env.process_counts or {}
     suspended = process_counts.get(process_name, 0) == 0
+    safe_labels = _safe_labels_from_release(release)
     common_labels = {
         "organization": release.application.project.organization.slug,
         "project": release.application.project.slug,
@@ -2100,6 +2142,7 @@ def render_cronjob(
         "environment": env_slug,
         "release": str(release.version),
         "deployment": str(deployment_id),
+        **safe_labels,
     }
     job_labels = {
         **common_labels,
@@ -2121,6 +2164,7 @@ def render_cronjob(
                 "process": process_name,
                 "app": label_value,
                 "resident-cronjob.cabotage.io": "true",
+                **safe_labels,
             },
         ),
         spec=kubernetes.client.V1CronJobSpec(
