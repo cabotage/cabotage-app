@@ -4569,12 +4569,15 @@ def deployment_logs_query(org_slug, project_slug, app_slug, deployment_id):
         return jsonify({"error": "not configured"}), 404
 
     namespace = _compute_observe_namespace(application, app_env)
+    org = application.project.organization
     process_names = sorted(app_env.process_counts or {})
     selectors = [
         f'namespace="{namespace}"',
         f'deployment="{deployment_id}"',
     ]
-    return _loki_query_response(selectors, process_names)
+    return _loki_query_response(
+        selectors, process_names, tenant_id=_loki_tenant_id(namespace, org)
+    )
 
 
 @user_blueprint.route("/deployment/<deployment_id>")
@@ -4917,7 +4920,10 @@ def application_clear_cache(org_slug, project_slug, app_slug):
 
         buildkit_image = current_app.config["BUILDKIT_IMAGE"]
 
+        from cabotage.celery.tasks.deploy import _safe_labels_from_application
+
         volume_claim = fetch_image_build_cache_volume_claim(core_api_instance, image)
+        safe_labels = _safe_labels_from_application(image.application)
         job_object = kubernetes.client.V1Job(
             metadata=kubernetes.client.V1ObjectMeta(
                 name=f"clear-cache-{volume_claim.metadata.name}"[:63],
@@ -4927,6 +4933,7 @@ def application_clear_cache(org_slug, project_slug, app_slug):
                     "application": image.application.slug,
                     "process": "clear-cache",
                     "resident-job.cabotage.io": "true",
+                    **safe_labels,
                 },
             ),
             spec=kubernetes.client.V1JobSpec(
@@ -4943,6 +4950,7 @@ def application_clear_cache(org_slug, project_slug, app_slug):
                             "process": "clear-cache",
                             "ca-admission.cabotage.io": "true",
                             "resident-pod.cabotage.io": "true",
+                            **safe_labels,
                         },
                         annotations={
                             "container.apparmor.security.beta.kubernetes.io/clear-cache": "unconfined",  # noqa: E501
@@ -5501,11 +5509,37 @@ def organization_demote_user(org_slug):
     return redirect(url_for("user.organization", org_slug=org_slug) + "#members")
 
 
+def _loki_tenant_id(namespace, organization):
+    """Build a Loki tenant ID that includes the org-only namespace as fallback.
+
+    Apps that were previously non-environment-aware had data stored under
+    just the org k8s_identifier.  Including it ensures old logs remain
+    queryable after the app is enrolled into environments.
+    """
+    org_k8s = organization.k8s_identifier
+    tenant_ids = {namespace, org_k8s}
+    return "|".join(sorted(tenant_ids))
+
+
+def _project_tenant_ids(organization, project):
+    """Collect all namespace-based tenant IDs for a project.
+
+    Returns a pipe-separated string suitable for X-Scope-OrgID.
+    """
+    org_k8s = organization.k8s_identifier
+    tenant_ids = {org_k8s}
+    for env in project.active_environments:
+        if env.deleted_at is not None:
+            continue
+        tenant_ids.add(safe_k8s_name(org_k8s, env.k8s_identifier))
+    return "|".join(sorted(tenant_ids))
+
+
 def _mimir_connection():
-    """Return (mimir_url, verify) tuple, or (None, None) if not configured."""
+    """Return (mimir_url, verify, headers) tuple, or (None, None, {}) if not configured."""
     mimir_url = current_app.config.get("MIMIR_URL")
     if not mimir_url:
-        return None, None
+        return None, None, {}
     verify = current_app.config.get("MIMIR_VERIFY")
     if verify is not None:
         if isinstance(verify, str) and verify.lower() == "false":
@@ -5525,7 +5559,7 @@ def _query_mimir_range(query, start, end, step):
 
     Returns the parsed ``data.result`` list, or None on any error.
     """
-    mimir_url, verify = _mimir_connection()
+    mimir_url, verify, headers = _mimir_connection()
     if not mimir_url:
         return None
     try:
@@ -5537,6 +5571,7 @@ def _query_mimir_range(query, start, end, step):
                 "end": end,
                 "step": step,
             },
+            headers=headers,
             verify=verify,
             timeout=10,
         )
@@ -6205,6 +6240,7 @@ def _build_observe_queries(
     network_labels=None,
 ):
     """Build PromQL queries and execute them. Returns (result, queries)."""
+
     result = None
     queries = []
 
@@ -6424,7 +6460,7 @@ def environment_observe_metric(org_slug, project_slug, env_slug):
         return jsonify({"error": "not configured"}), 404
 
     org_k8s = organization.k8s_identifier
-    namespace = safe_k8s_name(org_k8s, environment.k8s_identifier)
+    env_namespace = safe_k8s_name(org_k8s, environment.k8s_identifier)
     container_filter = _observe_container_filter()
 
     # Optional application filter
@@ -6438,16 +6474,25 @@ def environment_observe_metric(org_slug, project_slug, env_slug):
             if ae.application.deleted_at is None and ae.application.slug == app_filter
         ]
 
+    # Legacy app_envs (k8s_identifier=None) have pods in the org-only
+    # namespace, not the environment namespace.  Build a namespace selector
+    # that covers both when needed.
+    has_legacy = any(ae.k8s_identifier is None for ae in active_aes)
+    if has_legacy and env_namespace != org_k8s:
+        ns_selector = f'namespace=~"{env_namespace}|{org_k8s}"'
+    else:
+        ns_selector = f'namespace="{env_namespace}"'
+
     if app_filter and active_aes:
         ae = active_aes[0]
         prefix = _compute_observe_prefix(ae.application)
         escaped_prefix = _REGEX_META.sub(r"\\\g<0>", prefix)
-        base_selector = f'namespace="{namespace}", pod=~"{escaped_prefix}-.*"'
+        base_selector = f'{ns_selector}, pod=~"{escaped_prefix}-.*"'
         labels = f"{base_selector}, {container_filter}"
         network_labels = base_selector
         process_re = f"{escaped_prefix}-(.*)-[a-z0-9]+-[a-z0-9]+"
     else:
-        base_selector = f'namespace="{namespace}"'
+        base_selector = ns_selector
         labels = f"{base_selector}, {container_filter}"
         network_labels = base_selector
         # Process RE: extract process from pod name across all apps in namespace
@@ -6470,7 +6515,7 @@ def environment_observe_metric(org_slug, project_slug, env_slug):
     # Traefik service names
     traefik_names = _collect_traefik_svc_names(
         active_aes,
-        lambda ae: namespace,
+        lambda ae: _compute_observe_namespace(ae.application, ae),
         lambda ae: _compute_observe_prefix(ae.application),
     )
     traefik_svc = _traefik_svc_label(traefik_names)
@@ -6764,13 +6809,14 @@ def _query_mimir_instant(query):
 
     Returns the parsed ``data.result`` list, or None on any error.
     """
-    mimir_url, verify = _mimir_connection()
+    mimir_url, verify, headers = _mimir_connection()
     if not mimir_url:
         return None
     try:
         resp = requests_lib.get(  # nosec B113 - timeout has default
             f"{mimir_url}/prometheus/api/v1/query",
             params={"query": query},
+            headers=headers,
             verify=verify,
             timeout=current_app.config.get("MIMIR_TIMEOUT", 5),
         )
@@ -6963,15 +7009,22 @@ def _loki_connection():
     return loki_url, verify
 
 
-def _query_loki(query, start, end, limit=500, direction="backward"):
+def _query_loki(query, start, end, limit=500, direction="backward", tenant_id=None):
     """Query Loki's query_range endpoint.
 
     *start* and *end* are unix epoch **nanoseconds** (int or str).
+    *tenant_id* is the X-Scope-OrgID header value (the k8s namespace name).
     Returns the parsed ``data.result`` list, or None on any error.
     """
     loki_url, verify = _loki_connection()
     if not loki_url:
         return None
+    headers = {}
+    if tenant_id:
+        legacy = current_app.config.get("LOKI_LEGACY_TENANT_ID")
+        if legacy:
+            tenant_id = f"{tenant_id}|{legacy}"
+        headers["X-Scope-OrgID"] = tenant_id
     try:
         resp = requests_lib.get(
             f"{loki_url}/loki/api/v1/query_range",
@@ -6982,6 +7035,7 @@ def _query_loki(query, start, end, limit=500, direction="backward"):
                 "limit": limit,
                 "direction": direction,
             },
+            headers=headers,
             verify=verify,
             timeout=10,
         )
@@ -7018,11 +7072,12 @@ def _build_log_selectors(namespace, project_slug=None, app_slug=None, env_slug=N
     return selectors
 
 
-def _loki_query_response(selectors, process_names):
+def _loki_query_response(selectors, process_names, tenant_id=None):
     """Shared Loki query logic.  Returns a Flask JSON response.
 
     *selectors* is a list of LogQL label matchers (strings).
     *process_names* is used to build a container-name filter.
+    *tenant_id* is the X-Scope-OrgID header value (the k8s namespace name).
     """
     loki_url, _ = _loki_connection()
     if not loki_url:
@@ -7081,7 +7136,9 @@ def _loki_query_response(selectors, process_names):
     if direction not in ("backward", "forward"):
         direction = "backward"
 
-    streams = _query_loki(logql, start_ns, end_ns, limit=limit, direction=direction)
+    streams = _query_loki(
+        logql, start_ns, end_ns, limit=limit, direction=direction, tenant_id=tenant_id
+    )
     if streams is None:
         return jsonify({"error": "query failed"}), 502
 
@@ -7226,7 +7283,10 @@ def project_application_logs_query(org_slug, project_slug, app_slug, env_slug=No
         app_slug=application.slug,
         env_slug=env_slug_val,
     )
-    return _loki_query_response(selectors, process_names)
+    org = application.project.organization
+    return _loki_query_response(
+        selectors, process_names, tenant_id=_loki_tenant_id(namespace, org)
+    )
 
 
 @user_blueprint.route(
@@ -7287,4 +7347,5 @@ def project_logs_query(org_slug, project_slug):
                 process_names_set.add(proc)
     process_names = sorted(process_names_set)
 
-    return _loki_query_response(selectors, process_names)
+    tenant_id = _project_tenant_ids(organization, project)
+    return _loki_query_response(selectors, process_names, tenant_id=tenant_id)
