@@ -230,6 +230,8 @@ def reap_pods():
     pods = core_api_instance.list_pod_for_all_namespaces(
         label_selector="resident-pod.cabotage.io=true",
     )
+    if not pods.items:
+        return
     candidate = sorted(pods.items, key=lambda pod: pod.status.start_time)[0]
     lookback = datetime.datetime.now().replace(
         tzinfo=datetime.timezone.utc

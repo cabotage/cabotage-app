@@ -70,3 +70,5 @@ security-check: .state/docker-build-base
 
 type-check: .state/docker-build-base
 	docker compose run --rm base ty check cabotage
+
+check: lint type-check
