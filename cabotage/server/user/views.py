@@ -5535,8 +5535,11 @@ def _project_tenant_ids(organization, project):
     return "|".join(sorted(tenant_ids))
 
 
-def _mimir_connection():
-    """Return (mimir_url, verify, headers) tuple, or (None, None, {}) if not configured."""
+def _mimir_connection(tenant_id=None):
+    """Return (mimir_url, verify, headers) tuple, or (None, None, {}) if not configured.
+
+    If *tenant_id* is given it overrides the default tenant header.
+    """
     mimir_url = current_app.config.get("MIMIR_URL")
     if not mimir_url:
         return None, None, {}
@@ -5548,18 +5551,22 @@ def _mimir_connection():
         verify = True
     headers = {}
     # TODO: Include anonymous until migration to multi-tenant is completed
-    tenant_id = str(current_app.config.get("MIMIR_TENANT_ID")) + "|anonymous"
-    if tenant_id:
-        headers["X-Scope-OrgID"] = tenant_id
+    effective_tenant = (
+        tenant_id
+        if tenant_id is not None
+        else str(current_app.config.get("MIMIR_TENANT_ID")) + "|anonymous"
+    )
+    if effective_tenant:
+        headers["X-Scope-OrgID"] = effective_tenant
     return mimir_url, verify, headers
 
 
-def _query_mimir_range(query, start, end, step):
+def _query_mimir_range(query, start, end, step, tenant_id=None):
     """Query Mimir's Prometheus-compatible query_range endpoint.
 
     Returns the parsed ``data.result`` list, or None on any error.
     """
-    mimir_url, verify, headers = _mimir_connection()
+    mimir_url, verify, headers = _mimir_connection(tenant_id=tenant_id)
     if not mimir_url:
         return None
     try:
@@ -6804,12 +6811,12 @@ def organization_observe_metric(org_slug):
     return jsonify({"result": result, "queries": queries})
 
 
-def _query_mimir_instant(query):
+def _query_mimir_instant(query, tenant_id=None):
     """Query Mimir's Prometheus-compatible instant query endpoint.
 
     Returns the parsed ``data.result`` list, or None on any error.
     """
-    mimir_url, verify, headers = _mimir_connection()
+    mimir_url, verify, headers = _mimir_connection(tenant_id=tenant_id)
     if not mimir_url:
         return None
     try:
@@ -7349,3 +7356,280 @@ def project_logs_query(org_slug, project_slug):
 
     tenant_id = _project_tenant_ids(organization, project)
     return _loki_query_response(selectors, process_names, tenant_id=tenant_id)
+
+
+# ── Infrastructure Observe (super-admin only) ──
+
+_INFRA_OBSERVE_METRICS = {"cpu", "memory", "network"}
+_INFRA_OBSERVE_GROUPS = {"total", "pod", "workload"}
+_INFRA_TENANT = "cabotage-infra"
+
+
+def _require_admin():
+    """Abort 403 unless the current user is a super admin."""
+    if not current_user.admin:
+        abort(403)
+
+
+def _discover_infra_workloads():
+    """Discover infra workloads via Mimir kube-state-metrics on the cabotage-infra tenant.
+
+    Uses three instant queries to build the workload hierarchy:
+      1. kube_pod_labels{label_cabotage_io_infra="true"} — infra pods
+      2. kube_pod_owner — pod -> owner (DaemonSet/StatefulSet/ReplicaSet)
+      3. kube_replicaset_owner{owner_kind="Deployment"} — RS -> Deployment
+
+    Returns a list of dicts:
+        [{"kind": ..., "name": ..., "namespace": ..., "pods": [...]}, ...]
+    """
+    # 1. All pods labelled cabotage.io/infra=true
+    infra_pods = _query_mimir_instant(
+        'kube_pod_labels{label_cabotage_io_infra="true"}',
+        tenant_id=_INFRA_TENANT,
+    )
+    if not infra_pods:
+        return []
+
+    infra_pod_set = {(r["metric"]["namespace"], r["metric"]["pod"]) for r in infra_pods}
+
+    # 2. Pod ownership
+    pod_owners = _query_mimir_instant("kube_pod_owner", tenant_id=_INFRA_TENANT)
+    owner_map = {}  # (ns, pod) -> (owner_kind, owner_name)
+    if pod_owners:
+        for r in pod_owners:
+            m = r["metric"]
+            key = (m.get("namespace", ""), m.get("pod", ""))
+            if key in infra_pod_set:
+                owner_map[key] = (m.get("owner_kind", ""), m.get("owner_name", ""))
+
+    # 3. ReplicaSet -> Deployment mapping
+    rs_owners = _query_mimir_instant(
+        'kube_replicaset_owner{owner_kind="Deployment"}',
+        tenant_id=_INFRA_TENANT,
+    )
+    rs_to_deployment = {}  # (ns, rs_name) -> deployment_name
+    if rs_owners:
+        for r in rs_owners:
+            m = r["metric"]
+            rs_to_deployment[(m.get("namespace", ""), m.get("replicaset", ""))] = m.get(
+                "owner_name", ""
+            )
+
+    # Build workload map: (kind, name, namespace) -> [pod_names]
+    workload_pods: dict[tuple[str, str, str], list[str]] = collections.defaultdict(list)
+    for ns, pod in sorted(infra_pod_set):
+        owner_kind, owner_name = owner_map.get((ns, pod), ("", ""))
+        if owner_kind == "ReplicaSet":
+            # Resolve through to Deployment
+            deployment = rs_to_deployment.get((ns, owner_name))
+            if deployment:
+                workload_pods[("Deployment", deployment, ns)].append(pod)
+            else:
+                # Orphaned ReplicaSet — show as-is
+                workload_pods[("ReplicaSet", owner_name, ns)].append(pod)
+        elif owner_kind in ("DaemonSet", "StatefulSet"):
+            workload_pods[(owner_kind, owner_name, ns)].append(pod)
+        elif owner_kind:
+            # Other owner kinds (Job, Cluster, etc.)
+            workload_pods[(owner_kind, owner_name, ns)].append(pod)
+        else:
+            workload_pods[("Pod", pod, ns)].append(pod)
+
+    workloads = [
+        {"kind": kind, "name": name, "namespace": ns, "pods": sorted(pods)}
+        for (kind, name, ns), pods in workload_pods.items()
+    ]
+    workloads.sort(key=lambda w: (w["kind"], w["name"]))
+    return workloads
+
+
+@user_blueprint.route("/infra/observe")
+@login_required
+def infra_observe():
+    _require_admin()
+
+    mimir_configured = bool(current_app.config.get("MIMIR_URL"))
+
+    workloads = []
+    if mimir_configured:
+        try:
+            workloads = _discover_infra_workloads()
+        except Exception:
+            pass
+
+    observe_groups = ["total", "pod", "workload"]
+    current_groups = {
+        "cpu": request.args.get("cpu", "total"),
+        "memory": request.args.get("memory", "total"),
+        "network": request.args.get("network", "total"),
+    }
+    for k in current_groups:
+        if current_groups[k] not in _INFRA_OBSERVE_GROUPS:
+            current_groups[k] = "total"
+
+    has_time_window = bool(request.args.get("start") and request.args.get("end"))
+
+    return render_template(
+        "user/infra_observe.html",
+        observe_level="infra",
+        observe_groups=observe_groups,
+        mimir_configured=mimir_configured,
+        metric_url=url_for("user.infra_observe_metric"),
+        workloads=workloads,
+        workloads_json=json.dumps(workloads),
+        current_range=request.args.get("range", "1h"),
+        current_groups=current_groups,
+        has_time_window=has_time_window,
+    )
+
+
+def _discover_infra_pods_for_selector(workload_name="", workload_namespace=""):
+    """Discover infra pod names for a specific workload via Mimir.
+
+    Returns list of (namespace, pod_name) tuples.
+    """
+    infra_pods = _query_mimir_instant(
+        'kube_pod_labels{label_cabotage_io_infra="true"}',
+        tenant_id=_INFRA_TENANT,
+    )
+    if not infra_pods:
+        return []
+
+    infra_pod_set = {(r["metric"]["namespace"], r["metric"]["pod"]) for r in infra_pods}
+
+    if not workload_name:
+        return sorted(infra_pod_set)
+
+    # Need to resolve which pods belong to the requested workload
+    pod_owners = _query_mimir_instant("kube_pod_owner", tenant_id=_INFRA_TENANT)
+    rs_owners = _query_mimir_instant(
+        'kube_replicaset_owner{owner_kind="Deployment"}',
+        tenant_id=_INFRA_TENANT,
+    )
+    rs_to_deployment = {}
+    if rs_owners:
+        for r in rs_owners:
+            m = r["metric"]
+            rs_to_deployment[(m.get("namespace", ""), m.get("replicaset", ""))] = m.get(
+                "owner_name", ""
+            )
+
+    matched = []
+    if pod_owners:
+        for r in pod_owners:
+            m = r["metric"]
+            ns = m.get("namespace", "")
+            pod = m.get("pod", "")
+            if (ns, pod) not in infra_pod_set:
+                continue
+            if workload_namespace and ns != workload_namespace:
+                continue
+            owner_kind = m.get("owner_kind", "")
+            owner_name = m.get("owner_name", "")
+            # Resolve ReplicaSet -> Deployment
+            if owner_kind == "ReplicaSet":
+                resolved = rs_to_deployment.get((ns, owner_name), owner_name)
+                if resolved == workload_name:
+                    matched.append((ns, pod))
+            elif owner_name == workload_name:
+                matched.append((ns, pod))
+    return sorted(matched)
+
+
+@user_blueprint.route("/infra/observe/metric")
+@login_required
+def infra_observe_metric():
+    _require_admin()
+
+    metric = request.args.get("metric")
+    if metric not in _INFRA_OBSERVE_METRICS:
+        return jsonify({"error": "invalid metric"}), 400
+
+    group = request.args.get("group", "total")
+    if group not in _INFRA_OBSERVE_GROUPS:
+        group = "total"
+
+    mimir_url = current_app.config.get("MIMIR_URL")
+    if not mimir_url:
+        return jsonify({"error": "not configured"}), 404
+
+    # Workload filter from query params
+    workload_name = request.args.get("workload_name", "")
+    workload_namespace = request.args.get("workload_namespace", "")
+    pod_name = request.args.get("pod", "")
+
+    include_system = request.args.get("system_containers", "") == "1"
+    container_filter = 'container!="", container!="POD"'
+    if not include_system:
+        container_filter += (
+            ', container!="cabotage-sidecar"'
+            ', container!="cabotage-sidecar-tls"'
+            ', container!="cabotage-enroller"'
+        )
+
+    # Build label selectors based on filters
+    if pod_name:
+        base_selector = f'pod="{pod_name}"'
+        if workload_namespace:
+            base_selector = f'namespace="{workload_namespace}", {base_selector}'
+    elif workload_name:
+        pods = _discover_infra_pods_for_selector(workload_name, workload_namespace)
+        if pods:
+            ns_set = sorted({ns for ns, _ in pods})
+            pod_names = sorted({p for _, p in pods})
+            ns_re = "|".join(_REGEX_META.sub(r"\\\g<0>", n) for n in ns_set)
+            pod_re = "|".join(_REGEX_META.sub(r"\\\g<0>", p) for p in pod_names)
+            base_selector = f'namespace=~"{ns_re}", pod=~"{pod_re}"'
+        else:
+            base_selector = 'pod=~"^$"'
+    else:
+        # All infra pods
+        all_pods = _discover_infra_pods_for_selector()
+        if all_pods:
+            ns_set = sorted({ns for ns, _ in all_pods})
+            pod_names = sorted({p for _, p in all_pods})
+            ns_re = "|".join(_REGEX_META.sub(r"\\\g<0>", n) for n in ns_set)
+            pod_re = "|".join(_REGEX_META.sub(r"\\\g<0>", p) for p in pod_names)
+            base_selector = f'namespace=~"{ns_re}", pod=~"{pod_re}"'
+        else:
+            base_selector = 'pod=~"^$"'
+
+    labels = f"{base_selector}, {container_filter}"
+    network_labels = base_selector
+
+    duration, step, start, end = _observe_time_params()
+    rate_window = f"{max(step, 30)}s"
+
+    by_clause = {
+        "pod": "by (pod)",
+        "workload": "by (pod)",
+        "total": "",
+    }.get(group, "")
+
+    result = None
+    queries = []
+
+    if metric == "cpu":
+        q = f"sum(rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}])) {by_clause}"
+        queries.append(q)
+        result = _query_mimir_range(q, start, end, step, tenant_id=_INFRA_TENANT)
+    elif metric == "memory":
+        q = f"sum(container_memory_working_set_bytes{{{labels}}}) {by_clause}"
+        queries.append(q)
+        result = _query_mimir_range(q, start, end, step, tenant_id=_INFRA_TENANT)
+    elif metric == "network":
+        result = []
+        for direction, counter in [
+            ("tx", "container_network_transmit_bytes_total"),
+            ("rx", "container_network_receive_bytes_total"),
+        ]:
+            q = f"sum(rate({counter}{{{network_labels}}}[{rate_window}])) {by_clause}"
+            queries.append(q)
+            qr = _query_mimir_range(q, start, end, step, tenant_id=_INFRA_TENANT)
+            if qr:
+                for series in qr:
+                    series["metric"]["direction"] = direction
+                result.extend(qr)
+        result = result if result else None
+
+    return jsonify({"result": result, "queries": queries})
