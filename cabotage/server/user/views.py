@@ -7483,59 +7483,6 @@ def infra_observe():
     )
 
 
-def _discover_infra_pods_for_selector(workload_name="", workload_namespace=""):
-    """Discover infra pod names for a specific workload via Mimir.
-
-    Returns list of (namespace, pod_name) tuples.
-    """
-    infra_pods = _query_mimir_instant(
-        'kube_pod_labels{label_cabotage_io_infra="true"}',
-        tenant_id=_INFRA_TENANT,
-    )
-    if not infra_pods:
-        return []
-
-    infra_pod_set = {(r["metric"]["namespace"], r["metric"]["pod"]) for r in infra_pods}
-
-    if not workload_name:
-        return sorted(infra_pod_set)
-
-    # Need to resolve which pods belong to the requested workload
-    pod_owners = _query_mimir_instant("kube_pod_owner", tenant_id=_INFRA_TENANT)
-    rs_owners = _query_mimir_instant(
-        'kube_replicaset_owner{owner_kind="Deployment"}',
-        tenant_id=_INFRA_TENANT,
-    )
-    rs_to_deployment = {}
-    if rs_owners:
-        for r in rs_owners:
-            m = r["metric"]
-            rs_to_deployment[(m.get("namespace", ""), m.get("replicaset", ""))] = m.get(
-                "owner_name", ""
-            )
-
-    matched = []
-    if pod_owners:
-        for r in pod_owners:
-            m = r["metric"]
-            ns = m.get("namespace", "")
-            pod = m.get("pod", "")
-            if (ns, pod) not in infra_pod_set:
-                continue
-            if workload_namespace and ns != workload_namespace:
-                continue
-            owner_kind = m.get("owner_kind", "")
-            owner_name = m.get("owner_name", "")
-            # Resolve ReplicaSet -> Deployment
-            if owner_kind == "ReplicaSet":
-                resolved = rs_to_deployment.get((ns, owner_name), owner_name)
-                if resolved == workload_name:
-                    matched.append((ns, pod))
-            elif owner_name == workload_name:
-                matched.append((ns, pod))
-    return sorted(matched)
-
-
 @user_blueprint.route("/infra/observe/metric")
 @login_required
 def infra_observe_metric():
@@ -7567,35 +7514,27 @@ def infra_observe_metric():
             ', container!="cabotage-enroller"'
         )
 
-    # Build label selectors based on filters
-    if pod_name:
-        base_selector = f'pod="{pod_name}"'
-        if workload_namespace:
-            base_selector = f'namespace="{workload_namespace}", {base_selector}'
-    elif workload_name:
-        pods = _discover_infra_pods_for_selector(workload_name, workload_namespace)
-        if pods:
-            ns_set = sorted({ns for ns, _ in pods})
-            pod_names = sorted({p for _, p in pods})
-            ns_re = "|".join(_REGEX_META.sub(r"\\\g<0>", n) for n in ns_set)
-            pod_re = "|".join(_REGEX_META.sub(r"\\\g<0>", p) for p in pod_names)
-            base_selector = f'namespace=~"{ns_re}", pod=~"{pod_re}"'
-        else:
-            base_selector = 'pod=~"^$"'
-    else:
-        # All infra pods
-        all_pods = _discover_infra_pods_for_selector()
-        if all_pods:
-            ns_set = sorted({ns for ns, _ in all_pods})
-            pod_names = sorted({p for _, p in all_pods})
-            ns_re = "|".join(_REGEX_META.sub(r"\\\g<0>", n) for n in ns_set)
-            pod_re = "|".join(_REGEX_META.sub(r"\\\g<0>", p) for p in pod_names)
-            base_selector = f'namespace=~"{ns_re}", pod=~"{pod_re}"'
-        else:
-            base_selector = 'pod=~"^$"'
+    # Instead of pre-resolving pod names (which only finds live pods),
+    # use PromQL joins against kube_pod_labels to filter at query time.
+    # This naturally includes pods that existed at any point during the
+    # time window, even if they've since been terminated.
+    infra_join = (
+        "* on (pod, namespace) group_left() "
+        'kube_pod_labels{label_cabotage_io_infra="true"}'
+    )
 
-    labels = f"{base_selector}, {container_filter}"
-    network_labels = base_selector
+    # Optional narrowing by namespace/pod prefix/exact pod
+    narrow = ""
+    if pod_name:
+        narrow = f'pod="{pod_name}"'
+        if workload_namespace:
+            narrow = f'namespace="{workload_namespace}", {narrow}'
+    elif workload_name and workload_namespace:
+        escaped_name = _REGEX_META.sub(r"\\\g<0>", workload_name)
+        narrow = f'namespace="{workload_namespace}", pod=~"{escaped_name}-.*"'
+
+    labels = f"{narrow}, {container_filter}" if narrow else container_filter
+    network_labels = narrow if narrow else ""
 
     duration, step, start, end = _observe_time_params()
     rate_window = f"{max(step, 30)}s"
@@ -7610,15 +7549,8 @@ def infra_observe_metric():
     result = None
     queries = []
 
-    # For requests/limits reference lines, we need to match only containers
-    # that actually have the value set.  When grouping by pod we suppress
-    # the reference series for any pod where not every usage-container has
-    # the corresponding KSM entry (a missing entry means "no limit").
-    # The container filter applied to KSM scopes it to the same containers
-    # we track for usage.
-    ksm_labels = f"{base_selector}, {container_filter}"
-
-    def _append_ref_lines(resource, by_clause_val):
+    # KSM ref lines use the same join + narrowing but with resource= filter
+    def _append_ref_lines(resource):
         """Query KSM requests/limits and append ref series to *result*.
 
         For per-pod grouping, only emit a pod's ref line when every
@@ -7628,29 +7560,35 @@ def infra_observe_metric():
         the value or doesn't — no ambiguity).
         """
         nonlocal result
+        ksm_narrow = (
+            f'{narrow}, {container_filter}, resource="{resource}"'
+            if narrow
+            else f'{container_filter}, resource="{resource}"'
+        )
+        usage_labels = labels  # same container filter as the usage query
         for ref_type, ksm_metric in [
             ("requests", "kube_pod_container_resource_requests"),
             ("limits", "kube_pod_container_resource_limits"),
         ]:
             if group == "container":
-                # Per-container: straightforward, KSM already has per-container entries
-                rq = f'sum by (pod, container) ({ksm_metric}{{{ksm_labels}, resource="{resource}"}})'
-            elif by_clause_val:
-                # Per-pod: only include pods where all usage containers
-                # have the KSM entry.  We compare container counts.
-                usage_count = (
+                rq = (
+                    f"sum by (pod, container) ("
+                    f"{ksm_metric}{{{ksm_narrow}}} {infra_join})"
+                )
+            elif by_clause:
+                usage_metric = (
                     "container_cpu_usage_seconds_total"
                     if resource == "cpu"
                     else "container_memory_working_set_bytes"
                 )
                 rq = (
-                    f'sum by (pod) ({ksm_metric}{{{ksm_labels}, resource="{resource}"}}) '
-                    f"and on (pod) "
-                    f'(count by (pod) ({ksm_metric}{{{ksm_labels}, resource="{resource}"}}) '
-                    f"== count by (pod) ({usage_count}{{{labels}}}))"
+                    f"sum by (pod) ({ksm_metric}{{{ksm_narrow}}} {infra_join}) "
+                    f"and on (pod) ("
+                    f"count by (pod) ({ksm_metric}{{{ksm_narrow}}} {infra_join}) "
+                    f"== count by (pod) ({usage_metric}{{{usage_labels}}} {infra_join}))"
                 )
             else:
-                rq = f'sum({ksm_metric}{{{ksm_labels}, resource="{resource}"}})'
+                rq = f"sum({ksm_metric}{{{ksm_narrow}}} {infra_join})"
             queries.append(rq)
             rr = _query_mimir_range(rq, start, end, step, tenant_id=_INFRA_TENANT)
             if rr:
@@ -7661,22 +7599,31 @@ def infra_observe_metric():
                 result.extend(rr)
 
     if metric == "cpu":
-        q = f"sum(rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}])) {by_clause}"
+        q = (
+            f"sum(rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}]) "
+            f"{infra_join}) {by_clause}"
+        )
         queries.append(q)
         result = _query_mimir_range(q, start, end, step, tenant_id=_INFRA_TENANT)
-        _append_ref_lines("cpu", by_clause)
+        _append_ref_lines("cpu")
     elif metric == "memory":
-        q = f"sum(container_memory_working_set_bytes{{{labels}}}) {by_clause}"
+        q = (
+            f"sum(container_memory_working_set_bytes{{{labels}}} "
+            f"{infra_join}) {by_clause}"
+        )
         queries.append(q)
         result = _query_mimir_range(q, start, end, step, tenant_id=_INFRA_TENANT)
-        _append_ref_lines("memory", by_clause)
+        _append_ref_lines("memory")
     elif metric == "network":
         result = []
         for direction, counter in [
             ("tx", "container_network_transmit_bytes_total"),
             ("rx", "container_network_receive_bytes_total"),
         ]:
-            q = f"sum(rate({counter}{{{network_labels}}}[{rate_window}])) {by_clause}"
+            if network_labels:
+                q = f"sum(rate({counter}{{{network_labels}}}[{rate_window}]) {infra_join}) {by_clause}"
+            else:
+                q = f"sum(rate({counter}[{rate_window}]) {infra_join}) {by_clause}"
             queries.append(q)
             qr = _query_mimir_range(q, start, end, step, tenant_id=_INFRA_TENANT)
             if qr:
