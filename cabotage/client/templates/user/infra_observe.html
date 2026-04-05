@@ -220,6 +220,7 @@
 
     var data = [timestamps];
     var labels = [];
+    var refs = [];  // parallel array: null for normal series, 'requests'/'limits' for ref lines
     result.forEach(function(s) {
       var vals = new Array(timestamps.length).fill(null);
       s.values.forEach(function(v) {
@@ -228,11 +229,30 @@
         if (!isNaN(num) && isFinite(num)) vals[idx] = num;
       });
       data.push(vals);
-      var raw = s.metric[labelKey] || (labelKey === '__total__' ? 'total' : labelKey);
-      var display = LABEL_MAP[raw] || raw;
-      labels.push(shortLabels ? shortLabel(display) : display);
+      var ref = s.metric['__ref__'] || null;
+      refs.push(ref);
+      if (ref) {
+        // For reference series, use the ref type as the label
+        var refEntity = '';
+        if (labelKey === '__pod_container__') {
+          refEntity = (s.metric.pod || '') + '/' + (s.metric.container || '');
+        } else if (labelKey !== '__total__') {
+          refEntity = s.metric[labelKey] || '';
+        }
+        var suffix = refEntity ? ' (' + (shortLabels ? shortLabel(refEntity) : refEntity) + ')' : '';
+        labels.push(ref + suffix);
+      } else if (labelKey === '__pod_container__') {
+        var pod = s.metric.pod || '';
+        var ctr = s.metric.container || '';
+        var composite = pod + '/' + ctr;
+        labels.push(shortLabels ? shortLabel(pod) + '/' + ctr : composite);
+      } else {
+        var raw = s.metric[labelKey] || (labelKey === '__total__' ? 'total' : labelKey);
+        var display = LABEL_MAP[raw] || raw;
+        labels.push(shortLabels ? shortLabel(display) : display);
+      }
     });
-    return { data: data, labels: labels };
+    return { data: data, labels: labels, refs: refs };
   }
 
   function tooltipPlugin(valueFmt, rawData, showTotal) {
@@ -296,6 +316,8 @@
     };
   }
 
+  var REF_COLORS = { 'requests': '#f59e0b', 'limits': '#ef4444' };
+
   function makeLineChart(el, result, labelKey, valueFmt, shortLabels, colorMap) {
     var parsed = promToUplot(result, labelKey, shortLabels);
     if (!parsed) {
@@ -306,15 +328,30 @@
     var width = el.clientWidth || 400;
     var height = parseInt(getComputedStyle(el).minHeight) || 220;
     var series = [{ label: '', value: '' }];
+    var colorIdx = 0;
     parsed.labels.forEach(function(label, i) {
-      var color = colorMap ? (colorMap[label] || COLORS[i % COLORS.length]) : COLORS[i % COLORS.length];
-      series.push({
-        label: label,
-        stroke: color,
-        width: 1.5,
-        points: { show: false },
-        value: ''
-      });
+      var ref = parsed.refs[i];
+      if (ref) {
+        // Reference line: dashed, fixed color
+        series.push({
+          label: label,
+          stroke: REF_COLORS[ref] || '#888',
+          width: 1.5,
+          dash: [6, 4],
+          points: { show: false },
+          value: ''
+        });
+      } else {
+        var color = colorMap ? (colorMap[label] || COLORS[colorIdx % COLORS.length]) : COLORS[colorIdx % COLORS.length];
+        colorIdx++;
+        series.push({
+          label: label,
+          stroke: color,
+          width: 1.5,
+          points: { show: false },
+          value: ''
+        });
+      }
     });
     var opts = {
       width: width,
@@ -497,10 +534,11 @@
     var labelKey = panel.labelKey;
     if (metric === 'cpu' || metric === 'memory' || metric === 'network') {
       if (group === 'total') labelKey = '__total__';
+      else if (group === 'container') labelKey = '__pod_container__';
       else if (group === 'workload') labelKey = 'pod';
       else labelKey = 'pod';
     }
-    var short = (group === 'pod');
+    var short = (group === 'pod' || group === 'container');
     if (panel.type === 'mirror') {
       makeMirrorChart(el, result, labelKey, panel.fmt, short, panel.colors);
     } else {
