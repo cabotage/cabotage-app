@@ -7359,7 +7359,7 @@ def project_logs_query(org_slug, project_slug):
 # ── Infrastructure Observe (super-admin only) ──
 
 _INFRA_OBSERVE_METRICS = {"cpu", "memory", "network"}
-_INFRA_OBSERVE_GROUPS = {"total", "pod", "workload"}
+_INFRA_OBSERVE_GROUPS = {"total", "pod", "workload", "container"}
 _INFRA_TENANT = "cabotage-infra"
 
 
@@ -7453,9 +7453,11 @@ def infra_observe():
         try:
             workloads = _discover_infra_workloads()
         except Exception:
-            pass
+            current_app.logger.debug(
+                "Failed to discover infra workloads", exc_info=True
+            )
 
-    observe_groups = ["total", "pod", "workload"]
+    observe_groups = ["total", "pod", "container", "workload"]
     current_groups = {
         "cpu": request.args.get("cpu", "total"),
         "memory": request.args.get("memory", "total"),
@@ -7600,6 +7602,7 @@ def infra_observe_metric():
 
     by_clause = {
         "pod": "by (pod)",
+        "container": "by (pod, container)",
         "workload": "by (pod)",
         "total": "",
     }.get(group, "")
@@ -7607,14 +7610,66 @@ def infra_observe_metric():
     result = None
     queries = []
 
+    # For requests/limits reference lines, we need to match only containers
+    # that actually have the value set.  When grouping by pod we suppress
+    # the reference series for any pod where not every usage-container has
+    # the corresponding KSM entry (a missing entry means "no limit").
+    # The container filter applied to KSM scopes it to the same containers
+    # we track for usage.
+    ksm_labels = f"{base_selector}, {container_filter}"
+
+    def _append_ref_lines(resource, by_clause_val):
+        """Query KSM requests/limits and append ref series to *result*.
+
+        For per-pod grouping, only emit a pod's ref line when every
+        usage-container in that pod has the KSM entry (i.e. the count
+        of containers with a limit equals the count with usage).
+        Per-container grouping always emits (each container either has
+        the value or doesn't — no ambiguity).
+        """
+        nonlocal result
+        for ref_type, ksm_metric in [
+            ("requests", "kube_pod_container_resource_requests"),
+            ("limits", "kube_pod_container_resource_limits"),
+        ]:
+            if group == "container":
+                # Per-container: straightforward, KSM already has per-container entries
+                rq = f'sum by (pod, container) ({ksm_metric}{{{ksm_labels}, resource="{resource}"}})'
+            elif by_clause_val:
+                # Per-pod: only include pods where all usage containers
+                # have the KSM entry.  We compare container counts.
+                usage_count = (
+                    "container_cpu_usage_seconds_total"
+                    if resource == "cpu"
+                    else "container_memory_working_set_bytes"
+                )
+                rq = (
+                    f'sum by (pod) ({ksm_metric}{{{ksm_labels}, resource="{resource}"}}) '
+                    f"and on (pod) "
+                    f'(count by (pod) ({ksm_metric}{{{ksm_labels}, resource="{resource}"}}) '
+                    f"== count by (pod) ({usage_count}{{{labels}}}))"
+                )
+            else:
+                rq = f'sum({ksm_metric}{{{ksm_labels}, resource="{resource}"}})'
+            queries.append(rq)
+            rr = _query_mimir_range(rq, start, end, step, tenant_id=_INFRA_TENANT)
+            if rr:
+                for series in rr:
+                    series["metric"]["__ref__"] = ref_type
+                if result is None:
+                    result = []
+                result.extend(rr)
+
     if metric == "cpu":
         q = f"sum(rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}])) {by_clause}"
         queries.append(q)
         result = _query_mimir_range(q, start, end, step, tenant_id=_INFRA_TENANT)
+        _append_ref_lines("cpu", by_clause)
     elif metric == "memory":
         q = f"sum(container_memory_working_set_bytes{{{labels}}}) {by_clause}"
         queries.append(q)
         result = _query_mimir_range(q, start, end, step, tenant_id=_INFRA_TENANT)
+        _append_ref_lines("memory", by_clause)
     elif metric == "network":
         result = []
         for direction, counter in [
