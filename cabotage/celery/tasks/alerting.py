@@ -34,8 +34,9 @@ def reconcile_alerts():
     if verify is None:
         verify = True
 
+    headers = {"X-Scope-OrgID": current_app.config.get("MIMIR_TENANT_ID")}
+
     secret = current_app.config.get("ALERTMANAGER_WEBHOOK_SECRET")
-    headers = {}
     if secret:
         headers["Authorization"] = f"Bearer {secret}"
 

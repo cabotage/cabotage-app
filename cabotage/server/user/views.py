@@ -5545,7 +5545,8 @@ def _mimir_connection():
     else:
         verify = True
     headers = {}
-    tenant_id = current_app.config.get("MIMIR_TENANT_ID")
+    # TODO: Include anonymous until migration to multi-tenant is completed
+    tenant_id = str(current_app.config.get("MIMIR_TENANT_ID")) + "|anonymous"
     if tenant_id:
         headers["X-Scope-OrgID"] = tenant_id
     return mimir_url, verify, headers
