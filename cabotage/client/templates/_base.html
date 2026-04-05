@@ -259,6 +259,10 @@
                    class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Projects</a>
                 <a href="{{ url_for('user.guide') }}"
                    class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Guide</a>
+                {% if current_user.admin %}
+                <a href="{{ url_for('user.infra_observe') }}"
+                   class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Infra</a>
+                {% endif %}
               </nav>
               <div class="dropdown dropdown-hover dropdown-end theme-toggle-wrap">
                 <div tabindex="0" role="button" id="theme-toggle"
@@ -611,6 +615,10 @@
                class="btn btn-ghost btn-sm justify-start text-sm">Projects</a>
             <a href="{{ url_for('user.guide') }}"
                class="btn btn-ghost btn-sm justify-start text-sm">Guide</a>
+            {% if current_user.admin %}
+            <a href="{{ url_for('user.infra_observe') }}"
+               class="btn btn-ghost btn-sm justify-start text-sm">Infrastructure</a>
+            {% endif %}
           </nav>
         {% endif %}
 
