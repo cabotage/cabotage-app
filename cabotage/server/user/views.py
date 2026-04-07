@@ -7522,7 +7522,7 @@ def infra_observe_metric():
     # time window, even if they've since been terminated.
     infra_join = (
         "* on (pod, namespace) group_left() "
-        'kube_pod_labels{label_cabotage_io_infra="true"}'
+        '(max by (pod, namespace) (kube_pod_labels{label_cabotage_io_infra="true"}))'
     )
 
     # Optional narrowing by namespace/pod prefix/exact pod
