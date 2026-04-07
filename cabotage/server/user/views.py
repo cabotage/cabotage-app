@@ -2360,7 +2360,9 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
                     application_environment_id=app_env.id,
                     process_name=proc_name,
                 )
-                .order_by(JobLog.completion_time.desc())
+                .order_by(
+                    func.coalesce(JobLog.completion_time, JobLog.start_time).desc()
+                )
                 .first()
             )
             if last_log is not None:
@@ -6849,7 +6851,7 @@ def job_history(org_slug, project_slug, app_slug, process_name, env_slug=None):
                 application_environment_id=app_env.id,
                 process_name=process_name,
             )
-            .order_by(JobLog.completion_time.desc())
+            .order_by(func.coalesce(JobLog.completion_time, JobLog.start_time).desc())
             .limit(100)
             .all()
         )
