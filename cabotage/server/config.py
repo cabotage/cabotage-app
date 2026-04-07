@@ -110,6 +110,7 @@ class Config(metaclass=MetaFlaskEnv):
     MIMIR_URL = None
     MIMIR_VERIFY = None
     MIMIR_TENANT_ID = "cabotage-infra"
+    MIMIR_TIMEOUT = 5
     LOKI_URL = None
     LOKI_VERIFY = None
     SLACK_CLIENT_ID = None

@@ -6820,12 +6820,12 @@ def _query_mimir_instant(query, tenant_id=None):
     if not mimir_url:
         return None
     try:
-        resp = requests_lib.get(
+        resp = requests_lib.get(  # nosec B113 - timeout has default
             f"{mimir_url}/prometheus/api/v1/query",
             params={"query": query},
             headers=headers,
             verify=verify,
-            timeout=5,
+            timeout=current_app.config.get("MIMIR_TIMEOUT", 5),
         )
         resp.raise_for_status()
         data = resp.json()
