@@ -1,0 +1,364 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon %}
+
+{% block title %}
+  Terms of Service - Cabotage
+{% endblock title %}
+
+{% block css %}
+<style>
+  /* Legal page smooth-scroll with topbar offset */
+  .legal-page { scroll-behavior: smooth; }
+  .legal-section { scroll-margin-top: 5rem; }
+
+  /* ToC active indicator */
+  .toc-link {
+    position: relative;
+    padding-left: 1rem;
+    border-left: 2px solid transparent;
+    transition: border-color 0.2s ease, color 0.2s ease;
+  }
+  .toc-link:hover,
+  .toc-link.active {
+    border-left-color: var(--color-primary);
+    color: var(--color-primary);
+  }
+
+  /* Section anchor highlight on target */
+  .legal-section:target > .section-heading {
+    color: var(--color-primary);
+  }
+  .legal-section:target > .section-heading::after {
+    content: '';
+    position: absolute;
+    left: -1.5rem;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    border-radius: 2px;
+    background: var(--color-primary);
+  }
+
+  /* Reading progress bar */
+  .reading-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 2px;
+    background: var(--color-primary);
+    z-index: 100;
+    transition: width 0.1s linear;
+    opacity: 0.8;
+  }
+
+  @media (max-width: 1023px) {
+    .legal-sidebar { display: none; }
+  }
+</style>
+{% endblock css %}
+
+{% block content_full %}
+<div class="reading-progress" id="reading-progress" style="width: 0%"></div>
+
+<div class="app-content-padded legal-page">
+  {# ── Page header ── #}
+  <div class="max-w-4xl mx-auto mb-8">
+    <div class="flex items-center gap-3 mb-2">
+      <div class="p-2 rounded-xl bg-primary/10 text-primary">
+        {{ icon('scroll-text', 'w-6 h-6') }}
+      </div>
+      <div>
+        <h1 class="text-2xl font-bold text-base-content">Terms of Service</h1>
+        <p class="text-sm text-base-content/40 mt-0.5">Last updated April 10, 2026</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="max-w-4xl mx-auto flex gap-10">
+    {# ── Sticky sidebar ToC (desktop) ── #}
+    <nav class="legal-sidebar w-56 shrink-0 hidden lg:block" aria-label="Table of contents">
+      <div class="sticky top-20">
+        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/30 mb-3">On this page</p>
+        <ul class="flex flex-col gap-1 text-sm" id="toc-list">
+          <li><a href="#acceptance"  class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Acceptance of Terms</a></li>
+          <li><a href="#description" class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Service Description</a></li>
+          <li><a href="#accounts"    class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Accounts</a></li>
+          <li><a href="#use"         class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Acceptable Use</a></li>
+          <li><a href="#data"        class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Data &amp; Content</a></li>
+          <li><a href="#uptime"      class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Availability &amp; SLA</a></li>
+          <li><a href="#ip"          class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Intellectual Property</a></li>
+          <li><a href="#termination" class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Termination</a></li>
+          <li><a href="#liability"   class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Limitation of Liability</a></li>
+          <li><a href="#changes"     class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Changes to Terms</a></li>
+          <li><a href="#contact"     class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Contact</a></li>
+        </ul>
+
+        <div class="mt-6 pt-4 border-t border-base-content/5">
+          <a href="{{ url_for('main.privacy') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+            {{ icon('shield-check', 'w-4 h-4') }}
+            <span>Privacy Policy</span>
+            {{ icon('arrow-right', 'w-3 h-3') }}
+          </a>
+        </div>
+      </div>
+    </nav>
+
+    {# ── Main content ── #}
+    <article class="flex-1 min-w-0">
+      {# Mobile ToC #}
+      <details class="lg:hidden mb-6 card bg-base-200 border border-base-300 group">
+        <summary class="flex items-center justify-between cursor-pointer px-4 py-3 text-sm font-medium text-base-content/60 hover:text-base-content transition-colors">
+          <span class="flex items-center gap-2">{{ icon('list', 'w-4 h-4') }} Table of Contents</span>
+          {{ icon('chevron-down', 'w-4 h-4 transition-transform group-open:rotate-180') }}
+        </summary>
+        <ul class="px-4 pb-3 flex flex-col gap-1 text-sm border-t border-base-content/5 pt-3">
+          <li><a href="#acceptance"  class="block py-1 text-base-content/50 hover:text-primary transition-colors">Acceptance of Terms</a></li>
+          <li><a href="#description" class="block py-1 text-base-content/50 hover:text-primary transition-colors">Service Description</a></li>
+          <li><a href="#accounts"    class="block py-1 text-base-content/50 hover:text-primary transition-colors">Accounts</a></li>
+          <li><a href="#use"         class="block py-1 text-base-content/50 hover:text-primary transition-colors">Acceptable Use</a></li>
+          <li><a href="#data"        class="block py-1 text-base-content/50 hover:text-primary transition-colors">Data &amp; Content</a></li>
+          <li><a href="#uptime"      class="block py-1 text-base-content/50 hover:text-primary transition-colors">Availability &amp; SLA</a></li>
+          <li><a href="#ip"          class="block py-1 text-base-content/50 hover:text-primary transition-colors">Intellectual Property</a></li>
+          <li><a href="#termination" class="block py-1 text-base-content/50 hover:text-primary transition-colors">Termination</a></li>
+          <li><a href="#liability"   class="block py-1 text-base-content/50 hover:text-primary transition-colors">Limitation of Liability</a></li>
+          <li><a href="#changes"     class="block py-1 text-base-content/50 hover:text-primary transition-colors">Changes to Terms</a></li>
+          <li><a href="#contact"     class="block py-1 text-base-content/50 hover:text-primary transition-colors">Contact</a></li>
+        </ul>
+      </details>
+
+      <div class="space-y-10">
+        {# §1 Acceptance #}
+        <section id="acceptance" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">1</span>
+            Acceptance of Terms
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              By accessing or using the Cabotage platform ("Service"), you agree to be bound by these Terms of Service ("Terms"). If you are using the Service on behalf of an organization, you represent that you have the authority to bind that organization to these Terms.
+            </p>
+            <p class="text-sm text-base-content/70 leading-relaxed mt-3">
+              If you do not agree to these Terms, you must not access or use the Service.
+            </p>
+          </div>
+        </section>
+
+        {# §2 Service Description #}
+        <section id="description" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">2</span>
+            Service Description
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              Cabotage is a self-hosted Platform as a Service (PaaS) that provides container orchestration, application deployment, scaling, and environment management on your own infrastructure. The Service includes the web dashboard, APIs, build pipelines, and related tooling.
+            </p>
+          </div>
+        </section>
+
+        {# §3 Accounts #}
+        <section id="accounts" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">3</span>
+            Accounts
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-3">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              You must create an account to use most features of the Service. You are responsible for maintaining the security of your account credentials, including enabling two-factor authentication when available.
+            </p>
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              You are responsible for all activity that occurs under your account. Notify the platform administrators immediately if you suspect unauthorized access.
+            </p>
+          </div>
+        </section>
+
+        {# §4 Acceptable Use #}
+        <section id="use" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">4</span>
+            Acceptable Use
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <p class="text-sm text-base-content/70 leading-relaxed mb-3">You agree not to use the Service to:</p>
+            <ul class="space-y-2 text-sm text-base-content/70">
+              <li class="flex items-start gap-2">
+                <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                Violate any applicable law or regulation
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                Deploy malicious software, cryptominers, or engage in unauthorized scanning
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                Interfere with the integrity or performance of the Service or its infrastructure
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                Attempt to gain unauthorized access to other users' accounts, data, or resources
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                Exceed allocated resource quotas or abuse shared infrastructure
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        {# §5 Data & Content #}
+        <section id="data" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">5</span>
+            Data &amp; Content
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-3">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              You retain ownership of all code, configuration, and data you deploy through the Service ("Your Content"). You are solely responsible for the legality, integrity, and appropriateness of Your Content.
+            </p>
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              You grant Cabotage only the permissions necessary to operate the Service on your behalf -- including building, storing, and deploying your container images and managing associated configuration.
+            </p>
+          </div>
+        </section>
+
+        {# §6 Availability & SLA #}
+        <section id="uptime" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">6</span>
+            Availability &amp; SLA
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-3">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              We strive to maintain high availability, but the Service is provided on an "as-is" basis. We do not guarantee uninterrupted or error-free operation. Planned maintenance windows will be communicated in advance when possible.
+            </p>
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              Specific SLA commitments, if any, are defined separately by your organization's infrastructure agreement and are not governed by these general Terms.
+            </p>
+          </div>
+        </section>
+
+        {# §7 Intellectual Property #}
+        <section id="ip" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">7</span>
+            Intellectual Property
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-3">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              The Cabotage platform, its design, logos, and underlying code are the intellectual property of the Cabotage project and its contributors. These Terms do not grant you any rights to use our trademarks or branding.
+            </p>
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              Cabotage is open-source software. Your use of the source code is governed by its respective license, separate from these Terms.
+            </p>
+          </div>
+        </section>
+
+        {# §8 Termination #}
+        <section id="termination" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">8</span>
+            Termination
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-3">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              We may suspend or terminate your access to the Service at any time for violation of these Terms, with or without notice. You may request account deletion at any time by contacting the platform administrators.
+            </p>
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              Upon termination, your right to use the Service ceases immediately. We will make reasonable efforts to allow you to export your data prior to deletion.
+            </p>
+          </div>
+        </section>
+
+        {# §9 Limitation of Liability #}
+        <section id="liability" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">9</span>
+            Limitation of Liability
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <div class="flex items-start gap-3 p-3 rounded-lg bg-warning/5 border border-warning/10 mb-3">
+              <span class="text-warning mt-0.5">{{ icon('alert-triangle', 'w-4 h-4') }}</span>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                <strong class="text-base-content/90">Important:</strong> To the fullest extent permitted by law, the Service is provided "as is" without warranties of any kind, either express or implied.
+              </p>
+            </div>
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              In no event shall the Cabotage project, its contributors, or operators be liable for any indirect, incidental, special, consequential, or punitive damages, including loss of data, revenue, or business opportunity, arising out of your use of the Service.
+            </p>
+          </div>
+        </section>
+
+        {# §10 Changes #}
+        <section id="changes" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">10</span>
+            Changes to Terms
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              We reserve the right to update these Terms at any time. Material changes will be communicated through the Service or via email. Continued use of the Service after changes take effect constitutes acceptance of the revised Terms.
+            </p>
+          </div>
+        </section>
+
+        {# §11 Contact #}
+        <section id="contact" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">11</span>
+            Contact
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              Questions about these Terms? Contact the platform administrators or open an issue in the Cabotage project repository.
+            </p>
+          </div>
+        </section>
+      </div>
+
+      {# ── Bottom navigation ── #}
+      <div class="mt-12 pt-6 border-t border-base-content/5 flex items-center justify-between">
+        <a href="{{ url_for('main.about') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+          {{ icon('arrow-left', 'w-4 h-4') }}
+          <span>About</span>
+        </a>
+        <a href="{{ url_for('main.privacy') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+          <span>Privacy Policy</span>
+          {{ icon('arrow-right', 'w-4 h-4') }}
+        </a>
+      </div>
+    </article>
+  </div>
+</div>
+{% endblock content_full %}
+
+{% block js %}
+<script>
+(function() {
+  // Reading progress bar
+  var bar = document.getElementById('reading-progress');
+  if (bar) {
+    window.addEventListener('scroll', function() {
+      var h = document.documentElement;
+      var pct = (h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100;
+      bar.style.width = Math.min(pct, 100) + '%';
+    }, { passive: true });
+  }
+
+  // ToC active state tracking via IntersectionObserver
+  var sections = document.querySelectorAll('.legal-section');
+  var tocLinks = document.querySelectorAll('#toc-list .toc-link');
+  if (sections.length && tocLinks.length) {
+    var observer = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (entry.isIntersecting) {
+          tocLinks.forEach(function(l) { l.classList.remove('active'); });
+          var active = document.querySelector('#toc-list a[href="#' + entry.target.id + '"]');
+          if (active) active.classList.add('active');
+        }
+      });
+    }, { rootMargin: '-80px 0px -60% 0px', threshold: 0 });
+    sections.forEach(function(s) { observer.observe(s); });
+  }
+})();
+</script>
+{% endblock js %}

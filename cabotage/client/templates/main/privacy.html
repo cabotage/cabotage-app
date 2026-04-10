@@ -1,0 +1,439 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon %}
+
+{% block title %}
+  Privacy Policy - Cabotage
+{% endblock title %}
+
+{% block css %}
+<style>
+  .legal-page { scroll-behavior: smooth; }
+  .legal-section { scroll-margin-top: 5rem; }
+
+  .toc-link {
+    position: relative;
+    padding-left: 1rem;
+    border-left: 2px solid transparent;
+    transition: border-color 0.2s ease, color 0.2s ease;
+  }
+  .toc-link:hover,
+  .toc-link.active {
+    border-left-color: var(--color-primary);
+    color: var(--color-primary);
+  }
+
+  .legal-section:target > .section-heading {
+    color: var(--color-primary);
+  }
+  .legal-section:target > .section-heading::after {
+    content: '';
+    position: absolute;
+    left: -1.5rem;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    border-radius: 2px;
+    background: var(--color-primary);
+  }
+
+  .reading-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 2px;
+    background: var(--color-primary);
+    z-index: 100;
+    transition: width 0.1s linear;
+    opacity: 0.8;
+  }
+
+  @media (max-width: 1023px) {
+    .legal-sidebar { display: none; }
+  }
+</style>
+{% endblock css %}
+
+{% block content_full %}
+<div class="reading-progress" id="reading-progress" style="width: 0%"></div>
+
+<div class="app-content-padded legal-page">
+  {# ── Page header ── #}
+  <div class="max-w-4xl mx-auto mb-8">
+    <div class="flex items-center gap-3 mb-2">
+      <div class="p-2 rounded-xl bg-primary/10 text-primary">
+        {{ icon('shield-check', 'w-6 h-6') }}
+      </div>
+      <div>
+        <h1 class="text-2xl font-bold text-base-content">Privacy Policy</h1>
+        <p class="text-sm text-base-content/40 mt-0.5">Last updated April 10, 2026</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="max-w-4xl mx-auto flex gap-10">
+    {# ── Sticky sidebar ToC (desktop) ── #}
+    <nav class="legal-sidebar w-56 shrink-0 hidden lg:block" aria-label="Table of contents">
+      <div class="sticky top-20">
+        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/30 mb-3">On this page</p>
+        <ul class="flex flex-col gap-1 text-sm" id="toc-list">
+          <li><a href="#overview"   class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Overview</a></li>
+          <li><a href="#collect"    class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">What We Collect</a></li>
+          <li><a href="#how"        class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">How We Use Data</a></li>
+          <li><a href="#storage"    class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Data Storage</a></li>
+          <li><a href="#sharing"    class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Data Sharing</a></li>
+          <li><a href="#security"   class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Security</a></li>
+          <li><a href="#retention"  class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Retention</a></li>
+          <li><a href="#rights"     class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Your Rights</a></li>
+          <li><a href="#cookies"    class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Cookies</a></li>
+          <li><a href="#pp-changes" class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Changes</a></li>
+          <li><a href="#pp-contact" class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Contact</a></li>
+        </ul>
+
+        <div class="mt-6 pt-4 border-t border-base-content/5">
+          <a href="{{ url_for('main.terms') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+            {{ icon('scroll-text', 'w-4 h-4') }}
+            <span>Terms of Service</span>
+            {{ icon('arrow-right', 'w-3 h-3') }}
+          </a>
+        </div>
+      </div>
+    </nav>
+
+    {# ── Main content ── #}
+    <article class="flex-1 min-w-0">
+      {# Mobile ToC #}
+      <details class="lg:hidden mb-6 card bg-base-200 border border-base-300 group">
+        <summary class="flex items-center justify-between cursor-pointer px-4 py-3 text-sm font-medium text-base-content/60 hover:text-base-content transition-colors">
+          <span class="flex items-center gap-2">{{ icon('list', 'w-4 h-4') }} Table of Contents</span>
+          {{ icon('chevron-down', 'w-4 h-4 transition-transform group-open:rotate-180') }}
+        </summary>
+        <ul class="px-4 pb-3 flex flex-col gap-1 text-sm border-t border-base-content/5 pt-3">
+          <li><a href="#overview"   class="block py-1 text-base-content/50 hover:text-primary transition-colors">Overview</a></li>
+          <li><a href="#collect"    class="block py-1 text-base-content/50 hover:text-primary transition-colors">What We Collect</a></li>
+          <li><a href="#how"        class="block py-1 text-base-content/50 hover:text-primary transition-colors">How We Use Data</a></li>
+          <li><a href="#storage"    class="block py-1 text-base-content/50 hover:text-primary transition-colors">Data Storage</a></li>
+          <li><a href="#sharing"    class="block py-1 text-base-content/50 hover:text-primary transition-colors">Data Sharing</a></li>
+          <li><a href="#security"   class="block py-1 text-base-content/50 hover:text-primary transition-colors">Security</a></li>
+          <li><a href="#retention"  class="block py-1 text-base-content/50 hover:text-primary transition-colors">Retention</a></li>
+          <li><a href="#rights"     class="block py-1 text-base-content/50 hover:text-primary transition-colors">Your Rights</a></li>
+          <li><a href="#cookies"    class="block py-1 text-base-content/50 hover:text-primary transition-colors">Cookies</a></li>
+          <li><a href="#pp-changes" class="block py-1 text-base-content/50 hover:text-primary transition-colors">Changes</a></li>
+          <li><a href="#pp-contact" class="block py-1 text-base-content/50 hover:text-primary transition-colors">Contact</a></li>
+        </ul>
+      </details>
+
+      {# ── TL;DR card ── #}
+      <div class="mb-8 card bg-primary/5 border border-primary/10 p-5">
+        <div class="flex items-start gap-3">
+          <span class="text-primary mt-0.5">{{ icon('sparkles', 'w-5 h-5') }}</span>
+          <div>
+            <p class="text-sm font-semibold text-base-content mb-1">The short version</p>
+            <p class="text-sm text-base-content/60 leading-relaxed">
+              Cabotage is self-hosted. Your data stays on your infrastructure. We collect only what's necessary to operate the platform -- account info, deployment metadata, and access logs. No analytics trackers, no data sales, no third-party sharing.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="space-y-10">
+        {# §1 Overview #}
+        <section id="overview" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">1</span>
+            Overview
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              This Privacy Policy describes how the Cabotage platform ("Service") collects, uses, and protects information when you use our self-hosted Platform as a Service. Because Cabotage is self-hosted, your organization's infrastructure administrator controls where data is stored and processed.
+            </p>
+          </div>
+        </section>
+
+        {# §2 What We Collect #}
+        <section id="collect" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">2</span>
+            What We Collect
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+                <div class="flex items-center gap-2 mb-2">
+                  <span class="text-primary">{{ icon('user', 'w-4 h-4') }}</span>
+                  <p class="text-sm font-medium text-base-content/80">Account Information</p>
+                </div>
+                <p class="text-xs text-base-content/50 leading-relaxed">Username, email address, authentication credentials (hashed), and organization membership.</p>
+              </div>
+              <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+                <div class="flex items-center gap-2 mb-2">
+                  <span class="text-primary">{{ icon('container', 'w-4 h-4') }}</span>
+                  <p class="text-sm font-medium text-base-content/80">Deployment Data</p>
+                </div>
+                <p class="text-xs text-base-content/50 leading-relaxed">Application configuration, environment variables (encrypted), container images, build logs, and deployment history.</p>
+              </div>
+              <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+                <div class="flex items-center gap-2 mb-2">
+                  <span class="text-primary">{{ icon('activity', 'w-4 h-4') }}</span>
+                  <p class="text-sm font-medium text-base-content/80">Usage &amp; Access Logs</p>
+                </div>
+                <p class="text-xs text-base-content/50 leading-relaxed">IP addresses, request timestamps, browser user-agent strings, and actions performed within the platform.</p>
+              </div>
+              <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+                <div class="flex items-center gap-2 mb-2">
+                  <span class="text-primary">{{ icon('git-branch', 'w-4 h-4') }}</span>
+                  <p class="text-sm font-medium text-base-content/80">Source Integration</p>
+                </div>
+                <p class="text-xs text-base-content/50 leading-relaxed">Repository URLs, branch names, and webhook payloads used to trigger automated builds and deployments.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {# §3 How We Use Data #}
+        <section id="how" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">3</span>
+            How We Use Data
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <ul class="space-y-2 text-sm text-base-content/70">
+              <li class="flex items-start gap-2">
+                <span class="text-success mt-0.5">{{ icon('check', 'w-4 h-4') }}</span>
+                Authenticate your identity and manage access control
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-success mt-0.5">{{ icon('check', 'w-4 h-4') }}</span>
+                Build, deploy, and manage your applications
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-success mt-0.5">{{ icon('check', 'w-4 h-4') }}</span>
+                Provide audit trails and operational logging
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-success mt-0.5">{{ icon('check', 'w-4 h-4') }}</span>
+                Troubleshoot issues and improve platform reliability
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-success mt-0.5">{{ icon('check', 'w-4 h-4') }}</span>
+                Enforce acceptable use policies and protect infrastructure
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        {# §4 Data Storage #}
+        <section id="storage" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">4</span>
+            Data Storage
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-3">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              Cabotage is a self-hosted platform. All data -- including application code, configuration, logs, and database contents -- is stored on infrastructure controlled by your organization. The Cabotage project does not operate any centralized data collection service.
+            </p>
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              Sensitive values such as environment variables and registry credentials are encrypted at rest using keys managed by the platform operator.
+            </p>
+          </div>
+        </section>
+
+        {# §5 Data Sharing #}
+        <section id="sharing" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">5</span>
+            Data Sharing
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <div class="flex items-start gap-3 p-3 rounded-lg bg-success/5 border border-success/10 mb-3">
+              <span class="text-success mt-0.5">{{ icon('shield-check', 'w-4 h-4') }}</span>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                <strong class="text-base-content/90">We do not sell, trade, or share your data with third parties.</strong>
+              </p>
+            </div>
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              Data may be shared with third-party services only when explicitly configured by the platform operator (e.g., external container registries, Git hosting providers, monitoring systems). These integrations are under your organization's control.
+            </p>
+          </div>
+        </section>
+
+        {# §6 Security #}
+        <section id="security" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">6</span>
+            Security
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <ul class="space-y-2 text-sm text-base-content/70">
+              <li class="flex items-start gap-2">
+                <span class="text-primary mt-0.5">{{ icon('lock', 'w-4 h-4') }}</span>
+                All credentials and secrets are encrypted at rest
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-primary mt-0.5">{{ icon('shield', 'w-4 h-4') }}</span>
+                HTTPS/TLS is enforced for all web traffic
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-primary mt-0.5">{{ icon('key', 'w-4 h-4') }}</span>
+                Two-factor authentication is available for all accounts
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-primary mt-0.5">{{ icon('users', 'w-4 h-4') }}</span>
+                Role-based access control limits data exposure
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-primary mt-0.5">{{ icon('file-text', 'w-4 h-4') }}</span>
+                Audit logging tracks all significant platform actions
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        {# §7 Retention #}
+        <section id="retention" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">7</span>
+            Retention
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-3">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              Account data is retained as long as your account is active. Deployment metadata and build logs are retained according to the retention policies configured by the platform operator.
+            </p>
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              Upon account deletion, personal data is removed. Anonymized audit logs may be retained for security and compliance purposes.
+            </p>
+          </div>
+        </section>
+
+        {# §8 Your Rights #}
+        <section id="rights" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">8</span>
+            Your Rights
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <p class="text-sm text-base-content/70 leading-relaxed mb-3">You have the right to:</p>
+            <div class="grid gap-2 sm:grid-cols-2">
+              <div class="flex items-center gap-2 text-sm text-base-content/70">
+                <span class="text-accent">{{ icon('eye', 'w-4 h-4') }}</span>
+                Access your personal data
+              </div>
+              <div class="flex items-center gap-2 text-sm text-base-content/70">
+                <span class="text-accent">{{ icon('pencil', 'w-4 h-4') }}</span>
+                Correct inaccurate data
+              </div>
+              <div class="flex items-center gap-2 text-sm text-base-content/70">
+                <span class="text-accent">{{ icon('download', 'w-4 h-4') }}</span>
+                Export your data
+              </div>
+              <div class="flex items-center gap-2 text-sm text-base-content/70">
+                <span class="text-accent">{{ icon('trash-2', 'w-4 h-4') }}</span>
+                Request deletion of your account
+              </div>
+            </div>
+            <p class="text-sm text-base-content/50 mt-3 leading-relaxed">
+              Contact the platform administrators to exercise any of these rights.
+            </p>
+          </div>
+        </section>
+
+        {# §9 Cookies #}
+        <section id="cookies" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">9</span>
+            Cookies
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-3">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              Cabotage uses only essential cookies required for authentication and session management. We do not use tracking cookies, analytics pixels, or any third-party advertising technology.
+            </p>
+            <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+              <div class="grid grid-cols-3 gap-2 text-xs">
+                <div>
+                  <p class="font-medium text-base-content/60 mb-1">Cookie</p>
+                  <p class="text-base-content/40 font-mono">session</p>
+                </div>
+                <div>
+                  <p class="font-medium text-base-content/60 mb-1">Purpose</p>
+                  <p class="text-base-content/40">Authentication</p>
+                </div>
+                <div>
+                  <p class="font-medium text-base-content/60 mb-1">Duration</p>
+                  <p class="text-base-content/40">Browser session</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {# §10 Changes #}
+        <section id="pp-changes" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">10</span>
+            Changes to This Policy
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              We may update this Privacy Policy to reflect changes to the platform or legal requirements. Material changes will be communicated through the Service. The "last updated" date at the top of this page indicates the latest revision.
+            </p>
+          </div>
+        </section>
+
+        {# §11 Contact #}
+        <section id="pp-contact" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">11</span>
+            Contact
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              For privacy-related inquiries, contact the platform administrators or open an issue in the Cabotage project repository.
+            </p>
+          </div>
+        </section>
+      </div>
+
+      {# ── Bottom navigation ── #}
+      <div class="mt-12 pt-6 border-t border-base-content/5 flex items-center justify-between">
+        <a href="{{ url_for('main.terms') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+          {{ icon('arrow-left', 'w-4 h-4') }}
+          <span>Terms of Service</span>
+        </a>
+        <a href="{{ url_for('main.about') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+          <span>About</span>
+          {{ icon('arrow-right', 'w-4 h-4') }}
+        </a>
+      </div>
+    </article>
+  </div>
+</div>
+{% endblock content_full %}
+
+{% block js %}
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress');
+  if (bar) {
+    window.addEventListener('scroll', function() {
+      var h = document.documentElement;
+      var pct = (h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100;
+      bar.style.width = Math.min(pct, 100) + '%';
+    }, { passive: true });
+  }
+
+  var sections = document.querySelectorAll('.legal-section');
+  var tocLinks = document.querySelectorAll('#toc-list .toc-link');
+  if (sections.length && tocLinks.length) {
+    var observer = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (entry.isIntersecting) {
+          tocLinks.forEach(function(l) { l.classList.remove('active'); });
+          var active = document.querySelector('#toc-list a[href="#' + entry.target.id + '"]');
+          if (active) active.classList.add('active');
+        }
+      });
+    }, { rootMargin: '-80px 0px -60% 0px', threshold: 0 });
+    sections.forEach(function(s) { observer.observe(s); });
+  }
+})();
+</script>
+{% endblock js %}
