@@ -66,3 +66,13 @@ def home():
 @main_blueprint.route("/about/")
 def about():
     return render_template("main/about.html")
+
+
+@main_blueprint.route("/terms/")
+def terms():
+    return render_template("main/terms.html")
+
+
+@main_blueprint.route("/privacy/")
+def privacy():
+    return render_template("main/privacy.html")
