@@ -655,8 +655,14 @@
       <footer class="border-t border-base-content/5 py-4">
         <div class="app-content-padded !py-0 flex items-center justify-between text-xs text-base-content/30">
           <span>Cabotage PaaS</span>
-          <a href="{{ url_for('main.about') }}"
-             class="hover:text-base-content/60 transition-colors">About</a>
+          <div class="flex items-center gap-3">
+            <a href="{{ url_for('main.terms') }}"
+               class="hover:text-base-content/60 transition-colors">Terms</a>
+            <a href="{{ url_for('main.privacy') }}"
+               class="hover:text-base-content/60 transition-colors">Privacy</a>
+            <a href="{{ url_for('main.about') }}"
+               class="hover:text-base-content/60 transition-colors">About</a>
+          </div>
         </div>
       </footer>
     </div>
