@@ -22,9 +22,7 @@
     color: var(--color-primary);
   }
 
-  .legal-section:target > .section-heading {
-    color: var(--color-primary);
-  }
+  .legal-section:target > .section-heading { color: var(--color-primary); }
   .legal-section:target > .section-heading::after {
     content: '';
     position: absolute;
@@ -65,7 +63,7 @@
       </div>
       <div>
         <h1 class="text-2xl font-bold text-base-content">Privacy Policy</h1>
-        <p class="text-sm text-base-content/40 mt-0.5">Last updated April 10, 2026</p>
+        <p class="text-sm text-base-content/40 mt-0.5">Cabotage Deploys, LLC</p>
       </div>
     </div>
   </div>
@@ -76,17 +74,18 @@
       <div class="sticky top-20">
         <p class="text-xs font-semibold uppercase tracking-wider text-base-content/30 mb-3">On this page</p>
         <ul class="flex flex-col gap-1 text-sm" id="toc-list">
-          <li><a href="#overview"   class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Overview</a></li>
-          <li><a href="#collect"    class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">What We Collect</a></li>
-          <li><a href="#how"        class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">How We Use Data</a></li>
-          <li><a href="#storage"    class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Data Storage</a></li>
-          <li><a href="#sharing"    class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Data Sharing</a></li>
-          <li><a href="#security"   class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Security</a></li>
-          <li><a href="#retention"  class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Retention</a></li>
-          <li><a href="#rights"     class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Your Rights</a></li>
-          <li><a href="#cookies"    class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Cookies</a></li>
-          <li><a href="#pp-changes" class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Changes</a></li>
-          <li><a href="#pp-contact" class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Contact</a></li>
+          <li><a href="#collect"    class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">1. Information We Collect</a></li>
+          <li><a href="#how"        class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">2. How We Use Information</a></li>
+          <li><a href="#sharing"    class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">3. How We Share Information</a></li>
+          <li><a href="#retention"  class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">4. Data Retention</a></li>
+          <li><a href="#security"   class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">5. Security</a></li>
+          <li><a href="#cookies"    class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">6. Cookies &amp; Tracking</a></li>
+          <li><a href="#rights"     class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">7. Your Rights &amp; Choices</a></li>
+          <li><a href="#us-state"   class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">8. U.S. State Privacy</a></li>
+          <li><a href="#intl"       class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">9. International &amp; GDPR</a></li>
+          <li><a href="#children"   class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">10. Children's Privacy</a></li>
+          <li><a href="#pp-changes" class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">11. Changes</a></li>
+          <li><a href="#pp-contact" class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">12. Contact</a></li>
         </ul>
 
         <div class="mt-6 pt-4 border-t border-base-content/5">
@@ -108,17 +107,18 @@
           {{ icon('chevron-down', 'w-4 h-4 transition-transform group-open:rotate-180') }}
         </summary>
         <ul class="px-4 pb-3 flex flex-col gap-1 text-sm border-t border-base-content/5 pt-3">
-          <li><a href="#overview"   class="block py-1 text-base-content/50 hover:text-primary transition-colors">Overview</a></li>
-          <li><a href="#collect"    class="block py-1 text-base-content/50 hover:text-primary transition-colors">What We Collect</a></li>
-          <li><a href="#how"        class="block py-1 text-base-content/50 hover:text-primary transition-colors">How We Use Data</a></li>
-          <li><a href="#storage"    class="block py-1 text-base-content/50 hover:text-primary transition-colors">Data Storage</a></li>
-          <li><a href="#sharing"    class="block py-1 text-base-content/50 hover:text-primary transition-colors">Data Sharing</a></li>
-          <li><a href="#security"   class="block py-1 text-base-content/50 hover:text-primary transition-colors">Security</a></li>
-          <li><a href="#retention"  class="block py-1 text-base-content/50 hover:text-primary transition-colors">Retention</a></li>
-          <li><a href="#rights"     class="block py-1 text-base-content/50 hover:text-primary transition-colors">Your Rights</a></li>
-          <li><a href="#cookies"    class="block py-1 text-base-content/50 hover:text-primary transition-colors">Cookies</a></li>
-          <li><a href="#pp-changes" class="block py-1 text-base-content/50 hover:text-primary transition-colors">Changes</a></li>
-          <li><a href="#pp-contact" class="block py-1 text-base-content/50 hover:text-primary transition-colors">Contact</a></li>
+          <li><a href="#collect"    class="block py-1 text-base-content/50 hover:text-primary transition-colors">1. Information We Collect</a></li>
+          <li><a href="#how"        class="block py-1 text-base-content/50 hover:text-primary transition-colors">2. How We Use Information</a></li>
+          <li><a href="#sharing"    class="block py-1 text-base-content/50 hover:text-primary transition-colors">3. How We Share Information</a></li>
+          <li><a href="#retention"  class="block py-1 text-base-content/50 hover:text-primary transition-colors">4. Data Retention</a></li>
+          <li><a href="#security"   class="block py-1 text-base-content/50 hover:text-primary transition-colors">5. Security</a></li>
+          <li><a href="#cookies"    class="block py-1 text-base-content/50 hover:text-primary transition-colors">6. Cookies &amp; Tracking</a></li>
+          <li><a href="#rights"     class="block py-1 text-base-content/50 hover:text-primary transition-colors">7. Your Rights &amp; Choices</a></li>
+          <li><a href="#us-state"   class="block py-1 text-base-content/50 hover:text-primary transition-colors">8. U.S. State Privacy</a></li>
+          <li><a href="#intl"       class="block py-1 text-base-content/50 hover:text-primary transition-colors">9. International &amp; GDPR</a></li>
+          <li><a href="#children"   class="block py-1 text-base-content/50 hover:text-primary transition-colors">10. Children's Privacy</a></li>
+          <li><a href="#pp-changes" class="block py-1 text-base-content/50 hover:text-primary transition-colors">11. Changes</a></li>
+          <li><a href="#pp-contact" class="block py-1 text-base-content/50 hover:text-primary transition-colors">12. Contact</a></li>
         </ul>
       </details>
 
@@ -129,222 +129,248 @@
           <div>
             <p class="text-sm font-semibold text-base-content mb-1">The short version</p>
             <p class="text-sm text-base-content/60 leading-relaxed">
-              We collect only what's necessary to operate the platform -- account info, deployment metadata, and access logs. No data sales, no third-party sharing.
+              We collect only what's necessary to operate the platform -- account info, deployment metadata, and access logs. We do not sell, rent, or trade your personal information. We share data only with essential service providers (like our payment processor) needed to run the Service.
             </p>
           </div>
         </div>
       </div>
 
-      <div class="space-y-10">
-        {# §1 Overview #}
-        <section id="overview" class="legal-section">
-          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
-            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">1</span>
-            Overview
-          </h2>
-          <div class="card bg-base-200 border border-base-300 p-5">
-            <p class="text-sm text-base-content/70 leading-relaxed">
-              This Privacy Policy describes how the Cabotage platform ("Service") collects, uses, and protects information when you use our Platform as a Service.
-            </p>
-          </div>
-        </section>
+      {# ── Preamble ── #}
+      <div class="mb-10 card bg-base-200 border border-base-300 p-5 space-y-3">
+        <p class="text-sm text-base-content/70 leading-relaxed">
+          This Privacy Policy describes how Cabotage Deploys, LLC ("Cabotage," "we," "us," or "our") collects, uses, and discloses information when you use our platform and services available at cabotage.io (the "Services"). By using the Services, you agree to the terms of this Privacy Policy.
+        </p>
+        <p class="text-sm text-base-content/70 leading-relaxed">
+          This policy covers two categories of people: <strong class="text-base-content/80">Customers</strong> (individuals or organizations that create an account and use our platform to deploy applications) and <strong class="text-base-content/80">End Users</strong> (individuals whose data may be processed by Customers' applications running on our infrastructure). Cabotage acts as a <strong class="text-base-content/80">data controller</strong> for Customer account data and as a <strong class="text-base-content/80">data processor</strong> for any personal data Customers process through their deployments.
+        </p>
+      </div>
 
-        {# §2 What We Collect #}
+      <div class="space-y-10">
+        {# §1 Information We Collect #}
         <section id="collect" class="legal-section">
           <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
-            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">2</span>
-            What We Collect
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">1</span>
+            Information We Collect
           </h2>
-          <div class="card bg-base-200 border border-base-300 p-5">
-            <div class="grid gap-4 sm:grid-cols-2">
-              <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5">
-                <div class="flex items-center gap-2 mb-2">
-                  <span class="text-primary">{{ icon('user', 'w-4 h-4') }}</span>
-                  <p class="text-sm font-medium text-base-content/80">Account Information</p>
-                </div>
-                <p class="text-xs text-base-content/50 leading-relaxed">Username, email address, authentication credentials (hashed), and organization membership.</p>
-              </div>
-              <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5">
-                <div class="flex items-center gap-2 mb-2">
-                  <span class="text-primary">{{ icon('container', 'w-4 h-4') }}</span>
-                  <p class="text-sm font-medium text-base-content/80">Deployment Data</p>
-                </div>
-                <p class="text-xs text-base-content/50 leading-relaxed">Application configuration, environment variables (encrypted), container images, build logs, and deployment history.</p>
-              </div>
-              <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5">
-                <div class="flex items-center gap-2 mb-2">
-                  <span class="text-primary">{{ icon('activity', 'w-4 h-4') }}</span>
-                  <p class="text-sm font-medium text-base-content/80">Usage &amp; Access Logs</p>
-                </div>
-                <p class="text-xs text-base-content/50 leading-relaxed">IP addresses, request timestamps, browser user-agent strings, and actions performed within the platform.</p>
-              </div>
-              <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5">
-                <div class="flex items-center gap-2 mb-2">
-                  <span class="text-primary">{{ icon('git-branch', 'w-4 h-4') }}</span>
-                  <p class="text-sm font-medium text-base-content/80">Source Integration</p>
-                </div>
-                <p class="text-xs text-base-content/50 leading-relaxed">Repository URLs, branch names, and webhook payloads used to trigger automated builds and deployments.</p>
-              </div>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-5">
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-2 flex items-center gap-2">
+                <span class="text-primary">{{ icon('user', 'w-4 h-4') }}</span>
+                1.1 Account and Customer Data
+              </h3>
+              <p class="text-sm text-base-content/70 leading-relaxed mb-2">When you register for an account, we collect:</p>
+              <ul class="space-y-1 text-sm text-base-content/70 ml-6">
+                <li class="flex items-center gap-2"><span class="w-1 h-1 rounded-full bg-base-content/30"></span> Name and email address</li>
+                <li class="flex items-center gap-2"><span class="w-1 h-1 rounded-full bg-base-content/30"></span> Organization name (if applicable)</li>
+                <li class="flex items-center gap-2"><span class="w-1 h-1 rounded-full bg-base-content/30"></span> Username and hashed password credentials</li>
+                <li class="flex items-center gap-2"><span class="w-1 h-1 rounded-full bg-base-content/30"></span> Billing contact information</li>
+              </ul>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-2 flex items-center gap-2">
+                <span class="text-primary">{{ icon('credit-card', 'w-4 h-4') }}</span>
+                1.2 Payment Data
+              </h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                Payment processing is handled by Stripe, Inc. Cabotage does not store full payment card numbers. We receive and retain limited billing data such as the last four digits of a card, billing address, and transaction history. Please review Stripe's privacy policy at stripe.com/privacy for details.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-2 flex items-center gap-2">
+                <span class="text-primary">{{ icon('activity', 'w-4 h-4') }}</span>
+                1.3 Infrastructure and Usage Data
+              </h3>
+              <p class="text-sm text-base-content/70 leading-relaxed mb-2">When you use the Services, we automatically collect:</p>
+              <ul class="space-y-1 text-sm text-base-content/70 ml-6">
+                <li class="flex items-center gap-2"><span class="w-1 h-1 rounded-full bg-base-content/30"></span> Deployment configurations, build logs, and runtime logs</li>
+                <li class="flex items-center gap-2"><span class="w-1 h-1 rounded-full bg-base-content/30"></span> Resource usage metrics (CPU, memory, network, storage)</li>
+                <li class="flex items-center gap-2"><span class="w-1 h-1 rounded-full bg-base-content/30"></span> IP addresses and request metadata for platform security</li>
+                <li class="flex items-center gap-2"><span class="w-1 h-1 rounded-full bg-base-content/30"></span> API access tokens and authentication events</li>
+                <li class="flex items-center gap-2"><span class="w-1 h-1 rounded-full bg-base-content/30"></span> Browser type, operating system, and referring URLs when accessing the dashboard</li>
+              </ul>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-2 flex items-center gap-2">
+                <span class="text-primary">{{ icon('container', 'w-4 h-4') }}</span>
+                1.4 Customer Content
+              </h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                Your application code, container images, environment variables, and any data stored in infrastructure managed by Cabotage ("Customer Content") are yours. We access Customer Content only as necessary to provide the Services, respond to support requests, or as required by law. We do not analyze Customer Content for advertising purposes.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-2 flex items-center gap-2">
+                <span class="text-primary">{{ icon('message-square', 'w-4 h-4') }}</span>
+                1.5 Communications
+              </h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                If you contact us for support or correspond with us by email, we retain those communications to assist you and improve the Services.
+              </p>
             </div>
           </div>
         </section>
 
-        {# §3 How We Use Data #}
+        {# §2 How We Use Information #}
         <section id="how" class="legal-section">
           <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
-            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">3</span>
-            How We Use Data
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">2</span>
+            How We Use Information
           </h2>
           <div class="card bg-base-200 border border-base-300 p-5">
             <ul class="space-y-2 text-sm text-base-content/70">
               <li class="flex items-start gap-2">
                 <span class="text-success mt-0.5">{{ icon('check', 'w-4 h-4') }}</span>
-                Authenticate your identity and manage access control
+                To provision, operate, maintain, and improve the Services
               </li>
               <li class="flex items-start gap-2">
                 <span class="text-success mt-0.5">{{ icon('check', 'w-4 h-4') }}</span>
-                Build, deploy, and manage your applications
+                To authenticate users and prevent unauthorized access
               </li>
               <li class="flex items-start gap-2">
                 <span class="text-success mt-0.5">{{ icon('check', 'w-4 h-4') }}</span>
-                Provide audit trails and operational logging
+                To process payments and send billing communications
               </li>
               <li class="flex items-start gap-2">
                 <span class="text-success mt-0.5">{{ icon('check', 'w-4 h-4') }}</span>
-                Troubleshoot issues and improve platform reliability
+                To send service notifications, security alerts, and policy updates
               </li>
               <li class="flex items-start gap-2">
                 <span class="text-success mt-0.5">{{ icon('check', 'w-4 h-4') }}</span>
-                Enforce acceptable use policies and protect infrastructure
+                To provide technical support
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-success mt-0.5">{{ icon('check', 'w-4 h-4') }}</span>
+                To detect, investigate, and prevent fraud, abuse, and security incidents
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-success mt-0.5">{{ icon('check', 'w-4 h-4') }}</span>
+                To comply with legal obligations
               </li>
             </ul>
-          </div>
-        </section>
-
-        {# §4 Data Storage #}
-        <section id="storage" class="legal-section">
-          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
-            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">4</span>
-            Data Storage
-          </h2>
-          <div class="card bg-base-200 border border-base-300 p-5 space-y-3">
-            <p class="text-sm text-base-content/70 leading-relaxed">
-              All data -- including application code, configuration, logs, and database contents -- is stored on infrastructure operated by Cabotage. For self-hosted deployments, your organization's administrator controls where data is stored and processed.
-            </p>
-            <p class="text-sm text-base-content/70 leading-relaxed">
-              Sensitive values such as environment variables and registry credentials are encrypted at rest.
-            </p>
-          </div>
-        </section>
-
-        {# §5 Data Sharing #}
-        <section id="sharing" class="legal-section">
-          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
-            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">5</span>
-            Data Sharing
-          </h2>
-          <div class="card bg-base-200 border border-base-300 p-5">
-            <div class="flex items-start gap-3 p-3 rounded-lg bg-success/5 border border-success/10 mb-3">
+            <div class="mt-4 flex items-start gap-3 p-3 rounded-lg bg-success/5 border border-success/10">
               <span class="text-success mt-0.5">{{ icon('shield-check', 'w-4 h-4') }}</span>
               <p class="text-sm text-base-content/70 leading-relaxed">
-                <strong class="text-base-content/90">We do not sell, trade, or share your data with third parties.</strong>
+                <strong class="text-base-content/90">We do not use your data for advertising.</strong> We do not sell, rent, or trade your personal information to third parties for marketing purposes.
               </p>
             </div>
-            <p class="text-sm text-base-content/70 leading-relaxed">
-              Data may be shared with third-party services only when necessary to operate the Service (e.g., container registries, Git hosting providers) or when explicitly configured by you or your organization.
+          </div>
+        </section>
+
+        {# §3 How We Share Information #}
+        <section id="sharing" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">3</span>
+            How We Share Information
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-4">
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">3.1 Service Providers (Subprocessors)</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed mb-2">
+                We share information with vendors who perform services on our behalf, including:
+              </p>
+              <div class="grid gap-2 sm:grid-cols-2">
+                <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+                  <p class="text-xs font-medium text-base-content/60">Amazon Web Services, Inc.</p>
+                  <p class="text-xs text-base-content/40">Cloud infrastructure and compute</p>
+                </div>
+                <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+                  <p class="text-xs font-medium text-base-content/60">Stripe, Inc.</p>
+                  <p class="text-xs text-base-content/40">Payment processing</p>
+                </div>
+              </div>
+              <p class="text-xs text-base-content/50 mt-2">
+                These vendors process data only as directed by us and are subject to confidentiality obligations.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">3.2 Legal Requirements</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                We may disclose information as required by law or valid legal process. We will notify affected Customers of such requests to the extent permitted by law.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">3.3 Business Transfers</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                In the event of a merger, acquisition, or asset sale, Customer data may transfer as part of that transaction. We will notify Customers by posting on cabotage.io or emailing the address on file.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">3.4 Protection of Rights</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                We may disclose information where necessary to protect the rights, property, or safety of Cabotage, our Customers, or the public.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {# §4 Data Retention #}
+        <section id="retention" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">4</span>
+            Data Retention
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <div class="grid gap-3 sm:grid-cols-3 mb-3">
+              <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5 text-center">
+                <p class="text-lg font-bold text-primary">3 yrs</p>
+                <p class="text-xs text-base-content/50">Account &amp; billing data after relationship ends</p>
+              </div>
+              <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5 text-center">
+                <p class="text-lg font-bold text-primary">90 days</p>
+                <p class="text-xs text-base-content/50">Log and usage data</p>
+              </div>
+              <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5 text-center">
+                <p class="text-lg font-bold text-primary">30 days</p>
+                <p class="text-xs text-base-content/50">Customer Content after termination</p>
+              </div>
+            </div>
+            <p class="text-sm text-base-content/50 leading-relaxed">
+              Data may be retained longer where required by law.
             </p>
           </div>
         </section>
 
-        {# §6 Security #}
+        {# §5 Security #}
         <section id="security" class="legal-section">
           <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
-            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">6</span>
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">5</span>
             Security
           </h2>
           <div class="card bg-base-200 border border-base-300 p-5">
+            <p class="text-sm text-base-content/70 leading-relaxed mb-3">We implement commercially reasonable safeguards including:</p>
             <ul class="space-y-2 text-sm text-base-content/70">
               <li class="flex items-start gap-2">
                 <span class="text-primary mt-0.5">{{ icon('lock', 'w-4 h-4') }}</span>
-                All credentials and secrets are encrypted at rest
+                Encryption of data in transit via TLS
               </li>
               <li class="flex items-start gap-2">
                 <span class="text-primary mt-0.5">{{ icon('shield', 'w-4 h-4') }}</span>
-                HTTPS/TLS is enforced for all web traffic
+                Encryption of data at rest
               </li>
               <li class="flex items-start gap-2">
                 <span class="text-primary mt-0.5">{{ icon('key', 'w-4 h-4') }}</span>
-                Two-factor authentication is available for all accounts
+                Access controls and authentication for Cabotage personnel
               </li>
               <li class="flex items-start gap-2">
-                <span class="text-primary mt-0.5">{{ icon('users', 'w-4 h-4') }}</span>
-                Role-based access control limits data exposure
-              </li>
-              <li class="flex items-start gap-2">
-                <span class="text-primary mt-0.5">{{ icon('file-text', 'w-4 h-4') }}</span>
-                Audit logging tracks all significant platform actions
+                <span class="text-primary mt-0.5">{{ icon('search', 'w-4 h-4') }}</span>
+                Regular security assessments
               </li>
             </ul>
-          </div>
-        </section>
-
-        {# §7 Retention #}
-        <section id="retention" class="legal-section">
-          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
-            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">7</span>
-            Retention
-          </h2>
-          <div class="card bg-base-200 border border-base-300 p-5 space-y-3">
-            <p class="text-sm text-base-content/70 leading-relaxed">
-              Account data is retained as long as your account is active. Deployment metadata and build logs are retained according to the platform's retention policies.
-            </p>
-            <p class="text-sm text-base-content/70 leading-relaxed">
-              Upon account deletion, personal data is removed. Anonymized audit logs may be retained for security and compliance purposes.
+            <p class="text-sm text-base-content/50 leading-relaxed mt-3">
+              No system is completely secure. If you believe your account has been compromised, contact legal@cabotage.io immediately.
             </p>
           </div>
         </section>
 
-        {# §8 Your Rights #}
-        <section id="rights" class="legal-section">
-          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
-            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">8</span>
-            Your Rights
-          </h2>
-          <div class="card bg-base-200 border border-base-300 p-5">
-            <p class="text-sm text-base-content/70 leading-relaxed mb-3">You have the right to:</p>
-            <div class="grid gap-2 sm:grid-cols-2">
-              <div class="flex items-center gap-2 text-sm text-base-content/70">
-                <span class="text-accent">{{ icon('eye', 'w-4 h-4') }}</span>
-                Access your personal data
-              </div>
-              <div class="flex items-center gap-2 text-sm text-base-content/70">
-                <span class="text-accent">{{ icon('pencil', 'w-4 h-4') }}</span>
-                Correct inaccurate data
-              </div>
-              <div class="flex items-center gap-2 text-sm text-base-content/70">
-                <span class="text-accent">{{ icon('download', 'w-4 h-4') }}</span>
-                Export your data
-              </div>
-              <div class="flex items-center gap-2 text-sm text-base-content/70">
-                <span class="text-accent">{{ icon('trash-2', 'w-4 h-4') }}</span>
-                Request deletion of your account
-              </div>
-            </div>
-            <p class="text-sm text-base-content/50 mt-3 leading-relaxed">
-              Contact the platform administrators to exercise any of these rights.
-            </p>
-          </div>
-        </section>
-
-        {# §9 Cookies #}
+        {# §6 Cookies and Tracking #}
         <section id="cookies" class="legal-section">
           <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
-            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">9</span>
-            Cookies
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">6</span>
+            Cookies &amp; Tracking
           </h2>
-          <div class="card bg-base-200 border border-base-300 p-5 space-y-3">
-            <p class="text-sm text-base-content/70 leading-relaxed">
-              Cabotage uses only essential cookies required for authentication and session management. We do not use tracking cookies, analytics pixels, or any third-party advertising technology.
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <p class="text-sm text-base-content/70 leading-relaxed mb-3">
+              We use cookies on the dashboard and marketing site to maintain session state and analyze aggregate usage. We do not use tracking cookies for cross-site advertising. You may configure your browser to refuse cookies, though some features may not function properly.
             </p>
             <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5">
               <div class="grid grid-cols-3 gap-2 text-xs">
@@ -365,28 +391,113 @@
           </div>
         </section>
 
-        {# §10 Changes #}
-        <section id="pp-changes" class="legal-section">
+        {# §7 Your Rights and Choices #}
+        <section id="rights" class="legal-section">
           <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
-            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">10</span>
-            Changes to This Policy
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">7</span>
+            Your Rights &amp; Choices
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-4">
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">7.1 Access and Correction</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                You may update most account information through your account settings. For other requests, contact privacy@cabotage.io.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">7.2 Deletion</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                You may request deletion of your account and personal data by contacting privacy@cabotage.io. We will honor requests subject to legal obligations and legitimate business needs.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">7.3 Marketing Communications</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                You may opt out of marketing emails via the unsubscribe link in any such email. We will continue to send transactional and administrative communications.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">7.4 Data Portability</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                Upon request, we will provide an export of your account data and deployment configurations where technically feasible.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {# §8 U.S. State Privacy Rights #}
+        <section id="us-state" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">8</span>
+            U.S. State Privacy Rights
           </h2>
           <div class="card bg-base-200 border border-base-300 p-5">
             <p class="text-sm text-base-content/70 leading-relaxed">
-              We may update this Privacy Policy to reflect changes to the platform or legal requirements. Material changes will be communicated through the Service. The "last updated" date at the top of this page indicates the latest revision.
+              If you are a resident of California, Colorado, Connecticut, Virginia, or another U.S. state with applicable consumer privacy laws, you may have rights including the right to know what personal information we collect, the right to correct inaccurate data, the right to delete personal information, and the right to opt out of the sale or sharing of personal information (we do not sell personal information).
+            </p>
+            <p class="text-sm text-base-content/70 leading-relaxed mt-3">
+              To exercise these rights, contact privacy@cabotage.io. We will respond within applicable legal timeframes and will not discriminate against you for exercising your rights.
             </p>
           </div>
         </section>
 
-        {# §11 Contact #}
-        <section id="pp-contact" class="legal-section">
+        {# §9 International Users and GDPR #}
+        <section id="intl" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">9</span>
+            International Users &amp; GDPR
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-3">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              The Services are operated from the United States. Data may be transferred to, stored, and processed in the United States.
+            </p>
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              If you are located in the EEA, UK, or Switzerland, you may have rights under applicable data protection law including the right to access, rectify, or erase your personal data, restrict or object to processing, and data portability. Our lawful bases for processing are: performance of a contract, compliance with legal obligations, and legitimate interests in securing and improving the platform.
+            </p>
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              Customers requiring a Data Processing Agreement (DPA) for GDPR Article 28 compliance should contact legal@cabotage.io.
+            </p>
+          </div>
+        </section>
+
+        {# §10 Children's Privacy #}
+        <section id="children" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">10</span>
+            Children's Privacy
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              The Services are not directed to individuals under 16. We do not knowingly collect personal information from children under 16. Contact privacy@cabotage.io if you believe a child has provided us with information.
+            </p>
+          </div>
+        </section>
+
+        {# §11 Changes #}
+        <section id="pp-changes" class="legal-section">
           <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
             <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">11</span>
+            Changes to This Policy
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              We may update this Privacy Policy from time to time. Material changes will be communicated via email and/or a prominent notice on cabotage.io at least 30 days before taking effect. Continued use after the effective date constitutes acceptance.
+            </p>
+          </div>
+        </section>
+
+        {# §12 Contact #}
+        <section id="pp-contact" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">12</span>
             Contact
           </h2>
           <div class="card bg-base-200 border border-base-300 p-5">
             <p class="text-sm text-base-content/70 leading-relaxed">
-              For privacy-related inquiries, contact the platform administrators or open an issue in the Cabotage project repository.
+              Questions, concerns, or requests related to this Privacy Policy:
+            </p>
+            <p class="text-sm text-base-content/70 leading-relaxed mt-2">
+              Cabotage Deploys, LLC &mdash; privacy@cabotage.io
             </p>
           </div>
         </section>

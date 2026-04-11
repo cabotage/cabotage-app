@@ -7,11 +7,9 @@
 
 {% block css %}
 <style>
-  /* Legal page smooth-scroll with topbar offset */
   .legal-page { scroll-behavior: smooth; }
   .legal-section { scroll-margin-top: 5rem; }
 
-  /* ToC active indicator */
   .toc-link {
     position: relative;
     padding-left: 1rem;
@@ -24,10 +22,7 @@
     color: var(--color-primary);
   }
 
-  /* Section anchor highlight on target */
-  .legal-section:target > .section-heading {
-    color: var(--color-primary);
-  }
+  .legal-section:target > .section-heading { color: var(--color-primary); }
   .legal-section:target > .section-heading::after {
     content: '';
     position: absolute;
@@ -39,7 +34,6 @@
     background: var(--color-primary);
   }
 
-  /* Reading progress bar */
   .reading-progress {
     position: fixed;
     top: 0;
@@ -69,7 +63,7 @@
       </div>
       <div>
         <h1 class="text-2xl font-bold text-base-content">Terms of Service</h1>
-        <p class="text-sm text-base-content/40 mt-0.5">Last updated April 10, 2026</p>
+        <p class="text-sm text-base-content/40 mt-0.5">Cabotage Deploys, LLC</p>
       </div>
     </div>
   </div>
@@ -80,17 +74,18 @@
       <div class="sticky top-20">
         <p class="text-xs font-semibold uppercase tracking-wider text-base-content/30 mb-3">On this page</p>
         <ul class="flex flex-col gap-1 text-sm" id="toc-list">
-          <li><a href="#acceptance"  class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Acceptance of Terms</a></li>
-          <li><a href="#description" class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Service Description</a></li>
-          <li><a href="#accounts"    class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Accounts</a></li>
-          <li><a href="#use"         class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Acceptable Use</a></li>
-          <li><a href="#data"        class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Data &amp; Content</a></li>
-          <li><a href="#uptime"      class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Availability &amp; SLA</a></li>
-          <li><a href="#ip"          class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Intellectual Property</a></li>
-          <li><a href="#termination" class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Termination</a></li>
-          <li><a href="#liability"   class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Limitation of Liability</a></li>
-          <li><a href="#changes"     class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Changes to Terms</a></li>
-          <li><a href="#contact"     class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Contact</a></li>
+          <li><a href="#accounts"      class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">1. Accounts</a></li>
+          <li><a href="#services"      class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">2. The Services</a></li>
+          <li><a href="#data"          class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">3. Customer Content &amp; Data</a></li>
+          <li><a href="#use"           class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">4. Acceptable Use</a></li>
+          <li><a href="#fees"          class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">5. Fees &amp; Payment</a></li>
+          <li><a href="#ip"            class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">6. Intellectual Property</a></li>
+          <li><a href="#confidential"  class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">7. Confidentiality</a></li>
+          <li><a href="#termination"   class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">8. Term &amp; Termination</a></li>
+          <li><a href="#disclaimers"   class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">9. Disclaimers</a></li>
+          <li><a href="#liability"     class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">10. Limitation of Liability</a></li>
+          <li><a href="#disputes"      class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">11. Dispute Resolution</a></li>
+          <li><a href="#general"       class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">12. General</a></li>
         </ul>
 
         <div class="mt-6 pt-4 border-t border-base-content/5">
@@ -112,63 +107,141 @@
           {{ icon('chevron-down', 'w-4 h-4 transition-transform group-open:rotate-180') }}
         </summary>
         <ul class="px-4 pb-3 flex flex-col gap-1 text-sm border-t border-base-content/5 pt-3">
-          <li><a href="#acceptance"  class="block py-1 text-base-content/50 hover:text-primary transition-colors">Acceptance of Terms</a></li>
-          <li><a href="#description" class="block py-1 text-base-content/50 hover:text-primary transition-colors">Service Description</a></li>
-          <li><a href="#accounts"    class="block py-1 text-base-content/50 hover:text-primary transition-colors">Accounts</a></li>
-          <li><a href="#use"         class="block py-1 text-base-content/50 hover:text-primary transition-colors">Acceptable Use</a></li>
-          <li><a href="#data"        class="block py-1 text-base-content/50 hover:text-primary transition-colors">Data &amp; Content</a></li>
-          <li><a href="#uptime"      class="block py-1 text-base-content/50 hover:text-primary transition-colors">Availability &amp; SLA</a></li>
-          <li><a href="#ip"          class="block py-1 text-base-content/50 hover:text-primary transition-colors">Intellectual Property</a></li>
-          <li><a href="#termination" class="block py-1 text-base-content/50 hover:text-primary transition-colors">Termination</a></li>
-          <li><a href="#liability"   class="block py-1 text-base-content/50 hover:text-primary transition-colors">Limitation of Liability</a></li>
-          <li><a href="#changes"     class="block py-1 text-base-content/50 hover:text-primary transition-colors">Changes to Terms</a></li>
-          <li><a href="#contact"     class="block py-1 text-base-content/50 hover:text-primary transition-colors">Contact</a></li>
+          <li><a href="#accounts"     class="block py-1 text-base-content/50 hover:text-primary transition-colors">1. Accounts</a></li>
+          <li><a href="#services"     class="block py-1 text-base-content/50 hover:text-primary transition-colors">2. The Services</a></li>
+          <li><a href="#data"         class="block py-1 text-base-content/50 hover:text-primary transition-colors">3. Customer Content &amp; Data</a></li>
+          <li><a href="#use"          class="block py-1 text-base-content/50 hover:text-primary transition-colors">4. Acceptable Use</a></li>
+          <li><a href="#fees"         class="block py-1 text-base-content/50 hover:text-primary transition-colors">5. Fees &amp; Payment</a></li>
+          <li><a href="#ip"           class="block py-1 text-base-content/50 hover:text-primary transition-colors">6. Intellectual Property</a></li>
+          <li><a href="#confidential" class="block py-1 text-base-content/50 hover:text-primary transition-colors">7. Confidentiality</a></li>
+          <li><a href="#termination"  class="block py-1 text-base-content/50 hover:text-primary transition-colors">8. Term &amp; Termination</a></li>
+          <li><a href="#disclaimers"  class="block py-1 text-base-content/50 hover:text-primary transition-colors">9. Disclaimers</a></li>
+          <li><a href="#liability"    class="block py-1 text-base-content/50 hover:text-primary transition-colors">10. Limitation of Liability</a></li>
+          <li><a href="#disputes"     class="block py-1 text-base-content/50 hover:text-primary transition-colors">11. Dispute Resolution</a></li>
+          <li><a href="#general"      class="block py-1 text-base-content/50 hover:text-primary transition-colors">12. General</a></li>
         </ul>
       </details>
 
+      {# ── Arbitration notice ── #}
+      <div class="mb-8 card bg-warning/5 border border-warning/10 p-5">
+        <div class="flex items-start gap-3">
+          <span class="text-warning mt-0.5">{{ icon('alert-triangle', 'w-5 h-5') }}</span>
+          <div>
+            <p class="text-sm font-semibold text-base-content mb-1">Please read carefully</p>
+            <p class="text-sm text-base-content/60 leading-relaxed">
+              Section 11 contains a binding arbitration clause and class action waiver. By accessing or using the Cabotage platform you agree to these Terms.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {# ── Preamble ── #}
+      <div class="mb-10 card bg-base-200 border border-base-300 p-5">
+        <p class="text-sm text-base-content/70 leading-relaxed">
+          These Terms of Service ("Terms") constitute a legally binding agreement between Cabotage Deploys, LLC ("Cabotage," "we," "us," or "our") and you or the entity you represent ("Customer" or "you"). They govern your access to and use of the Cabotage platform available at cabotage.io and any related services, APIs, documentation, and tooling (collectively, the "Services"). By creating an account or using the Services, you accept these Terms on behalf of yourself and, where applicable, the organization you represent.
+        </p>
+      </div>
+
       <div class="space-y-10">
-        {# §1 Acceptance #}
-        <section id="acceptance" class="legal-section">
-          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
-            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">1</span>
-            Acceptance of Terms
-          </h2>
-          <div class="card bg-base-200 border border-base-300 p-5">
-            <p class="text-sm text-base-content/70 leading-relaxed">
-              By accessing or using the Cabotage platform ("Service"), you agree to be bound by these Terms of Service ("Terms"). If you are using the Service on behalf of an organization, you represent that you have the authority to bind that organization to these Terms.
-            </p>
-            <p class="text-sm text-base-content/70 leading-relaxed mt-3">
-              If you do not agree to these Terms, you must not access or use the Service.
-            </p>
-          </div>
-        </section>
-
-        {# §2 Service Description #}
-        <section id="description" class="legal-section">
-          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
-            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">2</span>
-            Service Description
-          </h2>
-          <div class="card bg-base-200 border border-base-300 p-5">
-            <p class="text-sm text-base-content/70 leading-relaxed">
-              Cabotage is a Platform as a Service (PaaS) that provides container orchestration, application deployment, scaling, and environment management. The Service includes the web dashboard, APIs, build pipelines, and related tooling. Cabotage is also available as open-source software for self-hosted use.
-            </p>
-          </div>
-        </section>
-
-        {# §3 Accounts #}
+        {# §1 Accounts #}
         <section id="accounts" class="legal-section">
           <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
-            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">3</span>
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">1</span>
             Accounts
           </h2>
-          <div class="card bg-base-200 border border-base-300 p-5 space-y-3">
-            <p class="text-sm text-base-content/70 leading-relaxed">
-              You must create an account to use most features of the Service. You are responsible for maintaining the security of your account credentials, including enabling two-factor authentication when available.
-            </p>
-            <p class="text-sm text-base-content/70 leading-relaxed">
-              You are responsible for all activity that occurs under your account. Notify the platform administrators immediately if you suspect unauthorized access.
-            </p>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-4">
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">1.1 Registration</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                You must create an account to use the Services. You represent that all registration information is accurate and will be kept current. You must be at least 18 years old and have authority to bind any organization you represent.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">1.2 Account Security</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                You are responsible for maintaining the confidentiality of your credentials and for all activity under your account. Notify us immediately at legal@cabotage.io of any unauthorized use.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">1.3 Organizations</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                If you create an account on behalf of an organization, you represent you have authority to bind that organization to these Terms. Organization administrators may provision additional users; you are responsible for their compliance.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {# §2 The Services #}
+        <section id="services" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">2</span>
+            The Services
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-4">
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">2.1 Platform Description</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                Cabotage provides a container-based platform-as-a-service that allows Customers to build, deploy, and operate applications on cloud infrastructure. The open-source core of the Cabotage platform (cabotage/cabotage-app) is licensed under the Apache License 2.0 and available at github.com/cabotage. These Terms govern your use of the hosted Services; they do not restrict your rights under the Apache 2.0 license with respect to the open-source software itself.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">2.2 License Grant</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                Subject to these Terms, Cabotage grants you a non-exclusive, non-transferable, revocable right to access and use the Services solely for your internal business purposes during the term of your subscription.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">2.3 Modifications</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                We may modify, suspend, or discontinue any feature of the Services at any time. We will provide reasonable advance notice of material changes that adversely affect paid Customers.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">2.4 Beta Features</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                Certain features may be offered in beta, preview, or experimental form. Beta features are provided "as is," may be discontinued, and are excluded from any SLA commitments.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">2.5 Support</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                Support is provided as described in your subscription plan. Enterprise and professional support tiers are available separately.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {# §3 Customer Content and Data #}
+        <section id="data" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">3</span>
+            Customer Content &amp; Data
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-4">
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">3.1 Ownership</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                You retain all right, title, and interest in and to your application code, container images, data, and configurations you deploy on the Services ("Customer Content"). These Terms do not grant Cabotage any ownership interest in Customer Content.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">3.2 License to Provide Services</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                You grant Cabotage a limited, non-exclusive license to host, store, transmit, process, and display Customer Content solely as necessary to provide the Services to you and as directed by you.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">3.3 Responsibility</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                You are solely responsible for the legality, accuracy, and appropriateness of all Customer Content. Cabotage is not obligated to back up Customer Content; you are responsible for your own backup copies.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">3.4 Data Processing</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                To the extent Customer Content includes personal data of your end users, the parties' obligations with respect to such data are governed by the Data Processing Agreement ("DPA") available as a standalone document at cabotage.io/legal. The DPA is incorporated into these Terms by reference upon execution.
+              </p>
+            </div>
           </div>
         </section>
 
@@ -179,138 +252,313 @@
             Acceptable Use
           </h2>
           <div class="card bg-base-200 border border-base-300 p-5">
-            <p class="text-sm text-base-content/70 leading-relaxed mb-3">You agree not to use the Service to:</p>
+            <p class="text-sm text-base-content/70 leading-relaxed mb-3">You agree not to use the Services to:</p>
             <ul class="space-y-2 text-sm text-base-content/70">
               <li class="flex items-start gap-2">
                 <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
-                Violate any applicable law or regulation
+                Deploy, distribute, or transmit malware, ransomware, or any code designed to damage, intercept, or exfiltrate data
               </li>
               <li class="flex items-start gap-2">
                 <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
-                Deploy malicious software, cryptominers, or engage in unauthorized scanning
+                Infringe, misappropriate, or violate any intellectual property right, privacy right, or other legal right of any third party
               </li>
               <li class="flex items-start gap-2">
                 <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
-                Interfere with the integrity or performance of the Service or its infrastructure
+                Facilitate spam, phishing, fraudulent activity, or any violation of applicable law
               </li>
               <li class="flex items-start gap-2">
                 <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
-                Attempt to gain unauthorized access to other users' accounts, data, or resources
+                Mine cryptocurrency without prior written consent from Cabotage
               </li>
               <li class="flex items-start gap-2">
                 <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
-                Exceed allocated resource quotas or abuse shared infrastructure
+                Conduct denial-of-service attacks or materially interfere with the Services or other customers' workloads
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                Store or process Protected Health Information (PHI) subject to HIPAA without a signed Business Associate Addendum
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                Engage in any activity that violates applicable export control laws or sanctions regulations
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                Attempt to gain unauthorized access to the Services or another customer's environment
               </li>
             </ul>
+            <p class="text-sm text-base-content/70 leading-relaxed mt-4">
+              Cabotage reserves the right to suspend or terminate access for violations of this section without prior notice where necessary to protect the integrity, security, or availability of the Services.
+            </p>
           </div>
         </section>
 
-        {# §5 Data & Content #}
-        <section id="data" class="legal-section">
+        {# §5 Fees and Payment #}
+        <section id="fees" class="legal-section">
           <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
             <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">5</span>
-            Data &amp; Content
+            Fees &amp; Payment
           </h2>
-          <div class="card bg-base-200 border border-base-300 p-5 space-y-3">
-            <p class="text-sm text-base-content/70 leading-relaxed">
-              You retain ownership of all code, configuration, and data you deploy through the Service ("Your Content"). You are solely responsible for the legality, integrity, and appropriateness of Your Content.
-            </p>
-            <p class="text-sm text-base-content/70 leading-relaxed">
-              You grant Cabotage the permissions necessary to operate the Service on your behalf -- including building, storing, and deploying your container images and managing associated configuration.
-            </p>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-4">
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">5.1 Subscription and Usage Fees</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                Access to the Services requires payment of fees as described on the Cabotage pricing page at cabotage.io/pricing, as amended from time to time. Fees may be based on resource consumption, flat-rate subscription, or a combination thereof.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">5.2 Payment Processing</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                Payment is processed by Stripe, Inc. on our behalf. By providing payment information, you authorize Cabotage to charge your payment method for all applicable fees. Stripe's terms of service and privacy policy apply to payment processing.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">5.3 Invoicing</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                Fees are typically invoiced monthly in arrears for usage-based components and in advance for subscription components. All fees are due upon invoice.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">5.4 Taxes</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                You are responsible for all applicable taxes, levies, or duties imposed by taxing authorities. Fees do not include taxes unless expressly stated.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">5.5 Disputes</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                You must notify us of any fee dispute within 30 days of the invoice date. Undisputed amounts remain due.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">5.6 Suspension for Non-Payment</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                We may suspend Services for accounts with overdue balances after reasonable notice, without liability to you.
+              </p>
+            </div>
           </div>
         </section>
 
-        {# §6 Availability & SLA #}
-        <section id="uptime" class="legal-section">
-          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
-            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">6</span>
-            Availability &amp; SLA
-          </h2>
-          <div class="card bg-base-200 border border-base-300 p-5 space-y-3">
-            <p class="text-sm text-base-content/70 leading-relaxed">
-              We strive to maintain high availability, but the Service is provided on an "as-is" basis. We do not guarantee uninterrupted or error-free operation. Planned maintenance windows will be communicated in advance when possible.
-            </p>
-            <p class="text-sm text-base-content/70 leading-relaxed">
-              Specific SLA commitments, if any, are defined separately by your organization's infrastructure agreement and are not governed by these general Terms.
-            </p>
-          </div>
-        </section>
-
-        {# §7 Intellectual Property #}
+        {# §6 Intellectual Property #}
         <section id="ip" class="legal-section">
           <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
-            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">7</span>
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">6</span>
             Intellectual Property
           </h2>
-          <div class="card bg-base-200 border border-base-300 p-5 space-y-3">
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-4">
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">6.1 Cabotage IP</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                Excluding the Apache 2.0 licensed open-source components, all software, documentation, trade secrets, marks, and other proprietary materials comprising the Services are owned by or licensed to Cabotage. No rights are granted except as expressly stated herein.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">6.2 Feedback</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                If you provide feedback, suggestions, or ideas regarding the Services ("Feedback"), you grant Cabotage a perpetual, irrevocable, royalty-free, worldwide license to use, incorporate, and exploit such Feedback. We will not identify you as the source without your consent.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">6.3 Open Source</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                Certain components of the Services incorporate open-source software. A list of such components and applicable license notices is available in the Cabotage documentation.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {# §7 Confidentiality #}
+        <section id="confidential" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">7</span>
+            Confidentiality
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
             <p class="text-sm text-base-content/70 leading-relaxed">
-              The Cabotage platform, its design, logos, and underlying code are the intellectual property of the Cabotage project and its contributors. These Terms do not grant you any rights to use our trademarks or branding.
+              Each party ("Receiving Party") may receive confidential information of the other party ("Disclosing Party") in connection with the Services. The Receiving Party will: (a) keep such information confidential using at least the same care it uses to protect its own confidential information, but no less than reasonable care; (b) not disclose it to third parties without the Disclosing Party's prior written consent; and (c) use it only to exercise rights and fulfill obligations under these Terms.
             </p>
-            <p class="text-sm text-base-content/70 leading-relaxed">
-              Cabotage is also available as open-source software. Your use of the source code is governed by its respective license, separate from these Terms.
+            <p class="text-sm text-base-content/70 leading-relaxed mt-3">
+              Confidentiality obligations do not apply to information that is or becomes publicly known through no fault of the Receiving Party, is independently developed, or must be disclosed by law or court order (with reasonable notice to the Disclosing Party where permitted).
             </p>
           </div>
         </section>
 
-        {# §8 Termination #}
+        {# §8 Term and Termination #}
         <section id="termination" class="legal-section">
           <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
             <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">8</span>
-            Termination
+            Term &amp; Termination
           </h2>
-          <div class="card bg-base-200 border border-base-300 p-5 space-y-3">
-            <p class="text-sm text-base-content/70 leading-relaxed">
-              We may suspend or terminate your access to the Service at any time for violation of these Terms, with or without notice. You may request account deletion at any time by contacting the platform administrators.
-            </p>
-            <p class="text-sm text-base-content/70 leading-relaxed">
-              Upon termination, your right to use the Service ceases immediately. We will make reasonable efforts to allow you to export your data prior to deletion.
-            </p>
-          </div>
-        </section>
-
-        {# §9 Limitation of Liability #}
-        <section id="liability" class="legal-section">
-          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
-            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">9</span>
-            Limitation of Liability
-          </h2>
-          <div class="card bg-base-200 border border-base-300 p-5">
-            <div class="flex items-start gap-3 p-3 rounded-lg bg-warning/5 border border-warning/10 mb-3">
-              <span class="text-warning mt-0.5">{{ icon('alert-triangle', 'w-4 h-4') }}</span>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-4">
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">8.1 Term</h3>
               <p class="text-sm text-base-content/70 leading-relaxed">
-                <strong class="text-base-content/90">Important:</strong> To the fullest extent permitted by law, the Service is provided "as is" without warranties of any kind, either express or implied.
+                These Terms commence when you create an account and continue until terminated.
               </p>
             </div>
-            <p class="text-sm text-base-content/70 leading-relaxed">
-              In no event shall the Cabotage project, its contributors, or operators be liable for any indirect, incidental, special, consequential, or punitive damages, including loss of data, revenue, or business opportunity, arising out of your use of the Service.
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">8.2 Termination by Customer</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                You may terminate your account at any time through the account settings. Termination does not entitle you to a refund of prepaid fees.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">8.3 Termination by Cabotage</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                We may terminate or suspend your access immediately upon written notice for material breach of these Terms that remains uncured for 10 days after notice, or immediately for violations of the Acceptable Use Policy, insolvency events, or as required by law.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">8.4 Effect of Termination</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                Upon termination: (a) your right to access the Services ceases; (b) Customer Content will be available for export for 30 days, after which it will be deleted; (c) accrued payment obligations survive; and (d) Sections 3.1, 6, 7, 9, 10, 11, and 12 survive.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {# §9 Disclaimers #}
+        <section id="disclaimers" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">9</span>
+            Disclaimers
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <p class="text-sm text-base-content/70 leading-relaxed uppercase font-medium">
+              The Services are provided "as is" and "as available." To the maximum extent permitted by applicable law, Cabotage and its suppliers disclaim all warranties, express, implied, or statutory, including warranties of merchantability, fitness for a particular purpose, title, and non-infringement. Cabotage does not warrant that the Services will be uninterrupted, error-free, or secure, or that any defects will be corrected. No advice or information obtained from Cabotage shall create any warranty not expressly stated in these Terms.
             </p>
           </div>
         </section>
 
-        {# §10 Changes #}
-        <section id="changes" class="legal-section">
+        {# §10 Limitation of Liability #}
+        <section id="liability" class="legal-section">
           <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
             <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">10</span>
-            Changes to Terms
+            Limitation of Liability
           </h2>
-          <div class="card bg-base-200 border border-base-300 p-5">
-            <p class="text-sm text-base-content/70 leading-relaxed">
-              We reserve the right to update these Terms at any time. Material changes will be communicated through the Service or via email. Continued use of the Service after changes take effect constitutes acceptance of the revised Terms.
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-4">
+            <div class="flex items-start gap-3 p-3 rounded-lg bg-warning/5 border border-warning/10">
+              <span class="text-warning mt-0.5">{{ icon('alert-triangle', 'w-4 h-4') }}</span>
+              <p class="text-sm text-base-content/70 leading-relaxed uppercase font-medium">
+                To the maximum extent permitted by law, in no event will Cabotage or its affiliates, officers, employees, agents, or suppliers be liable for any indirect, incidental, special, exemplary, punitive, or consequential damages, including loss of profits, data, business, or goodwill, arising out of or in connection with these Terms or the Services, even if advised of the possibility of such damages.
+              </p>
+            </div>
+            <p class="text-sm text-base-content/70 leading-relaxed uppercase font-medium">
+              Cabotage's total aggregate liability arising out of or in connection with these Terms will not exceed the greater of: (a) the amounts paid by you to Cabotage in the 12 months preceding the claim, or (b) one hundred US dollars (USD $100). The parties acknowledge that these limitations reflect a reasonable allocation of risk and are a fundamental element of the basis of the bargain between the parties.
+            </p>
+            <p class="text-sm text-base-content/50 leading-relaxed">
+              Some jurisdictions do not permit certain liability exclusions, in which case the above may not apply to you in full.
             </p>
           </div>
         </section>
 
-        {# §11 Contact #}
-        <section id="contact" class="legal-section">
+        {# §11 Dispute Resolution #}
+        <section id="disputes" class="legal-section">
           <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
             <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">11</span>
-            Contact
+            Dispute Resolution &amp; Arbitration
           </h2>
-          <div class="card bg-base-200 border border-base-300 p-5">
-            <p class="text-sm text-base-content/70 leading-relaxed">
-              Questions about these Terms? Contact the platform administrators or open an issue in the Cabotage project repository.
-            </p>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-4">
+            <div class="flex items-start gap-3 p-3 rounded-lg bg-warning/5 border border-warning/10">
+              <span class="text-warning mt-0.5">{{ icon('alert-triangle', 'w-4 h-4') }}</span>
+              <p class="text-sm text-base-content/70 leading-relaxed font-semibold">
+                Please read this section carefully. It affects your legal rights, including your right to file a lawsuit in court.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">11.1 Informal Resolution</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                Before initiating formal proceedings, the party raising a dispute must provide written notice to the other. The parties agree to meet and confer in good faith within 30 days of such notice to attempt informal resolution.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">11.2 Binding Arbitration</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                If informal resolution fails, disputes arising out of or relating to these Terms or the Services shall be resolved by binding arbitration administered by JAMS under its applicable rules. Claims under $250,000 are subject to JAMS Streamlined Arbitration Rules; larger claims to JAMS Comprehensive Rules. The arbitration shall be conducted in English. The Federal Arbitration Act governs this agreement to arbitrate.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">11.3 Class Action Waiver</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed uppercase font-medium">
+                All disputes must be brought on an individual basis. Neither party may bring claims as a plaintiff or class member in any class, consolidated, or representative proceeding. The arbitrator may not consolidate proceedings without consent of all parties.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">11.4 Exceptions</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                Either party may seek injunctive or equitable relief in a court of competent jurisdiction for intellectual property infringement or misappropriation. Small claims that qualify may be brought in small claims court.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">11.5 Governing Law &amp; Venue</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                These Terms are governed by the laws of the State of Delaware, without regard to conflict of law principles. For matters not subject to arbitration, the parties consent to the exclusive jurisdiction of the state and federal courts located in Delaware.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">11.6 Opt-Out</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                You may opt out of the arbitration agreement by sending written notice within 30 days of first accepting these Terms. Opting out does not affect any other provisions.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {# §12 General #}
+        <section id="general" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">12</span>
+            General
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-4">
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">12.1 Entire Agreement</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                These Terms, together with the Privacy Policy, any executed DPA, and any order forms, constitute the entire agreement between the parties regarding the Services and supersede all prior discussions.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">12.2 Modifications</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                We may update these Terms from time to time. Material changes will be communicated via email or notice on the Services at least 14 days before taking effect. Continued use after the effective date constitutes acceptance.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">12.3 Severability</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                If any provision is held invalid or unenforceable, the remaining provisions continue in full force.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">12.4 Assignment</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                You may not assign these Terms without our prior written consent. Cabotage may assign these Terms in connection with a merger, acquisition, or sale of assets.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">12.5 Force Majeure</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                Neither party is liable for delays or failures caused by events beyond its reasonable control, including natural disasters, acts of government, or third-party infrastructure failures.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">12.6 Export Compliance</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                You agree to comply with all applicable U.S. and international export control laws and regulations. You represent that you are not on any U.S. government denied-party list.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">12.7 DMCA</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                To report copyright infringement, send a notice meeting the requirements of 17 U.S.C. &sect; 512(c) to dmca@cabotage.io.
+              </p>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-base-content/80 mb-1">12.8 Contact</h3>
+              <p class="text-sm text-base-content/70 leading-relaxed">
+                Cabotage Deploys, LLC &mdash; legal@cabotage.io
+              </p>
+            </div>
           </div>
         </section>
       </div>
@@ -334,7 +582,6 @@
 {% block js %}
 <script>
 (function() {
-  // Reading progress bar
   var bar = document.getElementById('reading-progress');
   if (bar) {
     window.addEventListener('scroll', function() {
@@ -344,7 +591,6 @@
     }, { passive: true });
   }
 
-  // ToC active state tracking via IntersectionObserver
   var sections = document.querySelectorAll('.legal-section');
   var tocLinks = document.querySelectorAll('#toc-list .toc-link');
   if (sections.length && tocLinks.length) {
