@@ -1,0 +1,458 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon %}
+
+{% block title %}
+  Fair Use &amp; Acceptable Use - Cabotage
+{% endblock title %}
+
+{% block css %}
+<style>
+  .legal-page { scroll-behavior: smooth; }
+  .legal-section { scroll-margin-top: 5rem; }
+
+  .toc-link {
+    position: relative;
+    padding-left: 1rem;
+    border-left: 2px solid transparent;
+    transition: border-color 0.2s ease, color 0.2s ease;
+  }
+  .toc-link:hover,
+  .toc-link.active {
+    border-left-color: var(--color-primary);
+    color: var(--color-primary);
+  }
+
+  .legal-section:target > .section-heading { color: var(--color-primary); }
+
+  .reading-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 2px;
+    background: var(--color-primary);
+    z-index: 100;
+    transition: width 0.1s linear;
+    opacity: 0.8;
+  }
+
+  @media (max-width: 1023px) {
+    .legal-sidebar { display: none; }
+  }
+</style>
+{% endblock css %}
+
+{% block content_full %}
+<div class="reading-progress" id="reading-progress" style="width: 0%"></div>
+
+<div class="app-content-padded legal-page">
+  {# ── Page header ── #}
+  <div class="max-w-4xl mx-auto mb-8">
+    <div class="flex items-center gap-3 mb-2">
+      <div class="p-2 rounded-xl bg-primary/10 text-primary">
+        {{ icon('scale', 'w-6 h-6') }}
+      </div>
+      <div>
+        <h1 class="text-2xl font-bold text-base-content">Fair Use &amp; Acceptable Use Policy</h1>
+        <p class="text-sm text-base-content/40 mt-0.5">Cabotage Deploys, LLC</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="max-w-4xl mx-auto flex gap-10">
+    {# ── Sticky sidebar ToC (desktop) ── #}
+    <nav class="legal-sidebar w-56 shrink-0 hidden lg:block" aria-label="Table of contents">
+      <div class="sticky top-20">
+        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/30 mb-3">On this page</p>
+        <ul class="flex flex-col gap-1 text-sm" id="toc-list">
+          <li><a href="#principle"   class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Guiding Principle</a></li>
+          <li><a href="#allowed"     class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">What's Allowed</a></li>
+          <li><a href="#prohibited"  class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">What's Not Allowed</a></li>
+          <li><a href="#resources"   class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Resource Usage</a></li>
+          <li><a href="#network"     class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Network &amp; Security</a></li>
+          <li><a href="#enforcement" class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Enforcement</a></li>
+          <li><a href="#aup-contact" class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Reporting &amp; Contact</a></li>
+        </ul>
+
+        <div class="mt-6 pt-4 border-t border-base-content/5 space-y-2">
+          <a href="{{ url_for('main.terms') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+            {{ icon('scroll-text', 'w-4 h-4') }}
+            <span>Terms of Service</span>
+            {{ icon('arrow-right', 'w-3 h-3') }}
+          </a>
+          <a href="{{ url_for('main.privacy') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+            {{ icon('shield-check', 'w-4 h-4') }}
+            <span>Privacy Policy</span>
+            {{ icon('arrow-right', 'w-3 h-3') }}
+          </a>
+        </div>
+      </div>
+    </nav>
+
+    {# ── Main content ── #}
+    <article class="flex-1 min-w-0">
+      {# Mobile ToC #}
+      <details class="lg:hidden mb-6 card bg-base-200 border border-base-300 group">
+        <summary class="flex items-center justify-between cursor-pointer px-4 py-3 text-sm font-medium text-base-content/60 hover:text-base-content transition-colors">
+          <span class="flex items-center gap-2">{{ icon('list', 'w-4 h-4') }} Table of Contents</span>
+          {{ icon('chevron-down', 'w-4 h-4 transition-transform group-open:rotate-180') }}
+        </summary>
+        <ul class="px-4 pb-3 flex flex-col gap-1 text-sm border-t border-base-content/5 pt-3">
+          <li><a href="#principle"   class="block py-1 text-base-content/50 hover:text-primary transition-colors">Guiding Principle</a></li>
+          <li><a href="#allowed"     class="block py-1 text-base-content/50 hover:text-primary transition-colors">What's Allowed</a></li>
+          <li><a href="#prohibited"  class="block py-1 text-base-content/50 hover:text-primary transition-colors">What's Not Allowed</a></li>
+          <li><a href="#resources"   class="block py-1 text-base-content/50 hover:text-primary transition-colors">Resource Usage</a></li>
+          <li><a href="#network"     class="block py-1 text-base-content/50 hover:text-primary transition-colors">Network &amp; Security</a></li>
+          <li><a href="#enforcement" class="block py-1 text-base-content/50 hover:text-primary transition-colors">Enforcement</a></li>
+          <li><a href="#aup-contact" class="block py-1 text-base-content/50 hover:text-primary transition-colors">Reporting &amp; Contact</a></li>
+        </ul>
+      </details>
+
+      {# ── TL;DR ── #}
+      <div class="mb-8 card bg-primary/5 border border-primary/10 p-5">
+        <div class="flex items-start gap-3">
+          <span class="text-primary mt-0.5">{{ icon('sparkles', 'w-5 h-5') }}</span>
+          <div>
+            <p class="text-sm font-semibold text-base-content mb-1">The short version</p>
+            <p class="text-sm text-base-content/60 leading-relaxed">
+              Use Cabotage for legitimate workloads. Don't abuse shared infrastructure, don't deploy anything illegal, and don't make things worse for other customers. If you wouldn't run it on your own servers, don't run it on ours.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {# ── Preamble ── #}
+      <div class="mb-10 card bg-base-200 border border-base-300 p-5">
+        <p class="text-sm text-base-content/70 leading-relaxed">
+          This Fair Use &amp; Acceptable Use Policy ("AUP") supplements the <a href="{{ url_for('main.terms') }}" class="text-primary hover:underline">Terms of Service</a> and applies to all use of the Cabotage platform. All deployments, services, and resources provisioned through Cabotage operate under this policy.
+        </p>
+      </div>
+
+      <div class="space-y-10">
+        {# ── Guiding Principle ── #}
+        <section id="principle" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            {{ icon('compass', 'w-5 h-5 text-primary') }}
+            Guiding Principle
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              Cabotage is shared infrastructure. Every customer's workloads run alongside others on the same platform. We expect you to be a good neighbor: use what you need, don't degrade the experience for others, and don't do anything illegal. We'll extend you the same courtesy.
+            </p>
+          </div>
+        </section>
+
+        {# ── What's Allowed ── #}
+        <section id="allowed" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            {{ icon('check-circle', 'w-5 h-5 text-success') }}
+            What's Allowed
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <p class="text-sm text-base-content/70 leading-relaxed mb-3">Cabotage is built for production workloads. Typical uses include:</p>
+            <div class="grid gap-2 sm:grid-cols-2">
+              <div class="flex items-center gap-2 text-sm text-base-content/70">
+                <span class="text-success">{{ icon('check', 'w-4 h-4') }}</span>
+                Web applications and APIs
+              </div>
+              <div class="flex items-center gap-2 text-sm text-base-content/70">
+                <span class="text-success">{{ icon('check', 'w-4 h-4') }}</span>
+                Backend services and microservices
+              </div>
+              <div class="flex items-center gap-2 text-sm text-base-content/70">
+                <span class="text-success">{{ icon('check', 'w-4 h-4') }}</span>
+                Scheduled jobs and cron tasks
+              </div>
+              <div class="flex items-center gap-2 text-sm text-base-content/70">
+                <span class="text-success">{{ icon('check', 'w-4 h-4') }}</span>
+                Background workers and queues
+              </div>
+              <div class="flex items-center gap-2 text-sm text-base-content/70">
+                <span class="text-success">{{ icon('check', 'w-4 h-4') }}</span>
+                Databases and caches
+              </div>
+              <div class="flex items-center gap-2 text-sm text-base-content/70">
+                <span class="text-success">{{ icon('check', 'w-4 h-4') }}</span>
+                Machine learning inference
+              </div>
+              <div class="flex items-center gap-2 text-sm text-base-content/70">
+                <span class="text-success">{{ icon('check', 'w-4 h-4') }}</span>
+                Static sites and documentation
+              </div>
+              <div class="flex items-center gap-2 text-sm text-base-content/70">
+                <span class="text-success">{{ icon('check', 'w-4 h-4') }}</span>
+                Internal tools and dashboards
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {# ── What's Not Allowed ── #}
+        <section id="prohibited" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            {{ icon('x-circle', 'w-5 h-5 text-error') }}
+            What's Not Allowed
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <p class="text-sm text-base-content/70 leading-relaxed mb-4">The following are prohibited on the Cabotage platform:</p>
+
+            <div class="space-y-4">
+              <div>
+                <h3 class="text-sm font-semibold text-base-content/80 mb-2">Illegal &amp; Harmful Activity</h3>
+                <ul class="space-y-1.5 text-sm text-base-content/70">
+                  <li class="flex items-start gap-2">
+                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                    Any activity that violates applicable law or regulation
+                  </li>
+                  <li class="flex items-start gap-2">
+                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                    Distributing malware, ransomware, or code designed to damage or exfiltrate data
+                  </li>
+                  <li class="flex items-start gap-2">
+                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                    Phishing, fraud, or impersonation of other entities
+                  </li>
+                  <li class="flex items-start gap-2">
+                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                    Hosting or distributing CSAM or content that exploits minors
+                  </li>
+                  <li class="flex items-start gap-2">
+                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                    Hosting violent, harassing, doxxing, or revenge pornography content
+                  </li>
+                </ul>
+              </div>
+
+              <div>
+                <h3 class="text-sm font-semibold text-base-content/80 mb-2">Intellectual Property &amp; Content</h3>
+                <ul class="space-y-1.5 text-sm text-base-content/70">
+                  <li class="flex items-start gap-2">
+                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                    Infringing, misappropriating, or violating intellectual property rights
+                  </li>
+                  <li class="flex items-start gap-2">
+                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                    Hosting pirated content, torrent trackers, or DMCA-infringing material
+                  </li>
+                  <li class="flex items-start gap-2">
+                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                    Running mirror or scraper sites without authorization
+                  </li>
+                </ul>
+              </div>
+
+              <div>
+                <h3 class="text-sm font-semibold text-base-content/80 mb-2">Resource Abuse &amp; Infrastructure</h3>
+                <ul class="space-y-1.5 text-sm text-base-content/70">
+                  <li class="flex items-start gap-2">
+                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                    Cryptocurrency mining without prior written consent
+                  </li>
+                  <li class="flex items-start gap-2">
+                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                    Running open proxies, VPN exit nodes, or VNC/remote desktop services
+                  </li>
+                  <li class="flex items-start gap-2">
+                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                    Exceeding allocated resource quotas or systematically abusing shared infrastructure
+                  </li>
+                  <li class="flex items-start gap-2">
+                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                    Creating multiple accounts to exploit trial or free-tier allowances
+                  </li>
+                </ul>
+              </div>
+
+              <div>
+                <h3 class="text-sm font-semibold text-base-content/80 mb-2">Spam &amp; Abuse</h3>
+                <ul class="space-y-1.5 text-sm text-base-content/70">
+                  <li class="flex items-start gap-2">
+                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                    Sending, proxying, or facilitating spam or unsolicited bulk messages
+                  </li>
+                  <li class="flex items-start gap-2">
+                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                    Running URL shorteners or redirect services that generate abuse complaints
+                  </li>
+                  <li class="flex items-start gap-2">
+                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                    Payment fraud, card testing, or fraudulent transaction processing
+                  </li>
+                </ul>
+              </div>
+
+              <div>
+                <h3 class="text-sm font-semibold text-base-content/80 mb-2">Regulated Data (Without Authorization)</h3>
+                <ul class="space-y-1.5 text-sm text-base-content/70">
+                  <li class="flex items-start gap-2">
+                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                    Processing Protected Health Information (PHI) without a signed BAA
+                  </li>
+                  <li class="flex items-start gap-2">
+                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                    Storing PCI cardholder data outside of PCI-compliant integrations
+                  </li>
+                  <li class="flex items-start gap-2">
+                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                    Violating export control laws or sanctions regulations
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {# ── Resource Usage ── #}
+        <section id="resources" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            {{ icon('gauge', 'w-5 h-5 text-primary') }}
+            Resource Usage
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-3">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              All deployments operate within the resource limits of your subscription plan. We monitor usage to ensure fair access for all customers. If your workload consistently exceeds plan limits or degrades platform performance for others, we will reach out to discuss options before taking action.
+            </p>
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              Burst usage is normal and expected. We care about sustained patterns that impact shared infrastructure, not occasional spikes.
+            </p>
+          </div>
+        </section>
+
+        {# ── Network & Security ── #}
+        <section id="network" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            {{ icon('network', 'w-5 h-5 text-primary') }}
+            Network &amp; Security
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <ul class="space-y-2 text-sm text-base-content/70">
+              <li class="flex items-start gap-2">
+                <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                Do not conduct denial-of-service attacks or flood attacks from or against the platform
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                Do not perform port scanning, network probing, or vulnerability scanning against other customers' workloads or Cabotage infrastructure
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                Do not attempt to access other customers' containers, data, or network namespaces
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-error/60 shrink-0"></span>
+                Do not intercept, monitor, or tamper with traffic not destined for your own services
+              </li>
+            </ul>
+            <p class="text-sm text-base-content/50 leading-relaxed mt-3">
+              Security testing of your own applications is permitted, provided it does not impact other customers or platform infrastructure. If you need to perform more extensive testing, contact us first.
+            </p>
+          </div>
+        </section>
+
+        {# ── Enforcement ── #}
+        <section id="enforcement" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            {{ icon('gavel', 'w-5 h-5 text-primary') }}
+            Enforcement
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-3">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              We generally follow a graduated approach: we'll notify you of a violation and give you a reasonable window to fix it. For most issues, we prefer a conversation over immediate action.
+            </p>
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              However, we reserve the right to immediately suspend or terminate access without prior notice when necessary to protect the platform, other customers, or comply with legal requirements. This includes situations involving:
+            </p>
+            <ul class="space-y-1.5 text-sm text-base-content/70">
+              <li class="flex items-start gap-2">
+                <span class="text-warning mt-0.5">{{ icon('alert-triangle', 'w-4 h-4') }}</span>
+                Active security threats or ongoing attacks
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-warning mt-0.5">{{ icon('alert-triangle', 'w-4 h-4') }}</span>
+                Illegal content or activity
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-warning mt-0.5">{{ icon('alert-triangle', 'w-4 h-4') }}</span>
+                Severe resource abuse degrading the platform for others
+              </li>
+              <li class="flex items-start gap-2">
+                <span class="text-warning mt-0.5">{{ icon('alert-triangle', 'w-4 h-4') }}</span>
+                Verified DMCA or legal takedown requests
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        {# ── Contact ── #}
+        <section id="aup-contact" class="legal-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            {{ icon('mail', 'w-5 h-5 text-primary') }}
+            Reporting &amp; Contact
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+                <p class="text-xs font-medium text-base-content/60 mb-1">Report abuse</p>
+                <p class="text-sm text-primary">abuse@cabotage.io</p>
+              </div>
+              <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+                <p class="text-xs font-medium text-base-content/60 mb-1">DMCA takedowns</p>
+                <p class="text-sm text-primary">dmca@cabotage.io</p>
+              </div>
+              <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+                <p class="text-xs font-medium text-base-content/60 mb-1">Security issues</p>
+                <p class="text-sm text-primary">security@cabotage.io</p>
+              </div>
+              <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+                <p class="text-xs font-medium text-base-content/60 mb-1">General legal</p>
+                <p class="text-sm text-primary">legal@cabotage.io</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      {# ── Bottom navigation ── #}
+      <div class="mt-12 pt-6 border-t border-base-content/5 flex items-center justify-between">
+        <a href="{{ url_for('main.terms') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+          {{ icon('arrow-left', 'w-4 h-4') }}
+          <span>Terms of Service</span>
+        </a>
+        <a href="{{ url_for('main.privacy') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+          <span>Privacy Policy</span>
+          {{ icon('arrow-right', 'w-4 h-4') }}
+        </a>
+      </div>
+    </article>
+  </div>
+</div>
+{% endblock content_full %}
+
+{% block js %}
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress');
+  if (bar) {
+    window.addEventListener('scroll', function() {
+      var h = document.documentElement;
+      var pct = (h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100;
+      bar.style.width = Math.min(pct, 100) + '%';
+    }, { passive: true });
+  }
+
+  var sections = document.querySelectorAll('.legal-section');
+  var tocLinks = document.querySelectorAll('#toc-list .toc-link');
+  if (sections.length && tocLinks.length) {
+    var observer = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (entry.isIntersecting) {
+          tocLinks.forEach(function(l) { l.classList.remove('active'); });
+          var active = document.querySelector('#toc-list a[href="#' + entry.target.id + '"]');
+          if (active) active.classList.add('active');
+        }
+      });
+    }, { rootMargin: '-80px 0px -60% 0px', threshold: 0 });
+    sections.forEach(function(s) { observer.observe(s); });
+  }
+})();
+</script>
+{% endblock js %}
