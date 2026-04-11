@@ -81,3 +81,8 @@ def privacy():
 @main_blueprint.route("/legal/fair-use/")
 def fair_use():
     return render_template("main/fair_use.html")
+
+
+@main_blueprint.route("/legal/")
+def legal():
+    return render_template("main/legal.html")

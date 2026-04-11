@@ -1,0 +1,253 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon %}
+
+{% block title %}
+  Legal - Cabotage
+{% endblock title %}
+
+{% block css %}
+<style>
+  .legal-hero {
+    background: radial-gradient(ellipse at 50% 0%, rgba(var(--glow-rgb, 124, 58, 237), 0.10) 0%, transparent 55%);
+  }
+
+  .legal-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: 0.75rem;
+    background: var(--surface-card, #16161f);
+    border: 1px solid var(--border-color, rgba(255,255,255,0.06));
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .legal-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--color-primary);
+    box-shadow:
+      0 12px 32px var(--shadow-card, rgba(0,0,0,0.3)),
+      0 0 0 1px var(--color-primary),
+      0 0 40px var(--shadow-primary-glow, rgba(124,58,237,0.25));
+  }
+  .legal-card:hover .legal-card-glow {
+    opacity: 1;
+  }
+  .legal-card:hover .legal-card-icon {
+    transform: scale(1.1);
+  }
+  .legal-card:hover .legal-card-arrow {
+    transform: translateX(4px);
+    opacity: 1;
+  }
+
+  /* Ambient glow on hover */
+  .legal-card-glow {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    background: radial-gradient(ellipse at 50% 0%, rgba(var(--glow-rgb, 124, 58, 237), 0.06) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .legal-card-icon {
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .legal-card-arrow {
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    opacity: 0.4;
+  }
+
+  /* Stagger entrance */
+  .legal-card { opacity: 0; animation: legal-card-in 0.5s ease forwards; }
+  .legal-card:nth-child(1) { animation-delay: 0.1s; }
+  .legal-card:nth-child(2) { animation-delay: 0.2s; }
+  .legal-card:nth-child(3) { animation-delay: 0.3s; }
+
+  @keyframes legal-card-in {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Subtle floating animation on the hero icon */
+  @keyframes legal-float {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-6px); }
+  }
+  .legal-float { animation: legal-float 4s ease-in-out infinite; }
+
+  /* Section divider with gradient fade */
+  .legal-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--color-primary), transparent);
+    opacity: 0.15;
+  }
+
+  /* Contact cards subtle shine */
+  .contact-card {
+    position: relative;
+    overflow: hidden;
+  }
+  .contact-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03), transparent);
+    transition: left 0.5s ease;
+  }
+  .contact-card:hover::before {
+    left: 100%;
+  }
+</style>
+{% endblock css %}
+
+{% block content_full %}
+<div class="legal-hero">
+  <div class="app-content-padded">
+    {# ── Hero ── #}
+    <div class="flex flex-col items-center text-center pt-8 pb-12 lg:pt-12 lg:pb-16">
+      <div class="legal-float p-3 rounded-2xl bg-primary/10 text-primary mb-6">
+        {{ icon('scale', 'w-10 h-10') }}
+      </div>
+      <h1 class="text-3xl lg:text-4xl font-bold text-base-content mb-3 text-balance">Legal</h1>
+      <p class="text-base text-base-content/40 max-w-lg text-pretty leading-relaxed">
+        Transparency matters. Here's how we operate, protect your data, and what we expect from each other.
+      </p>
+    </div>
+
+    {# ── Main cards ── #}
+    <div class="max-w-3xl mx-auto grid gap-4 sm:grid-cols-3 mb-16">
+      {# Terms of Service #}
+      <a href="{{ url_for('main.terms') }}" class="legal-card block no-underline p-6 group">
+        <div class="legal-card-glow"></div>
+        <div class="relative z-10">
+          <div class="flex items-center justify-between mb-4">
+            <div class="legal-card-icon p-2.5 rounded-xl bg-primary/10 text-primary">
+              {{ icon('scroll-text', 'w-6 h-6') }}
+            </div>
+            <span class="legal-card-arrow text-base-content/20">
+              {{ icon('arrow-right', 'w-5 h-5') }}
+            </span>
+          </div>
+          <h2 class="text-base font-semibold text-base-content mb-1.5">Terms of Service</h2>
+          <p class="text-xs text-base-content/40 leading-relaxed">
+            The agreement between you and Cabotage Deploys, LLC governing use of the platform.
+          </p>
+          <div class="mt-4 pt-3 border-t border-base-content/5">
+            <span class="text-xs text-base-content/25">12 sections &middot; Effective Apr 11, 2026</span>
+          </div>
+        </div>
+      </a>
+
+      {# Privacy Policy #}
+      <a href="{{ url_for('main.privacy') }}" class="legal-card block no-underline p-6 group">
+        <div class="legal-card-glow"></div>
+        <div class="relative z-10">
+          <div class="flex items-center justify-between mb-4">
+            <div class="legal-card-icon p-2.5 rounded-xl bg-primary/10 text-primary">
+              {{ icon('shield-check', 'w-6 h-6') }}
+            </div>
+            <span class="legal-card-arrow text-base-content/20">
+              {{ icon('arrow-right', 'w-5 h-5') }}
+            </span>
+          </div>
+          <h2 class="text-base font-semibold text-base-content mb-1.5">Privacy Policy</h2>
+          <p class="text-xs text-base-content/40 leading-relaxed">
+            How we collect, use, and protect your information. We don't sell your data.
+          </p>
+          <div class="mt-4 pt-3 border-t border-base-content/5">
+            <span class="text-xs text-base-content/25">12 sections &middot; Effective Apr 11, 2026</span>
+          </div>
+        </div>
+      </a>
+
+      {# Fair Use #}
+      <a href="{{ url_for('main.fair_use') }}" class="legal-card block no-underline p-6 group">
+        <div class="legal-card-glow"></div>
+        <div class="relative z-10">
+          <div class="flex items-center justify-between mb-4">
+            <div class="legal-card-icon p-2.5 rounded-xl bg-primary/10 text-primary">
+              {{ icon('scale', 'w-6 h-6') }}
+            </div>
+            <span class="legal-card-arrow text-base-content/20">
+              {{ icon('arrow-right', 'w-5 h-5') }}
+            </span>
+          </div>
+          <h2 class="text-base font-semibold text-base-content mb-1.5">Fair Use Policy</h2>
+          <p class="text-xs text-base-content/40 leading-relaxed">
+            What's allowed, what's not, and how we keep the platform fair for everyone.
+          </p>
+          <div class="mt-4 pt-3 border-t border-base-content/5">
+            <span class="text-xs text-base-content/25">7 sections &middot; Effective Apr 11, 2026</span>
+          </div>
+        </div>
+      </a>
+    </div>
+
+    {# ── Divider ── #}
+    <div class="legal-divider max-w-xl mx-auto mb-16"></div>
+
+    {# ── Quick info section ── #}
+    <div class="max-w-3xl mx-auto mb-16">
+      <h2 class="text-sm font-medium text-base-content/30 uppercase tracking-wider mb-6 text-center">At a Glance</h2>
+
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="flex flex-col items-center text-center p-4 rounded-lg bg-base-200/50 border border-base-content/5">
+          <span class="text-primary mb-2">{{ icon('database', 'w-5 h-5') }}</span>
+          <p class="text-xs font-medium text-base-content/60 mb-0.5">Your Data</p>
+          <p class="text-xs text-base-content/35">You own it. Always.</p>
+        </div>
+        <div class="flex flex-col items-center text-center p-4 rounded-lg bg-base-200/50 border border-base-content/5">
+          <span class="text-primary mb-2">{{ icon('eye-off', 'w-5 h-5') }}</span>
+          <p class="text-xs font-medium text-base-content/60 mb-0.5">No Data Sales</p>
+          <p class="text-xs text-base-content/35">We never sell your info.</p>
+        </div>
+        <div class="flex flex-col items-center text-center p-4 rounded-lg bg-base-200/50 border border-base-content/5">
+          <span class="text-primary mb-2">{{ icon('lock', 'w-5 h-5') }}</span>
+          <p class="text-xs font-medium text-base-content/60 mb-0.5">Encrypted</p>
+          <p class="text-xs text-base-content/35">In transit and at rest.</p>
+        </div>
+        <div class="flex flex-col items-center text-center p-4 rounded-lg bg-base-200/50 border border-base-content/5">
+          <span class="text-primary mb-2">{{ icon('code', 'w-5 h-5') }}</span>
+          <p class="text-xs font-medium text-base-content/60 mb-0.5">Source Available</p>
+          <p class="text-xs text-base-content/35">FSL-1.1-ALv2 licensed.</p>
+        </div>
+      </div>
+    </div>
+
+    {# ── Contact section ── #}
+    <div class="max-w-3xl mx-auto pb-12">
+      <h2 class="text-sm font-medium text-base-content/30 uppercase tracking-wider mb-6 text-center">Get in Touch</h2>
+
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <a href="mailto:legal@cabotage.io" class="contact-card flex flex-col items-center text-center p-4 rounded-lg bg-base-200/50 border border-base-content/5 no-underline hover:border-primary/30 transition-all duration-200">
+          <span class="text-primary mb-2">{{ icon('briefcase', 'w-5 h-5') }}</span>
+          <p class="text-xs font-medium text-base-content/60 mb-0.5">Legal</p>
+          <p class="text-xs text-primary/60">legal@cabotage.io</p>
+        </a>
+        <a href="mailto:privacy@cabotage.io" class="contact-card flex flex-col items-center text-center p-4 rounded-lg bg-base-200/50 border border-base-content/5 no-underline hover:border-primary/30 transition-all duration-200">
+          <span class="text-primary mb-2">{{ icon('shield', 'w-5 h-5') }}</span>
+          <p class="text-xs font-medium text-base-content/60 mb-0.5">Privacy</p>
+          <p class="text-xs text-primary/60">privacy@cabotage.io</p>
+        </a>
+        <a href="mailto:abuse@cabotage.io" class="contact-card flex flex-col items-center text-center p-4 rounded-lg bg-base-200/50 border border-base-content/5 no-underline hover:border-primary/30 transition-all duration-200">
+          <span class="text-primary mb-2">{{ icon('flag', 'w-5 h-5') }}</span>
+          <p class="text-xs font-medium text-base-content/60 mb-0.5">Abuse</p>
+          <p class="text-xs text-primary/60">abuse@cabotage.io</p>
+        </a>
+        <a href="mailto:security@cabotage.io" class="contact-card flex flex-col items-center text-center p-4 rounded-lg bg-base-200/50 border border-base-content/5 no-underline hover:border-primary/30 transition-all duration-200">
+          <span class="text-primary mb-2">{{ icon('key', 'w-5 h-5') }}</span>
+          <p class="text-xs font-medium text-base-content/60 mb-0.5">Security</p>
+          <p class="text-xs text-primary/60">security@cabotage.io</p>
+        </a>
+      </div>
+
+      <p class="text-center text-xs text-base-content/20 mt-8">
+        Cabotage Deploys, LLC &mdash; a Delaware limited liability company
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock content_full %}
