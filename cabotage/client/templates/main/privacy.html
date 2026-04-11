@@ -88,11 +88,14 @@
           <li><a href="#pp-contact" class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">12. Contact</a></li>
         </ul>
 
-        <div class="mt-6 pt-4 border-t border-base-content/5">
+        <div class="mt-6 pt-4 border-t border-base-content/5 space-y-2">
           <a href="{{ url_for('main.terms') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
             {{ icon('scroll-text', 'w-4 h-4') }}
             <span>Terms of Service</span>
-            {{ icon('arrow-right', 'w-3 h-3') }}
+          </a>
+          <a href="{{ url_for('main.fair_use') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+            {{ icon('scale', 'w-4 h-4') }}
+            <span>Fair Use</span>
           </a>
         </div>
       </div>
@@ -275,21 +278,89 @@
                 We share information with vendors who perform services on our behalf, including:
               </p>
               <div class="grid gap-2 sm:grid-cols-2">
-                <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5">
-                  <p class="text-xs font-medium text-base-content/60">Amazon Web Services, Inc.</p>
-                  <p class="text-xs text-base-content/40">Cloud infrastructure and compute</p>
+                <div class="flex items-start gap-2.5 p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+                  <span class="text-base-content/40 mt-0.5">{{ icon('si-aws', 'w-4 h-4') }}</span>
+                  <div>
+                    <p class="text-xs font-medium text-base-content/60">Amazon Web Services, Inc.</p>
+                    <p class="text-xs text-base-content/40">Cloud infrastructure and compute</p>
+                  </div>
                 </div>
-                <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5">
-                  <p class="text-xs font-medium text-base-content/60">Stripe, Inc.</p>
-                  <p class="text-xs text-base-content/40">Payment processing</p>
+                <div class="flex items-start gap-2.5 p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+                  <span class="text-base-content/40 mt-0.5">{{ icon('si-stripe', 'w-4 h-4') }}</span>
+                  <div>
+                    <p class="text-xs font-medium text-base-content/60">Stripe, Inc.</p>
+                    <p class="text-xs text-base-content/40">Payment processing</p>
+                  </div>
                 </div>
-                <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5">
-                  <p class="text-xs font-medium text-base-content/60">GitHub, Inc.</p>
-                  <p class="text-xs text-base-content/40">Source code integration and OAuth authentication</p>
+                <div class="flex items-start gap-2.5 p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+                  <span class="text-base-content/40 mt-0.5">{{ icon('si-github', 'w-4 h-4') }}</span>
+                  <div>
+                    <p class="text-xs font-medium text-base-content/60">GitHub, Inc.</p>
+                    <p class="text-xs text-base-content/40">Source code integration and OAuth</p>
+                  </div>
                 </div>
-                <div class="p-3 rounded-lg bg-base-100/50 border border-base-content/5">
-                  <p class="text-xs font-medium text-base-content/60">Google LLC</p>
-                  <p class="text-xs text-base-content/40">OAuth authentication</p>
+                <div class="flex items-start gap-2.5 p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+                  <span class="text-base-content/40 mt-0.5">{{ icon('si-google', 'w-4 h-4') }}</span>
+                  <div>
+                    <p class="text-xs font-medium text-base-content/60">Google LLC</p>
+                    <p class="text-xs text-base-content/40">OAuth, email, storage, collaboration</p>
+                  </div>
+                </div>
+                <div class="flex items-start gap-2.5 p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+                  <span class="text-base-content/40 mt-0.5">{{ icon('si-discord', 'w-4 h-4') }}</span>
+                  <div>
+                    <p class="text-xs font-medium text-base-content/60">Discord, Inc.</p>
+                    <p class="text-xs text-base-content/40">Community communication</p>
+                  </div>
+                </div>
+                <div class="flex items-start gap-2.5 p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+                  <span class="text-base-content/40 mt-0.5">{{ icon('si-slack', 'w-4 h-4') }}</span>
+                  <div>
+                    <p class="text-xs font-medium text-base-content/60">Slack Technologies, LLC</p>
+                    <p class="text-xs text-base-content/40">Internal and enterprise communication</p>
+                  </div>
+                </div>
+                <div class="flex items-start gap-2.5 p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+                  <span class="text-base-content/40 mt-0.5">{{ icon('si-linear', 'w-4 h-4') }}</span>
+                  <div>
+                    <p class="text-xs font-medium text-base-content/60">Linear, Inc.</p>
+                    <p class="text-xs text-base-content/40">Issue tracking</p>
+                  </div>
+                </div>
+                <div class="flex items-start gap-2.5 p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+                  <span class="text-base-content/40 mt-0.5">{{ icon('si-anthropic', 'w-4 h-4') }}</span>
+                  <div>
+                    <p class="text-xs font-medium text-base-content/60">Anthropic, PBC</p>
+                    <p class="text-xs text-base-content/40">Generative AI services</p>
+                  </div>
+                </div>
+                <div class="flex items-start gap-2.5 p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+                  <span class="text-base-content/40 mt-0.5">{{ icon('si-openai', 'w-4 h-4') }}</span>
+                  <div>
+                    <p class="text-xs font-medium text-base-content/60">OpenAI, Inc.</p>
+                    <p class="text-xs text-base-content/40">Generative AI services</p>
+                  </div>
+                </div>
+                <div class="flex items-start gap-2.5 p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+                  <span class="text-base-content/40 mt-0.5">{{ icon('si-fastly', 'w-4 h-4') }}</span>
+                  <div>
+                    <p class="text-xs font-medium text-base-content/60">Fastly, Inc.</p>
+                    <p class="text-xs text-base-content/40">Content delivery network</p>
+                  </div>
+                </div>
+                <div class="flex items-start gap-2.5 p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+                  <span class="text-base-content/40 mt-0.5">{{ icon('si-plausible', 'w-4 h-4') }}</span>
+                  <div>
+                    <p class="text-xs font-medium text-base-content/60">Plausible Insights O&Uuml;</p>
+                    <p class="text-xs text-base-content/40">Privacy-friendly analytics</p>
+                  </div>
+                </div>
+                <div class="flex items-start gap-2.5 p-3 rounded-lg bg-base-100/50 border border-base-content/5">
+                  <span class="text-base-content/40 mt-0.5">{{ icon('si-resend', 'w-4 h-4') }}</span>
+                  <div>
+                    <p class="text-xs font-medium text-base-content/60">Resend, Inc.</p>
+                    <p class="text-xs text-base-content/40">Transactional email delivery</p>
+                  </div>
                 </div>
               </div>
               <p class="text-xs text-base-content/50 mt-2">
@@ -544,8 +615,8 @@
           {{ icon('arrow-left', 'w-4 h-4') }}
           <span>Terms of Service</span>
         </a>
-        <a href="{{ url_for('main.about') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
-          <span>About</span>
+        <a href="{{ url_for('main.fair_use') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+          <span>Fair Use</span>
           {{ icon('arrow-right', 'w-4 h-4') }}
         </a>
       </div>
