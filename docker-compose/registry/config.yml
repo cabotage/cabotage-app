@@ -5,6 +5,7 @@ auth:
     service: cabotage-registry
     issuer: cabotage-app
     rootcertbundle: /etc/docker/registry-local/public_key_bundle
+    jwks: /etc/docker/registry-local/jwks.json
 log:
   level: debug
   fields:
