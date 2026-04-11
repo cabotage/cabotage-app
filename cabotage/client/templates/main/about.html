@@ -1,21 +1,298 @@
 {% extends "_base.html" %}
+{% from "_macros.html" import icon %}
 
 {% block title %}
   About - Cabotage
 {% endblock title %}
 
-{% block content %}
-  <div class="max-w-2xl mx-auto">
-    <h1 class="text-2xl font-semibold text-base-content mb-6">About Cabotage</h1>
-    <div class="card bg-base-200 border border-base-300">
-      <div class="card-body prose prose-invert max-w-none">
-        <p class="text-base-content/70 leading-relaxed">
-          Cabotage is a self-hosted Platform as a Service (PaaS) that lets you deploy and manage applications on your own infrastructure with the ease of a managed platform.
-        </p>
-        <p class="text-base-content/70 leading-relaxed">
-          Built on top of Kubernetes, Cabotage handles container builds, deployments, scaling, environment configuration, and more -- giving you full control without the complexity.
-        </p>
+{% block css %}
+<style>
+  .about-page { scroll-behavior: smooth; }
+  .about-section { scroll-margin-top: 5rem; }
+
+  .toc-link {
+    position: relative;
+    padding-left: 1rem;
+    border-left: 2px solid transparent;
+    transition: border-color 0.2s ease, color 0.2s ease;
+  }
+  .toc-link:hover,
+  .toc-link.active {
+    border-left-color: var(--color-primary);
+    color: var(--color-primary);
+  }
+
+  .about-section:target > .section-heading { color: var(--color-primary); }
+  .about-section:target > .section-heading::after {
+    content: '';
+    position: absolute;
+    left: -1.5rem;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    border-radius: 2px;
+    background: var(--color-primary);
+  }
+
+  @media (max-width: 1023px) {
+    .about-sidebar { display: none; }
+  }
+</style>
+{% endblock css %}
+
+{% block content_full %}
+<div class="app-content-padded about-page">
+  {# ── Page header ── #}
+  <div class="max-w-4xl mx-auto mb-8">
+    <div class="flex items-center gap-3 mb-2">
+      <div class="text-primary">
+        <span class="inline-block w-10 h-10 bg-current" style="-webkit-mask: url('{{ url_for('static', filename='cabotage.svg') }}') center/contain no-repeat; mask: url('{{ url_for('static', filename='cabotage.svg') }}') center/contain no-repeat;" aria-hidden="true"></span>
+      </div>
+      <div>
+        <h1 class="text-2xl font-bold text-base-content">About Cabotage</h1>
+        <p class="text-sm text-base-content/40 mt-0.5">Deploy with confidence</p>
       </div>
     </div>
   </div>
-{% endblock content %}
+
+  <div class="max-w-4xl mx-auto flex gap-10">
+    {# ── Sticky sidebar ToC (desktop) ── #}
+    <nav class="about-sidebar w-56 shrink-0 hidden lg:block" aria-label="Table of contents">
+      <div class="sticky top-20">
+        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/30 mb-3">On this page</p>
+        <ul class="flex flex-col gap-1 text-sm" id="toc-list">
+          <li><a href="#what"       class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">What is Cabotage</a></li>
+          <li><a href="#features"   class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">What you can do</a></li>
+          <li><a href="#how"        class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">How it works</a></li>
+          <li><a href="#open"       class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Open source</a></li>
+          <li><a href="#legal"      class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Legal</a></li>
+        </ul>
+
+        <div class="mt-6 pt-4 border-t border-base-content/5 space-y-2">
+          <a href="{{ url_for('main.terms') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+            {{ icon('file-text', 'w-4 h-4') }}
+            <span>Terms of Service</span>
+          </a>
+          <a href="{{ url_for('main.privacy') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+            {{ icon('shield', 'w-4 h-4') }}
+            <span>Privacy Policy</span>
+          </a>
+        </div>
+      </div>
+    </nav>
+
+    {# ── Main content ── #}
+    <article class="flex-1 min-w-0">
+      {# Mobile ToC #}
+      <details class="lg:hidden mb-6 card bg-base-200 border border-base-300 group">
+        <summary class="flex items-center justify-between cursor-pointer px-4 py-3 text-sm font-medium text-base-content/60 hover:text-base-content transition-colors">
+          <span class="flex items-center gap-2">{{ icon('hash', 'w-4 h-4') }} Table of Contents</span>
+          {{ icon('chevron-right', 'w-4 h-4 transition-transform group-open:rotate-90') }}
+        </summary>
+        <ul class="px-4 pb-3 flex flex-col gap-1 text-sm border-t border-base-content/5 pt-3">
+          <li><a href="#what"       class="block py-1 text-base-content/50 hover:text-primary transition-colors">What is Cabotage</a></li>
+          <li><a href="#features"   class="block py-1 text-base-content/50 hover:text-primary transition-colors">What you can do</a></li>
+          <li><a href="#how"        class="block py-1 text-base-content/50 hover:text-primary transition-colors">How it works</a></li>
+          <li><a href="#open"       class="block py-1 text-base-content/50 hover:text-primary transition-colors">Open source</a></li>
+          <li><a href="#legal"      class="block py-1 text-base-content/50 hover:text-primary transition-colors">Legal</a></li>
+        </ul>
+      </details>
+
+      <div class="space-y-10">
+        {# §1 What is Cabotage #}
+        <section id="what" class="about-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            What is Cabotage
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-3">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              Cabotage is a platform that handles the operational work of running applications &mdash; container builds, deployments, TLS, secret management, scaling, and more &mdash; so your team can focus on shipping code.
+            </p>
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              Built by <strong class="text-base-content/80">Cabotage Deploys, LLC</strong>, the platform runs on Kubernetes and is designed for teams that want the convenience of a managed PaaS without the overhead of building deployment tooling in-house.
+            </p>
+          </div>
+        </section>
+
+        {# §2 What you can do #}
+        <section id="features" class="about-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            What you can do
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div class="flex items-start gap-3">
+                <span class="text-primary mt-0.5">{{ icon('git-branch', 'w-4 h-4') }}</span>
+                <div>
+                  <p class="text-sm font-medium text-base-content/80">Push to deploy</p>
+                  <p class="text-xs text-base-content/50">Connect a GitHub repository and deploy on push. Cabotage builds your container image and rolls it out.</p>
+                </div>
+              </div>
+              <div class="flex items-start gap-3">
+                <span class="text-primary mt-0.5">{{ icon('layers', 'w-4 h-4') }}</span>
+                <div>
+                  <p class="text-sm font-medium text-base-content/80">Multi-process apps</p>
+                  <p class="text-xs text-base-content/50">Run web servers, background workers, scheduled jobs, and one-off tasks from a single codebase with a Procfile.</p>
+                </div>
+              </div>
+              <div class="flex items-start gap-3">
+                <span class="text-primary mt-0.5">{{ icon('lock', 'w-4 h-4') }}</span>
+                <div>
+                  <p class="text-sm font-medium text-base-content/80">Secrets and config</p>
+                  <p class="text-xs text-base-content/50">Manage environment variables and secrets through the dashboard. Values are stored in Vault and injected at runtime.</p>
+                </div>
+              </div>
+              <div class="flex items-start gap-3">
+                <span class="text-primary mt-0.5">{{ icon('shield', 'w-4 h-4') }}</span>
+                <div>
+                  <p class="text-sm font-medium text-base-content/80">Automatic TLS</p>
+                  <p class="text-xs text-base-content/50">TLS certificates are provisioned and renewed automatically. Traffic is terminated at the pod level.</p>
+                </div>
+              </div>
+              <div class="flex items-start gap-3">
+                <span class="text-primary mt-0.5">{{ icon('users', 'w-4 h-4') }}</span>
+                <div>
+                  <p class="text-sm font-medium text-base-content/80">Organizations and teams</p>
+                  <p class="text-xs text-base-content/50">Group projects under organizations. Control who can deploy what.</p>
+                </div>
+              </div>
+              <div class="flex items-start gap-3">
+                <span class="text-primary mt-0.5">{{ icon('activity', 'w-4 h-4') }}</span>
+                <div>
+                  <p class="text-sm font-medium text-base-content/80">Logs and metrics</p>
+                  <p class="text-xs text-base-content/50">View build and runtime logs from the dashboard. Optionally forward metrics and traces to Datadog.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {# §3 How it works #}
+        <section id="how" class="about-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            How it works
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <ol class="space-y-4">
+              <li class="flex items-start gap-3">
+                <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold shrink-0 mt-0.5">1</span>
+                <div>
+                  <p class="text-sm font-medium text-base-content/80">Connect your repository</p>
+                  <p class="text-xs text-base-content/50">Link a GitHub repo to a Cabotage application. Define your processes in a Procfile.</p>
+                </div>
+              </li>
+              <li class="flex items-start gap-3">
+                <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold shrink-0 mt-0.5">2</span>
+                <div>
+                  <p class="text-sm font-medium text-base-content/80">Cabotage builds and deploys</p>
+                  <p class="text-xs text-base-content/50">Each push triggers an image build. When the build completes, Cabotage creates a rolling deployment on your cluster.</p>
+                </div>
+              </li>
+              <li class="flex items-start gap-3">
+                <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold shrink-0 mt-0.5">3</span>
+                <div>
+                  <p class="text-sm font-medium text-base-content/80">Manage from the dashboard</p>
+                  <p class="text-xs text-base-content/50">Scale processes, update configuration, view logs, and roll back &mdash; all from the web interface.</p>
+                </div>
+              </li>
+            </ol>
+          </div>
+        </section>
+
+        {# §4 Open source #}
+        <section id="open" class="about-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            Open source
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5 space-y-3">
+            <p class="text-sm text-base-content/70 leading-relaxed">
+              Cabotage's source code is available on GitHub under the <strong class="text-base-content/80">Functional Source License (FSL-1.1-ALv2)</strong>. The FSL grants you the right to use, copy, modify, and redistribute the software for any non-competing purpose. After two years, each release converts to the Apache License 2.0.
+            </p>
+            <div class="flex flex-wrap gap-3">
+              <a href="https://github.com/cabotage/cabotage-app"
+                 target="_blank"
+                 rel="noopener noreferrer"
+                 class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-base-100/50 border border-base-content/5 text-sm text-base-content/60 hover:text-primary hover:border-primary/20 transition-colors">
+                {{ icon('github', 'w-4 h-4') }}
+                <span>cabotage/cabotage-app</span>
+                {{ icon('external-link', 'w-3 h-3') }}
+              </a>
+              <a href="https://github.com/cabotage/cabotage-app/blob/main/LICENSE"
+                 target="_blank"
+                 rel="noopener noreferrer"
+                 class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-base-100/50 border border-base-content/5 text-sm text-base-content/60 hover:text-primary hover:border-primary/20 transition-colors">
+                {{ icon('file-text', 'w-4 h-4') }}
+                <span>FSL-1.1-ALv2</span>
+                {{ icon('external-link', 'w-3 h-3') }}
+              </a>
+            </div>
+          </div>
+        </section>
+
+        {# §5 Legal #}
+        <section id="legal" class="about-section">
+          <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
+            Legal
+          </h2>
+          <div class="card bg-base-200 border border-base-300 p-5">
+            <p class="text-sm text-base-content/70 leading-relaxed mb-4">
+              Use of this Cabotage instance is governed by the following:
+            </p>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <a href="{{ url_for('main.terms') }}"
+                 class="flex items-start gap-3 p-3 rounded-lg bg-base-100/50 border border-base-content/5 hover:border-primary/20 transition-colors group">
+                <span class="text-primary mt-0.5">{{ icon('file-text', 'w-4 h-4') }}</span>
+                <div>
+                  <p class="text-sm font-medium text-base-content/80 group-hover:text-primary transition-colors">Terms of Service</p>
+                  <p class="text-xs text-base-content/40">Rules governing use of the platform</p>
+                </div>
+              </a>
+              <a href="{{ url_for('main.privacy') }}"
+                 class="flex items-start gap-3 p-3 rounded-lg bg-base-100/50 border border-base-content/5 hover:border-primary/20 transition-colors group">
+                <span class="text-primary mt-0.5">{{ icon('shield', 'w-4 h-4') }}</span>
+                <div>
+                  <p class="text-sm font-medium text-base-content/80 group-hover:text-primary transition-colors">Privacy Policy</p>
+                  <p class="text-xs text-base-content/40">How we handle your data</p>
+                </div>
+              </a>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      {# ── Bottom navigation ── #}
+      <div class="mt-12 pt-6 border-t border-base-content/5 flex items-center justify-between">
+        <a href="{{ url_for('main.privacy') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+          {{ icon('arrow-left', 'w-4 h-4') }}
+          <span>Privacy Policy</span>
+        </a>
+        <a href="{{ url_for('main.terms') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+          <span>Terms of Service</span>
+          {{ icon('chevron-right', 'w-4 h-4') }}
+        </a>
+      </div>
+    </article>
+  </div>
+</div>
+{% endblock content_full %}
+
+{% block js %}
+<script>
+(function() {
+  var sections = document.querySelectorAll('.about-section');
+  var tocLinks = document.querySelectorAll('#toc-list .toc-link');
+  if (sections.length && tocLinks.length) {
+    var observer = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (entry.isIntersecting) {
+          tocLinks.forEach(function(l) { l.classList.remove('active'); });
+          var active = document.querySelector('#toc-list a[href="#' + entry.target.id + '"]');
+          if (active) active.classList.add('active');
+        }
+      });
+    }, { rootMargin: '-80px 0px -60% 0px', threshold: 0 });
+    sections.forEach(function(s) { observer.observe(s); });
+  }
+})();
+</script>
+{% endblock js %}
