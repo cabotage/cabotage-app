@@ -88,11 +88,14 @@
           <li><a href="#general"       class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">12. General</a></li>
         </ul>
 
-        <div class="mt-6 pt-4 border-t border-base-content/5">
+        <div class="mt-6 pt-4 border-t border-base-content/5 space-y-2">
           <a href="{{ url_for('main.privacy') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
             {{ icon('shield-check', 'w-4 h-4') }}
             <span>Privacy Policy</span>
-            {{ icon('arrow-right', 'w-3 h-3') }}
+          </a>
+          <a href="{{ url_for('main.fair_use') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+            {{ icon('scale', 'w-4 h-4') }}
+            <span>Fair Use</span>
           </a>
         </div>
       </div>
