@@ -77,12 +77,10 @@
           <a href="{{ url_for('main.terms') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
             {{ icon('scroll-text', 'w-4 h-4') }}
             <span>Terms of Service</span>
-            {{ icon('arrow-right', 'w-3 h-3') }}
           </a>
           <a href="{{ url_for('main.privacy') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
             {{ icon('shield-check', 'w-4 h-4') }}
             <span>Privacy Policy</span>
-            {{ icon('arrow-right', 'w-3 h-3') }}
           </a>
         </div>
       </div>
@@ -413,12 +411,12 @@
 
       {# ── Bottom navigation ── #}
       <div class="mt-12 pt-6 border-t border-base-content/5 flex items-center justify-between">
-        <a href="{{ url_for('main.terms') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
-          {{ icon('arrow-left', 'w-4 h-4') }}
-          <span>Terms of Service</span>
-        </a>
         <a href="{{ url_for('main.privacy') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+          {{ icon('arrow-left', 'w-4 h-4') }}
           <span>Privacy Policy</span>
+        </a>
+        <a href="{{ url_for('main.about') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+          <span>About</span>
           {{ icon('arrow-right', 'w-4 h-4') }}
         </a>
       </div>
