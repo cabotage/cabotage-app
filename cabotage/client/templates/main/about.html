@@ -69,13 +69,17 @@
         </ul>
 
         <div class="mt-6 pt-4 border-t border-base-content/5 space-y-2">
-          <a href="{{ url_for('main.terms') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
-            {{ icon('file-text', 'w-4 h-4') }}
-            <span>Terms of Service</span>
+          <a href="{{ url_for('main.fair_use') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+            {{ icon('scale', 'w-4 h-4') }}
+            <span>Fair Use</span>
           </a>
           <a href="{{ url_for('main.privacy') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
-            {{ icon('shield', 'w-4 h-4') }}
+            {{ icon('shield-check', 'w-4 h-4') }}
             <span>Privacy Policy</span>
+          </a>
+          <a href="{{ url_for('main.terms') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+            {{ icon('scroll-text', 'w-4 h-4') }}
+            <span>Terms of Service</span>
           </a>
         </div>
       </div>
@@ -249,10 +253,18 @@
               </a>
               <a href="{{ url_for('main.privacy') }}"
                  class="flex items-start gap-3 p-3 rounded-lg bg-base-100/50 border border-base-content/5 hover:border-primary/20 transition-colors group">
-                <span class="text-primary mt-0.5">{{ icon('shield', 'w-4 h-4') }}</span>
+                <span class="text-primary mt-0.5">{{ icon('shield-check', 'w-4 h-4') }}</span>
                 <div>
                   <p class="text-sm font-medium text-base-content/80 group-hover:text-primary transition-colors">Privacy Policy</p>
                   <p class="text-xs text-base-content/40">How we handle your data</p>
+                </div>
+              </a>
+              <a href="{{ url_for('main.fair_use') }}"
+                 class="flex items-start gap-3 p-3 rounded-lg bg-base-100/50 border border-base-content/5 hover:border-primary/20 transition-colors group">
+                <span class="text-primary mt-0.5">{{ icon('scale', 'w-4 h-4') }}</span>
+                <div>
+                  <p class="text-sm font-medium text-base-content/80 group-hover:text-primary transition-colors">Fair Use Policy</p>
+                  <p class="text-xs text-base-content/40">What's allowed on the platform</p>
                 </div>
               </a>
             </div>

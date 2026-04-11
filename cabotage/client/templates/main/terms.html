@@ -89,13 +89,17 @@
         </ul>
 
         <div class="mt-6 pt-4 border-t border-base-content/5 space-y-2">
-          <a href="{{ url_for('main.privacy') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
-            {{ icon('shield-check', 'w-4 h-4') }}
-            <span>Privacy Policy</span>
+          <a href="{{ url_for('main.about') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+            {{ icon('info', 'w-4 h-4') }}
+            <span>About</span>
           </a>
           <a href="{{ url_for('main.fair_use') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
             {{ icon('scale', 'w-4 h-4') }}
             <span>Fair Use</span>
+          </a>
+          <a href="{{ url_for('main.privacy') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+            {{ icon('shield-check', 'w-4 h-4') }}
+            <span>Privacy Policy</span>
           </a>
         </div>
       </div>
