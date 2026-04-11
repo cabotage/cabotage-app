@@ -80,3 +80,8 @@ def terms():
 @main_blueprint.route("/privacy/")
 def privacy():
     return render_template("main/privacy.html")
+
+
+@main_blueprint.route("/fair-use/")
+def fair_use():
+    return render_template("main/fair_use.html")
