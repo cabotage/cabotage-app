@@ -68,16 +68,16 @@ def about():
     return render_template("main/about.html")
 
 
-@main_blueprint.route("/terms/")
+@main_blueprint.route("/legal/terms/")
 def terms():
     return render_template("main/terms.html")
 
 
-@main_blueprint.route("/privacy/")
+@main_blueprint.route("/legal/privacy/")
 def privacy():
     return render_template("main/privacy.html")
 
 
-@main_blueprint.route("/fair-use/")
+@main_blueprint.route("/legal/fair-use/")
 def fair_use():
     return render_template("main/fair_use.html")
