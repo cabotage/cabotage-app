@@ -152,6 +152,16 @@ def celery_init_app(app):
             "schedule": 15.0,
             "args": None,
         },
+        "alert-reconciler": {
+            "task": "cabotage.celery.tasks.alerting.reconcile_alerts",
+            "schedule": 15.0,
+            "args": None,
+        },
+        "notification-reconciler": {
+            "task": "cabotage.celery.tasks.notify.reconcile_notifications",
+            "schedule": 15.0,
+            "args": None,
+        },
     }
     app.extensions["celery"] = celery_app
     return celery_app
@@ -190,6 +200,20 @@ def create_app():
         app.config["SECURITY_TOTP_SECRETS"] = {
             int(k): v for k, v in json.loads(totp_secrets).items()
         }
+
+    # MetaFlaskEnv parses dotted strings as floats, which truncates IDs
+    # like Slack's "10818900810177.1079..." — re-read as raw strings.
+    _env_prefix = app.config.get("ENV_PREFIX", "CABOTAGE_")
+    for _key in (
+        "SLACK_CLIENT_ID",
+        "SLACK_CLIENT_SECRET",
+        "DISCORD_CLIENT_ID",
+        "DISCORD_CLIENT_SECRET",
+        "DISCORD_BOT_TOKEN",
+    ):
+        _raw = os.environ.get(f"{_env_prefix}{_key}")
+        if _raw is not None:
+            app.config[_key] = _raw
 
     if app.config.get("GITHUB_OAUTH_ONLY"):
         app.config["SECURITY_REGISTERABLE"] = False
@@ -237,8 +261,16 @@ def create_app():
         login_form=ExtendedLoginForm,
     )
     from cabotage.server.user.github_oauth import init_github_oauth
+    from cabotage.server.integrations.slack_oauth import init_slack_oauth
+    from cabotage.server.integrations.discord_oauth import init_discord_oauth
+    from cabotage.server.integrations.notification_routing import (
+        init_notification_routing,
+    )
 
     init_github_oauth(app)
+    init_slack_oauth(app)
+    init_discord_oauth(app)
+    init_notification_routing(app)
     vault_db_creds.init_app(app)
     db.init_app(app)
     principal.init_app(app)
@@ -348,14 +380,18 @@ def create_app():
     from cabotage.server.main.views import main_blueprint
     from cabotage.server.oidc.views import oidc_blueprint
     from cabotage.server.registry_auth.views import registry_auth_blueprint
+    from cabotage.server.alerting.views import alerting_blueprint
 
     app.register_blueprint(user_blueprint)
     app.register_blueprint(main_blueprint)
     app.register_blueprint(oidc_blueprint)
     app.register_blueprint(registry_auth_blueprint)
+    app.register_blueprint(alerting_blueprint)
 
     # GitHub webhook uses HMAC validation, not CSRF tokens
     csrf.exempt("cabotage.server.user.views.github_hooks")
+    # Alertmanager webhook uses bearer token auth, not CSRF tokens
+    csrf.exempt("cabotage.server.alerting.views.alertmanager_webhook")
 
     from cabotage.server.mfa import register_mfa_guards
 
@@ -391,6 +427,7 @@ def create_app():
         Release,
         Deployment,
         Hook,
+        Alert,
     )
 
     admin.add_view(AdminModelView(Role, db.session))
@@ -406,6 +443,7 @@ def create_app():
     admin.add_view(AdminModelView(Release, db.session))
     admin.add_view(AdminModelView(Deployment, db.session))
     admin.add_view(AdminModelView(Hook, db.session))
+    admin.add_view(AdminModelView(Alert, db.session))
     admin.add_view(AdminModelView(User, db.session))
 
     num_proxies = app.config.get("PROXY_FIX_NUM_PROXIES", 1)

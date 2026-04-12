@@ -50,10 +50,49 @@ from cabotage.utils.github import (
     cabotage_url,
     post_deployment_status_update,
 )
+from cabotage.celery.tasks.notify import (
+    dispatch_autodeploy_notification,
+    dispatch_pipeline_notification,
+)
+
+log = logging.getLogger(__name__)
 
 
 class DeployError(RuntimeError):
     pass
+
+
+def _dispatch_deploy_failure(deployment, error_detail):
+    try:
+        app = deployment.application
+        if deployment.deploy_metadata and deployment.deploy_metadata.get("auto_deploy"):
+            image_id = deployment.deploy_metadata.get(
+                "source_image_id", str(deployment.id)
+            )
+            dispatch_autodeploy_notification(
+                "deploy_failed",
+                image_id,
+                app,
+                deployment.application_environment,
+                error=error_detail,
+                image_url=cabotage_url(app, f"images/{image_id}"),
+                deploy_url=cabotage_url(app, f"deployments/{deployment.id}"),
+                image_metadata=deployment.deploy_metadata,
+            )
+        else:
+            dispatch_pipeline_notification.delay(
+                "pipeline.deploy",
+                "Deployment",
+                str(deployment.id),
+                str(app.project.organization_id),
+                str(app.id),
+                str(deployment.application_environment_id)
+                if deployment.application_environment_id
+                else None,
+                error=error_detail,
+            )
+    except Exception:
+        log.warning("Failed to dispatch deploy failure notification", exc_info=True)
 
 
 @shared_task()
@@ -2489,8 +2528,10 @@ def deploy_release(deployment):
                 refresh_heartbeat(
                     redis_client, "deploy", deployment_id_str, ttl=heartbeat_ttl
                 )
-            except Exception:  # nosec B110
-                pass
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "Failed to publish deploy log line to redis", exc_info=True
+                )
 
     # Pick up check run from the build pipeline metadata
     check = CheckRun.from_metadata(
@@ -2854,10 +2895,13 @@ def deploy_release(deployment):
         if redis_client is not None and log_key is not None:
             try:
                 publish_end(redis_client, log_key, error=True)
-            except Exception:  # nosec B110
-                pass
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "Failed to publish deploy log stream end", exc_info=True
+                )
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
+        _dispatch_deploy_failure(deployment, str(exc))
         check.fail(
             "Deployment failed",
             detail=str(exc),
@@ -2886,10 +2930,13 @@ def deploy_release(deployment):
         if redis_client is not None and log_key is not None:
             try:
                 publish_end(redis_client, log_key, error=True)
-            except Exception:  # nosec B110
-                pass
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "Failed to publish deploy log stream end", exc_info=True
+                )
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
+        _dispatch_deploy_failure(deployment, "Deploy failed due to an internal error")
         check.fail(
             "Deployment failed",
             detail=str(exc),
@@ -2900,8 +2947,10 @@ def deploy_release(deployment):
     if redis_client is not None and log_key is not None:
         try:
             publish_end(redis_client, log_key, error=False)
-        except Exception:  # nosec B110
-            pass
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "Failed to publish deploy log stream end", exc_info=True
+            )
     deployment.deploy_log = "\n".join(deploy_log)
     db.session.commit()
 
@@ -2949,6 +2998,41 @@ def deploy_release(deployment):
         details_url=cabotage_url(check.application, deploy_path),
         **deploy_links,
     )
+    if deployment.deploy_metadata and deployment.deploy_metadata.get("auto_deploy"):
+        try:
+            image_id = deployment.deploy_metadata.get(
+                "source_image_id", str(deployment.id)
+            )
+            dispatch_autodeploy_notification(
+                "complete",
+                image_id,
+                deployment.application,
+                deployment.application_environment,
+                image_url=cabotage_url(check.application, f"images/{image_id}"),
+                deploy_url=cabotage_url(check.application, deploy_path),
+                image_metadata=deployment.deploy_metadata,
+            )
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "Failed to dispatch autodeploy completion", exc_info=True
+            )
+    else:
+        try:
+            dispatch_pipeline_notification.delay(
+                "pipeline.deploy",
+                "Deployment",
+                str(deployment.id),
+                str(deployment.application.project.organization_id),
+                str(deployment.application.id),
+                str(deployment.application_environment_id)
+                if deployment.application_environment_id
+                else None,
+                complete=True,
+            )
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "Failed to dispatch deploy completion notification", exc_info=True
+            )
 
 
 def fake_deploy_release(deployment):

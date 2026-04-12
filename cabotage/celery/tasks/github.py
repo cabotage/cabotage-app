@@ -30,10 +30,12 @@ from cabotage.celery.tasks.branch_deploy import (
     teardown_branch_deploy,
 )
 from cabotage.utils.github import (
+    cabotage_url,
     github_session,
     matches_watch_paths,
     post_deployment_status_update,
 )
+from cabotage.celery.tasks.notify import dispatch_autodeploy_notification
 
 Activity = activity_plugin.activity_cls
 logger = logging.getLogger(__name__)
@@ -242,6 +244,20 @@ def process_deployment_hook(hook):
             "in_progress",
             "Image build commencing.",
         )
+        try:
+            dispatch_autodeploy_notification(
+                "image_building",
+                image.id,
+                application,
+                app_env,
+                image_url=cabotage_url(application, f"images/{image.id}"),
+                image_metadata=image.image_metadata,
+            )
+        except Exception:
+            logger.warning(
+                "Failed to dispatch autodeploy image_building notification",
+                exc_info=True,
+            )
         return True
     except HookError as exc:
         if access_token and "token" in access_token:

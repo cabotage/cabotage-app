@@ -328,6 +328,7 @@ class ApplicationEnvironment(Model, Timestamp):
         foreign_keys="Ingress.application_environment_id",
         cascade="all, delete-orphan",
     )
+    alerts: Mapped[list[Alert]] = relationship(back_populates="application_environment")
 
     __table_args__ = (
         Index(
@@ -500,6 +501,7 @@ class Application(Model, Timestamp):
         back_populates="application",
         cascade="all, delete-orphan",
     )
+    alerts: Mapped[list[Alert]] = relationship(back_populates="application")
 
     @property
     def active_application_environments(self):
@@ -1842,3 +1844,61 @@ def create_default_ingresses(app_env, process_names=None):
             )
         )
     db.session.flush()
+
+
+class Alert(Model, Timestamp):
+    __versioned__: dict = {}
+    __tablename__ = "alerts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        primary_key=True,
+    )
+    fingerprint: Mapped[str] = mapped_column(String(256), index=True)
+    status: Mapped[str] = mapped_column(String(32))
+    alertname: Mapped[str] = mapped_column(String(256), index=True)
+    labels: Mapped[Any] = mapped_column(postgresql.JSONB())
+    annotations: Mapped[Any] = mapped_column(
+        postgresql.JSONB(), server_default=text("'{}'::jsonb")
+    )
+    starts_at: Mapped[datetime.datetime] = mapped_column(DateTime, index=True)
+    ends_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    generator_url: Mapped[str | None] = mapped_column(Text())
+    group_key: Mapped[str | None] = mapped_column(Text())
+    receiver: Mapped[str | None] = mapped_column(String(256))
+    application_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("project_applications.id"),
+        index=True,
+    )
+    application_environment_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("application_environments.id"),
+        index=True,
+    )
+    last_notified_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    version_id: Mapped[int] = mapped_column(Integer)
+
+    application: Mapped[Application | None] = relationship(
+        back_populates="alerts",
+    )
+    application_environment: Mapped[ApplicationEnvironment | None] = relationship(
+        back_populates="alerts",
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_alerts_fingerprint_status",
+            "fingerprint",
+            "status",
+        ),
+        Index(
+            "ix_alerts_fingerprint_starts_at",
+            "fingerprint",
+            "starts_at",
+            unique=True,
+        ),
+    )
+
+    __mapper_args__ = {"version_id_col": version_id}
