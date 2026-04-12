@@ -1,5 +1,6 @@
 import datetime
 import json
+import logging
 import os
 import re
 import secrets
@@ -26,7 +27,15 @@ from github.Auth import AppAuth as GithubAppAuth
 from github.GithubException import GithubException, UnknownObjectException
 from github.GithubIntegration import GithubIntegration
 
-from cabotage.celery.tasks.deploy import run_deploy, run_job
+from cabotage.celery.tasks.deploy import (
+    _safe_labels_from_application,
+    run_deploy,
+    run_job,
+)
+from cabotage.celery.tasks.notify import (
+    dispatch_autodeploy_notification,
+    dispatch_pipeline_notification,
+)
 
 
 from cabotage.server import (
@@ -62,6 +71,68 @@ from cabotage.utils.github import (
     post_deployment_status_update,
 )
 from cabotage.utils import procfile
+
+log = logging.getLogger(__name__)
+
+
+def _dispatch_image_failure(image, error_detail):
+    try:
+        app = image.application
+        if image.image_metadata and image.image_metadata.get("auto_deploy"):
+            dispatch_autodeploy_notification(
+                "image_failed",
+                image.id,
+                app,
+                image.application_environment,
+                error=error_detail,
+                image_url=cabotage_url(app, f"images/{image.id}"),
+                image_metadata=image.image_metadata,
+            )
+        else:
+            dispatch_pipeline_notification.delay(
+                "pipeline.image_build",
+                "Image",
+                str(image.id),
+                str(app.project.organization_id),
+                str(app.id),
+                str(image.application_environment_id)
+                if image.application_environment_id
+                else None,
+                error=error_detail,
+            )
+    except Exception:
+        log.warning("Failed to dispatch image failure notification", exc_info=True)
+
+
+def _dispatch_release_failure(release, error_detail):
+    try:
+        app = release.application
+        if release.release_metadata and release.release_metadata.get("auto_deploy"):
+            image_id = release.release_metadata.get("source_image_id", str(release.id))
+            dispatch_autodeploy_notification(
+                "release_failed",
+                image_id,
+                app,
+                release.application_environment,
+                error=error_detail,
+                image_url=cabotage_url(app, f"images/{image_id}"),
+                release_url=cabotage_url(app, f"releases/{release.id}"),
+                image_metadata=release.release_metadata,
+            )
+        else:
+            dispatch_pipeline_notification.delay(
+                "pipeline.release",
+                "Release",
+                str(release.id),
+                str(app.project.organization_id),
+                str(app.id),
+                str(release.application_environment_id)
+                if release.application_environment_id
+                else None,
+                error=error_detail,
+            )
+    except Exception:
+        log.warning("Failed to dispatch release failure notification", exc_info=True)
 
 
 def _build_namespace(app_env):
@@ -383,6 +454,7 @@ def build_release_buildkit(release):
                 },
             )
             context_configmap_object = release.release_build_context_configmap
+            safe_labels = _safe_labels_from_application(release.application)
             job_object = kubernetes.client.V1Job(
                 metadata=kubernetes.client.V1ObjectMeta(
                     name=f"releasebuild-{release.build_job_id}",
@@ -393,6 +465,7 @@ def build_release_buildkit(release):
                         "process": "build",
                         "build_id": release.build_job_id,
                         "build-job.cabotage.io": "true",
+                        **safe_labels,
                     },
                 ),
                 spec=kubernetes.client.V1JobSpec(
@@ -410,6 +483,7 @@ def build_release_buildkit(release):
                                 "build_id": release.build_job_id,
                                 "ca-admission.cabotage.io": "true",
                                 "resident-pod.cabotage.io": "true",
+                                **safe_labels,
                             },
                             annotations={
                                 "container.apparmor.security.beta.kubernetes.io/build": "unconfined",  # noqa: E501
@@ -550,8 +624,11 @@ def build_release_buildkit(release):
                 if redis_client and log_key:
                     try:
                         publish_end(redis_client, log_key, error=not job_complete)
-                    except Exception:  # nosec B110
-                        pass
+                    except Exception:
+                        log.warning(
+                            "Failed to publish log stream end for release build",
+                            exc_info=True,
+                        )
             finally:
                 core_api_instance.delete_namespaced_secret(
                     f"buildkit-registry-auth-{release.build_job_id}",
@@ -794,6 +871,23 @@ def build_image_buildkit(image: Image):
     processes = source["processes"]
     dockerfile_env_vars = source["dockerfile_env_vars"]
 
+    # Now that the commit SHA is resolved, update the notification
+    if image.image_metadata and image.image_metadata.get("auto_deploy"):
+        try:
+            dispatch_autodeploy_notification(
+                "image_building",
+                image.id,
+                image.application,
+                image.application_environment,
+                image_url=cabotage_url(image.application, f"images/{image.id}"),
+                image_metadata=image.image_metadata,
+            )
+        except Exception:
+            log.warning(
+                "Failed to dispatch autodeploy image_building notification",
+                exc_info=True,
+            )
+
     buildctl_command = [
         "buildctl-daemonless.sh",
     ]
@@ -873,6 +967,7 @@ def build_image_buildkit(image: Image):
                     "buildkitd.toml": buildkitd_toml,
                 },
             )
+            safe_labels = _safe_labels_from_application(image.application)
             job_object = kubernetes.client.V1Job(
                 metadata=kubernetes.client.V1ObjectMeta(
                     name=f"imagebuild-{image.build_job_id}",
@@ -883,6 +978,7 @@ def build_image_buildkit(image: Image):
                         "process": "build",
                         "build_id": image.build_job_id,
                         "build-job.cabotage.io": "true",
+                        **safe_labels,
                     },
                 ),
                 spec=kubernetes.client.V1JobSpec(
@@ -900,6 +996,7 @@ def build_image_buildkit(image: Image):
                                 "build_id": image.build_job_id,
                                 "ca-admission.cabotage.io": "true",
                                 "resident-pod.cabotage.io": "true",
+                                **safe_labels,
                             },
                             annotations={
                                 "container.apparmor.security.beta.kubernetes.io/build": "unconfined",  # noqa: E501
@@ -1032,8 +1129,11 @@ def build_image_buildkit(image: Image):
                 if redis_client and log_key:
                     try:
                         publish_end(redis_client, log_key, error=not job_complete)
-                    except Exception:  # nosec B110
-                        pass
+                    except Exception:
+                        log.warning(
+                            "Failed to publish log stream end for image build",
+                            exc_info=True,
+                        )
             finally:
                 core_api_instance.delete_namespaced_secret(
                     f"buildkit-registry-auth-{image.build_job_id}",
@@ -1171,6 +1271,23 @@ def build_omnibus_buildkit(image, release):
     dockerfile_name = source["dockerfile_name"]
     processes = source["processes"]
     dockerfile_env_vars = source["dockerfile_env_vars"]
+
+    # Now that the commit SHA is resolved, update the notification
+    if image.image_metadata and image.image_metadata.get("auto_deploy"):
+        try:
+            dispatch_autodeploy_notification(
+                "image_building",
+                image.id,
+                image.application,
+                image.application_environment,
+                image_url=cabotage_url(image.application, f"images/{image.id}"),
+                image_metadata=image.image_metadata,
+            )
+        except Exception:
+            log.warning(
+                "Failed to dispatch autodeploy image_building notification",
+                exc_info=True,
+            )
 
     # --- Image build args (init container) ---
     buildctl_command = [
@@ -1389,6 +1506,7 @@ def build_omnibus_buildkit(image, release):
             ],
         )
 
+        safe_labels = _safe_labels_from_application(image.application)
         job_object = kubernetes.client.V1Job(
             metadata=kubernetes.client.V1ObjectMeta(
                 name=f"omnibusbuild-{image.build_job_id}",
@@ -1399,6 +1517,7 @@ def build_omnibus_buildkit(image, release):
                     "process": "build",
                     "build_id": image.build_job_id,
                     "build-job.cabotage.io": "true",
+                    **safe_labels,
                 },
             ),
             spec=kubernetes.client.V1JobSpec(
@@ -1416,6 +1535,7 @@ def build_omnibus_buildkit(image, release):
                             "build_id": image.build_job_id,
                             "ca-admission.cabotage.io": "true",
                             "resident-pod.cabotage.io": "true",
+                            **safe_labels,
                         },
                         annotations={
                             "container.apparmor.security.beta.kubernetes.io/image-build": "unconfined",  # noqa: E501
@@ -1521,8 +1641,11 @@ def build_omnibus_buildkit(image, release):
             if redis_client and log_key:
                 try:
                     publish_end(redis_client, log_key, error=not job_complete)
-                except Exception:  # nosec B110
-                    pass
+                except Exception:
+                    log.warning(
+                        "Failed to publish log stream end for omnibus build",
+                        exc_info=True,
+                    )
         finally:
             core_api_instance.delete_namespaced_secret(
                 f"buildkit-registry-auth-{image.build_job_id}",
@@ -1633,10 +1756,8 @@ def run_image_build(image_id: str, buildkit: bool = False):
     try:
         redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
         refresh_heartbeat(redis_client, "image_build", str(image.id))
-    except Exception:  # nosec B110
-        # blind capture any issues sending heartbeat to redis,
-        # we don't want to fail the build for this!
-        pass
+    except Exception:
+        log.warning("Failed to send image build heartbeat to redis", exc_info=True)
 
     try:
         try:
@@ -1662,6 +1783,7 @@ def run_image_build(image_id: str, buildkit: bool = False):
             image.error = True
             image.error_detail = str(exc)
             db.session.commit()
+            _dispatch_image_failure(image, str(exc))
             if (
                 image.image_metadata
                 and "installation_id" in image.image_metadata
@@ -1683,14 +1805,17 @@ def run_image_build(image_id: str, buildkit: bool = False):
             log_key = stream_key("image", image.build_job_id)
             redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
             publish_end(redis_client, log_key, error=True)
-        except Exception:  # nosec B110
-            pass
+        except Exception:
+            log.warning(
+                "Failed to publish log stream end for image build error", exc_info=True
+            )
         db.session.rollback()
         db.session.add(image)
         if not image.error:
             image.error = True
             image.error_detail = "Image build failed due to an internal error"
             db.session.commit()
+        _dispatch_image_failure(image, image.error_detail or "Image build failed")
         check.fail(
             "Image build failed",
             detail=image.error_detail or "Image build failed",
@@ -1718,6 +1843,30 @@ def run_image_build(image_id: str, buildkit: bool = False):
         Image=f"images/{image.id}",
     )
 
+    if not (
+        image.built
+        and image.image_metadata
+        and image.image_metadata.get("auto_deploy", False)
+    ):
+        # Non-auto-deploy: update the "Image build started" notification to complete
+        try:
+            dispatch_pipeline_notification.delay(
+                "pipeline.image_build",
+                "Image",
+                str(image.id),
+                str(application.project.organization_id),
+                str(application.id),
+                str(image.application_environment_id)
+                if image.application_environment_id
+                else None,
+                complete=True,
+            )
+        except Exception:
+            log.warning(
+                "Failed to dispatch image build completion notification",
+                exc_info=True,
+            )
+
     if (
         image.built
         and image.image_metadata
@@ -1725,7 +1874,10 @@ def run_image_build(image_id: str, buildkit: bool = False):
     ):
         app_env = image.application_environment
         release = image.application.create_release(app_env=app_env)
-        release.release_metadata = image.image_metadata
+        release.release_metadata = {
+            **(image.image_metadata or {}),
+            "source_image_id": str(image.id),
+        }
         db.session.add(release)
         db.session.flush()
         activity = Activity(
@@ -1748,6 +1900,21 @@ def run_image_build(image_id: str, buildkit: bool = False):
             Release=f"releases/{release.id}",
         )
         run_release_build.delay(release_id=release.id)
+        try:
+            dispatch_autodeploy_notification(
+                "release_building",
+                image.id,
+                application,
+                app_env,
+                image_url=cabotage_url(application, f"images/{image.id}"),
+                release_url=cabotage_url(application, f"releases/{release.id}"),
+                image_metadata=image.image_metadata,
+            )
+        except Exception:
+            log.warning(
+                "Failed to dispatch autodeploy release_building notification",
+                exc_info=True,
+            )
 
 
 @shared_task()
@@ -1772,10 +1939,10 @@ def run_release_build(release_id: str):
         try:
             redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
             refresh_heartbeat(redis_client, "release_build", str(release.id))
-        except Exception:  # nosec B110
-            # blind capture any issues sending heartbeat to redis,
-            # we don't want to fail the build for this!
-            pass
+        except Exception:
+            log.warning(
+                "Failed to send release build heartbeat to redis", exc_info=True
+            )
 
         try:
             build_metadata = build_release_buildkit(release)
@@ -1803,8 +1970,12 @@ def run_release_build(release_id: str):
                 log_key = stream_key("release", release.build_job_id)
                 redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
                 publish_end(redis_client, log_key, error=True)
-            except Exception:  # nosec B110
-                pass
+            except Exception:
+                log.warning(
+                    "Failed to publish log stream end for release build error",
+                    exc_info=True,
+                )
+            _dispatch_release_failure(release, str(exc))
             if (
                 "installation_id" in release.release_metadata
                 and "statuses_url" in release.release_metadata
@@ -1833,12 +2004,18 @@ def run_release_build(release_id: str):
                 log_key = stream_key("release", release.build_job_id)
                 redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
                 publish_end(redis_client, log_key, error=True)
-            except Exception:  # nosec B110
-                pass
+            except Exception:
+                log.warning(
+                    "Failed to publish log stream end for release build error",
+                    exc_info=True,
+                )
             release.error = True
             release.error_detail = "Release build failed due to an internal error"
             db.session.add(release)
             db.session.commit()
+            _dispatch_release_failure(
+                release, "Release build failed due to an internal error"
+            )
             if (
                 "installation_id" in release.release_metadata
                 and "statuses_url" in release.release_metadata
@@ -1879,6 +2056,29 @@ def run_release_build(release_id: str):
             **release_links,
         )
 
+        if not (
+            release.built
+            and release.release_metadata
+            and release.release_metadata.get("auto_deploy", False)
+        ):
+            try:
+                dispatch_pipeline_notification.delay(
+                    "pipeline.release",
+                    "Release",
+                    str(release.id),
+                    str(release.application.project.organization_id),
+                    str(release.application.id),
+                    str(release.application_environment_id)
+                    if release.application_environment_id
+                    else None,
+                    complete=True,
+                )
+            except Exception:
+                log.warning(
+                    "Failed to dispatch release build completion notification",
+                    exc_info=True,
+                )
+
         if (
             release.built
             and release.release_metadata
@@ -1906,6 +2106,29 @@ def run_release_build(release_id: str):
             )
             db.session.add(activity)
             db.session.commit()
+            try:
+                image_id = release.release_metadata.get(
+                    "source_image_id", str(release.id)
+                )
+                dispatch_autodeploy_notification(
+                    "deploying",
+                    image_id,
+                    release.application,
+                    release.application_environment,
+                    image_url=cabotage_url(release.application, f"images/{image_id}"),
+                    release_url=cabotage_url(
+                        release.application, f"releases/{release.id}"
+                    ),
+                    deploy_url=cabotage_url(
+                        release.application, f"deployments/{deployment.id}"
+                    ),
+                    image_metadata=release.release_metadata,
+                )
+            except Exception:
+                log.warning(
+                    "Failed to dispatch autodeploy deploying notification",
+                    exc_info=True,
+                )
             if current_app.config["KUBERNETES_ENABLED"]:
                 deployment_id = deployment.id
                 run_deploy.delay(deployment_id=deployment.id)
@@ -1926,6 +2149,28 @@ def run_release_build(release_id: str):
                     Deployment=f"deployments/{deployment.id}",
                     Release=f"releases/{release.id}",
                 )
+                try:
+                    dispatch_autodeploy_notification(
+                        "complete",
+                        image_id,
+                        release.application,
+                        release.application_environment,
+                        image_url=cabotage_url(
+                            release.application, f"images/{image_id}"
+                        ),
+                        release_url=cabotage_url(
+                            release.application, f"releases/{release.id}"
+                        ),
+                        deploy_url=cabotage_url(
+                            release.application, f"deployments/{deployment.id}"
+                        ),
+                        image_metadata=release.release_metadata,
+                    )
+                except Exception:
+                    log.warning(
+                        "Failed to dispatch autodeploy completion notification",
+                        exc_info=True,
+                    )
     except Exception:
         db.session.rollback()
         if release is not None and not release.error:
@@ -1995,8 +2240,8 @@ def run_omnibus_build(image_id: str):
     try:
         redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
         refresh_heartbeat(redis_client, "omnibus_build", str(image.id))
-    except Exception:  # nosec B110
-        pass
+    except Exception:
+        log.warning("Failed to send omnibus build heartbeat to redis", exc_info=True)
 
     release = None
     app_env = image.application_environment
@@ -2019,7 +2264,10 @@ def run_omnibus_build(image_id: str):
                 health_check_path=app_env.effective_health_check_path,
                 health_check_host=app_env.effective_health_check_host,
             )
-            release.release_metadata = image.image_metadata
+            release.release_metadata = {
+                **(image.image_metadata or {}),
+                "source_image_id": str(image.id),
+            }
             db.session.add(release)
             db.session.flush()
 
@@ -2088,8 +2336,11 @@ def run_omnibus_build(image_id: str):
             log_key = stream_key("omnibus", image.build_job_id)
             redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
             publish_end(redis_client, log_key, error=True)
-        except Exception:  # nosec B110
-            pass
+        except Exception:
+            log.warning(
+                "Failed to publish log stream end for omnibus build error",
+                exc_info=True,
+            )
         db.session.rollback()
         db.session.add(image)
         if not image.error:

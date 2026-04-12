@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, service_card, danger_zone_delete, tab_nav %}
+{% from "_macros.html" import icon, resource_path, page_header, service_card, danger_zone_delete, env_tab_nav %}
 
 {% block title %}
   {{ environment.name }} - {{ project.name }} - Cabotage
@@ -15,18 +15,7 @@
 {% endblock resource_path %}
 
 {% block tab_bar %}
-  <div class="app-content-padded !py-0">
-    <div class="tab-bar">
-      <a href="{{ url_for('user.project_environment', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}"
-         class="tab-item tab-active">{{ icon('activity', 'w-4 h-4') }} <span class="tab-label">Overview</span></a>
-      {% if config.MIMIR_URL %}
-      <a href="{{ url_for('user.environment_observe', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}"
-         class="tab-item">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></a>
-      {% else %}
-      <span class="tab-item tab-disabled">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></span>
-      {% endif %}
-    </div>
-  </div>
+  {{ env_tab_nav(project, environment, 'overview') }}
 {% endblock tab_bar %}
 
 {% block content %}

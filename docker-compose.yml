@@ -57,7 +57,7 @@ services:
     links:
       - db
   registry:
-    image: registry:2
+    image: registry:3
     restart: always
     command: ["/etc/docker/registry-local/config.yml"]
     environment:
@@ -66,9 +66,10 @@ services:
       REGISTRY_STORAGE_S3_REGION: us-east-1
       REGISTRY_STORAGE_S3_REGIONENDPOINT: http://minio:9000
       REGISTRY_STORAGE_S3_BUCKET: cabotage-registry
-      REGISTRY_STORAGE_S3_SECURE: "true"
+      REGISTRY_STORAGE_S3_SECURE: "false"
       REGISTRY_STORAGE_S3_V4AUTH: "true"
       REGISTRY_STORAGE_S3_CHUNKSIZE: 5242880
+      REGISTRY_STORAGE_S3_FORCEPATHSTYLE: "true"
       REGISTRY_STORAGE_DELETE_ENABLED: true
     ports:
       - "5001:5001"

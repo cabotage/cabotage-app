@@ -29,7 +29,7 @@ import kubernetes.stream.ws_client
 from dxf import DXF
 import requests as requests_lib
 from requests.exceptions import HTTPError
-from sqlalchemy import desc, func
+from sqlalchemy import and_, desc, func, or_
 from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import joinedload, subqueryload
 from sqlalchemy.orm.attributes import flag_modified
@@ -130,12 +130,14 @@ from cabotage.utils.docker_auth import (
 from cabotage.celery.tasks import (
     cleanup_app_env_k8s,
     deploy_tailscale_operator,
+    dispatch_pipeline_notification,
     process_github_hook,
     run_deploy,
     run_image_build,
     run_release_build,
     teardown_tailscale_operator,
 )
+from cabotage.celery.tasks.notify import dispatch_autodeploy_notification
 
 from cabotage.celery.tasks.deploy import resize_deployment, scale_deployment
 from cabotage.utils.build_log_stream import (
@@ -608,12 +610,6 @@ def organization(org_slug):
 
     is_admin = AdministerOrganizationPermission(organization.id).can()
 
-    add_member_form = None
-    remove_member_form = None
-    if is_admin:
-        add_member_form = AddOrganizationUserForm()
-        remove_member_form = FlaskForm()
-
     return render_template(
         "user/organization.html",
         organization=organization,
@@ -624,6 +620,34 @@ def organization(org_slug):
         errored_app_ids=errored_app_ids,
         building_app_ids=building_app_ids,
         last_deploy_ts=last_deploy_ts,
+        is_admin=is_admin,
+    )
+
+
+@user_blueprint.route("/organizations/<org_slug>/members")
+@login_required
+def organization_members(org_slug):
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .options(
+            joinedload(Organization.members).joinedload(OrganizationMember.user),
+        )
+        .first_or_404()
+    )
+    if not ViewOrganizationPermission(organization.id).can():
+        abort(403)
+
+    is_admin = AdministerOrganizationPermission(organization.id).can()
+    add_member_form = None
+    remove_member_form = None
+    if is_admin:
+        add_member_form = AddOrganizationUserForm()
+        remove_member_form = FlaskForm()
+
+    return render_template(
+        "user/organization_members.html",
+        organization=organization,
         is_admin=is_admin,
         add_member_form=add_member_form,
         remove_member_form=remove_member_form,
@@ -826,6 +850,8 @@ def organization_settings(org_slug):
         ],
     )
 
+    from cabotage.server.models.notifications import NOTIFICATION_CATEGORIES
+
     return render_template(
         "user/organization_settings.html",
         organization=organization,
@@ -835,6 +861,9 @@ def organization_settings(org_slug):
         ts_form=ts_form,
         ts_integration=ts_integration,
         oidc_issuer_url=oidc.issuer_url(),
+        slack_integration=organization.slack_integration,
+        discord_integration=organization.discord_integration,
+        notification_categories=NOTIFICATION_CATEGORIES,
     )
 
 
@@ -2360,7 +2389,9 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
                     application_environment_id=app_env.id,
                     process_name=proc_name,
                 )
-                .order_by(JobLog.completion_time.desc())
+                .order_by(
+                    func.coalesce(JobLog.completion_time, JobLog.start_time).desc()
+                )
                 .first()
             )
             if last_log is not None:
@@ -3821,6 +3852,218 @@ def project_application_configuration_delete(
     )
 
 
+def _render_audit_log(scope_filter, template_context):
+    """Core audit log rendering shared across org/project/app scopes.
+
+    scope_filter: a SQLAlchemy filter expression for scoping (e.g. by org, project, app)
+    template_context: dict of extra template variables (application, org, etc.)
+    """
+    from cabotage.server.models.audit import AuditLog
+
+    before = request.args.get("before", type=int)
+    after = request.args.get("after", type=int)
+    per_page = 30
+    verb_filter = [v for v in request.args.get("verb", "").split(",") if v]
+    type_filter = [t for t in request.args.get("type", "").split(",") if t]
+
+    q = AuditLog.query.filter(scope_filter)
+    if verb_filter:
+        q = q.filter(AuditLog.verb.in_(verb_filter))
+    if type_filter:
+        q = q.filter(AuditLog.object_type.in_(type_filter))
+
+    if after:
+        entries = (
+            q.filter(AuditLog.id > after)
+            .order_by(AuditLog.id.asc())
+            .limit(per_page + 1)
+            .all()
+        )
+        has_newer = len(entries) > per_page
+        entries = entries[:per_page]
+        entries.reverse()
+        has_older = True
+    else:
+        if before:
+            q = q.filter(AuditLog.id < before)
+        entries = q.order_by(AuditLog.id.desc()).limit(per_page + 1).all()
+        has_older = len(entries) > per_page
+        entries = entries[:per_page]
+        has_newer = before is not None
+
+    # Available filter values — scoped by the OTHER active filter
+    verb_q = AuditLog.query.filter(scope_filter)
+    type_q = AuditLog.query.filter(scope_filter)
+    if type_filter:
+        verb_q = verb_q.filter(AuditLog.object_type.in_(type_filter))
+    if verb_filter:
+        type_q = type_q.filter(AuditLog.verb.in_(verb_filter))
+
+    all_verbs = sorted(
+        r[0] for r in verb_q.with_entities(AuditLog.verb).distinct() if r[0]
+    )
+    all_types = sorted(
+        r[0] for r in type_q.with_entities(AuditLog.object_type).distinct() if r[0]
+    )
+
+    from cabotage.server.audit_helpers import compute_audit_changes
+
+    entry_changes = compute_audit_changes(entries)
+
+    return render_template(
+        "user/audit_log.html",
+        entries=entries,
+        entry_changes=entry_changes,
+        has_newer=has_newer,
+        has_older=has_older,
+        newer_after=entries[0].id if entries and has_newer else None,
+        older_before=entries[-1].id if entries and has_older else None,
+        verb_filter=verb_filter,
+        type_filter=type_filter,
+        all_verbs=all_verbs,
+        all_types=all_types,
+        **template_context,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/audit"
+)
+@login_required
+def application_audit_log(org_slug, project_slug, app_slug):
+    from cabotage.server.models.audit import AuditLog
+
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    env_slug = request.args.get("env_slug")
+    app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
+
+    scope = AuditLog.application_id == application.id
+    if app_env:
+        scope = and_(
+            scope,
+            or_(
+                AuditLog.application_environment_id == app_env.id,
+                AuditLog.application_environment_id.is_(None),
+            ),
+        )
+
+    environment = (
+        app_env.environment if app_env and project.environments_enabled else None
+    )
+    return _render_audit_log(
+        scope,
+        {
+            "application": application,
+            "app_env": app_env,
+            "environment": environment,
+            "scope_type": "application",
+            "audit_url": url_for(
+                "user.application_audit_log",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                app_slug=app_slug,
+            ),
+        },
+    )
+
+
+@user_blueprint.route("/projects/<org_slug>/<project_slug>/audit")
+@login_required
+def project_audit_log(org_slug, project_slug):
+    from cabotage.server.models.audit import AuditLog
+
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not ViewProjectPermission(project.id).can():
+        abort(403)
+
+    return _render_audit_log(
+        AuditLog.project_id == project.id,
+        {
+            "organization": organization,
+            "project": project,
+            "scope_type": "project",
+            "audit_url": url_for(
+                "user.project_audit_log", org_slug=org_slug, project_slug=project_slug
+            ),
+        },
+    )
+
+
+@user_blueprint.route("/projects/<org_slug>/<project_slug>/env/<env_slug>/audit")
+@login_required
+def environment_audit_log(org_slug, project_slug, env_slug):
+    from cabotage.server.models.audit import AuditLog
+
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    project = Project.query.filter_by(
+        organization_id=organization.id, slug=project_slug
+    ).first_or_404()
+    if not ViewProjectPermission(project.id).can():
+        abort(403)
+    environment = Environment.query.filter_by(
+        project_id=project.id, slug=env_slug
+    ).first_or_404()
+
+    # Get all app_env IDs for this environment
+    env_ae_ids = [ae.id for ae in environment.active_application_environments]
+
+    scope = and_(
+        AuditLog.project_id == project.id,
+        or_(
+            (
+                AuditLog.application_environment_id.in_(env_ae_ids)
+                if env_ae_ids
+                else False
+            ),
+            AuditLog.application_environment_id.is_(None),
+        ),
+    )
+
+    return _render_audit_log(
+        scope,
+        {
+            "organization": organization,
+            "project": project,
+            "environment": environment,
+            "scope_type": "environment",
+            "audit_url": url_for(
+                "user.environment_audit_log",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                env_slug=env_slug,
+            ),
+        },
+    )
+
+
+@user_blueprint.route("/organizations/<org_slug>/audit")
+@login_required
+def organization_audit_log(org_slug):
+    from cabotage.server.models.audit import AuditLog
+
+    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
+    if not ViewOrganizationPermission(organization.id).can():
+        abort(403)
+
+    return _render_audit_log(
+        or_(
+            AuditLog.organization_id == organization.id,
+            and_(
+                AuditLog.object_type == "Organization",
+                AuditLog.object_id == organization.id,
+            ),
+        ),
+        {
+            "organization": organization,
+            "scope_type": "organization",
+            "audit_url": url_for("user.organization_audit_log", org_slug=org_slug),
+        },
+    )
+
+
 @user_blueprint.route(
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/images"
 )
@@ -4326,12 +4569,15 @@ def deployment_logs_query(org_slug, project_slug, app_slug, deployment_id):
         return jsonify({"error": "not configured"}), 404
 
     namespace = _compute_observe_namespace(application, app_env)
+    org = application.project.organization
     process_names = sorted(app_env.process_counts or {})
     selectors = [
         f'namespace="{namespace}"',
         f'deployment="{deployment_id}"',
     ]
-    return _loki_query_response(selectors, process_names)
+    return _loki_query_response(
+        selectors, process_names, tenant_id=_loki_tenant_id(namespace, org)
+    )
 
 
 @user_blueprint.route("/deployment/<deployment_id>")
@@ -4381,6 +4627,15 @@ def application_release_create(org_slug, project_slug, app_slug):
     db.session.add(activity)
     db.session.commit()
     run_release_build.delay(release_id=release.id)
+    dispatch_pipeline_notification.delay(
+        "pipeline.release",
+        "Release",
+        str(release.id),
+        str(org.id),
+        str(application.id),
+        str(app_env.id),
+        detail=f"Triggered by: {current_user.username}",
+    )
     return redirect(
         url_for(
             "user.release_detail",
@@ -4577,6 +4832,32 @@ def application_images_build_fromsource(org_slug, project_slug, app_slug):
     db.session.commit()
     run_image_build.delay(image_id=image.id, buildkit=True)
     if auto_deploy:
+        dispatch_autodeploy_notification(
+            "image_building",
+            image.id,
+            application,
+            app_env,
+            image_url=url_for(
+                "user.image_detail",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                app_slug=app_slug,
+                image_id=image.id,
+                _external=True,
+            ),
+            image_metadata=image.image_metadata,
+        )
+    else:
+        dispatch_pipeline_notification.delay(
+            "pipeline.image_build",
+            "Image",
+            str(image.id),
+            str(org.id),
+            str(application.id),
+            str(app_env.id),
+            detail=f"Triggered by: {current_user.username}",
+        )
+    if auto_deploy:
         return redirect(
             url_for(
                 "user.project_application",
@@ -4639,7 +4920,10 @@ def application_clear_cache(org_slug, project_slug, app_slug):
 
         buildkit_image = current_app.config["BUILDKIT_IMAGE"]
 
+        from cabotage.celery.tasks.deploy import _safe_labels_from_application
+
         volume_claim = fetch_image_build_cache_volume_claim(core_api_instance, image)
+        safe_labels = _safe_labels_from_application(image.application)
         job_object = kubernetes.client.V1Job(
             metadata=kubernetes.client.V1ObjectMeta(
                 name=f"clear-cache-{volume_claim.metadata.name}"[:63],
@@ -4649,6 +4933,7 @@ def application_clear_cache(org_slug, project_slug, app_slug):
                     "application": image.application.slug,
                     "process": "clear-cache",
                     "resident-job.cabotage.io": "true",
+                    **safe_labels,
                 },
             ),
             spec=kubernetes.client.V1JobSpec(
@@ -4665,6 +4950,7 @@ def application_clear_cache(org_slug, project_slug, app_slug):
                             "process": "clear-cache",
                             "ca-admission.cabotage.io": "true",
                             "resident-pod.cabotage.io": "true",
+                            **safe_labels,
                         },
                         annotations={
                             "container.apparmor.security.beta.kubernetes.io/clear-cache": "unconfined",  # noqa: E501
@@ -4967,6 +5253,17 @@ def release_deploy(org_slug, project_slug, app_slug, release_id):
     db.session.add(activity)
     db.session.commit()
     if current_app.config["KUBERNETES_ENABLED"]:
+        dispatch_pipeline_notification.delay(
+            "pipeline.deploy",
+            "Deployment",
+            str(deployment.id),
+            str(org.id),
+            str(application.id),
+            str(release.application_environment_id)
+            if release.application_environment_id
+            else None,
+            detail=f"Triggered by: {current_user.username}",
+        )
         deployment_id = deployment.id
         run_deploy.delay(deployment_id=deployment.id)
         deployment = Deployment.query.filter_by(id=deployment_id).first_or_404()
@@ -4976,6 +5273,18 @@ def release_deploy(org_slug, project_slug, app_slug, release_id):
         fake_deploy_release(deployment)
         deployment.complete = True
         db.session.commit()
+        dispatch_pipeline_notification.delay(
+            "pipeline.deploy",
+            "Deployment",
+            str(deployment.id),
+            str(org.id),
+            str(application.id),
+            str(release.application_environment_id)
+            if release.application_environment_id
+            else None,
+            detail=f"Triggered by: {current_user.username}",
+            complete=True,
+        )
     return redirect(
         url_for(
             "user.deployment_detail",
@@ -5200,26 +5509,64 @@ def organization_demote_user(org_slug):
     return redirect(url_for("user.organization", org_slug=org_slug) + "#members")
 
 
-def _mimir_connection():
-    """Return (mimir_url, verify) tuple, or (None, None) if not configured."""
+def _loki_tenant_id(namespace, organization):
+    """Build a Loki tenant ID that includes the org-only namespace as fallback.
+
+    Apps that were previously non-environment-aware had data stored under
+    just the org k8s_identifier.  Including it ensures old logs remain
+    queryable after the app is enrolled into environments.
+    """
+    org_k8s = organization.k8s_identifier
+    tenant_ids = {namespace, org_k8s}
+    return "|".join(sorted(tenant_ids))
+
+
+def _project_tenant_ids(organization, project):
+    """Collect all namespace-based tenant IDs for a project.
+
+    Returns a pipe-separated string suitable for X-Scope-OrgID.
+    """
+    org_k8s = organization.k8s_identifier
+    tenant_ids = {org_k8s}
+    for env in project.active_environments:
+        if env.deleted_at is not None:
+            continue
+        tenant_ids.add(safe_k8s_name(org_k8s, env.k8s_identifier))
+    return "|".join(sorted(tenant_ids))
+
+
+def _mimir_connection(tenant_id=None):
+    """Return (mimir_url, verify, headers) tuple, or (None, None, {}) if not configured.
+
+    If *tenant_id* is given it overrides the default tenant header.
+    """
     mimir_url = current_app.config.get("MIMIR_URL")
     if not mimir_url:
-        return None, None
+        return None, None, {}
     verify = current_app.config.get("MIMIR_VERIFY")
     if verify is not None:
         if isinstance(verify, str) and verify.lower() == "false":
             verify = False
     else:
         verify = True
-    return mimir_url, verify
+    headers = {}
+    # TODO: Include anonymous until migration to multi-tenant is completed
+    effective_tenant = (
+        tenant_id
+        if tenant_id is not None
+        else str(current_app.config.get("MIMIR_TENANT_ID")) + "|anonymous"
+    )
+    if effective_tenant:
+        headers["X-Scope-OrgID"] = effective_tenant
+    return mimir_url, verify, headers
 
 
-def _query_mimir_range(query, start, end, step):
+def _query_mimir_range(query, start, end, step, tenant_id=None):
     """Query Mimir's Prometheus-compatible query_range endpoint.
 
     Returns the parsed ``data.result`` list, or None on any error.
     """
-    mimir_url, verify = _mimir_connection()
+    mimir_url, verify, headers = _mimir_connection(tenant_id=tenant_id)
     if not mimir_url:
         return None
     try:
@@ -5231,6 +5578,7 @@ def _query_mimir_range(query, start, end, step):
                 "end": end,
                 "step": step,
             },
+            headers=headers,
             verify=verify,
             timeout=10,
         )
@@ -5899,6 +6247,7 @@ def _build_observe_queries(
     network_labels=None,
 ):
     """Build PromQL queries and execute them. Returns (result, queries)."""
+
     result = None
     queries = []
 
@@ -6118,7 +6467,7 @@ def environment_observe_metric(org_slug, project_slug, env_slug):
         return jsonify({"error": "not configured"}), 404
 
     org_k8s = organization.k8s_identifier
-    namespace = safe_k8s_name(org_k8s, environment.k8s_identifier)
+    env_namespace = safe_k8s_name(org_k8s, environment.k8s_identifier)
     container_filter = _observe_container_filter()
 
     # Optional application filter
@@ -6132,16 +6481,25 @@ def environment_observe_metric(org_slug, project_slug, env_slug):
             if ae.application.deleted_at is None and ae.application.slug == app_filter
         ]
 
+    # Legacy app_envs (k8s_identifier=None) have pods in the org-only
+    # namespace, not the environment namespace.  Build a namespace selector
+    # that covers both when needed.
+    has_legacy = any(ae.k8s_identifier is None for ae in active_aes)
+    if has_legacy and env_namespace != org_k8s:
+        ns_selector = f'namespace=~"{env_namespace}|{org_k8s}"'
+    else:
+        ns_selector = f'namespace="{env_namespace}"'
+
     if app_filter and active_aes:
         ae = active_aes[0]
         prefix = _compute_observe_prefix(ae.application)
         escaped_prefix = _REGEX_META.sub(r"\\\g<0>", prefix)
-        base_selector = f'namespace="{namespace}", pod=~"{escaped_prefix}-.*"'
+        base_selector = f'{ns_selector}, pod=~"{escaped_prefix}-.*"'
         labels = f"{base_selector}, {container_filter}"
         network_labels = base_selector
         process_re = f"{escaped_prefix}-(.*)-[a-z0-9]+-[a-z0-9]+"
     else:
-        base_selector = f'namespace="{namespace}"'
+        base_selector = ns_selector
         labels = f"{base_selector}, {container_filter}"
         network_labels = base_selector
         # Process RE: extract process from pod name across all apps in namespace
@@ -6164,7 +6522,7 @@ def environment_observe_metric(org_slug, project_slug, env_slug):
     # Traefik service names
     traefik_names = _collect_traefik_svc_names(
         active_aes,
-        lambda ae: namespace,
+        lambda ae: _compute_observe_namespace(ae.application, ae),
         lambda ae: _compute_observe_prefix(ae.application),
     )
     traefik_svc = _traefik_svc_label(traefik_names)
@@ -6453,20 +6811,21 @@ def organization_observe_metric(org_slug):
     return jsonify({"result": result, "queries": queries})
 
 
-def _query_mimir_instant(query):
+def _query_mimir_instant(query, tenant_id=None):
     """Query Mimir's Prometheus-compatible instant query endpoint.
 
     Returns the parsed ``data.result`` list, or None on any error.
     """
-    mimir_url, verify = _mimir_connection()
+    mimir_url, verify, headers = _mimir_connection(tenant_id=tenant_id)
     if not mimir_url:
         return None
     try:
-        resp = requests_lib.get(
+        resp = requests_lib.get(  # nosec B113 - timeout has default
             f"{mimir_url}/prometheus/api/v1/query",
             params={"query": query},
+            headers=headers,
             verify=verify,
-            timeout=5,
+            timeout=current_app.config.get("MIMIR_TIMEOUT", 5),
         )
         resp.raise_for_status()
         data = resp.json()
@@ -6657,15 +7016,22 @@ def _loki_connection():
     return loki_url, verify
 
 
-def _query_loki(query, start, end, limit=500, direction="backward"):
+def _query_loki(query, start, end, limit=500, direction="backward", tenant_id=None):
     """Query Loki's query_range endpoint.
 
     *start* and *end* are unix epoch **nanoseconds** (int or str).
+    *tenant_id* is the X-Scope-OrgID header value (the k8s namespace name).
     Returns the parsed ``data.result`` list, or None on any error.
     """
     loki_url, verify = _loki_connection()
     if not loki_url:
         return None
+    headers = {}
+    if tenant_id:
+        legacy = current_app.config.get("LOKI_LEGACY_TENANT_ID")
+        if legacy:
+            tenant_id = f"{tenant_id}|{legacy}"
+        headers["X-Scope-OrgID"] = tenant_id
     try:
         resp = requests_lib.get(
             f"{loki_url}/loki/api/v1/query_range",
@@ -6676,6 +7042,7 @@ def _query_loki(query, start, end, limit=500, direction="backward"):
                 "limit": limit,
                 "direction": direction,
             },
+            headers=headers,
             verify=verify,
             timeout=10,
         )
@@ -6712,11 +7079,12 @@ def _build_log_selectors(namespace, project_slug=None, app_slug=None, env_slug=N
     return selectors
 
 
-def _loki_query_response(selectors, process_names):
+def _loki_query_response(selectors, process_names, tenant_id=None):
     """Shared Loki query logic.  Returns a Flask JSON response.
 
     *selectors* is a list of LogQL label matchers (strings).
     *process_names* is used to build a container-name filter.
+    *tenant_id* is the X-Scope-OrgID header value (the k8s namespace name).
     """
     loki_url, _ = _loki_connection()
     if not loki_url:
@@ -6775,7 +7143,9 @@ def _loki_query_response(selectors, process_names):
     if direction not in ("backward", "forward"):
         direction = "backward"
 
-    streams = _query_loki(logql, start_ns, end_ns, limit=limit, direction=direction)
+    streams = _query_loki(
+        logql, start_ns, end_ns, limit=limit, direction=direction, tenant_id=tenant_id
+    )
     if streams is None:
         return jsonify({"error": "query failed"}), 502
 
@@ -6849,7 +7219,7 @@ def job_history(org_slug, project_slug, app_slug, process_name, env_slug=None):
                 application_environment_id=app_env.id,
                 process_name=process_name,
             )
-            .order_by(JobLog.completion_time.desc())
+            .order_by(func.coalesce(JobLog.completion_time, JobLog.start_time).desc())
             .limit(100)
             .all()
         )
@@ -6920,7 +7290,10 @@ def project_application_logs_query(org_slug, project_slug, app_slug, env_slug=No
         app_slug=application.slug,
         env_slug=env_slug_val,
     )
-    return _loki_query_response(selectors, process_names)
+    org = application.project.organization
+    return _loki_query_response(
+        selectors, process_names, tenant_id=_loki_tenant_id(namespace, org)
+    )
 
 
 @user_blueprint.route(
@@ -6981,4 +7354,284 @@ def project_logs_query(org_slug, project_slug):
                 process_names_set.add(proc)
     process_names = sorted(process_names_set)
 
-    return _loki_query_response(selectors, process_names)
+    tenant_id = _project_tenant_ids(organization, project)
+    return _loki_query_response(selectors, process_names, tenant_id=tenant_id)
+
+
+# ── Infrastructure Observe (super-admin only) ──
+
+_INFRA_OBSERVE_METRICS = {"cpu", "memory", "network"}
+_INFRA_OBSERVE_GROUPS = {"total", "pod", "workload", "container"}
+_INFRA_TENANT = "cabotage-infra"
+
+
+def _require_admin():
+    """Abort 403 unless the current user is a super admin."""
+    if not current_user.admin:
+        abort(403)
+
+
+def _discover_infra_workloads():
+    """Discover infra workloads via Mimir kube-state-metrics on the cabotage-infra tenant.
+
+    Uses three instant queries to build the workload hierarchy:
+      1. kube_pod_labels{label_cabotage_io_infra="true"} — infra pods
+      2. kube_pod_owner — pod -> owner (DaemonSet/StatefulSet/ReplicaSet)
+      3. kube_replicaset_owner{owner_kind="Deployment"} — RS -> Deployment
+
+    Returns a list of dicts:
+        [{"kind": ..., "name": ..., "namespace": ..., "pods": [...]}, ...]
+    """
+    # 1. All pods labelled cabotage.io/infra=true
+    infra_pods = _query_mimir_instant(
+        'kube_pod_labels{label_cabotage_io_infra="true"}',
+        tenant_id=_INFRA_TENANT,
+    )
+    if not infra_pods:
+        return []
+
+    infra_pod_set = {(r["metric"]["namespace"], r["metric"]["pod"]) for r in infra_pods}
+
+    # 2. Pod ownership
+    pod_owners = _query_mimir_instant("kube_pod_owner", tenant_id=_INFRA_TENANT)
+    owner_map = {}  # (ns, pod) -> (owner_kind, owner_name)
+    if pod_owners:
+        for r in pod_owners:
+            m = r["metric"]
+            key = (m.get("namespace", ""), m.get("pod", ""))
+            if key in infra_pod_set:
+                owner_map[key] = (m.get("owner_kind", ""), m.get("owner_name", ""))
+
+    # 3. ReplicaSet -> Deployment mapping
+    rs_owners = _query_mimir_instant(
+        'kube_replicaset_owner{owner_kind="Deployment"}',
+        tenant_id=_INFRA_TENANT,
+    )
+    rs_to_deployment = {}  # (ns, rs_name) -> deployment_name
+    if rs_owners:
+        for r in rs_owners:
+            m = r["metric"]
+            rs_to_deployment[(m.get("namespace", ""), m.get("replicaset", ""))] = m.get(
+                "owner_name", ""
+            )
+
+    # Build workload map: (kind, name, namespace) -> [pod_names]
+    workload_pods: dict[tuple[str, str, str], list[str]] = collections.defaultdict(list)
+    for ns, pod in sorted(infra_pod_set):
+        owner_kind, owner_name = owner_map.get((ns, pod), ("", ""))
+        if owner_kind == "ReplicaSet":
+            # Resolve through to Deployment
+            deployment = rs_to_deployment.get((ns, owner_name))
+            if deployment:
+                workload_pods[("Deployment", deployment, ns)].append(pod)
+            else:
+                # Orphaned ReplicaSet — show as-is
+                workload_pods[("ReplicaSet", owner_name, ns)].append(pod)
+        elif owner_kind in ("DaemonSet", "StatefulSet"):
+            workload_pods[(owner_kind, owner_name, ns)].append(pod)
+        elif owner_kind:
+            # Other owner kinds (Job, Cluster, etc.)
+            workload_pods[(owner_kind, owner_name, ns)].append(pod)
+        else:
+            workload_pods[("Pod", pod, ns)].append(pod)
+
+    workloads = [
+        {"kind": kind, "name": name, "namespace": ns, "pods": sorted(pods)}
+        for (kind, name, ns), pods in workload_pods.items()
+    ]
+    workloads.sort(key=lambda w: (w["kind"], w["name"]))
+    return workloads
+
+
+@user_blueprint.route("/infra/observe")
+@login_required
+def infra_observe():
+    _require_admin()
+
+    mimir_configured = bool(current_app.config.get("MIMIR_URL"))
+
+    workloads = []
+    if mimir_configured:
+        try:
+            workloads = _discover_infra_workloads()
+        except Exception:
+            current_app.logger.debug(
+                "Failed to discover infra workloads", exc_info=True
+            )
+
+    observe_groups = ["total", "pod", "container", "workload"]
+    current_groups = {
+        "cpu": request.args.get("cpu", "total"),
+        "memory": request.args.get("memory", "total"),
+        "network": request.args.get("network", "total"),
+    }
+    for k in current_groups:
+        if current_groups[k] not in _INFRA_OBSERVE_GROUPS:
+            current_groups[k] = "total"
+
+    has_time_window = bool(request.args.get("start") and request.args.get("end"))
+
+    return render_template(
+        "user/infra_observe.html",
+        observe_level="infra",
+        observe_groups=observe_groups,
+        mimir_configured=mimir_configured,
+        metric_url=url_for("user.infra_observe_metric"),
+        workloads=workloads,
+        workloads_json=json.dumps(workloads),
+        current_range=request.args.get("range", "1h"),
+        current_groups=current_groups,
+        has_time_window=has_time_window,
+    )
+
+
+@user_blueprint.route("/infra/observe/metric")
+@login_required
+def infra_observe_metric():
+    _require_admin()
+
+    metric = request.args.get("metric")
+    if metric not in _INFRA_OBSERVE_METRICS:
+        return jsonify({"error": "invalid metric"}), 400
+
+    group = request.args.get("group", "total")
+    if group not in _INFRA_OBSERVE_GROUPS:
+        group = "total"
+
+    mimir_url = current_app.config.get("MIMIR_URL")
+    if not mimir_url:
+        return jsonify({"error": "not configured"}), 404
+
+    # Workload filter from query params
+    workload_name = request.args.get("workload_name", "")
+    workload_namespace = request.args.get("workload_namespace", "")
+    pod_name = request.args.get("pod", "")
+
+    include_system = request.args.get("system_containers", "") == "1"
+    container_filter = 'container!="", container!="POD"'
+    if not include_system:
+        container_filter += (
+            ', container!="cabotage-sidecar"'
+            ', container!="cabotage-sidecar-tls"'
+            ', container!="cabotage-enroller"'
+        )
+
+    # Instead of pre-resolving pod names (which only finds live pods),
+    # use PromQL joins against kube_pod_labels to filter at query time.
+    # This naturally includes pods that existed at any point during the
+    # time window, even if they've since been terminated.
+    infra_join = (
+        "* on (pod, namespace) group_left() "
+        '(max by (pod, namespace) (kube_pod_labels{label_cabotage_io_infra="true"}))'
+    )
+
+    # Optional narrowing by namespace/pod prefix/exact pod
+    narrow = ""
+    if pod_name:
+        narrow = f'pod="{pod_name}"'
+        if workload_namespace:
+            narrow = f'namespace="{workload_namespace}", {narrow}'
+    elif workload_name and workload_namespace:
+        escaped_name = _REGEX_META.sub(r"\\\g<0>", workload_name)
+        narrow = f'namespace="{workload_namespace}", pod=~"{escaped_name}-.*"'
+
+    labels = f"{narrow}, {container_filter}" if narrow else container_filter
+    network_labels = narrow if narrow else ""
+
+    duration, step, start, end = _observe_time_params()
+    rate_window = f"{max(step, 30)}s"
+
+    by_clause = {
+        "pod": "by (pod)",
+        "container": "by (pod, container)",
+        "workload": "by (pod)",
+        "total": "",
+    }.get(group, "")
+
+    result = None
+    queries = []
+
+    # KSM ref lines use the same join + narrowing but with resource= filter
+    def _append_ref_lines(resource):
+        """Query KSM requests/limits and append ref series to *result*.
+
+        For per-pod grouping, only emit a pod's ref line when every
+        usage-container in that pod has the KSM entry (i.e. the count
+        of containers with a limit equals the count with usage).
+        Per-container grouping always emits (each container either has
+        the value or doesn't — no ambiguity).
+        """
+        nonlocal result
+        ksm_narrow = (
+            f'{narrow}, {container_filter}, resource="{resource}"'
+            if narrow
+            else f'{container_filter}, resource="{resource}"'
+        )
+        usage_labels = labels  # same container filter as the usage query
+        for ref_type, ksm_metric in [
+            ("requests", "kube_pod_container_resource_requests"),
+            ("limits", "kube_pod_container_resource_limits"),
+        ]:
+            if group == "container":
+                rq = (
+                    f"sum by (pod, container) ("
+                    f"{ksm_metric}{{{ksm_narrow}}} {infra_join})"
+                )
+            elif by_clause:
+                usage_metric = (
+                    "container_cpu_usage_seconds_total"
+                    if resource == "cpu"
+                    else "container_memory_working_set_bytes"
+                )
+                rq = (
+                    f"sum by (pod) ({ksm_metric}{{{ksm_narrow}}} {infra_join}) "
+                    f"and on (pod) ("
+                    f"count by (pod) ({ksm_metric}{{{ksm_narrow}}} {infra_join}) "
+                    f"== count by (pod) ({usage_metric}{{{usage_labels}}} {infra_join}))"
+                )
+            else:
+                rq = f"sum({ksm_metric}{{{ksm_narrow}}} {infra_join})"
+            queries.append(rq)
+            rr = _query_mimir_range(rq, start, end, step, tenant_id=_INFRA_TENANT)
+            if rr:
+                for series in rr:
+                    series["metric"]["__ref__"] = ref_type
+                if result is None:
+                    result = []
+                result.extend(rr)
+
+    if metric == "cpu":
+        q = (
+            f"sum(rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}]) "
+            f"{infra_join}) {by_clause}"
+        )
+        queries.append(q)
+        result = _query_mimir_range(q, start, end, step, tenant_id=_INFRA_TENANT)
+        _append_ref_lines("cpu")
+    elif metric == "memory":
+        q = (
+            f"sum(container_memory_working_set_bytes{{{labels}}} "
+            f"{infra_join}) {by_clause}"
+        )
+        queries.append(q)
+        result = _query_mimir_range(q, start, end, step, tenant_id=_INFRA_TENANT)
+        _append_ref_lines("memory")
+    elif metric == "network":
+        result = []
+        for direction, counter in [
+            ("tx", "container_network_transmit_bytes_total"),
+            ("rx", "container_network_receive_bytes_total"),
+        ]:
+            if network_labels:
+                q = f"sum(rate({counter}{{{network_labels}}}[{rate_window}]) {infra_join}) {by_clause}"
+            else:
+                q = f"sum(rate({counter}[{rate_window}]) {infra_join}) {by_clause}"
+            queries.append(q)
+            qr = _query_mimir_range(q, start, end, step, tenant_id=_INFRA_TENANT)
+            if qr:
+                for series in qr:
+                    series["metric"]["direction"] = direction
+                result.extend(qr)
+        result = result if result else None
+
+    return jsonify({"result": result, "queries": queries})

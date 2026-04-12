@@ -50,10 +50,49 @@ from cabotage.utils.github import (
     cabotage_url,
     post_deployment_status_update,
 )
+from cabotage.celery.tasks.notify import (
+    dispatch_autodeploy_notification,
+    dispatch_pipeline_notification,
+)
+
+log = logging.getLogger(__name__)
 
 
 class DeployError(RuntimeError):
     pass
+
+
+def _dispatch_deploy_failure(deployment, error_detail):
+    try:
+        app = deployment.application
+        if deployment.deploy_metadata and deployment.deploy_metadata.get("auto_deploy"):
+            image_id = deployment.deploy_metadata.get(
+                "source_image_id", str(deployment.id)
+            )
+            dispatch_autodeploy_notification(
+                "deploy_failed",
+                image_id,
+                app,
+                deployment.application_environment,
+                error=error_detail,
+                image_url=cabotage_url(app, f"images/{image_id}"),
+                deploy_url=cabotage_url(app, f"deployments/{deployment.id}"),
+                image_metadata=deployment.deploy_metadata,
+            )
+        else:
+            dispatch_pipeline_notification.delay(
+                "pipeline.deploy",
+                "Deployment",
+                str(deployment.id),
+                str(app.project.organization_id),
+                str(app.id),
+                str(deployment.application_environment_id)
+                if deployment.application_environment_id
+                else None,
+                error=error_detail,
+            )
+    except Exception:
+        log.warning("Failed to dispatch deploy failure notification", exc_info=True)
 
 
 @shared_task()
@@ -230,6 +269,37 @@ def k8s_label_value(release):
     pairs.append((project.slug, project.k8s_identifier))
     pairs.append((app.slug, app.k8s_identifier))
     return compact_k8s_name(*pairs)
+
+
+def _safe_labels_from_release(release):
+    """Build cabotage.io/-prefixed labels using k8s_identifiers.
+
+    These are collision-safe labels that sit alongside the legacy
+    slug-based labels.
+    """
+    org = release.application.project.organization
+    project = release.application.project
+    app = release.application
+    app_env = release.application_environment
+    labels = {
+        "cabotage.io/organization": org.k8s_identifier,
+        "cabotage.io/project": project.k8s_identifier,
+        "cabotage.io/application": app.k8s_identifier,
+    }
+    if app_env.k8s_identifier is not None:
+        labels["cabotage.io/environment"] = app_env.environment.k8s_identifier
+    return labels
+
+
+def _safe_labels_from_application(application):
+    """Build cabotage.io/-prefixed labels from an Application (for builds)."""
+    org = application.project.organization
+    project = application.project
+    return {
+        "cabotage.io/organization": org.k8s_identifier,
+        "cabotage.io/project": project.k8s_identifier,
+        "cabotage.io/application": application.k8s_identifier,
+    }
 
 
 def render_namespace(release):
@@ -769,6 +839,7 @@ def render_service(release, process_name):
     resource_prefix = k8s_resource_prefix(release)
     service_name = f"{resource_prefix}-{process_name}"
     label_value = k8s_label_value(release)
+    safe_labels = _safe_labels_from_release(release)
     service_object = kubernetes.client.V1Service(
         metadata=kubernetes.client.V1ObjectMeta(
             name=service_name,
@@ -776,6 +847,7 @@ def render_service(release, process_name):
                 "resident-service.cabotage.io": "true",
                 "app": resource_prefix,
                 "process": process_name,
+                **safe_labels,
             },
         ),
         spec=kubernetes.client.V1ServiceSpec(
@@ -835,6 +907,7 @@ def render_ingress(release, ingress):
 
     Convenience wrapper that extracts naming context from a Release.
     """
+    safe_labels = _safe_labels_from_release(release)
     return render_ingress_object(
         ingress=ingress,
         resource_prefix=k8s_resource_prefix(release),
@@ -843,6 +916,7 @@ def render_ingress(release, ingress):
             "project": release.application.project.slug,
             "application": release.application.slug,
             "app": k8s_label_value(release),
+            **safe_labels,
         },
         org_k8s_identifier=release.application.project.organization.k8s_identifier,
         process_names=list(release.processes) if release.processes else [],
@@ -1802,6 +1876,7 @@ def render_deployment(
     app_env = release.application_environment
     env_slug = app_env.environment.slug if app_env.environment else ""
     process_counts = app_env.process_counts or {}
+    safe_labels = _safe_labels_from_release(release)
     pod_labels = {
         "organization": release.application.project.organization.slug,
         "project": release.application.project.slug,
@@ -1813,6 +1888,7 @@ def render_deployment(
         "deployment": str(deployment_id),
         "ca-admission.cabotage.io": "true",
         "resident-pod.cabotage.io": "true",
+        **safe_labels,
     }
     deployment_object = kubernetes.client.V1Deployment(
         metadata=kubernetes.client.V1ObjectMeta(
@@ -1824,6 +1900,7 @@ def render_deployment(
                 "process": process_name,
                 "app": label_value,
                 "resident-deployment.cabotage.io": "true",
+                **safe_labels,
             },
         ),
         spec=kubernetes.client.V1DeploymentSpec(
@@ -2015,6 +2092,7 @@ def resize_deployment(namespace, release, process_name, pod_class_name):
 
 def render_job(namespace, release, service_account_name, process_name, job_id):
     label_value = k8s_label_value(release)
+    safe_labels = _safe_labels_from_release(release)
     job_object = kubernetes.client.V1Job(
         metadata=kubernetes.client.V1ObjectMeta(
             name=f"deployment-{job_id}",
@@ -2027,6 +2105,7 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
                 "release": str(release.version),
                 "deployment": job_id,
                 "resident-job.cabotage.io": "true",
+                **safe_labels,
             },
         ),
         spec=kubernetes.client.V1JobSpec(
@@ -2045,6 +2124,7 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
                         "deployment": job_id,
                         "ca-admission.cabotage.io": "true",
                         "resident-pod.cabotage.io": "true",
+                        **safe_labels,
                     }
                 ),
                 spec=render_podspec(release, process_name, service_account_name),
@@ -2091,6 +2171,7 @@ def render_cronjob(
         )
     process_counts = app_env.process_counts or {}
     suspended = process_counts.get(process_name, 0) == 0
+    safe_labels = _safe_labels_from_release(release)
     common_labels = {
         "organization": release.application.project.organization.slug,
         "project": release.application.project.slug,
@@ -2100,6 +2181,7 @@ def render_cronjob(
         "environment": env_slug,
         "release": str(release.version),
         "deployment": str(deployment_id),
+        **safe_labels,
     }
     job_labels = {
         **common_labels,
@@ -2121,6 +2203,7 @@ def render_cronjob(
                 "process": process_name,
                 "app": label_value,
                 "resident-cronjob.cabotage.io": "true",
+                **safe_labels,
             },
         ),
         spec=kubernetes.client.V1CronJobSpec(
@@ -2489,8 +2572,10 @@ def deploy_release(deployment):
                 refresh_heartbeat(
                     redis_client, "deploy", deployment_id_str, ttl=heartbeat_ttl
                 )
-            except Exception:  # nosec B110
-                pass
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "Failed to publish deploy log line to redis", exc_info=True
+                )
 
     # Pick up check run from the build pipeline metadata
     check = CheckRun.from_metadata(
@@ -2854,10 +2939,13 @@ def deploy_release(deployment):
         if redis_client is not None and log_key is not None:
             try:
                 publish_end(redis_client, log_key, error=True)
-            except Exception:  # nosec B110
-                pass
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "Failed to publish deploy log stream end", exc_info=True
+                )
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
+        _dispatch_deploy_failure(deployment, str(exc))
         check.fail(
             "Deployment failed",
             detail=str(exc),
@@ -2886,10 +2974,13 @@ def deploy_release(deployment):
         if redis_client is not None and log_key is not None:
             try:
                 publish_end(redis_client, log_key, error=True)
-            except Exception:  # nosec B110
-                pass
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "Failed to publish deploy log stream end", exc_info=True
+                )
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
+        _dispatch_deploy_failure(deployment, "Deploy failed due to an internal error")
         check.fail(
             "Deployment failed",
             detail=str(exc),
@@ -2900,8 +2991,10 @@ def deploy_release(deployment):
     if redis_client is not None and log_key is not None:
         try:
             publish_end(redis_client, log_key, error=False)
-        except Exception:  # nosec B110
-            pass
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "Failed to publish deploy log stream end", exc_info=True
+            )
     deployment.deploy_log = "\n".join(deploy_log)
     db.session.commit()
 
@@ -2949,6 +3042,41 @@ def deploy_release(deployment):
         details_url=cabotage_url(check.application, deploy_path),
         **deploy_links,
     )
+    if deployment.deploy_metadata and deployment.deploy_metadata.get("auto_deploy"):
+        try:
+            image_id = deployment.deploy_metadata.get(
+                "source_image_id", str(deployment.id)
+            )
+            dispatch_autodeploy_notification(
+                "complete",
+                image_id,
+                deployment.application,
+                deployment.application_environment,
+                image_url=cabotage_url(check.application, f"images/{image_id}"),
+                deploy_url=cabotage_url(check.application, deploy_path),
+                image_metadata=deployment.deploy_metadata,
+            )
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "Failed to dispatch autodeploy completion", exc_info=True
+            )
+    else:
+        try:
+            dispatch_pipeline_notification.delay(
+                "pipeline.deploy",
+                "Deployment",
+                str(deployment.id),
+                str(deployment.application.project.organization_id),
+                str(deployment.application.id),
+                str(deployment.application_environment_id)
+                if deployment.application_environment_id
+                else None,
+                complete=True,
+            )
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "Failed to dispatch deploy completion notification", exc_info=True
+            )
 
 
 def fake_deploy_release(deployment):

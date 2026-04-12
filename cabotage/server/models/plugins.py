@@ -4,7 +4,7 @@ import sqlalchemy as sa
 import sqlalchemy.orm
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy_utils import JSONType, generic_relationship
+from sqlalchemy_utils import generic_relationship
 
 from sqlalchemy_continuum.plugins.base import Plugin
 from sqlalchemy_continuum.factory import ModelFactory
@@ -41,7 +41,7 @@ class ActivityFactory(ModelFactory):
 
             transaction_id = sa.Column(sa.BigInteger, index=True, nullable=False)
 
-            data = sa.Column(JSONType)
+            data = sa.Column(postgresql.JSONB())
 
             object_type = sa.Column(sa.String(255))
 
