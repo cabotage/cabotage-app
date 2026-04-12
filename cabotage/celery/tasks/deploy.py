@@ -1465,7 +1465,7 @@ def render_cabotage_sidecar_container(release, process_name, with_tls=True):
         resources=kubernetes.client.V1ResourceRequirements(
             limits={
                 "memory": "48Mi",
-                "cpu": "20m",
+                "cpu": "50m",
             },
             requests={
                 "memory": "32Mi",
@@ -1711,6 +1711,7 @@ def render_datadog_container(dd_api_key, datadog_tags):
         resources=kubernetes.client.V1ResourceRequirements(
             limits={
                 "memory": "256Mi",
+                "cpu": "50m",
             },
             requests={
                 "memory": "192Mi",
