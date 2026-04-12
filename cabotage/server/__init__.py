@@ -263,6 +263,36 @@ def create_app():
     def humanize_filter(value):
         return humanize_lib.naturaltime(value)
 
+    @app.template_filter("timeago")
+    def timeago_filter(value):
+        """Server-side timeago matching the JS timeago() function exactly."""
+        if value is None:
+            return ""
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        diff = max(0, int((now - value).total_seconds()))
+        if diff < 2:
+            return "just now"
+        if diff < 60:
+            return f"{diff} seconds ago"
+        m = diff // 60
+        if m == 1:
+            return "a minute ago"
+        if m < 60:
+            return f"{m} minutes ago"
+        h = m // 60
+        if h == 1:
+            return "an hour ago"
+        if h < 24:
+            return f"{h} hours ago"
+        d = h // 24
+        if d == 1:
+            return "a day ago"
+        return f"{d} days ago"
+
     @app.template_filter("isoformat_utc")
     def isoformat_utc_filter(value):
         if value is None:

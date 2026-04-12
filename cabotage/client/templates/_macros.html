@@ -84,6 +84,105 @@
   </div>
 {% endmacro %}
 
+{% macro org_tab_nav(organization, active='') %}
+  {% set org_slug = organization.slug %}
+  <div class="app-content-padded !py-0">
+    <div class="tab-bar" data-tabs>
+      <a href="{{ url_for('user.organization', org_slug=org_slug) }}"
+         title="Projects"
+         class="tab-item {% if active == 'projects' %}tab-active{% endif %}">{{ icon('folder', 'w-4 h-4') }} <span class="tab-label">Projects</span></a>
+      <a href="{{ url_for('user.organization_members', org_slug=org_slug) }}"
+         title="Members"
+         class="tab-item {% if active == 'members' %}tab-active{% endif %}">{{ icon('users', 'w-4 h-4') }} <span class="tab-label">Members</span></a>
+      <div class="dropdown dropdown-hover">
+        <div tabindex="0" role="button"
+             class="tab-item {% if active in ('observe', 'audit') %}tab-active{% endif %}">
+          {{ icon('search', 'w-4 h-4') }}
+          <span class="tab-label">Observe {{ icon('chevron-down', 'w-3 h-3 opacity-40') }}</span>
+        </div>
+        <ul tabindex="0" class="menu menu-md dropdown-content bg-base-100 rounded-box z-50 mt-1 w-48 p-2 shadow-lg border border-base-300">
+          {% if config.MIMIR_URL %}
+          <li><a href="{{ url_for('user.organization_observe', org_slug=org_slug) }}"
+                 class="{% if active == 'observe' %}active{% endif %}">{{ icon('bar-chart', 'w-3.5 h-3.5') }} Metrics</a></li>
+          {% else %}
+          <li class="disabled opacity-30"><span>{{ icon('bar-chart', 'w-3.5 h-3.5') }} Metrics</span></li>
+          {% endif %}
+          <li><a href="{{ url_for('user.organization_audit_log', org_slug=org_slug) }}"
+                 class="{% if active == 'audit' %}active{% endif %}">{{ icon('clock', 'w-3.5 h-3.5') }} Audit Log</a></li>
+        </ul>
+      </div>
+      <a href="{{ url_for('user.organization_settings', org_slug=org_slug) }}"
+         title="Settings"
+         class="tab-item {% if active == 'settings' %}tab-active{% endif %}">{{ icon('settings', 'w-4 h-4') }} <span class="tab-label">Settings</span></a>
+    </div>
+  </div>
+{% endmacro %}
+
+{% macro env_tab_nav(project, environment, active='') %}
+  {% set org_slug = project.organization.slug %}
+  {% set project_slug = project.slug %}
+  {% set env_slug = environment.slug %}
+  <div class="app-content-padded !py-0">
+    <div class="tab-bar" data-tabs>
+      <a href="{{ url_for('user.project_environment', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug) }}"
+         title="Overview"
+         class="tab-item {% if active == 'overview' %}tab-active{% endif %}">{{ icon('activity', 'w-4 h-4') }} <span class="tab-label">Overview</span></a>
+      <div class="dropdown dropdown-hover">
+        <div tabindex="0" role="button"
+             class="tab-item {% if active in ('observe', 'audit') %}tab-active{% endif %}">
+          {{ icon('search', 'w-4 h-4') }}
+          <span class="tab-label">Observe {{ icon('chevron-down', 'w-3 h-3 opacity-40') }}</span>
+        </div>
+        <ul tabindex="0" class="menu menu-md dropdown-content bg-base-100 rounded-box z-50 mt-1 w-48 p-2 shadow-lg border border-base-300">
+          {% if config.MIMIR_URL %}
+          <li><a href="{{ url_for('user.environment_observe', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug) }}"
+                 class="{% if active == 'observe' %}active{% endif %}">{{ icon('bar-chart', 'w-3.5 h-3.5') }} Metrics</a></li>
+          {% else %}
+          <li class="disabled opacity-30"><span>{{ icon('bar-chart', 'w-3.5 h-3.5') }} Metrics</span></li>
+          {% endif %}
+          <li><a href="{{ url_for('user.environment_audit_log', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug) }}"
+                 class="{% if active == 'audit' %}active{% endif %}">{{ icon('clock', 'w-3.5 h-3.5') }} Audit Log</a></li>
+        </ul>
+      </div>
+      <a href="{{ url_for('user.project_environment_settings', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug) }}"
+         title="Settings"
+         class="tab-item {% if active == 'settings' %}tab-active{% endif %}">{{ icon('settings', 'w-4 h-4') }} <span class="tab-label">Settings</span></a>
+    </div>
+  </div>
+{% endmacro %}
+
+{% macro project_tab_nav(project, active='') %}
+  {% set org_slug = project.organization.slug %}
+  {% set project_slug = project.slug %}
+  <div class="app-content-padded !py-0">
+    <div class="tab-bar" data-tabs>
+      <a href="{{ url_for('user.project', org_slug=org_slug, project_slug=project_slug) }}"
+         title="Overview"
+         class="tab-item {% if active == 'overview' %}tab-active{% endif %}">{{ icon('activity', 'w-4 h-4') }} <span class="tab-label">Overview</span></a>
+      <div class="dropdown dropdown-hover">
+        <div tabindex="0" role="button"
+             class="tab-item {% if active in ('observe', 'audit') %}tab-active{% endif %}">
+          {{ icon('search', 'w-4 h-4') }}
+          <span class="tab-label">Observe {{ icon('chevron-down', 'w-3 h-3 opacity-40') }}</span>
+        </div>
+        <ul tabindex="0" class="menu menu-md dropdown-content bg-base-100 rounded-box z-50 mt-1 w-48 p-2 shadow-lg border border-base-300">
+          {% if config.MIMIR_URL %}
+          <li><a href="{{ url_for('user.project_observe', org_slug=org_slug, project_slug=project_slug) }}"
+                 class="{% if active == 'observe' %}active{% endif %}">{{ icon('bar-chart', 'w-3.5 h-3.5') }} Metrics</a></li>
+          {% else %}
+          <li class="disabled opacity-30"><span>{{ icon('bar-chart', 'w-3.5 h-3.5') }} Metrics</span></li>
+          {% endif %}
+          <li><a href="{{ url_for('user.project_audit_log', org_slug=org_slug, project_slug=project_slug) }}"
+                 class="{% if active == 'audit' %}active{% endif %}">{{ icon('clock', 'w-3.5 h-3.5') }} Audit Log</a></li>
+        </ul>
+      </div>
+      <a href="{{ url_for('user.project_settings', org_slug=org_slug, project_slug=project_slug) }}"
+         title="Settings"
+         class="tab-item {% if active == 'settings' %}tab-active{% endif %}">{{ icon('settings', 'w-4 h-4') }} <span class="tab-label">Settings</span></a>
+    </div>
+  </div>
+{% endmacro %}
+
 {% macro app_tab_nav(application, active='', env=none) %}
   {% set org_slug = application.project.organization.slug %}
   {% set project_slug = application.project.slug %}
@@ -116,6 +215,8 @@
           <li class="disabled opacity-30"><span>{{ icon('file-text', 'w-3.5 h-3.5') }} Logs</span></li>
           {% endif %}
           <li class="disabled opacity-30"><span>{{ icon('bar-chart-2', 'w-3.5 h-3.5') }} Pipeline <span class="text-[0.6rem] opacity-40">(Soon)</span></span></li>
+          <li><a href="{{ url_for('user.application_audit_log', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
+                 class="{% if active == 'audit' %}active{% endif %}">{{ icon('clock', 'w-3.5 h-3.5') }} Audit Log</a></li>
         </ul>
       </div>
       <a href="{{ url_for('user.application_images', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, Integer, DateTime
+from sqlalchemy import BigInteger, Column, String, Boolean, Integer, DateTime
 from sqlalchemy.dialects import postgresql
 
 from cabotage.server import Model
@@ -14,6 +14,10 @@ class AuditLog(Model):
     id = Column(Integer, primary_key=True)
     timestamp = Column(DateTime)
 
+    # Version lookup (for computing diffs from version tables)
+    object_tx_id = Column(BigInteger)
+    transaction_id = Column(BigInteger)
+
     # Event
     verb = Column(String)
     detail = Column(String)
@@ -24,6 +28,12 @@ class AuditLog(Model):
     # Scoping
     application_id = Column(postgresql.UUID(as_uuid=True))
     application_environment_id = Column(postgresql.UUID(as_uuid=True))
+    project_id = Column(postgresql.UUID(as_uuid=True))
+    organization_id = Column(postgresql.UUID(as_uuid=True))
+
+    # Context (names for display at broader scopes)
+    app_name = Column(String)
+    project_name = Column(String)
 
     # Actor
     actor_username = Column(String)

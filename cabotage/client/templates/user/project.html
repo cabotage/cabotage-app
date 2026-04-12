@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, empty_state, service_card, stat_card, create_modal, render_field, tab_nav %}
+{% from "_macros.html" import icon, resource_path, page_header, empty_state, service_card, stat_card, create_modal, render_field, project_tab_nav %}
 
 {% block title %}
   {{ project.name }} - Cabotage
@@ -13,18 +13,7 @@
 {% endblock resource_path %}
 
 {% block tab_bar %}
-  <div class="app-content-padded !py-0">
-    <div class="tab-bar">
-      <a href="{{ url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug) }}"
-         class="tab-item tab-active">{{ icon('activity', 'w-4 h-4') }} <span class="tab-label">Overview</span></a>
-      {% if config.MIMIR_URL %}
-      <a href="{{ url_for('user.project_observe', org_slug=project.organization.slug, project_slug=project.slug) }}"
-         class="tab-item">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></a>
-      {% else %}
-      <span class="tab-item tab-disabled">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></span>
-      {% endif %}
-    </div>
-  </div>
+  {{ project_tab_nav(project, 'overview') }}
 {% endblock tab_bar %}
 
 {% block content %}
