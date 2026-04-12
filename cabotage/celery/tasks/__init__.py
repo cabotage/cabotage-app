@@ -33,6 +33,10 @@ from .tailscale import (
 
 from .alerting import reconcile_alerts  # noqa: F401
 
+from .resources import (
+    reconcile_backing_services,  # noqa: F401
+)
+
 from .notify import (
     dispatch_alert_notification,  # noqa: F401
     dispatch_pipeline_notification,  # noqa: F401

@@ -7,6 +7,7 @@ from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from cabotage.server.models.auth import Organization
+    from cabotage.server.models.resources import Resource
 
 from flask import current_app
 from sqlalchemy import (
@@ -34,6 +35,7 @@ from cabotage.server.models.plugins import ActivityPlugin
 from cabotage.server.models.utils import (
     generate_k8s_identifier,
     readable_k8s_hostname,
+    safe_k8s_name,
     slugify,
     DictDiffer,
 )
@@ -231,6 +233,10 @@ class Environment(Model, Timestamp):
         cascade="all, delete-orphan",
         order_by="EnvironmentConfiguration.name",
     )
+    resources: Mapped[list["Resource"]] = relationship(
+        back_populates="environment",
+        cascade="all, delete-orphan",
+    )
 
     @property
     def active_application_environments(self):
@@ -239,6 +245,34 @@ class Environment(Model, Timestamp):
     @property
     def active_environment_configurations(self):
         return [ec for ec in self.environment_configurations if not ec.deleted]
+
+    @property
+    def k8s_namespace(self):
+        """The K8s namespace where resources for this environment live.
+
+        Uses the combined org+env namespace when environment-scoped
+        namespacing is active (any ApplicationEnvironment has a
+        k8s_identifier), otherwise falls back to the org namespace.
+        """
+        org_k8s = self.project.organization.k8s_identifier
+        has_env_namespacing = any(
+            ae.k8s_identifier is not None for ae in self.application_environments
+        )
+        if has_env_namespacing:
+            return safe_k8s_name(org_k8s, self.k8s_identifier)
+        return org_k8s
+
+    @property
+    def active_resources(self):
+        return [r for r in self.resources if r.deleted_at is None]
+
+    @property
+    def active_postgres_resources(self):
+        return [r for r in self.active_resources if r.type == "postgres"]
+
+    @property
+    def active_redis_resources(self):
+        return [r for r in self.active_resources if r.type == "redis"]
 
     __table_args__ = (
         UniqueConstraint(project_id, slug),
@@ -1224,6 +1258,11 @@ class EnvironmentConfiguration(Model, Timestamp):
     value: Mapped[str] = mapped_column(String(2048))
     key_slug: Mapped[str | None] = mapped_column(Text())
     build_key_slug: Mapped[str | None] = mapped_column(Text())
+    resource_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("resources.id"),
+        index=True,
+    )
     version_id: Mapped[int] = mapped_column(Integer)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     secret: Mapped[bool] = mapped_column(Boolean, default=False)

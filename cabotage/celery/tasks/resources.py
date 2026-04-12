@@ -1,0 +1,799 @@
+import base64
+import logging
+import secrets
+
+import kubernetes
+from celery import shared_task
+from kubernetes.client.rest import ApiException
+
+from cabotage.server import (
+    config_writer,
+    db,
+    kubernetes as kubernetes_ext,
+)
+from cabotage.server.models.resources import (
+    postgres_size_classes,
+    redis_size_classes,
+)
+from cabotage.server.models.utils import safe_k8s_name
+from cabotage.celery.tasks.deploy import ensure_namespace
+
+log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# CNPG (CloudNativePG) constants
+# ---------------------------------------------------------------------------
+CNPG_GROUP = "postgresql.cnpg.io"
+CNPG_VERSION = "v1"
+CNPG_PLURAL = "clusters"
+
+# ---------------------------------------------------------------------------
+# OpsTree Redis Operator constants
+# ---------------------------------------------------------------------------
+REDIS_GROUP = "redis.redis.opstreelabs.in"
+REDIS_VERSION = "v1beta2"
+REDIS_STANDALONE_PLURAL = "redis"
+REDIS_CLUSTER_PLURAL = "redisclusters"
+
+# ---------------------------------------------------------------------------
+# cert-manager constants
+# ---------------------------------------------------------------------------
+CERTMANAGER_GROUP = "cert-manager.io"
+CERTMANAGER_VERSION = "v1"
+CERTMANAGER_CERT_PLURAL = "certificates"
+
+# ClusterIssuer used to sign TLS certs for backing services
+TLS_CLUSTER_ISSUER = "operators-ca-issuer"
+# Secret containing the CA cert for TLS verification
+TLS_CA_SECRET = "operators-ca-crt"
+
+REDIS_IMAGES: dict[str, str] = {
+    "8": "quay.io/opstree/redis:v8.6.2",
+}
+
+POSTGRES_IMAGES: dict[str, str] = {
+    "18": "ghcr.io/cloudnative-pg/postgresql:18.3-202604060836-minimal-trixie@sha256:3b36ae680b6ed02e5a44b4a2eaf1d1a002e1a7d581bbd5171fd5f9d94082a361",
+}
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _resource_namespace(resource):
+    return resource.environment.k8s_namespace
+
+
+def _resource_k8s_name(resource):
+    project = resource.environment.project
+    return safe_k8s_name(project.k8s_identifier, resource.k8s_identifier)
+
+
+def _resource_labels(resource):
+    """Labels applied to the operator CRD object itself."""
+    org = resource.environment.project.organization
+    project = resource.environment.project
+    env = resource.environment
+    return {
+        # Slug-based (human-readable)
+        "organization": org.slug,
+        "project": project.slug,
+        "environment": env.slug,
+        # Safe k8s-identifier labels (collision-safe)
+        "cabotage.io/organization": org.k8s_identifier,
+        "cabotage.io/project": project.k8s_identifier,
+        "cabotage.io/environment": env.k8s_identifier,
+        # Resource tracking
+        "cabotage.io/resource-id": str(resource.id),
+        "cabotage.io/resource-type": resource.type,
+        # Resident label for cleanup queries
+        f"resident-{resource.type}.cabotage.io": "true",
+    }
+
+
+def _resource_pod_labels(resource):
+    """Labels applied to pods managed by the operator (via inheritedMetadata)."""
+    labels = _resource_labels(resource)
+    labels["resident-pod.cabotage.io"] = "true"
+    labels["ca-admission.cabotage.io"] = "true"
+    return labels
+
+
+def _tls_secret_name(resource):
+    return f"{_resource_k8s_name(resource)}-tls"
+
+
+def _password_secret_name(resource):
+    return f"{_resource_k8s_name(resource)}-password"
+
+
+# ---------------------------------------------------------------------------
+# TLS Certificate (cert-manager) rendering
+# ---------------------------------------------------------------------------
+
+
+def _render_postgres_certificate(resource):
+    """Render a cert-manager Certificate for a CNPG Cluster."""
+    name = _resource_k8s_name(resource)
+    namespace = _resource_namespace(resource)
+    secret_name = _tls_secret_name(resource)
+
+    # DNS names for the CNPG service endpoints
+    dns_names = []
+    for suffix in (f"{name}-rw", f"{name}-r", f"{name}-ro"):
+        dns_names.append(suffix)
+        dns_names.append(f"{suffix}.{namespace}")
+        dns_names.append(f"{suffix}.{namespace}.svc")
+        dns_names.append(f"{suffix}.{namespace}.svc.cluster.local")
+
+    return {
+        "apiVersion": f"{CERTMANAGER_GROUP}/{CERTMANAGER_VERSION}",
+        "kind": "Certificate",
+        "metadata": {
+            "name": name,
+            "labels": _resource_labels(resource),
+        },
+        "spec": {
+            "secretName": secret_name,
+            "duration": "2160h",  # 90 days
+            "renewBefore": "360h",  # 15 days
+            "subject": {"organizations": ["cabotage"]},
+            "commonName": f"{name}-primary",
+            "isCA": False,
+            "privateKey": {"algorithm": "ECDSA", "size": 256},
+            "usages": ["digital signature", "key encipherment"],
+            "dnsNames": dns_names,
+            "issuerRef": {
+                "name": TLS_CLUSTER_ISSUER,
+                "kind": "ClusterIssuer",
+                "group": CERTMANAGER_GROUP,
+            },
+        },
+    }
+
+
+def _render_redis_certificate(resource):
+    """Render a cert-manager Certificate for a Redis instance."""
+    name = _resource_k8s_name(resource)
+    namespace = _resource_namespace(resource)
+    secret_name = _tls_secret_name(resource)
+
+    # DNS names for the Redis service and pod endpoints
+    dns_names = [
+        name,
+        f"{name}.{namespace}",
+        f"{name}.{namespace}.svc",
+        f"{name}.{namespace}.svc.cluster.local",
+    ]
+    # Add pod DNS names for headless service
+    for i in range(3):
+        pod = f"{name}-{i}"
+        dns_names.append(pod)
+        dns_names.append(f"{pod}.{namespace}")
+        dns_names.append(f"{pod}.{namespace}.svc")
+        dns_names.append(f"{pod}.{namespace}.svc.cluster.local")
+
+    return {
+        "apiVersion": f"{CERTMANAGER_GROUP}/{CERTMANAGER_VERSION}",
+        "kind": "Certificate",
+        "metadata": {
+            "name": name,
+            "labels": _resource_labels(resource),
+        },
+        "spec": {
+            "secretName": secret_name,
+            "duration": "2160h",
+            "renewBefore": "360h",
+            "subject": {"organizations": ["cabotage"]},
+            "commonName": name,
+            "isCA": False,
+            "privateKey": {"algorithm": "ECDSA", "size": 256},
+            "usages": ["digital signature", "key encipherment"],
+            "dnsNames": dns_names,
+            "issuerRef": {
+                "name": TLS_CLUSTER_ISSUER,
+                "kind": "ClusterIssuer",
+                "group": CERTMANAGER_GROUP,
+            },
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# K8s prerequisite helpers
+# ---------------------------------------------------------------------------
+
+
+def _ensure_certificate(custom_api, namespace, cert_body):
+    """Create or patch a cert-manager Certificate custom resource."""
+    name = cert_body["metadata"]["name"]
+    _ensure_custom_object(
+        custom_api,
+        CERTMANAGER_GROUP,
+        CERTMANAGER_VERSION,
+        namespace,
+        CERTMANAGER_CERT_PLURAL,
+        name,
+        cert_body,
+    )
+
+
+def _ensure_password_secret(core_api, namespace, secret_name, labels):
+    """Create a Kubernetes Secret with a random password if it doesn't exist."""
+    try:
+        core_api.read_namespaced_secret(secret_name, namespace)
+        log.info("Password Secret %s/%s already exists", namespace, secret_name)
+    except ApiException as exc:
+        if exc.status == 404:
+            password = secrets.token_urlsafe(48)
+            core_api.create_namespaced_secret(
+                namespace,
+                kubernetes.client.V1Secret(
+                    metadata=kubernetes.client.V1ObjectMeta(
+                        name=secret_name,
+                        namespace=namespace,
+                        labels=labels,
+                    ),
+                    string_data={"password": password},
+                ),
+            )
+            log.info("Created password Secret %s/%s", namespace, secret_name)
+        else:
+            raise
+
+
+def _ensure_custom_object(custom_api, group, version, namespace, plural, name, body):
+    """Create or patch a namespaced custom object."""
+    try:
+        custom_api.get_namespaced_custom_object(
+            group,
+            version,
+            namespace,
+            plural,
+            name,
+        )
+        custom_api.patch_namespaced_custom_object(
+            group,
+            version,
+            namespace,
+            plural,
+            name,
+            body,
+        )
+        log.info("Patched %s/%s %s/%s", group, plural, namespace, name)
+    except ApiException as exc:
+        if exc.status != 404:
+            raise
+        log.info("Not found, creating %s/%s %s/%s", group, plural, namespace, name)
+        custom_api.create_namespaced_custom_object(
+            group,
+            version,
+            namespace,
+            plural,
+            body,
+        )
+        log.info("Created %s/%s %s/%s", group, plural, namespace, name)
+
+
+def _ensure_ca_secret(core_api, namespace):
+    """Copy the operators CA certificate secret into the target namespace.
+
+    CNPG requires the CA secret (operators-ca-crt) to be present in the
+    same namespace as the Cluster.  The canonical copy lives in the
+    cert-manager namespace.  Always syncs from source to pick up rotations.
+    """
+    source = core_api.read_namespaced_secret(TLS_CA_SECRET, "cert-manager")
+    body = kubernetes.client.V1Secret(
+        metadata=kubernetes.client.V1ObjectMeta(
+            name=TLS_CA_SECRET,
+            namespace=namespace,
+            labels={"cnpg.io/reload": ""},
+        ),
+        type=source.type,
+        data=source.data,
+    )
+    try:
+        core_api.replace_namespaced_secret(TLS_CA_SECRET, namespace, body)
+    except ApiException as exc:
+        if exc.status == 404:
+            core_api.create_namespaced_secret(namespace, body)
+            log.info("Copied %s to namespace %s", TLS_CA_SECRET, namespace)
+        else:
+            raise
+
+
+def _delete_k8s_resource_quiet(fn, *args):
+    """Call a K8s delete function, ignoring 404."""
+    try:
+        fn(*args)
+    except ApiException as exc:
+        if exc.status != 404:
+            raise
+
+
+# ---------------------------------------------------------------------------
+# CNPG Cluster rendering
+# ---------------------------------------------------------------------------
+
+
+def _render_cnpg_cluster(resource):
+    size = postgres_size_classes[resource.size_class]
+    instances = 2 if resource.ha_enabled else 1
+    name = _resource_k8s_name(resource)
+    labels = _resource_labels(resource)
+
+    pod_labels = _resource_pod_labels(resource)
+
+    cluster = {
+        "apiVersion": f"{CNPG_GROUP}/{CNPG_VERSION}",
+        "kind": "Cluster",
+        "metadata": {
+            "name": name,
+            "labels": labels,
+        },
+        "spec": {
+            "instances": instances,
+            "imageName": POSTGRES_IMAGES[resource.service_version],
+            "inheritedMetadata": {
+                "labels": pod_labels,
+            },
+            "certificates": {
+                "serverTLSSecret": _tls_secret_name(resource),
+                "serverCASecret": TLS_CA_SECRET,
+            },
+            "postgresql": {
+                "parameters": resource.postgres_parameters or {},
+            },
+            "resources": {
+                "requests": {
+                    "cpu": size["cpu"]["requests"],
+                    "memory": size["memory"]["requests"],
+                },
+                "limits": {
+                    "cpu": size["cpu"]["limits"],
+                    "memory": size["memory"]["limits"],
+                },
+            },
+            "storage": {
+                "size": f"{resource.storage_size}Gi",
+            },
+        },
+    }
+
+    # Backup configuration
+    # TODO: backups require per-tenant object storage credentials (S3 bucket +
+    # Secret with s3Credentials).  The backup_strategy is persisted on the
+    # resource so it can be wired up once the storage backend is provisioned.
+    # CNPG >= 1.30 deprecates native barmanObjectStore in favour of the
+    # Barman Cloud Plugin — migrate to that when adding backup support.
+
+    return cluster
+
+
+# ---------------------------------------------------------------------------
+# OpsTree Redis rendering
+# ---------------------------------------------------------------------------
+
+
+def _redis_spec_common(resource):
+    """Return the common spec fields for both Redis and RedisCluster."""
+    size = redis_size_classes[resource.size_class]
+    return {
+        "TLS": {
+            "secret": {
+                "optional": False,
+                "secretName": _tls_secret_name(resource),
+            },
+        },
+        "kubernetesConfig": {
+            "image": REDIS_IMAGES[resource.service_version],
+            "imagePullPolicy": "IfNotPresent",
+            "redisSecret": {
+                "key": "password",
+                "name": _password_secret_name(resource),
+            },
+            "resources": {
+                "requests": {
+                    "cpu": size["cpu"]["requests"],
+                    "memory": size["memory"]["requests"],
+                },
+                "limits": {
+                    "cpu": size["cpu"]["limits"],
+                    "memory": size["memory"]["limits"],
+                },
+            },
+        },
+        "podSecurityContext": {
+            "fsGroup": 1000,
+            "runAsUser": 1000,
+        },
+        "storage": {
+            "volumeClaimTemplate": {
+                "spec": {
+                    "accessModes": ["ReadWriteOnce"],
+                    "resources": {
+                        "requests": {"storage": f"{resource.storage_size}Gi"},
+                    },
+                },
+            },
+        },
+    }
+
+
+def _render_redis_standalone(resource):
+    name = _resource_k8s_name(resource)
+    spec = _redis_spec_common(resource)
+
+    return {
+        "apiVersion": f"{REDIS_GROUP}/{REDIS_VERSION}",
+        "kind": "Redis",
+        "metadata": {
+            "name": name,
+            "labels": _resource_pod_labels(resource),
+        },
+        "spec": spec,
+    }
+
+
+def _render_redis_cluster(resource):
+    name = _resource_k8s_name(resource)
+    spec = _redis_spec_common(resource)
+    spec["clusterSize"] = 3
+    spec["clusterVersion"] = f"v{resource.service_version}"
+    spec["persistenceEnabled"] = True
+
+    return {
+        "apiVersion": f"{REDIS_GROUP}/{REDIS_VERSION}",
+        "kind": "RedisCluster",
+        "metadata": {
+            "name": name,
+            "labels": _resource_pod_labels(resource),
+        },
+        "spec": spec,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Per-resource reconcile functions
+# ---------------------------------------------------------------------------
+
+
+def _reconcile_postgres(resource, core_api, custom_api):
+    """Converge a single PostgresResource to its desired K8s state."""
+    namespace = _resource_namespace(resource)
+    name = _resource_k8s_name(resource)
+
+    ensure_namespace(core_api, namespace)
+    _ensure_ca_secret(core_api, namespace)
+
+    cert_body = _render_postgres_certificate(resource)
+    _ensure_certificate(custom_api, namespace, cert_body)
+
+    body = _render_cnpg_cluster(resource)
+    _ensure_custom_object(
+        custom_api,
+        CNPG_GROUP,
+        CNPG_VERSION,
+        namespace,
+        CNPG_PLURAL,
+        name,
+        body,
+    )
+
+    resource.connection_info = {
+        "host": f"{name}-rw.{namespace}.svc.cluster.local",
+        "port": "5432",
+        "dbname": "app",
+        "username": "app",
+        "sslmode": "verify-full",
+        "secret_name": f"{name}-app",
+    }
+
+    # Read password from CNPG-generated secret (created by operator
+    # once the cluster is healthy — may not exist yet)
+    try:
+        pg_secret = core_api.read_namespaced_secret(f"{name}-app", namespace)
+        pg_password = base64.b64decode(pg_secret.data["password"]).decode()
+        _sync_resource_env_configs(
+            resource,
+            _postgres_config_entries(resource, namespace, name, pg_password),
+        )
+    except ApiException as exc:
+        if exc.status == 404:
+            log.info(
+                "CNPG app secret %s-app not yet available in %s, "
+                "will retry on next reconcile",
+                name,
+                namespace,
+            )
+        else:
+            raise
+
+    resource.provisioning_status = "ready"
+    resource.provisioning_error = None
+
+
+def _reconcile_redis(resource, core_api, custom_api):
+    """Converge a single RedisResource to its desired K8s state."""
+    namespace = _resource_namespace(resource)
+    name = _resource_k8s_name(resource)
+    labels = _resource_labels(resource)
+
+    ensure_namespace(core_api, namespace)
+
+    cert_body = _render_redis_certificate(resource)
+    _ensure_certificate(custom_api, namespace, cert_body)
+
+    _ensure_password_secret(
+        core_api,
+        namespace,
+        _password_secret_name(resource),
+        labels,
+    )
+
+    if resource.ha_enabled:
+        body = _render_redis_cluster(resource)
+        plural = REDIS_CLUSTER_PLURAL
+    else:
+        body = _render_redis_standalone(resource)
+        plural = REDIS_STANDALONE_PLURAL
+
+    _ensure_custom_object(
+        custom_api,
+        REDIS_GROUP,
+        REDIS_VERSION,
+        namespace,
+        plural,
+        name,
+        body,
+    )
+
+    password_secret = core_api.read_namespaced_secret(
+        _password_secret_name(resource), namespace
+    )
+    password = base64.b64decode(password_secret.data["password"]).decode()
+
+    resource.connection_info = {
+        "host": f"{name}.{namespace}.svc.cluster.local",
+        "port": "6379",
+        "tls": True,
+        "password_secret": _password_secret_name(resource),
+    }
+    _sync_resource_env_configs(
+        resource, _redis_config_entries(resource, namespace, name, password)
+    )
+
+    resource.provisioning_status = "ready"
+    resource.provisioning_error = None
+
+
+def _delete_postgres(resource, core_api, custom_api):
+    """Remove all K8s objects for a deleted PostgresResource."""
+    namespace = _resource_namespace(resource)
+    name = _resource_k8s_name(resource)
+
+    _delete_k8s_resource_quiet(
+        custom_api.delete_namespaced_custom_object,
+        CNPG_GROUP,
+        CNPG_VERSION,
+        namespace,
+        CNPG_PLURAL,
+        name,
+    )
+    _delete_k8s_resource_quiet(
+        custom_api.delete_namespaced_custom_object,
+        CERTMANAGER_GROUP,
+        CERTMANAGER_VERSION,
+        namespace,
+        CERTMANAGER_CERT_PLURAL,
+        name,
+    )
+    _delete_k8s_resource_quiet(
+        core_api.delete_namespaced_secret,
+        _tls_secret_name(resource),
+        namespace,
+    )
+    _cleanup_managed_env_configs(resource)
+    log.info("Cleaned up PostgresResource %s (%s/%s)", resource.id, namespace, name)
+
+
+def _delete_redis(resource, core_api, custom_api):
+    """Remove all K8s objects for a deleted RedisResource."""
+    namespace = _resource_namespace(resource)
+    name = _resource_k8s_name(resource)
+
+    for plural in (REDIS_STANDALONE_PLURAL, REDIS_CLUSTER_PLURAL):
+        _delete_k8s_resource_quiet(
+            custom_api.delete_namespaced_custom_object,
+            REDIS_GROUP,
+            REDIS_VERSION,
+            namespace,
+            plural,
+            name,
+        )
+    _delete_k8s_resource_quiet(
+        custom_api.delete_namespaced_custom_object,
+        CERTMANAGER_GROUP,
+        CERTMANAGER_VERSION,
+        namespace,
+        CERTMANAGER_CERT_PLURAL,
+        name,
+    )
+    _delete_k8s_resource_quiet(
+        core_api.delete_namespaced_secret,
+        _tls_secret_name(resource),
+        namespace,
+    )
+    _delete_k8s_resource_quiet(
+        core_api.delete_namespaced_secret,
+        _password_secret_name(resource),
+        namespace,
+    )
+    _cleanup_managed_env_configs(resource)
+    log.info("Cleaned up RedisResource %s (%s/%s)", resource.id, namespace, name)
+
+
+# ---------------------------------------------------------------------------
+# Periodic reconcile task
+# ---------------------------------------------------------------------------
+
+_RECONCILERS = {
+    "postgres": (_reconcile_postgres, _delete_postgres),
+    "redis": (_reconcile_redis, _delete_redis),
+}
+
+
+@shared_task()
+def reconcile_backing_services():
+    """Periodic task: converge all backing service resources to desired state."""
+    from cabotage.server.models.resources import Resource
+
+    resources = Resource.query.filter(
+        Resource.provisioning_status != "deleting",
+    ).all()
+
+    if not resources:
+        return
+
+    api_client = kubernetes_ext.kubernetes_client
+    core_api = kubernetes.client.CoreV1Api(api_client)
+    custom_api = kubernetes.client.CustomObjectsApi(api_client)
+
+    for resource in resources:
+        entry = _RECONCILERS.get(resource.type)
+        if entry is None:
+            continue
+        reconcile_fn, delete_fn = entry
+
+        try:
+            if resource.deleted_at is not None:
+                delete_fn(resource, core_api, custom_api)
+                resource.provisioning_status = "deleted"
+                db.session.commit()
+            else:
+                reconcile_fn(resource, core_api, custom_api)
+                db.session.commit()
+        except Exception:
+            log.exception(
+                "Failed to reconcile %s resource %s (%s)",
+                resource.type,
+                resource.id,
+                resource.slug,
+            )
+            resource.provisioning_status = "error"
+            resource.provisioning_error = "Reconcile failed; will retry"
+            db.session.commit()
+
+
+CA_CERT_PATH = "/var/run/secrets/cabotage.io/ca.crt"
+
+
+def _postgres_config_entries(resource, namespace, name, password):
+    """Build the (name, value, secret) tuples for a Postgres resource."""
+    slug_upper = resource.slug.upper().replace("-", "_")
+    host = f"{name}-rw.{namespace}.svc.cluster.local"
+    return [
+        (
+            f"{slug_upper}_DATABASE_URL",
+            f"postgresql://app:{password}@{host}:5432/app"
+            f"?sslmode=verify-full&sslrootcert={CA_CERT_PATH}",
+            True,
+        ),
+        (f"{slug_upper}_PGHOST", host, False),
+        (f"{slug_upper}_PGPORT", "5432", False),
+        (f"{slug_upper}_PGDATABASE", "app", False),
+        (f"{slug_upper}_PGUSER", "app", False),
+        (f"{slug_upper}_PGPASSWORD", password, True),
+        (f"{slug_upper}_PGSSLMODE", "verify-full", False),
+        (f"{slug_upper}_PGSSLROOTCERT", CA_CERT_PATH, False),
+    ]
+
+
+def _redis_config_entries(resource, namespace, name, password):
+    """Build the (name, value, secret) tuples for a Redis resource."""
+    slug_upper = resource.slug.upper().replace("-", "_")
+    host = f"{name}.{namespace}.svc.cluster.local"
+    return [
+        (
+            f"{slug_upper}_REDIS_URL",
+            f"rediss://:{password}@{host}:6379",
+            True,
+        ),
+        (f"{slug_upper}_REDIS_HOST", host, False),
+        (f"{slug_upper}_REDIS_PORT", "6379", False),
+        (f"{slug_upper}_REDIS_PASSWORD", password, True),
+        (f"{slug_upper}_REDIS_SSL_CA_CERTS", CA_CERT_PATH, False),
+    ]
+
+
+def _sync_resource_env_configs(resource, entries):
+    """Create or update EnvironmentConfiguration rows managed by a resource.
+
+    entries: list of (name, value, secret) tuples.
+    Existing configs for this resource are updated in place; missing ones
+    are created; stale ones (not in entries) are deleted.
+    """
+    from cabotage.server.models.projects import EnvironmentConfiguration
+
+    env = resource.environment
+    project = env.project
+    namespace = resource.environment.k8s_namespace
+    prefix = project.k8s_identifier
+
+    existing = {
+        c.name: c
+        for c in EnvironmentConfiguration.query.filter_by(resource_id=resource.id).all()
+    }
+    wanted_names = set()
+
+    for name, value, secret in entries:
+        wanted_names.add(name)
+        config = existing.get(name)
+        if config is None:
+            config = EnvironmentConfiguration(
+                project_id=project.id,
+                environment_id=env.id,
+                resource_id=resource.id,
+                name=name,
+                value=value,
+                secret=secret,
+                buildtime=False,
+            )
+            db.session.add(config)
+        else:
+            config.value = value
+            config.secret = secret
+
+        db.session.flush()
+
+        try:
+            key_slugs = config_writer.write_configuration(namespace, prefix, config)
+            config.key_slug = key_slugs["config_key_slug"]
+            config.build_key_slug = key_slugs["build_key_slug"]
+            if config.secret:
+                config.value = "**secure**"
+        except Exception:
+            log.warning(
+                "Failed to write config %s to config_writer, storing direct",
+                name,
+                exc_info=True,
+            )
+
+    # Remove configs no longer in the wanted set
+    for name, config in existing.items():
+        if name not in wanted_names:
+            db.session.delete(config)
+
+    db.session.flush()
+    log.info("Synced %d env configs for resource %s", len(entries), resource.slug)
+
+
+def _cleanup_managed_env_configs(resource):
+    """Remove EnvironmentConfiguration rows managed by this resource."""
+    from cabotage.server.models.projects import EnvironmentConfiguration
+
+    configs = EnvironmentConfiguration.query.filter_by(resource_id=resource.id).all()
+    for config in configs:
+        db.session.delete(config)
+    db.session.flush()

@@ -1,0 +1,57 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, resource_path, page_header, render_field, env_tab_nav %}
+
+{% block title %}
+  Add Redis - {{ environment.name }} - {{ project.name }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': project.organization.slug, 'url': url_for('user.organization', org_slug=project.organization.slug) },
+    {'label': project.slug, 'url': url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug)},
+    {'label': 'environments', 'url': url_for('user.project_environments', org_slug=project.organization.slug, project_slug=project.slug)},
+    {'label': environment.slug, 'url': url_for('user.project_environment', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug)},
+    {'label': 'redis / create'}
+  ]) }}
+{% endblock resource_path %}
+
+{% block tab_bar %}
+  {{ env_tab_nav(project, environment, '') }}
+{% endblock tab_bar %}
+
+{% block content %}
+  {{ page_header('Add Redis Instance', 'In ' ~ project.organization.slug ~ '/' ~ project.slug ~ ' / ' ~ environment.slug) }}
+
+  <div class="card bg-base-200/50 border border-base-300/50 max-w-2xl">
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('user.environment_redis_create', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}">
+        {{ form.hidden_tag() }}
+        {{ render_field(form.name) }}
+        {{ render_field(form.slug) }}
+        {{ render_field(form.service_version) }}
+        {{ render_field(form.size_class) }}
+        {{ render_field(form.storage_size) }}
+        {{ render_field(form.ha_enabled) }}
+        <div class="mt-4">
+          <button type="submit" class="btn btn-primary gap-2">
+            {{ icon('plus', 'w-4 h-4') }}
+            Create Redis Instance
+          </button>
+        </div>
+      </form>
+      <script>
+        (function() {
+          var nameField = document.getElementById('name');
+          var slugField = document.getElementById('slug');
+          var slugEdited = false;
+          if (!nameField || !slugField) return;
+          slugField.addEventListener('input', function() { slugEdited = !!this.value; });
+          nameField.addEventListener('input', function() {
+            if (slugEdited) return;
+            slugField.value = this.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+          });
+        })();
+      </script>
+    </div>
+  </div>
+{% endblock content %}

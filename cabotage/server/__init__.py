@@ -162,6 +162,11 @@ def celery_init_app(app):
             "schedule": 15.0,
             "args": None,
         },
+        "backing-service-reconciler": {
+            "task": "cabotage.celery.tasks.resources.reconcile_backing_services",
+            "schedule": 30.0,
+            "args": None,
+        },
     }
     app.extensions["celery"] = celery_app
     return celery_app

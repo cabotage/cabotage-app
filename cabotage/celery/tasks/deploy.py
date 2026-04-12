@@ -233,11 +233,7 @@ def _wait_for_tls_certificate(api_client, namespace, cert_name, timeout=120, log
 
 
 def k8s_namespace(release):
-    org_k8s = release.application.project.organization.k8s_identifier
-    app_env = release.application_environment
-    if app_env.k8s_identifier is not None:
-        return safe_k8s_name(org_k8s, app_env.environment.k8s_identifier)
-    return org_k8s
+    return release.application_environment.environment.k8s_namespace
 
 
 def k8s_resource_prefix(release):
@@ -325,8 +321,8 @@ def create_namespace(core_api_instance, release):
         )
 
 
-def fetch_namespace(core_api_instance, release):
-    namespace_name = k8s_namespace(release)
+def ensure_namespace(core_api_instance, namespace_name):
+    """Create the namespace if it doesn't exist, ensure resident label is set."""
     try:
         namespace = core_api_instance.read_namespace(namespace_name)
         # Ensure the resident-namespace label is present on existing namespaces
@@ -342,12 +338,23 @@ def fetch_namespace(core_api_instance, release):
             )
     except ApiException as exc:
         if exc.status == 404:
-            namespace = create_namespace(core_api_instance, release)
+            namespace = core_api_instance.create_namespace(
+                kubernetes.client.V1Namespace(
+                    metadata=kubernetes.client.V1ObjectMeta(
+                        name=namespace_name,
+                        labels={"resident-namespace.cabotage.io": "true"},
+                    ),
+                ),
+            )
         else:
             raise DeployError(
                 f"Unexpected exception fetching Namespace/{namespace_name}: {exc}"
             )
     return namespace
+
+
+def fetch_namespace(core_api_instance, release):
+    return ensure_namespace(core_api_instance, k8s_namespace(release))
 
 
 TENANT_NETWORK_POLICIES = [
@@ -356,6 +363,75 @@ TENANT_NETWORK_POLICIES = [
         "spec": {
             "podSelector": {},
             "policyTypes": ["Ingress"],
+        },
+    },
+    # CNPG operator-managed pods need unrestricted egress to reach
+    # the K8s API server for CRD reads at startup.
+    {
+        "name": "allow-egress-cnpg-pods",
+        "spec": {
+            "podSelector": {
+                "matchExpressions": [
+                    {"key": "cnpg.io/cluster", "operator": "Exists"},
+                ],
+            },
+            "policyTypes": ["Egress"],
+            "egress": [{}],
+        },
+    },
+    # CNPG pods need ingress from the CNPG operator (status checks
+    # on port 8000) and from other cluster members (replication on
+    # port 5432).
+    {
+        "name": "allow-ingress-cnpg-pods",
+        "spec": {
+            "podSelector": {
+                "matchExpressions": [
+                    {"key": "cnpg.io/cluster", "operator": "Exists"},
+                ],
+            },
+            "ingress": [
+                # CNPG operator (runs in postgres namespace)
+                {
+                    "from": [
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {
+                                    "kubernetes.io/metadata.name": "postgres",
+                                },
+                            },
+                            "podSelector": {
+                                "matchLabels": {
+                                    "app.kubernetes.io/name": "cloudnative-pg",
+                                },
+                            },
+                        },
+                    ],
+                    "ports": [
+                        {"port": 5432, "protocol": "TCP"},
+                        {"port": 8000, "protocol": "TCP"},
+                    ],
+                },
+                # Intra-cluster replication between CNPG instances
+                {
+                    "from": [
+                        {
+                            "podSelector": {
+                                "matchExpressions": [
+                                    {
+                                        "key": "cnpg.io/cluster",
+                                        "operator": "Exists",
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                    "ports": [
+                        {"port": 5432, "protocol": "TCP"},
+                        {"port": 8000, "protocol": "TCP"},
+                    ],
+                },
+            ],
         },
     },
     {

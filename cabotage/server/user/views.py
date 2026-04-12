@@ -80,6 +80,13 @@ from cabotage.server.models.projects import (
     pod_classes,
 )
 from cabotage.server.models.projects import activity_plugin
+from cabotage.server.models.resources import (
+    PostgresResource,
+    RedisResource,
+    compute_postgres_parameters,
+    postgres_size_classes,
+    redis_size_classes,
+)
 
 from cabotage.server.query_helpers import (
     compute_app_status_sets,
@@ -121,6 +128,12 @@ from cabotage.server.user.forms import (
     TailscaleIngressSettingsForm,
     ReleaseDeployForm,
     AddOrganizationUserForm,
+    CreatePostgresResourceForm,
+    EditPostgresResourceForm,
+    DeletePostgresResourceForm,
+    CreateRedisResourceForm,
+    EditRedisResourceForm,
+    DeleteRedisResourceForm,
 )
 
 from cabotage.utils.docker_auth import (
@@ -1429,6 +1442,8 @@ def project_environment(org_slug, project_slug, env_slug):
         app_config_counts=app_config_counts,
         app_references=_app_refs,
         tcp_references=_tcp_refs,
+        postgres_resources=environment.active_postgres_resources,
+        redis_resources=environment.active_redis_resources,
     )
 
 
@@ -1975,6 +1990,410 @@ def project_environment_configuration_delete(
         environment=environment,
         configuration=configuration,
     )
+
+
+# ---------------------------------------------------------------------------
+# Backing service resource routes
+# ---------------------------------------------------------------------------
+
+
+def _resolve_environment(org_slug, project_slug, env_slug):
+    """Resolve org -> project -> environment chain. Returns (org, project, env)."""
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .first_or_404()
+    )
+    project = (
+        Project.query.filter_by(organization_id=organization.id, slug=project_slug)
+        .filter(Project.deleted_at.is_(None))
+        .first_or_404()
+    )
+    environment = (
+        Environment.query.filter_by(project_id=project.id, slug=env_slug)
+        .filter(Environment.deleted_at.is_(None))
+        .first_or_404()
+    )
+    return organization, project, environment
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/postgres/create",
+    methods=["GET", "POST"],
+)
+@login_required
+def environment_postgres_create(org_slug, project_slug, env_slug):
+    organization, project, environment = _resolve_environment(
+        org_slug, project_slug, env_slug
+    )
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    form = CreatePostgresResourceForm()
+    form.environment_id.data = str(environment.id)
+    if form.validate_on_submit():
+        slug = form.slug.data or slugify(form.name.data)
+        params = compute_postgres_parameters(form.size_class.data)
+        resource = PostgresResource(
+            environment_id=environment.id,
+            name=form.name.data,
+            slug=slug,
+            service_version=form.service_version.data,
+            size_class=form.size_class.data,
+            storage_size=form.storage_size.data,
+            ha_enabled=form.ha_enabled.data,
+            backup_strategy=form.backup_strategy.data,
+            postgres_parameters=params,
+        )
+        db.session.add(resource)
+        db.session.flush()
+        activity = Activity(
+            verb="create",
+            object=resource,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            },
+        )
+        db.session.add(activity)
+        db.session.commit()
+
+        return redirect(
+            url_for(
+                "user.environment_postgres_detail",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                env_slug=env_slug,
+                resource_slug=resource.slug,
+            )
+        )
+    return render_template(
+        "user/environment_postgres_create.html",
+        project=project,
+        environment=environment,
+        form=form,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/postgres/<resource_slug>",
+)
+@login_required
+def environment_postgres_detail(org_slug, project_slug, env_slug, resource_slug):
+    organization, project, environment = _resolve_environment(
+        org_slug, project_slug, env_slug
+    )
+    if not ViewProjectPermission(project.id).can():
+        abort(403)
+    resource = (
+        PostgresResource.query.filter_by(
+            environment_id=environment.id, slug=resource_slug
+        )
+        .filter(PostgresResource.deleted_at.is_(None))
+        .first_or_404()
+    )
+    return render_template(
+        "user/environment_postgres_detail.html",
+        project=project,
+        environment=environment,
+        resource=resource,
+        postgres_size_classes=postgres_size_classes,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/postgres/<resource_slug>/settings",
+    methods=["GET", "POST"],
+)
+@login_required
+def environment_postgres_settings(org_slug, project_slug, env_slug, resource_slug):
+    organization, project, environment = _resolve_environment(
+        org_slug, project_slug, env_slug
+    )
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    resource = (
+        PostgresResource.query.filter_by(
+            environment_id=environment.id, slug=resource_slug
+        )
+        .filter(PostgresResource.deleted_at.is_(None))
+        .first_or_404()
+    )
+    form = EditPostgresResourceForm(obj=resource)
+    form.resource_id.data = str(resource.id)
+    form.current_storage_size.data = str(resource.storage_size)
+    if form.validate_on_submit():
+        resource.size_class = form.size_class.data
+        resource.storage_size = form.storage_size.data
+        resource.ha_enabled = form.ha_enabled.data
+        resource.backup_strategy = form.backup_strategy.data
+        resource.postgres_parameters = compute_postgres_parameters(form.size_class.data)
+        db.session.add(resource)
+        db.session.flush()
+        activity = Activity(
+            verb="edit",
+            object=resource,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            },
+        )
+        db.session.add(activity)
+        db.session.commit()
+
+        return redirect(
+            url_for(
+                "user.environment_postgres_detail",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                env_slug=env_slug,
+                resource_slug=resource.slug,
+            )
+        )
+    delete_form = DeletePostgresResourceForm()
+    delete_form.resource_id.data = str(resource.id)
+    delete_form.name.data = resource.slug
+    return render_template(
+        "user/environment_postgres_settings.html",
+        project=project,
+        environment=environment,
+        resource=resource,
+        form=form,
+        delete_form=delete_form,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/postgres/<resource_slug>/delete",
+    methods=["POST"],
+)
+@login_required
+def environment_postgres_delete(org_slug, project_slug, env_slug, resource_slug):
+    organization, project, environment = _resolve_environment(
+        org_slug, project_slug, env_slug
+    )
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    resource = (
+        PostgresResource.query.filter_by(
+            environment_id=environment.id, slug=resource_slug
+        )
+        .filter(PostgresResource.deleted_at.is_(None))
+        .first_or_404()
+    )
+    form = DeletePostgresResourceForm()
+    form.resource_id.data = str(resource.id)
+    form.name.data = resource.slug
+    if form.validate_on_submit():
+        resource.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        resource.slug = f"--deleted-{resource.slug}-{str(resource.id)[:8]}"
+        db.session.add(resource)
+        db.session.flush()
+        activity = Activity(
+            verb="delete",
+            object=resource,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            },
+        )
+        db.session.add(activity)
+        db.session.commit()
+
+        flash(f"Database {resource.name} deleted.", "success")
+        return redirect(
+            url_for(
+                "user.project_environment",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                env_slug=env_slug,
+                _anchor="services",
+            )
+        )
+    abort(400)
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/redis/create",
+    methods=["GET", "POST"],
+)
+@login_required
+def environment_redis_create(org_slug, project_slug, env_slug):
+    organization, project, environment = _resolve_environment(
+        org_slug, project_slug, env_slug
+    )
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    form = CreateRedisResourceForm()
+    form.environment_id.data = str(environment.id)
+    if form.validate_on_submit():
+        slug = form.slug.data or slugify(form.name.data)
+        resource = RedisResource(
+            environment_id=environment.id,
+            name=form.name.data,
+            slug=slug,
+            service_version=form.service_version.data,
+            size_class=form.size_class.data,
+            storage_size=form.storage_size.data,
+            ha_enabled=form.ha_enabled.data,
+        )
+        db.session.add(resource)
+        db.session.flush()
+        activity = Activity(
+            verb="create",
+            object=resource,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            },
+        )
+        db.session.add(activity)
+        db.session.commit()
+
+        return redirect(
+            url_for(
+                "user.environment_redis_detail",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                env_slug=env_slug,
+                resource_slug=resource.slug,
+            )
+        )
+    return render_template(
+        "user/environment_redis_create.html",
+        project=project,
+        environment=environment,
+        form=form,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/redis/<resource_slug>",
+)
+@login_required
+def environment_redis_detail(org_slug, project_slug, env_slug, resource_slug):
+    organization, project, environment = _resolve_environment(
+        org_slug, project_slug, env_slug
+    )
+    if not ViewProjectPermission(project.id).can():
+        abort(403)
+    resource = (
+        RedisResource.query.filter_by(environment_id=environment.id, slug=resource_slug)
+        .filter(RedisResource.deleted_at.is_(None))
+        .first_or_404()
+    )
+    return render_template(
+        "user/environment_redis_detail.html",
+        project=project,
+        environment=environment,
+        resource=resource,
+        redis_size_classes=redis_size_classes,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/redis/<resource_slug>/settings",
+    methods=["GET", "POST"],
+)
+@login_required
+def environment_redis_settings(org_slug, project_slug, env_slug, resource_slug):
+    organization, project, environment = _resolve_environment(
+        org_slug, project_slug, env_slug
+    )
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    resource = (
+        RedisResource.query.filter_by(environment_id=environment.id, slug=resource_slug)
+        .filter(RedisResource.deleted_at.is_(None))
+        .first_or_404()
+    )
+    form = EditRedisResourceForm(obj=resource)
+    form.resource_id.data = str(resource.id)
+    form.current_storage_size.data = str(resource.storage_size)
+    if form.validate_on_submit():
+        resource.size_class = form.size_class.data
+        resource.storage_size = form.storage_size.data
+        resource.ha_enabled = form.ha_enabled.data
+        db.session.add(resource)
+        db.session.flush()
+        activity = Activity(
+            verb="edit",
+            object=resource,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            },
+        )
+        db.session.add(activity)
+        db.session.commit()
+
+        return redirect(
+            url_for(
+                "user.environment_redis_detail",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                env_slug=env_slug,
+                resource_slug=resource.slug,
+            )
+        )
+    delete_form = DeleteRedisResourceForm()
+    delete_form.resource_id.data = str(resource.id)
+    delete_form.name.data = resource.slug
+    return render_template(
+        "user/environment_redis_settings.html",
+        project=project,
+        environment=environment,
+        resource=resource,
+        form=form,
+        delete_form=delete_form,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/redis/<resource_slug>/delete",
+    methods=["POST"],
+)
+@login_required
+def environment_redis_delete(org_slug, project_slug, env_slug, resource_slug):
+    organization, project, environment = _resolve_environment(
+        org_slug, project_slug, env_slug
+    )
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    resource = (
+        RedisResource.query.filter_by(environment_id=environment.id, slug=resource_slug)
+        .filter(RedisResource.deleted_at.is_(None))
+        .first_or_404()
+    )
+    form = DeleteRedisResourceForm()
+    form.resource_id.data = str(resource.id)
+    form.name.data = resource.slug
+    if form.validate_on_submit():
+        resource.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        resource.slug = f"--deleted-{resource.slug}-{str(resource.id)[:8]}"
+        db.session.add(resource)
+        db.session.flush()
+        activity = Activity(
+            verb="delete",
+            object=resource,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            },
+        )
+        db.session.add(activity)
+        db.session.commit()
+
+        flash(f"Redis instance {resource.name} deleted.", "success")
+        return redirect(
+            url_for(
+                "user.project_environment",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                env_slug=env_slug,
+                _anchor="services",
+            )
+        )
+    abort(400)
 
 
 @user_blueprint.route(

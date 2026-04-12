@@ -44,6 +44,7 @@ class FakeRelease:
         class Env:
             slug = "production"
             k8s_identifier = "production-xyz"
+            k8s_namespace = "myorg-abc123-production-xyz"
 
         k8s_identifier = "appenv-123"
         environment = Env()
@@ -75,8 +76,8 @@ class TestRenderNamespace:
 
 
 class TestTenantNetworkPoliciesData:
-    def test_five_policies_defined(self):
-        assert len(TENANT_NETWORK_POLICIES) == 5
+    def test_policies_defined(self):
+        assert len(TENANT_NETWORK_POLICIES) == 7
 
     def test_policy_names(self):
         names = [p["name"] for p in TENANT_NETWORK_POLICIES]
@@ -248,7 +249,7 @@ class TestEnsureNetworkPolicies:
 
         ensure_network_policies(api, "tenant-ns")
 
-        assert api.create_namespaced_network_policy.call_count == 5
+        assert api.create_namespaced_network_policy.call_count == 7
         created_names = [
             c.args[1]["metadata"]["name"]
             for c in api.create_namespaced_network_policy.call_args_list
@@ -265,7 +266,7 @@ class TestEnsureNetworkPolicies:
 
         ensure_network_policies(api, "tenant-ns")
 
-        assert api.patch_namespaced_network_policy.call_count == 5
+        assert api.patch_namespaced_network_policy.call_count == 7
         assert api.create_namespaced_network_policy.call_count == 0
 
     def test_sets_namespace_on_created_policies(self):
@@ -303,7 +304,7 @@ class TestEnsureNetworkPolicies:
         ensure_network_policies(api, "tenant-ns")
 
         assert api.patch_namespaced_network_policy.call_count == 2
-        assert api.create_namespaced_network_policy.call_count == 3
+        assert api.create_namespaced_network_policy.call_count == 5
 
 
 # ---------------------------------------------------------------------------
