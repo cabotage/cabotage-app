@@ -175,6 +175,8 @@ def _fetch_github_access_token(application):
         or application.github_app_installation_id
     ):
         try:
+            if github_app.app_id is None:
+                raise BuildError("GitHub App ID not configured")
             auth = GithubAppAuth(github_app.app_id, github_app.app_private_key_pem)
             gi = GithubIntegration(auth=auth)
             access_token = gi.get_access_token(
@@ -271,16 +273,16 @@ def _fetch_image_source(image, access_token):
         os.chdir(tempdir)
         try:
             dockerfile_object.content = dockerfile_body
+            dockerfile_env_vars = list(dockerfile_object.envs.keys())
         finally:
             os.chdir(previous_dir)
-    dockerfile_env_vars = list(dockerfile_object.envs.keys())
     try:
         processes = procfile.loads(procfile_body)
     except ValueError as exc:
         raise BuildError(f"error parsing Procfile: {exc}")
 
     for process_name, process_def in processes.items():
-        if re.search("\s", process_name) is not None:
+        if re.search(r"\s", process_name) is not None:
             raise BuildError(
                 f'Invalid process name: "{process_name}" in Procfile, '
                 "may not contain whitespace."
@@ -613,9 +615,7 @@ def build_release_buildkit(release):
                         "done\n"
                         f'buildctl --addr={sock_addr} "$@"\n'
                     )
-                os.chmod(
-                    wrapper, 0o755
-                )  # nosec B103 — wrapper script must be executable
+                os.chmod(wrapper, 0o755)  # nosec B103 — wrapper script must be executable
                 buildctl_command = [wrapper]
 
                 try:
@@ -669,6 +669,10 @@ def _fetch_github_file(
     g = Github(access_token)
     try:
         content_file = g.get_repo(github_repository).get_contents(filename, ref=ref)
+        if isinstance(content_file, list):
+            raise BuildError(
+                f"Expected a file but got a directory listing for {filename}"
+            )
         if content_file.encoding == "base64":
             return b64decode(content_file.content).decode()
         return content_file.content
@@ -773,7 +777,7 @@ def fetch_image_build_cache_volume_claim(core_api_instance, buildable):
     return volume_claim
 
 
-def build_image_buildkit(image=None):
+def build_image_buildkit(image: Image):
     bke = BuildkitEnv(image.repository_name)
     registry = bke.registry
     buildkit_image = bke.buildkit_image
@@ -1096,9 +1100,7 @@ def build_image_buildkit(image=None):
                         "done\n"
                         f'buildctl --addr={sock_addr} "$@"\n'
                     )
-                os.chmod(
-                    wrapper, 0o755
-                )  # nosec B103 — wrapper script must be executable
+                os.chmod(wrapper, 0o755)  # nosec B103 — wrapper script must be executable
                 buildctl_command = [wrapper]
 
                 try:
@@ -1577,7 +1579,7 @@ def build_omnibus_buildkit(image, release):
 
 
 @shared_task()
-def run_image_build(image_id=None, buildkit=False):
+def run_image_build(image_id: str, buildkit: bool = False):
     from cabotage.utils.config_templates import TemplateResolutionError
 
     current_app.config["REGISTRY_AUTH_SECRET"]
@@ -1733,7 +1735,7 @@ def run_image_build(image_id=None, buildkit=False):
                 "user_id": "automation",
                 "deployment_id": image.image_metadata.get("id", None),
                 "description": image.image_metadata.get("description", None),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
         )
         db.session.add(activity)
@@ -1749,7 +1751,7 @@ def run_image_build(image_id=None, buildkit=False):
 
 
 @shared_task()
-def run_release_build(release_id=None):
+def run_release_build(release_id: str):
     from cabotage.utils.config_templates import TemplateResolutionError
 
     release = None
@@ -1897,7 +1899,9 @@ def run_release_build(release_id=None):
                     "user_id": "automation",
                     "deployment_id": release.release_metadata.get("id", None),
                     "description": release.release_metadata.get("description", None),
-                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                    "timestamp": datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -1932,7 +1936,7 @@ def run_release_build(release_id=None):
 
 
 @shared_task()
-def run_omnibus_build(image_id=None):
+def run_omnibus_build(image_id: str):
     """Build image + release in a single K8s Job for auto-deploys.
 
     Avoids mounting the build cache volume twice by combining both build
@@ -2028,7 +2032,9 @@ def run_omnibus_build(image_id=None):
                     "user_id": "automation",
                     "deployment_id": image.image_metadata.get("id", None),
                     "description": image.image_metadata.get("description", None),
-                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                    "timestamp": datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -2140,7 +2146,7 @@ def run_omnibus_build(image_id=None):
             "user_id": "automation",
             "deployment_id": image.image_metadata.get("id", None),
             "description": image.image_metadata.get("description", None),
-            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         },
     )
     db.session.add(activity)

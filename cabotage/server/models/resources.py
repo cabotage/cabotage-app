@@ -1,27 +1,30 @@
-from sqlalchemy import text
+from __future__ import annotations
+
+import uuid
+
+from sqlalchemy import ForeignKey, Integer, String, text
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy_utils.models import Timestamp
 
-from cabotage.server import db, Model
+from cabotage.server import Model
 
 
 class Resource(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "resources"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    type = db.Column(db.String(50))
-    application_id = db.Column(
+    type: Mapped[str | None] = mapped_column(String(50))
+    application_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("project_applications.id"),
-        nullable=False,
+        ForeignKey("project_applications.id"),
     )
-    version_id = db.Column(db.Integer, nullable=False)
+    version_id: Mapped[int] = mapped_column(Integer)
 
     __mapper_args__ = {
         "polymorphic_identity": "resource",
@@ -34,13 +37,12 @@ class PostgresResource(Resource):
     __versioned__: dict = {}
     __tablename__ = "resources_postgres"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("resources.id"),
-        nullable=False,
+        ForeignKey("resources.id"),
         primary_key=True,
     )
-    version_id = db.Column(db.Integer, nullable=False)
+    version_id: Mapped[int] = mapped_column(Integer)
 
     __mapper_args__ = {
         "polymorphic_identity": "postgres",
@@ -52,13 +54,12 @@ class RedisResource(Resource):
     __versioned__: dict = {}
     __tablename__ = "resources_redis"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("resources.id"),
-        nullable=False,
+        ForeignKey("resources.id"),
         primary_key=True,
     )
-    version_id = db.Column(db.Integer, nullable=False)
+    version_id: Mapped[int] = mapped_column(Integer)
 
     __mapper_args__ = {
         "polymorphic_identity": "redis",
@@ -70,13 +71,12 @@ class IngressResource(Resource):
     __versioned__: dict = {}
     __tablename__ = "resources_ingress"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("resources.id"),
-        nullable=False,
+        ForeignKey("resources.id"),
         primary_key=True,
     )
-    version_id = db.Column(db.Integer, nullable=False)
+    version_id: Mapped[int] = mapped_column(Integer)
 
     __mapper_args__ = {
         "polymorphic_identity": "ingress",
@@ -88,13 +88,12 @@ class CertificateResource(Resource):
     __versioned__: dict = {}
     __tablename__ = "resources_certificate"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("resources.id"),
-        nullable=False,
+        ForeignKey("resources.id"),
         primary_key=True,
     )
-    version_id = db.Column(db.Integer, nullable=False)
+    version_id: Mapped[int] = mapped_column(Integer)
 
     __mapper_args__ = {
         "polymorphic_identity": "certificate",

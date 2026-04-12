@@ -17,9 +17,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: astral-sh/setup-uv@v5
-      - run: uv python install 3.11
+      - run: uv python install 3.13
       - run: uv sync --frozen
-      - run: uv run black --check --diff .
+      - run: uv run ruff format --check --diff .
       - run: uv run ruff check .
 
   type-check:
@@ -28,9 +28,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: astral-sh/setup-uv@v5
-      - run: uv python install 3.11
+      - run: uv python install 3.13
       - run: uv sync --frozen
-      - run: uv run mypy --config-file pyproject.toml .
+      - run: uv run ty check cabotage
 
   security-check:
     runs-on: ubuntu-24.04-arm
@@ -38,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: astral-sh/setup-uv@v5
-      - run: uv python install 3.11
+      - run: uv python install 3.13
       - run: uv sync --frozen
       - run: uv run bandit -c pyproject.toml -r .
 
@@ -73,17 +73,17 @@ jobs:
         run: |
           docker run --rm --network host postgres:16 psql -h localhost -U postgres -d cabotage_test -c "CREATE EXTENSION IF NOT EXISTS citext; CREATE EXTENSION IF NOT EXISTS pgcrypto;"
       - uses: astral-sh/setup-uv@v5
-      - run: uv python install 3.11
+      - run: uv python install 3.13
       - run: uv sync --frozen
       - name: Run migrations
         run: uv run flask db upgrade
         env:
-          CABOTAGE_SQLALCHEMY_DATABASE_URI: postgresql://postgres@localhost/cabotage_test
+          CABOTAGE_SQLALCHEMY_DATABASE_URI: postgresql+psycopg://postgres@localhost/cabotage_test
           FLASK_APP: cabotage.server.wsgi
       - name: Run tests
         run: uv run pytest tests/ -v
         env:
-          CABOTAGE_SQLALCHEMY_DATABASE_URI: postgresql://postgres@localhost/cabotage_test
+          CABOTAGE_SQLALCHEMY_DATABASE_URI: postgresql+psycopg://postgres@localhost/cabotage_test
           CABOTAGE_CELERY_BROKER_URL: redis://localhost:6379/0
           CABOTAGE_CELERY_RESULTS_URL: redis://localhost:6379/0
           CABOTAGE_TESTING: "True"

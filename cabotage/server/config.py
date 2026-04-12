@@ -109,6 +109,7 @@ class Config(metaclass=MetaFlaskEnv):
     TAILSCALE_TAG_PREFIX = "cabotage"
     MIMIR_URL = None
     MIMIR_VERIFY = None
+    MIMIR_TIMEOUT = 5
     LOKI_URL = None
     LOKI_VERIFY = None
     PROXY_FIX_NUM_PROXIES = 1

@@ -196,7 +196,7 @@
          class="tab-item
                 {% if active == 'overview' %}tab-active{% endif %}">{{ icon('activity', 'w-4 h-4') }} <span class="tab-label">Overview</span></a>
       <div class="dropdown dropdown-hover">
-        <div tabindex="0" role="button"
+        <div tabindex="0" role="button" title="Observe"
              class="tab-item {% if active in ('observe', 'logs', 'pipeline') %}tab-active{% endif %}">
           {{ icon('search', 'w-4 h-4') }}
           <span class="tab-label">Observe {{ icon('chevron-down', 'w-3 h-3 opacity-40') }}</span>
@@ -224,7 +224,7 @@
          class="tab-item
                 {% if active == 'images' %}tab-active{% endif %}">{{ icon('image', 'w-4 h-4') }} <span class="tab-label">Images</span></a>
       <div class="dropdown dropdown-hover">
-        <div tabindex="0" role="button"
+        <div tabindex="0" role="button" title="Config"
              class="tab-item {% if active in ('config', 'ingress') %}tab-active{% endif %}">
           {{ icon('tool', 'w-4 h-4') }}
           <span class="tab-label">Config {{ icon('chevron-down', 'w-3 h-3 opacity-40') }}</span>
@@ -250,7 +250,7 @@
                 {% if active == 'deployments' %}tab-active{% endif %}">{{ icon('upload', 'w-4 h-4') }} <span class="tab-label">Deploys</span></a>
       {% if application.project.environments_enabled and env %}
       <div class="dropdown dropdown-hover dropdown-end">
-        <div tabindex="0" role="button"
+        <div tabindex="0" role="button" title="Settings"
              class="tab-item {% if active in ('settings', 'env_settings') %}tab-active{% endif %}">
           {{ icon('settings', 'w-4 h-4') }}
           <span class="tab-label">Settings {{ icon('chevron-down', 'w-3 h-3 opacity-40') }}</span>

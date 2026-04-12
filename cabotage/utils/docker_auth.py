@@ -10,6 +10,7 @@ from base64 import (
 )
 
 
+from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
     PublicFormat,
@@ -51,6 +52,8 @@ def generate_libcrypt_key_id(public_key_pem):
 def public_key_to_jwk(public_key_pem):
     """Convert a PEM-encoded EC public key to a JWK dict."""
     pub_key = load_pem_public_key(public_key_pem)
+    if not isinstance(pub_key, EllipticCurvePublicKey):
+        raise TypeError(f"Expected EC public key, got {type(pub_key).__name__}")
     numbers = pub_key.public_numbers()
     x_bytes = number_to_bytes(numbers.x, 32)
     y_bytes = number_to_bytes(numbers.y, 32)
@@ -130,8 +133,8 @@ def parse_docker_scope(scope_string):
 
 
 def docker_access_intersection(scope0, scope1):
-    scope0 = {f'{x["type"]}:{x["name"]}': x["actions"] for x in scope0}
-    scope1 = {f'{x["type"]}:{x["name"]}': x["actions"] for x in scope1}
+    scope0 = {f"{x['type']}:{x['name']}": x["actions"] for x in scope0}
+    scope1 = {f"{x['type']}:{x['name']}": x["actions"] for x in scope1}
     intersection = []
     for key in frozenset(scope0.keys()) & frozenset(scope1.keys()):
         actions = list(frozenset(scope0[key]) & frozenset(scope1[key]))
@@ -201,8 +204,8 @@ def generate_docker_registry_jwt(access=None):
     header_encoded = urlsafe_b64encode(header.encode("utf-8"))
     claim_set_encoded = urlsafe_b64encode(claim_set.encode("utf-8"))
     payload = (
-        f'{header_encoded.rstrip(b"=").decode()}'
-        f'.{claim_set_encoded.rstrip(b"=").decode()}'
+        f"{header_encoded.rstrip(b'=').decode()}"
+        f".{claim_set_encoded.rstrip(b'=').decode()}"
     )
 
     signature = vault.sign_payload(payload, marshaling_algorithm="jws")
