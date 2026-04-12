@@ -1,10 +1,29 @@
-import json
+from __future__ import annotations
 
-from citext import CIText
+import datetime
+import json
+import uuid
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from cabotage.server.models.auth import Organization
+
 from flask import current_app
-from sqlalchemy import CheckConstraint, text, UniqueConstraint
-from sqlalchemy.event import listens_for
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.event import listens_for
+from sqlalchemy.orm import DynamicMapped, Mapped, mapped_column, relationship, backref
 from sqlalchemy_continuum import make_versioned
 from sqlalchemy_continuum.plugins import FlaskPlugin
 from sqlalchemy_utils.models import Timestamp
@@ -102,43 +121,43 @@ class Project(Model, Timestamp):
             kwargs["k8s_identifier"] = generate_k8s_identifier(kwargs["slug"])
         super().__init__(*args, **kwargs)
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    organization_id = db.Column(
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("organizations.id"),
+        ForeignKey("organizations.id"),
     )
-    name = db.Column(db.Text(), nullable=False)
-    slug = db.Column(CIText(), nullable=False)
-    k8s_identifier = db.Column(db.String(64), nullable=False)
-    environments_enabled = db.Column(
-        db.Boolean, nullable=False, default=False, server_default="false"
+    name: Mapped[str] = mapped_column(Text())
+    slug: Mapped[str] = mapped_column(postgresql.CITEXT())
+    k8s_identifier: Mapped[str] = mapped_column(String(64))
+    environments_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
     )
-    branch_deploys_enabled = db.Column(
-        db.Boolean, nullable=False, default=False, server_default="false"
+    branch_deploys_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
     )
-    branch_deploy_base_environment_id = db.Column(
+    branch_deploy_base_environment_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("project_environments.id"),
-        nullable=True,
+        ForeignKey("project_environments.id"),
     )
-    deleted_at = db.Column(db.DateTime, nullable=True, index=True)
+    deleted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, index=True)
 
-    branch_deploy_base_environment = db.relationship(
+    organization: Mapped[Organization] = relationship(
+        "Organization", back_populates="projects"
+    )
+
+    branch_deploy_base_environment: Mapped[Environment | None] = relationship(
         "Environment", foreign_keys=[branch_deploy_base_environment_id]
     )
-    project_applications = db.relationship(
-        "Application",
-        backref="project",
+    project_applications: Mapped[list[Application]] = relationship(
+        back_populates="project",
         cascade="all, delete-orphan",
     )
-    project_environments = db.relationship(
-        "Environment",
-        backref="project",
+    project_environments: Mapped[list[Environment]] = relationship(
+        back_populates="project",
         cascade="all, delete-orphan",
         order_by="Environment.sort_order",
         foreign_keys="Environment.project_id",
@@ -171,46 +190,44 @@ class Environment(Model, Timestamp):
             kwargs["k8s_identifier"] = generate_k8s_identifier(kwargs["slug"])
         super().__init__(*args, **kwargs)
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    project_id = db.Column(
+    project_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("projects.id"),
-        nullable=False,
+        ForeignKey("projects.id"),
         index=True,
     )
-    name = db.Column(db.Text(), nullable=False)
-    slug = db.Column(CIText(), nullable=False)
-    k8s_identifier = db.Column(db.String(64), nullable=False)
-    sort_order = db.Column(db.Integer, nullable=False, default=100)
-    ephemeral = db.Column(db.Boolean, nullable=False, default=False)
-    ttl_hours = db.Column(db.Integer, nullable=True)
-    is_default = db.Column(db.Boolean, nullable=False, default=False)
-    deleted_at = db.Column(db.DateTime, nullable=True, index=True)
-    forked_from_environment_id = db.Column(
+    name: Mapped[str] = mapped_column(Text())
+    slug: Mapped[str] = mapped_column(postgresql.CITEXT())
+    k8s_identifier: Mapped[str] = mapped_column(String(64))
+    sort_order: Mapped[int] = mapped_column(Integer, default=100)
+    ephemeral: Mapped[bool] = mapped_column(Boolean, default=False)
+    ttl_hours: Mapped[int | None] = mapped_column(Integer)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    deleted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, index=True)
+    forked_from_environment_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("project_environments.id"),
-        nullable=True,
+        ForeignKey("project_environments.id"),
     )
-    version_id = db.Column(db.Integer, nullable=False)
+    version_id: Mapped[int] = mapped_column(Integer)
 
-    forked_from_environment = db.relationship(
+    project: Mapped[Project] = relationship(
+        back_populates="project_environments", foreign_keys=[project_id]
+    )
+    forked_from_environment: Mapped[Environment | None] = relationship(
         "Environment",
         remote_side="Environment.id",
         foreign_keys=[forked_from_environment_id],
     )
-    application_environments = db.relationship(
-        "ApplicationEnvironment",
-        backref="environment",
+    application_environments: Mapped[list[ApplicationEnvironment]] = relationship(
+        back_populates="environment",
         cascade="all, delete-orphan",
     )
-    environment_configurations = db.relationship(
-        "EnvironmentConfiguration",
-        backref="environment",
+    environment_configurations: Mapped[list[EnvironmentConfiguration]] = relationship(
+        back_populates="environment",
         cascade="all, delete-orphan",
         order_by="EnvironmentConfiguration.name",
     )
@@ -239,101 +256,81 @@ class ApplicationEnvironment(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "application_environments"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    application_id = db.Column(
+    application_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("project_applications.id"),
-        nullable=False,
+        ForeignKey("project_applications.id"),
         index=True,
     )
-    environment_id = db.Column(
+    environment_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("project_environments.id"),
-        nullable=False,
+        ForeignKey("project_environments.id"),
         index=True,
     )
-    process_counts = db.Column(
+    process_counts: Mapped[Any | None] = mapped_column(
         postgresql.JSONB(), server_default=text("json_object('{}')")
     )
-    process_pod_classes = db.Column(
+    process_pod_classes: Mapped[Any | None] = mapped_column(
         postgresql.JSONB(), server_default=text("json_object('{}')")
     )
-    deployment_timeout = db.Column(
-        db.Integer,
-        nullable=True,
-    )
-    health_check_path = db.Column(
-        db.String(64),
-        nullable=True,
-    )
-    health_check_host = db.Column(
-        db.String(256),
-        nullable=True,
-    )
-    auto_deploy_branch = db.Column(
-        db.Text(),
-        nullable=True,
-    )
-    auto_deploy_wait_for_ci = db.Column(
-        db.Boolean,
-        nullable=False,
+    deployment_timeout: Mapped[int | None] = mapped_column(Integer)
+    health_check_path: Mapped[str | None] = mapped_column(String(64))
+    health_check_host: Mapped[str | None] = mapped_column(String(256))
+    auto_deploy_branch: Mapped[str | None] = mapped_column(Text())
+    auto_deploy_wait_for_ci: Mapped[bool] = mapped_column(
+        Boolean,
         default=True,
         server_default="true",
     )
-    github_environment_name = db.Column(
-        db.Text(),
-        nullable=True,
-    )
-    k8s_identifier = db.Column(
-        db.String(64),
-        nullable=True,
-    )
-    deleted_at = db.Column(db.DateTime, nullable=True, index=True)
-    version_id = db.Column(db.Integer, nullable=False)
+    github_environment_name: Mapped[str | None] = mapped_column(Text())
+    k8s_identifier: Mapped[str | None] = mapped_column(String(64))
+    deleted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, index=True)
+    version_id: Mapped[int] = mapped_column(Integer)
 
-    configurations = db.relationship(
-        "Configuration",
-        backref="application_environment",
+    application: Mapped[Application] = relationship(
+        back_populates="application_environments"
+    )
+    environment: Mapped[Environment] = relationship(
+        back_populates="application_environments"
+    )
+    configurations: Mapped[list[Configuration]] = relationship(
+        back_populates="application_environment",
         foreign_keys="Configuration.application_environment_id",
         order_by="Configuration.name",
     )
-    environment_config_subscriptions = db.relationship(
-        "EnvironmentConfigSubscription",
-        backref="application_environment",
-        cascade="all, delete-orphan",
+    environment_config_subscriptions: Mapped[list[EnvironmentConfigSubscription]] = (
+        relationship(
+            back_populates="application_environment",
+            cascade="all, delete-orphan",
+        )
     )
-    images = db.relationship(
-        "Image",
-        backref="application_environment",
+    images: DynamicMapped[Image] = relationship(
+        back_populates="application_environment",
         foreign_keys="Image.application_environment_id",
         lazy="dynamic",
     )
-    releases = db.relationship(
-        "Release",
-        backref="application_environment",
+    releases: DynamicMapped[Release] = relationship(
+        back_populates="application_environment",
         foreign_keys="Release.application_environment_id",
         lazy="dynamic",
     )
-    deployments = db.relationship(
-        "Deployment",
-        backref="application_environment",
+    deployments: DynamicMapped[Deployment] = relationship(
+        back_populates="application_environment",
         foreign_keys="Deployment.application_environment_id",
         lazy="dynamic",
     )
-    ingresses = db.relationship(
-        "Ingress",
-        backref="application_environment",
+    ingresses: Mapped[list[Ingress]] = relationship(
+        back_populates="application_environment",
         foreign_keys="Ingress.application_environment_id",
         cascade="all, delete-orphan",
     )
 
     __table_args__ = (
-        db.Index(
+        Index(
             "uq_app_env_active",
             application_id,
             environment_id,
@@ -457,56 +454,50 @@ class Application(Model, Timestamp):
             kwargs["k8s_identifier"] = generate_k8s_identifier(kwargs["slug"])
         super().__init__(*args, **kwargs)
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    project_id = db.Column(
+    project_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("projects.id"),
-        nullable=False,
+        ForeignKey("projects.id"),
     )
-    name = db.Column(db.Text(), nullable=False)
-    slug = db.Column(CIText(), nullable=False)
-    k8s_identifier = db.Column(db.String(64), nullable=False)
-    platform = db.Column(platform_version, nullable=False, default="wind")
-    process_counts = db.Column(
+    name: Mapped[str] = mapped_column(Text())
+    slug: Mapped[str] = mapped_column(postgresql.CITEXT())
+    k8s_identifier: Mapped[str] = mapped_column(String(64))
+    platform: Mapped[str] = mapped_column(platform_version, default="wind")
+    process_counts: Mapped[Any | None] = mapped_column(
         postgresql.JSONB(), server_default=text("json_object('{}')")
     )
-    process_pod_classes = db.Column(
+    process_pod_classes: Mapped[Any | None] = mapped_column(
         postgresql.JSONB(), server_default=text("json_object('{}')")
     )
-    deleted_at = db.Column(db.DateTime, nullable=True, index=True)
+    deleted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, index=True)
 
-    images = db.relationship(
-        "Image",
-        backref="application",
+    project: Mapped[Project] = relationship(back_populates="project_applications")
+    images: DynamicMapped[Image] = relationship(
+        back_populates="application",
         cascade="all, delete-orphan",
         lazy="dynamic",
     )
-    configurations = db.relationship(
-        "Configuration",
-        backref="application",
+    configurations: Mapped[list[Configuration]] = relationship(
+        back_populates="application",
         cascade="all, delete-orphan",
         order_by="Configuration.name",
     )
-    releases = db.relationship(
-        "Release",
-        backref="application",
+    releases: DynamicMapped[Release] = relationship(
+        back_populates="application",
         cascade="all, delete-orphan",
         lazy="dynamic",
     )
-    deployments = db.relationship(
-        "Deployment",
-        backref="application",
+    deployments: DynamicMapped[Deployment] = relationship(
+        back_populates="application",
         cascade="all, delete-orphan",
         lazy="dynamic",
     )
-    application_environments = db.relationship(
-        "ApplicationEnvironment",
-        backref="application",
+    application_environments: Mapped[list[ApplicationEnvironment]] = relationship(
+        back_populates="application",
         cascade="all, delete-orphan",
     )
 
@@ -514,65 +505,41 @@ class Application(Model, Timestamp):
     def active_application_environments(self):
         return [ae for ae in self.application_environments if ae.deleted_at is None]
 
-    version_id = db.Column(db.Integer, nullable=False)
+    version_id: Mapped[int] = mapped_column(Integer)
 
-    github_app_installation_id = db.Column(
-        db.Integer,
-        nullable=True,
-    )
-    github_repository = db.Column(
-        db.Text(),
-        nullable=True,
-    )
-    github_repository_is_private = db.Column(
-        db.Boolean,
+    github_app_installation_id: Mapped[int | None] = mapped_column(Integer)
+    github_repository: Mapped[str | None] = mapped_column(Text())
+    github_repository_is_private: Mapped[bool] = mapped_column(
+        Boolean,
         default=False,
-        nullable=False,
     )
-    github_environment_name = db.Column(
-        db.Text(),
-        nullable=True,
-    )
+    github_environment_name: Mapped[str | None] = mapped_column(Text())
 
-    subdirectory = db.Column(
-        db.Text(),
-        nullable=True,
-    )
+    subdirectory: Mapped[str | None] = mapped_column(Text())
 
-    dockerfile_path = db.Column(
-        db.Text(),
-        nullable=True,
-    )
-    branch_deploy_watch_paths = db.Column(
+    dockerfile_path: Mapped[str | None] = mapped_column(Text())
+    branch_deploy_watch_paths: Mapped[Any | None] = mapped_column(
         postgresql.JSONB(),
-        nullable=True,
     )
 
-    auto_deploy_branch = db.Column(
-        db.Text(),
-        nullable=True,
-    )
-    deployment_timeout = db.Column(
-        db.Integer,
-        nullable=True,
+    auto_deploy_branch: Mapped[str | None] = mapped_column(Text())
+    deployment_timeout: Mapped[int | None] = mapped_column(
+        Integer,
         server_default="180",
     )
 
-    health_check_path = db.Column(
-        db.String(64),
-        nullable=False,
+    health_check_path: Mapped[str] = mapped_column(
+        String(64),
         server_default="/_health/",
     )
-    health_check_host = db.Column(
-        db.String(256),
-        nullable=True,
+    health_check_host: Mapped[str | None] = mapped_column(
+        String(256),
         server_default=None,
     )
 
-    privileged = db.Column(
-        db.Boolean,
+    privileged: Mapped[bool] = mapped_column(
+        Boolean,
         default=False,
-        nullable=False,
     )
 
     @property
@@ -702,7 +669,7 @@ class Application(Model, Timestamp):
             k8s_identifier,
             name="uq_project_applications_project_k8s_identifier",
         ),
-        db.Index(
+        Index(
             "github_deployments_unique",
             github_app_installation_id,
             github_repository,
@@ -719,43 +686,33 @@ class Deployment(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "deployments"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    application_id = db.Column(
+    application_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("project_applications.id"),
-        nullable=False,
+        ForeignKey("project_applications.id"),
         index=True,
     )
-    application_environment_id = db.Column(
+    application_environment_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("application_environments.id"),
-        nullable=False,
+        ForeignKey("application_environments.id"),
         index=True,
     )
-    release = db.Column(postgresql.JSONB(), nullable=False)
-    version_id = db.Column(db.Integer, nullable=False)
-    complete = db.Column(db.Boolean, nullable=False, default=False)
-    error = db.Column(db.Boolean, nullable=False, default=False)
-    error_detail = db.Column(
-        db.String(2048),
-        nullable=True,
-    )
-    deploy_metadata = db.Column(
-        postgresql.JSONB(),
-        nullable=True,
-    )
-    deploy_log = db.Column(
-        db.Text(),
-        nullable=True,
-    )
-    job_id = db.Column(
-        db.String(64),
-        nullable=True,
+    release: Mapped[Any] = mapped_column(postgresql.JSONB())
+    version_id: Mapped[int] = mapped_column(Integer)
+    complete: Mapped[bool] = mapped_column(Boolean, default=False)
+    error: Mapped[bool] = mapped_column(Boolean, default=False)
+    error_detail: Mapped[str | None] = mapped_column(String(2048))
+    deploy_metadata: Mapped[Any | None] = mapped_column(postgresql.JSONB())
+    deploy_log: Mapped[str | None] = mapped_column(Text())
+    job_id: Mapped[str | None] = mapped_column(String(64))
+
+    application: Mapped[Application] = relationship(back_populates="deployments")
+    application_environment: Mapped[ApplicationEnvironment] = relationship(
+        back_populates="deployments", foreign_keys=[application_environment_id]
     )
 
     __mapper_args__ = {"version_id_col": version_id}
@@ -774,45 +731,42 @@ class Deployment(Model, Timestamp):
 class JobLog(Model, Timestamp):
     __tablename__ = "job_logs"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    application_id = db.Column(
+    application_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("project_applications.id"),
-        nullable=False,
+        ForeignKey("project_applications.id"),
         index=True,
     )
-    application_environment_id = db.Column(
+    application_environment_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("application_environments.id"),
-        nullable=False,
+        ForeignKey("application_environments.id"),
         index=True,
     )
-    process_name = db.Column(db.String(64), nullable=False)
-    job_name = db.Column(db.String(253), nullable=False)
-    namespace = db.Column(db.String(253), nullable=False)
-    schedule_timestamp = db.Column(db.DateTime, nullable=True)
-    start_time = db.Column(db.DateTime, nullable=True)
-    completion_time = db.Column(db.DateTime, nullable=True)
-    duration_seconds = db.Column(db.Integer, nullable=True)
-    succeeded = db.Column(db.Boolean, nullable=False)
-    pods_active = db.Column(db.Integer, nullable=False, default=0)
-    pods_succeeded = db.Column(db.Integer, nullable=False, default=0)
-    pods_failed = db.Column(db.Integer, nullable=False, default=0)
-    release_version = db.Column(db.Integer, nullable=True)
-    deployment_id = db.Column(db.String(64), nullable=True)
-    labels = db.Column(postgresql.JSONB(), nullable=True)
-    resources = db.Column(postgresql.JSONB(), nullable=True)
+    process_name: Mapped[str] = mapped_column(String(64))
+    job_name: Mapped[str] = mapped_column(String(253))
+    namespace: Mapped[str] = mapped_column(String(253))
+    schedule_timestamp: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    start_time: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    completion_time: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer)
+    succeeded: Mapped[bool] = mapped_column(Boolean)
+    pods_active: Mapped[int] = mapped_column(Integer, default=0)
+    pods_succeeded: Mapped[int] = mapped_column(Integer, default=0)
+    pods_failed: Mapped[int] = mapped_column(Integer, default=0)
+    release_version: Mapped[int | None] = mapped_column(Integer)
+    deployment_id: Mapped[str | None] = mapped_column(String(64))
+    labels: Mapped[Any | None] = mapped_column(postgresql.JSONB())
+    resources: Mapped[Any | None] = mapped_column(postgresql.JSONB())
 
     __table_args__ = (
-        db.UniqueConstraint(
+        UniqueConstraint(
             "job_name", "namespace", name="uq_job_logs_job_name_namespace"
         ),
-        db.Index(
+        Index(
             "ix_job_logs_app_env_process_completion",
             "application_id",
             "application_environment_id",
@@ -821,13 +775,11 @@ class JobLog(Model, Timestamp):
         ),
     )
 
-    application = db.relationship(
-        "Application",
-        backref=db.backref("job_logs", lazy="dynamic"),
+    application: Mapped[Application] = relationship(
+        backref=backref("job_logs", lazy="dynamic"),
     )
-    application_environment = db.relationship(
-        "ApplicationEnvironment",
-        backref=db.backref("job_logs", lazy="dynamic"),
+    application_environment: Mapped[ApplicationEnvironment] = relationship(
+        backref=backref("job_logs", lazy="dynamic"),
     )
 
 
@@ -835,87 +787,63 @@ class Release(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_app_releases"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    application_id = db.Column(
+    application_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("project_applications.id"),
-        nullable=False,
+        ForeignKey("project_applications.id"),
         index=True,
     )
-    application_environment_id = db.Column(
+    application_environment_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("application_environments.id"),
-        nullable=False,
+        ForeignKey("application_environments.id"),
         index=True,
     )
-    platform = db.Column(platform_version, nullable=False, default="wind")
-    image = db.Column(postgresql.JSONB(), nullable=False)
-    configuration = db.Column(postgresql.JSONB(), nullable=False)
-    image_changes = db.Column(postgresql.JSONB(), nullable=False)
-    configuration_changes = db.Column(postgresql.JSONB(), nullable=False)
-    ingresses = db.Column(
+    platform: Mapped[str] = mapped_column(platform_version, default="wind")
+    image: Mapped[Any] = mapped_column(postgresql.JSONB())
+    configuration: Mapped[Any] = mapped_column(postgresql.JSONB())
+    image_changes: Mapped[Any] = mapped_column(postgresql.JSONB())
+    configuration_changes: Mapped[Any] = mapped_column(postgresql.JSONB())
+    ingresses: Mapped[Any] = mapped_column(
         postgresql.JSONB(),
-        nullable=False,
         server_default=text("'{}'::jsonb"),
     )
-    ingress_changes = db.Column(
+    ingress_changes: Mapped[Any] = mapped_column(
         postgresql.JSONB(),
-        nullable=False,
         server_default=text("'{}'::jsonb"),
     )
-    version_id = db.Column(db.Integer, nullable=False)
+    version_id: Mapped[int] = mapped_column(Integer)
 
-    _repository_name = db.Column(
+    _repository_name: Mapped[str] = mapped_column(
         "repository_name",
-        db.String(256),
-        nullable=False,
+        String(256),
     )
-    release_id = db.Column(
-        db.String(256),
-        nullable=True,
-    )
-    version = db.Column(
-        db.Integer,
-        nullable=False,
-    )
+    release_id: Mapped[str | None] = mapped_column(String(256))
+    version: Mapped[int] = mapped_column(Integer)
 
-    built = db.Column(db.Boolean, nullable=False, default=False)
-    error = db.Column(db.Boolean, nullable=False, default=False)
-    error_detail = db.Column(
-        db.String(2048),
-        nullable=True,
-    )
-    deleted = db.Column(db.Boolean, nullable=False, default=False)
-    dockerfile = db.Column(
-        db.Text(),
-        nullable=True,
-    )
-    release_metadata = db.Column(
-        postgresql.JSONB(),
-        nullable=True,
-    )
-    release_build_log = db.Column(
-        db.Text(),
-        nullable=True,
-    )
-    build_job_id = db.Column(
-        db.String(64),
-        nullable=True,
-    )
-    health_check_path = db.Column(
-        db.String(64),
-        nullable=False,
+    built: Mapped[bool] = mapped_column(Boolean, default=False)
+    error: Mapped[bool] = mapped_column(Boolean, default=False)
+    error_detail: Mapped[str | None] = mapped_column(String(2048))
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    dockerfile: Mapped[str | None] = mapped_column(Text())
+    release_metadata: Mapped[Any | None] = mapped_column(postgresql.JSONB())
+    release_build_log: Mapped[str | None] = mapped_column(Text())
+    build_job_id: Mapped[str | None] = mapped_column(String(64))
+    health_check_path: Mapped[str] = mapped_column(
+        String(64),
         server_default="/_health/",
     )
-    health_check_host = db.Column(
-        db.String(256),
-        nullable=True,
+    health_check_host: Mapped[str | None] = mapped_column(
+        String(256),
         server_default=None,
+    )
+
+    application: Mapped[Application] = relationship(back_populates="releases")
+    application_environment: Mapped[ApplicationEnvironment] = relationship(
+        back_populates="releases", foreign_keys=[application_environment_id]
     )
 
     __mapper_args__ = {"version_id_col": version_id}
@@ -935,7 +863,7 @@ class Release(Model, Timestamp):
         reasons = []
         if self.image_object is None:
             reasons.append(
-                f'<code>Image {self.image["repository"]}:{self.image["tag"]} '
+                f"<code>Image {self.image['repository']}:{self.image['tag']} "
                 "no longer exists!</code>"
             )
         for configuration, configuration_serialized in self.configuration.items():
@@ -1022,13 +950,13 @@ class Release(Model, Timestamp):
                     statements.append(stmt)
         environment_statements = "\n".join(statements)
 
-        exec_statement = "exec {\n" '  command = "/bin/sh"\n'
+        exec_statement = 'exec {\n  command = "/bin/sh"\n'
         if not self.application.privileged:
             exec_statement += "  env = {\n"
             if resolved_template_env:
                 exec_statement += f"    custom = {json.dumps(resolved_template_env)}\n"
             exec_statement += (
-                '    denylist = ["CONSUL_*", "VAULT_*", "KUBERNETES_*"]\n' "  }\n"
+                '    denylist = ["CONSUL_*", "VAULT_*", "KUBERNETES_*"]\n  }\n'
             )
         exec_statement += "}"
         configurations["shell"] = "\n".join([exec_statement, environment_statements])
@@ -1036,7 +964,7 @@ class Release(Model, Timestamp):
             proc_env = [f"{key}={value}" for key, value in proc["env"]]
             proc_env.extend(resolved_template_env)
             custom_env = json.dumps(proc_env)
-            exec_statement = "exec {\n" f'  command = {json.dumps(proc["cmd"])}\n'
+            exec_statement = f"exec {{\n  command = {json.dumps(proc['cmd'])}\n"
             if not self.application.privileged:
                 exec_statement += (
                     "  env = {\n"
@@ -1177,48 +1105,38 @@ class Configuration(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_app_configurations"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    application_id = db.Column(
+    application_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("project_applications.id"),
-        nullable=False,
+        ForeignKey("project_applications.id"),
         index=True,
     )
-    application_environment_id = db.Column(
+    application_environment_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("application_environments.id"),
-        nullable=False,
+        ForeignKey("application_environments.id"),
         index=True,
     )
 
-    name = db.Column(
-        CIText(),
-        nullable=False,
+    name: Mapped[str] = mapped_column(postgresql.CITEXT())
+    value: Mapped[str] = mapped_column(String(2048))
+    key_slug: Mapped[str | None] = mapped_column(Text())
+    build_key_slug: Mapped[str | None] = mapped_column(Text())
+    version_id: Mapped[int] = mapped_column(Integer)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    secret: Mapped[bool] = mapped_column(Boolean, default=False)
+    buildtime: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    application: Mapped[Application] = relationship(back_populates="configurations")
+    application_environment: Mapped[ApplicationEnvironment] = relationship(
+        back_populates="configurations", foreign_keys=[application_environment_id]
     )
-    value = db.Column(
-        db.String(2048),
-        nullable=False,
-    )
-    key_slug = db.Column(
-        db.Text(),
-        nullable=True,
-    )
-    build_key_slug = db.Column(
-        db.Text(),
-        nullable=True,
-    )
-    version_id = db.Column(db.Integer, nullable=False)
-    deleted = db.Column(db.Boolean, nullable=False, default=False)
-    secret = db.Column(db.Boolean, nullable=False, default=False)
-    buildtime = db.Column(db.Boolean, nullable=False, default=False)
 
     __table_args__ = (
-        db.UniqueConstraint(
+        UniqueConstraint(
             application_id,
             application_environment_id,
             name,
@@ -1248,7 +1166,7 @@ class Configuration(Model, Timestamp):
             return None
         directive = "secret" if self.secret else "prefix"
         path = self.key_slug.split(":", 1)[1]
-        return f"{directive} {{\n" "  no_prefix = true\n" f'  path = "{path}"\n' "}"
+        return f'{directive} {{\n  no_prefix = true\n  path = "{path}"\n}}'
 
     def read_value(self, reader):
         from cabotage.utils.config_templates import (
@@ -1257,7 +1175,7 @@ class Configuration(Model, Timestamp):
         )
 
         if self.secret:
-            if self.buildtime:
+            if self.buildtime and self.build_key_slug:
                 payload = reader.read(
                     self.build_key_slug.split(":", 1)[1], build=True, secret=True
                 )
@@ -1285,53 +1203,40 @@ class EnvironmentConfiguration(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_environment_configurations"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    project_id = db.Column(
+    project_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("projects.id"),
-        nullable=False,
+        ForeignKey("projects.id"),
         index=True,
     )
-    environment_id = db.Column(
+    environment_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("project_environments.id"),
-        nullable=False,
+        ForeignKey("project_environments.id"),
         index=True,
     )
-    name = db.Column(
-        CIText(),
-        nullable=False,
-    )
-    value = db.Column(
-        db.String(2048),
-        nullable=False,
-    )
-    key_slug = db.Column(
-        db.Text(),
-        nullable=True,
-    )
-    build_key_slug = db.Column(
-        db.Text(),
-        nullable=True,
-    )
-    version_id = db.Column(db.Integer, nullable=False)
-    deleted = db.Column(db.Boolean, nullable=False, default=False)
-    secret = db.Column(db.Boolean, nullable=False, default=False)
-    buildtime = db.Column(db.Boolean, nullable=False, default=False)
+    name: Mapped[str] = mapped_column(postgresql.CITEXT())
+    value: Mapped[str] = mapped_column(String(2048))
+    key_slug: Mapped[str | None] = mapped_column(Text())
+    build_key_slug: Mapped[str | None] = mapped_column(Text())
+    version_id: Mapped[int] = mapped_column(Integer)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    secret: Mapped[bool] = mapped_column(Boolean, default=False)
+    buildtime: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    subscriptions = db.relationship(
-        "EnvironmentConfigSubscription",
-        backref="environment_configuration",
+    environment: Mapped[Environment] = relationship(
+        back_populates="environment_configurations"
+    )
+    subscriptions: Mapped[list[EnvironmentConfigSubscription]] = relationship(
+        back_populates="environment_configuration",
         cascade="all, delete-orphan",
     )
 
     __table_args__ = (
-        db.UniqueConstraint(
+        UniqueConstraint(
             project_id,
             environment_id,
             name,
@@ -1361,13 +1266,13 @@ class EnvironmentConfiguration(Model, Timestamp):
             return None
         directive = "secret" if self.secret else "prefix"
         path = self.key_slug.split(":", 1)[1]
-        return f"{directive} {{\n" "  no_prefix = true\n" f'  path = "{path}"\n' "}"
+        return f'{directive} {{\n  no_prefix = true\n  path = "{path}"\n}}'
 
     def read_value(self, reader):
         from cabotage.utils.config_templates import has_template_variables
 
         if self.secret:
-            if self.buildtime:
+            if self.buildtime and self.build_key_slug:
                 payload = reader.read(
                     self.build_key_slug.split(":", 1)[1], build=True, secret=True
                 )
@@ -1382,27 +1287,31 @@ class EnvironmentConfigSubscription(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "environment_config_subscriptions"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    application_environment_id = db.Column(
+    application_environment_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("application_environments.id"),
-        nullable=False,
+        ForeignKey("application_environments.id"),
         index=True,
     )
-    environment_configuration_id = db.Column(
+    environment_configuration_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("project_environment_configurations.id"),
-        nullable=False,
+        ForeignKey("project_environment_configurations.id"),
         index=True,
     )
 
+    application_environment: Mapped[ApplicationEnvironment] = relationship(
+        back_populates="environment_config_subscriptions"
+    )
+    environment_configuration: Mapped[EnvironmentConfiguration] = relationship(
+        back_populates="subscriptions"
+    )
+
     __table_args__ = (
-        db.UniqueConstraint(
+        UniqueConstraint(
             application_environment_id,
             environment_configuration_id,
             name="uq_env_config_subscription_app_env_config",
@@ -1414,36 +1323,20 @@ class Hook(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "hooks"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    commit_sha = db.Column(
-        db.String(256),
+    commit_sha: Mapped[str | None] = mapped_column(
+        String(256),
         index=True,
-        nullable=True,
     )
-    headers = db.Column(
-        postgresql.JSONB(),
-        nullable=False,
-    )
-    payload = db.Column(
-        postgresql.JSONB(),
-        nullable=False,
-    )
-    processed = db.Column(
-        db.Boolean,
-        nullable=False,
-        default=False,
-    )
-    deployed = db.Column(
-        db.Boolean,
-        nullable=True,
-        default=None,
-    )
-    version_id = db.Column(db.Integer, nullable=False)
+    headers: Mapped[Any] = mapped_column(postgresql.JSONB())
+    payload: Mapped[Any] = mapped_column(postgresql.JSONB())
+    processed: Mapped[bool] = mapped_column(Boolean, default=False)
+    deployed: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    version_id: Mapped[int] = mapped_column(Integer)
 
     __mapper_args__ = {"version_id_col": version_id}
 
@@ -1452,82 +1345,47 @@ class Image(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_app_images"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    application_id = db.Column(
+    application_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("project_applications.id"),
-        nullable=False,
+        ForeignKey("project_applications.id"),
         index=True,
     )
-    application_environment_id = db.Column(
+    application_environment_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("application_environments.id"),
-        nullable=False,
+        ForeignKey("application_environments.id"),
         index=True,
     )
 
-    _repository_name = db.Column(
+    application: Mapped[Application] = relationship(back_populates="images")
+    application_environment: Mapped[ApplicationEnvironment] = relationship(
+        back_populates="images", foreign_keys=[application_environment_id]
+    )
+
+    _repository_name: Mapped[str] = mapped_column(
         "repository_name",
-        db.String(256),
-        nullable=False,
+        String(256),
     )
-    image_id = db.Column(
-        db.String(256),
-        nullable=True,
-    )
-    version = db.Column(
-        db.Integer,
-        nullable=False,
-    )
+    image_id: Mapped[str | None] = mapped_column(String(256))
+    version: Mapped[int] = mapped_column(Integer)
 
-    version_id = db.Column(
-        db.Integer,
-        nullable=False,
-    )
-    built = db.Column(db.Boolean, nullable=False, default=False)
-    error = db.Column(db.Boolean, nullable=False, default=False)
-    error_detail = db.Column(
-        db.String(2048),
-        nullable=True,
-    )
-    deleted = db.Column(db.Boolean, nullable=False, default=False)
-    build_slug = db.Column(
-        db.String(1024),
-        nullable=True,
-    )
-    build_ref = db.Column(
-        db.String(1024),
-        nullable=True,
-    )
-    dockerfile = db.Column(
-        db.Text(),
-        nullable=True,
-    )
-    procfile = db.Column(
-        db.Text(),
-        nullable=True,
-    )
-    processes = db.Column(
-        postgresql.JSONB(),
-        nullable=True,
-    )
-    image_metadata = db.Column(
-        postgresql.JSONB(),
-        nullable=True,
-    )
-    image_build_log = db.Column(
-        db.Text(),
-        nullable=True,
-    )
-    build_job_id = db.Column(
-        db.String(64),
-        nullable=True,
-    )
+    version_id: Mapped[int] = mapped_column(Integer)
+    built: Mapped[bool] = mapped_column(Boolean, default=False)
+    error: Mapped[bool] = mapped_column(Boolean, default=False)
+    error_detail: Mapped[str | None] = mapped_column(String(2048))
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    build_slug: Mapped[str | None] = mapped_column(String(1024))
+    build_ref: Mapped[str | None] = mapped_column(String(1024))
+    dockerfile: Mapped[str | None] = mapped_column(Text())
+    procfile: Mapped[str | None] = mapped_column(Text())
+    processes: Mapped[Any | None] = mapped_column(postgresql.JSONB())
+    image_metadata: Mapped[Any | None] = mapped_column(postgresql.JSONB())
+    image_build_log: Mapped[str | None] = mapped_column(Text())
+    build_job_id: Mapped[str | None] = mapped_column(String(64))
 
     __mapper_args__ = {"version_id_col": version_id}
     __table_args__ = (
@@ -1626,62 +1484,61 @@ class Ingress(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "ingresses"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    application_environment_id = db.Column(
+    application_environment_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("application_environments.id"),
-        nullable=False,
+        ForeignKey("application_environments.id"),
         index=True,
     )
-    name = db.Column(db.String(64), nullable=False, default="default")
-    enabled = db.Column(db.Boolean(), default=True, nullable=False)
-    ingress_class_name = db.Column(db.String(64), default="nginx", nullable=False)
-    backend_protocol = db.Column(db.String(16), default="HTTPS", nullable=False)
-    proxy_connect_timeout = db.Column(
-        db.String(16), default="10s", server_default="10s", nullable=True
+    name: Mapped[str] = mapped_column(String(64), default="default")
+    enabled: Mapped[bool] = mapped_column(Boolean(), default=True)
+    ingress_class_name: Mapped[str] = mapped_column(String(64), default="nginx")
+    backend_protocol: Mapped[str] = mapped_column(String(16), default="HTTPS")
+    proxy_connect_timeout: Mapped[str | None] = mapped_column(
+        String(16), default="10s", server_default="10s"
     )
-    proxy_read_timeout = db.Column(
-        db.String(16), default="10s", server_default="10s", nullable=True
+    proxy_read_timeout: Mapped[str | None] = mapped_column(
+        String(16), default="10s", server_default="10s"
     )
-    proxy_send_timeout = db.Column(
-        db.String(16), default="10s", server_default="10s", nullable=True
+    proxy_send_timeout: Mapped[str | None] = mapped_column(
+        String(16), default="10s", server_default="10s"
     )
-    proxy_body_size = db.Column(
-        db.String(16), default="10M", server_default="10M", nullable=True
+    proxy_body_size: Mapped[str | None] = mapped_column(
+        String(16), default="10M", server_default="10M"
     )
-    client_body_buffer_size = db.Column(
-        db.String(16), default="1M", server_default="1M", nullable=True
+    client_body_buffer_size: Mapped[str | None] = mapped_column(
+        String(16), default="1M", server_default="1M"
     )
-    proxy_request_buffering = db.Column(
-        db.String(16), default="on", server_default="on", nullable=True
+    proxy_request_buffering: Mapped[str | None] = mapped_column(
+        String(16), default="on", server_default="on"
     )
-    session_affinity = db.Column(db.Boolean(), default=False, nullable=False)
-    use_regex = db.Column(db.Boolean(), default=False, nullable=False)
-    allow_annotations = db.Column(db.Boolean(), default=False, nullable=False)
-    extra_annotations = db.Column(
-        postgresql.JSONB(), server_default=text("'{}'::jsonb"), nullable=False
+    session_affinity: Mapped[bool] = mapped_column(Boolean(), default=False)
+    use_regex: Mapped[bool] = mapped_column(Boolean(), default=False)
+    allow_annotations: Mapped[bool] = mapped_column(Boolean(), default=False)
+    extra_annotations: Mapped[Any] = mapped_column(
+        postgresql.JSONB(), server_default=text("'{}'::jsonb")
     )
-    cluster_issuer = db.Column(db.String(64), default="letsencrypt", nullable=False)
-    force_ssl_redirect = db.Column(db.Boolean(), default=True, nullable=False)
-    service_upstream = db.Column(db.Boolean(), default=True, nullable=False)
-    tailscale_hostname = db.Column(db.String(253), nullable=True)
-    tailscale_funnel = db.Column(db.Boolean(), default=False, nullable=False)
-    tailscale_tags = db.Column(db.String(512), nullable=True)
-    version_id = db.Column(db.Integer, nullable=False)
+    cluster_issuer: Mapped[str] = mapped_column(String(64), default="letsencrypt")
+    force_ssl_redirect: Mapped[bool] = mapped_column(Boolean(), default=True)
+    service_upstream: Mapped[bool] = mapped_column(Boolean(), default=True)
+    tailscale_hostname: Mapped[str | None] = mapped_column(String(253))
+    tailscale_funnel: Mapped[bool] = mapped_column(Boolean(), default=False)
+    tailscale_tags: Mapped[str | None] = mapped_column(String(512))
+    version_id: Mapped[int] = mapped_column(Integer)
 
-    hosts = db.relationship(
-        "IngressHost",
+    application_environment: Mapped[ApplicationEnvironment] = relationship(
+        back_populates="ingresses", foreign_keys=[application_environment_id]
+    )
+    hosts: Mapped[list[IngressHost]] = relationship(
         backref="ingress",
         cascade="all, delete-orphan",
         order_by="IngressHost.hostname",
     )
-    paths = db.relationship(
-        "IngressPath",
+    paths: Mapped[list[IngressPath]] = relationship(
         backref="ingress",
         cascade="all, delete-orphan",
         order_by="IngressPath.path",
@@ -1729,25 +1586,23 @@ class IngressHost(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "ingress_hosts"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    ingress_id = db.Column(
+    ingress_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("ingresses.id"),
-        nullable=False,
+        ForeignKey("ingresses.id"),
         index=True,
     )
-    hostname = db.Column(db.String(253), nullable=False)
-    tls_enabled = db.Column(db.Boolean(), default=True, nullable=False)
-    is_auto_generated = db.Column(db.Boolean(), default=False, nullable=False)
-    version_id = db.Column(db.Integer, nullable=False)
+    hostname: Mapped[str] = mapped_column(String(253))
+    tls_enabled: Mapped[bool] = mapped_column(Boolean(), default=True)
+    is_auto_generated: Mapped[bool] = mapped_column(Boolean(), default=False)
+    version_id: Mapped[int] = mapped_column(Integer)
 
     __table_args__ = (
-        db.Index(
+        Index(
             "ix_ingress_hosts_hostname_unique",
             hostname,
             unique=True,
@@ -1774,22 +1629,20 @@ class IngressPath(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "ingress_paths"
 
-    id = db.Column(
+    id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         server_default=text("gen_random_uuid()"),
-        nullable=False,
         primary_key=True,
     )
-    ingress_id = db.Column(
+    ingress_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
-        db.ForeignKey("ingresses.id"),
-        nullable=False,
+        ForeignKey("ingresses.id"),
         index=True,
     )
-    path = db.Column(db.String(256), default="/", nullable=False)
-    path_type = db.Column(db.String(32), default="Prefix", nullable=False)
-    target_process_name = db.Column(db.String(64), nullable=False)
-    version_id = db.Column(db.Integer, nullable=False)
+    path: Mapped[str] = mapped_column(String(256), default="/")
+    path_type: Mapped[str] = mapped_column(String(32), default="Prefix")
+    target_process_name: Mapped[str] = mapped_column(String(64))
+    version_id: Mapped[int] = mapped_column(Integer)
 
     @property
     def asdict(self):
@@ -1970,8 +1823,7 @@ def create_default_ingresses(app_env, process_names=None):
         db.session.add(ingress_obj)
         db.session.flush()
         auto_hostname = (
-            f"{readable_k8s_hostname(*hostname_pairs)}"
-            f"-{process_name}.{ingress_domain}"
+            f"{readable_k8s_hostname(*hostname_pairs)}-{process_name}.{ingress_domain}"
         )
         db.session.add(
             IngressHost(

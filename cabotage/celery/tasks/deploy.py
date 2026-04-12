@@ -1047,7 +1047,7 @@ def fetch_ingress(networking_api, release, ingress):
         if exc.status == 404:
             return create_ingress(networking_api, release, ingress)
         raise DeployError(
-            "Unexpected exception fetching Ingress/" f"{k8s_name} in {namespace}: {exc}"
+            f"Unexpected exception fetching Ingress/{k8s_name} in {namespace}: {exc}"
         )
 
 
@@ -1535,7 +1535,7 @@ def render_process_container(
     pod_class = pod_classes[process_pod_cls]
     return kubernetes.client.V1Container(
         name=process_name,
-        image=f'{current_app.config["REGISTRY_PULL"]}/{release.repository_name}:release-{release.version}',
+        image=f"{current_app.config['REGISTRY_PULL']}/{release.repository_name}:release-{release.version}",
         image_pull_policy="Always",
         env=[
             kubernetes.client.V1EnvVar(
@@ -1604,10 +1604,12 @@ def render_datadog_container(dd_api_key, datadog_tags):
             kubernetes.client.V1EnvVar(name="DD_APM_ENABLED", value="true"),
             kubernetes.client.V1EnvVar(name="DD_LOGS_ENABLED", value="false"),
             kubernetes.client.V1EnvVar(
-                name="DD_CONFD_PATH", value="/tmp/null"  # nosec
+                name="DD_CONFD_PATH",
+                value="/tmp/null",  # nosec
             ),
             kubernetes.client.V1EnvVar(
-                name="DD_AUTOCONF_TEMPLATE_DIR", value="/tmp/null"  # nosec
+                name="DD_AUTOCONF_TEMPLATE_DIR",
+                value="/tmp/null",  # nosec
             ),
             kubernetes.client.V1EnvVar(name="DD_ENABLE_GOHAI", value="false"),
             kubernetes.client.V1EnvVar(
@@ -1920,11 +1922,30 @@ def create_deployment(
             )
     else:
         try:
-            return apps_api_instance.patch_namespaced_deployment(
-                deployment_object.metadata.name,
-                namespace,
-                deployment_object,
-                field_validation="Ignore",
+            # Use call_api directly to force application/merge-patch+json.
+            # The default patch method uses strategic merge patch, which
+            # merges container lists by name and never removes containers
+            # absent from the new spec. JSON merge patch (RFC 7386) replaces
+            # arrays entirely, ensuring stale containers/initContainers are
+            # cleared.
+            body = apps_api_instance.api_client.sanitize_for_serialization(
+                deployment_object
+            )
+            return apps_api_instance.api_client.call_api(
+                "/apis/apps/v1/namespaces/{namespace}/deployments/{name}",
+                "PATCH",
+                path_params={
+                    "namespace": namespace,
+                    "name": deployment_object.metadata.name,
+                },
+                body=body,
+                header_params={
+                    "Content-Type": "application/merge-patch+json",
+                    "Accept": "application/json",
+                },
+                response_type="V1Deployment",
+                auth_settings=["BearerToken"],
+                _return_http_data_only=True,
             )
         except Exception as exc:
             raise DeployError(
@@ -2044,9 +2065,9 @@ def _get_job_schedule(process_def):
 def _history_limit_for_schedule(schedule, hours=12):
     """Estimate how many times a cron schedule fires in the given window."""
     from croniter import croniter
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     end = now + timedelta(hours=hours)
     it = croniter(schedule, now)
     count = 0

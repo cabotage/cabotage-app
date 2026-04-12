@@ -2,5 +2,5 @@
 
 set -ex
 
-black --check --diff .
+ruff format --check --diff .
 ruff check .

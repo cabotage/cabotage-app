@@ -211,13 +211,13 @@ class TestBuildJobNamespace:
         _run_release_build(release, mock_core, mock_run_job)
 
         for c in mock_core.create_namespaced_config_map.call_args_list:
-            assert (
-                c[0][0] == "cabotage-tenant-builds"
-            ), f"configmap created in wrong ns: {c}"
+            assert c[0][0] == "cabotage-tenant-builds", (
+                f"configmap created in wrong ns: {c}"
+            )
         for c in mock_core.create_namespaced_secret.call_args_list:
-            assert (
-                c[0][0] == "cabotage-tenant-builds"
-            ), f"secret created in wrong ns: {c}"
+            assert c[0][0] == "cabotage-tenant-builds", (
+                f"secret created in wrong ns: {c}"
+            )
 
     def test_release_build_cleans_up_in_tenant_namespace(self, mock_app):
         release = _make_release(org_k8s="myorg", env_k8s="prod")
@@ -227,13 +227,13 @@ class TestBuildJobNamespace:
         _run_release_build(release, mock_core, mock_run_job)
 
         for c in mock_core.delete_namespaced_secret.call_args_list:
-            assert (
-                c[0][1] == "cabotage-tenant-builds"
-            ), f"secret deleted in wrong ns: {c}"
+            assert c[0][1] == "cabotage-tenant-builds", (
+                f"secret deleted in wrong ns: {c}"
+            )
         for c in mock_core.delete_namespaced_config_map.call_args_list:
-            assert (
-                c[0][1] == "cabotage-tenant-builds"
-            ), f"configmap deleted in wrong ns: {c}"
+            assert c[0][1] == "cabotage-tenant-builds", (
+                f"configmap deleted in wrong ns: {c}"
+            )
 
     def test_image_build_runs_in_tenant_namespace(self, mock_app):
         image = _make_image(org_k8s="myorg", env_k8s="staging")
@@ -253,13 +253,13 @@ class TestBuildJobNamespace:
         _run_image_build(image, mock_core, mock_run_job)
 
         for c in mock_core.delete_namespaced_secret.call_args_list:
-            assert (
-                c[0][1] == "cabotage-tenant-builds"
-            ), f"secret deleted in wrong ns: {c}"
+            assert c[0][1] == "cabotage-tenant-builds", (
+                f"secret deleted in wrong ns: {c}"
+            )
         for c in mock_core.delete_namespaced_config_map.call_args_list:
-            assert (
-                c[0][1] == "cabotage-tenant-builds"
-            ), f"configmap deleted in wrong ns: {c}"
+            assert c[0][1] == "cabotage-tenant-builds", (
+                f"configmap deleted in wrong ns: {c}"
+            )
 
     def test_legacy_app_uses_tenant_builds_namespace(self, mock_app):
         release = _make_release(org_k8s="myorg", env_enabled=False)
@@ -329,3 +329,86 @@ class TestBuildCachePVC:
 
         read_call = mock_core.read_namespaced_persistent_volume_claim.call_args
         assert read_call[0][1] == "cabotage-tenant-builds"
+
+
+# ---------------------------------------------------------------------------
+# Docker Hub auth in BuildkitEnv
+# ---------------------------------------------------------------------------
+
+
+_BUILDKIT_CONFIG = {
+    "REGISTRY_AUTH_SECRET": "testsecret",
+    "REGISTRY_BUILD": "registry:5001",
+    "REGISTRY_SECURE": False,
+    "REGISTRY_VERIFY": False,
+    "BUILDKIT_IMAGE": "moby/buildkit:latest",
+}
+
+
+class TestDockerHubAuth:
+    def test_dockerhub_creds_included_when_configured(self):
+        import json
+        from base64 import b64decode
+
+        config = {
+            **_BUILDKIT_CONFIG,
+            "DOCKERHUB_USERNAME": "myuser",
+            "DOCKERHUB_TOKEN": "mytoken",
+        }
+        mock_app = MagicMock()
+        mock_app.config = config
+        with patch.object(build_module, "current_app", mock_app):
+            bke = build_module.BuildkitEnv("test-org/test-app")
+
+        docker_config = json.loads(bke.dockerconfigjson)
+        assert "https://index.docker.io/v1/" in docker_config["auths"]
+        auth = docker_config["auths"]["https://index.docker.io/v1/"]["auth"]
+        assert b64decode(auth).decode() == "myuser:mytoken"
+
+    def test_dockerhub_creds_excluded_when_not_configured(self):
+        import json
+
+        mock_app = MagicMock()
+        mock_app.config = {**_BUILDKIT_CONFIG}
+        with patch.object(build_module, "current_app", mock_app):
+            bke = build_module.BuildkitEnv("test-org/test-app")
+
+        docker_config = json.loads(bke.dockerconfigjson)
+        assert "https://index.docker.io/v1/" not in docker_config["auths"]
+
+    def test_dockerhub_creds_excluded_when_username_only(self):
+        import json
+
+        mock_app = MagicMock()
+        mock_app.config = {**_BUILDKIT_CONFIG, "DOCKERHUB_USERNAME": "myuser"}
+        with patch.object(build_module, "current_app", mock_app):
+            bke = build_module.BuildkitEnv("test-org/test-app")
+
+        docker_config = json.loads(bke.dockerconfigjson)
+        assert "https://index.docker.io/v1/" not in docker_config["auths"]
+
+    def test_dockerhub_creds_excluded_when_token_only(self):
+        import json
+
+        mock_app = MagicMock()
+        mock_app.config = {**_BUILDKIT_CONFIG, "DOCKERHUB_TOKEN": "mytoken"}
+        with patch.object(build_module, "current_app", mock_app):
+            bke = build_module.BuildkitEnv("test-org/test-app")
+
+        docker_config = json.loads(bke.dockerconfigjson)
+        assert "https://index.docker.io/v1/" not in docker_config["auths"]
+
+    def test_internal_registry_auth_always_present(self):
+        import json
+
+        mock_app = MagicMock()
+        mock_app.config = {
+            **_BUILDKIT_CONFIG,
+            "DOCKERHUB_USERNAME": "myuser",
+            "DOCKERHUB_TOKEN": "mytoken",
+        }
+        with patch.object(build_module, "current_app", mock_app):
+            bke = build_module.BuildkitEnv("test-org/test-app")
+
+        docker_config = json.loads(bke.dockerconfigjson)
+        assert "http://registry:5001/v2" in docker_config["auths"]
