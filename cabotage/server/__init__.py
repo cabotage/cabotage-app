@@ -47,6 +47,7 @@ from cabotage.server.ext.kubernetes import Kubernetes
 from cabotage.server.ext.vault_db_creds import VaultDBCreds
 from cabotage.server.ext.github_app import GitHubApp
 from cabotage.server.mfa import CabotageWebauthnUtil
+from cabotage.server.config import validate_tenant_postgres_backup_config
 
 # instantiate the extensions
 bcrypt = Bcrypt()
@@ -219,6 +220,8 @@ def create_app():
         _raw = os.environ.get(f"{_env_prefix}{_key}")
         if _raw is not None:
             app.config[_key] = _raw
+
+    validate_tenant_postgres_backup_config(app.config)
 
     if app.config.get("GITHUB_OAUTH_ONLY"):
         app.config["SECURITY_REGISTERABLE"] = False
