@@ -1,7 +1,7 @@
 """add explicit environment namespace mode
 
 Revision ID: 3d08438ad713
-Revises: 0ccb7fd739a4
+Revises: c2d5d53ebd73
 Create Date: 2026-04-16 20:44:20.750320
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = "3d08438ad713"
-down_revision = "0ccb7fd739a4"
+down_revision = "c2d5d53ebd73"
 branch_labels = None
 depends_on = None
 
