@@ -4,6 +4,7 @@ import secrets
 
 import kubernetes
 from celery import shared_task
+from flask import current_app, has_app_context
 from kubernetes.client.rest import ApiException
 
 from cabotage.server import (
@@ -46,6 +47,10 @@ CERTMANAGER_CERT_PLURAL = "certificates"
 TLS_CLUSTER_ISSUER = "operators-ca-issuer"
 # Secret containing the CA cert for TLS verification
 TLS_CA_SECRET = "operators-ca-crt"
+NODE_POOL_LABEL = "cabotage.dev/node-pool"
+DO_NOT_DISRUPT_ANNOTATION = "karpenter.sh/do-not-disrupt"
+HOSTNAME_TOPOLOGY_KEY = "kubernetes.io/hostname"
+ZONE_TOPOLOGY_KEY = "topology.kubernetes.io/zone"
 
 REDIS_IMAGES: dict[str, str] = {
     "8": "quay.io/opstree/redis:v8.6.2",
@@ -106,6 +111,175 @@ def _tls_secret_name(resource):
 
 def _password_secret_name(resource):
     return f"{_resource_k8s_name(resource)}-password"
+
+
+def _backing_services_pool():
+    if not has_app_context():
+        return None
+    return current_app.config.get("BACKING_SERVICES_POOL") or None
+
+
+def _node_selector_for_pool(node_pool):
+    if not node_pool:
+        return None
+    return {NODE_POOL_LABEL: node_pool}
+
+
+def _tolerations_for_pool(node_pool):
+    if not node_pool:
+        return None
+    return [
+        {
+            "key": NODE_POOL_LABEL,
+            "operator": "Equal",
+            "value": node_pool,
+            "effect": "NoSchedule",
+        }
+    ]
+
+
+def _backing_service_pod_annotations():
+    if not _backing_services_pool():
+        return {}
+    return {DO_NOT_DISRUPT_ANNOTATION: "true"}
+
+
+def _preferred_pod_anti_affinity_term(match_labels, topology_key, weight=100):
+    return {
+        "weight": weight,
+        "podAffinityTerm": {
+            "labelSelector": {"matchLabels": match_labels},
+            "topologyKey": topology_key,
+        },
+    }
+
+
+def _required_same_resource_role_anti_affinity(resource, role):
+    return [
+        {
+            "labelSelector": {
+                "matchLabels": {
+                    "cabotage.io/resource-id": str(resource.id),
+                    "role": role,
+                }
+            },
+            "topologyKey": HOSTNAME_TOPOLOGY_KEY,
+        }
+    ]
+
+
+def _cnpg_affinity(resource):
+    node_pool = _backing_services_pool()
+    if not node_pool:
+        return None
+
+    affinity = {
+        "nodeSelector": _node_selector_for_pool(node_pool),
+        "tolerations": _tolerations_for_pool(node_pool),
+    }
+    if resource.ha_enabled:
+        preferred_terms = [
+            _preferred_pod_anti_affinity_term(
+                {"resident-pod.cabotage.io": "true"},
+                HOSTNAME_TOPOLOGY_KEY,
+            ),
+            _preferred_pod_anti_affinity_term(
+                {"cabotage.io/resource-id": str(resource.id)},
+                ZONE_TOPOLOGY_KEY,
+                weight=90,
+            ),
+        ]
+        affinity.update(
+            {
+                "enablePodAntiAffinity": True,
+                "podAntiAffinityType": "required",
+                "topologyKey": HOSTNAME_TOPOLOGY_KEY,
+                "additionalPodAntiAffinity": {
+                    "preferredDuringSchedulingIgnoredDuringExecution": preferred_terms,
+                },
+            }
+        )
+    return affinity
+
+
+def _redis_role_affinity(resource, role, replicas):
+    node_pool = _backing_services_pool()
+    if not node_pool:
+        return None
+
+    preferred_terms = [
+        _preferred_pod_anti_affinity_term(
+            {"resident-pod.cabotage.io": "true"},
+            HOSTNAME_TOPOLOGY_KEY,
+        )
+    ]
+    if replicas > 1:
+        preferred_terms.append(
+            _preferred_pod_anti_affinity_term(
+                {
+                    "cabotage.io/resource-id": str(resource.id),
+                    "role": role,
+                },
+                ZONE_TOPOLOGY_KEY,
+                weight=90,
+            )
+        )
+
+    pod_anti_affinity = {
+        "preferredDuringSchedulingIgnoredDuringExecution": preferred_terms,
+    }
+    if replicas > 1:
+        pod_anti_affinity["requiredDuringSchedulingIgnoredDuringExecution"] = (
+            _required_same_resource_role_anti_affinity(resource, role)
+        )
+
+    return {"podAntiAffinity": pod_anti_affinity}
+
+
+def _redis_statefulset_names(resource, name):
+    if resource.ha_enabled:
+        return [f"{name}-leader", f"{name}-follower"]
+    return [name]
+
+
+def _sync_statefulset_pod_annotations(apps_api, namespace, statefulset_name):
+    managed_keys = {DO_NOT_DISRUPT_ANNOTATION}
+    desired_annotations = _backing_service_pod_annotations()
+
+    try:
+        statefulset = apps_api.read_namespaced_stateful_set(statefulset_name, namespace)
+    except ApiException as exc:
+        if exc.status == 404:
+            log.info(
+                "StatefulSet %s/%s not yet available for pod annotation sync",
+                namespace,
+                statefulset_name,
+            )
+            return
+        raise
+
+    metadata = statefulset.spec.template.metadata
+    current_annotations = dict((metadata.annotations or {}))
+    annotations = {
+        key: value
+        for key, value in current_annotations.items()
+        if key not in managed_keys
+    }
+    annotations.update(desired_annotations)
+
+    if annotations == current_annotations:
+        return
+
+    apps_api.patch_namespaced_stateful_set(
+        statefulset_name,
+        namespace,
+        {"spec": {"template": {"metadata": {"annotations": annotations}}}},
+    )
+    log.info(
+        "Patched StatefulSet %s/%s pod annotations for backing-service placement",
+        namespace,
+        statefulset_name,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -460,6 +634,13 @@ def _render_cnpg_cluster(resource):
 
     pod_labels = _resource_pod_labels(resource)
 
+    inherited_metadata = {
+        "labels": pod_labels,
+    }
+    pod_annotations = _backing_service_pod_annotations()
+    if pod_annotations:
+        inherited_metadata["annotations"] = pod_annotations
+
     cluster = {
         "apiVersion": f"{CNPG_GROUP}/{CNPG_VERSION}",
         "kind": "Cluster",
@@ -470,9 +651,7 @@ def _render_cnpg_cluster(resource):
         "spec": {
             "instances": instances,
             "imageName": POSTGRES_IMAGES[resource.service_version],
-            "inheritedMetadata": {
-                "labels": pod_labels,
-            },
+            "inheritedMetadata": inherited_metadata,
             "certificates": {
                 "serverTLSSecret": _tls_secret_name(resource),
                 "serverCASecret": TLS_CA_SECRET,
@@ -495,6 +674,9 @@ def _render_cnpg_cluster(resource):
             },
         },
     }
+    affinity = _cnpg_affinity(resource)
+    if affinity:
+        cluster["spec"]["affinity"] = affinity
 
     # Backup configuration
     # TODO: backups require per-tenant object storage credentials (S3 bucket +
@@ -514,7 +696,7 @@ def _render_cnpg_cluster(resource):
 def _redis_spec_common(resource):
     """Return the common spec fields for both Redis and RedisCluster."""
     size = redis_size_classes[resource.size_class]
-    return {
+    spec = {
         "TLS": {
             "secret": {
                 "optional": False,
@@ -554,6 +736,11 @@ def _redis_spec_common(resource):
             },
         },
     }
+    node_pool = _backing_services_pool()
+    if node_pool:
+        spec["nodeSelector"] = _node_selector_for_pool(node_pool)
+        spec["tolerations"] = _tolerations_for_pool(node_pool)
+    return spec
 
 
 def _render_redis_standalone(resource):
@@ -577,8 +764,19 @@ def _render_redis_cluster(resource):
     spec["clusterSize"] = max(resource.leader_replicas, resource.follower_replicas)
     spec["clusterVersion"] = f"v{resource.service_version}"
     spec["persistenceEnabled"] = True
-    spec["redisLeader"] = {"replicas": resource.leader_replicas}
-    spec["redisFollower"] = {"replicas": resource.follower_replicas}
+    redis_leader = {"replicas": resource.leader_replicas}
+    leader_affinity = _redis_role_affinity(resource, "leader", resource.leader_replicas)
+    if leader_affinity:
+        redis_leader["affinity"] = leader_affinity
+    spec["redisLeader"] = redis_leader
+
+    redis_follower = {"replicas": resource.follower_replicas}
+    follower_affinity = _redis_role_affinity(
+        resource, "follower", resource.follower_replicas
+    )
+    if follower_affinity:
+        redis_follower["affinity"] = follower_affinity
+    spec["redisFollower"] = redis_follower
 
     return {
         "apiVersion": f"{REDIS_GROUP}/{REDIS_VERSION}",
@@ -596,7 +794,7 @@ def _render_redis_cluster(resource):
 # ---------------------------------------------------------------------------
 
 
-def _reconcile_postgres(resource, core_api, custom_api):
+def _reconcile_postgres(resource, core_api, custom_api, apps_api=None):
     """Converge a single PostgresResource to its desired K8s state."""
     namespace = _resource_namespace(resource)
     name = _resource_k8s_name(resource)
@@ -658,7 +856,7 @@ def _reconcile_postgres(resource, core_api, custom_api):
         resource.provisioning_error = None
 
 
-def _reconcile_redis(resource, core_api, custom_api):
+def _reconcile_redis(resource, core_api, custom_api, apps_api=None):
     """Converge a single RedisResource to its desired K8s state."""
     namespace = _resource_namespace(resource)
     name = _resource_k8s_name(resource)
@@ -692,6 +890,9 @@ def _reconcile_redis(resource, core_api, custom_api):
         name,
         body,
     )
+    if apps_api is not None:
+        for statefulset_name in _redis_statefulset_names(resource, name):
+            _sync_statefulset_pod_annotations(apps_api, namespace, statefulset_name)
 
     password_secret = core_api.read_namespaced_secret(
         _password_secret_name(resource), namespace
@@ -729,7 +930,7 @@ def _reconcile_redis(resource, core_api, custom_api):
     resource.provisioning_error = health_reason
 
 
-def _delete_postgres(resource, core_api, custom_api):
+def _delete_postgres(resource, core_api, custom_api, apps_api=None):
     """Remove all K8s objects for a deleted PostgresResource."""
     namespace = _resource_namespace(resource)
     name = _resource_k8s_name(resource)
@@ -759,7 +960,7 @@ def _delete_postgres(resource, core_api, custom_api):
     log.info("Cleaned up PostgresResource %s (%s/%s)", resource.id, namespace, name)
 
 
-def _delete_redis(resource, core_api, custom_api):
+def _delete_redis(resource, core_api, custom_api, apps_api=None):
     """Remove all K8s objects for a deleted RedisResource."""
     namespace = _resource_namespace(resource)
     name = _resource_k8s_name(resource)
@@ -820,6 +1021,7 @@ def reconcile_backing_services():
     api_client = kubernetes_ext.kubernetes_client
     core_api = kubernetes.client.CoreV1Api(api_client)
     custom_api = kubernetes.client.CustomObjectsApi(api_client)
+    apps_api = kubernetes.client.AppsV1Api(api_client)
 
     for resource in resources:
         entry = _RECONCILERS.get(resource.type)
@@ -829,11 +1031,11 @@ def reconcile_backing_services():
 
         try:
             if resource.deleted_at is not None:
-                delete_fn(resource, core_api, custom_api)
+                delete_fn(resource, core_api, custom_api, apps_api)
                 resource.provisioning_status = "deleted"
                 db.session.commit()
             else:
-                reconcile_fn(resource, core_api, custom_api)
+                reconcile_fn(resource, core_api, custom_api, apps_api)
                 db.session.commit()
         except Exception:
             log.exception(

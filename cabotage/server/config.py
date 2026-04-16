@@ -92,6 +92,7 @@ class Config(metaclass=MetaFlaskEnv):
     KUBERNETES_ENABLED = False
     KUBERNETES_CONTEXT = "cabotage"
     NETWORK_POLICIES_ENABLED = False
+    BACKING_SERVICES_POOL = None
     GITHUB_APP_ID = None
     GITHUB_APP_PRIVATE_KEY = None
     GITHUB_WEBHOOK_SECRET = None
