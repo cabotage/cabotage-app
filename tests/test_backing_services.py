@@ -138,6 +138,73 @@ def _login(client, user):
         sess["identity.auth_type"] = "session"
 
 
+def _configure_s3_tenant_postgres_backups(app):
+    app.config.update(
+        {
+            "TENANT_POSTGRES_BACKUPS_ENABLED": True,
+            "TENANT_POSTGRES_BACKUP_PROVIDER": "s3",
+            "TENANT_POSTGRES_BACKUP_BUCKET": "tenant-postgres-backups",
+            "TENANT_POSTGRES_BACKUP_IRSA_ROLE_ARN": (
+                "arn:aws:iam::123456789012:role/tenant-postgres-backups"
+            ),
+            "TENANT_POSTGRES_BACKUP_PATH_PREFIX": "tenants",
+            "TENANT_POSTGRES_BACKUP_PLUGIN_NAME": "barman-cloud.cloudnative-pg.io",
+            "TENANT_POSTGRES_BACKUP_RETENTION_POLICY": "30d",
+            "TENANT_POSTGRES_BACKUP_SCHEDULE": "0 0 0 * * *",
+            "TENANT_POSTGRES_BACKUP_SERVICE_ACCOUNT_NAME": "cnpg-backups",
+            "TENANT_POSTGRES_BACKUP_RUSTFS_ENDPOINT": None,
+            "TENANT_POSTGRES_BACKUP_RUSTFS_CA_SECRET_NAME": "operators-ca-crt",
+            "TENANT_POSTGRES_BACKUP_RUSTFS_SECRET_NAME": "cnpg-backups-objectstore",
+            "TENANT_POSTGRES_BACKUP_RUSTFS_SOURCE_SECRET_NAME": None,
+            "TENANT_POSTGRES_BACKUP_RUSTFS_SOURCE_SECRET_NAMESPACE": None,
+        }
+    )
+
+
+def _configure_rustfs_tenant_postgres_backups(app):
+    app.config.update(
+        {
+            "TENANT_POSTGRES_BACKUPS_ENABLED": True,
+            "TENANT_POSTGRES_BACKUP_PROVIDER": "rustfs",
+            "TENANT_POSTGRES_BACKUP_BUCKET": "cabotage-postgres-backups",
+            "TENANT_POSTGRES_BACKUP_IRSA_ROLE_ARN": None,
+            "TENANT_POSTGRES_BACKUP_PATH_PREFIX": "tenants",
+            "TENANT_POSTGRES_BACKUP_PLUGIN_NAME": "barman-cloud.cloudnative-pg.io",
+            "TENANT_POSTGRES_BACKUP_RETENTION_POLICY": "30d",
+            "TENANT_POSTGRES_BACKUP_SCHEDULE": "0 0 0 * * *",
+            "TENANT_POSTGRES_BACKUP_SERVICE_ACCOUNT_NAME": "cnpg-backups",
+            "TENANT_POSTGRES_BACKUP_RUSTFS_ENDPOINT": (
+                "https://rustfs.cabotage.svc.cluster.local:9000"
+            ),
+            "TENANT_POSTGRES_BACKUP_RUSTFS_CA_SECRET_NAME": "operators-ca-crt",
+            "TENANT_POSTGRES_BACKUP_RUSTFS_SECRET_NAME": "cnpg-backups-objectstore",
+            "TENANT_POSTGRES_BACKUP_RUSTFS_SOURCE_SECRET_NAME": "rustfs-source",
+            "TENANT_POSTGRES_BACKUP_RUSTFS_SOURCE_SECRET_NAMESPACE": "postgres",
+        }
+    )
+
+
+def _reset_tenant_postgres_backups(app):
+    app.config.update(
+        {
+            "TENANT_POSTGRES_BACKUPS_ENABLED": False,
+            "TENANT_POSTGRES_BACKUP_PROVIDER": None,
+            "TENANT_POSTGRES_BACKUP_BUCKET": None,
+            "TENANT_POSTGRES_BACKUP_IRSA_ROLE_ARN": None,
+            "TENANT_POSTGRES_BACKUP_PATH_PREFIX": "tenants",
+            "TENANT_POSTGRES_BACKUP_PLUGIN_NAME": "barman-cloud.cloudnative-pg.io",
+            "TENANT_POSTGRES_BACKUP_RETENTION_POLICY": "30d",
+            "TENANT_POSTGRES_BACKUP_SCHEDULE": "0 0 0 * * *",
+            "TENANT_POSTGRES_BACKUP_SERVICE_ACCOUNT_NAME": "cnpg-backups",
+            "TENANT_POSTGRES_BACKUP_RUSTFS_ENDPOINT": None,
+            "TENANT_POSTGRES_BACKUP_RUSTFS_CA_SECRET_NAME": "operators-ca-crt",
+            "TENANT_POSTGRES_BACKUP_RUSTFS_SECRET_NAME": "cnpg-backups-objectstore",
+            "TENANT_POSTGRES_BACKUP_RUSTFS_SOURCE_SECRET_NAME": None,
+            "TENANT_POSTGRES_BACKUP_RUSTFS_SOURCE_SECRET_NAMESPACE": None,
+        }
+    )
+
+
 # ---------------------------------------------------------------------------
 # Model tests
 # ---------------------------------------------------------------------------
@@ -835,6 +902,7 @@ class TestCeleryTasks:
         mock_custom_api = MagicMock()
         mock_core_api = MagicMock()
         mock_apps_api = MagicMock()
+        mock_rbac_api = MagicMock()
 
         def _get_custom_object(group, version, namespace, plural, name):
             key = (group, plural, namespace, name)
@@ -905,7 +973,10 @@ class TestCeleryTasks:
             return statefulset
 
         mock_apps_api.read_namespaced_stateful_set.side_effect = _read_statefulset
-        return mock_custom_api, mock_core_api, mock_apps_api
+        mock_rbac_api.read_namespaced_role_binding.side_effect = ApiException(
+            status=404
+        )
+        return mock_custom_api, mock_core_api, mock_apps_api, mock_rbac_api
 
     def test_reconcile_postgres_creates_crd(self, app, environment):
         from cabotage.celery.tasks.resources import _reconcile_postgres
@@ -922,8 +993,15 @@ class TestCeleryTasks:
         db.session.add(r)
         db.session.commit()
 
-        mock_custom_api, mock_core_api, mock_apps_api = self._mock_k8s_apis()
-        _reconcile_postgres(r, mock_core_api, mock_custom_api, mock_apps_api)
+        (
+            mock_custom_api,
+            mock_core_api,
+            mock_apps_api,
+            mock_rbac_api,
+        ) = self._mock_k8s_apis()
+        _reconcile_postgres(
+            r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api
+        )
 
         create_calls = mock_custom_api.create_namespaced_custom_object.call_args_list
         assert len(create_calls) == 2
@@ -939,6 +1017,406 @@ class TestCeleryTasks:
         assert r.provisioning_status == "ready"
         assert r.connection_info["port"] == "5432"
         assert r.connection_info["sslmode"] == "verify-full"
+
+    def test_reconcile_postgres_with_backups_creates_object_store_and_schedule(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import _reconcile_postgres
+
+        _configure_s3_tenant_postgres_backups(app)
+        try:
+            r = PostgresResource(
+                service_version="18",
+                environment_id=environment.id,
+                name="Backed Up PG",
+                size_class="db.small",
+                storage_size=5,
+                backup_strategy="daily",
+                postgres_parameters=compute_postgres_parameters("db.small"),
+            )
+            db.session.add(r)
+            db.session.commit()
+
+            (
+                mock_custom_api,
+                mock_core_api,
+                mock_apps_api,
+                mock_rbac_api,
+            ) = self._mock_k8s_apis()
+
+            def _get_custom_object(group, version, namespace, plural, name):
+                key = (group, plural, namespace, name)
+                seen = getattr(_get_custom_object, "_seen", set())
+                if key not in seen:
+                    seen.add(key)
+                    _get_custom_object._seen = seen
+                    raise ApiException(status=404)
+
+                if group == "postgresql.cnpg.io" and plural == "clusters":
+                    return {
+                        "status": {
+                            "conditions": [
+                                {"type": "Ready", "status": "True"},
+                                {
+                                    "type": "ContinuousArchiving",
+                                    "status": "True",
+                                },
+                            ],
+                            "pluginStatus": [
+                                {"name": "barman-cloud.cloudnative-pg.io"}
+                            ],
+                            "readyInstances": 1,
+                            "currentPrimary": f"{name}-1",
+                        }
+                    }
+
+                raise ApiException(status=404)
+
+            mock_custom_api.get_namespaced_custom_object.side_effect = (
+                _get_custom_object
+            )
+
+            _reconcile_postgres(
+                r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api
+            )
+
+            create_calls = (
+                mock_custom_api.create_namespaced_custom_object.call_args_list
+            )
+            created_plurals = [call[0][3] for call in create_calls]
+            assert created_plurals == [
+                "objectstores",
+                "certificates",
+                "clusters",
+                "scheduledbackups",
+            ]
+
+            object_store_body = create_calls[0][0][4]
+            cluster_body = create_calls[2][0][4]
+            scheduled_backup_body = create_calls[3][0][4]
+
+            assert object_store_body["kind"] == "ObjectStore"
+            assert (
+                object_store_body["spec"]["configuration"]["s3Credentials"][
+                    "inheritFromIAMRole"
+                ]
+                is True
+            )
+            assert cluster_body["spec"]["serviceAccountName"] == "cnpg-backups"
+            assert cluster_body["spec"]["plugins"][0]["parameters"][
+                "barmanObjectName"
+            ].endswith("-backups")
+            assert "isWALArchiver" not in cluster_body["spec"]["plugins"][0]
+            assert scheduled_backup_body["kind"] == "ScheduledBackup"
+            assert scheduled_backup_body["spec"]["immediate"] is True
+            assert scheduled_backup_body["spec"]["pluginConfiguration"]["name"] == (
+                "barman-cloud.cloudnative-pg.io"
+            )
+            mock_core_api.replace_namespaced_service_account.assert_called_once()
+            assert r.provisioning_status == "ready"
+        finally:
+            _reset_tenant_postgres_backups(app)
+
+    def test_reconcile_postgres_daily_backups_do_not_require_continuous_archiving(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import _reconcile_postgres
+
+        _configure_s3_tenant_postgres_backups(app)
+        try:
+            r = PostgresResource(
+                service_version="18",
+                environment_id=environment.id,
+                name="Daily Backup PG",
+                size_class="db.small",
+                storage_size=5,
+                backup_strategy="daily",
+                postgres_parameters=compute_postgres_parameters("db.small"),
+            )
+            db.session.add(r)
+            db.session.commit()
+
+            (
+                mock_custom_api,
+                mock_core_api,
+                mock_apps_api,
+                mock_rbac_api,
+            ) = self._mock_k8s_apis()
+
+            def _get_custom_object(group, version, namespace, plural, name):
+                key = (group, plural, namespace, name)
+                seen = getattr(_get_custom_object, "_seen", set())
+                if key not in seen:
+                    seen.add(key)
+                    _get_custom_object._seen = seen
+                    raise ApiException(status=404)
+
+                if group == "postgresql.cnpg.io" and plural == "clusters":
+                    return {
+                        "status": {
+                            "conditions": [{"type": "Ready", "status": "True"}],
+                            "pluginStatus": [
+                                {"name": "barman-cloud.cloudnative-pg.io"}
+                            ],
+                            "readyInstances": 1,
+                            "currentPrimary": f"{name}-1",
+                        }
+                    }
+
+                raise ApiException(status=404)
+
+            mock_custom_api.get_namespaced_custom_object.side_effect = (
+                _get_custom_object
+            )
+
+            _reconcile_postgres(
+                r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api
+            )
+
+            created_plurals = [
+                call[0][3]
+                for call in mock_custom_api.create_namespaced_custom_object.call_args_list
+            ]
+            assert created_plurals == [
+                "objectstores",
+                "certificates",
+                "clusters",
+                "scheduledbackups",
+            ]
+            assert r.provisioning_status == "ready"
+        finally:
+            _reset_tenant_postgres_backups(app)
+
+    def test_reconcile_postgres_streaming_waits_for_continuous_archiving_before_schedule(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import _reconcile_postgres
+
+        _configure_s3_tenant_postgres_backups(app)
+        try:
+            r = PostgresResource(
+                service_version="18",
+                environment_id=environment.id,
+                name="Pending Streaming Backup PG",
+                size_class="db.small",
+                storage_size=5,
+                backup_strategy="streaming",
+                postgres_parameters=compute_postgres_parameters("db.small"),
+            )
+            db.session.add(r)
+            db.session.commit()
+
+            (
+                mock_custom_api,
+                mock_core_api,
+                mock_apps_api,
+                mock_rbac_api,
+            ) = self._mock_k8s_apis()
+
+            def _get_custom_object(group, version, namespace, plural, name):
+                key = (group, plural, namespace, name)
+                seen = getattr(_get_custom_object, "_seen", set())
+                if key not in seen:
+                    seen.add(key)
+                    _get_custom_object._seen = seen
+                    raise ApiException(status=404)
+
+                if group == "postgresql.cnpg.io" and plural == "clusters":
+                    return {
+                        "status": {
+                            "conditions": [{"type": "Ready", "status": "True"}],
+                            "readyInstances": 1,
+                            "currentPrimary": f"{name}-1",
+                        }
+                    }
+
+                raise ApiException(status=404)
+
+            mock_custom_api.get_namespaced_custom_object.side_effect = (
+                _get_custom_object
+            )
+
+            _reconcile_postgres(
+                r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api
+            )
+
+            created_plurals = [
+                call[0][3]
+                for call in mock_custom_api.create_namespaced_custom_object.call_args_list
+            ]
+            assert created_plurals == ["objectstores", "certificates", "clusters"]
+            assert r.provisioning_status == "ready"
+        finally:
+            _reset_tenant_postgres_backups(app)
+
+    def test_reconcile_postgres_with_rustfs_backups_copies_secret(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import _reconcile_postgres
+
+        _configure_rustfs_tenant_postgres_backups(app)
+        try:
+            r = PostgresResource(
+                service_version="18",
+                environment_id=environment.id,
+                name="RustFS Backup PG",
+                size_class="db.small",
+                storage_size=5,
+                backup_strategy="daily",
+                postgres_parameters=compute_postgres_parameters("db.small"),
+            )
+            db.session.add(r)
+            db.session.commit()
+
+            (
+                mock_custom_api,
+                mock_core_api,
+                mock_apps_api,
+                mock_rbac_api,
+            ) = self._mock_k8s_apis()
+            base_read_secret = mock_core_api.read_namespaced_secret.side_effect
+
+            def _read_secret(name, namespace):
+                if name == "rustfs-source" and namespace == "postgres":
+                    secret = MagicMock()
+                    secret.type = "Opaque"
+                    secret.data = {
+                        "access-key-id": "YWNjZXNz",
+                        "secret-key": "c2VjcmV0",
+                        "region": "dXMtZWFzdC0x",
+                    }
+                    return secret
+                return base_read_secret(name, namespace)
+
+            mock_core_api.read_namespaced_secret.side_effect = _read_secret
+
+            _reconcile_postgres(
+                r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api
+            )
+
+            replaced_secret_names = [
+                call[0][0]
+                for call in mock_core_api.replace_namespaced_secret.call_args_list
+            ]
+            assert "cnpg-backups-objectstore" in replaced_secret_names
+        finally:
+            _reset_tenant_postgres_backups(app)
+
+    def test_reconcile_postgres_repairs_barman_rolebinding_subject(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import _reconcile_postgres
+
+        _configure_s3_tenant_postgres_backups(app)
+        try:
+            r = PostgresResource(
+                service_version="18",
+                environment_id=environment.id,
+                name="Migrated Backup PG",
+                size_class="db.small",
+                storage_size=5,
+                backup_strategy="daily",
+                postgres_parameters=compute_postgres_parameters("db.small"),
+            )
+            db.session.add(r)
+            db.session.commit()
+
+            (
+                mock_custom_api,
+                mock_core_api,
+                mock_apps_api,
+                mock_rbac_api,
+            ) = self._mock_k8s_apis()
+
+            rolebinding = MagicMock()
+            rolebinding.subjects = [
+                MagicMock(
+                    kind="ServiceAccount",
+                    name="old-cluster-name",
+                    namespace=environment.k8s_namespace,
+                )
+            ]
+            mock_rbac_api.read_namespaced_role_binding.side_effect = None
+            mock_rbac_api.read_namespaced_role_binding.return_value = rolebinding
+
+            _reconcile_postgres(
+                r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api
+            )
+
+            patch_call = mock_rbac_api.patch_namespaced_role_binding.call_args
+            assert patch_call[0][0].endswith("-barman-cloud")
+            assert patch_call[0][1] == environment.k8s_namespace
+            assert patch_call[0][2]["subjects"] == [
+                {
+                    "kind": "ServiceAccount",
+                    "name": "cnpg-backups",
+                    "namespace": environment.k8s_namespace,
+                }
+            ]
+        finally:
+            _reset_tenant_postgres_backups(app)
+
+    def test_reconcile_postgres_patches_scheduled_backup_without_immediate(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import _reconcile_postgres
+
+        _configure_s3_tenant_postgres_backups(app)
+        try:
+            r = PostgresResource(
+                service_version="18",
+                environment_id=environment.id,
+                name="Existing Schedule PG",
+                size_class="db.small",
+                storage_size=5,
+                backup_strategy="daily",
+                postgres_parameters=compute_postgres_parameters("db.small"),
+            )
+            db.session.add(r)
+            db.session.commit()
+
+            (
+                mock_custom_api,
+                mock_core_api,
+                mock_apps_api,
+                mock_rbac_api,
+            ) = self._mock_k8s_apis()
+
+            def _get_custom_object(group, version, namespace, plural, name):
+                if group == "cert-manager.io":
+                    raise ApiException(status=404)
+                if group == "postgresql.cnpg.io" and plural == "clusters":
+                    return {
+                        "status": {
+                            "conditions": [{"type": "Ready", "status": "True"}],
+                            "pluginStatus": [
+                                {"name": "barman-cloud.cloudnative-pg.io"}
+                            ],
+                            "readyInstances": 1,
+                            "currentPrimary": f"{name}-1",
+                        }
+                    }
+                if group == "barmancloud.cnpg.io" and plural == "objectstores":
+                    return {"metadata": {"name": name}}
+                if group == "postgresql.cnpg.io" and plural == "scheduledbackups":
+                    return {"metadata": {"name": name}}
+                raise ApiException(status=404)
+
+            mock_custom_api.get_namespaced_custom_object.side_effect = (
+                _get_custom_object
+            )
+
+            _reconcile_postgres(
+                r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api
+            )
+
+            patch_calls = mock_custom_api.patch_namespaced_custom_object.call_args_list
+            scheduled_backup_patch = [
+                call for call in patch_calls if call[0][3] == "scheduledbackups"
+            ][0]
+            assert "immediate" not in scheduled_backup_patch[0][5]["spec"]
+        finally:
+            _reset_tenant_postgres_backups(app)
 
     def test_reconcile_postgres_stays_provisioning_until_cluster_ready(
         self, app, environment
@@ -957,7 +1435,12 @@ class TestCeleryTasks:
         db.session.add(r)
         db.session.commit()
 
-        mock_custom_api, mock_core_api, mock_apps_api = self._mock_k8s_apis()
+        (
+            mock_custom_api,
+            mock_core_api,
+            mock_apps_api,
+            mock_rbac_api,
+        ) = self._mock_k8s_apis()
 
         def _get_custom_object(group, version, namespace, plural, name):
             if group == "cert-manager.io":
@@ -968,7 +1451,9 @@ class TestCeleryTasks:
 
         mock_custom_api.get_namespaced_custom_object.side_effect = _get_custom_object
 
-        _reconcile_postgres(r, mock_core_api, mock_custom_api, mock_apps_api)
+        _reconcile_postgres(
+            r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api
+        )
 
         assert r.provisioning_status == "provisioning"
         assert r.provisioning_error is None
@@ -987,8 +1472,15 @@ class TestCeleryTasks:
         db.session.add(r)
         db.session.commit()
 
-        mock_custom_api, mock_core_api, mock_apps_api = self._mock_k8s_apis()
-        _reconcile_redis(r, mock_core_api, mock_custom_api, mock_apps_api)
+        (
+            mock_custom_api,
+            mock_core_api,
+            mock_apps_api,
+            mock_rbac_api,
+        ) = self._mock_k8s_apis()
+        _reconcile_redis(
+            r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api
+        )
 
         create_calls = mock_custom_api.create_namespaced_custom_object.call_args_list
         assert len(create_calls) == 2
@@ -1024,7 +1516,12 @@ class TestCeleryTasks:
         db.session.add(r)
         db.session.commit()
 
-        mock_custom_api, mock_core_api, mock_apps_api = self._mock_k8s_apis()
+        (
+            mock_custom_api,
+            mock_core_api,
+            mock_apps_api,
+            mock_rbac_api,
+        ) = self._mock_k8s_apis()
         pending_pod = MagicMock()
         pending_pod.metadata.deletion_timestamp = None
         pending_pod.status.phase = "Pending"
@@ -1032,7 +1529,9 @@ class TestCeleryTasks:
         pending_pod.status.container_statuses = []
         mock_core_api.read_namespaced_pod.return_value = pending_pod
 
-        _reconcile_redis(r, mock_core_api, mock_custom_api, mock_apps_api)
+        _reconcile_redis(
+            r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api
+        )
 
         assert r.provisioning_status == "provisioning"
         assert r.provisioning_error is None
@@ -1051,8 +1550,15 @@ class TestCeleryTasks:
         db.session.add(r)
         db.session.commit()
 
-        mock_custom_api, mock_core_api, mock_apps_api = self._mock_k8s_apis()
-        _reconcile_redis(r, mock_core_api, mock_custom_api, mock_apps_api)
+        (
+            mock_custom_api,
+            mock_core_api,
+            mock_apps_api,
+            mock_rbac_api,
+        ) = self._mock_k8s_apis()
+        _reconcile_redis(
+            r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api
+        )
 
         create_calls = mock_custom_api.create_namespaced_custom_object.call_args_list
         cluster_call = create_calls[-1]
@@ -1104,7 +1610,12 @@ class TestCeleryTasks:
         db.session.add(r)
         db.session.commit()
 
-        mock_custom_api, mock_core_api, mock_apps_api = self._mock_k8s_apis()
+        (
+            mock_custom_api,
+            mock_core_api,
+            mock_apps_api,
+            mock_rbac_api,
+        ) = self._mock_k8s_apis()
 
         def _get_custom_object(group, version, namespace, plural, name):
             key = (group, plural, namespace, name)
@@ -1125,7 +1636,9 @@ class TestCeleryTasks:
 
         mock_custom_api.get_namespaced_custom_object.side_effect = _get_custom_object
 
-        _reconcile_redis(r, mock_core_api, mock_custom_api, mock_apps_api)
+        _reconcile_redis(
+            r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api
+        )
 
         body = mock_custom_api.create_namespaced_custom_object.call_args_list[-1][0][4]
         assert body["spec"]["clusterSize"] == 4
@@ -1149,7 +1662,12 @@ class TestCeleryTasks:
         db.session.add(r)
         db.session.commit()
 
-        mock_custom_api, mock_core_api, mock_apps_api = self._mock_k8s_apis()
+        (
+            mock_custom_api,
+            mock_core_api,
+            mock_apps_api,
+            mock_rbac_api,
+        ) = self._mock_k8s_apis()
 
         def _get_custom_object(group, version, namespace, plural, name):
             if group == "cert-manager.io":
@@ -1166,7 +1684,9 @@ class TestCeleryTasks:
 
         mock_custom_api.get_namespaced_custom_object.side_effect = _get_custom_object
 
-        _reconcile_redis(r, mock_core_api, mock_custom_api, mock_apps_api)
+        _reconcile_redis(
+            r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api
+        )
 
         assert r.provisioning_status == "provisioning"
         assert r.provisioning_error is None
@@ -1187,7 +1707,12 @@ class TestCeleryTasks:
         db.session.add(r)
         db.session.commit()
 
-        mock_custom_api, mock_core_api, mock_apps_api = self._mock_k8s_apis()
+        (
+            mock_custom_api,
+            mock_core_api,
+            mock_apps_api,
+            mock_rbac_api,
+        ) = self._mock_k8s_apis()
         crashed_pod = MagicMock()
         crashed_pod.metadata.deletion_timestamp = None
         crashed_pod.status.phase = "Running"
@@ -1202,7 +1727,9 @@ class TestCeleryTasks:
         ]
         mock_core_api.read_namespaced_pod.return_value = crashed_pod
 
-        _reconcile_redis(r, mock_core_api, mock_custom_api, mock_apps_api)
+        _reconcile_redis(
+            r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api
+        )
 
         assert r.provisioning_status == "error"
         assert "CrashLoopBackOff" in r.provisioning_error
@@ -1225,10 +1752,13 @@ class TestCeleryTasks:
         mock_custom_api = MagicMock()
         mock_core_api = MagicMock()
         mock_apps_api = MagicMock()
+        mock_rbac_api = MagicMock()
         mock_core_api.read_namespaced_secret.side_effect = Exception("K8s unreachable")
 
         with pytest.raises(Exception, match="K8s unreachable"):
-            _reconcile_postgres(r, mock_core_api, mock_custom_api, mock_apps_api)
+            _reconcile_postgres(
+                r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api
+            )
 
     def test_delete_postgres(self, app, environment):
         from cabotage.celery.tasks.resources import _delete_postgres
@@ -1248,9 +1778,12 @@ class TestCeleryTasks:
         mock_custom_api = MagicMock()
         mock_core_api = MagicMock()
         mock_apps_api = MagicMock()
-        _delete_postgres(r, mock_core_api, mock_custom_api, mock_apps_api)
+        mock_rbac_api = MagicMock()
+        _delete_postgres(
+            r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api
+        )
 
-        assert mock_custom_api.delete_namespaced_custom_object.call_count == 2
+        assert mock_custom_api.delete_namespaced_custom_object.call_count == 4
         mock_core_api.delete_namespaced_secret.assert_called_once()
 
     def test_delete_redis(self, app, environment):
@@ -1270,7 +1803,8 @@ class TestCeleryTasks:
         mock_custom_api = MagicMock()
         mock_core_api = MagicMock()
         mock_apps_api = MagicMock()
-        _delete_redis(r, mock_core_api, mock_custom_api, mock_apps_api)
+        mock_rbac_api = MagicMock()
+        _delete_redis(r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api)
 
         assert mock_custom_api.delete_namespaced_custom_object.call_count == 3
         assert mock_core_api.delete_namespaced_secret.call_count == 2
@@ -1293,8 +1827,15 @@ class TestCeleryTasks:
             db.session.add(r)
             db.session.commit()
 
-            mock_custom_api, mock_core_api, mock_apps_api = self._mock_k8s_apis()
-            _reconcile_redis(r, mock_core_api, mock_custom_api, mock_apps_api)
+            (
+                mock_custom_api,
+                mock_core_api,
+                mock_apps_api,
+                mock_rbac_api,
+            ) = self._mock_k8s_apis()
+            _reconcile_redis(
+                r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api
+            )
 
             patch_body = mock_apps_api.patch_namespaced_stateful_set.call_args[0][2]
             assert (
@@ -1341,8 +1882,7 @@ class TestCRDRendering:
         assert "certificates" in crd["spec"]
         assert crd["spec"]["certificates"]["serverCASecret"] == "operators-ca-crt"
         assert crd["spec"]["certificates"]["serverTLSSecret"].endswith("-tls")
-        # backup not yet wired (requires object storage credentials)
-        assert "backup" not in crd["spec"]
+        assert "plugins" not in crd["spec"]
 
     def test_cnpg_cluster_adds_backing_services_pool_placement(self, app, environment):
         from cabotage.celery.tasks.resources import _render_cnpg_cluster
@@ -1417,8 +1957,7 @@ class TestCRDRendering:
 
         crd = _render_cnpg_cluster(r)
         assert crd["spec"]["instances"] == 2
-        # backup not yet wired (requires object storage credentials)
-        assert "backup" not in crd["spec"]
+        assert "plugins" not in crd["spec"]
 
     def test_cnpg_cluster_no_backup(self, app, environment):
         from cabotage.celery.tasks.resources import _render_cnpg_cluster
@@ -1437,7 +1976,165 @@ class TestCRDRendering:
         db.session.flush()
 
         crd = _render_cnpg_cluster(r)
-        assert "backup" not in crd["spec"]
+        assert "plugins" not in crd["spec"]
+
+    def test_cnpg_cluster_adds_backup_plugin_when_enabled(self, app, environment):
+        from cabotage.celery.tasks.resources import (
+            _render_cnpg_cluster,
+            _resource_k8s_name,
+        )
+
+        _configure_s3_tenant_postgres_backups(app)
+        try:
+            r = PostgresResource(
+                service_version="18",
+                environment_id=environment.id,
+                name="Backed Up DB",
+                size_class="db.medium",
+                storage_size=10,
+                ha_enabled=True,
+                backup_strategy="daily",
+                postgres_parameters=compute_postgres_parameters("db.medium"),
+            )
+            db.session.add(r)
+            db.session.flush()
+
+            crd = _render_cnpg_cluster(r)
+            assert crd["spec"]["serviceAccountName"] == "cnpg-backups"
+            assert crd["spec"]["plugins"] == [
+                {
+                    "name": "barman-cloud.cloudnative-pg.io",
+                    "parameters": {
+                        "barmanObjectName": f"{_resource_k8s_name(r)}-backups",
+                        "serverName": _resource_k8s_name(r),
+                    },
+                }
+            ]
+        finally:
+            _reset_tenant_postgres_backups(app)
+
+    def test_cnpg_cluster_streaming_backup_enables_wal_archiver(self, app, environment):
+        from cabotage.celery.tasks.resources import _render_cnpg_cluster
+
+        _configure_s3_tenant_postgres_backups(app)
+        try:
+            r = PostgresResource(
+                service_version="18",
+                environment_id=environment.id,
+                name="Streaming Backups DB",
+                size_class="db.medium",
+                storage_size=10,
+                ha_enabled=True,
+                backup_strategy="streaming",
+                postgres_parameters=compute_postgres_parameters("db.medium"),
+            )
+            db.session.add(r)
+            db.session.flush()
+
+            crd = _render_cnpg_cluster(r)
+            assert crd["spec"]["plugins"][0]["isWALArchiver"] is True
+        finally:
+            _reset_tenant_postgres_backups(app)
+
+    def test_postgres_object_store_s3(self, app, environment):
+        from cabotage.celery.tasks.resources import (
+            _render_postgres_object_store,
+            _resource_k8s_name,
+        )
+
+        _configure_s3_tenant_postgres_backups(app)
+        try:
+            r = PostgresResource(
+                service_version="18",
+                environment_id=environment.id,
+                name="S3 Backups",
+                size_class="db.small",
+                storage_size=5,
+                backup_strategy="daily",
+                postgres_parameters=compute_postgres_parameters("db.small"),
+            )
+            db.session.add(r)
+            db.session.flush()
+
+            body = _render_postgres_object_store(
+                r,
+                {
+                    "provider": "s3",
+                    "bucket": "tenant-postgres-backups",
+                    "irsa_role_arn": "arn:aws:iam::123456789012:role/tenant-postgres-backups",
+                    "path_prefix": "tenants",
+                    "plugin_name": "barman-cloud.cloudnative-pg.io",
+                    "retention_policy": "30d",
+                    "schedule": "0 0 0 * * *",
+                    "service_account_name": "cnpg-backups",
+                    "rustfs_endpoint": None,
+                    "rustfs_ca_secret_name": "operators-ca-crt",
+                    "rustfs_secret_name": "cnpg-backups-objectstore",
+                    "rustfs_source_secret_name": None,
+                    "rustfs_source_secret_namespace": None,
+                },
+            )
+
+            assert body["kind"] == "ObjectStore"
+            assert body["spec"]["retentionPolicy"] == "30d"
+            assert body["spec"]["configuration"]["destinationPath"].endswith(
+                f"/{environment.k8s_namespace}/{_resource_k8s_name(r)}/"
+            )
+            assert body["spec"]["configuration"]["s3Credentials"] == {
+                "inheritFromIAMRole": True
+            }
+        finally:
+            _reset_tenant_postgres_backups(app)
+
+    def test_postgres_object_store_rustfs(self, app, environment):
+        from cabotage.celery.tasks.resources import _render_postgres_object_store
+
+        _configure_rustfs_tenant_postgres_backups(app)
+        try:
+            r = PostgresResource(
+                service_version="18",
+                environment_id=environment.id,
+                name="RustFS Backups",
+                size_class="db.small",
+                storage_size=5,
+                backup_strategy="daily",
+                postgres_parameters=compute_postgres_parameters("db.small"),
+            )
+            db.session.add(r)
+            db.session.flush()
+
+            body = _render_postgres_object_store(
+                r,
+                {
+                    "provider": "rustfs",
+                    "bucket": "cabotage-postgres-backups",
+                    "irsa_role_arn": None,
+                    "path_prefix": "tenants",
+                    "plugin_name": "barman-cloud.cloudnative-pg.io",
+                    "retention_policy": "30d",
+                    "schedule": "0 0 0 * * *",
+                    "service_account_name": "cnpg-backups",
+                    "rustfs_endpoint": "https://rustfs.cabotage.svc.cluster.local:9000",
+                    "rustfs_ca_secret_name": "operators-ca-crt",
+                    "rustfs_secret_name": "cnpg-backups-objectstore",
+                    "rustfs_source_secret_name": "rustfs-source",
+                    "rustfs_source_secret_namespace": "postgres",
+                },
+            )
+
+            assert body["spec"]["configuration"]["endpointURL"] == (
+                "https://rustfs.cabotage.svc.cluster.local:9000"
+            )
+            assert body["spec"]["configuration"]["endpointCA"] == {
+                "name": "operators-ca-crt",
+                "key": "ca.crt",
+            }
+            assert body["spec"]["configuration"]["s3Credentials"]["accessKeyId"] == {
+                "name": "cnpg-backups-objectstore",
+                "key": "access-key-id",
+            }
+        finally:
+            _reset_tenant_postgres_backups(app)
 
     def test_redis_standalone_crd(self, app, environment):
         from cabotage.celery.tasks.resources import _render_redis_standalone

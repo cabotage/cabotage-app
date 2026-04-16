@@ -12,6 +12,7 @@ from cabotage.server import (
     db,
     kubernetes as kubernetes_ext,
 )
+from cabotage.server.config import validate_tenant_postgres_backup_config
 from cabotage.server.models.resources import (
     postgres_size_classes,
     redis_size_classes,
@@ -27,6 +28,14 @@ log = logging.getLogger(__name__)
 CNPG_GROUP = "postgresql.cnpg.io"
 CNPG_VERSION = "v1"
 CNPG_PLURAL = "clusters"
+CNPG_SCHEDULED_BACKUP_PLURAL = "scheduledbackups"
+
+# ---------------------------------------------------------------------------
+# Barman Cloud Plugin constants
+# ---------------------------------------------------------------------------
+BARMAN_GROUP = "barmancloud.cnpg.io"
+BARMAN_VERSION = "v1"
+BARMAN_OBJECT_STORE_PLURAL = "objectstores"
 
 # ---------------------------------------------------------------------------
 # OpsTree Redis Operator constants
@@ -119,6 +128,59 @@ def _backing_services_pool():
     return current_app.config.get("BACKING_SERVICES_POOL") or None
 
 
+def _tenant_postgres_backups_enabled(resource=None):
+    if not has_app_context():
+        return False
+    if not current_app.config.get("TENANT_POSTGRES_BACKUPS_ENABLED"):
+        return False
+    if resource is not None and getattr(resource, "backup_strategy", None) == "none":
+        return False
+    return True
+
+
+def _postgres_backup_requires_continuous_archiving(resource):
+    return getattr(resource, "backup_strategy", None) == "streaming"
+
+
+def _tenant_postgres_backup_settings():
+    if not _tenant_postgres_backups_enabled():
+        return None
+
+    validate_tenant_postgres_backup_config(current_app.config)
+
+    return {
+        "provider": current_app.config["TENANT_POSTGRES_BACKUP_PROVIDER"]
+        .strip()
+        .lower(),
+        "bucket": current_app.config["TENANT_POSTGRES_BACKUP_BUCKET"],
+        "irsa_role_arn": current_app.config.get("TENANT_POSTGRES_BACKUP_IRSA_ROLE_ARN"),
+        "path_prefix": current_app.config["TENANT_POSTGRES_BACKUP_PATH_PREFIX"],
+        "plugin_name": current_app.config["TENANT_POSTGRES_BACKUP_PLUGIN_NAME"],
+        "retention_policy": current_app.config[
+            "TENANT_POSTGRES_BACKUP_RETENTION_POLICY"
+        ],
+        "schedule": current_app.config["TENANT_POSTGRES_BACKUP_SCHEDULE"],
+        "service_account_name": current_app.config[
+            "TENANT_POSTGRES_BACKUP_SERVICE_ACCOUNT_NAME"
+        ],
+        "rustfs_endpoint": current_app.config.get(
+            "TENANT_POSTGRES_BACKUP_RUSTFS_ENDPOINT"
+        ),
+        "rustfs_ca_secret_name": current_app.config.get(
+            "TENANT_POSTGRES_BACKUP_RUSTFS_CA_SECRET_NAME"
+        ),
+        "rustfs_secret_name": current_app.config.get(
+            "TENANT_POSTGRES_BACKUP_RUSTFS_SECRET_NAME"
+        ),
+        "rustfs_source_secret_name": current_app.config.get(
+            "TENANT_POSTGRES_BACKUP_RUSTFS_SOURCE_SECRET_NAME"
+        ),
+        "rustfs_source_secret_namespace": current_app.config.get(
+            "TENANT_POSTGRES_BACKUP_RUSTFS_SOURCE_SECRET_NAMESPACE"
+        ),
+    }
+
+
 def _node_selector_for_pool(node_pool):
     if not node_pool:
         return None
@@ -200,6 +262,136 @@ def _cnpg_affinity(resource):
             }
         )
     return affinity
+
+
+def _backup_objectstore_name(resource):
+    return f"{_resource_k8s_name(resource)}-backups"
+
+
+def _backup_destination_path(namespace, cluster_name, settings):
+    path_prefix = settings["path_prefix"].strip("/")
+    path_parts = [part for part in (path_prefix, namespace, cluster_name) if part]
+    return f"s3://{settings['bucket']}/{'/'.join(path_parts)}/"
+
+
+def _render_postgres_object_store(resource, settings):
+    namespace = _resource_namespace(resource)
+    cluster_name = _resource_k8s_name(resource)
+    configuration = {
+        "destinationPath": _backup_destination_path(namespace, cluster_name, settings),
+        "data": {"compression": "gzip"},
+        "wal": {"compression": "gzip"},
+    }
+
+    if settings["provider"] == "s3":
+        configuration["s3Credentials"] = {"inheritFromIAMRole": True}
+    else:
+        configuration.update(
+            {
+                "endpointURL": settings["rustfs_endpoint"],
+                "endpointCA": {
+                    "name": settings["rustfs_ca_secret_name"],
+                    "key": "ca.crt",
+                },
+                "s3Credentials": {
+                    "accessKeyId": {
+                        "name": settings["rustfs_secret_name"],
+                        "key": "access-key-id",
+                    },
+                    "secretAccessKey": {
+                        "name": settings["rustfs_secret_name"],
+                        "key": "secret-key",
+                    },
+                    "region": {
+                        "name": settings["rustfs_secret_name"],
+                        "key": "region",
+                    },
+                },
+            }
+        )
+
+    return {
+        "apiVersion": f"{BARMAN_GROUP}/{BARMAN_VERSION}",
+        "kind": "ObjectStore",
+        "metadata": {
+            "name": _backup_objectstore_name(resource),
+            "labels": _resource_labels(resource),
+        },
+        "spec": {
+            "retentionPolicy": settings["retention_policy"],
+            "configuration": configuration,
+        },
+    }
+
+
+def _render_scheduled_backup(resource, settings, immediate=False):
+    body = {
+        "apiVersion": f"{CNPG_GROUP}/{CNPG_VERSION}",
+        "kind": "ScheduledBackup",
+        "metadata": {
+            "name": _resource_k8s_name(resource),
+            "labels": _resource_labels(resource),
+        },
+        "spec": {
+            "schedule": settings["schedule"],
+            "backupOwnerReference": "self",
+            "cluster": {
+                "name": _resource_k8s_name(resource),
+            },
+            "method": "plugin",
+            "pluginConfiguration": {
+                "name": settings["plugin_name"],
+            },
+            "target": "prefer-standby",
+        },
+    }
+    if immediate:
+        body["spec"]["immediate"] = True
+    return body
+
+
+def _ensure_scheduled_backup(custom_api, namespace, resource, settings):
+    name = _resource_k8s_name(resource)
+    try:
+        custom_api.get_namespaced_custom_object(
+            CNPG_GROUP,
+            CNPG_VERSION,
+            namespace,
+            CNPG_SCHEDULED_BACKUP_PLURAL,
+            name,
+        )
+        custom_api.patch_namespaced_custom_object(
+            CNPG_GROUP,
+            CNPG_VERSION,
+            namespace,
+            CNPG_SCHEDULED_BACKUP_PLURAL,
+            name,
+            _render_scheduled_backup(resource, settings, immediate=False),
+        )
+        log.info(
+            "Patched %s/%s %s/%s",
+            CNPG_GROUP,
+            CNPG_SCHEDULED_BACKUP_PLURAL,
+            namespace,
+            name,
+        )
+    except ApiException as exc:
+        if exc.status != 404:
+            raise
+        custom_api.create_namespaced_custom_object(
+            CNPG_GROUP,
+            CNPG_VERSION,
+            namespace,
+            CNPG_SCHEDULED_BACKUP_PLURAL,
+            _render_scheduled_backup(resource, settings, immediate=True),
+        )
+        log.info(
+            "Created %s/%s %s/%s",
+            CNPG_GROUP,
+            CNPG_SCHEDULED_BACKUP_PLURAL,
+            namespace,
+            name,
+        )
 
 
 def _redis_role_affinity(resource, role, replicas):
@@ -477,6 +669,124 @@ def _ensure_ca_secret(core_api, namespace):
             raise
 
 
+def _ensure_backup_service_account(core_api, namespace, settings):
+    annotations = {}
+    if settings["provider"] == "s3":
+        annotations["eks.amazonaws.com/role-arn"] = settings["irsa_role_arn"]
+
+    body = kubernetes.client.V1ServiceAccount(
+        metadata=kubernetes.client.V1ObjectMeta(
+            name=settings["service_account_name"],
+            namespace=namespace,
+            annotations=annotations or None,
+        )
+    )
+
+    try:
+        core_api.replace_namespaced_service_account(
+            settings["service_account_name"], namespace, body
+        )
+    except ApiException as exc:
+        if exc.status == 404:
+            core_api.create_namespaced_service_account(namespace, body)
+            log.info(
+                "Created backup ServiceAccount %s/%s",
+                namespace,
+                settings["service_account_name"],
+            )
+        else:
+            raise
+
+
+def _ensure_rustfs_secret(core_api, namespace, settings):
+    source_secret = core_api.read_namespaced_secret(
+        settings["rustfs_source_secret_name"],
+        settings["rustfs_source_secret_namespace"],
+    )
+
+    copied_keys = ("access-key-id", "secret-key", "region")
+    source_data = source_secret.data or {}
+    missing_keys = [key for key in copied_keys if key not in source_data]
+    if missing_keys:
+        raise ValueError(
+            "RustFS source secret is missing required keys: "
+            + ", ".join(sorted(missing_keys))
+        )
+
+    body = kubernetes.client.V1Secret(
+        metadata=kubernetes.client.V1ObjectMeta(
+            name=settings["rustfs_secret_name"],
+            namespace=namespace,
+        ),
+        type=source_secret.type,
+        data={key: source_data[key] for key in copied_keys},
+    )
+
+    try:
+        core_api.replace_namespaced_secret(
+            settings["rustfs_secret_name"], namespace, body
+        )
+    except ApiException as exc:
+        if exc.status == 404:
+            core_api.create_namespaced_secret(namespace, body)
+            log.info(
+                "Copied RustFS backup secret to %s/%s",
+                namespace,
+                settings["rustfs_secret_name"],
+            )
+        else:
+            raise
+
+
+def _sync_barman_rolebinding_subject(
+    rbac_api, namespace, cluster_name, service_account_name
+):
+    if rbac_api is None:
+        return
+
+    rolebinding_name = f"{cluster_name}-barman-cloud"
+    try:
+        rolebinding = rbac_api.read_namespaced_role_binding(rolebinding_name, namespace)
+    except ApiException as exc:
+        if exc.status == 404:
+            log.info(
+                "Barman RoleBinding %s/%s not yet available for subject sync",
+                namespace,
+                rolebinding_name,
+            )
+            return
+        raise
+
+    desired_subject = {
+        "kind": "ServiceAccount",
+        "name": service_account_name,
+        "namespace": namespace,
+    }
+    current_subjects = [
+        {
+            "kind": _field(subject, "kind"),
+            "name": _field(subject, "name"),
+            "namespace": _field(subject, "namespace"),
+        }
+        for subject in (_field(rolebinding, "subjects") or [])
+    ]
+
+    if current_subjects == [desired_subject]:
+        return
+
+    rbac_api.patch_namespaced_role_binding(
+        rolebinding_name,
+        namespace,
+        {"subjects": [desired_subject]},
+    )
+    log.info(
+        "Patched Barman RoleBinding %s/%s subject to ServiceAccount %s",
+        namespace,
+        rolebinding_name,
+        service_account_name,
+    )
+
+
 def _delete_k8s_resource_quiet(fn, *args):
     """Call a K8s delete function, ignoring 404."""
     try:
@@ -560,6 +870,25 @@ def _postgres_cluster_is_ready(status, expected_instances):
     )
 
 
+def _postgres_cluster_has_plugin(status, plugin_name):
+    for plugin_status in status.get("pluginStatus") or []:
+        if _field(plugin_status, "name") == plugin_name:
+            return True
+    return False
+
+
+def _postgres_cluster_is_backup_ready(
+    status, expected_instances, plugin_name, require_continuous_archiving=True
+):
+    if not _postgres_cluster_is_ready(status, expected_instances):
+        return False
+    if require_continuous_archiving and not _condition_is_true(
+        status.get("conditions"), "ContinuousArchiving"
+    ):
+        return False
+    return _postgres_cluster_has_plugin(status, plugin_name)
+
+
 def _read_redis_cluster_status(custom_api, namespace, name):
     try:
         cluster = custom_api.get_namespaced_custom_object(
@@ -626,7 +955,7 @@ def _read_redis_standalone_health(core_api, namespace, name):
 # ---------------------------------------------------------------------------
 
 
-def _render_cnpg_cluster(resource):
+def _render_cnpg_cluster(resource, backup_settings=None):
     size = postgres_size_classes[resource.size_class]
     instances = 2 if resource.ha_enabled else 1
     name = _resource_k8s_name(resource)
@@ -678,12 +1007,21 @@ def _render_cnpg_cluster(resource):
     if affinity:
         cluster["spec"]["affinity"] = affinity
 
-    # Backup configuration
-    # TODO: backups require per-tenant object storage credentials (S3 bucket +
-    # Secret with s3Credentials).  The backup_strategy is persisted on the
-    # resource so it can be wired up once the storage backend is provisioned.
-    # CNPG >= 1.30 deprecates native barmanObjectStore in favour of the
-    # Barman Cloud Plugin — migrate to that when adding backup support.
+    if backup_settings is None and _tenant_postgres_backups_enabled(resource):
+        backup_settings = _tenant_postgres_backup_settings()
+
+    if backup_settings:
+        plugin = {
+            "name": backup_settings["plugin_name"],
+            "parameters": {
+                "barmanObjectName": _backup_objectstore_name(resource),
+                "serverName": name,
+            },
+        }
+        if _postgres_backup_requires_continuous_archiving(resource):
+            plugin["isWALArchiver"] = True
+        cluster["spec"]["serviceAccountName"] = backup_settings["service_account_name"]
+        cluster["spec"]["plugins"] = [plugin]
 
     return cluster
 
@@ -794,7 +1132,7 @@ def _render_redis_cluster(resource):
 # ---------------------------------------------------------------------------
 
 
-def _reconcile_postgres(resource, core_api, custom_api, apps_api=None):
+def _reconcile_postgres(resource, core_api, custom_api, apps_api=None, rbac_api=None):
     """Converge a single PostgresResource to its desired K8s state."""
     namespace = _resource_namespace(resource)
     name = _resource_k8s_name(resource)
@@ -803,10 +1141,43 @@ def _reconcile_postgres(resource, core_api, custom_api, apps_api=None):
     ensure_namespace(core_api, namespace)
     _ensure_ca_secret(core_api, namespace)
 
+    backup_settings = None
+    if _tenant_postgres_backups_enabled(resource):
+        backup_settings = _tenant_postgres_backup_settings()
+        _ensure_backup_service_account(core_api, namespace, backup_settings)
+        if backup_settings["provider"] == "rustfs":
+            _ensure_rustfs_secret(core_api, namespace, backup_settings)
+        _ensure_custom_object(
+            custom_api,
+            BARMAN_GROUP,
+            BARMAN_VERSION,
+            namespace,
+            BARMAN_OBJECT_STORE_PLURAL,
+            _backup_objectstore_name(resource),
+            _render_postgres_object_store(resource, backup_settings),
+        )
+    else:
+        _delete_k8s_resource_quiet(
+            custom_api.delete_namespaced_custom_object,
+            CNPG_GROUP,
+            CNPG_VERSION,
+            namespace,
+            CNPG_SCHEDULED_BACKUP_PLURAL,
+            name,
+        )
+        _delete_k8s_resource_quiet(
+            custom_api.delete_namespaced_custom_object,
+            BARMAN_GROUP,
+            BARMAN_VERSION,
+            namespace,
+            BARMAN_OBJECT_STORE_PLURAL,
+            _backup_objectstore_name(resource),
+        )
+
     cert_body = _render_postgres_certificate(resource)
     _ensure_certificate(custom_api, namespace, cert_body)
 
-    body = _render_cnpg_cluster(resource)
+    body = _render_cnpg_cluster(resource, backup_settings=backup_settings)
     _ensure_custom_object(
         custom_api,
         CNPG_GROUP,
@@ -816,6 +1187,13 @@ def _reconcile_postgres(resource, core_api, custom_api, apps_api=None):
         name,
         body,
     )
+    if backup_settings:
+        _sync_barman_rolebinding_subject(
+            rbac_api,
+            namespace,
+            name,
+            backup_settings["service_account_name"],
+        )
 
     resource.connection_info = {
         "host": f"{name}-rw.{namespace}.svc.cluster.local",
@@ -848,6 +1226,16 @@ def _reconcile_postgres(resource, core_api, custom_api, apps_api=None):
         else:
             raise
 
+    if backup_settings and _postgres_cluster_is_backup_ready(
+        status,
+        expected_instances,
+        backup_settings["plugin_name"],
+        require_continuous_archiving=_postgres_backup_requires_continuous_archiving(
+            resource
+        ),
+    ):
+        _ensure_scheduled_backup(custom_api, namespace, resource, backup_settings)
+
     if _postgres_cluster_is_ready(status, expected_instances):
         resource.provisioning_status = "ready"
         resource.provisioning_error = None
@@ -856,7 +1244,7 @@ def _reconcile_postgres(resource, core_api, custom_api, apps_api=None):
         resource.provisioning_error = None
 
 
-def _reconcile_redis(resource, core_api, custom_api, apps_api=None):
+def _reconcile_redis(resource, core_api, custom_api, apps_api=None, rbac_api=None):
     """Converge a single RedisResource to its desired K8s state."""
     namespace = _resource_namespace(resource)
     name = _resource_k8s_name(resource)
@@ -930,11 +1318,27 @@ def _reconcile_redis(resource, core_api, custom_api, apps_api=None):
     resource.provisioning_error = health_reason
 
 
-def _delete_postgres(resource, core_api, custom_api, apps_api=None):
+def _delete_postgres(resource, core_api, custom_api, apps_api=None, rbac_api=None):
     """Remove all K8s objects for a deleted PostgresResource."""
     namespace = _resource_namespace(resource)
     name = _resource_k8s_name(resource)
 
+    _delete_k8s_resource_quiet(
+        custom_api.delete_namespaced_custom_object,
+        CNPG_GROUP,
+        CNPG_VERSION,
+        namespace,
+        CNPG_SCHEDULED_BACKUP_PLURAL,
+        name,
+    )
+    _delete_k8s_resource_quiet(
+        custom_api.delete_namespaced_custom_object,
+        BARMAN_GROUP,
+        BARMAN_VERSION,
+        namespace,
+        BARMAN_OBJECT_STORE_PLURAL,
+        _backup_objectstore_name(resource),
+    )
     _delete_k8s_resource_quiet(
         custom_api.delete_namespaced_custom_object,
         CNPG_GROUP,
@@ -960,7 +1364,7 @@ def _delete_postgres(resource, core_api, custom_api, apps_api=None):
     log.info("Cleaned up PostgresResource %s (%s/%s)", resource.id, namespace, name)
 
 
-def _delete_redis(resource, core_api, custom_api, apps_api=None):
+def _delete_redis(resource, core_api, custom_api, apps_api=None, rbac_api=None):
     """Remove all K8s objects for a deleted RedisResource."""
     namespace = _resource_namespace(resource)
     name = _resource_k8s_name(resource)
@@ -1022,6 +1426,7 @@ def reconcile_backing_services():
     core_api = kubernetes.client.CoreV1Api(api_client)
     custom_api = kubernetes.client.CustomObjectsApi(api_client)
     apps_api = kubernetes.client.AppsV1Api(api_client)
+    rbac_api = kubernetes.client.RbacAuthorizationV1Api(api_client)
 
     for resource in resources:
         entry = _RECONCILERS.get(resource.type)
@@ -1031,11 +1436,11 @@ def reconcile_backing_services():
 
         try:
             if resource.deleted_at is not None:
-                delete_fn(resource, core_api, custom_api, apps_api)
+                delete_fn(resource, core_api, custom_api, apps_api, rbac_api)
                 resource.provisioning_status = "deleted"
                 db.session.commit()
             else:
-                reconcile_fn(resource, core_api, custom_api, apps_api)
+                reconcile_fn(resource, core_api, custom_api, apps_api, rbac_api)
                 db.session.commit()
         except Exception:
             log.exception(
