@@ -164,12 +164,31 @@ class TestTenantNetworkPoliciesData:
         policy = next(
             p for p in TENANT_NETWORK_POLICIES if p["name"] == "restrict-egress"
         )
+        assert policy["spec"]["podSelector"]["matchExpressions"] == [
+            {
+                "key": "cnpg.io/cluster",
+                "operator": "DoesNotExist",
+            }
+        ]
         dns_rule = policy["spec"]["egress"][0]
         ns_label = dns_rule["to"][0]["namespaceSelector"]["matchLabels"]
         assert ns_label["kubernetes.io/metadata.name"] == "kube-system"
         ports = {(p["port"], p["protocol"]) for p in dns_rule["ports"]}
         assert (53, "UDP") in ports
         assert (53, "TCP") in ports
+
+    def test_allow_egress_cnpg_pods_targets_only_cnpg_pods(self):
+        policy = next(
+            p for p in TENANT_NETWORK_POLICIES if p["name"] == "allow-egress-cnpg-pods"
+        )
+        assert policy["spec"]["podSelector"]["matchExpressions"] == [
+            {
+                "key": "cnpg.io/cluster",
+                "operator": "Exists",
+            }
+        ]
+        assert policy["spec"]["policyTypes"] == ["Egress"]
+        assert policy["spec"]["egress"] == [{}]
 
     def test_restrict_egress_allows_vault(self):
         policy = next(
