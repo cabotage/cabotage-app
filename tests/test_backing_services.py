@@ -2379,6 +2379,76 @@ class TestCRDRendering:
         finally:
             app.config.pop("BACKING_SERVICES_POOL", None)
 
+    def test_redis_standalone_certificate_covers_live_service_aliases(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import (
+            _render_redis_certificate,
+            _resource_k8s_name,
+        )
+
+        r = RedisResource(
+            service_version="8",
+            environment_id=environment.id,
+            name="Standalone Cert",
+            size_class="cache.medium",
+            storage_size=2,
+            ha_enabled=False,
+        )
+        db.session.add(r)
+        db.session.flush()
+
+        cert = _render_redis_certificate(r)
+        dns_names = set(cert["spec"]["dnsNames"])
+        name = _resource_k8s_name(r)
+        namespace = environment.k8s_namespace
+
+        assert f"{name}-additional.{namespace}.svc.cluster.local" in dns_names
+        assert f"{name}-headless.{namespace}.svc.cluster.local" in dns_names
+        assert f"{name}-0.{name}-headless.{namespace}.svc.cluster.local" in dns_names
+
+    def test_redis_cluster_certificate_covers_advertised_services_and_pods(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import (
+            _render_redis_certificate,
+            _resource_k8s_name,
+        )
+
+        r = RedisResource(
+            service_version="8",
+            environment_id=environment.id,
+            name="Cluster Cert",
+            size_class="cache.xlarge",
+            storage_size=10,
+            ha_enabled=True,
+            leader_replicas=4,
+            follower_replicas=2,
+        )
+        db.session.add(r)
+        db.session.flush()
+
+        cert = _render_redis_certificate(r)
+        dns_names = set(cert["spec"]["dnsNames"])
+        name = _resource_k8s_name(r)
+        namespace = environment.k8s_namespace
+
+        assert f"{name}-master.{namespace}.svc.cluster.local" in dns_names
+        assert f"{name}-leader.{namespace}.svc.cluster.local" in dns_names
+        assert f"{name}-leader-headless.{namespace}.svc.cluster.local" in dns_names
+        assert f"{name}-leader-additional.{namespace}.svc.cluster.local" in dns_names
+        assert f"{name}-follower.{namespace}.svc.cluster.local" in dns_names
+        assert f"{name}-follower-headless.{namespace}.svc.cluster.local" in dns_names
+        assert f"{name}-follower-additional.{namespace}.svc.cluster.local" in dns_names
+        assert (
+            f"{name}-leader-3.{name}-leader-headless.{namespace}.svc.cluster.local"
+            in dns_names
+        )
+        assert (
+            f"{name}-follower-1.{name}-follower-headless.{namespace}.svc.cluster.local"
+            in dns_names
+        )
+
     def test_redis_cluster_crd_avoids_required_anti_affinity_for_single_replica_roles(
         self, app, environment
     ):
