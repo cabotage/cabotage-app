@@ -55,7 +55,7 @@ CERTMANAGER_CERT_PLURAL = "certificates"
 # ClusterIssuer used to sign TLS certs for backing services
 TLS_CLUSTER_ISSUER = "operators-ca-issuer"
 # Secret containing the CA cert for TLS verification
-TLS_CA_SECRET = "operators-ca-crt"
+TLS_CA_SECRET = "operators-ca-crt"  # nosec B105
 NODE_POOL_LABEL = "cabotage.dev/node-pool"
 DO_NOT_DISRUPT_ANNOTATION = "karpenter.sh/do-not-disrupt"
 HOSTNAME_TOPOLOGY_KEY = "kubernetes.io/hostname"
