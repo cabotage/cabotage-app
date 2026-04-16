@@ -36,11 +36,11 @@ from cabotage.server.models.resources import (
     DEFAULT_REDIS_LEADER_REPLICAS,
     POSTGRES_VERSIONS,
     REDIS_VERSIONS,
-    PostgresResource,
-    RedisResource,
+    Resource,
     postgres_size_classes,
     redis_size_classes,
 )
+from cabotage.server.models.utils import slugify
 
 
 class ExtendedLoginForm(LoginForm):
@@ -1010,6 +1010,23 @@ _BACKUP_STRATEGY_CHOICES = [
 ]
 
 
+def _validate_unique_resource_slug(form, slug):
+    effective_slug = slug or slugify(form.name.data or "")
+    if not effective_slug:
+        return True
+    existing = (
+        Resource.query.filter_by(
+            environment_id=form.environment_id.data,
+            slug=effective_slug,
+        )
+        .filter(Resource.deleted_at.is_(None))
+        .first()
+    )
+    if existing is not None:
+        raise ValidationError("Resource slugs must be unique within environments.")
+    return True
+
+
 class CreatePostgresResourceForm(FlaskForm):
     environment_id = HiddenField(
         "Environment",
@@ -1059,19 +1076,16 @@ class CreatePostgresResourceForm(FlaskForm):
     )
 
     def validate_slug(form, field):
-        slug = field.data
-        if not slug:
-            return True
-        existing = (
-            PostgresResource.query.filter_by(
-                environment_id=form.environment_id.data,
-                slug=slug,
-            )
-            .filter(PostgresResource.deleted_at.is_(None))
-            .first()
-        )
-        if existing is not None:
-            raise ValidationError("Resource slugs must be unique within environments.")
+        return _validate_unique_resource_slug(form, field.data)
+
+    def validate(form, extra_validators=None):
+        if not super().validate(extra_validators=extra_validators):
+            return False
+        try:
+            _validate_unique_resource_slug(form, form.slug.data)
+        except ValidationError as exc:
+            form.slug.errors = [*form.slug.errors, str(exc)]
+            return False
         return True
 
     def validate_storage_size(form, field):
@@ -1203,19 +1217,16 @@ class CreateRedisResourceForm(FlaskForm):
     )
 
     def validate_slug(form, field):
-        slug = field.data
-        if not slug:
-            return True
-        existing = (
-            RedisResource.query.filter_by(
-                environment_id=form.environment_id.data,
-                slug=slug,
-            )
-            .filter(RedisResource.deleted_at.is_(None))
-            .first()
-        )
-        if existing is not None:
-            raise ValidationError("Resource slugs must be unique within environments.")
+        return _validate_unique_resource_slug(form, field.data)
+
+    def validate(form, extra_validators=None):
+        if not super().validate(extra_validators=extra_validators):
+            return False
+        try:
+            _validate_unique_resource_slug(form, form.slug.data)
+        except ValidationError as exc:
+            form.slug.errors = [*form.slug.errors, str(exc)]
+            return False
         return True
 
     def validate_storage_size(form, field):
