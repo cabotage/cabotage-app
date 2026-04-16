@@ -3,7 +3,7 @@
 import datetime
 import time
 import uuid
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from flask_security import hash_password
@@ -1885,6 +1885,46 @@ class TestCeleryTasks:
 
         assert mock_custom_api.delete_namespaced_custom_object.call_count == 3
         assert mock_core_api.delete_namespaced_secret.call_count == 2
+
+    def test_reconcile_backing_services_skips_already_deleted_resources(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import reconcile_backing_services
+
+        r = RedisResource(
+            service_version="8",
+            environment_id=environment.id,
+            name="Already Deleted Redis",
+            size_class="cache.small",
+            storage_size=1,
+            provisioning_status="deleted",
+        )
+        r.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        db.session.add(r)
+        db.session.commit()
+
+        with (
+            patch("cabotage.celery.tasks.resources.kubernetes_ext") as mock_kext,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.CoreV1Api"
+            ) as mock_core_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.CustomObjectsApi"
+            ) as mock_custom_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.AppsV1Api"
+            ) as mock_apps_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.RbacAuthorizationV1Api"
+            ) as mock_rbac_api_cls,
+        ):
+            mock_kext.kubernetes_client = MagicMock()
+            reconcile_backing_services()
+
+        mock_core_api_cls.assert_not_called()
+        mock_custom_api_cls.assert_not_called()
+        mock_apps_api_cls.assert_not_called()
+        mock_rbac_api_cls.assert_not_called()
 
     def test_reconcile_redis_standalone_patches_statefulset_for_backing_pool(
         self, app, environment

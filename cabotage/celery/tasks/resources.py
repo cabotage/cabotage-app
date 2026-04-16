@@ -1483,6 +1483,7 @@ def reconcile_backing_services():
 
     resources = Resource.query.filter(
         Resource.provisioning_status != "deleting",
+        Resource.provisioning_status != "deleted",
     ).all()
 
     if not resources:
