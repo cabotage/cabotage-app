@@ -312,6 +312,141 @@ def _delete_k8s_resource_quiet(fn, *args):
             raise
 
 
+def _zero_if_none(value):
+    return value if value is not None else 0
+
+
+def _field(obj, name, default=None):
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(name, default)
+    return getattr(obj, name, default)
+
+
+def _find_condition(conditions, cond_type):
+    for condition in conditions or []:
+        if _field(condition, "type") == cond_type:
+            return condition
+    return None
+
+
+def _condition_is_true(conditions, cond_type):
+    condition = _find_condition(conditions, cond_type)
+    return _field(condition, "status") == "True"
+
+
+def _container_failure_reason(container_statuses):
+    for container_status in container_statuses or []:
+        state = _field(container_status, "state")
+        waiting = _field(state, "waiting")
+        if waiting is not None:
+            reason = _field(waiting, "reason")
+            if reason:
+                return reason
+        terminated = _field(state, "terminated")
+        if terminated is not None:
+            return _field(terminated, "reason") or "Terminated"
+    return None
+
+
+def _pod_is_ready(pod):
+    if pod is None:
+        return False
+    if _field(_field(pod, "metadata"), "deletion_timestamp") is not None:
+        return False
+    if _field(_field(pod, "status"), "phase") != "Running":
+        return False
+    return _condition_is_true(_field(_field(pod, "status"), "conditions"), "Ready")
+
+
+def _read_postgres_cluster_status(custom_api, namespace, name):
+    try:
+        cluster = custom_api.get_namespaced_custom_object(
+            CNPG_GROUP,
+            CNPG_VERSION,
+            namespace,
+            CNPG_PLURAL,
+            name,
+        )
+    except ApiException as exc:
+        if exc.status == 404:
+            return None
+        raise
+    return cluster.get("status") or {}
+
+
+def _postgres_cluster_is_ready(status, expected_instances):
+    if not status:
+        return False
+    return (
+        _condition_is_true(status.get("conditions"), "Ready")
+        and _zero_if_none(status.get("readyInstances")) >= expected_instances
+        and bool(status.get("currentPrimary"))
+    )
+
+
+def _read_redis_cluster_status(custom_api, namespace, name):
+    try:
+        cluster = custom_api.get_namespaced_custom_object(
+            REDIS_GROUP,
+            REDIS_VERSION,
+            namespace,
+            REDIS_CLUSTER_PLURAL,
+            name,
+        )
+    except ApiException as exc:
+        if exc.status == 404:
+            return None
+        raise
+    return cluster.get("status") or {}
+
+
+def _redis_cluster_health(status, expected_leader_replicas, expected_follower_replicas):
+    if not status:
+        return "provisioning", None
+
+    state = str(status.get("state") or "")
+    state_lower = state.lower()
+    reason = status.get("reason")
+    leader_replicas = _zero_if_none(status.get("readyLeaderReplicas"))
+    follower_replicas = _zero_if_none(status.get("readyFollowerReplicas"))
+
+    if (
+        state_lower == "ready"
+        and leader_replicas >= expected_leader_replicas
+        and follower_replicas >= expected_follower_replicas
+    ):
+        return "ready", None
+    if state_lower in {"error", "failed", "failure"}:
+        return "error", reason or f"Redis operator reported state {state}"
+    return "provisioning", None
+
+
+def _read_redis_standalone_health(core_api, namespace, name):
+    try:
+        pod = core_api.read_namespaced_pod(f"{name}-0", namespace)
+    except ApiException as exc:
+        if exc.status == 404:
+            return "provisioning", None
+        raise
+
+    if _pod_is_ready(pod):
+        return "ready", None
+
+    reason = _container_failure_reason(
+        _field(_field(pod, "status"), "container_statuses") or []
+    )
+    if reason in {
+        "CrashLoopBackOff",
+        "Error",
+        "ImagePullBackOff",
+        "CreateContainerError",
+    }:
+        return "error", f"Redis pod is not healthy: {reason}"
+    return "provisioning", None
+
+
 # ---------------------------------------------------------------------------
 # CNPG Cluster rendering
 # ---------------------------------------------------------------------------
@@ -439,9 +574,11 @@ def _render_redis_standalone(resource):
 def _render_redis_cluster(resource):
     name = _resource_k8s_name(resource)
     spec = _redis_spec_common(resource)
-    spec["clusterSize"] = 3
+    spec["clusterSize"] = max(resource.leader_replicas, resource.follower_replicas)
     spec["clusterVersion"] = f"v{resource.service_version}"
     spec["persistenceEnabled"] = True
+    spec["redisLeader"] = {"replicas": resource.leader_replicas}
+    spec["redisFollower"] = {"replicas": resource.follower_replicas}
 
     return {
         "apiVersion": f"{REDIS_GROUP}/{REDIS_VERSION}",
@@ -463,6 +600,7 @@ def _reconcile_postgres(resource, core_api, custom_api):
     """Converge a single PostgresResource to its desired K8s state."""
     namespace = _resource_namespace(resource)
     name = _resource_k8s_name(resource)
+    expected_instances = 2 if resource.ha_enabled else 1
 
     ensure_namespace(core_api, namespace)
     _ensure_ca_secret(core_api, namespace)
@@ -490,6 +628,8 @@ def _reconcile_postgres(resource, core_api, custom_api):
         "secret_name": f"{name}-app",
     }
 
+    status = _read_postgres_cluster_status(custom_api, namespace, name)
+
     # Read password from CNPG-generated secret (created by operator
     # once the cluster is healthy — may not exist yet)
     try:
@@ -510,8 +650,12 @@ def _reconcile_postgres(resource, core_api, custom_api):
         else:
             raise
 
-    resource.provisioning_status = "ready"
-    resource.provisioning_error = None
+    if _postgres_cluster_is_ready(status, expected_instances):
+        resource.provisioning_status = "ready"
+        resource.provisioning_error = None
+    else:
+        resource.provisioning_status = "provisioning"
+        resource.provisioning_error = None
 
 
 def _reconcile_redis(resource, core_api, custom_api):
@@ -554,18 +698,35 @@ def _reconcile_redis(resource, core_api, custom_api):
     )
     password = base64.b64decode(password_secret.data["password"]).decode()
 
+    host = _redis_service_host(resource, namespace, name)
     resource.connection_info = {
-        "host": f"{name}.{namespace}.svc.cluster.local",
+        "host": host,
         "port": "6379",
         "tls": True,
         "password_secret": _password_secret_name(resource),
     }
+    if resource.ha_enabled:
+        resource.connection_info["client_mode"] = "cluster-aware"
+        resource.connection_info["startup_nodes"] = f"{host}:6379"
     _sync_resource_env_configs(
         resource, _redis_config_entries(resource, namespace, name, password)
     )
 
-    resource.provisioning_status = "ready"
-    resource.provisioning_error = None
+    if resource.ha_enabled:
+        health_state, health_reason = _redis_cluster_health(
+            _read_redis_cluster_status(custom_api, namespace, name),
+            expected_leader_replicas=resource.leader_replicas,
+            expected_follower_replicas=resource.follower_replicas,
+        )
+    else:
+        health_state, health_reason = _read_redis_standalone_health(
+            core_api,
+            namespace,
+            name,
+        )
+
+    resource.provisioning_status = health_state
+    resource.provisioning_error = health_reason
 
 
 def _delete_postgres(resource, core_api, custom_api):
@@ -710,11 +871,20 @@ def _postgres_config_entries(resource, namespace, name, password):
     ]
 
 
+def _redis_service_host(resource, namespace, name):
+    """Return the stable in-cluster Redis service hostname for this resource."""
+    if resource.ha_enabled:
+        service_name = f"{name}-master"
+    else:
+        service_name = name
+    return f"{service_name}.{namespace}.svc.cluster.local"
+
+
 def _redis_config_entries(resource, namespace, name, password):
     """Build the (name, value, secret) tuples for a Redis resource."""
     slug_upper = resource.slug.upper().replace("-", "_")
-    host = f"{name}.{namespace}.svc.cluster.local"
-    return [
+    host = _redis_service_host(resource, namespace, name)
+    entries = [
         (
             f"{slug_upper}_REDIS_URL",
             f"rediss://:{password}@{host}:6379",
@@ -725,6 +895,14 @@ def _redis_config_entries(resource, namespace, name, password):
         (f"{slug_upper}_REDIS_PASSWORD", password, True),
         (f"{slug_upper}_REDIS_SSL_CA_CERTS", CA_CERT_PATH, False),
     ]
+    if resource.ha_enabled:
+        entries.extend(
+            [
+                (f"{slug_upper}_REDIS_CLUSTER", "true", False),
+                (f"{slug_upper}_REDIS_STARTUP_NODES", f"{host}:6379", False),
+            ]
+        )
+    return entries
 
 
 def _sync_resource_env_configs(resource, entries):

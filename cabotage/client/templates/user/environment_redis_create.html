@@ -32,6 +32,10 @@
         {{ render_field(form.size_class) }}
         {{ render_field(form.storage_size) }}
         {{ render_field(form.ha_enabled) }}
+        <div id="redis-cluster-fields" class="space-y-4{% if not form.ha_enabled.data %} hidden{% endif %}">
+          {{ render_field(form.leader_replicas) }}
+          {{ render_field(form.follower_replicas) }}
+        </div>
         <div class="mt-4">
           <button type="submit" class="btn btn-primary gap-2">
             {{ icon('plus', 'w-4 h-4') }}
@@ -43,6 +47,8 @@
         (function() {
           var nameField = document.getElementById('name');
           var slugField = document.getElementById('slug');
+          var haField = document.getElementById('{{ form.ha_enabled.id }}');
+          var clusterFields = document.getElementById('redis-cluster-fields');
           var slugEdited = false;
           if (!nameField || !slugField) return;
           slugField.addEventListener('input', function() { slugEdited = !!this.value; });
@@ -50,6 +56,13 @@
             if (slugEdited) return;
             slugField.value = this.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
           });
+          if (haField && clusterFields) {
+            var syncClusterFields = function() {
+              clusterFields.classList.toggle('hidden', !haField.checked);
+            };
+            haField.addEventListener('change', syncClusterFields);
+            syncClusterFields();
+          }
         })();
       </script>
     </div>

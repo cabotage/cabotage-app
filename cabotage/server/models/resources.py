@@ -91,6 +91,8 @@ POSTGRES_VERSIONS = ["18"]
 REDIS_VERSIONS = ["8"]
 DEFAULT_POSTGRES_VERSION = "18"
 DEFAULT_REDIS_VERSION = "8"
+DEFAULT_REDIS_LEADER_REPLICAS = 3
+DEFAULT_REDIS_FOLLOWER_REPLICAS = 3
 
 
 # ---------------------------------------------------------------------------
@@ -224,6 +226,16 @@ class RedisResource(Resource):
         postgresql.UUID(as_uuid=True),
         ForeignKey("resources.id"),
         primary_key=True,
+    )
+    leader_replicas: Mapped[int] = mapped_column(
+        Integer,
+        default=DEFAULT_REDIS_LEADER_REPLICAS,
+        server_default=str(DEFAULT_REDIS_LEADER_REPLICAS),
+    )
+    follower_replicas: Mapped[int] = mapped_column(
+        Integer,
+        default=DEFAULT_REDIS_FOLLOWER_REPLICAS,
+        server_default=str(DEFAULT_REDIS_FOLLOWER_REPLICAS),
     )
 
     __mapper_args__ = {

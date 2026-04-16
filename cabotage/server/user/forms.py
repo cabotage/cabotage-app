@@ -32,6 +32,8 @@ from cabotage.server.models.projects import (
     Project,
 )
 from cabotage.server.models.resources import (
+    DEFAULT_REDIS_FOLLOWER_REPLICAS,
+    DEFAULT_REDIS_LEADER_REPLICAS,
     POSTGRES_VERSIONS,
     REDIS_VERSIONS,
     PostgresResource,
@@ -1187,6 +1189,18 @@ class CreateRedisResourceForm(FlaskForm):
         [],
         description="Deploy as a Redis cluster with automatic failover.",
     )
+    leader_replicas = IntegerField(
+        "Leader Replicas",
+        [InputRequired()],
+        default=DEFAULT_REDIS_LEADER_REPLICAS,
+        description="Number of Redis leader nodes when cluster mode is enabled.",
+    )
+    follower_replicas = IntegerField(
+        "Follower Replicas",
+        [InputRequired()],
+        default=DEFAULT_REDIS_FOLLOWER_REPLICAS,
+        description="Number of Redis follower nodes when cluster mode is enabled.",
+    )
 
     def validate_slug(form, field):
         slug = field.data
@@ -1211,6 +1225,20 @@ class CreateRedisResourceForm(FlaskForm):
             raise ValidationError("Storage size must be between 1 and 1024 GB.")
         return True
 
+    def validate_leader_replicas(form, field):
+        if field.data is None:
+            return True
+        if field.data < 1 or field.data > 32:
+            raise ValidationError("Leader replicas must be between 1 and 32.")
+        return True
+
+    def validate_follower_replicas(form, field):
+        if field.data is None:
+            return True
+        if field.data < 1 or field.data > 32:
+            raise ValidationError("Follower replicas must be between 1 and 32.")
+        return True
+
 
 class EditRedisResourceForm(FlaskForm):
     resource_id = HiddenField(
@@ -1230,10 +1258,17 @@ class EditRedisResourceForm(FlaskForm):
         [InputRequired()],
         description="Persistent volume size in gigabytes. Cannot be reduced.",
     )
-    ha_enabled = BooleanField(
-        "High Availability",
-        [],
-        description="Deploy as a Redis cluster with automatic failover.",
+    leader_replicas = IntegerField(
+        "Leader Replicas",
+        [InputRequired()],
+        default=DEFAULT_REDIS_LEADER_REPLICAS,
+        description="Number of Redis leader nodes when cluster mode is enabled.",
+    )
+    follower_replicas = IntegerField(
+        "Follower Replicas",
+        [InputRequired()],
+        default=DEFAULT_REDIS_FOLLOWER_REPLICAS,
+        description="Number of Redis follower nodes when cluster mode is enabled.",
     )
 
     def validate_storage_size(form, field):
@@ -1247,6 +1282,20 @@ class EditRedisResourceForm(FlaskForm):
                 raise ValidationError(
                     f"Storage size cannot be reduced (currently {current} GB)."
                 )
+        return True
+
+    def validate_leader_replicas(form, field):
+        if field.data is None:
+            return True
+        if field.data < 1 or field.data > 32:
+            raise ValidationError("Leader replicas must be between 1 and 32.")
+        return True
+
+    def validate_follower_replicas(form, field):
+        if field.data is None:
+            return True
+        if field.data < 1 or field.data > 32:
+            raise ValidationError("Follower replicas must be between 1 and 32.")
         return True
 
 

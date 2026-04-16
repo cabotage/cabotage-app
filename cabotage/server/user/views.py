@@ -2235,6 +2235,8 @@ def environment_redis_create(org_slug, project_slug, env_slug):
             size_class=form.size_class.data,
             storage_size=form.storage_size.data,
             ha_enabled=form.ha_enabled.data,
+            leader_replicas=form.leader_replicas.data,
+            follower_replicas=form.follower_replicas.data,
         )
         db.session.add(resource)
         db.session.flush()
@@ -2309,10 +2311,38 @@ def environment_redis_settings(org_slug, project_slug, env_slug, resource_slug):
     form = EditRedisResourceForm(obj=resource)
     form.resource_id.data = str(resource.id)
     form.current_storage_size.data = str(resource.storage_size)
+    if request.method == "POST" and "ha_enabled" in request.form:
+        requested_ha = request.form.get("ha_enabled") not in (
+            "",
+            "0",
+            "false",
+            "False",
+            "off",
+        )
+        if requested_ha != resource.ha_enabled:
+            flash(
+                "Redis topology cannot be changed after creation. Create a new Redis service instead.",
+                "error",
+            )
+            delete_form = DeleteRedisResourceForm()
+            delete_form.resource_id.data = str(resource.id)
+            delete_form.name.data = resource.slug
+            return (
+                render_template(
+                    "user/environment_redis_settings.html",
+                    project=project,
+                    environment=environment,
+                    resource=resource,
+                    form=form,
+                    delete_form=delete_form,
+                ),
+                400,
+            )
     if form.validate_on_submit():
         resource.size_class = form.size_class.data
         resource.storage_size = form.storage_size.data
-        resource.ha_enabled = form.ha_enabled.data
+        resource.leader_replicas = form.leader_replicas.data
+        resource.follower_replicas = form.follower_replicas.data
         db.session.add(resource)
         db.session.flush()
         activity = Activity(

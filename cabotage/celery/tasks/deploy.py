@@ -435,6 +435,37 @@ TENANT_NETWORK_POLICIES = [
         },
     },
     {
+        "name": "allow-ingress-from-redis-operator",
+        "spec": {
+            "podSelector": {
+                "matchLabels": {
+                    "resident-redis.cabotage.io": "true",
+                },
+            },
+            "ingress": [
+                {
+                    "from": [
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {
+                                    "kubernetes.io/metadata.name": "redis",
+                                },
+                            },
+                            "podSelector": {
+                                "matchLabels": {
+                                    "name": "redis-operator",
+                                },
+                            },
+                        },
+                    ],
+                    "ports": [
+                        {"port": 6379, "protocol": "TCP"},
+                    ],
+                },
+            ],
+        },
+    },
+    {
         "name": "allow-ingress-from-traefik",
         "spec": {
             "podSelector": {},
