@@ -527,6 +527,40 @@ class TestPostgresRoutes:
         assert r is not None
         assert r.slug == "primary-database"
 
+    def test_create_postgres_rejects_auto_generated_slug_collision(
+        self, client, admin_user, org, project, environment
+    ):
+        _login(client, admin_user)
+        existing = RedisResource(
+            service_version="8",
+            environment_id=environment.id,
+            name="Primary Database",
+            slug="primary-database",
+            size_class="cache.small",
+            storage_size=1,
+        )
+        db.session.add(existing)
+        db.session.commit()
+
+        resp = client.post(
+            f"/projects/{org.slug}/{project.slug}/environments/{environment.slug}/postgres/create",
+            data={
+                "name": "Primary Database",
+                "slug": "",
+                "service_version": "18",
+                "size_class": "db.small",
+                "storage_size": 5,
+                "backup_strategy": "daily",
+                "environment_id": str(environment.id),
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert b"Resource slugs must be unique within environments." in resp.data
+
+        resources = Resource.query.filter_by(environment_id=environment.id).all()
+        assert len(resources) == 1
+
     def test_create_postgres_get_renders_form(
         self, client, admin_user, org, project, environment
     ):
@@ -713,6 +747,42 @@ class TestRedisRoutes:
         assert b"Add Redis Instance" in resp.data
         assert b'id="redis-cluster-fields"' in resp.data
         assert b'id="redis-cluster-fields" class="space-y-4 hidden"' in resp.data
+
+    def test_create_redis_rejects_cross_type_slug_collision(
+        self, client, admin_user, org, project, environment
+    ):
+        _login(client, admin_user)
+        existing = PostgresResource(
+            service_version="18",
+            environment_id=environment.id,
+            name="Existing Database",
+            slug="shared-service",
+            size_class="db.small",
+            storage_size=5,
+            backup_strategy="daily",
+        )
+        db.session.add(existing)
+        db.session.commit()
+
+        resp = client.post(
+            f"/projects/{org.slug}/{project.slug}/environments/{environment.slug}/redis/create",
+            data={
+                "name": "My Cache",
+                "slug": "shared-service",
+                "service_version": "8",
+                "size_class": "cache.medium",
+                "storage_size": 5,
+                "leader_replicas": 3,
+                "follower_replicas": 3,
+                "environment_id": str(environment.id),
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert b"Resource slugs must be unique within environments." in resp.data
+
+        resources = Resource.query.filter_by(environment_id=environment.id).all()
+        assert len(resources) == 1
 
     def test_redis_detail_page(self, client, admin_user, org, project, environment):
         _login(client, admin_user)
