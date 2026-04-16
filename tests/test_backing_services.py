@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from flask_security import hash_password
+from kubernetes.client.rest import ApiException
 
 from cabotage.server import db
 from cabotage.server.models.auth import User
@@ -181,6 +182,8 @@ class TestResourceModels:
         assert r.slug == "cache"
         assert r.type == "redis"
         assert r.provisioning_status == "pending"
+        assert r.leader_replicas == 3
+        assert r.follower_replicas == 3
 
     def test_environment_resources_relationship(self, app, environment):
         pg = PostgresResource(
@@ -536,6 +539,8 @@ class TestRedisRoutes:
                 "size_class": "cache.medium",
                 "storage_size": 5,
                 # ha_enabled omitted = False
+                "leader_replicas": 3,
+                "follower_replicas": 3,
                 "environment_id": str(environment.id),
             },
             follow_redirects=False,
@@ -550,6 +555,8 @@ class TestRedisRoutes:
         assert r.name == "My Cache"
         assert r.size_class == "cache.medium"
         assert r.ha_enabled is False
+        assert r.leader_replicas == 3
+        assert r.follower_replicas == 3
 
     def test_create_redis_get_renders_form(
         self, client, admin_user, org, project, environment
@@ -560,6 +567,8 @@ class TestRedisRoutes:
         )
         assert resp.status_code == 200
         assert b"Add Redis Instance" in resp.data
+        assert b'id="redis-cluster-fields"' in resp.data
+        assert b'id="redis-cluster-fields" class="space-y-4 hidden"' in resp.data
 
     def test_redis_detail_page(self, client, admin_user, org, project, environment):
         _login(client, admin_user)
@@ -591,6 +600,7 @@ class TestRedisRoutes:
             slug="edit-redis",
             size_class="cache.small",
             storage_size=1,
+            ha_enabled=True,
         )
         db.session.add(r)
         db.session.commit()
@@ -603,7 +613,8 @@ class TestRedisRoutes:
                 "service_version": "8",
                 "size_class": "cache.xlarge",
                 "storage_size": 10,
-                "ha_enabled": "y",
+                "leader_replicas": 5,
+                "follower_replicas": 2,
             },
             follow_redirects=False,
         )
@@ -613,6 +624,129 @@ class TestRedisRoutes:
         assert r.size_class == "cache.xlarge"
         assert r.storage_size == 10
         assert r.ha_enabled is True
+        assert r.leader_replicas == 5
+        assert r.follower_replicas == 2
+
+    def test_edit_redis_settings_hides_replica_fields_for_standalone(
+        self, client, admin_user, org, project, environment
+    ):
+        _login(client, admin_user)
+        r = RedisResource(
+            service_version="8",
+            environment_id=environment.id,
+            name="Standalone Settings",
+            slug="standalone-settings",
+            size_class="cache.small",
+            storage_size=1,
+            ha_enabled=False,
+        )
+        db.session.add(r)
+        db.session.commit()
+
+        resp = client.get(
+            f"/projects/{org.slug}/{project.slug}/environments/{environment.slug}/redis/standalone-settings/settings"
+        )
+        assert resp.status_code == 200
+        assert b"Topology is fixed after creation" in resp.data
+        assert b"Leader Replicas" not in resp.data
+        assert b"Follower Replicas" not in resp.data
+
+    def test_edit_redis_settings_shows_replica_fields_for_ha(
+        self, client, admin_user, org, project, environment
+    ):
+        _login(client, admin_user)
+        r = RedisResource(
+            service_version="8",
+            environment_id=environment.id,
+            name="HA Settings",
+            slug="ha-settings",
+            size_class="cache.large",
+            storage_size=5,
+            ha_enabled=True,
+        )
+        db.session.add(r)
+        db.session.commit()
+
+        resp = client.get(
+            f"/projects/{org.slug}/{project.slug}/environments/{environment.slug}/redis/ha-settings/settings"
+        )
+        assert resp.status_code == 200
+        assert b"Leader Replicas" in resp.data
+        assert b"Follower Replicas" in resp.data
+
+    def test_edit_redis_cannot_convert_to_ha(
+        self, client, admin_user, org, project, environment
+    ):
+        _login(client, admin_user)
+        r = RedisResource(
+            service_version="8",
+            environment_id=environment.id,
+            name="Standalone Redis",
+            slug="standalone-redis",
+            size_class="cache.small",
+            storage_size=1,
+            ha_enabled=False,
+        )
+        db.session.add(r)
+        db.session.commit()
+
+        resp = client.post(
+            f"/projects/{org.slug}/{project.slug}/environments/{environment.slug}/redis/standalone-redis/settings",
+            data={
+                "resource_id": str(r.id),
+                "current_storage_size": "1",
+                "size_class": "cache.medium",
+                "storage_size": 2,
+                "ha_enabled": "y",
+                "leader_replicas": 3,
+                "follower_replicas": 3,
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 400
+        assert b"Redis topology cannot be changed after creation" in resp.data
+
+        db.session.refresh(r)
+        assert r.ha_enabled is False
+        assert r.size_class == "cache.small"
+        assert r.storage_size == 1
+
+    def test_edit_redis_cannot_convert_from_ha(
+        self, client, admin_user, org, project, environment
+    ):
+        _login(client, admin_user)
+        r = RedisResource(
+            service_version="8",
+            environment_id=environment.id,
+            name="HA Redis",
+            slug="ha-redis",
+            size_class="cache.large",
+            storage_size=5,
+            ha_enabled=True,
+        )
+        db.session.add(r)
+        db.session.commit()
+
+        resp = client.post(
+            f"/projects/{org.slug}/{project.slug}/environments/{environment.slug}/redis/ha-redis/settings",
+            data={
+                "resource_id": str(r.id),
+                "current_storage_size": "5",
+                "size_class": "cache.xlarge",
+                "storage_size": 10,
+                "ha_enabled": "0",
+                "leader_replicas": 3,
+                "follower_replicas": 3,
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 400
+        assert b"Redis topology cannot be changed after creation" in resp.data
+
+        db.session.refresh(r)
+        assert r.ha_enabled is True
+        assert r.size_class == "cache.large"
+        assert r.storage_size == 5
 
     def test_delete_redis_resource(self, client, admin_user, org, project, environment):
         _login(client, admin_user)
@@ -700,9 +834,36 @@ class TestCeleryTasks:
 
         mock_custom_api = MagicMock()
         mock_core_api = MagicMock()
-        mock_custom_api.get_namespaced_custom_object.side_effect = ApiException(
-            status=404
-        )
+
+        def _get_custom_object(group, version, namespace, plural, name):
+            key = (group, plural, namespace, name)
+            seen = getattr(_get_custom_object, "_seen", set())
+            if key not in seen:
+                seen.add(key)
+                _get_custom_object._seen = seen
+                raise ApiException(status=404)
+
+            if group == "postgresql.cnpg.io" and plural == "clusters":
+                instances = 2 if name.startswith("ha-") else 1
+                return {
+                    "status": {
+                        "conditions": [{"type": "Ready", "status": "True"}],
+                        "readyInstances": instances,
+                        "currentPrimary": f"{name}-1",
+                    }
+                }
+            if group == "redis.redis.opstreelabs.in" and plural == "redisclusters":
+                return {
+                    "status": {
+                        "state": "Ready",
+                        "readyLeaderReplicas": 3,
+                        "readyFollowerReplicas": 3,
+                    }
+                }
+
+            raise ApiException(status=404)
+
+        mock_custom_api.get_namespaced_custom_object.side_effect = _get_custom_object
 
         def _read_secret(name, namespace):
             if name == "operators-ca-crt":
@@ -727,6 +888,13 @@ class TestCeleryTasks:
             raise ApiException(status=404)
 
         mock_core_api.read_namespaced_secret.side_effect = _read_secret
+
+        ready_pod = MagicMock()
+        ready_pod.metadata.deletion_timestamp = None
+        ready_pod.status.phase = "Running"
+        ready_pod.status.conditions = [MagicMock(type="Ready", status="True")]
+        ready_pod.status.container_statuses = []
+        mock_core_api.read_namespaced_pod.return_value = ready_pod
         return mock_custom_api, mock_core_api
 
     def test_reconcile_postgres_creates_crd(self, app, environment):
@@ -762,8 +930,41 @@ class TestCeleryTasks:
         assert r.connection_info["port"] == "5432"
         assert r.connection_info["sslmode"] == "verify-full"
 
+    def test_reconcile_postgres_stays_provisioning_until_cluster_ready(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import _reconcile_postgres
+
+        r = PostgresResource(
+            service_version="18",
+            environment_id=environment.id,
+            name="Pending PG",
+            size_class="db.small",
+            storage_size=5,
+            backup_strategy="daily",
+            postgres_parameters=compute_postgres_parameters("db.small"),
+        )
+        db.session.add(r)
+        db.session.commit()
+
+        mock_custom_api, mock_core_api = self._mock_k8s_apis()
+
+        def _get_custom_object(group, version, namespace, plural, name):
+            if group == "cert-manager.io":
+                raise ApiException(status=404)
+            if group == "postgresql.cnpg.io" and plural == "clusters":
+                return {"status": {"readyInstances": 0, "currentPrimary": None}}
+            raise ApiException(status=404)
+
+        mock_custom_api.get_namespaced_custom_object.side_effect = _get_custom_object
+
+        _reconcile_postgres(r, mock_core_api, mock_custom_api)
+
+        assert r.provisioning_status == "provisioning"
+        assert r.provisioning_error is None
+
     def test_reconcile_redis_standalone(self, app, environment):
-        from cabotage.celery.tasks.resources import _reconcile_redis
+        from cabotage.celery.tasks.resources import _reconcile_redis, _resource_k8s_name
 
         r = RedisResource(
             service_version="8",
@@ -791,10 +992,43 @@ class TestCeleryTasks:
         mock_core_api.create_namespaced_secret.assert_called_once()
 
         assert r.provisioning_status == "ready"
+        assert (
+            r.connection_info["host"]
+            == f"{_resource_k8s_name(r)}.{environment.k8s_namespace}.svc.cluster.local"
+        )
         assert r.connection_info["tls"] is True
 
-    def test_reconcile_redis_cluster(self, app, environment):
+    def test_reconcile_redis_standalone_stays_provisioning_until_pod_ready(
+        self, app, environment
+    ):
         from cabotage.celery.tasks.resources import _reconcile_redis
+
+        r = RedisResource(
+            service_version="8",
+            environment_id=environment.id,
+            name="Slow Redis",
+            size_class="cache.medium",
+            storage_size=2,
+            ha_enabled=False,
+        )
+        db.session.add(r)
+        db.session.commit()
+
+        mock_custom_api, mock_core_api = self._mock_k8s_apis()
+        pending_pod = MagicMock()
+        pending_pod.metadata.deletion_timestamp = None
+        pending_pod.status.phase = "Pending"
+        pending_pod.status.conditions = [MagicMock(type="Ready", status="False")]
+        pending_pod.status.container_statuses = []
+        mock_core_api.read_namespaced_pod.return_value = pending_pod
+
+        _reconcile_redis(r, mock_core_api, mock_custom_api)
+
+        assert r.provisioning_status == "provisioning"
+        assert r.provisioning_error is None
+
+    def test_reconcile_redis_cluster(self, app, environment):
+        from cabotage.celery.tasks.resources import _reconcile_redis, _resource_k8s_name
 
         r = RedisResource(
             service_version="8",
@@ -816,6 +1050,152 @@ class TestCeleryTasks:
         body = cluster_call[0][4]
         assert body["kind"] == "RedisCluster"
         assert body["spec"]["clusterSize"] == 3
+        assert body["spec"]["redisLeader"]["replicas"] == 3
+        assert body["spec"]["redisFollower"]["replicas"] == 3
+        assert (
+            r.connection_info["host"]
+            == f"{_resource_k8s_name(r)}-master.{environment.k8s_namespace}.svc.cluster.local"
+        )
+        assert r.connection_info["client_mode"] == "cluster-aware"
+        assert (
+            r.connection_info["startup_nodes"]
+            == f"{_resource_k8s_name(r)}-master.{environment.k8s_namespace}.svc.cluster.local:6379"
+        )
+
+        env_configs = {
+            cfg.name: cfg
+            for cfg in EnvironmentConfiguration.query.filter_by(resource_id=r.id).all()
+        }
+        slug_upper = r.slug.upper().replace("-", "_")
+        assert (
+            env_configs[f"{slug_upper}_REDIS_HOST"].value
+            == f"{_resource_k8s_name(r)}-master.{environment.k8s_namespace}.svc.cluster.local"
+        )
+        assert env_configs[f"{slug_upper}_REDIS_CLUSTER"].value == "true"
+        assert (
+            env_configs[f"{slug_upper}_REDIS_STARTUP_NODES"].value
+            == f"{_resource_k8s_name(r)}-master.{environment.k8s_namespace}.svc.cluster.local:6379"
+        )
+        assert r.provisioning_status == "ready"
+
+    def test_reconcile_redis_cluster_uses_custom_replica_counts(self, app, environment):
+        from cabotage.celery.tasks.resources import _reconcile_redis
+
+        r = RedisResource(
+            service_version="8",
+            environment_id=environment.id,
+            name="Custom HA Redis",
+            size_class="cache.large",
+            storage_size=5,
+            ha_enabled=True,
+            leader_replicas=4,
+            follower_replicas=2,
+        )
+        db.session.add(r)
+        db.session.commit()
+
+        mock_custom_api, mock_core_api = self._mock_k8s_apis()
+
+        def _get_custom_object(group, version, namespace, plural, name):
+            key = (group, plural, namespace, name)
+            seen = getattr(_get_custom_object, "_seen", set())
+            if key not in seen:
+                seen.add(key)
+                _get_custom_object._seen = seen
+                raise ApiException(status=404)
+            if group == "redis.redis.opstreelabs.in" and plural == "redisclusters":
+                return {
+                    "status": {
+                        "state": "Ready",
+                        "readyLeaderReplicas": 4,
+                        "readyFollowerReplicas": 2,
+                    }
+                }
+            raise ApiException(status=404)
+
+        mock_custom_api.get_namespaced_custom_object.side_effect = _get_custom_object
+
+        _reconcile_redis(r, mock_core_api, mock_custom_api)
+
+        body = mock_custom_api.create_namespaced_custom_object.call_args_list[-1][0][4]
+        assert body["spec"]["clusterSize"] == 4
+        assert body["spec"]["redisLeader"]["replicas"] == 4
+        assert body["spec"]["redisFollower"]["replicas"] == 2
+        assert r.provisioning_status == "ready"
+
+    def test_reconcile_redis_cluster_stays_provisioning_until_operator_ready(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import _reconcile_redis
+
+        r = RedisResource(
+            service_version="8",
+            environment_id=environment.id,
+            name="Pending HA Redis",
+            size_class="cache.large",
+            storage_size=5,
+            ha_enabled=True,
+        )
+        db.session.add(r)
+        db.session.commit()
+
+        mock_custom_api, mock_core_api = self._mock_k8s_apis()
+
+        def _get_custom_object(group, version, namespace, plural, name):
+            if group == "cert-manager.io":
+                raise ApiException(status=404)
+            if group == "redis.redis.opstreelabs.in" and plural == "redisclusters":
+                return {
+                    "status": {
+                        "state": "Initializing",
+                        "readyLeaderReplicas": 1,
+                        "readyFollowerReplicas": 0,
+                    }
+                }
+            raise ApiException(status=404)
+
+        mock_custom_api.get_namespaced_custom_object.side_effect = _get_custom_object
+
+        _reconcile_redis(r, mock_core_api, mock_custom_api)
+
+        assert r.provisioning_status == "provisioning"
+        assert r.provisioning_error is None
+
+    def test_reconcile_redis_standalone_marks_error_on_crash_loop(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import _reconcile_redis
+
+        r = RedisResource(
+            service_version="8",
+            environment_id=environment.id,
+            name="Broken Redis",
+            size_class="cache.medium",
+            storage_size=2,
+            ha_enabled=False,
+        )
+        db.session.add(r)
+        db.session.commit()
+
+        mock_custom_api, mock_core_api = self._mock_k8s_apis()
+        crashed_pod = MagicMock()
+        crashed_pod.metadata.deletion_timestamp = None
+        crashed_pod.status.phase = "Running"
+        crashed_pod.status.conditions = [MagicMock(type="Ready", status="False")]
+        crashed_pod.status.container_statuses = [
+            MagicMock(
+                state=MagicMock(
+                    waiting=MagicMock(reason="CrashLoopBackOff"),
+                    terminated=None,
+                )
+            )
+        ]
+        mock_core_api.read_namespaced_pod.return_value = crashed_pod
+
+        _reconcile_redis(r, mock_core_api, mock_custom_api)
+
+        assert r.provisioning_status == "error"
+        assert "CrashLoopBackOff" in r.provisioning_error
 
     def test_reconcile_postgres_error_raises(self, app, environment):
         from cabotage.celery.tasks.resources import _reconcile_postgres
@@ -1007,7 +1387,30 @@ class TestCRDRendering:
         assert crd["apiVersion"] == "redis.redis.opstreelabs.in/v1beta2"
         assert crd["kind"] == "RedisCluster"
         assert crd["spec"]["clusterSize"] == 3
+        assert crd["spec"]["redisLeader"]["replicas"] == 3
+        assert crd["spec"]["redisFollower"]["replicas"] == 3
         assert crd["spec"]["persistenceEnabled"] is True
         # TLS and password on cluster too
         assert crd["spec"]["TLS"]["secret"]["secretName"].endswith("-tls")
         assert "redisSecret" in crd["spec"]["kubernetesConfig"]
+
+    def test_redis_cluster_crd_with_custom_replica_counts(self, app, environment):
+        from cabotage.celery.tasks.resources import _render_redis_cluster
+
+        r = RedisResource(
+            service_version="8",
+            environment_id=environment.id,
+            name="Custom Cluster",
+            size_class="cache.xlarge",
+            storage_size=10,
+            ha_enabled=True,
+            leader_replicas=5,
+            follower_replicas=2,
+        )
+        db.session.add(r)
+        db.session.flush()
+
+        crd = _render_redis_cluster(r)
+        assert crd["spec"]["clusterSize"] == 5
+        assert crd["spec"]["redisLeader"]["replicas"] == 5
+        assert crd["spec"]["redisFollower"]["replicas"] == 2

@@ -28,9 +28,28 @@
     <div class="card-body">
       <form method="POST" action="{{ url_for('user.environment_redis_settings', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug, resource_slug=resource.slug) }}">
         {{ form.hidden_tag() }}
+        <div class="form-control mb-4">
+          <label class="label">
+            <span class="label-text">Topology</span>
+          </label>
+          <div class="rounded-lg border border-base-300/50 bg-base-100/50 px-4 py-3 text-sm">
+            <div class="font-medium">
+              {{ 'Redis Cluster' if resource.ha_enabled else 'Standalone Redis' }}
+            </div>
+            <div class="text-base-content/60 mt-1">
+              Topology is fixed after creation. Create a new Redis service if you need to switch modes.
+            </div>
+          </div>
+        </div>
         {{ render_field(form.size_class) }}
         {{ render_field(form.storage_size) }}
-        {{ render_field(form.ha_enabled) }}
+        {% if resource.ha_enabled %}
+          {{ render_field(form.leader_replicas) }}
+          {{ render_field(form.follower_replicas) }}
+        {% else %}
+          {{ form.leader_replicas(type='hidden') }}
+          {{ form.follower_replicas(type='hidden') }}
+        {% endif %}
         <div class="mt-4">
           <button type="submit" class="btn btn-primary gap-2">
             {{ icon('check', 'w-4 h-4') }}

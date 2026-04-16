@@ -58,6 +58,15 @@
     </div>
   {% endif %}
 
+  {% if resource.ha_enabled %}
+    <div class="alert alert-info mb-6">
+      <div>
+        {{ icon('info', 'w-5 h-5') }}
+        <span>This is Redis Cluster. Use a cluster-aware client and prefer the provided startup nodes over treating it like standalone Redis.</span>
+      </div>
+    </div>
+  {% endif %}
+
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
     <div class="card bg-base-200/50 border border-base-300/50">
       <div class="card-body">
@@ -88,8 +97,20 @@
           </div>
           <div class="flex justify-between">
             <span class="text-base-content/60">Mode</span>
-            <code class="text-base-content">{{ 'Cluster (3+3)' if resource.ha_enabled else 'Standalone' }}</code>
+            <code class="text-base-content">
+              {{ 'Cluster (' ~ resource.leader_replicas ~ '+' ~ resource.follower_replicas ~ ')' if resource.ha_enabled else 'Standalone' }}
+            </code>
           </div>
+          {% if resource.ha_enabled %}
+            <div class="flex justify-between">
+              <span class="text-base-content/60">Leaders</span>
+              <code class="text-base-content">{{ resource.leader_replicas }}</code>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-base-content/60">Followers</span>
+              <code class="text-base-content">{{ resource.follower_replicas }}</code>
+            </div>
+          {% endif %}
         </div>
       </div>
     </div>
