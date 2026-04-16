@@ -18,7 +18,7 @@ from cabotage.server.models.resources import (
     redis_size_classes,
 )
 from cabotage.server.models.utils import safe_k8s_name
-from cabotage.celery.tasks.deploy import ensure_namespace
+from cabotage.celery.tasks.deploy import ensure_namespace, ensure_network_policies
 
 log = logging.getLogger(__name__)
 
@@ -1494,6 +1494,7 @@ def reconcile_backing_services():
     custom_api = kubernetes.client.CustomObjectsApi(api_client)
     apps_api = kubernetes.client.AppsV1Api(api_client)
     rbac_api = kubernetes.client.RbacAuthorizationV1Api(api_client)
+    networking_api = kubernetes.client.NetworkingV1Api(api_client)
 
     for resource in resources:
         entry = _RECONCILERS.get(resource.type)
@@ -1507,6 +1508,14 @@ def reconcile_backing_services():
                 resource.provisioning_status = "deleted"
                 db.session.commit()
             else:
+                namespace = _resource_namespace(resource)
+                ensure_namespace(core_api, namespace)
+                if (
+                    has_app_context()
+                    and current_app.config.get("NETWORK_POLICIES_ENABLED")
+                    and namespace != "cabotage"
+                ):
+                    ensure_network_policies(networking_api, namespace)
                 reconcile_fn(resource, core_api, custom_api, apps_api, rbac_api)
                 db.session.commit()
         except Exception:

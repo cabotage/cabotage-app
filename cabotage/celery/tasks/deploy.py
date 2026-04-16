@@ -523,7 +523,14 @@ TENANT_NETWORK_POLICIES = [
     {
         "name": "restrict-egress",
         "spec": {
-            "podSelector": {},
+            "podSelector": {
+                "matchExpressions": [
+                    {
+                        "key": "cnpg.io/cluster",
+                        "operator": "DoesNotExist",
+                    },
+                ],
+            },
             "policyTypes": ["Egress"],
             "egress": [
                 # DNS resolution (kube-system CoreDNS)

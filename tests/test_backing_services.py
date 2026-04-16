@@ -1987,6 +1987,9 @@ class TestCeleryTasks:
             patch(
                 "cabotage.celery.tasks.resources.kubernetes.client.RbacAuthorizationV1Api"
             ) as mock_rbac_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.NetworkingV1Api"
+            ) as mock_networking_api_cls,
         ):
             mock_kext.kubernetes_client = MagicMock()
             reconcile_backing_services()
@@ -1995,6 +1998,140 @@ class TestCeleryTasks:
         mock_custom_api_cls.assert_not_called()
         mock_apps_api_cls.assert_not_called()
         mock_rbac_api_cls.assert_not_called()
+        mock_networking_api_cls.assert_not_called()
+
+    def test_reconcile_backing_services_ensures_namespace_and_network_policies(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import reconcile_backing_services
+        from cabotage.server.models.resources import Resource
+
+        app.config["NETWORK_POLICIES_ENABLED"] = True
+        r = RedisResource(
+            service_version="8",
+            environment_id=environment.id,
+            name="Bootstrap First Redis",
+            size_class="cache.small",
+            storage_size=1,
+        )
+        db.session.add(r)
+        db.session.commit()
+
+        with (
+            patch("cabotage.celery.tasks.resources.kubernetes_ext") as mock_kext,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.CoreV1Api"
+            ) as mock_core_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.CustomObjectsApi"
+            ) as mock_custom_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.AppsV1Api"
+            ) as mock_apps_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.RbacAuthorizationV1Api"
+            ) as mock_rbac_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.NetworkingV1Api"
+            ) as mock_networking_api_cls,
+            patch("cabotage.celery.tasks.resources.ensure_namespace") as mock_ensure_ns,
+            patch(
+                "cabotage.celery.tasks.resources.ensure_network_policies"
+            ) as mock_ensure_policies,
+            patch.object(Resource, "query") as mock_query,
+        ):
+            mock_kext.kubernetes_client = MagicMock()
+            mock_reconcile_redis = MagicMock()
+            mock_query.filter.return_value.all.return_value = [r]
+            with patch.dict(
+                "cabotage.celery.tasks.resources._RECONCILERS",
+                {"redis": (mock_reconcile_redis, MagicMock())},
+                clear=True,
+            ):
+                reconcile_backing_services()
+
+        namespace = environment.k8s_namespace
+        mock_ensure_ns.assert_called_once_with(
+            mock_core_api_cls.return_value, namespace
+        )
+        mock_ensure_policies.assert_called_once_with(
+            mock_networking_api_cls.return_value, namespace
+        )
+        mock_reconcile_redis.assert_called_once_with(
+            r,
+            mock_core_api_cls.return_value,
+            mock_custom_api_cls.return_value,
+            mock_apps_api_cls.return_value,
+            mock_rbac_api_cls.return_value,
+        )
+
+    def test_reconcile_backing_services_skips_network_policies_for_cabotage_namespace(
+        self, app, environment, project, org
+    ):
+        from cabotage.celery.tasks.resources import reconcile_backing_services
+        from cabotage.server.models.resources import Resource
+
+        app.config["NETWORK_POLICIES_ENABLED"] = True
+        org.k8s_identifier = "cabotage"
+        environment.uses_environment_namespace = False
+        db.session.commit()
+
+        r = PostgresResource(
+            service_version="18",
+            environment_id=environment.id,
+            name="Control Plane Postgres",
+            size_class="db.small",
+            storage_size=1,
+            backup_strategy="none",
+        )
+        db.session.add(r)
+        db.session.commit()
+
+        with (
+            patch("cabotage.celery.tasks.resources.kubernetes_ext") as mock_kext,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.CoreV1Api"
+            ) as mock_core_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.CustomObjectsApi"
+            ) as mock_custom_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.AppsV1Api"
+            ) as mock_apps_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.RbacAuthorizationV1Api"
+            ) as mock_rbac_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.NetworkingV1Api"
+            ) as mock_networking_api_cls,
+            patch("cabotage.celery.tasks.resources.ensure_namespace") as mock_ensure_ns,
+            patch(
+                "cabotage.celery.tasks.resources.ensure_network_policies"
+            ) as mock_ensure_policies,
+            patch.object(Resource, "query") as mock_query,
+        ):
+            mock_kext.kubernetes_client = MagicMock()
+            mock_reconcile_postgres = MagicMock()
+            mock_query.filter.return_value.all.return_value = [r]
+            with patch.dict(
+                "cabotage.celery.tasks.resources._RECONCILERS",
+                {"postgres": (mock_reconcile_postgres, MagicMock())},
+                clear=True,
+            ):
+                reconcile_backing_services()
+
+        mock_networking_api_cls.assert_called_once()
+        mock_ensure_ns.assert_called_once_with(
+            mock_core_api_cls.return_value, "cabotage"
+        )
+        mock_ensure_policies.assert_not_called()
+        mock_reconcile_postgres.assert_called_once_with(
+            r,
+            mock_core_api_cls.return_value,
+            mock_custom_api_cls.return_value,
+            mock_apps_api_cls.return_value,
+            mock_rbac_api_cls.return_value,
+        )
 
     def test_reconcile_redis_standalone_patches_statefulset_for_backing_pool(
         self, app, environment
