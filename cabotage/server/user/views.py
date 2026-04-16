@@ -181,7 +181,7 @@ user_blueprint = Blueprint(
 
 
 def _config_k8s_namespace(organization, app_env):
-    if app_env.k8s_identifier is not None:
+    if app_env.environment.uses_environment_namespace:
         return safe_k8s_name(
             organization.k8s_identifier, app_env.environment.k8s_identifier
         )
@@ -339,7 +339,11 @@ def _associate_app_with_environment(application, environment, organization, proj
     app_env = ApplicationEnvironment(
         application_id=application.id,
         environment_id=environment.id,
-        k8s_identifier=environment.k8s_identifier,
+        k8s_identifier=(
+            environment.k8s_identifier
+            if environment.uses_environment_namespace
+            else None
+        ),
     )
     db.session.add(app_env)
     db.session.flush()
@@ -949,6 +953,7 @@ def organization_project_create(org_slug):
             name=env_name,
             slug=form.initial_env_slug.data or slugify(env_name),
             is_default=True,
+            uses_environment_namespace=form.environments_enabled.data,
         )
         db.session.add(default_env)
         db.session.flush()
@@ -1151,6 +1156,7 @@ def project_settings(org_slug, project_slug):
             # Reset k8s_identifier on default app_envs to NULL (legacy mode)
             default_env = next((e for e in envs if e.is_default), None)
             if default_env:
+                default_env.uses_environment_namespace = False
                 for app_env in default_env.application_environments:
                     app_env.k8s_identifier = None
                 db.session.flush()
@@ -1301,6 +1307,7 @@ def project_create():
             name=env_name,
             slug=form.initial_env_slug.data or slugify(env_name),
             is_default=True,
+            uses_environment_namespace=form.environments_enabled.data,
         )
         db.session.add(default_env)
         db.session.flush()
@@ -1369,6 +1376,7 @@ def project_environment_create(org_slug, project_slug):
             name=form.name.data,
             slug=slug,
             is_default=form.is_default.data,
+            uses_environment_namespace=project.environments_enabled,
         )
         db.session.add(environment)
         db.session.flush()
@@ -1748,9 +1756,7 @@ def project_environment_configuration_create(org_slug, project_slug, env_slug):
                 if app_env:
                     ns = _config_k8s_namespace(organization, app_env)
                 else:
-                    ns = safe_k8s_name(
-                        organization.k8s_identifier, environment.k8s_identifier
-                    )
+                    ns = environment.k8s_namespace
                 prefix = _env_config_k8s_resource_prefix(project)
                 key_slugs = config_writer.write_configuration(ns, prefix, configuration)
             except Exception:
@@ -1877,9 +1883,7 @@ def project_environment_configuration_edit(org_slug, project_slug, env_slug, con
                 if app_env:
                     ns = _config_k8s_namespace(organization, app_env)
                 else:
-                    ns = safe_k8s_name(
-                        organization.k8s_identifier, environment.k8s_identifier
-                    )
+                    ns = environment.k8s_namespace
                 prefix = _env_config_k8s_resource_prefix(project)
                 key_slugs = config_writer.write_configuration(ns, prefix, configuration)
             except Exception:
@@ -6043,8 +6047,8 @@ def _query_mimir_range(query, start, end, step, tenant_id=None):
 def _compute_observe_namespace(application, app_env):
     """Compute the k8s namespace for an application's environment."""
     org_k8s = application.project.organization.k8s_identifier
-    if app_env and app_env.k8s_identifier is not None:
-        return safe_k8s_name(org_k8s, app_env.environment.k8s_identifier)
+    if app_env and app_env.environment.uses_environment_namespace:
+        return app_env.environment.k8s_namespace
     return org_k8s
 
 
@@ -6916,7 +6920,7 @@ def environment_observe_metric(org_slug, project_slug, env_slug):
         return jsonify({"error": "not configured"}), 404
 
     org_k8s = organization.k8s_identifier
-    env_namespace = safe_k8s_name(org_k8s, environment.k8s_identifier)
+    env_namespace = environment.k8s_namespace
     container_filter = _observe_container_filter()
 
     # Optional application filter
@@ -7097,7 +7101,7 @@ def project_observe_metric(org_slug, project_slug):
 
     traefik_names = _collect_traefik_svc_names(
         all_aes,
-        lambda ae: safe_k8s_name(org_k8s, ae.environment.k8s_identifier),
+        lambda ae: ae.environment.k8s_namespace,
         lambda ae: _compute_observe_prefix(ae.application),
     )
     traefik_svc = _traefik_svc_label(traefik_names)
@@ -7235,7 +7239,7 @@ def organization_observe_metric(org_slug):
 
     traefik_names = _collect_traefik_svc_names(
         all_aes,
-        lambda ae: safe_k8s_name(org_k8s, ae.environment.k8s_identifier),
+        lambda ae: ae.environment.k8s_namespace,
         lambda ae: _compute_observe_prefix(ae.application),
     )
     traefik_svc = _traefik_svc_label(traefik_names)

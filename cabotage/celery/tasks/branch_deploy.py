@@ -56,7 +56,11 @@ def _create_app_env_for_branch_deploy(
     app_env = ApplicationEnvironment(
         application_id=application.id,
         environment_id=environment.id,
-        k8s_identifier=environment.k8s_identifier,
+        k8s_identifier=(
+            environment.k8s_identifier
+            if environment.uses_environment_namespace
+            else None
+        ),
         process_counts=base_app_env.process_counts if base_app_env else {},
         process_pod_classes=base_app_env.process_pod_classes if base_app_env else {},
         auto_deploy_branch=auto_deploy_branch,
@@ -186,7 +190,7 @@ def _precreate_ingresses(environment):
         return
 
     org = environment.project.organization
-    ns_name = safe_k8s_name(org.k8s_identifier, environment.k8s_identifier)
+    ns_name = environment.k8s_namespace
     api_client = kubernetes_ext.kubernetes_client
     core_api = kubernetes.client.CoreV1Api(api_client)
     networking_api = kubernetes.client.NetworkingV1Api(api_client)
@@ -250,8 +254,7 @@ def _teardown_environment(environment):
     from cabotage.celery.tasks.build import build_cache_pvc_name
 
     if current_app.config["KUBERNETES_ENABLED"]:
-        org = environment.project.organization
-        ns_name = safe_k8s_name(org.k8s_identifier, environment.k8s_identifier)
+        ns_name = environment.k8s_namespace
         api_client = kubernetes_ext.kubernetes_client
         core_api = kubernetes.client.CoreV1Api(api_client)
         try:
@@ -664,6 +667,7 @@ def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref
         name=f"PR #{pr_number}",
         slug=env_slug,
         ephemeral=True,
+        uses_environment_namespace=True,
         forked_from_environment_id=base_env.id,
         sort_order=999,
     )

@@ -1,7 +1,7 @@
 """Tests for process_pull_request_hook — branch deploy lifecycle."""
 
 import uuid
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
@@ -14,6 +14,7 @@ from cabotage.server.models.projects import (
     Hook,
     Project,
 )
+from cabotage.server.models.utils import safe_k8s_name
 from cabotage.server.wsgi import app as _app
 
 REPO = "myorg/myrepo"
@@ -406,6 +407,179 @@ class TestPullRequestBranchDeploy:
 
         assert hook.commit_sha is not None
         assert len(hook.commit_sha) > 0
+
+
+class TestBranchDeployNamespaces:
+    @patch("cabotage.celery.tasks.branch_deploy.update_pr_comment")
+    @patch("cabotage.celery.tasks.branch_deploy._build_images_for_app_envs")
+    @patch("cabotage.celery.tasks.branch_deploy._precreate_ingresses")
+    def test_create_branch_deploy_uses_environment_namespace(
+        self,
+        mock_precreate,
+        mock_build_images,
+        mock_update_comment,
+        db_session,
+        branch_deploy_project,
+        environment,
+        installation_id,
+    ):
+        application = _make_app(branch_deploy_project, installation_id)
+        _make_app_env(application, environment)
+
+        from cabotage.celery.tasks.branch_deploy import create_branch_deploy
+
+        create_branch_deploy(
+            branch_deploy_project,
+            pr_number=42,
+            head_sha=uuid.uuid4().hex[:40],
+            installation_id=installation_id,
+            head_ref="feature-branch",
+        )
+
+        pr_environment = Environment.query.filter_by(
+            project_id=branch_deploy_project.id,
+            slug="pr-42",
+        ).first()
+        assert pr_environment is not None
+        assert pr_environment.uses_environment_namespace is True
+        assert pr_environment.k8s_namespace == safe_k8s_name(
+            branch_deploy_project.organization.k8s_identifier,
+            pr_environment.k8s_identifier,
+        )
+
+        pr_app_env = ApplicationEnvironment.query.filter_by(
+            application_id=application.id,
+            environment_id=pr_environment.id,
+        ).first()
+        assert pr_app_env is not None
+        assert pr_app_env.k8s_identifier == pr_environment.k8s_identifier
+
+        mock_precreate.assert_called_once_with(pr_environment)
+        mock_build_images.assert_called_once()
+        mock_update_comment.assert_called_once_with(pr_environment)
+
+    @patch(
+        "cabotage.server.ext.kubernetes.Kubernetes.kubernetes_client",
+        new_callable=PropertyMock,
+    )
+    @patch("cabotage.celery.tasks.deploy.ensure_ingresses")
+    @patch("cabotage.celery.tasks.deploy.ensure_network_policies")
+    @patch("kubernetes.client.NetworkingV1Api")
+    @patch("kubernetes.client.CoreV1Api")
+    def test_precreate_ingresses_uses_pr_namespace(
+        self,
+        mock_core_api_cls,
+        mock_networking_api_cls,
+        mock_ensure_network_policies,
+        mock_ensure_ingresses,
+        mock_kubernetes_client,
+        db_session,
+        branch_deploy_project,
+        environment,
+        installation_id,
+        app,
+    ):
+        app.config["KUBERNETES_ENABLED"] = True
+        app.config["NETWORK_POLICIES_ENABLED"] = True
+        mock_kubernetes_client.return_value = MagicMock()
+
+        application = _make_app(branch_deploy_project, installation_id)
+        pr_environment = Environment(
+            project_id=branch_deploy_project.id,
+            name="PR #42",
+            slug="pr-42",
+            ephemeral=True,
+            uses_environment_namespace=True,
+            forked_from_environment_id=environment.id,
+        )
+        db.session.add(pr_environment)
+        db.session.flush()
+        _make_app_env(
+            application,
+            pr_environment,
+            k8s_identifier=pr_environment.k8s_identifier,
+        )
+
+        mock_core = MagicMock()
+        mock_networking = MagicMock()
+        mock_core.read_namespace.side_effect = Exception("not found")
+        mock_core_api_cls.return_value = mock_core
+        mock_networking_api_cls.return_value = mock_networking
+
+        from kubernetes.client.rest import ApiException
+        from cabotage.celery.tasks.branch_deploy import _precreate_ingresses
+
+        mock_core.read_namespace.side_effect = ApiException(status=404)
+
+        _precreate_ingresses(pr_environment)
+
+        expected_namespace = safe_k8s_name(
+            branch_deploy_project.organization.k8s_identifier,
+            pr_environment.k8s_identifier,
+        )
+        mock_core.read_namespace.assert_called_once_with(expected_namespace)
+        create_call = mock_core.create_namespace.call_args[0][0]
+        assert create_call.metadata.name == expected_namespace
+        mock_ensure_network_policies.assert_called_once_with(
+            mock_networking, expected_namespace
+        )
+        mock_ensure_ingresses.assert_called_once()
+
+    @patch(
+        "cabotage.server.ext.kubernetes.Kubernetes.kubernetes_client",
+        new_callable=PropertyMock,
+    )
+    @patch("cabotage.celery.tasks.branch_deploy._post_teardown_comment")
+    @patch("cabotage.celery.tasks.branch_deploy._deactivate_deployment")
+    @patch("kubernetes.client.CoreV1Api")
+    def test_teardown_branch_deploy_deletes_pr_namespace(
+        self,
+        mock_core_api_cls,
+        mock_deactivate,
+        mock_post_comment,
+        mock_kubernetes_client,
+        db_session,
+        branch_deploy_project,
+        environment,
+        installation_id,
+        app,
+    ):
+        app.config["KUBERNETES_ENABLED"] = True
+        mock_kubernetes_client.return_value = MagicMock()
+
+        application = _make_app(branch_deploy_project, installation_id)
+        pr_environment = Environment(
+            project_id=branch_deploy_project.id,
+            name="PR #42",
+            slug="pr-42",
+            ephemeral=True,
+            uses_environment_namespace=True,
+            forked_from_environment_id=environment.id,
+        )
+        db.session.add(pr_environment)
+        db.session.flush()
+        _make_app_env(
+            application,
+            pr_environment,
+            k8s_identifier=pr_environment.k8s_identifier,
+        )
+
+        mock_core = MagicMock()
+        mock_core_api_cls.return_value = mock_core
+
+        from cabotage.celery.tasks.branch_deploy import teardown_branch_deploy
+
+        teardown_branch_deploy(branch_deploy_project, 42)
+
+        expected_namespace = safe_k8s_name(
+            branch_deploy_project.organization.k8s_identifier,
+            pr_environment.k8s_identifier,
+        )
+        mock_core.delete_namespace.assert_called_once_with(
+            expected_namespace, propagation_policy="Foreground"
+        )
+        mock_deactivate.assert_called_once()
+        mock_post_comment.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

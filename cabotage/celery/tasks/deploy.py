@@ -260,7 +260,7 @@ def k8s_label_value(release):
     app = release.application
     app_env = release.application_environment
     pairs = [(org.slug, org.k8s_identifier)]
-    if app_env.k8s_identifier is not None:
+    if app_env.environment.uses_environment_namespace:
         pairs.append((app_env.environment.slug, app_env.environment.k8s_identifier))
     pairs.append((project.slug, project.k8s_identifier))
     pairs.append((app.slug, app.k8s_identifier))
@@ -282,7 +282,7 @@ def _safe_labels_from_release(release):
         "cabotage.io/project": project.k8s_identifier,
         "cabotage.io/application": app.k8s_identifier,
     }
-    if app_env.k8s_identifier is not None:
+    if app_env.environment.uses_environment_namespace:
         labels["cabotage.io/environment"] = app_env.environment.k8s_identifier
     return labels
 
@@ -1945,8 +1945,7 @@ def render_podspec(release, process_name, service_account_name):
         if dd_api_key:
             init_containers.append(render_datadog_container(dd_api_key, datadog_tags))
 
-    app_env = release.application_environment
-    env = app_env.environment if app_env.k8s_identifier is not None else None
+    env = release.application_environment.environment
     if env and getattr(env, "ephemeral", False):
         node_pool = current_app.config.get("PREVIEW_POOL") or None
     else:

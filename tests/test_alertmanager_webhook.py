@@ -932,7 +932,13 @@ class TestActivityRecording:
 
 @pytest.fixture
 def staging_environment(db_session, project):
-    e = Environment(name="staging", project_id=project.id, ephemeral=False)
+    project.environments_enabled = True
+    e = Environment(
+        name="staging",
+        project_id=project.id,
+        ephemeral=False,
+        uses_environment_namespace=True,
+    )
     db_session.add(e)
     db_session.flush()
     return e
@@ -940,7 +946,13 @@ def staging_environment(db_session, project):
 
 @pytest.fixture
 def production_environment(db_session, project):
-    e = Environment(name="production", project_id=project.id, ephemeral=False)
+    project.environments_enabled = True
+    e = Environment(
+        name="production",
+        project_id=project.id,
+        ephemeral=False,
+        uses_environment_namespace=True,
+    )
     db_session.add(e)
     db_session.flush()
     return e

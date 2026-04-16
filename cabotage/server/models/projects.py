@@ -209,6 +209,9 @@ class Environment(Model, Timestamp):
     ephemeral: Mapped[bool] = mapped_column(Boolean, default=False)
     ttl_hours: Mapped[int | None] = mapped_column(Integer)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    uses_environment_namespace: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     deleted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, index=True)
     forked_from_environment_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True),
@@ -251,14 +254,11 @@ class Environment(Model, Timestamp):
         """The K8s namespace where resources for this environment live.
 
         Uses the combined org+env namespace when environment-scoped
-        namespacing is active (any ApplicationEnvironment has a
-        k8s_identifier), otherwise falls back to the org namespace.
+        namespacing is explicitly enabled for this environment,
+        otherwise falls back to the org namespace.
         """
         org_k8s = self.project.organization.k8s_identifier
-        has_env_namespacing = any(
-            ae.k8s_identifier is not None for ae in self.application_environments
-        )
-        if has_env_namespacing:
+        if self.uses_environment_namespace:
             return safe_k8s_name(org_k8s, self.k8s_identifier)
         return org_k8s
 
@@ -673,7 +673,11 @@ class Application(Model, Timestamp):
         org_k8s = self.project.organization.k8s_identifier
         project_k8s = self.project.k8s_identifier
         app_k8s = self.k8s_identifier
-        env_k8s = app_env.k8s_identifier
+        env_k8s = (
+            app_env.environment.k8s_identifier
+            if app_env.environment.uses_environment_namespace
+            else None
+        )
         return Image._build_repository_name(org_k8s, project_k8s, app_k8s, env_k8s)
 
     def create_release(self, app_env):

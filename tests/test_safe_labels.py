@@ -13,6 +13,7 @@ import cabotage.celery.tasks.deploy as deploy_module
 from cabotage.celery.tasks.deploy import (
     _safe_labels_from_application,
     _safe_labels_from_release,
+    k8s_label_value,
     render_ingress_object,
     render_service,
 )
@@ -54,6 +55,7 @@ def _make_release(env_enabled=True):
         env_obj = MagicMock()
         env_obj.slug = "production"
         env_obj.k8s_identifier = "production-m3n4o5"
+        env_obj.uses_environment_namespace = True
         env_obj.ephemeral = False
         app_env.environment = env_obj
     else:
@@ -61,6 +63,7 @@ def _make_release(env_enabled=True):
         env_obj = MagicMock()
         env_obj.slug = "default"
         env_obj.k8s_identifier = None
+        env_obj.uses_environment_namespace = False
         env_obj.ephemeral = False
         app_env.environment = env_obj
 
@@ -136,6 +139,36 @@ class TestSafeLabelsFromRelease:
         release = _make_release(env_enabled=False)
         labels = _safe_labels_from_release(release)
         _assert_safe_labels(labels, env_expected=False)
+
+    def test_includes_environment_when_env_mode_enabled_even_if_app_env_is_legacy(self):
+        release = _make_release(env_enabled=False)
+        release.application_environment.environment.slug = "production"
+        release.application_environment.environment.k8s_identifier = "production-m3n4o5"
+        release.application_environment.environment.uses_environment_namespace = True
+
+        labels = _safe_labels_from_release(release)
+
+        _assert_safe_labels(labels, env_expected=True)
+
+
+class TestK8sLabelValue:
+    def test_includes_environment_when_env_mode_enabled_even_if_app_env_is_legacy(self):
+        release = _make_release(env_enabled=False)
+        release.application_environment.environment.slug = "production"
+        release.application_environment.environment.k8s_identifier = "production-m3n4o5"
+        release.application_environment.environment.uses_environment_namespace = True
+
+        label_value = k8s_label_value(release)
+
+        assert "production" in label_value
+
+    def test_excludes_environment_when_env_mode_disabled_even_if_app_env_is_set(self):
+        release = _make_release(env_enabled=True)
+        release.application_environment.environment.uses_environment_namespace = False
+
+        label_value = k8s_label_value(release)
+
+        assert "production" not in label_value
 
 
 class TestSafeLabelsFromApplication:
