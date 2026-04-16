@@ -519,26 +519,91 @@ def _render_postgres_certificate(resource):
     }
 
 
+def _service_dns_names(service_name, namespace):
+    return [
+        service_name,
+        f"{service_name}.{namespace}",
+        f"{service_name}.{namespace}.svc",
+        f"{service_name}.{namespace}.svc.cluster.local",
+    ]
+
+
+def _add_pod_dns_names(dns_names, pod_name, namespace, service_names=()):
+    dns_names.update(
+        [
+            pod_name,
+            f"{pod_name}.{namespace}",
+            f"{pod_name}.{namespace}.svc",
+            f"{pod_name}.{namespace}.svc.cluster.local",
+        ]
+    )
+    for service_name in service_names:
+        dns_names.update(
+            [
+                f"{pod_name}.{service_name}",
+                f"{pod_name}.{service_name}.{namespace}",
+                f"{pod_name}.{service_name}.{namespace}.svc",
+                f"{pod_name}.{service_name}.{namespace}.svc.cluster.local",
+            ]
+        )
+
+
 def _render_redis_certificate(resource):
     """Render a cert-manager Certificate for a Redis instance."""
     name = _resource_k8s_name(resource)
     namespace = _resource_namespace(resource)
     secret_name = _tls_secret_name(resource)
 
-    # DNS names for the Redis service and pod endpoints
-    dns_names = [
-        name,
-        f"{name}.{namespace}",
-        f"{name}.{namespace}.svc",
-        f"{name}.{namespace}.svc.cluster.local",
-    ]
-    # Add pod DNS names for headless service
-    for i in range(3):
-        pod = f"{name}-{i}"
-        dns_names.append(pod)
-        dns_names.append(f"{pod}.{namespace}")
-        dns_names.append(f"{pod}.{namespace}.svc")
-        dns_names.append(f"{pod}.{namespace}.svc.cluster.local")
+    if resource.ha_enabled:
+        service_names = [
+            f"{name}-master",
+            f"{name}-leader",
+            f"{name}-leader-additional",
+            f"{name}-leader-headless",
+            f"{name}-follower",
+            f"{name}-follower-additional",
+            f"{name}-follower-headless",
+        ]
+        dns_names = set()
+        for service_name in service_names:
+            dns_names.update(_service_dns_names(service_name, namespace))
+
+        pod_service_names = [
+            f"{name}-master",
+            f"{name}-leader",
+            f"{name}-leader-headless",
+            f"{name}-follower",
+            f"{name}-follower-headless",
+        ]
+        for i in range(resource.leader_replicas):
+            _add_pod_dns_names(
+                dns_names,
+                f"{name}-leader-{i}",
+                namespace,
+                pod_service_names,
+            )
+        for i in range(resource.follower_replicas):
+            _add_pod_dns_names(
+                dns_names,
+                f"{name}-follower-{i}",
+                namespace,
+                pod_service_names,
+            )
+    else:
+        dns_names = set()
+        service_names = [
+            name,
+            f"{name}-additional",
+            f"{name}-headless",
+        ]
+        for service_name in service_names:
+            dns_names.update(_service_dns_names(service_name, namespace))
+        _add_pod_dns_names(
+            dns_names,
+            f"{name}-0",
+            namespace,
+            [name, f"{name}-headless"],
+        )
 
     return {
         "apiVersion": f"{CERTMANAGER_GROUP}/{CERTMANAGER_VERSION}",
@@ -556,7 +621,7 @@ def _render_redis_certificate(resource):
             "isCA": False,
             "privateKey": {"algorithm": "ECDSA", "size": 256},
             "usages": ["digital signature", "key encipherment"],
-            "dnsNames": dns_names,
+            "dnsNames": sorted(dns_names),
             "issuerRef": {
                 "name": TLS_CLUSTER_ISSUER,
                 "kind": "ClusterIssuer",
