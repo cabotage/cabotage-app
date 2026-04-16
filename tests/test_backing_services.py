@@ -834,6 +834,7 @@ class TestCeleryTasks:
 
         mock_custom_api = MagicMock()
         mock_core_api = MagicMock()
+        mock_apps_api = MagicMock()
 
         def _get_custom_object(group, version, namespace, plural, name):
             key = (group, plural, namespace, name)
@@ -895,7 +896,16 @@ class TestCeleryTasks:
         ready_pod.status.conditions = [MagicMock(type="Ready", status="True")]
         ready_pod.status.container_statuses = []
         mock_core_api.read_namespaced_pod.return_value = ready_pod
-        return mock_custom_api, mock_core_api
+
+        def _read_statefulset(name, namespace):
+            statefulset = MagicMock()
+            statefulset.spec.template.metadata.annotations = {
+                "redis.opstreelabs.in": "true",
+            }
+            return statefulset
+
+        mock_apps_api.read_namespaced_stateful_set.side_effect = _read_statefulset
+        return mock_custom_api, mock_core_api, mock_apps_api
 
     def test_reconcile_postgres_creates_crd(self, app, environment):
         from cabotage.celery.tasks.resources import _reconcile_postgres
@@ -912,8 +922,8 @@ class TestCeleryTasks:
         db.session.add(r)
         db.session.commit()
 
-        mock_custom_api, mock_core_api = self._mock_k8s_apis()
-        _reconcile_postgres(r, mock_core_api, mock_custom_api)
+        mock_custom_api, mock_core_api, mock_apps_api = self._mock_k8s_apis()
+        _reconcile_postgres(r, mock_core_api, mock_custom_api, mock_apps_api)
 
         create_calls = mock_custom_api.create_namespaced_custom_object.call_args_list
         assert len(create_calls) == 2
@@ -947,7 +957,7 @@ class TestCeleryTasks:
         db.session.add(r)
         db.session.commit()
 
-        mock_custom_api, mock_core_api = self._mock_k8s_apis()
+        mock_custom_api, mock_core_api, mock_apps_api = self._mock_k8s_apis()
 
         def _get_custom_object(group, version, namespace, plural, name):
             if group == "cert-manager.io":
@@ -958,7 +968,7 @@ class TestCeleryTasks:
 
         mock_custom_api.get_namespaced_custom_object.side_effect = _get_custom_object
 
-        _reconcile_postgres(r, mock_core_api, mock_custom_api)
+        _reconcile_postgres(r, mock_core_api, mock_custom_api, mock_apps_api)
 
         assert r.provisioning_status == "provisioning"
         assert r.provisioning_error is None
@@ -977,8 +987,8 @@ class TestCeleryTasks:
         db.session.add(r)
         db.session.commit()
 
-        mock_custom_api, mock_core_api = self._mock_k8s_apis()
-        _reconcile_redis(r, mock_core_api, mock_custom_api)
+        mock_custom_api, mock_core_api, mock_apps_api = self._mock_k8s_apis()
+        _reconcile_redis(r, mock_core_api, mock_custom_api, mock_apps_api)
 
         create_calls = mock_custom_api.create_namespaced_custom_object.call_args_list
         assert len(create_calls) == 2
@@ -1014,7 +1024,7 @@ class TestCeleryTasks:
         db.session.add(r)
         db.session.commit()
 
-        mock_custom_api, mock_core_api = self._mock_k8s_apis()
+        mock_custom_api, mock_core_api, mock_apps_api = self._mock_k8s_apis()
         pending_pod = MagicMock()
         pending_pod.metadata.deletion_timestamp = None
         pending_pod.status.phase = "Pending"
@@ -1022,7 +1032,7 @@ class TestCeleryTasks:
         pending_pod.status.container_statuses = []
         mock_core_api.read_namespaced_pod.return_value = pending_pod
 
-        _reconcile_redis(r, mock_core_api, mock_custom_api)
+        _reconcile_redis(r, mock_core_api, mock_custom_api, mock_apps_api)
 
         assert r.provisioning_status == "provisioning"
         assert r.provisioning_error is None
@@ -1041,8 +1051,8 @@ class TestCeleryTasks:
         db.session.add(r)
         db.session.commit()
 
-        mock_custom_api, mock_core_api = self._mock_k8s_apis()
-        _reconcile_redis(r, mock_core_api, mock_custom_api)
+        mock_custom_api, mock_core_api, mock_apps_api = self._mock_k8s_apis()
+        _reconcile_redis(r, mock_core_api, mock_custom_api, mock_apps_api)
 
         create_calls = mock_custom_api.create_namespaced_custom_object.call_args_list
         cluster_call = create_calls[-1]
@@ -1094,7 +1104,7 @@ class TestCeleryTasks:
         db.session.add(r)
         db.session.commit()
 
-        mock_custom_api, mock_core_api = self._mock_k8s_apis()
+        mock_custom_api, mock_core_api, mock_apps_api = self._mock_k8s_apis()
 
         def _get_custom_object(group, version, namespace, plural, name):
             key = (group, plural, namespace, name)
@@ -1115,7 +1125,7 @@ class TestCeleryTasks:
 
         mock_custom_api.get_namespaced_custom_object.side_effect = _get_custom_object
 
-        _reconcile_redis(r, mock_core_api, mock_custom_api)
+        _reconcile_redis(r, mock_core_api, mock_custom_api, mock_apps_api)
 
         body = mock_custom_api.create_namespaced_custom_object.call_args_list[-1][0][4]
         assert body["spec"]["clusterSize"] == 4
@@ -1139,7 +1149,7 @@ class TestCeleryTasks:
         db.session.add(r)
         db.session.commit()
 
-        mock_custom_api, mock_core_api = self._mock_k8s_apis()
+        mock_custom_api, mock_core_api, mock_apps_api = self._mock_k8s_apis()
 
         def _get_custom_object(group, version, namespace, plural, name):
             if group == "cert-manager.io":
@@ -1156,7 +1166,7 @@ class TestCeleryTasks:
 
         mock_custom_api.get_namespaced_custom_object.side_effect = _get_custom_object
 
-        _reconcile_redis(r, mock_core_api, mock_custom_api)
+        _reconcile_redis(r, mock_core_api, mock_custom_api, mock_apps_api)
 
         assert r.provisioning_status == "provisioning"
         assert r.provisioning_error is None
@@ -1177,7 +1187,7 @@ class TestCeleryTasks:
         db.session.add(r)
         db.session.commit()
 
-        mock_custom_api, mock_core_api = self._mock_k8s_apis()
+        mock_custom_api, mock_core_api, mock_apps_api = self._mock_k8s_apis()
         crashed_pod = MagicMock()
         crashed_pod.metadata.deletion_timestamp = None
         crashed_pod.status.phase = "Running"
@@ -1192,7 +1202,7 @@ class TestCeleryTasks:
         ]
         mock_core_api.read_namespaced_pod.return_value = crashed_pod
 
-        _reconcile_redis(r, mock_core_api, mock_custom_api)
+        _reconcile_redis(r, mock_core_api, mock_custom_api, mock_apps_api)
 
         assert r.provisioning_status == "error"
         assert "CrashLoopBackOff" in r.provisioning_error
@@ -1214,10 +1224,11 @@ class TestCeleryTasks:
 
         mock_custom_api = MagicMock()
         mock_core_api = MagicMock()
+        mock_apps_api = MagicMock()
         mock_core_api.read_namespaced_secret.side_effect = Exception("K8s unreachable")
 
         with pytest.raises(Exception, match="K8s unreachable"):
-            _reconcile_postgres(r, mock_core_api, mock_custom_api)
+            _reconcile_postgres(r, mock_core_api, mock_custom_api, mock_apps_api)
 
     def test_delete_postgres(self, app, environment):
         from cabotage.celery.tasks.resources import _delete_postgres
@@ -1236,7 +1247,8 @@ class TestCeleryTasks:
 
         mock_custom_api = MagicMock()
         mock_core_api = MagicMock()
-        _delete_postgres(r, mock_core_api, mock_custom_api)
+        mock_apps_api = MagicMock()
+        _delete_postgres(r, mock_core_api, mock_custom_api, mock_apps_api)
 
         assert mock_custom_api.delete_namespaced_custom_object.call_count == 2
         mock_core_api.delete_namespaced_secret.assert_called_once()
@@ -1257,10 +1269,42 @@ class TestCeleryTasks:
 
         mock_custom_api = MagicMock()
         mock_core_api = MagicMock()
-        _delete_redis(r, mock_core_api, mock_custom_api)
+        mock_apps_api = MagicMock()
+        _delete_redis(r, mock_core_api, mock_custom_api, mock_apps_api)
 
         assert mock_custom_api.delete_namespaced_custom_object.call_count == 3
         assert mock_core_api.delete_namespaced_secret.call_count == 2
+
+    def test_reconcile_redis_standalone_patches_statefulset_for_backing_pool(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import _reconcile_redis
+
+        app.config["BACKING_SERVICES_POOL"] = "backing-services"
+        try:
+            r = RedisResource(
+                service_version="8",
+                environment_id=environment.id,
+                name="Placed Redis",
+                size_class="cache.medium",
+                storage_size=2,
+                ha_enabled=False,
+            )
+            db.session.add(r)
+            db.session.commit()
+
+            mock_custom_api, mock_core_api, mock_apps_api = self._mock_k8s_apis()
+            _reconcile_redis(r, mock_core_api, mock_custom_api, mock_apps_api)
+
+            patch_body = mock_apps_api.patch_namespaced_stateful_set.call_args[0][2]
+            assert (
+                patch_body["spec"]["template"]["metadata"]["annotations"][
+                    "karpenter.sh/do-not-disrupt"
+                ]
+                == "true"
+            )
+        finally:
+            app.config.pop("BACKING_SERVICES_POOL", None)
 
 
 # ---------------------------------------------------------------------------
@@ -1299,6 +1343,61 @@ class TestCRDRendering:
         assert crd["spec"]["certificates"]["serverTLSSecret"].endswith("-tls")
         # backup not yet wired (requires object storage credentials)
         assert "backup" not in crd["spec"]
+
+    def test_cnpg_cluster_adds_backing_services_pool_placement(self, app, environment):
+        from cabotage.celery.tasks.resources import _render_cnpg_cluster
+
+        app.config["BACKING_SERVICES_POOL"] = "backing-services"
+        try:
+            r = PostgresResource(
+                service_version="18",
+                environment_id=environment.id,
+                name="Placed PG",
+                size_class="db.large",
+                storage_size=50,
+                ha_enabled=True,
+                backup_strategy="streaming",
+                postgres_parameters=compute_postgres_parameters("db.large"),
+            )
+            db.session.add(r)
+            db.session.flush()
+
+            crd = _render_cnpg_cluster(r)
+            assert (
+                crd["spec"]["inheritedMetadata"]["annotations"][
+                    "karpenter.sh/do-not-disrupt"
+                ]
+                == "true"
+            )
+            assert crd["spec"]["affinity"]["nodeSelector"] == {
+                "cabotage.dev/node-pool": "backing-services"
+            }
+            assert (
+                crd["spec"]["affinity"]["tolerations"][0]["value"] == "backing-services"
+            )
+            assert crd["spec"]["affinity"]["podAntiAffinityType"] == "required"
+            assert crd["spec"]["affinity"]["topologyKey"] == "kubernetes.io/hostname"
+            assert (
+                crd["spec"]["affinity"]["additionalPodAntiAffinity"][
+                    "preferredDuringSchedulingIgnoredDuringExecution"
+                ][0]["podAffinityTerm"]["labelSelector"]["matchLabels"][
+                    "resident-pod.cabotage.io"
+                ]
+                == "true"
+            )
+            assert crd["spec"]["affinity"]["additionalPodAntiAffinity"][
+                "preferredDuringSchedulingIgnoredDuringExecution"
+            ][1]["podAffinityTerm"]["labelSelector"]["matchLabels"][
+                "cabotage.io/resource-id"
+            ] == str(r.id)
+            assert (
+                crd["spec"]["affinity"]["additionalPodAntiAffinity"][
+                    "preferredDuringSchedulingIgnoredDuringExecution"
+                ][1]["podAffinityTerm"]["topologyKey"]
+                == "topology.kubernetes.io/zone"
+            )
+        finally:
+            app.config.pop("BACKING_SERVICES_POOL", None)
 
     def test_cnpg_cluster_ha(self, app, environment):
         from cabotage.celery.tasks.resources import _render_cnpg_cluster
@@ -1368,6 +1467,35 @@ class TestCRDRendering:
         assert crd["spec"]["TLS"]["secret"]["secretName"].endswith("-tls")
         # Password configured
         assert crd["spec"]["kubernetesConfig"]["redisSecret"]["key"] == "password"
+        assert "nodeSelector" not in crd["spec"]
+        assert "tolerations" not in crd["spec"]
+
+    def test_redis_standalone_crd_adds_backing_services_pool_placement(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import _render_redis_standalone
+
+        app.config["BACKING_SERVICES_POOL"] = "backing-services"
+        try:
+            r = RedisResource(
+                service_version="8",
+                environment_id=environment.id,
+                name="Placed Standalone",
+                size_class="cache.medium",
+                storage_size=2,
+                ha_enabled=False,
+            )
+            db.session.add(r)
+            db.session.flush()
+
+            crd = _render_redis_standalone(r)
+            assert crd["spec"]["nodeSelector"] == {
+                "cabotage.dev/node-pool": "backing-services"
+            }
+            assert crd["spec"]["tolerations"][0]["value"] == "backing-services"
+            assert "affinity" not in crd["spec"]
+        finally:
+            app.config.pop("BACKING_SERVICES_POOL", None)
 
     def test_redis_cluster_crd(self, app, environment):
         from cabotage.celery.tasks.resources import _render_redis_cluster
@@ -1393,6 +1521,8 @@ class TestCRDRendering:
         # TLS and password on cluster too
         assert crd["spec"]["TLS"]["secret"]["secretName"].endswith("-tls")
         assert "redisSecret" in crd["spec"]["kubernetesConfig"]
+        assert "nodeSelector" not in crd["spec"]
+        assert "tolerations" not in crd["spec"]
 
     def test_redis_cluster_crd_with_custom_replica_counts(self, app, environment):
         from cabotage.celery.tasks.resources import _render_redis_cluster
@@ -1414,3 +1544,117 @@ class TestCRDRendering:
         assert crd["spec"]["clusterSize"] == 5
         assert crd["spec"]["redisLeader"]["replicas"] == 5
         assert crd["spec"]["redisFollower"]["replicas"] == 2
+
+    def test_redis_cluster_crd_adds_backing_services_pool_placement(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import _render_redis_cluster
+
+        app.config["BACKING_SERVICES_POOL"] = "backing-services"
+        try:
+            r = RedisResource(
+                service_version="8",
+                environment_id=environment.id,
+                name="Placed Cluster",
+                size_class="cache.xlarge",
+                storage_size=10,
+                ha_enabled=True,
+                leader_replicas=3,
+                follower_replicas=2,
+            )
+            db.session.add(r)
+            db.session.flush()
+
+            crd = _render_redis_cluster(r)
+            assert crd["spec"]["nodeSelector"] == {
+                "cabotage.dev/node-pool": "backing-services"
+            }
+            assert crd["spec"]["tolerations"][0]["value"] == "backing-services"
+            assert (
+                crd["spec"]["redisLeader"]["affinity"]["podAntiAffinity"][
+                    "requiredDuringSchedulingIgnoredDuringExecution"
+                ][0]["labelSelector"]["matchLabels"]["role"]
+                == "leader"
+            )
+            assert (
+                crd["spec"]["redisFollower"]["affinity"]["podAntiAffinity"][
+                    "requiredDuringSchedulingIgnoredDuringExecution"
+                ][0]["labelSelector"]["matchLabels"]["role"]
+                == "follower"
+            )
+            assert (
+                crd["spec"]["redisLeader"]["affinity"]["podAntiAffinity"][
+                    "preferredDuringSchedulingIgnoredDuringExecution"
+                ][0]["podAffinityTerm"]["labelSelector"]["matchLabels"][
+                    "resident-pod.cabotage.io"
+                ]
+                == "true"
+            )
+            assert (
+                crd["spec"]["redisLeader"]["affinity"]["podAntiAffinity"][
+                    "preferredDuringSchedulingIgnoredDuringExecution"
+                ][1]["podAffinityTerm"]["labelSelector"]["matchLabels"]["role"]
+                == "leader"
+            )
+            assert (
+                crd["spec"]["redisLeader"]["affinity"]["podAntiAffinity"][
+                    "preferredDuringSchedulingIgnoredDuringExecution"
+                ][1]["podAffinityTerm"]["topologyKey"]
+                == "topology.kubernetes.io/zone"
+            )
+        finally:
+            app.config.pop("BACKING_SERVICES_POOL", None)
+
+    def test_redis_cluster_crd_avoids_required_anti_affinity_for_single_replica_roles(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import _render_redis_cluster
+
+        app.config["BACKING_SERVICES_POOL"] = "backing-services"
+        try:
+            r = RedisResource(
+                service_version="8",
+                environment_id=environment.id,
+                name="Light Cluster",
+                size_class="cache.large",
+                storage_size=5,
+                ha_enabled=True,
+                leader_replicas=1,
+                follower_replicas=1,
+            )
+            db.session.add(r)
+            db.session.flush()
+
+            crd = _render_redis_cluster(r)
+            leader_pod_anti_affinity = crd["spec"]["redisLeader"]["affinity"][
+                "podAntiAffinity"
+            ]
+            follower_pod_anti_affinity = crd["spec"]["redisFollower"]["affinity"][
+                "podAntiAffinity"
+            ]
+            assert (
+                "requiredDuringSchedulingIgnoredDuringExecution"
+                not in leader_pod_anti_affinity
+            )
+            assert (
+                "requiredDuringSchedulingIgnoredDuringExecution"
+                not in follower_pod_anti_affinity
+            )
+            assert (
+                len(
+                    leader_pod_anti_affinity[
+                        "preferredDuringSchedulingIgnoredDuringExecution"
+                    ]
+                )
+                == 1
+            )
+            assert (
+                len(
+                    follower_pod_anti_affinity[
+                        "preferredDuringSchedulingIgnoredDuringExecution"
+                    ]
+                )
+                == 1
+            )
+        finally:
+            app.config.pop("BACKING_SERVICES_POOL", None)
