@@ -11,7 +11,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import cabotage.celery.tasks.build as build_module
-from cabotage.celery.tasks.build import _build_namespace
+from cabotage.celery.tasks.build import _build_namespace, build_cache_pvc_name
+from cabotage.server.models.projects import Application
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -20,12 +21,20 @@ from cabotage.celery.tasks.build import _build_namespace
 _BUILD_MODULE = "cabotage.celery.tasks.build"
 
 
-def _make_app_env(org_k8s="test-org", env_k8s="production", env_enabled=True):
+def _make_app_env(
+    org_k8s="test-org",
+    env_k8s="production",
+    env_enabled=True,
+    uses_environment_namespace=None,
+):
     app_env = MagicMock()
     app_env.application.project.organization.k8s_identifier = org_k8s
+    app_env.environment.k8s_identifier = env_k8s
+    if uses_environment_namespace is None:
+        uses_environment_namespace = env_enabled
+    app_env.environment.uses_environment_namespace = uses_environment_namespace
     if env_enabled:
         app_env.k8s_identifier = env_k8s
-        app_env.environment.k8s_identifier = env_k8s
     else:
         app_env.k8s_identifier = None
     return app_env
@@ -154,6 +163,70 @@ class TestBuildNamespace:
     def test_env_disabled_still_returns_tenant_builds(self):
         app_env = _make_app_env(org_k8s="myorg", env_enabled=False)
         assert _build_namespace(app_env) == "cabotage-tenant-builds"
+
+
+class TestBuildCachePVCName:
+    def test_includes_environment_when_env_mode_enabled_even_if_app_env_is_legacy(self):
+        app_env = _make_app_env(
+            org_k8s="myorg",
+            env_k8s="staging",
+            env_enabled=False,
+            uses_environment_namespace=True,
+        )
+        app_env.application.project.k8s_identifier = "myproject"
+        app_env.application.k8s_identifier = "myapp"
+
+        pvc_name = build_cache_pvc_name(app_env)
+
+        assert pvc_name == "build-image-cache-myorg-myproject-myapp-staging"
+
+    def test_excludes_environment_when_env_mode_disabled_even_if_app_env_has_id(self):
+        app_env = _make_app_env(
+            org_k8s="myorg",
+            env_k8s="staging",
+            env_enabled=True,
+            uses_environment_namespace=False,
+        )
+        app_env.application.project.k8s_identifier = "myproject"
+        app_env.application.k8s_identifier = "myapp"
+
+        pvc_name = build_cache_pvc_name(app_env)
+
+        assert pvc_name == "build-image-cache-myorg-myproject-myapp"
+
+
+class TestRegistryRepositoryName:
+    def test_includes_environment_when_env_mode_enabled_even_if_app_env_is_legacy(self):
+        application = MagicMock(spec=Application)
+        application.project.organization.k8s_identifier = "myorg"
+        application.project.k8s_identifier = "myproject"
+        application.k8s_identifier = "myapp"
+        app_env = _make_app_env(
+            org_k8s="myorg",
+            env_k8s="staging",
+            env_enabled=False,
+            uses_environment_namespace=True,
+        )
+
+        repository_name = Application.registry_repository_name(application, app_env)
+
+        assert repository_name == "cabotage/myorg/staging/myproject/myapp"
+
+    def test_excludes_environment_when_env_mode_disabled_even_if_app_env_has_id(self):
+        application = MagicMock(spec=Application)
+        application.project.organization.k8s_identifier = "myorg"
+        application.project.k8s_identifier = "myproject"
+        application.k8s_identifier = "myapp"
+        app_env = _make_app_env(
+            org_k8s="myorg",
+            env_k8s="staging",
+            env_enabled=True,
+            uses_environment_namespace=False,
+        )
+
+        repository_name = Application.registry_repository_name(application, app_env)
+
+        assert repository_name == "cabotage/myorg/myproject/myapp"
 
 
 # ---------------------------------------------------------------------------

@@ -12,7 +12,6 @@ from cabotage.server.models.projects import (
     activity_plugin,
 )
 from cabotage.server.models.auth import Organization
-from cabotage.server.models.utils import safe_k8s_name
 
 log = logging.getLogger(__name__)
 
@@ -80,9 +79,9 @@ def _resolve_app_env_from_namespace(application, namespace):
 
     # Check each active app env to see if its environment produces this namespace
     for app_env in application.active_application_environments:
-        if app_env.k8s_identifier is None:
+        if not app_env.environment.uses_environment_namespace:
             continue
-        env_namespace = safe_k8s_name(org_k8s, app_env.environment.k8s_identifier)
+        env_namespace = app_env.environment.k8s_namespace
         if namespace == env_namespace:
             return app_env, True
 

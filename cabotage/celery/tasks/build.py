@@ -816,7 +816,7 @@ def build_cache_pvc_name(app_env):
         f"{application.project.k8s_identifier}-"
         f"{application.k8s_identifier}"
     )
-    if app_env.k8s_identifier is not None:
+    if app_env.environment.uses_environment_namespace:
         name += f"-{app_env.environment.k8s_identifier}"
     if len(name) > 63:
         suffix = hashlib.sha256(name.encode()).hexdigest()[:8]

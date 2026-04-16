@@ -14,6 +14,8 @@ from cabotage.server.models.auth import User
 from cabotage.server.models.auth_associations import OrganizationMember
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import (
+    Application,
+    ApplicationEnvironment,
     Environment,
     EnvironmentConfiguration,
     Project,
@@ -25,6 +27,7 @@ from cabotage.server.models.resources import (
     compute_postgres_parameters,
     postgres_size_classes,
 )
+from cabotage.server.models.utils import safe_k8s_name
 from cabotage.server.wsgi import app as _app
 
 
@@ -211,6 +214,80 @@ def _reset_tenant_postgres_backups(app):
 
 
 class TestResourceModels:
+    def test_converted_default_environment_namespace_flips_when_new_app_is_enrolled(
+        self, app, org
+    ):
+        project = Project(
+            name="Converted Project",
+            organization_id=org.id,
+            environments_enabled=True,
+        )
+        db.session.add(project)
+        db.session.flush()
+        environment = Environment(
+            name="default",
+            project_id=project.id,
+            is_default=True,
+        )
+        db.session.add(environment)
+        db.session.flush()
+
+        legacy_app = Application(
+            name="Legacy App",
+            slug=f"legacy-app-{uuid.uuid4().hex[:8]}",
+            project_id=project.id,
+        )
+        enrolled_app = Application(
+            name="Enrolled App",
+            slug=f"enrolled-app-{uuid.uuid4().hex[:8]}",
+            project_id=project.id,
+        )
+        db.session.add(legacy_app)
+        db.session.add(enrolled_app)
+        db.session.flush()
+
+        db.session.add(
+            ApplicationEnvironment(
+                application_id=legacy_app.id,
+                environment_id=environment.id,
+                k8s_identifier=None,
+            )
+        )
+        db.session.add(
+            ApplicationEnvironment(
+                application_id=enrolled_app.id,
+                environment_id=environment.id,
+                k8s_identifier=environment.k8s_identifier,
+            )
+        )
+        db.session.flush()
+
+        # Legacy default environments are supposed to remain on the org namespace
+        # after enabling environments, even if new env-style enrollments are added.
+        assert environment.k8s_namespace == org.k8s_identifier
+
+    def test_environment_namespace_uses_env_namespace_when_explicitly_enabled(
+        self, app, org
+    ):
+        project = Project(
+            name="Env Project",
+            organization_id=org.id,
+            environments_enabled=True,
+        )
+        db.session.add(project)
+        db.session.flush()
+        environment = Environment(
+            name="production",
+            project_id=project.id,
+            uses_environment_namespace=True,
+        )
+        db.session.add(environment)
+        db.session.flush()
+
+        assert environment.k8s_namespace == safe_k8s_name(
+            org.k8s_identifier, environment.k8s_identifier
+        )
+
     def test_create_postgres_resource(self, app, environment):
         r = PostgresResource(
             service_version="18",
