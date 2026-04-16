@@ -970,42 +970,34 @@ def _render_cnpg_cluster(resource, backup_settings=None):
     if pod_annotations:
         inherited_metadata["annotations"] = pod_annotations
 
-    cluster = {
-        "apiVersion": f"{CNPG_GROUP}/{CNPG_VERSION}",
-        "kind": "Cluster",
-        "metadata": {
-            "name": name,
-            "labels": labels,
+    spec: dict[str, object] = {
+        "instances": instances,
+        "imageName": POSTGRES_IMAGES[resource.service_version],
+        "inheritedMetadata": inherited_metadata,
+        "certificates": {
+            "serverTLSSecret": _tls_secret_name(resource),
+            "serverCASecret": TLS_CA_SECRET,
         },
-        "spec": {
-            "instances": instances,
-            "imageName": POSTGRES_IMAGES[resource.service_version],
-            "inheritedMetadata": inherited_metadata,
-            "certificates": {
-                "serverTLSSecret": _tls_secret_name(resource),
-                "serverCASecret": TLS_CA_SECRET,
+        "postgresql": {
+            "parameters": resource.postgres_parameters or {},
+        },
+        "resources": {
+            "requests": {
+                "cpu": size["cpu"]["requests"],
+                "memory": size["memory"]["requests"],
             },
-            "postgresql": {
-                "parameters": resource.postgres_parameters or {},
+            "limits": {
+                "cpu": size["cpu"]["limits"],
+                "memory": size["memory"]["limits"],
             },
-            "resources": {
-                "requests": {
-                    "cpu": size["cpu"]["requests"],
-                    "memory": size["memory"]["requests"],
-                },
-                "limits": {
-                    "cpu": size["cpu"]["limits"],
-                    "memory": size["memory"]["limits"],
-                },
-            },
-            "storage": {
-                "size": f"{resource.storage_size}Gi",
-            },
+        },
+        "storage": {
+            "size": f"{resource.storage_size}Gi",
         },
     }
     affinity = _cnpg_affinity(resource)
     if affinity:
-        cluster["spec"]["affinity"] = affinity
+        spec["affinity"] = affinity
 
     if backup_settings is None and _tenant_postgres_backups_enabled(resource):
         backup_settings = _tenant_postgres_backup_settings()
@@ -1020,9 +1012,18 @@ def _render_cnpg_cluster(resource, backup_settings=None):
         }
         if _postgres_backup_requires_continuous_archiving(resource):
             plugin["isWALArchiver"] = True
-        cluster["spec"]["serviceAccountName"] = backup_settings["service_account_name"]
-        cluster["spec"]["plugins"] = [plugin]
+        spec["serviceAccountName"] = backup_settings["service_account_name"]
+        spec["plugins"] = [plugin]
 
+    cluster = {
+        "apiVersion": f"{CNPG_GROUP}/{CNPG_VERSION}",
+        "kind": "Cluster",
+        "metadata": {
+            "name": name,
+            "labels": labels,
+        },
+        "spec": spec,
+    }
     return cluster
 
 
