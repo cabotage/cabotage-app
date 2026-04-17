@@ -1452,6 +1452,8 @@ def project_environment(org_slug, project_slug, env_slug):
         tcp_references=_tcp_refs,
         postgres_resources=environment.active_postgres_resources,
         redis_resources=environment.active_redis_resources,
+        postgres_enabled=_backing_service_type_enabled("postgres"),
+        redis_enabled=_backing_service_type_enabled("redis"),
     )
 
 
@@ -2021,12 +2023,24 @@ def _resolve_environment(org_slug, project_slug, env_slug):
     return organization, project, environment
 
 
+def _backing_service_type_enabled(resource_type):
+    config_key = {
+        "postgres": "BACKING_SERVICE_POSTGRES_ENABLED",
+        "redis": "BACKING_SERVICE_REDIS_ENABLED",
+    }.get(resource_type)
+    if config_key is None:
+        raise KeyError(f"Unknown backing service type: {resource_type}")
+    return bool(current_app.config.get(config_key, True))
+
+
 @user_blueprint.route(
     "/projects/<org_slug>/<project_slug>/environments/<env_slug>/postgres/create",
     methods=["GET", "POST"],
 )
 @login_required
 def environment_postgres_create(org_slug, project_slug, env_slug):
+    if not _backing_service_type_enabled("postgres"):
+        abort(404)
     organization, project, environment = _resolve_environment(
         org_slug, project_slug, env_slug
     )
@@ -2222,6 +2236,8 @@ def environment_postgres_delete(org_slug, project_slug, env_slug, resource_slug)
 )
 @login_required
 def environment_redis_create(org_slug, project_slug, env_slug):
+    if not _backing_service_type_enabled("redis"):
+        abort(404)
     organization, project, environment = _resolve_environment(
         org_slug, project_slug, env_slug
     )

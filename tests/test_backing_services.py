@@ -41,10 +41,14 @@ def app():
     _app.config["TESTING"] = True
     _app.config["WTF_CSRF_ENABLED"] = False
     _app.config["REQUIRE_MFA"] = False
+    _app.config["BACKING_SERVICE_POSTGRES_ENABLED"] = True
+    _app.config["BACKING_SERVICE_REDIS_ENABLED"] = True
     with _app.app_context():
         yield _app
     # Restore defaults so we don't pollute other test files
     _app.config["REQUIRE_MFA"] = True
+    _app.config["BACKING_SERVICE_POSTGRES_ENABLED"] = False
+    _app.config["BACKING_SERVICE_REDIS_ENABLED"] = False
 
 
 @pytest.fixture
@@ -444,6 +448,19 @@ class TestPostgresParameterTuning:
 
 
 class TestPostgresRoutes:
+    def test_create_postgres_route_404_when_feature_disabled(
+        self, client, admin_user, app, org, project, environment
+    ):
+        _login(client, admin_user)
+        app.config["BACKING_SERVICE_POSTGRES_ENABLED"] = False
+        try:
+            resp = client.get(
+                f"/projects/{org.slug}/{project.slug}/environments/{environment.slug}/postgres/create"
+            )
+            assert resp.status_code == 404
+        finally:
+            app.config["BACKING_SERVICE_POSTGRES_ENABLED"] = True
+
     def test_create_postgres_resource(
         self, client, admin_user, org, project, environment
     ):
@@ -706,6 +723,19 @@ class TestPostgresRoutes:
 
 
 class TestRedisRoutes:
+    def test_create_redis_route_404_when_feature_disabled(
+        self, client, admin_user, app, org, project, environment
+    ):
+        _login(client, admin_user)
+        app.config["BACKING_SERVICE_REDIS_ENABLED"] = False
+        try:
+            resp = client.get(
+                f"/projects/{org.slug}/{project.slug}/environments/{environment.slug}/redis/create"
+            )
+            assert resp.status_code == 404
+        finally:
+            app.config["BACKING_SERVICE_REDIS_ENABLED"] = True
+
     def test_create_redis_resource(self, client, admin_user, org, project, environment):
         _login(client, admin_user)
         resp = client.post(
@@ -735,6 +765,30 @@ class TestRedisRoutes:
         assert r.ha_enabled is False
         assert r.leader_replicas == 3
         assert r.follower_replicas == 3
+
+    def test_environment_page_hides_disabled_backing_service_types(
+        self, client, admin_user, app, org, project, environment
+    ):
+        _login(client, admin_user)
+        app.config["BACKING_SERVICE_POSTGRES_ENABLED"] = False
+        app.config["BACKING_SERVICE_REDIS_ENABLED"] = True
+        try:
+            resp = client.get(
+                f"/projects/{org.slug}/{project.slug}/environments/{environment.slug}"
+            )
+            assert resp.status_code == 200
+            assert b"Add Service" in resp.data
+            assert (
+                f"/projects/{org.slug}/{project.slug}/environments/{environment.slug}/redis/create".encode()
+                in resp.data
+            )
+            assert (
+                f"/projects/{org.slug}/{project.slug}/environments/{environment.slug}/postgres/create".encode()
+                not in resp.data
+            )
+        finally:
+            app.config["BACKING_SERVICE_POSTGRES_ENABLED"] = True
+            app.config["BACKING_SERVICE_REDIS_ENABLED"] = True
 
     def test_create_redis_get_renders_form(
         self, client, admin_user, org, project, environment
@@ -2132,6 +2186,103 @@ class TestCeleryTasks:
             mock_apps_api_cls.return_value,
             mock_rbac_api_cls.return_value,
         )
+
+    def test_reconcile_backing_services_skips_disabled_active_resource(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import reconcile_backing_services
+        from cabotage.server.models.resources import Resource
+
+        app.config["BACKING_SERVICE_REDIS_ENABLED"] = False
+        r = RedisResource(
+            service_version="8",
+            environment_id=environment.id,
+            name="Disabled Redis",
+            size_class="cache.small",
+            storage_size=1,
+        )
+        db.session.add(r)
+        db.session.commit()
+
+        try:
+            with (
+                patch("cabotage.celery.tasks.resources.kubernetes_ext") as mock_kext,
+                patch(
+                    "cabotage.celery.tasks.resources.kubernetes.client.CoreV1Api"
+                ) as mock_core_api_cls,
+                patch(
+                    "cabotage.celery.tasks.resources.kubernetes.client.CustomObjectsApi"
+                ) as mock_custom_api_cls,
+                patch(
+                    "cabotage.celery.tasks.resources.kubernetes.client.AppsV1Api"
+                ) as mock_apps_api_cls,
+                patch(
+                    "cabotage.celery.tasks.resources.kubernetes.client.RbacAuthorizationV1Api"
+                ) as mock_rbac_api_cls,
+                patch(
+                    "cabotage.celery.tasks.resources.kubernetes.client.NetworkingV1Api"
+                ) as mock_networking_api_cls,
+                patch.object(Resource, "query") as mock_query,
+                patch(
+                    "cabotage.celery.tasks.resources.ensure_namespace"
+                ) as mock_ensure_ns,
+            ):
+                mock_kext.kubernetes_client = MagicMock()
+                mock_query.filter.return_value.all.return_value = [r]
+                with patch.dict(
+                    "cabotage.celery.tasks.resources._RECONCILERS",
+                    {"redis": (MagicMock(), MagicMock())},
+                    clear=True,
+                ):
+                    reconcile_backing_services()
+
+            mock_core_api_cls.assert_called_once()
+            mock_custom_api_cls.assert_called_once()
+            mock_apps_api_cls.assert_called_once()
+            mock_rbac_api_cls.assert_called_once()
+            mock_networking_api_cls.assert_called_once()
+            mock_ensure_ns.assert_not_called()
+        finally:
+            app.config["BACKING_SERVICE_REDIS_ENABLED"] = True
+
+    def test_reconcile_backing_services_deletes_disabled_resource(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import reconcile_backing_services
+        from cabotage.server.models.resources import Resource
+
+        app.config["BACKING_SERVICE_POSTGRES_ENABLED"] = False
+        r = PostgresResource(
+            service_version="18",
+            environment_id=environment.id,
+            name="Disabled Postgres",
+            size_class="db.small",
+            storage_size=1,
+            backup_strategy="none",
+        )
+        r.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        db.session.add(r)
+        db.session.commit()
+
+        try:
+            with (
+                patch("cabotage.celery.tasks.resources.kubernetes_ext") as mock_kext,
+                patch.object(Resource, "query") as mock_query,
+            ):
+                mock_kext.kubernetes_client = MagicMock()
+                mock_query.filter.return_value.all.return_value = [r]
+                mock_delete_postgres = MagicMock()
+                with patch.dict(
+                    "cabotage.celery.tasks.resources._RECONCILERS",
+                    {"postgres": (MagicMock(), mock_delete_postgres)},
+                    clear=True,
+                ):
+                    reconcile_backing_services()
+
+            mock_delete_postgres.assert_called_once()
+            assert r.provisioning_status == "deleted"
+        finally:
+            app.config["BACKING_SERVICE_POSTGRES_ENABLED"] = True
 
     def test_reconcile_redis_standalone_patches_statefulset_for_backing_pool(
         self, app, environment
