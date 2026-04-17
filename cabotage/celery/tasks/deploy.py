@@ -350,6 +350,7 @@ def ensure_namespace(core_api_instance, namespace_name):
             raise DeployError(
                 f"Unexpected exception fetching Namespace/{namespace_name}: {exc}"
             )
+    ensure_cabotage_ca_configmap(core_api_instance, namespace_name)
     return namespace
 
 
@@ -699,7 +700,7 @@ def ensure_network_policies(networking_api, namespace):
                 )
 
 
-def render_cabotage_ca_configmap(release):
+def render_cabotage_ca_configmap():
     with open("/var/run/secrets/cabotage.io/ca.crt", "r") as f:
         ca_crt = f.read()
     configmap_object = kubernetes.client.V1ConfigMap(
@@ -713,12 +714,26 @@ def render_cabotage_ca_configmap(release):
     return configmap_object
 
 
-def create_cabotage_ca_configmap(core_api_instance, release):
-    configmap_object = render_cabotage_ca_configmap(release)
-    namespace_name = k8s_namespace(release)
+def create_cabotage_ca_configmap(core_api_instance, namespace_name):
+    configmap_object = render_cabotage_ca_configmap()
     try:
         return core_api_instance.create_namespaced_config_map(
             namespace_name, configmap_object
+        )
+    except ApiException as exc:
+        if exc.status == 409:
+            try:
+                return core_api_instance.read_namespaced_config_map(
+                    "cabotage-ca", namespace_name
+                )
+            except Exception as reread_exc:
+                raise DeployError(
+                    "ConfigMap/cabotage-ca already existed in "
+                    f"{namespace_name}, but re-read failed: {reread_exc}"
+                )
+        raise DeployError(
+            "Unexpected exception creating ConfigMap/cabotage-ca in "
+            f"{namespace_name}: {exc}"
         )
     except Exception as exc:
         raise DeployError(
@@ -727,21 +742,24 @@ def create_cabotage_ca_configmap(core_api_instance, release):
         )
 
 
-def fetch_cabotage_ca_configmap(core_api_instance, release):
-    namespace_name = k8s_namespace(release)
+def ensure_cabotage_ca_configmap(core_api_instance, namespace_name):
     try:
         configmap = core_api_instance.read_namespaced_config_map(
             "cabotage-ca", namespace_name
         )
     except ApiException as exc:
         if exc.status == 404:
-            configmap = create_cabotage_ca_configmap(core_api_instance, release)
+            configmap = create_cabotage_ca_configmap(core_api_instance, namespace_name)
         else:
             raise DeployError(
                 "Unexpected exception fetching ConfigMap/cabotage-ca in "
                 f"{namespace_name}: {exc}"
             )
     return configmap
+
+
+def fetch_cabotage_ca_configmap(core_api_instance, release):
+    return ensure_cabotage_ca_configmap(core_api_instance, k8s_namespace(release))
 
 
 def render_service_account(release):

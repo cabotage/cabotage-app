@@ -114,6 +114,44 @@
     ) }}
   {% endmacro %}
 
+  {% macro backing_service_card(resource, env) %}
+    {% if resource.type == 'postgres' %}
+      {% set res_url = url_for('user.environment_postgres_detail', org_slug=project.organization.slug, project_slug=project.slug, env_slug=env.slug, resource_slug=resource.slug) %}
+      {% set icon_name = 'database' %}
+      {% set color = 'secondary' %}
+      {% set type_label = 'PostgreSQL' %}
+    {% elif resource.type == 'redis' %}
+      {% set res_url = url_for('user.environment_redis_detail', org_slug=project.organization.slug, project_slug=project.slug, env_slug=env.slug, resource_slug=resource.slug) %}
+      {% set icon_name = 'zap' %}
+      {% set color = 'warning' %}
+      {% set type_label = 'Redis' %}
+    {% endif %}
+    {% if resource.provisioning_status == 'ready' %}
+      {% set status = 'running' %}
+    {% elif resource.provisioning_status == 'error' %}
+      {% set status = 'error' %}
+    {% elif resource.provisioning_status == 'provisioning' %}
+      {% set status = 'building' %}
+    {% else %}
+      {% set status = '' %}
+    {% endif %}
+    {% set meta = [
+      type_label,
+      resource.size_class,
+      resource.storage_size ~ ' GB',
+      'HA' if resource.ha_enabled else 'Standalone'
+    ] %}
+    {{ service_card(
+         name=resource.name,
+         slug=resource.slug,
+         url=res_url,
+         status=status,
+         meta_items=meta,
+         color=color,
+         icon_name=icon_name,
+    ) }}
+  {% endmacro %}
+
   {% if project.environments_enabled %}
     {# ── Environment-centric layout ── #}
     {% set sorted_envs = project.active_environments|sort(attribute='sort_order') %}
@@ -137,6 +175,20 @@
             </div>
           {% else %}
             <p class="text-sm text-base-content/30 ml-1">No applications in this environment.</p>
+          {% endif %}
+
+          {% set env_resources = resources_by_env.get(env.id, []) %}
+          {% if env_resources %}
+            <div class="mt-3">
+              <div class="flex items-center gap-3 mb-3">
+                <h3 class="text-xs font-medium text-base-content/35 uppercase tracking-wider">Backing Services</h3>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {% for resource in env_resources %}
+                  {{ backing_service_card(resource, env) }}
+                {% endfor %}
+              </div>
+            </div>
           {% endif %}
         </div>
       {% endfor %}
@@ -223,6 +275,21 @@
           Create Application
         </button>
         {% endif %}
+      </div>
+    {% endif %}
+
+    {% set default_env = project.active_environments[0] if project.active_environments else none %}
+    {% set default_env_resources = resources_by_env.get(default_env.id, []) if default_env else [] %}
+    {% if default_env_resources %}
+      <div class="mt-6">
+        <div class="flex items-center gap-3 mb-3">
+          <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider">Backing Services</h2>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {% for resource in default_env_resources %}
+            {{ backing_service_card(resource, default_env) }}
+          {% endfor %}
+        </div>
       </div>
     {% endif %}
   {% endif %}

@@ -1,11 +1,12 @@
 """Tests for tenant namespace network policy support."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from kubernetes.client.rest import ApiException
 
 from cabotage.celery.tasks.deploy import (
     TENANT_NETWORK_POLICIES,
+    ensure_cabotage_ca_configmap,
     ensure_network_policies,
     render_namespace,
 )
@@ -362,11 +363,38 @@ class TestFetchNamespaceLabel:
         ns.metadata.labels = {}
         core_api.read_namespace.return_value = ns
 
-        fetch_namespace(core_api, FakeRelease())
+        with patch(
+            "cabotage.celery.tasks.deploy.ensure_cabotage_ca_configmap"
+        ) as mock_ensure_ca:
+            fetch_namespace(core_api, FakeRelease())
 
         core_api.patch_namespace.assert_called_once()
         patch_arg = core_api.patch_namespace.call_args.args[1]
         assert patch_arg.metadata.labels["resident-namespace.cabotage.io"] == "true"
+        mock_ensure_ca.assert_called_once_with(
+            core_api, FakeRelease().application_environment.environment.k8s_namespace
+        )
+
+
+class TestEnsureCabotageCAConfigMap:
+    def test_tolerates_create_race(self):
+        core_api = MagicMock()
+        existing = MagicMock()
+        core_api.read_namespaced_config_map.side_effect = [
+            _api_exception(404),
+            existing,
+        ]
+        core_api.create_namespaced_config_map.side_effect = _api_exception(409)
+
+        with patch(
+            "cabotage.celery.tasks.deploy.render_cabotage_ca_configmap",
+            return_value=MagicMock(),
+        ):
+            result = ensure_cabotage_ca_configmap(core_api, "tenant-ns")
+
+        assert result == existing
+        assert core_api.read_namespaced_config_map.call_count == 2
+        core_api.create_namespaced_config_map.assert_called_once()
 
     def test_skips_patch_when_label_present(self):
         from cabotage.celery.tasks.deploy import fetch_namespace
@@ -376,9 +404,15 @@ class TestFetchNamespaceLabel:
         ns.metadata.labels = {"resident-namespace.cabotage.io": "true"}
         core_api.read_namespace.return_value = ns
 
-        fetch_namespace(core_api, FakeRelease())
+        with patch(
+            "cabotage.celery.tasks.deploy.ensure_cabotage_ca_configmap"
+        ) as mock_ensure_ca:
+            fetch_namespace(core_api, FakeRelease())
 
         core_api.patch_namespace.assert_not_called()
+        mock_ensure_ca.assert_called_once_with(
+            core_api, FakeRelease().application_environment.environment.k8s_namespace
+        )
 
     def test_creates_with_label_on_404(self):
         from cabotage.celery.tasks.deploy import fetch_namespace
@@ -388,8 +422,14 @@ class TestFetchNamespaceLabel:
         created_ns = MagicMock()
         core_api.create_namespace.return_value = created_ns
 
-        result = fetch_namespace(core_api, FakeRelease())
+        with patch(
+            "cabotage.celery.tasks.deploy.ensure_cabotage_ca_configmap"
+        ) as mock_ensure_ca:
+            result = fetch_namespace(core_api, FakeRelease())
 
         assert result == created_ns
         create_arg = core_api.create_namespace.call_args.args[0]
         assert create_arg.metadata.labels["resident-namespace.cabotage.io"] == "true"
+        mock_ensure_ca.assert_called_once_with(
+            core_api, FakeRelease().application_environment.environment.k8s_namespace
+        )
