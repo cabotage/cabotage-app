@@ -6,7 +6,7 @@ import pytest
 
 import cabotage.celery.tasks.deploy as deploy_module
 
-DEFAULT_IMAGE = "gcr.io/datadoghq/dogstatsd:default"
+DEFAULT_IMAGE = "datadog/agent:7.78.0"
 
 
 @pytest.fixture
@@ -22,7 +22,7 @@ def mock_app():
     [
         (None, DEFAULT_IMAGE),
         ("", DEFAULT_IMAGE),
-        ("custom.registry/dogstatsd:7.50.0", "custom.registry/dogstatsd:7.50.0"),
+        ("datadog/agent:7.80.0", "datadog/agent:7.80.0"),
     ],
     ids=["none-falls-back", "empty-falls-back", "explicit-overrides"],
 )
