@@ -107,28 +107,29 @@
             </select>
           {% endif %}
 
-          <div class="flex gap-1.5" id="range-selector">
+          <div class="flex gap-1.5" data-range-selector>
             {% for r in ['1h', '6h', '24h', '7d', '30d'] %}
               <button data-range="{{ r }}"
                  class="btn btn-xs {% if current_range == r %}btn-primary{% else %}btn-ghost{% endif %}">{{ r }}</button>
             {% endfor %}
           </div>
         </div>
-        <span id="time-nav" class="inline-flex items-center gap-0.5 mt-1">
+        <span data-time-nav class="inline-flex items-center gap-0.5 mt-1">
           <span class="relative flex flex-col items-center">
-            <button id="nav-left" class="btn btn-xs btn-ghost btn-square" title="Back ½ interval">{{ icon('chevron-left', 'w-3.5 h-3.5') }}</button>
-            <span id="nav-left-label" class="text-[0.5rem] absolute -bottom-2"></span>
+            <button data-nav-left class="btn btn-xs btn-ghost btn-square" title="Back ½ interval">{{ icon('chevron-left', 'w-3.5 h-3.5') }}</button>
+            <span data-nav-left-label class="text-[0.5rem] absolute -bottom-2"></span>
           </span>
-          <button id="nav-now" class="btn btn-xs text-xs {% if has_time_window %}btn-ghost{% else %}btn-primary btn-outline animate-pulse-gentle pointer-events-none{% endif %}" title="Back to live view">Live</button>
-          <span id="nav-right-wrap" class="relative flex flex-col items-center {% if not has_time_window %}opacity-30 pointer-events-none{% endif %}">
-            <button id="nav-right" class="btn btn-xs btn-ghost btn-square" title="Forward ½ interval">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</button>
-            <span id="nav-right-label" class="text-[0.5rem] absolute -bottom-2"></span>
+          <button data-nav-now class="btn btn-xs text-xs {% if has_time_window %}btn-ghost{% else %}btn-primary btn-outline animate-pulse-gentle pointer-events-none{% endif %}" title="Back to live view">Live</button>
+          <span data-nav-right-wrap class="relative flex flex-col items-center {% if not has_time_window %}opacity-30 pointer-events-none{% endif %}">
+            <button data-nav-right class="btn btn-xs btn-ghost btn-square" title="Forward ½ interval">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</button>
+            <span data-nav-right-label class="text-[0.5rem] absolute -bottom-2"></span>
           </span>
         </span>
       </div>
     </div>
 
     {% include "user/_observe_panels.html" %}
+    {% include "user/_observe_backing_service_panels.html" %}
   </div>
 {% endblock content %}
 
@@ -148,12 +149,14 @@
   var METRIC_URL = {{ metric_url|tojson }};
   var RANGE = {{ current_range|tojson }};
   var OBSERVE_LEVEL = {{ observe_level|tojson }};
+  var SHOW_BACKING_SERVICES = {{ show_backing_services_panels|tojson }};
   var REFRESH_MAP = { '1h': 15000, '6h': 60000, '24h': 60000, '7d': 60000, '30d': 60000 };
   var REFRESH_MS = REFRESH_MAP[RANGE] || 15000;
   var RANGE_SECS = { '1h': 3600, '6h': 21600, '24h': 86400, '7d': 604800, '30d': 2592000 };
 
   // Filter hierarchy for cascading dropdowns
   var FILTER_HIERARCHY = {{ filter_hierarchy_json|safe }};
+  var BACKING_SERVICE_HIERARCHY = {{ backing_service_hierarchy_json|safe }};
   var LABEL_MAP = {{ label_map_json|safe }};
 
   // Time window: null = live (anchored to now), otherwise {start, end} in epoch seconds
@@ -551,6 +554,14 @@
       if (g && g !== 'total') url.searchParams.set(m, g);
       else url.searchParams.delete(m);
     });
+    if (SHOW_BACKING_SERVICES) {
+      ['cpu', 'memory', 'network'].forEach(function(m) {
+        var g = backingPanelGroups[m];
+        var key = 'backing_' + m;
+        if (g && g !== 'total') url.searchParams.set(key, g);
+        else url.searchParams.delete(key);
+      });
+    }
     // Cascading filter params
     var projEl = document.getElementById('filter-project');
     var envEl = document.getElementById('filter-environment');
@@ -561,6 +572,9 @@
     else url.searchParams.delete('environment');
     if (appEl && appEl.value) url.searchParams.set('application', appEl.value);
     else url.searchParams.delete('application');
+    var serviceEl = document.getElementById('filter-service');
+    if (serviceEl && serviceEl.value) url.searchParams.set('service', serviceEl.value);
+    else url.searchParams.delete('service');
     history.replaceState(null, '', url);
   }
 
@@ -571,6 +585,11 @@
     errors: {{ current_groups.errors|tojson }},
     network: {{ current_groups.network|tojson }}
   };
+  var backingPanelGroups = SHOW_BACKING_SERVICES ? {
+    cpu: {{ current_backing_service_groups.get('cpu', 'total')|tojson }},
+    memory: {{ current_backing_service_groups.get('memory', 'total')|tojson }},
+    network: {{ current_backing_service_groups.get('network', 'total')|tojson }}
+  } : {};
 
   // Panels config
   var panels = {
@@ -581,23 +600,39 @@
     errors:   { labelKey: 'label', fmt: fmtPct,   type: 'line', short: false, colors: { 'error rate': '#ef4444', '4xx': '#f59e0b', '5xx': '#ef4444' } },
     network:  { labelKey: 'direction', fmt: fmtBytes, type: 'mirror', short: false, colors: { 'tx': '#8b5cf6', 'rx': '#3b82f6' } }
   };
+  var backingPanels = SHOW_BACKING_SERVICES ? {
+    cpu:     { labelKey: 'pod', fmt: fmtCpu, type: 'line', short: false },
+    memory:  { labelKey: 'pod', fmt: fmtMem, type: 'line', short: false },
+    network: { labelKey: 'direction', fmt: fmtBytes, type: 'mirror', short: false, colors: { 'tx': '#8b5cf6', 'rx': '#3b82f6' } }
+  } : {};
 
   // Cache last fetched data per metric so theme switches can re-render without refetch
-  var _panelCache = {};
+  var _panelCache = { primary: {}, backing: {} };
 
-  function renderPanel(metric, result) {
-    var panel = panels[metric];
-    var el = document.getElementById('chart-' + metric);
-    var group = panelGroups[metric] || 'total';
+  function renderPanel(metric, result, setName) {
+    setName = setName || 'primary';
+    var panelSet = setName === 'backing' ? backingPanels : panels;
+    var groupSet = setName === 'backing' ? backingPanelGroups : panelGroups;
+    var panel = panelSet[metric];
+    var el = document.getElementById(setName === 'backing' ? 'chart-backing-' + metric : 'chart-' + metric);
+    var group = groupSet[metric] || 'total';
     var labelKey = panel.labelKey;
     var chartType = panel.type;
     if (metric === 'cpu' || metric === 'memory' || metric === 'network') {
-      if (group === 'total') labelKey = '__total__';
-      else if (group === 'process') labelKey = 'process';
-      else if (group === 'application') labelKey = 'application';
-      else if (group === 'environment') labelKey = 'environment';
-      else if (group === 'project') labelKey = 'project';
-      else labelKey = 'pod';
+      if (setName === 'backing') {
+        if (group === 'total') labelKey = '__total__';
+        else if (group === 'service') labelKey = 'label_cabotage_io_resource_id';
+        else if (group === 'type') labelKey = 'label_backing_service_type';
+        else if (group === 'role') labelKey = 'label_role';
+        else labelKey = 'pod';
+      } else {
+        if (group === 'total') labelKey = '__total__';
+        else if (group === 'process') labelKey = 'process';
+        else if (group === 'application') labelKey = 'application';
+        else if (group === 'environment') labelKey = 'environment';
+        else if (group === 'project') labelKey = 'project';
+        else labelKey = 'pod';
+      }
     } else if (metric === 'errors') {
       if (group === 'status') labelKey = 'label';
     }
@@ -611,17 +646,20 @@
     }
   }
 
-  function fetchAndRender(metric) {
-    var panel = panels[metric];
-    var el = document.getElementById('chart-' + metric);
-    var group = panelGroups[metric] || 'total';
+  function fetchAndRender(metric, setName) {
+    setName = setName || 'primary';
+    var panelSet = setName === 'backing' ? backingPanels : panels;
+    var groupSet = setName === 'backing' ? backingPanelGroups : panelGroups;
+    var el = document.getElementById(setName === 'backing' ? 'chart-backing-' + metric : 'chart-' + metric);
+    var group = groupSet[metric] || 'total';
 
     var processEl = document.getElementById('process-filter');
     var proc = processEl ? processEl.value : '';
     var sysToggle = document.getElementById('system-containers-toggle');
     var includeSys = sysToggle && sysToggle.checked;
-    var qs = '?metric=' + metric + '&range=' + RANGE + '&group=' + group;
-    if (proc) qs += '&process=' + encodeURIComponent(proc);
+    var workload = setName === 'backing' ? 'backing_services' : 'applications';
+    var qs = '?metric=' + metric + '&range=' + RANGE + '&group=' + group + '&workload=' + workload;
+    if (proc && setName !== 'backing') qs += '&process=' + encodeURIComponent(proc);
     if (includeSys) qs += '&system_containers=1';
     if (windowStart && windowEnd) {
       qs += '&start=' + windowStart + '&end=' + windowEnd;
@@ -630,11 +668,13 @@
     var projEl = document.getElementById('filter-project');
     var envEl = document.getElementById('filter-environment');
     var appEl = document.getElementById('filter-application');
+    var serviceEl = document.getElementById('filter-service');
     if (projEl && projEl.value) qs += '&project=' + encodeURIComponent(projEl.value);
     if (envEl && envEl.value) qs += '&environment=' + encodeURIComponent(envEl.value);
-    if (appEl && appEl.value) qs += '&application=' + encodeURIComponent(appEl.value);
+    if (appEl && appEl.value && setName !== 'backing') qs += '&application=' + encodeURIComponent(appEl.value);
+    if (serviceEl && serviceEl.value && setName === 'backing') qs += '&service=' + encodeURIComponent(serviceEl.value);
 
-    var debugEl = document.querySelector('[data-query-debug="' + metric + '"]');
+    var debugEl = document.querySelector('[data-query-debug="' + (setName === 'backing' ? 'backing-' + metric : metric) + '"]');
     fetch(METRIC_URL + qs, { credentials: 'same-origin' })
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(data) {
@@ -645,8 +685,8 @@
           el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/30 text-sm">No data</div>';
           return;
         }
-        _panelCache[metric] = data.result;
-        renderPanel(metric, data.result);
+        _panelCache[setName][metric] = data.result;
+        renderPanel(metric, data.result, setName);
       })
       .catch(function() {
         el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/30 text-sm">Unavailable</div>';
@@ -655,18 +695,21 @@
 
   // Group selector buttons
   document.querySelectorAll('[data-group-selector]').forEach(function(sel) {
-    var metric = sel.getAttribute('data-group-selector');
+    var selectorMetric = sel.getAttribute('data-group-selector');
+    var isBacking = selectorMetric.indexOf('backing-') === 0;
+    var metric = isBacking ? selectorMetric.replace('backing-', '') : selectorMetric;
     sel.querySelectorAll('button[data-group]').forEach(function(btn) {
       btn.addEventListener('click', function() {
         sel.querySelectorAll('button').forEach(function(b) {
           b.className = 'btn btn-xs btn-ghost';
         });
         btn.className = 'btn btn-xs btn-primary';
-        panelGroups[metric] = btn.getAttribute('data-group');
+        if (isBacking) backingPanelGroups[metric] = btn.getAttribute('data-group');
+        else panelGroups[metric] = btn.getAttribute('data-group');
         updateURL();
-        var el = document.getElementById('chart-' + metric);
+        var el = document.getElementById(isBacking ? 'chart-backing-' + metric : 'chart-' + metric);
         el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/20"><span class="loading loading-spinner loading-sm"></span></div>';
-        fetchAndRender(metric);
+        fetchAndRender(metric, isBacking ? 'backing' : 'primary');
       });
     });
   });
@@ -703,13 +746,17 @@
     document.querySelectorAll('[data-metric-panel]').forEach(function(el) {
       el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/20"><span class="loading loading-spinner loading-sm"></span></div>';
     });
-    Object.keys(panels).forEach(fetchAndRender);
+    Object.keys(panels).forEach(function(metric) { fetchAndRender(metric, 'primary'); });
+    if (SHOW_BACKING_SERVICES) {
+      Object.keys(backingPanels).forEach(function(metric) { fetchAndRender(metric, 'backing'); });
+    }
   }
 
   // ── Cascading filter dropdowns ──
   var filterProject = document.getElementById('filter-project');
   var filterEnvironment = document.getElementById('filter-environment');
   var filterApplication = document.getElementById('filter-application');
+  var filterService = document.getElementById('filter-service');
 
   function populateEnvironments() {
     if (!filterEnvironment) return;
@@ -741,6 +788,7 @@
       filterEnvironment.value = prev;
     }
     populateApplications();
+    populateServices();
   }
 
   function populateApplications() {
@@ -792,6 +840,48 @@
     }
   }
 
+  function populateServices() {
+    if (!filterService) return;
+    if (OBSERVE_LEVEL === 'environment') return;
+    var prev = filterService.value;
+    var projSlug = filterProject ? filterProject.value : '';
+    var envSlug = filterEnvironment ? filterEnvironment.value : '';
+    filterService.innerHTML = '<option value="">All services</option>';
+    var services = [];
+    if (OBSERVE_LEVEL === 'organization') {
+      var projects = projSlug
+        ? BACKING_SERVICE_HIERARCHY.filter(function(p) { return p.slug === projSlug; })
+        : BACKING_SERVICE_HIERARCHY;
+      projects.forEach(function(p) {
+        var envs = envSlug
+          ? (p.environments || []).filter(function(e) { return e.slug === envSlug; })
+          : (p.environments || []);
+        envs.forEach(function(e) {
+          (e.services || []).forEach(function(svc) { services.push(svc); });
+        });
+      });
+    } else if (OBSERVE_LEVEL === 'project') {
+      if (envSlug) {
+        var env = BACKING_SERVICE_HIERARCHY.find(function(e) { return e.slug === envSlug; });
+        if (env) services = env.services || [];
+      } else {
+        BACKING_SERVICE_HIERARCHY.forEach(function(e) {
+          (e.services || []).forEach(function(svc) { services.push(svc); });
+        });
+      }
+    }
+    var seen = {};
+    services.forEach(function(svc) {
+      if (seen[svc.id]) return;
+      seen[svc.id] = true;
+      var opt = document.createElement('option');
+      opt.value = svc.id;
+      opt.textContent = svc.name;
+      filterService.appendChild(opt);
+    });
+    if (prev && seen[prev]) filterService.value = prev;
+  }
+
   if (filterProject) {
     filterProject.addEventListener('change', function() {
       populateEnvironments();
@@ -802,12 +892,19 @@
   if (filterEnvironment) {
     filterEnvironment.addEventListener('change', function() {
       populateApplications();
+      populateServices();
       updateURL();
       refreshAllPanels();
     });
   }
   if (filterApplication) {
     filterApplication.addEventListener('change', function() {
+      updateURL();
+      refreshAllPanels();
+    });
+  }
+  if (filterService) {
+    filterService.addEventListener('change', function() {
       updateURL();
       refreshAllPanels();
     });
@@ -828,14 +925,18 @@
     }
     // Always populate applications from hierarchy (for non-environment levels)
     if (filterApplication && OBSERVE_LEVEL !== 'environment') populateApplications();
+    if (filterService && OBSERVE_LEVEL !== 'environment') populateServices();
     // Restore application selection
     if (filterApplication && params.get('application')) {
       filterApplication.value = params.get('application');
     }
+    if (filterService && params.get('service')) {
+      filterService.value = params.get('service');
+    }
   })();
 
   // Range selector — switch time range without full page reload
-  document.querySelectorAll('#range-selector button[data-range]').forEach(function(btn) {
+  document.querySelectorAll('[data-range-selector] button[data-range]').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var newRange = btn.getAttribute('data-range');
       if (newRange === RANGE) return;
@@ -846,10 +947,9 @@
       windowEnd = null;
       updateNavUI();
       // Update button styles
-      document.querySelectorAll('#range-selector button[data-range]').forEach(function(b) {
-        b.className = 'btn btn-xs btn-ghost';
+      document.querySelectorAll('[data-range-selector] button[data-range]').forEach(function(b) {
+        b.className = b.getAttribute('data-range') === RANGE ? 'btn btn-xs btn-primary' : 'btn btn-xs btn-ghost';
       });
-      btn.className = 'btn btn-xs btn-primary';
       updateURL();
       refreshAllPanels();
       if (typeof resetRefreshTimer === 'function') resetRefreshTimer();
@@ -857,26 +957,36 @@
   });
 
   // Time navigation
-  var timeNav = document.getElementById('time-nav');
-  var navLeft = document.getElementById('nav-left');
-  var navRight = document.getElementById('nav-right');
-  var navNow = document.getElementById('nav-now');
-  var navLeftLabel = document.getElementById('nav-left-label');
-  var navRightLabel = document.getElementById('nav-right-label');
+  var timeNavs = document.querySelectorAll('[data-time-nav]');
+  var navLeftButtons = document.querySelectorAll('[data-nav-left]');
+  var navRightButtons = document.querySelectorAll('[data-nav-right]');
+  var navNowButtons = document.querySelectorAll('[data-nav-now]');
+  var navLeftLabels = document.querySelectorAll('[data-nav-left-label]');
+  var navRightLabels = document.querySelectorAll('[data-nav-right-label]');
+  var navRightWraps = document.querySelectorAll('[data-nav-right-wrap]');
   var HALF_LABELS = { '1h': '30m', '6h': '3h', '24h': '12h', '7d': '3.5d', '30d': '15d' };
 
   function updateNavUI() {
-    if (!timeNav) return;
+    if (!timeNavs.length) return;
     var half = HALF_LABELS[RANGE] || '';
-    if (navLeftLabel) navLeftLabel.textContent = '-' + half;
-    if (navRightLabel) navRightLabel.textContent = '+' + half;
     var live = isLive();
-    navNow.className = live
-      ? 'btn btn-xs text-xs btn-primary btn-outline animate-pulse-gentle pointer-events-none'
-      : 'btn btn-xs text-xs btn-ghost';
-    navRight.className = live
-      ? 'btn btn-xs btn-ghost btn-square opacity-30 pointer-events-none'
-      : 'btn btn-xs btn-ghost btn-square';
+    navLeftLabels.forEach(function(label) { label.textContent = '-' + half; });
+    navRightLabels.forEach(function(label) { label.textContent = '+' + half; });
+    navNowButtons.forEach(function(button) {
+      button.className = live
+        ? 'btn btn-xs text-xs btn-primary btn-outline animate-pulse-gentle pointer-events-none'
+        : 'btn btn-xs text-xs btn-ghost';
+    });
+    navRightButtons.forEach(function(button) {
+      button.className = live
+        ? 'btn btn-xs btn-ghost btn-square opacity-30 pointer-events-none'
+        : 'btn btn-xs btn-ghost btn-square';
+    });
+    navRightWraps.forEach(function(wrap) {
+      wrap.className = live
+        ? 'relative flex flex-col items-center opacity-30 pointer-events-none'
+        : 'relative flex flex-col items-center';
+    });
   }
 
   function navigate(direction) {
@@ -902,37 +1012,57 @@
     refreshAllPanels();
   }
 
-  if (navLeft) navLeft.addEventListener('click', function() { navigate(-1); });
-  if (navRight) navRight.addEventListener('click', function() { navigate(1); });
-  if (navNow) navNow.addEventListener('click', function() {
-    windowEnd = null;
-    windowStart = null;
-    updateNavUI();
-    updateURL();
-    refreshAllPanels();
+  navLeftButtons.forEach(function(button) {
+    button.addEventListener('click', function() { navigate(-1); });
+  });
+  navRightButtons.forEach(function(button) {
+    button.addEventListener('click', function() { navigate(1); });
+  });
+  navNowButtons.forEach(function(button) {
+    button.addEventListener('click', function() {
+      windowEnd = null;
+      windowStart = null;
+      updateNavUI();
+      updateURL();
+      refreshAllPanels();
+    });
   });
 
   // Set initial nav button visibility
   updateNavUI();
 
   // Initial load all panels
-  Object.keys(panels).forEach(fetchAndRender);
+  Object.keys(panels).forEach(function(metric) { fetchAndRender(metric, 'primary'); });
+  if (SHOW_BACKING_SERVICES) {
+    Object.keys(backingPanels).forEach(function(metric) { fetchAndRender(metric, 'backing'); });
+  }
 
   // Re-render charts from cache when theme changes so axis/grid colors update
   new MutationObserver(function() {
     Object.keys(panels).forEach(function(metric) {
-      if (_panelCache[metric]) renderPanel(metric, _panelCache[metric]);
+      if (_panelCache.primary[metric]) renderPanel(metric, _panelCache.primary[metric], 'primary');
     });
+    if (SHOW_BACKING_SERVICES) {
+      Object.keys(backingPanels).forEach(function(metric) {
+        if (_panelCache.backing[metric]) renderPanel(metric, _panelCache.backing[metric], 'backing');
+      });
+    }
   }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
   // Auto-refresh (restarts when range changes)
   var refreshTimer = setInterval(function() {
-    Object.keys(panels).forEach(fetchAndRender);
+    Object.keys(panels).forEach(function(metric) { fetchAndRender(metric, 'primary'); });
+    if (SHOW_BACKING_SERVICES) {
+      Object.keys(backingPanels).forEach(function(metric) { fetchAndRender(metric, 'backing'); });
+    }
   }, REFRESH_MS);
   function resetRefreshTimer() {
     clearInterval(refreshTimer);
     refreshTimer = setInterval(function() {
-      Object.keys(panels).forEach(fetchAndRender);
+      Object.keys(panels).forEach(function(metric) { fetchAndRender(metric, 'primary'); });
+      if (SHOW_BACKING_SERVICES) {
+        Object.keys(backingPanels).forEach(function(metric) { fetchAndRender(metric, 'backing'); });
+      }
     }, REFRESH_MS);
   }
 

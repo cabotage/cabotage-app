@@ -233,11 +233,7 @@ def _wait_for_tls_certificate(api_client, namespace, cert_name, timeout=120, log
 
 
 def k8s_namespace(release):
-    org_k8s = release.application.project.organization.k8s_identifier
-    app_env = release.application_environment
-    if app_env.k8s_identifier is not None:
-        return safe_k8s_name(org_k8s, app_env.environment.k8s_identifier)
-    return org_k8s
+    return release.application_environment.environment.k8s_namespace
 
 
 def k8s_resource_prefix(release):
@@ -264,7 +260,7 @@ def k8s_label_value(release):
     app = release.application
     app_env = release.application_environment
     pairs = [(org.slug, org.k8s_identifier)]
-    if app_env.k8s_identifier is not None:
+    if app_env.environment.uses_environment_namespace:
         pairs.append((app_env.environment.slug, app_env.environment.k8s_identifier))
     pairs.append((project.slug, project.k8s_identifier))
     pairs.append((app.slug, app.k8s_identifier))
@@ -286,7 +282,7 @@ def _safe_labels_from_release(release):
         "cabotage.io/project": project.k8s_identifier,
         "cabotage.io/application": app.k8s_identifier,
     }
-    if app_env.k8s_identifier is not None:
+    if app_env.environment.uses_environment_namespace:
         labels["cabotage.io/environment"] = app_env.environment.k8s_identifier
     return labels
 
@@ -325,8 +321,8 @@ def create_namespace(core_api_instance, release):
         )
 
 
-def fetch_namespace(core_api_instance, release):
-    namespace_name = k8s_namespace(release)
+def ensure_namespace(core_api_instance, namespace_name):
+    """Create the namespace if it doesn't exist, ensure resident label is set."""
     try:
         namespace = core_api_instance.read_namespace(namespace_name)
         # Ensure the resident-namespace label is present on existing namespaces
@@ -342,12 +338,24 @@ def fetch_namespace(core_api_instance, release):
             )
     except ApiException as exc:
         if exc.status == 404:
-            namespace = create_namespace(core_api_instance, release)
+            namespace = core_api_instance.create_namespace(
+                kubernetes.client.V1Namespace(
+                    metadata=kubernetes.client.V1ObjectMeta(
+                        name=namespace_name,
+                        labels={"resident-namespace.cabotage.io": "true"},
+                    ),
+                ),
+            )
         else:
             raise DeployError(
                 f"Unexpected exception fetching Namespace/{namespace_name}: {exc}"
             )
+    ensure_cabotage_ca_configmap(core_api_instance, namespace_name)
     return namespace
+
+
+def fetch_namespace(core_api_instance, release):
+    return ensure_namespace(core_api_instance, k8s_namespace(release))
 
 
 TENANT_NETWORK_POLICIES = [
@@ -356,6 +364,106 @@ TENANT_NETWORK_POLICIES = [
         "spec": {
             "podSelector": {},
             "policyTypes": ["Ingress"],
+        },
+    },
+    # CNPG operator-managed pods need unrestricted egress to reach
+    # the K8s API server for CRD reads at startup.
+    {
+        "name": "allow-egress-cnpg-pods",
+        "spec": {
+            "podSelector": {
+                "matchExpressions": [
+                    {"key": "cnpg.io/cluster", "operator": "Exists"},
+                ],
+            },
+            "policyTypes": ["Egress"],
+            "egress": [{}],
+        },
+    },
+    # CNPG pods need ingress from the CNPG operator (status checks
+    # on port 8000) and from other cluster members (replication on
+    # port 5432).
+    {
+        "name": "allow-ingress-cnpg-pods",
+        "spec": {
+            "podSelector": {
+                "matchExpressions": [
+                    {"key": "cnpg.io/cluster", "operator": "Exists"},
+                ],
+            },
+            "ingress": [
+                # CNPG operator (runs in postgres namespace)
+                {
+                    "from": [
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {
+                                    "kubernetes.io/metadata.name": "postgres",
+                                },
+                            },
+                            "podSelector": {
+                                "matchLabels": {
+                                    "app.kubernetes.io/name": "cloudnative-pg",
+                                },
+                            },
+                        },
+                    ],
+                    "ports": [
+                        {"port": 5432, "protocol": "TCP"},
+                        {"port": 8000, "protocol": "TCP"},
+                    ],
+                },
+                # Intra-cluster replication between CNPG instances
+                {
+                    "from": [
+                        {
+                            "podSelector": {
+                                "matchExpressions": [
+                                    {
+                                        "key": "cnpg.io/cluster",
+                                        "operator": "Exists",
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                    "ports": [
+                        {"port": 5432, "protocol": "TCP"},
+                        {"port": 8000, "protocol": "TCP"},
+                    ],
+                },
+            ],
+        },
+    },
+    {
+        "name": "allow-ingress-from-redis-operator",
+        "spec": {
+            "podSelector": {
+                "matchLabels": {
+                    "resident-redis.cabotage.io": "true",
+                },
+            },
+            "ingress": [
+                {
+                    "from": [
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {
+                                    "kubernetes.io/metadata.name": "redis",
+                                },
+                            },
+                            "podSelector": {
+                                "matchLabels": {
+                                    "name": "redis-operator",
+                                },
+                            },
+                        },
+                    ],
+                    "ports": [
+                        {"port": 6379, "protocol": "TCP"},
+                    ],
+                },
+            ],
         },
     },
     {
@@ -416,7 +524,14 @@ TENANT_NETWORK_POLICIES = [
     {
         "name": "restrict-egress",
         "spec": {
-            "podSelector": {},
+            "podSelector": {
+                "matchExpressions": [
+                    {
+                        "key": "cnpg.io/cluster",
+                        "operator": "DoesNotExist",
+                    },
+                ],
+            },
             "policyTypes": ["Egress"],
             "egress": [
                 # DNS resolution (kube-system CoreDNS)
@@ -585,7 +700,7 @@ def ensure_network_policies(networking_api, namespace):
                 )
 
 
-def render_cabotage_ca_configmap(release):
+def render_cabotage_ca_configmap():
     with open("/var/run/secrets/cabotage.io/ca.crt", "r") as f:
         ca_crt = f.read()
     configmap_object = kubernetes.client.V1ConfigMap(
@@ -599,12 +714,26 @@ def render_cabotage_ca_configmap(release):
     return configmap_object
 
 
-def create_cabotage_ca_configmap(core_api_instance, release):
-    configmap_object = render_cabotage_ca_configmap(release)
-    namespace_name = k8s_namespace(release)
+def create_cabotage_ca_configmap(core_api_instance, namespace_name):
+    configmap_object = render_cabotage_ca_configmap()
     try:
         return core_api_instance.create_namespaced_config_map(
             namespace_name, configmap_object
+        )
+    except ApiException as exc:
+        if exc.status == 409:
+            try:
+                return core_api_instance.read_namespaced_config_map(
+                    "cabotage-ca", namespace_name
+                )
+            except Exception as reread_exc:
+                raise DeployError(
+                    "ConfigMap/cabotage-ca already existed in "
+                    f"{namespace_name}, but re-read failed: {reread_exc}"
+                )
+        raise DeployError(
+            "Unexpected exception creating ConfigMap/cabotage-ca in "
+            f"{namespace_name}: {exc}"
         )
     except Exception as exc:
         raise DeployError(
@@ -613,21 +742,24 @@ def create_cabotage_ca_configmap(core_api_instance, release):
         )
 
 
-def fetch_cabotage_ca_configmap(core_api_instance, release):
-    namespace_name = k8s_namespace(release)
+def ensure_cabotage_ca_configmap(core_api_instance, namespace_name):
     try:
         configmap = core_api_instance.read_namespaced_config_map(
             "cabotage-ca", namespace_name
         )
     except ApiException as exc:
         if exc.status == 404:
-            configmap = create_cabotage_ca_configmap(core_api_instance, release)
+            configmap = create_cabotage_ca_configmap(core_api_instance, namespace_name)
         else:
             raise DeployError(
                 "Unexpected exception fetching ConfigMap/cabotage-ca in "
                 f"{namespace_name}: {exc}"
             )
     return configmap
+
+
+def fetch_cabotage_ca_configmap(core_api_instance, release):
+    return ensure_cabotage_ca_configmap(core_api_instance, k8s_namespace(release))
 
 
 def render_service_account(release):
@@ -1850,8 +1982,7 @@ def render_podspec(release, process_name, service_account_name):
                 render_datadog_container(dd_api_key, datadog_tags, dd_image)
             )
 
-    app_env = release.application_environment
-    env = app_env.environment if app_env.k8s_identifier is not None else None
+    env = release.application_environment.environment
     if env and getattr(env, "ephemeral", False):
         node_pool = current_app.config.get("PREVIEW_POOL") or None
     else:

@@ -1,0 +1,134 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, resource_path, page_header, env_tab_nav %}
+
+{% block title %}
+  {{ resource.name }} - {{ environment.name }} - {{ project.name }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': project.organization.slug, 'url': url_for('user.organization', org_slug=project.organization.slug) },
+    {'label': project.slug, 'url': url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug)},
+    {'label': 'environments', 'url': url_for('user.project_environments', org_slug=project.organization.slug, project_slug=project.slug)},
+    {'label': environment.slug, 'url': url_for('user.project_environment', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug)},
+    {'label': 'postgres'},
+    {'label': resource.slug}
+  ]) }}
+{% endblock resource_path %}
+
+{% block tab_bar %}
+  {{ env_tab_nav(project, environment, '') }}
+{% endblock tab_bar %}
+
+{% block content %}
+  {% call page_header(resource.name, 'PostgreSQL Database') %}
+    <div class="flex gap-2">
+      <a href="{{ url_for('user.environment_postgres_settings', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug, resource_slug=resource.slug) }}"
+         class="btn btn-sm btn-ghost gap-1">
+        {{ icon('settings', 'w-4 h-4') }} Settings
+      </a>
+    </div>
+  {% endcall %}
+
+  <div class="flex flex-wrap gap-2 mb-6">
+    {% if resource.provisioning_status == 'ready' %}
+      <span class="badge badge-sm badge-success">Ready</span>
+    {% elif resource.provisioning_status == 'provisioning' %}
+      <span class="badge badge-sm badge-warning">Provisioning</span>
+    {% elif resource.provisioning_status == 'error' %}
+      <span class="badge badge-sm badge-error">Error</span>
+    {% elif resource.provisioning_status == 'deleting' %}
+      <span class="badge badge-sm badge-error">Deleting</span>
+    {% else %}
+      <span class="badge badge-sm badge-ghost">Pending</span>
+    {% endif %}
+    {% if resource.ha_enabled %}
+      <span class="badge badge-sm badge-info">High Availability</span>
+    {% else %}
+      <span class="badge badge-sm badge-ghost">Standalone</span>
+    {% endif %}
+    <span class="badge badge-sm badge-ghost">{{ resource.backup_strategy }} backups</span>
+  </div>
+
+  {% if resource.provisioning_error %}
+    <div class="alert alert-error mb-6">
+      <div>
+        {{ icon('alert-circle', 'w-5 h-5') }}
+        <span>{{ resource.provisioning_error }}</span>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+    <div class="card bg-base-200/50 border border-base-300/50">
+      <div class="card-body">
+        <h3 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Configuration</h3>
+        <div class="flex flex-col gap-2 text-sm">
+          <div class="flex justify-between">
+            <span class="text-base-content/60">Version</span>
+            <code class="text-base-content">PostgreSQL {{ resource.service_version }}</code>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-base-content/60">Size Class</span>
+            <code class="text-base-content">{{ resource.size_class }}</code>
+          </div>
+          {% set sc = postgres_size_classes.get(resource.size_class, {}) %}
+          {% if sc %}
+            <div class="flex justify-between">
+              <span class="text-base-content/60">CPU</span>
+              <code class="text-base-content">{{ sc.cpu.requests }} / {{ sc.cpu.limits }}</code>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-base-content/60">Memory</span>
+              <code class="text-base-content">{{ sc.memory.limits }}</code>
+            </div>
+          {% endif %}
+          <div class="flex justify-between">
+            <span class="text-base-content/60">Storage</span>
+            <code class="text-base-content">{{ resource.storage_size }} GB</code>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-base-content/60">Instances</span>
+            <code class="text-base-content">{{ 2 if resource.ha_enabled else 1 }}</code>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-base-content/60">Backups</span>
+            <code class="text-base-content">{{ resource.backup_strategy }}</code>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {% if resource.connection_info and resource.connection_info.keys()|list|length > 0 %}
+      <div class="card bg-base-200/50 border border-base-300/50">
+        <div class="card-body">
+          <h3 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Connection</h3>
+          <div class="flex flex-col gap-2 text-sm">
+            {% for key, val in resource.connection_info.items() %}
+              <div class="flex justify-between">
+                <span class="text-base-content/60">{{ key }}</span>
+                <code class="text-base-content truncate max-w-xs">{{ val }}</code>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
+  {% if resource.postgres_parameters %}
+    <div class="card bg-base-200/50 border border-base-300/50 max-w-2xl">
+      <div class="card-body">
+        <h3 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Tuned Parameters</h3>
+        <div class="flex flex-col gap-1 text-sm">
+          {% for key, val in resource.postgres_parameters.items()|sort %}
+            <div class="flex justify-between">
+              <code class="text-base-content/60">{{ key }}</code>
+              <code class="text-base-content">{{ val }}</code>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
+{% endblock content %}

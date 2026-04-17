@@ -122,6 +122,91 @@
     </div>
   {% endif %}
 
+  <hr class="border-base-content/10 my-6" id="services">
+
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider">Backing Services</h2>
+    {% if postgres_enabled or redis_enabled %}
+      <div class="dropdown dropdown-end">
+        <label tabindex="0" class="btn btn-primary btn-sm gap-1.5">
+          {{ icon('plus', 'w-4 h-4') }} Add Service
+        </label>
+        <ul tabindex="0" class="menu menu-md dropdown-content bg-base-100 rounded-box z-50 mt-1 w-48 p-2 shadow-lg border border-base-300">
+          {% if postgres_enabled %}
+            <li><a href="{{ url_for('user.environment_postgres_create', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}">
+              {{ icon('database', 'w-3.5 h-3.5') }} PostgreSQL
+            </a></li>
+          {% endif %}
+          {% if redis_enabled %}
+            <li><a href="{{ url_for('user.environment_redis_create', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}">
+              {{ icon('zap', 'w-3.5 h-3.5') }} Redis
+            </a></li>
+          {% endif %}
+        </ul>
+      </div>
+    {% endif %}
+  </div>
+
+  {% set all_resources = postgres_resources + redis_resources %}
+  {% if all_resources %}
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      {% for resource in all_resources %}
+        {% if resource.type == 'postgres' %}
+          {% set res_url = url_for('user.environment_postgres_detail', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug, resource_slug=resource.slug) %}
+          {% set icon_name = 'database' %}
+          {% set color = 'secondary' %}
+        {% elif resource.type == 'redis' %}
+          {% set res_url = url_for('user.environment_redis_detail', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug, resource_slug=resource.slug) %}
+          {% set icon_name = 'zap' %}
+          {% set color = 'warning' %}
+        {% endif %}
+        {% if resource.provisioning_status == 'ready' %}
+          {% set status = 'running' %}
+        {% elif resource.provisioning_status == 'error' %}
+          {% set status = 'error' %}
+        {% elif resource.provisioning_status == 'provisioning' %}
+          {% set status = 'building' %}
+        {% else %}
+          {% set status = '' %}
+        {% endif %}
+        {% set meta = [
+          resource.size_class,
+          resource.storage_size ~ ' GB',
+          'HA' if resource.ha_enabled else 'Standalone'
+        ] %}
+        {{ service_card(
+             name=resource.name,
+             slug=resource.slug,
+             url=res_url,
+             status=status,
+             meta_items=meta,
+             color=color,
+             icon_name=icon_name,
+        ) }}
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <div class="text-base-content/15 mb-4">{{ icon('database', 'w-12 h-12') }}</div>
+      <h3 class="text-base font-medium text-base-content/60 mb-1">No backing services</h3>
+      {% if postgres_enabled or redis_enabled %}
+        <p class="text-sm text-base-content/40 max-w-sm">
+          Add a
+          {% if postgres_enabled and redis_enabled %}
+            PostgreSQL database or Redis instance
+          {% elif postgres_enabled %}
+            PostgreSQL database
+          {% else %}
+            Redis instance
+          {% endif %}
+          to this environment.
+        </p>
+      {% else %}
+        <p class="text-sm text-base-content/40 max-w-sm">Backing services are disabled for this Cabotage deployment.</p>
+      {% endif %}
+    </div>
+  {% endif %}
+
   <hr class="border-base-content/10 my-6" id="config">
 
   <div class="flex items-center justify-between mb-4">

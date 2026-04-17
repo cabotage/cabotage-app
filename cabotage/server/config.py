@@ -6,6 +6,46 @@ from flask_security import uia_username_mapper, uia_email_mapper
 basedir = os.path.abspath(os.path.dirname(__file__))
 
 
+def validate_tenant_postgres_backup_config(config):
+    if not config.get("TENANT_POSTGRES_BACKUPS_ENABLED"):
+        return
+
+    provider = str(config.get("TENANT_POSTGRES_BACKUP_PROVIDER") or "").strip().lower()
+    if provider not in {"s3", "rustfs"}:
+        raise ValueError(
+            "TENANT_POSTGRES_BACKUP_PROVIDER must be 's3' or 'rustfs' when "
+            "TENANT_POSTGRES_BACKUPS_ENABLED is true"
+        )
+
+    required_keys = [
+        "TENANT_POSTGRES_BACKUP_BUCKET",
+        "TENANT_POSTGRES_BACKUP_PATH_PREFIX",
+        "TENANT_POSTGRES_BACKUP_PLUGIN_NAME",
+        "TENANT_POSTGRES_BACKUP_RETENTION_POLICY",
+        "TENANT_POSTGRES_BACKUP_SCHEDULE",
+        "TENANT_POSTGRES_BACKUP_SERVICE_ACCOUNT_NAME",
+    ]
+    if provider == "s3":
+        required_keys.append("TENANT_POSTGRES_BACKUP_IRSA_ROLE_ARN")
+    else:
+        required_keys.extend(
+            [
+                "TENANT_POSTGRES_BACKUP_RUSTFS_ENDPOINT",
+                "TENANT_POSTGRES_BACKUP_RUSTFS_CA_SECRET_NAME",
+                "TENANT_POSTGRES_BACKUP_RUSTFS_SECRET_NAME",
+                "TENANT_POSTGRES_BACKUP_RUSTFS_SOURCE_SECRET_NAME",
+                "TENANT_POSTGRES_BACKUP_RUSTFS_SOURCE_SECRET_NAMESPACE",
+            ]
+        )
+
+    missing = [key for key in required_keys if not config.get(key)]
+    if missing:
+        raise ValueError(
+            "Tenant Postgres backups are enabled, but required config is missing: "
+            + ", ".join(sorted(missing))
+        )
+
+
 class Config(metaclass=MetaFlaskEnv):
     ENV_PREFIX = "CABOTAGE_"
     ENV_LOAD_ALL = True
@@ -92,6 +132,23 @@ class Config(metaclass=MetaFlaskEnv):
     KUBERNETES_ENABLED = False
     KUBERNETES_CONTEXT = "cabotage"
     NETWORK_POLICIES_ENABLED = False
+    BACKING_SERVICE_POSTGRES_ENABLED = False
+    BACKING_SERVICE_REDIS_ENABLED = False
+    BACKING_SERVICES_POOL = None
+    TENANT_POSTGRES_BACKUPS_ENABLED = False
+    TENANT_POSTGRES_BACKUP_PROVIDER = None
+    TENANT_POSTGRES_BACKUP_BUCKET = None
+    TENANT_POSTGRES_BACKUP_IRSA_ROLE_ARN = None
+    TENANT_POSTGRES_BACKUP_PATH_PREFIX = "tenants"
+    TENANT_POSTGRES_BACKUP_PLUGIN_NAME = "barman-cloud.cloudnative-pg.io"
+    TENANT_POSTGRES_BACKUP_RETENTION_POLICY = "30d"
+    TENANT_POSTGRES_BACKUP_SCHEDULE = "0 0 0 * * *"
+    TENANT_POSTGRES_BACKUP_SERVICE_ACCOUNT_NAME = "cnpg-backups"
+    TENANT_POSTGRES_BACKUP_RUSTFS_ENDPOINT = None
+    TENANT_POSTGRES_BACKUP_RUSTFS_CA_SECRET_NAME = "operators-ca-crt"  # nosec B105
+    TENANT_POSTGRES_BACKUP_RUSTFS_SECRET_NAME = "cnpg-backups-objectstore"  # nosec B105
+    TENANT_POSTGRES_BACKUP_RUSTFS_SOURCE_SECRET_NAME = None
+    TENANT_POSTGRES_BACKUP_RUSTFS_SOURCE_SECRET_NAMESPACE = None
     GITHUB_APP_ID = None
     GITHUB_APP_PRIVATE_KEY = None
     GITHUB_WEBHOOK_SECRET = None

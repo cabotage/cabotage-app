@@ -7,6 +7,7 @@ from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from cabotage.server.models.auth import Organization
+    from cabotage.server.models.resources import Resource
 
 from flask import current_app
 from sqlalchemy import (
@@ -34,6 +35,7 @@ from cabotage.server.models.plugins import ActivityPlugin
 from cabotage.server.models.utils import (
     generate_k8s_identifier,
     readable_k8s_hostname,
+    safe_k8s_name,
     slugify,
     DictDiffer,
 )
@@ -207,6 +209,9 @@ class Environment(Model, Timestamp):
     ephemeral: Mapped[bool] = mapped_column(Boolean, default=False)
     ttl_hours: Mapped[int | None] = mapped_column(Integer)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    uses_environment_namespace: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     deleted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, index=True)
     forked_from_environment_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True),
@@ -231,6 +236,10 @@ class Environment(Model, Timestamp):
         cascade="all, delete-orphan",
         order_by="EnvironmentConfiguration.name",
     )
+    resources: Mapped[list["Resource"]] = relationship(
+        back_populates="environment",
+        cascade="all, delete-orphan",
+    )
 
     @property
     def active_application_environments(self):
@@ -239,6 +248,31 @@ class Environment(Model, Timestamp):
     @property
     def active_environment_configurations(self):
         return [ec for ec in self.environment_configurations if not ec.deleted]
+
+    @property
+    def k8s_namespace(self):
+        """The K8s namespace where resources for this environment live.
+
+        Uses the combined org+env namespace when environment-scoped
+        namespacing is explicitly enabled for this environment,
+        otherwise falls back to the org namespace.
+        """
+        org_k8s = self.project.organization.k8s_identifier
+        if self.uses_environment_namespace:
+            return safe_k8s_name(org_k8s, self.k8s_identifier)
+        return org_k8s
+
+    @property
+    def active_resources(self):
+        return [r for r in self.resources if r.deleted_at is None]
+
+    @property
+    def active_postgres_resources(self):
+        return [r for r in self.active_resources if r.type == "postgres"]
+
+    @property
+    def active_redis_resources(self):
+        return [r for r in self.active_resources if r.type == "redis"]
 
     __table_args__ = (
         UniqueConstraint(project_id, slug),
@@ -639,7 +673,11 @@ class Application(Model, Timestamp):
         org_k8s = self.project.organization.k8s_identifier
         project_k8s = self.project.k8s_identifier
         app_k8s = self.k8s_identifier
-        env_k8s = app_env.k8s_identifier
+        env_k8s = (
+            app_env.environment.k8s_identifier
+            if app_env.environment.uses_environment_namespace
+            else None
+        )
         return Image._build_repository_name(org_k8s, project_k8s, app_k8s, env_k8s)
 
     def create_release(self, app_env):
@@ -1224,6 +1262,11 @@ class EnvironmentConfiguration(Model, Timestamp):
     value: Mapped[str] = mapped_column(String(2048))
     key_slug: Mapped[str | None] = mapped_column(Text())
     build_key_slug: Mapped[str | None] = mapped_column(Text())
+    resource_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("resources.id"),
+        index=True,
+    )
     version_id: Mapped[int] = mapped_column(Integer)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     secret: Mapped[bool] = mapped_column(Boolean, default=False)

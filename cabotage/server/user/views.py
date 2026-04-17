@@ -80,6 +80,13 @@ from cabotage.server.models.projects import (
     pod_classes,
 )
 from cabotage.server.models.projects import activity_plugin
+from cabotage.server.models.resources import (
+    PostgresResource,
+    RedisResource,
+    compute_postgres_parameters,
+    postgres_size_classes,
+    redis_size_classes,
+)
 
 from cabotage.server.query_helpers import (
     compute_app_status_sets,
@@ -121,6 +128,12 @@ from cabotage.server.user.forms import (
     TailscaleIngressSettingsForm,
     ReleaseDeployForm,
     AddOrganizationUserForm,
+    CreatePostgresResourceForm,
+    EditPostgresResourceForm,
+    DeletePostgresResourceForm,
+    CreateRedisResourceForm,
+    EditRedisResourceForm,
+    DeleteRedisResourceForm,
 )
 
 from cabotage.utils.docker_auth import (
@@ -168,7 +181,7 @@ user_blueprint = Blueprint(
 
 
 def _config_k8s_namespace(organization, app_env):
-    if app_env.k8s_identifier is not None:
+    if app_env.environment.uses_environment_namespace:
         return safe_k8s_name(
             organization.k8s_identifier, app_env.environment.k8s_identifier
         )
@@ -299,12 +312,22 @@ def _soft_delete_application(application, organization):
     application.slug = f"{application.slug}--deleted-{uuid.uuid4().hex[:12]}"
 
 
+def _soft_delete_resource(resource):
+    """Soft-delete a backing service resource."""
+    if resource.deleted_at is not None:
+        return
+    resource.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+    resource.slug = f"--deleted-{resource.slug}-{str(resource.id)[:8]}"
+
+
 def _soft_delete_environment(environment, organization):
-    """Soft-delete an Environment and all its ApplicationEnvironments."""
+    """Soft-delete an Environment and all its child records."""
     for app_env in environment.application_environments:
         if app_env.deleted_at is None:
             _enqueue_app_env_cleanup(app_env, organization)
             app_env.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+    for resource in environment.resources:
+        _soft_delete_resource(resource)
     environment.deleted_at = datetime.datetime.now(datetime.timezone.utc)
     environment.slug = f"{environment.slug}--deleted-{uuid.uuid4().hex[:12]}"
 
@@ -326,7 +349,11 @@ def _associate_app_with_environment(application, environment, organization, proj
     app_env = ApplicationEnvironment(
         application_id=application.id,
         environment_id=environment.id,
-        k8s_identifier=environment.k8s_identifier,
+        k8s_identifier=(
+            environment.k8s_identifier
+            if environment.uses_environment_namespace
+            else None
+        ),
     )
     db.session.add(app_env)
     db.session.flush()
@@ -936,6 +963,7 @@ def organization_project_create(org_slug):
             name=env_name,
             slug=form.initial_env_slug.data or slugify(env_name),
             is_default=True,
+            uses_environment_namespace=form.environments_enabled.data,
         )
         db.session.add(default_env)
         db.session.flush()
@@ -1010,7 +1038,9 @@ def project(org_slug, project_slug):
             selectinload(Project.project_applications)
             .selectinload(Application.application_environments)
             .selectinload(ApplicationEnvironment.configurations),
-            selectinload(Project.project_environments),
+            selectinload(Project.project_environments).selectinload(
+                Environment.resources
+            ),
         )
         .first_or_404()
     )
@@ -1075,6 +1105,11 @@ def project(org_slug, project_slug):
         for ae in app.active_application_environments:
             app_config_counts[ae.id] = _config_count(ae, ae.environment)
 
+    resources_by_env = {
+        env.id: sorted(env.active_resources, key=lambda resource: resource.name.lower())
+        for env in active_envs
+    }
+
     return render_template(
         "user/project.html",
         project=project,
@@ -1090,6 +1125,7 @@ def project(org_slug, project_slug):
         errored_ae_ids=errored_ae_ids,
         last_deploy_by_ae=last_deploy_by_ae,
         ae_by_env=ae_by_env,
+        resources_by_env=resources_by_env,
         app_config_counts=app_config_counts,
     )
 
@@ -1138,6 +1174,7 @@ def project_settings(org_slug, project_slug):
             # Reset k8s_identifier on default app_envs to NULL (legacy mode)
             default_env = next((e for e in envs if e.is_default), None)
             if default_env:
+                default_env.uses_environment_namespace = False
                 for app_env in default_env.application_environments:
                     app_env.k8s_identifier = None
                 db.session.flush()
@@ -1288,6 +1325,7 @@ def project_create():
             name=env_name,
             slug=form.initial_env_slug.data or slugify(env_name),
             is_default=True,
+            uses_environment_namespace=form.environments_enabled.data,
         )
         db.session.add(default_env)
         db.session.flush()
@@ -1356,6 +1394,7 @@ def project_environment_create(org_slug, project_slug):
             name=form.name.data,
             slug=slug,
             is_default=form.is_default.data,
+            uses_environment_namespace=project.environments_enabled,
         )
         db.session.add(environment)
         db.session.flush()
@@ -1429,6 +1468,10 @@ def project_environment(org_slug, project_slug, env_slug):
         app_config_counts=app_config_counts,
         app_references=_app_refs,
         tcp_references=_tcp_refs,
+        postgres_resources=environment.active_postgres_resources,
+        redis_resources=environment.active_redis_resources,
+        postgres_enabled=_backing_service_type_enabled("postgres"),
+        redis_enabled=_backing_service_type_enabled("redis"),
     )
 
 
@@ -1733,9 +1776,7 @@ def project_environment_configuration_create(org_slug, project_slug, env_slug):
                 if app_env:
                     ns = _config_k8s_namespace(organization, app_env)
                 else:
-                    ns = safe_k8s_name(
-                        organization.k8s_identifier, environment.k8s_identifier
-                    )
+                    ns = environment.k8s_namespace
                 prefix = _env_config_k8s_resource_prefix(project)
                 key_slugs = config_writer.write_configuration(ns, prefix, configuration)
             except Exception:
@@ -1862,9 +1903,7 @@ def project_environment_configuration_edit(org_slug, project_slug, env_slug, con
                 if app_env:
                     ns = _config_k8s_namespace(organization, app_env)
                 else:
-                    ns = safe_k8s_name(
-                        organization.k8s_identifier, environment.k8s_identifier
-                    )
+                    ns = environment.k8s_namespace
                 prefix = _env_config_k8s_resource_prefix(project)
                 key_slugs = config_writer.write_configuration(ns, prefix, configuration)
             except Exception:
@@ -1975,6 +2014,454 @@ def project_environment_configuration_delete(
         environment=environment,
         configuration=configuration,
     )
+
+
+# ---------------------------------------------------------------------------
+# Backing service resource routes
+# ---------------------------------------------------------------------------
+
+
+def _resolve_environment(org_slug, project_slug, env_slug):
+    """Resolve org -> project -> environment chain. Returns (org, project, env)."""
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .first_or_404()
+    )
+    project = (
+        Project.query.filter_by(organization_id=organization.id, slug=project_slug)
+        .filter(Project.deleted_at.is_(None))
+        .first_or_404()
+    )
+    environment = (
+        Environment.query.filter_by(project_id=project.id, slug=env_slug)
+        .filter(Environment.deleted_at.is_(None))
+        .first_or_404()
+    )
+    return organization, project, environment
+
+
+def _backing_service_type_enabled(resource_type):
+    config_key = {
+        "postgres": "BACKING_SERVICE_POSTGRES_ENABLED",
+        "redis": "BACKING_SERVICE_REDIS_ENABLED",
+    }.get(resource_type)
+    if config_key is None:
+        raise KeyError(f"Unknown backing service type: {resource_type}")
+    return bool(current_app.config.get(config_key, True))
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/postgres/create",
+    methods=["GET", "POST"],
+)
+@login_required
+def environment_postgres_create(org_slug, project_slug, env_slug):
+    if not _backing_service_type_enabled("postgres"):
+        abort(404)
+    organization, project, environment = _resolve_environment(
+        org_slug, project_slug, env_slug
+    )
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    form = CreatePostgresResourceForm()
+    form.environment_id.data = str(environment.id)
+    if form.validate_on_submit():
+        slug = form.slug.data or slugify(form.name.data)
+        params = compute_postgres_parameters(form.size_class.data)
+        resource = PostgresResource(
+            environment_id=environment.id,
+            name=form.name.data,
+            slug=slug,
+            service_version=form.service_version.data,
+            size_class=form.size_class.data,
+            storage_size=form.storage_size.data,
+            ha_enabled=form.ha_enabled.data,
+            backup_strategy=form.backup_strategy.data,
+            postgres_parameters=params,
+        )
+        db.session.add(resource)
+        db.session.flush()
+        activity = Activity(
+            verb="create",
+            object=resource,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            },
+        )
+        db.session.add(activity)
+        db.session.commit()
+
+        return redirect(
+            url_for(
+                "user.environment_postgres_detail",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                env_slug=env_slug,
+                resource_slug=resource.slug,
+            )
+        )
+    return render_template(
+        "user/environment_postgres_create.html",
+        project=project,
+        environment=environment,
+        form=form,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/postgres/<resource_slug>",
+)
+@login_required
+def environment_postgres_detail(org_slug, project_slug, env_slug, resource_slug):
+    organization, project, environment = _resolve_environment(
+        org_slug, project_slug, env_slug
+    )
+    if not ViewProjectPermission(project.id).can():
+        abort(403)
+    resource = (
+        PostgresResource.query.filter_by(
+            environment_id=environment.id, slug=resource_slug
+        )
+        .filter(PostgresResource.deleted_at.is_(None))
+        .first_or_404()
+    )
+    return render_template(
+        "user/environment_postgres_detail.html",
+        project=project,
+        environment=environment,
+        resource=resource,
+        postgres_size_classes=postgres_size_classes,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/postgres/<resource_slug>/settings",
+    methods=["GET", "POST"],
+)
+@login_required
+def environment_postgres_settings(org_slug, project_slug, env_slug, resource_slug):
+    organization, project, environment = _resolve_environment(
+        org_slug, project_slug, env_slug
+    )
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    resource = (
+        PostgresResource.query.filter_by(
+            environment_id=environment.id, slug=resource_slug
+        )
+        .filter(PostgresResource.deleted_at.is_(None))
+        .first_or_404()
+    )
+    form = EditPostgresResourceForm(obj=resource)
+    form.resource_id.data = str(resource.id)
+    form.current_storage_size.data = str(resource.storage_size)
+    if form.validate_on_submit():
+        resource.size_class = form.size_class.data
+        resource.storage_size = form.storage_size.data
+        resource.ha_enabled = form.ha_enabled.data
+        resource.backup_strategy = form.backup_strategy.data
+        resource.postgres_parameters = compute_postgres_parameters(form.size_class.data)
+        db.session.add(resource)
+        db.session.flush()
+        activity = Activity(
+            verb="edit",
+            object=resource,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            },
+        )
+        db.session.add(activity)
+        db.session.commit()
+
+        return redirect(
+            url_for(
+                "user.environment_postgres_detail",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                env_slug=env_slug,
+                resource_slug=resource.slug,
+            )
+        )
+    delete_form = DeletePostgresResourceForm()
+    delete_form.resource_id.data = str(resource.id)
+    delete_form.name.data = resource.slug
+    return render_template(
+        "user/environment_postgres_settings.html",
+        project=project,
+        environment=environment,
+        resource=resource,
+        form=form,
+        delete_form=delete_form,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/postgres/<resource_slug>/delete",
+    methods=["POST"],
+)
+@login_required
+def environment_postgres_delete(org_slug, project_slug, env_slug, resource_slug):
+    organization, project, environment = _resolve_environment(
+        org_slug, project_slug, env_slug
+    )
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    resource = (
+        PostgresResource.query.filter_by(
+            environment_id=environment.id, slug=resource_slug
+        )
+        .filter(PostgresResource.deleted_at.is_(None))
+        .first_or_404()
+    )
+    form = DeletePostgresResourceForm()
+    form.resource_id.data = str(resource.id)
+    form.name.data = resource.slug
+    if form.validate_on_submit():
+        resource.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        resource.slug = f"--deleted-{resource.slug}-{str(resource.id)[:8]}"
+        db.session.add(resource)
+        db.session.flush()
+        activity = Activity(
+            verb="delete",
+            object=resource,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            },
+        )
+        db.session.add(activity)
+        db.session.commit()
+
+        flash(f"Database {resource.name} deleted.", "success")
+        return redirect(
+            url_for(
+                "user.project_environment",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                env_slug=env_slug,
+                _anchor="services",
+            )
+        )
+    abort(400)
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/redis/create",
+    methods=["GET", "POST"],
+)
+@login_required
+def environment_redis_create(org_slug, project_slug, env_slug):
+    if not _backing_service_type_enabled("redis"):
+        abort(404)
+    organization, project, environment = _resolve_environment(
+        org_slug, project_slug, env_slug
+    )
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    form = CreateRedisResourceForm()
+    form.environment_id.data = str(environment.id)
+    if form.validate_on_submit():
+        slug = form.slug.data or slugify(form.name.data)
+        resource = RedisResource(
+            environment_id=environment.id,
+            name=form.name.data,
+            slug=slug,
+            service_version=form.service_version.data,
+            size_class=form.size_class.data,
+            storage_size=form.storage_size.data,
+            ha_enabled=form.ha_enabled.data,
+            leader_replicas=form.leader_replicas.data,
+            follower_replicas=form.follower_replicas.data,
+        )
+        db.session.add(resource)
+        db.session.flush()
+        activity = Activity(
+            verb="create",
+            object=resource,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            },
+        )
+        db.session.add(activity)
+        db.session.commit()
+
+        return redirect(
+            url_for(
+                "user.environment_redis_detail",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                env_slug=env_slug,
+                resource_slug=resource.slug,
+            )
+        )
+    return render_template(
+        "user/environment_redis_create.html",
+        project=project,
+        environment=environment,
+        form=form,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/redis/<resource_slug>",
+)
+@login_required
+def environment_redis_detail(org_slug, project_slug, env_slug, resource_slug):
+    organization, project, environment = _resolve_environment(
+        org_slug, project_slug, env_slug
+    )
+    if not ViewProjectPermission(project.id).can():
+        abort(403)
+    resource = (
+        RedisResource.query.filter_by(environment_id=environment.id, slug=resource_slug)
+        .filter(RedisResource.deleted_at.is_(None))
+        .first_or_404()
+    )
+    return render_template(
+        "user/environment_redis_detail.html",
+        project=project,
+        environment=environment,
+        resource=resource,
+        redis_size_classes=redis_size_classes,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/redis/<resource_slug>/settings",
+    methods=["GET", "POST"],
+)
+@login_required
+def environment_redis_settings(org_slug, project_slug, env_slug, resource_slug):
+    organization, project, environment = _resolve_environment(
+        org_slug, project_slug, env_slug
+    )
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    resource = (
+        RedisResource.query.filter_by(environment_id=environment.id, slug=resource_slug)
+        .filter(RedisResource.deleted_at.is_(None))
+        .first_or_404()
+    )
+    form = EditRedisResourceForm(obj=resource)
+    form.resource_id.data = str(resource.id)
+    form.current_storage_size.data = str(resource.storage_size)
+    if request.method == "POST" and "ha_enabled" in request.form:
+        requested_ha = request.form.get("ha_enabled") not in (
+            "",
+            "0",
+            "false",
+            "False",
+            "off",
+        )
+        if requested_ha != resource.ha_enabled:
+            flash(
+                "Redis topology cannot be changed after creation. Create a new Redis service instead.",
+                "error",
+            )
+            delete_form = DeleteRedisResourceForm()
+            delete_form.resource_id.data = str(resource.id)
+            delete_form.name.data = resource.slug
+            return (
+                render_template(
+                    "user/environment_redis_settings.html",
+                    project=project,
+                    environment=environment,
+                    resource=resource,
+                    form=form,
+                    delete_form=delete_form,
+                ),
+                400,
+            )
+    if form.validate_on_submit():
+        resource.size_class = form.size_class.data
+        resource.storage_size = form.storage_size.data
+        resource.leader_replicas = form.leader_replicas.data
+        resource.follower_replicas = form.follower_replicas.data
+        db.session.add(resource)
+        db.session.flush()
+        activity = Activity(
+            verb="edit",
+            object=resource,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            },
+        )
+        db.session.add(activity)
+        db.session.commit()
+
+        return redirect(
+            url_for(
+                "user.environment_redis_detail",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                env_slug=env_slug,
+                resource_slug=resource.slug,
+            )
+        )
+    delete_form = DeleteRedisResourceForm()
+    delete_form.resource_id.data = str(resource.id)
+    delete_form.name.data = resource.slug
+    return render_template(
+        "user/environment_redis_settings.html",
+        project=project,
+        environment=environment,
+        resource=resource,
+        form=form,
+        delete_form=delete_form,
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/environments/<env_slug>/redis/<resource_slug>/delete",
+    methods=["POST"],
+)
+@login_required
+def environment_redis_delete(org_slug, project_slug, env_slug, resource_slug):
+    organization, project, environment = _resolve_environment(
+        org_slug, project_slug, env_slug
+    )
+    if not AdministerProjectPermission(project.id).can():
+        abort(403)
+    resource = (
+        RedisResource.query.filter_by(environment_id=environment.id, slug=resource_slug)
+        .filter(RedisResource.deleted_at.is_(None))
+        .first_or_404()
+    )
+    form = DeleteRedisResourceForm()
+    form.resource_id.data = str(resource.id)
+    form.name.data = resource.slug
+    if form.validate_on_submit():
+        resource.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        resource.slug = f"--deleted-{resource.slug}-{str(resource.id)[:8]}"
+        db.session.add(resource)
+        db.session.flush()
+        activity = Activity(
+            verb="delete",
+            object=resource,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            },
+        )
+        db.session.add(activity)
+        db.session.commit()
+
+        flash(f"Redis instance {resource.name} deleted.", "success")
+        return redirect(
+            url_for(
+                "user.project_environment",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                env_slug=env_slug,
+                _anchor="services",
+            )
+        )
+    abort(400)
 
 
 @user_blueprint.route(
@@ -5594,8 +6081,8 @@ def _query_mimir_range(query, start, end, step, tenant_id=None):
 def _compute_observe_namespace(application, app_env):
     """Compute the k8s namespace for an application's environment."""
     org_k8s = application.project.organization.k8s_identifier
-    if app_env and app_env.k8s_identifier is not None:
-        return safe_k8s_name(org_k8s, app_env.environment.k8s_identifier)
+    if app_env and app_env.environment.uses_environment_namespace:
+        return app_env.environment.k8s_namespace
     return org_k8s
 
 
@@ -5619,6 +6106,48 @@ def _observe_common_groups(allowed):
         if current_groups[k] not in allowed:
             current_groups[k] = "total"
     return current_groups
+
+
+def _observe_backing_service_groups(allowed):
+    """Parse backing-service group query params, clamping to allowed set."""
+    current_groups = {
+        "cpu": request.args.get("backing_cpu", "total"),
+        "memory": request.args.get("backing_memory", "total"),
+        "network": request.args.get("backing_network", "total"),
+    }
+    for key in current_groups:
+        if current_groups[key] not in allowed:
+            current_groups[key] = "total"
+    return current_groups
+
+
+def _set_default_groupings(current_groups, default_group, prefix=""):
+    for key in ("cpu", "memory", "network"):
+        if key not in current_groups:
+            continue
+        arg_name = f"{prefix}{key}"
+        if request.args.get(arg_name) is None:
+            current_groups[key] = default_group
+    return current_groups
+
+
+def _observe_backing_service_pod_join(selector, resource_id=None):
+    """Return a PromQL join that keeps only backing-service pods."""
+    service_selector = ""
+    if resource_id:
+        service_selector = f', label_cabotage_io_resource_id="{resource_id}"'
+    return (
+        " * on (pod, namespace) "
+        "group_left("
+        "label_backing_service_type, "
+        "label_backing_service_slug, "
+        "label_role, "
+        "label_cabotage_io_resource_id"
+        ") "
+        f"(max by (pod, namespace, label_backing_service_type, "
+        f"label_backing_service_slug, label_role, label_cabotage_io_resource_id) "
+        f'(kube_pod_labels{{{selector}, label_backing_service="true"{service_selector}}}))'
+    )
 
 
 @user_blueprint.route(
@@ -5657,6 +6186,8 @@ def project_application_observe(org_slug, project_slug, app_slug, env_slug=None)
         environment=environment,
         app_env=app_env,
         mimir_configured=mimir_configured,
+        show_backing_services_panels=False,
+        backing_service_groups=[],
         metric_url=url_for(
             "user.project_application_observe_metric",
             org_slug=org_slug,
@@ -5665,11 +6196,13 @@ def project_application_observe(org_slug, project_slug, app_slug, env_slug=None)
             env_slug=env_slug,
         ),
         filter_hierarchy_json="[]",
+        backing_service_hierarchy_json="[]",
         label_map_json="{}",
         current_range=request.args.get("range", "1h"),
         process_names=process_names,
         current_process=current_process,
         current_groups=current_groups,
+        current_backing_service_groups={},
         has_time_window=has_time_window,
     )
 
@@ -5702,10 +6235,20 @@ def environment_observe(org_slug, project_slug, env_slug):
     current_groups = _observe_common_groups(
         {"total", "application", "process", "pod", "status"}
     )
+    current_groups = _set_default_groupings(current_groups, "application")
+    backing_service_groups = ["total", "service", "type", "role", "pod"]
+    current_backing_service_groups = _observe_backing_service_groups(
+        set(backing_service_groups)
+    )
+    current_backing_service_groups = _set_default_groupings(
+        current_backing_service_groups, "service", prefix="backing_"
+    )
     has_time_window = bool(request.args.get("start") and request.args.get("end"))
+    has_backing_services = bool(environment.active_resources)
 
     # Build filter hierarchy and label map
     filter_hierarchy = []
+    backing_service_hierarchy = []
     label_map = {}
     for ae in environment.active_application_environments:
         app = ae.application
@@ -5715,15 +6258,23 @@ def environment_observe(org_slug, project_slug, env_slug):
         app_k8s = safe_k8s_name(project.k8s_identifier, app.k8s_identifier)
         label_map[app_k8s] = app.slug
     filter_hierarchy.sort(key=lambda a: a["slug"])
+    for resource in environment.active_resources:
+        label_map[str(resource.id)] = f"{resource.slug} ({resource.type})"
+        backing_service_hierarchy.append(
+            {"id": str(resource.id), "name": f"{resource.slug} ({resource.type})"}
+        )
+    backing_service_hierarchy.sort(key=lambda r: r["name"])
 
     return render_template(
         "user/observe.html",
         observe_level="environment",
         observe_groups=observe_groups,
+        backing_service_groups=backing_service_groups,
         organization=organization,
         project=project,
         environment=environment,
         mimir_configured=mimir_configured,
+        show_backing_services_panels=has_backing_services,
         metric_url=url_for(
             "user.environment_observe_metric",
             org_slug=org_slug,
@@ -5732,11 +6283,14 @@ def environment_observe(org_slug, project_slug, env_slug):
         ),
         filter_hierarchy=filter_hierarchy,
         filter_hierarchy_json=json.dumps(filter_hierarchy),
+        backing_service_hierarchy=backing_service_hierarchy,
+        backing_service_hierarchy_json=json.dumps(backing_service_hierarchy),
         label_map_json=json.dumps(label_map),
         current_range=request.args.get("range", "1h"),
         process_names=[],
         current_process="",
         current_groups=current_groups,
+        current_backing_service_groups=current_backing_service_groups,
         has_time_window=has_time_window,
     )
 
@@ -5764,14 +6318,36 @@ def project_observe(org_slug, project_slug):
     current_groups = _observe_common_groups(
         {"total", "environment", "application", "process", "pod", "status"}
     )
+    current_groups = _set_default_groupings(current_groups, "application")
+    backing_service_groups = ["total", "service", "type", "role", "pod"]
+    current_backing_service_groups = _observe_backing_service_groups(
+        set(backing_service_groups)
+    )
+    current_backing_service_groups = _set_default_groupings(
+        current_backing_service_groups, "service", prefix="backing_"
+    )
     has_time_window = bool(request.args.get("start") and request.args.get("end"))
+    has_backing_services = False
 
     # Build filter hierarchy and label map
     filter_hierarchy = []
     label_map = {}
     for env in project.active_environments:
-        env_entry = {"slug": env.slug, "name": env.name, "applications": []}
+        env_entry = {
+            "slug": env.slug,
+            "name": env.name,
+            "applications": [],
+            "services": [],
+        }
         label_map[env.k8s_identifier] = env.slug
+        for resource in env.active_resources:
+            has_backing_services = True
+            label_map[str(resource.id)] = (
+                f"{env.slug}/{resource.slug} ({resource.type})"
+            )
+            env_entry["services"].append(
+                {"id": str(resource.id), "name": f"{resource.slug} ({resource.type})"}
+            )
         for ae in env.active_application_environments:
             app = ae.application
             if app.deleted_at is not None:
@@ -5780,16 +6356,19 @@ def project_observe(org_slug, project_slug):
             app_k8s = safe_k8s_name(project.k8s_identifier, app.k8s_identifier)
             label_map[app_k8s] = app.slug
         env_entry["applications"].sort(key=lambda a: a["slug"])
+        env_entry["services"].sort(key=lambda r: r["name"])
         filter_hierarchy.append(env_entry)
 
     return render_template(
         "user/observe.html",
         observe_level="project",
         observe_groups=observe_groups,
+        backing_service_groups=backing_service_groups,
         organization=organization,
         project=project,
         environment=None,
         mimir_configured=mimir_configured,
+        show_backing_services_panels=has_backing_services,
         metric_url=url_for(
             "user.project_observe_metric",
             org_slug=org_slug,
@@ -5797,11 +6376,14 @@ def project_observe(org_slug, project_slug):
         ),
         filter_hierarchy=filter_hierarchy,
         filter_hierarchy_json=json.dumps(filter_hierarchy),
+        backing_service_hierarchy=filter_hierarchy,
+        backing_service_hierarchy_json=json.dumps(filter_hierarchy),
         label_map_json=json.dumps(label_map),
         current_range=request.args.get("range", "1h"),
         process_names=[],
         current_process="",
         current_groups=current_groups,
+        current_backing_service_groups=current_backing_service_groups,
         has_time_window=has_time_window,
     )
 
@@ -5828,7 +6410,16 @@ def organization_observe(org_slug):
     current_groups = _observe_common_groups(
         {"total", "project", "environment", "application", "status"}
     )
+    current_groups = _set_default_groupings(current_groups, "application")
+    backing_service_groups = ["total", "service", "type", "role", "pod"]
+    current_backing_service_groups = _observe_backing_service_groups(
+        set(backing_service_groups)
+    )
+    current_backing_service_groups = _set_default_groupings(
+        current_backing_service_groups, "service", prefix="backing_"
+    )
     has_time_window = bool(request.args.get("start") and request.args.get("end"))
+    has_backing_services = False
 
     # Build filter hierarchy and label map
     filter_hierarchy = []
@@ -5841,8 +6432,24 @@ def organization_observe(org_slug):
         }
         label_map[proj.k8s_identifier] = proj.slug
         for env in proj.active_environments:
-            env_entry = {"slug": env.slug, "name": env.name, "applications": []}
+            env_entry = {
+                "slug": env.slug,
+                "name": env.name,
+                "applications": [],
+                "services": [],
+            }
             label_map[env.k8s_identifier] = env.slug
+            for resource in env.active_resources:
+                has_backing_services = True
+                label_map[str(resource.id)] = (
+                    f"{proj.slug}/{env.slug}/{resource.slug} ({resource.type})"
+                )
+                env_entry["services"].append(
+                    {
+                        "id": str(resource.id),
+                        "name": f"{resource.slug} ({resource.type})",
+                    }
+                )
             for ae in env.active_application_environments:
                 app = ae.application
                 if app.deleted_at is not None:
@@ -5851,6 +6458,7 @@ def organization_observe(org_slug):
                 app_k8s = safe_k8s_name(proj.k8s_identifier, app.k8s_identifier)
                 label_map[app_k8s] = app.slug
             env_entry["applications"].sort(key=lambda a: a["slug"])
+            env_entry["services"].sort(key=lambda r: r["name"])
             proj_entry["environments"].append(env_entry)
         filter_hierarchy.append(proj_entry)
     filter_hierarchy.sort(key=lambda p: p["slug"])
@@ -5859,21 +6467,26 @@ def organization_observe(org_slug):
         "user/observe.html",
         observe_level="organization",
         observe_groups=observe_groups,
+        backing_service_groups=backing_service_groups,
         organization=organization,
         project=None,
         environment=None,
         mimir_configured=mimir_configured,
+        show_backing_services_panels=has_backing_services,
         metric_url=url_for(
             "user.organization_observe_metric",
             org_slug=org_slug,
         ),
         filter_hierarchy=filter_hierarchy,
         filter_hierarchy_json=json.dumps(filter_hierarchy),
+        backing_service_hierarchy=filter_hierarchy,
+        backing_service_hierarchy_json=json.dumps(filter_hierarchy),
         label_map_json=json.dumps(label_map),
         current_range=request.args.get("range", "1h"),
         process_names=[],
         current_process="",
         current_groups=current_groups,
+        current_backing_service_groups=current_backing_service_groups,
         has_time_window=has_time_window,
     )
 
@@ -5888,6 +6501,8 @@ _OBSERVE_GROUPS = {
     "environment",
     "project",
 }
+_BACKING_SERVICE_OBSERVE_METRICS = {"cpu", "memory", "network"}
+_BACKING_SERVICE_OBSERVE_GROUPS = {"total", "service", "type", "role", "pod"}
 
 
 @user_blueprint.route(
@@ -5899,6 +6514,10 @@ _OBSERVE_GROUPS = {
 )
 @login_required
 def project_application_observe_metric(org_slug, project_slug, app_slug, env_slug=None):
+    workload = request.args.get("workload", "applications")
+    if workload != "applications":
+        return jsonify({"error": "invalid workload"}), 400
+
     metric = request.args.get("metric")
     if metric not in _OBSERVE_METRICS:
         return jsonify({"error": "invalid metric"}), 400
@@ -6190,6 +6809,14 @@ def _observe_container_filter():
     return container_filter
 
 
+def _observe_application_pod_join(selector):
+    """Return a PromQL join that keeps only pods belonging to applications."""
+    return (
+        " * on (pod, namespace) group_left() "
+        f'(max by (pod, namespace) (kube_pod_labels{{{selector}, label_application!=""}}))'
+    )
+
+
 def _collect_traefik_svc_names(app_envs, namespace_fn, prefix_fn, process_filter=""):
     """Enumerate traefik service names from ingress configs across app_envs."""
     names = set()
@@ -6245,69 +6872,82 @@ def _build_observe_queries(
     env_re=None,
     proj_re=None,
     network_labels=None,
+    pod_join=None,
+    group_label_map=None,
 ):
     """Build PromQL queries and execute them. Returns (result, queries)."""
 
     result = None
     queries = []
+    pod_join = pod_join or ""
+    group_label_map = group_label_map or {}
 
     if metric == "cpu":
-        if group == "process":
+        cpu_source = (
+            f"(rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}]))"
+            f"{pod_join}"
+        )
+        if group in group_label_map:
+            q = f"sum by ({group_label_map[group]}) ({cpu_source})"
+        elif group == "process":
             q = (
                 f"sum by (process) (label_replace("
-                f"sum by (pod) (rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}]))"
+                f"sum by (pod) ({cpu_source})"
                 f', "process", "$1", "pod", "{process_re}"))'
             )
         elif group == "application" and app_re:
             q = (
                 f"sum by (application) (label_replace("
-                f"sum by (pod) (rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}]))"
+                f"sum by (pod) ({cpu_source})"
                 f', "application", "$1", "pod", "{app_re}"))'
             )
         elif group == "environment" and env_re:
             q = (
                 f"sum by (environment) (label_replace("
-                f"sum by (namespace) (rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}]))"
+                f"sum by (namespace) ({cpu_source})"
                 f', "environment", "$1", "namespace", "{env_re}"))'
             )
         elif group == "project" and proj_re:
             q = (
                 f"sum by (project) (label_replace("
-                f"sum by (pod) (rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}]))"
+                f"sum by (pod) ({cpu_source})"
                 f', "project", "$1", "pod", "{proj_re}"))'
             )
         else:
-            q = f"sum(rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}])) {by_clause}"
+            q = f"sum({cpu_source}) {by_clause}"
         queries.append(q)
         result = _query_mimir_range(q, start, end, step)
 
     elif metric == "memory":
-        if group == "process":
+        mem_source = f"(container_memory_working_set_bytes{{{labels}}}){pod_join}"
+        if group in group_label_map:
+            q = f"sum by ({group_label_map[group]}) ({mem_source})"
+        elif group == "process":
             q = (
                 f"sum by (process) (label_replace("
-                f"sum by (pod) (container_memory_working_set_bytes{{{labels}}})"
+                f"sum by (pod) ({mem_source})"
                 f', "process", "$1", "pod", "{process_re}"))'
             )
         elif group == "application" and app_re:
             q = (
                 f"sum by (application) (label_replace("
-                f"sum by (pod) (container_memory_working_set_bytes{{{labels}}})"
+                f"sum by (pod) ({mem_source})"
                 f', "application", "$1", "pod", "{app_re}"))'
             )
         elif group == "environment" and env_re:
             q = (
                 f"sum by (environment) (label_replace("
-                f"sum by (namespace) (container_memory_working_set_bytes{{{labels}}})"
+                f"sum by (namespace) ({mem_source})"
                 f', "environment", "$1", "namespace", "{env_re}"))'
             )
         elif group == "project" and proj_re:
             q = (
                 f"sum by (project) (label_replace("
-                f"sum by (pod) (container_memory_working_set_bytes{{{labels}}})"
+                f"sum by (pod) ({mem_source})"
                 f', "project", "$1", "pod", "{proj_re}"))'
             )
         else:
-            q = f"sum(container_memory_working_set_bytes{{{labels}}}) {by_clause}"
+            q = f"sum({mem_source}) {by_clause}"
         queries.append(q)
         result = _query_mimir_range(q, start, end, step)
 
@@ -6392,32 +7032,37 @@ def _build_observe_queries(
             ("tx", "container_network_transmit_bytes_total"),
             ("rx", "container_network_receive_bytes_total"),
         ]:
-            if group == "process":
+            network_source = (
+                f"(rate({counter}{{{net_labels}}}[{rate_window}])){pod_join}"
+            )
+            if group in group_label_map:
+                q = f"sum by ({group_label_map[group]}) ({network_source})"
+            elif group == "process":
                 q = (
                     f"sum by (process) (label_replace("
-                    f"sum by (pod) (rate({counter}{{{net_labels}}}[{rate_window}]))"
+                    f"sum by (pod) ({network_source})"
                     f', "process", "$1", "pod", "{process_re}"))'
                 )
             elif group == "application" and app_re:
                 q = (
                     f"sum by (application) (label_replace("
-                    f"sum by (pod) (rate({counter}{{{net_labels}}}[{rate_window}]))"
+                    f"sum by (pod) ({network_source})"
                     f', "application", "$1", "pod", "{app_re}"))'
                 )
             elif group == "environment" and env_re:
                 q = (
                     f"sum by (environment) (label_replace("
-                    f"sum by (namespace) (rate({counter}{{{net_labels}}}[{rate_window}]))"
+                    f"sum by (namespace) ({network_source})"
                     f', "environment", "$1", "namespace", "{env_re}"))'
                 )
             elif group == "project" and proj_re:
                 q = (
                     f"sum by (project) (label_replace("
-                    f"sum by (pod) (rate({counter}{{{net_labels}}}[{rate_window}]))"
+                    f"sum by (pod) ({network_source})"
                     f', "project", "$1", "pod", "{proj_re}"))'
                 )
             else:
-                q = f"sum(rate({counter}{{{net_labels}}}[{rate_window}])) {by_clause}"
+                q = f"sum({network_source}) {by_clause}"
             queries.append(q)
             qr = _query_mimir_range(q, start, end, step)
             if qr:
@@ -6437,11 +7082,19 @@ def _build_observe_queries(
 )
 @login_required
 def environment_observe_metric(org_slug, project_slug, env_slug):
+    workload = request.args.get("workload", "applications")
     metric = request.args.get("metric")
-    if metric not in _OBSERVE_METRICS:
+    if workload == "backing_services":
+        if metric not in _BACKING_SERVICE_OBSERVE_METRICS:
+            return jsonify({"error": "invalid metric"}), 400
+    elif metric not in _OBSERVE_METRICS:
         return jsonify({"error": "invalid metric"}), 400
+
     group = request.args.get("group", "total")
-    if group not in _OBSERVE_GROUPS:
+    if workload == "backing_services":
+        if group not in _BACKING_SERVICE_OBSERVE_GROUPS:
+            group = "total"
+    elif group not in _OBSERVE_GROUPS:
         group = "total"
 
     organization = (
@@ -6467,14 +7120,16 @@ def environment_observe_metric(org_slug, project_slug, env_slug):
         return jsonify({"error": "not configured"}), 404
 
     org_k8s = organization.k8s_identifier
-    env_namespace = safe_k8s_name(org_k8s, environment.k8s_identifier)
+    env_namespace = environment.k8s_namespace
     container_filter = _observe_container_filter()
+    is_backing_services = workload == "backing_services"
 
     # Optional application filter
     app_filter = request.args.get("application", "")
+    service_filter = request.args.get("service", "")
     active_aes = environment.active_application_environments
 
-    if app_filter:
+    if app_filter and not is_backing_services:
         active_aes = [
             ae
             for ae in active_aes
@@ -6490,20 +7145,30 @@ def environment_observe_metric(org_slug, project_slug, env_slug):
     else:
         ns_selector = f'namespace="{env_namespace}"'
 
-    if app_filter and active_aes:
-        ae = active_aes[0]
-        prefix = _compute_observe_prefix(ae.application)
-        escaped_prefix = _REGEX_META.sub(r"\\\g<0>", prefix)
-        base_selector = f'{ns_selector}, pod=~"{escaped_prefix}-.*"'
-        labels = f"{base_selector}, {container_filter}"
-        network_labels = base_selector
-        process_re = f"{escaped_prefix}-(.*)-[a-z0-9]+-[a-z0-9]+"
-    else:
+    if is_backing_services:
         base_selector = ns_selector
         labels = f"{base_selector}, {container_filter}"
         network_labels = base_selector
-        # Process RE: extract process from pod name across all apps in namespace
         process_re = ".*-(.*)-[a-z0-9]+-[a-z0-9]+"
+        pod_join = _observe_backing_service_pod_join(
+            base_selector, service_filter or None
+        )
+    else:
+        if app_filter and active_aes:
+            ae = active_aes[0]
+            prefix = _compute_observe_prefix(ae.application)
+            escaped_prefix = _REGEX_META.sub(r"\\\g<0>", prefix)
+            base_selector = f'{ns_selector}, pod=~"{escaped_prefix}-.*"'
+            labels = f"{base_selector}, {container_filter}"
+            network_labels = base_selector
+            process_re = f"{escaped_prefix}-(.*)-[a-z0-9]+-[a-z0-9]+"
+        else:
+            base_selector = ns_selector
+            labels = f"{base_selector}, {container_filter}"
+            network_labels = base_selector
+            # Process RE: extract process from pod name across all apps in namespace
+            process_re = ".*-(.*)-[a-z0-9]+-[a-z0-9]+"
+        pod_join = _observe_application_pod_join(base_selector)
 
     # Application grouping RE: extract project-app prefix from pod name
     # Pod format: {project_k8s}-{app_k8s}-{process}-{rs_hash}-{pod_hash}
@@ -6517,15 +7182,26 @@ def environment_observe_metric(org_slug, project_slug, env_slug):
         "application": "by (application)",
         "total": "",
         "status": "",
+        "service": "",
+        "type": "",
+        "role": "",
     }.get(group, "")
 
-    # Traefik service names
-    traefik_names = _collect_traefik_svc_names(
-        active_aes,
-        lambda ae: _compute_observe_namespace(ae.application, ae),
-        lambda ae: _compute_observe_prefix(ae.application),
-    )
-    traefik_svc = _traefik_svc_label(traefik_names)
+    group_label_map = None
+    traefik_svc = None
+    if not is_backing_services:
+        traefik_names = _collect_traefik_svc_names(
+            active_aes,
+            lambda ae: _compute_observe_namespace(ae.application, ae),
+            lambda ae: _compute_observe_prefix(ae.application),
+        )
+        traefik_svc = _traefik_svc_label(traefik_names)
+    else:
+        group_label_map = {
+            "service": "label_cabotage_io_resource_id",
+            "type": "label_backing_service_type",
+            "role": "label_role",
+        }
 
     result, queries = _build_observe_queries(
         metric,
@@ -6541,6 +7217,8 @@ def environment_observe_metric(org_slug, project_slug, env_slug):
         rate_window,
         app_re=app_re,
         network_labels=network_labels,
+        pod_join=pod_join,
+        group_label_map=group_label_map,
     )
     return jsonify({"result": result, "queries": queries})
 
@@ -6553,11 +7231,18 @@ def environment_observe_metric(org_slug, project_slug, env_slug):
 )
 @login_required
 def project_observe_metric(org_slug, project_slug):
+    workload = request.args.get("workload", "applications")
     metric = request.args.get("metric")
-    if metric not in _OBSERVE_METRICS:
+    if workload == "backing_services":
+        if metric not in _BACKING_SERVICE_OBSERVE_METRICS:
+            return jsonify({"error": "invalid metric"}), 400
+    elif metric not in _OBSERVE_METRICS:
         return jsonify({"error": "invalid metric"}), 400
     group = request.args.get("group", "total")
-    if group not in _OBSERVE_GROUPS:
+    if workload == "backing_services":
+        if group not in _BACKING_SERVICE_OBSERVE_GROUPS:
+            group = "total"
+    elif group not in _OBSERVE_GROUPS:
         group = "total"
 
     organization = (
@@ -6582,10 +7267,12 @@ def project_observe_metric(org_slug, project_slug):
     proj_k8s = project.k8s_identifier
     escaped_proj_k8s = _REGEX_META.sub(r"\\\g<0>", proj_k8s)
     container_filter = _observe_container_filter()
+    is_backing_services = workload == "backing_services"
 
     # Optional filters
     env_filter = request.args.get("environment", "")
     app_filter = request.args.get("application", "")
+    service_filter = request.args.get("service", "")
 
     # Determine namespace selector
     if env_filter:
@@ -6595,14 +7282,14 @@ def project_observe_metric(org_slug, project_slug):
             .first()
         )
         if env:
-            ns_label = f'namespace="{safe_k8s_name(org_k8s, env.k8s_identifier)}"'
+            ns_label = f'namespace="{env.k8s_namespace}"'
         else:
             ns_label = f'namespace=~"{escaped_org_k8s}(-.*)?$"'
     else:
         ns_label = f'namespace=~"{escaped_org_k8s}(-.*)?$"'
 
     # Determine pod selector
-    if app_filter:
+    if app_filter and not is_backing_services:
         app = (
             Application.query.filter_by(project_id=project.id, slug=app_filter)
             .filter(Application.deleted_at.is_(None))
@@ -6617,8 +7304,15 @@ def project_observe_metric(org_slug, project_slug):
     else:
         pod_label = f'pod=~"{escaped_proj_k8s}-.*"'
 
-    network_labels = f"{ns_label}, {pod_label}"
-    labels = f"{ns_label}, {pod_label}, {container_filter}"
+    base_selector = f"{ns_label}, {pod_label}"
+    network_labels = base_selector
+    labels = f"{base_selector}, {container_filter}"
+    if is_backing_services:
+        pod_join = _observe_backing_service_pod_join(
+            base_selector, service_filter or None
+        )
+    else:
+        pod_join = _observe_application_pod_join(base_selector)
     process_re = ".*-(.*)-[a-z0-9]+-[a-z0-9]+"
     app_re = f"({escaped_proj_k8s}-.+)-[^-]+-[a-z0-9]+-[a-z0-9]+"
     env_re = f"{escaped_org_k8s}-(.+)"
@@ -6632,26 +7326,37 @@ def project_observe_metric(org_slug, project_slug):
         "environment": "by (environment)",
         "total": "",
         "status": "",
+        "service": "",
+        "type": "",
+        "role": "",
     }.get(group, "")
 
-    # Collect traefik svc names across all app_envs in this project
-    all_aes = []
-    for env in project.active_environments:
-        if env_filter and env.slug != env_filter:
-            continue
-        for ae in env.active_application_environments:
-            if ae.application.deleted_at is not None:
+    group_label_map = None
+    traefik_svc = None
+    if not is_backing_services:
+        all_aes = []
+        for env in project.active_environments:
+            if env_filter and env.slug != env_filter:
                 continue
-            if app_filter and ae.application.slug != app_filter:
-                continue
-            all_aes.append(ae)
+            for ae in env.active_application_environments:
+                if ae.application.deleted_at is not None:
+                    continue
+                if app_filter and ae.application.slug != app_filter:
+                    continue
+                all_aes.append(ae)
 
-    traefik_names = _collect_traefik_svc_names(
-        all_aes,
-        lambda ae: safe_k8s_name(org_k8s, ae.environment.k8s_identifier),
-        lambda ae: _compute_observe_prefix(ae.application),
-    )
-    traefik_svc = _traefik_svc_label(traefik_names)
+        traefik_names = _collect_traefik_svc_names(
+            all_aes,
+            lambda ae: ae.environment.k8s_namespace,
+            lambda ae: _compute_observe_prefix(ae.application),
+        )
+        traefik_svc = _traefik_svc_label(traefik_names)
+    else:
+        group_label_map = {
+            "service": "label_cabotage_io_resource_id",
+            "type": "label_backing_service_type",
+            "role": "label_role",
+        }
 
     result, queries = _build_observe_queries(
         metric,
@@ -6668,6 +7373,8 @@ def project_observe_metric(org_slug, project_slug):
         app_re=app_re,
         env_re=env_re,
         network_labels=network_labels,
+        pod_join=pod_join,
+        group_label_map=group_label_map,
     )
     return jsonify({"result": result, "queries": queries})
 
@@ -6678,11 +7385,18 @@ def project_observe_metric(org_slug, project_slug):
 @user_blueprint.route("/organizations/<org_slug>/observe/metric")
 @login_required
 def organization_observe_metric(org_slug):
+    workload = request.args.get("workload", "applications")
     metric = request.args.get("metric")
-    if metric not in _OBSERVE_METRICS:
+    if workload == "backing_services":
+        if metric not in _BACKING_SERVICE_OBSERVE_METRICS:
+            return jsonify({"error": "invalid metric"}), 400
+    elif metric not in _OBSERVE_METRICS:
         return jsonify({"error": "invalid metric"}), 400
     group = request.args.get("group", "total")
-    if group not in _OBSERVE_GROUPS:
+    if workload == "backing_services":
+        if group not in _BACKING_SERVICE_OBSERVE_GROUPS:
+            group = "total"
+    elif group not in _OBSERVE_GROUPS:
         group = "total"
 
     organization = (
@@ -6700,11 +7414,13 @@ def organization_observe_metric(org_slug):
     org_k8s = organization.k8s_identifier
     escaped_org_k8s = _REGEX_META.sub(r"\\\g<0>", org_k8s)
     container_filter = _observe_container_filter()
+    is_backing_services = workload == "backing_services"
 
     # Optional filters
     proj_filter = request.args.get("project", "")
     env_filter = request.args.get("environment", "")
     app_filter = request.args.get("application", "")
+    service_filter = request.args.get("service", "")
 
     # Resolve filtered project once (used for both namespace and pod selectors)
     filtered_proj = None
@@ -6724,11 +7440,11 @@ def organization_observe_metric(org_slug):
             .first()
         )
         if env:
-            ns_label = f'namespace="{safe_k8s_name(org_k8s, env.k8s_identifier)}"'
+            ns_label = f'namespace="{env.k8s_namespace}"'
 
     # Determine pod selector
     pod_label = 'pod=~".*"'
-    if filtered_proj and app_filter:
+    if filtered_proj and app_filter and not is_backing_services:
         app = (
             Application.query.filter_by(project_id=filtered_proj.id, slug=app_filter)
             .filter(Application.deleted_at.is_(None))
@@ -6742,8 +7458,15 @@ def organization_observe_metric(org_slug):
         escaped_proj_k8s = _REGEX_META.sub(r"\\\g<0>", filtered_proj.k8s_identifier)
         pod_label = f'pod=~"{escaped_proj_k8s}-.*"'
 
-    network_labels = f"{ns_label}, {pod_label}"
-    labels = f"{ns_label}, {pod_label}, {container_filter}"
+    base_selector = f"{ns_label}, {pod_label}"
+    network_labels = base_selector
+    labels = f"{base_selector}, {container_filter}"
+    if is_backing_services:
+        pod_join = _observe_backing_service_pod_join(
+            base_selector, service_filter or None
+        )
+    else:
+        pod_join = _observe_application_pod_join(base_selector)
 
     # Grouping regexes
     process_re = ".*-(.*)-[a-z0-9]+-[a-z0-9]+"
@@ -6767,29 +7490,40 @@ def organization_observe_metric(org_slug):
         "project": "by (project)",
         "total": "",
         "status": "",
+        "service": "",
+        "type": "",
+        "role": "",
     }.get(group, "")
 
-    # Collect traefik svc names across all projects
-    all_aes = []
-    for proj in organization.active_projects:
-        if proj_filter and proj.slug != proj_filter:
-            continue
-        for env in proj.active_environments:
-            if env_filter and env.slug != env_filter:
+    group_label_map = None
+    traefik_svc = None
+    if not is_backing_services:
+        all_aes = []
+        for proj in organization.active_projects:
+            if proj_filter and proj.slug != proj_filter:
                 continue
-            for ae in env.active_application_environments:
-                if ae.application.deleted_at is not None:
+            for env in proj.active_environments:
+                if env_filter and env.slug != env_filter:
                     continue
-                if app_filter and ae.application.slug != app_filter:
-                    continue
-                all_aes.append(ae)
+                for ae in env.active_application_environments:
+                    if ae.application.deleted_at is not None:
+                        continue
+                    if app_filter and ae.application.slug != app_filter:
+                        continue
+                    all_aes.append(ae)
 
-    traefik_names = _collect_traefik_svc_names(
-        all_aes,
-        lambda ae: safe_k8s_name(org_k8s, ae.environment.k8s_identifier),
-        lambda ae: _compute_observe_prefix(ae.application),
-    )
-    traefik_svc = _traefik_svc_label(traefik_names)
+        traefik_names = _collect_traefik_svc_names(
+            all_aes,
+            lambda ae: ae.environment.k8s_namespace,
+            lambda ae: _compute_observe_prefix(ae.application),
+        )
+        traefik_svc = _traefik_svc_label(traefik_names)
+    else:
+        group_label_map = {
+            "service": "label_cabotage_io_resource_id",
+            "type": "label_backing_service_type",
+            "role": "label_role",
+        }
 
     result, queries = _build_observe_queries(
         metric,
@@ -6807,6 +7541,8 @@ def organization_observe_metric(org_slug):
         env_re=env_re,
         proj_re=proj_re,
         network_labels=network_labels,
+        pod_join=pod_join,
+        group_label_map=group_label_map,
     )
     return jsonify({"result": result, "queries": queries})
 

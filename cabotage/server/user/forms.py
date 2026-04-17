@@ -31,6 +31,16 @@ from cabotage.server.models.projects import (
     EnvironmentConfiguration,
     Project,
 )
+from cabotage.server.models.resources import (
+    DEFAULT_REDIS_FOLLOWER_REPLICAS,
+    DEFAULT_REDIS_LEADER_REPLICAS,
+    POSTGRES_VERSIONS,
+    REDIS_VERSIONS,
+    Resource,
+    postgres_size_classes,
+    redis_size_classes,
+)
+from cabotage.server.models.utils import slugify
 
 
 class ExtendedLoginForm(LoginForm):
@@ -986,4 +996,339 @@ class AddOrganizationUserForm(FlaskForm):
             Length(min=1, max=255),
         ],
         description="Email address or GitHub username of the user to add",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Backing service resource forms
+# ---------------------------------------------------------------------------
+
+_BACKUP_STRATEGY_CHOICES = [
+    ("daily", "Daily Backups"),
+    ("streaming", "Streaming (WAL Archiving)"),
+    ("none", "None"),
+]
+
+
+def _validate_unique_resource_slug(form, slug):
+    effective_slug = slug or slugify(form.name.data or "")
+    if not effective_slug:
+        raise ValidationError(
+            "Name must contain at least one letter or number, or provide a slug."
+        )
+    existing = (
+        Resource.query.filter_by(
+            environment_id=form.environment_id.data,
+            slug=effective_slug,
+        )
+        .filter(Resource.deleted_at.is_(None))
+        .first()
+    )
+    if existing is not None:
+        raise ValidationError("Resource slugs must be unique within environments.")
+    return True
+
+
+class CreatePostgresResourceForm(FlaskForm):
+    environment_id = HiddenField(
+        "Environment",
+        [DataRequired()],
+        description="Environment this resource belongs to.",
+    )
+    name = StringField(
+        "Database Name",
+        [InputRequired()],
+        description="Friendly name for this PostgreSQL database.",
+    )
+    slug = StringField(
+        "Database Slug",
+        [
+            Optional(),
+            Regexp("^[-a-z0-9]+$", message="Invalid Slug! Must match ^[-a-z0-9]+$"),
+        ],
+        description=("URL-safe identifier. Auto-generated from name if left blank."),
+    )
+    service_version = SelectField(
+        "PostgreSQL Version",
+        [DataRequired()],
+        choices=[(v, f"PostgreSQL {v}") for v in POSTGRES_VERSIONS],
+        description="Major PostgreSQL version.",
+    )
+    size_class = SelectField(
+        "Size Class",
+        [DataRequired()],
+        choices=[(k, k) for k in postgres_size_classes],
+        description="CPU and memory allocation for the database.",
+    )
+    storage_size = IntegerField(
+        "Storage Size (GB)",
+        [InputRequired()],
+        description="Persistent volume size in gigabytes. Maximum 1024 GB (1 TB).",
+    )
+    ha_enabled = BooleanField(
+        "High Availability",
+        [],
+        description="Deploy with streaming replication for automatic failover.",
+    )
+    backup_strategy = SelectField(
+        "Backup Strategy",
+        [DataRequired()],
+        choices=_BACKUP_STRATEGY_CHOICES,
+        description="How often backups are taken.",
+    )
+
+    def validate_slug(form, field):
+        return _validate_unique_resource_slug(form, field.data)
+
+    def validate(form, extra_validators=None):
+        if not super().validate(extra_validators=extra_validators):
+            return False
+        try:
+            _validate_unique_resource_slug(form, form.slug.data)
+        except ValidationError as exc:
+            form.slug.errors = [*form.slug.errors, str(exc)]
+            return False
+        return True
+
+    def validate_storage_size(form, field):
+        if field.data is None:
+            return True
+        if field.data < 1 or field.data > 1024:
+            raise ValidationError("Storage size must be between 1 and 1024 GB.")
+        return True
+
+
+class EditPostgresResourceForm(FlaskForm):
+    resource_id = HiddenField(
+        "Resource ID",
+        [DataRequired()],
+        description="ID of the resource to edit.",
+    )
+    current_storage_size = HiddenField("Current Storage Size")
+    size_class = SelectField(
+        "Size Class",
+        [DataRequired()],
+        choices=[(k, k) for k in postgres_size_classes],
+        description="CPU and memory allocation for the database.",
+    )
+    storage_size = IntegerField(
+        "Storage Size (GB)",
+        [InputRequired()],
+        description="Persistent volume size in gigabytes. Cannot be reduced.",
+    )
+    ha_enabled = BooleanField(
+        "High Availability",
+        [],
+        description="Deploy with streaming replication for automatic failover.",
+    )
+    backup_strategy = SelectField(
+        "Backup Strategy",
+        [DataRequired()],
+        choices=_BACKUP_STRATEGY_CHOICES,
+        description="How often backups are taken.",
+    )
+
+    def validate_storage_size(form, field):
+        if field.data is None:
+            return True
+        if field.data < 1 or field.data > 1024:
+            raise ValidationError("Storage size must be between 1 and 1024 GB.")
+        if form.current_storage_size.data:
+            current = int(form.current_storage_size.data)
+            if field.data < current:
+                raise ValidationError(
+                    f"Storage size cannot be reduced (currently {current} GB)."
+                )
+        return True
+
+
+class DeletePostgresResourceForm(FlaskForm):
+    resource_id = HiddenField(
+        "Resource ID",
+        [DataRequired()],
+        description="ID of the resource to delete.",
+    )
+    name = StringField(
+        "Slug",
+        [InputRequired()],
+        description="Slug of the resource being deleted.",
+    )
+    confirm = StringField(
+        "Type the slug of the database to confirm.",
+        [
+            EqualTo(
+                "name",
+                message="Must confirm the *exact* slug of the database!",
+            )
+        ],
+    )
+
+
+class CreateRedisResourceForm(FlaskForm):
+    environment_id = HiddenField(
+        "Environment",
+        [DataRequired()],
+        description="Environment this resource belongs to.",
+    )
+    name = StringField(
+        "Redis Name",
+        [InputRequired()],
+        description="Friendly name for this Redis instance.",
+    )
+    slug = StringField(
+        "Redis Slug",
+        [
+            Optional(),
+            Regexp("^[-a-z0-9]+$", message="Invalid Slug! Must match ^[-a-z0-9]+$"),
+        ],
+        description=("URL-safe identifier. Auto-generated from name if left blank."),
+    )
+    service_version = SelectField(
+        "Redis Version",
+        [DataRequired()],
+        choices=[(v, f"Redis {v}") for v in REDIS_VERSIONS],
+        description="Major Redis version.",
+    )
+    size_class = SelectField(
+        "Size Class",
+        [DataRequired()],
+        choices=[(k, k) for k in redis_size_classes],
+        description="CPU and memory allocation for the Redis instance.",
+    )
+    storage_size = IntegerField(
+        "Storage Size (GB)",
+        [InputRequired()],
+        description="Persistent volume size in gigabytes. Maximum 1024 GB (1 TB).",
+    )
+    ha_enabled = BooleanField(
+        "High Availability",
+        [],
+        description="Deploy as a Redis cluster with automatic failover.",
+    )
+    leader_replicas = IntegerField(
+        "Leader Replicas",
+        [InputRequired()],
+        default=DEFAULT_REDIS_LEADER_REPLICAS,
+        description="Number of Redis leader nodes when cluster mode is enabled.",
+    )
+    follower_replicas = IntegerField(
+        "Follower Replicas",
+        [InputRequired()],
+        default=DEFAULT_REDIS_FOLLOWER_REPLICAS,
+        description="Number of Redis follower nodes when cluster mode is enabled.",
+    )
+
+    def validate_slug(form, field):
+        return _validate_unique_resource_slug(form, field.data)
+
+    def validate(form, extra_validators=None):
+        if not super().validate(extra_validators=extra_validators):
+            return False
+        try:
+            _validate_unique_resource_slug(form, form.slug.data)
+        except ValidationError as exc:
+            form.slug.errors = [*form.slug.errors, str(exc)]
+            return False
+        return True
+
+    def validate_storage_size(form, field):
+        if field.data is None:
+            return True
+        if field.data < 1 or field.data > 1024:
+            raise ValidationError("Storage size must be between 1 and 1024 GB.")
+        return True
+
+    def validate_leader_replicas(form, field):
+        if field.data is None:
+            return True
+        if field.data < 1 or field.data > 32:
+            raise ValidationError("Leader replicas must be between 1 and 32.")
+        return True
+
+    def validate_follower_replicas(form, field):
+        if field.data is None:
+            return True
+        if field.data < 1 or field.data > 32:
+            raise ValidationError("Follower replicas must be between 1 and 32.")
+        return True
+
+
+class EditRedisResourceForm(FlaskForm):
+    resource_id = HiddenField(
+        "Resource ID",
+        [DataRequired()],
+        description="ID of the resource to edit.",
+    )
+    current_storage_size = HiddenField("Current Storage Size")
+    size_class = SelectField(
+        "Size Class",
+        [DataRequired()],
+        choices=[(k, k) for k in redis_size_classes],
+        description="CPU and memory allocation for the Redis instance.",
+    )
+    storage_size = IntegerField(
+        "Storage Size (GB)",
+        [InputRequired()],
+        description="Persistent volume size in gigabytes. Cannot be reduced.",
+    )
+    leader_replicas = IntegerField(
+        "Leader Replicas",
+        [InputRequired()],
+        default=DEFAULT_REDIS_LEADER_REPLICAS,
+        description="Number of Redis leader nodes when cluster mode is enabled.",
+    )
+    follower_replicas = IntegerField(
+        "Follower Replicas",
+        [InputRequired()],
+        default=DEFAULT_REDIS_FOLLOWER_REPLICAS,
+        description="Number of Redis follower nodes when cluster mode is enabled.",
+    )
+
+    def validate_storage_size(form, field):
+        if field.data is None:
+            return True
+        if field.data < 1 or field.data > 1024:
+            raise ValidationError("Storage size must be between 1 and 1024 GB.")
+        if form.current_storage_size.data:
+            current = int(form.current_storage_size.data)
+            if field.data < current:
+                raise ValidationError(
+                    f"Storage size cannot be reduced (currently {current} GB)."
+                )
+        return True
+
+    def validate_leader_replicas(form, field):
+        if field.data is None:
+            return True
+        if field.data < 1 or field.data > 32:
+            raise ValidationError("Leader replicas must be between 1 and 32.")
+        return True
+
+    def validate_follower_replicas(form, field):
+        if field.data is None:
+            return True
+        if field.data < 1 or field.data > 32:
+            raise ValidationError("Follower replicas must be between 1 and 32.")
+        return True
+
+
+class DeleteRedisResourceForm(FlaskForm):
+    resource_id = HiddenField(
+        "Resource ID",
+        [DataRequired()],
+        description="ID of the resource to delete.",
+    )
+    name = StringField(
+        "Slug",
+        [InputRequired()],
+        description="Slug of the resource being deleted.",
+    )
+    confirm = StringField(
+        "Type the slug of the Redis instance to confirm.",
+        [
+            EqualTo(
+                "name",
+                message="Must confirm the *exact* slug of the Redis instance!",
+            )
+        ],
     )
