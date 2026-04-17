@@ -16,6 +16,7 @@ from cabotage.server.models.projects import (
     Release,
     activity_plugin,
 )
+from cabotage.server.models.resources import PostgresResource
 from cabotage.server.wsgi import app as _app
 
 Activity = activity_plugin.activity_cls
@@ -105,6 +106,31 @@ def app_env(db_session, application, environment):
 
 
 @pytest.fixture
+def branch_deploy_environment(db_session, project, environment):
+    e = Environment(
+        name="pr-42",
+        project_id=project.id,
+        ephemeral=True,
+        uses_environment_namespace=True,
+        forked_from_environment_id=environment.id,
+    )
+    db_session.add(e)
+    db_session.flush()
+    return e
+
+
+@pytest.fixture
+def branch_deploy_app_env(db_session, application, branch_deploy_environment):
+    ae = ApplicationEnvironment(
+        application_id=application.id,
+        environment_id=branch_deploy_environment.id,
+    )
+    db_session.add(ae)
+    db_session.flush()
+    return ae
+
+
+@pytest.fixture
 def image(db_session, application, app_env):
     img = Image(
         application_id=application.id,
@@ -114,6 +140,25 @@ def image(db_session, application, app_env):
             "sha": COMMIT_SHA[:40],
             "installation_id": 12345,
             "auto_deploy": True,
+        },
+        build_ref=COMMIT_SHA[:40],
+    )
+    db_session.add(img)
+    db_session.flush()
+    return img
+
+
+@pytest.fixture
+def branch_deploy_image(db_session, application, branch_deploy_app_env):
+    img = Image(
+        application_id=application.id,
+        application_environment_id=branch_deploy_app_env.id,
+        _repository_name=REPOSITORY_NAME,
+        image_metadata={
+            "sha": COMMIT_SHA[:40],
+            "installation_id": 12345,
+            "auto_deploy": True,
+            "branch_deploy": True,
         },
         build_ref=COMMIT_SHA[:40],
     )
@@ -595,6 +640,121 @@ class TestRunImageBuild:
         ).all()
         assert len(releases) == 0
 
+    @patch("cabotage.celery.tasks.build.run_release_build")
+    @patch("cabotage.celery.tasks.build.build_image_buildkit")
+    @patch("cabotage.celery.tasks.build.github_app")
+    def test_branch_deploy_waits_for_backing_services_before_release(
+        self,
+        mock_github_app,
+        mock_build,
+        mock_run_release,
+        app,
+        db_session,
+        branch_deploy_environment,
+        branch_deploy_image,
+    ):
+        """Branch deploy images wait for backing services before cutting a release."""
+        from cabotage.celery.tasks.build import run_image_build
+
+        app.config["CABOTAGE_OMNIBUS_BUILDS"] = False
+        db_session.add(
+            PostgresResource(
+                environment_id=branch_deploy_environment.id,
+                name="preview-db",
+                service_version="18",
+                size_class="db.small",
+                storage_size=1,
+                provisioning_status="provisioning",
+            )
+        )
+        db_session.commit()
+
+        mock_github_app.fetch_installation_access_token.return_value = "token"
+        mock_github_app.slug = "cabotage"
+        mock_build.return_value = {
+            "image_id": "sha256:abc",
+            "processes": {"web": {"cmd": "python", "env": []}},
+            "dockerfile": DOCKERFILE_BODY,
+            "procfile": PROCFILE_BODY,
+            "dockerfile_env_vars": ["APP_ENV"],
+        }
+
+        with patch(
+            "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
+        ):
+            with patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
+                mock_check = MagicMock()
+                mock_check_cls.return_value = mock_check
+                mock_check_cls.create.return_value = MagicMock(check_run_id=None)
+                run_image_build(image_id=branch_deploy_image.id)
+
+        db_session.refresh(branch_deploy_image)
+        assert branch_deploy_image.built is True
+        assert (
+            branch_deploy_image.image_metadata["waiting_for_backing_services"] is True
+        )
+        releases = Release.query.filter_by(
+            application_id=branch_deploy_image.application_id,
+            application_environment_id=branch_deploy_image.application_environment_id,
+        ).all()
+        assert releases == []
+        mock_run_release.delay.assert_not_called()
+
+    @patch("cabotage.celery.tasks.build.dispatch_autodeploy_notification")
+    @patch("cabotage.celery.tasks.build.run_release_build")
+    @patch("cabotage.celery.tasks.build.CheckRun")
+    def test_resume_branch_deploy_releases_after_backing_services_ready(
+        self,
+        mock_check_cls,
+        mock_run_release,
+        mock_dispatch,
+        app,
+        db_session,
+        branch_deploy_environment,
+        branch_deploy_image,
+    ):
+        """Ready backing services resume deferred branch deploy release builds."""
+        from cabotage.celery.tasks.build import (
+            resume_branch_deploy_releases_for_environment,
+        )
+
+        app.config["CABOTAGE_OMNIBUS_BUILDS"] = False
+        db_session.add(
+            PostgresResource(
+                environment_id=branch_deploy_environment.id,
+                name="preview-db",
+                service_version="18",
+                size_class="db.small",
+                storage_size=1,
+                provisioning_status="ready",
+            )
+        )
+        branch_deploy_image.built = True
+        branch_deploy_image.image_id = "sha256:abc"
+        branch_deploy_image.processes = {"web": {"cmd": "python", "env": []}}
+        branch_deploy_image.image_metadata = {
+            **branch_deploy_image.image_metadata,
+            "waiting_for_backing_services": True,
+        }
+        db_session.add(branch_deploy_image)
+        db_session.commit()
+
+        mock_check_cls.from_metadata.return_value = MagicMock()
+
+        resume_branch_deploy_releases_for_environment(branch_deploy_environment.id)
+
+        db_session.refresh(branch_deploy_image)
+        assert "waiting_for_backing_services" not in branch_deploy_image.image_metadata
+        releases = Release.query.filter_by(
+            application_id=branch_deploy_image.application_id,
+            application_environment_id=branch_deploy_image.application_environment_id,
+        ).all()
+        assert len(releases) == 1
+        assert releases[0].release_metadata["source_image_id"] == str(
+            branch_deploy_image.id
+        )
+        mock_run_release.delay.assert_called_once_with(release_id=releases[0].id)
+
     @patch("cabotage.celery.tasks.build.build_image_buildkit")
     @patch("cabotage.celery.tasks.build.github_app")
     def test_build_error_marks_image_as_error(
@@ -1013,6 +1173,94 @@ class TestRunOmnibusBuild:
         ).all()
         assert len(deployments) == 1
         mock_run_deploy.delay.assert_called_once()
+
+    @patch("cabotage.celery.tasks.build.build_omnibus_buildkit")
+    @patch("cabotage.celery.tasks.build.github_app")
+    def test_branch_deploy_waits_for_backing_services_before_omnibus_build(
+        self,
+        mock_github_app,
+        mock_build,
+        app,
+        db_session,
+        branch_deploy_environment,
+        branch_deploy_image,
+    ):
+        """Branch deploy omnibus builds wait for backing services before starting."""
+        from cabotage.celery.tasks.build import run_omnibus_build
+
+        app.config["CABOTAGE_OMNIBUS_BUILDS"] = True
+        db_session.add(
+            PostgresResource(
+                environment_id=branch_deploy_environment.id,
+                name="preview-db",
+                service_version="18",
+                size_class="db.small",
+                storage_size=1,
+                provisioning_status="provisioning",
+            )
+        )
+        db_session.commit()
+
+        mock_github_app.fetch_installation_access_token.return_value = "token"
+        mock_github_app.slug = "cabotage"
+
+        with patch(
+            "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
+        ):
+            with patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
+                mock_check_cls.return_value = MagicMock()
+                mock_check_cls.create.return_value = MagicMock(check_run_id=None)
+                run_omnibus_build(image_id=branch_deploy_image.id)
+
+        db_session.refresh(branch_deploy_image)
+        assert branch_deploy_image.built is False
+        assert (
+            branch_deploy_image.image_metadata["waiting_for_backing_services"] is True
+        )
+        releases = Release.query.filter_by(
+            application_id=branch_deploy_image.application_id,
+            application_environment_id=branch_deploy_image.application_environment_id,
+        ).all()
+        assert releases == []
+        mock_build.assert_not_called()
+
+    @patch("cabotage.celery.tasks.build.run_omnibus_build")
+    def test_resume_branch_deploy_requeues_omnibus_build_when_backing_services_ready(
+        self,
+        mock_run_omnibus,
+        app,
+        db_session,
+        branch_deploy_environment,
+        branch_deploy_image,
+    ):
+        """Ready backing services requeue deferred branch deploy omnibus builds."""
+        from cabotage.celery.tasks.build import (
+            resume_branch_deploy_releases_for_environment,
+        )
+
+        app.config["CABOTAGE_OMNIBUS_BUILDS"] = True
+        db_session.add(
+            PostgresResource(
+                environment_id=branch_deploy_environment.id,
+                name="preview-db",
+                service_version="18",
+                size_class="db.small",
+                storage_size=1,
+                provisioning_status="ready",
+            )
+        )
+        branch_deploy_image.image_metadata = {
+            **branch_deploy_image.image_metadata,
+            "waiting_for_backing_services": True,
+        }
+        db_session.add(branch_deploy_image)
+        db_session.commit()
+
+        resume_branch_deploy_releases_for_environment(branch_deploy_environment.id)
+
+        db_session.refresh(branch_deploy_image)
+        assert "waiting_for_backing_services" not in branch_deploy_image.image_metadata
+        mock_run_omnibus.delay.assert_called_once_with(image_id=branch_deploy_image.id)
 
     @patch("cabotage.celery.tasks.build.build_omnibus_buildkit")
     @patch("cabotage.celery.tasks.build.github_app")

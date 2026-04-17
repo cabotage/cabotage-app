@@ -165,7 +165,7 @@ def celery_init_app(app):
         },
         "backing-service-reconciler": {
             "task": "cabotage.celery.tasks.resources.reconcile_backing_services",
-            "schedule": 30.0,
+            "schedule": 10.0,
             "args": None,
         },
     }

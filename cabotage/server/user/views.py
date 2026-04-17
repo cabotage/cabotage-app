@@ -1028,7 +1028,9 @@ def project(org_slug, project_slug):
             selectinload(Project.project_applications)
             .selectinload(Application.application_environments)
             .selectinload(ApplicationEnvironment.configurations),
-            selectinload(Project.project_environments),
+            selectinload(Project.project_environments).selectinload(
+                Environment.resources
+            ),
         )
         .first_or_404()
     )
@@ -1093,6 +1095,11 @@ def project(org_slug, project_slug):
         for ae in app.active_application_environments:
             app_config_counts[ae.id] = _config_count(ae, ae.environment)
 
+    resources_by_env = {
+        env.id: sorted(env.active_resources, key=lambda resource: resource.name.lower())
+        for env in active_envs
+    }
+
     return render_template(
         "user/project.html",
         project=project,
@@ -1108,6 +1115,7 @@ def project(org_slug, project_slug):
         errored_ae_ids=errored_ae_ids,
         last_deploy_by_ae=last_deploy_by_ae,
         ae_by_env=ae_by_env,
+        resources_by_env=resources_by_env,
         app_config_counts=app_config_counts,
     )
 
