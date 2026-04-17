@@ -14,6 +14,7 @@ from cabotage.server.models.projects import (
     Hook,
     Project,
 )
+from cabotage.server.models.resources import PostgresResource, RedisResource
 from cabotage.server.models.utils import safe_k8s_name
 from cabotage.server.wsgi import app as _app
 
@@ -413,6 +414,83 @@ class TestBranchDeployNamespaces:
     @patch("cabotage.celery.tasks.branch_deploy.update_pr_comment")
     @patch("cabotage.celery.tasks.branch_deploy._build_images_for_app_envs")
     @patch("cabotage.celery.tasks.branch_deploy._precreate_ingresses")
+    @patch("cabotage.celery.tasks.resources.reconcile_backing_services")
+    def test_create_branch_deploy_enqueues_backing_service_reconcile_when_services_cloned(
+        self,
+        mock_reconcile_backing_services,
+        mock_precreate,
+        mock_build_images,
+        mock_update_comment,
+        db_session,
+        branch_deploy_project,
+        environment,
+        installation_id,
+    ):
+        application = _make_app(branch_deploy_project, installation_id)
+        _make_app_env(application, environment)
+        db.session.add(
+            PostgresResource(
+                environment_id=environment.id,
+                name="auth-db",
+                slug="auth-db",
+                service_version="18",
+                size_class="db.small",
+                storage_size=5,
+            )
+        )
+        db.session.commit()
+
+        from cabotage.celery.tasks.branch_deploy import create_branch_deploy
+
+        create_branch_deploy(
+            branch_deploy_project,
+            pr_number=42,
+            head_sha=uuid.uuid4().hex[:40],
+            installation_id=installation_id,
+            head_ref="feature-branch",
+        )
+
+        mock_reconcile_backing_services.delay.assert_called_once_with()
+        mock_precreate.assert_called_once()
+        mock_build_images.assert_called_once()
+        mock_update_comment.assert_called_once()
+
+    @patch("cabotage.celery.tasks.branch_deploy.update_pr_comment")
+    @patch("cabotage.celery.tasks.branch_deploy._build_images_for_app_envs")
+    @patch("cabotage.celery.tasks.branch_deploy._precreate_ingresses")
+    @patch("cabotage.celery.tasks.resources.reconcile_backing_services")
+    def test_create_branch_deploy_skips_backing_service_reconcile_when_no_services(
+        self,
+        mock_reconcile_backing_services,
+        mock_precreate,
+        mock_build_images,
+        mock_update_comment,
+        db_session,
+        branch_deploy_project,
+        environment,
+        installation_id,
+    ):
+        application = _make_app(branch_deploy_project, installation_id)
+        _make_app_env(application, environment)
+
+        from cabotage.celery.tasks.branch_deploy import create_branch_deploy
+
+        create_branch_deploy(
+            branch_deploy_project,
+            pr_number=42,
+            head_sha=uuid.uuid4().hex[:40],
+            installation_id=installation_id,
+            head_ref="feature-branch",
+        )
+
+        mock_reconcile_backing_services.delay.assert_not_called()
+        mock_precreate.assert_called_once()
+        mock_build_images.assert_called_once()
+        mock_update_comment.assert_called_once()
+
+    @patch("cabotage.celery.tasks.branch_deploy.update_pr_comment")
+    @patch("cabotage.celery.tasks.branch_deploy._build_images_for_app_envs")
+    @patch("cabotage.celery.tasks.branch_deploy._precreate_ingresses")
     def test_create_branch_deploy_uses_environment_namespace(
         self,
         mock_precreate,
@@ -453,6 +531,96 @@ class TestBranchDeployNamespaces:
         ).first()
         assert pr_app_env is not None
         assert pr_app_env.k8s_identifier == pr_environment.k8s_identifier
+
+        mock_precreate.assert_called_once_with(pr_environment)
+        mock_build_images.assert_called_once()
+        mock_update_comment.assert_called_once_with(pr_environment)
+
+    @patch("cabotage.celery.tasks.branch_deploy.update_pr_comment")
+    @patch("cabotage.celery.tasks.branch_deploy._build_images_for_app_envs")
+    @patch("cabotage.celery.tasks.branch_deploy._precreate_ingresses")
+    def test_create_branch_deploy_clones_backing_services_from_base_environment(
+        self,
+        mock_precreate,
+        mock_build_images,
+        mock_update_comment,
+        db_session,
+        branch_deploy_project,
+        environment,
+        installation_id,
+    ):
+        application = _make_app(branch_deploy_project, installation_id)
+        _make_app_env(application, environment)
+
+        base_pg = PostgresResource(
+            environment_id=environment.id,
+            name="auth-db",
+            slug="auth-db",
+            service_version="18",
+            size_class="db.small",
+            storage_size=5,
+            ha_enabled=True,
+            backup_strategy="streaming",
+            postgres_parameters={"shared_buffers": "128MB"},
+        )
+        base_redis = RedisResource(
+            environment_id=environment.id,
+            name="cache",
+            slug="cache",
+            service_version="8",
+            size_class="cache.small",
+            storage_size=1,
+            ha_enabled=True,
+            leader_replicas=2,
+            follower_replicas=4,
+        )
+        db.session.add(base_pg)
+        db.session.add(base_redis)
+        db.session.commit()
+
+        from cabotage.celery.tasks.branch_deploy import create_branch_deploy
+
+        create_branch_deploy(
+            branch_deploy_project,
+            pr_number=42,
+            head_sha=uuid.uuid4().hex[:40],
+            installation_id=installation_id,
+            head_ref="feature-branch",
+        )
+
+        pr_environment = Environment.query.filter_by(
+            project_id=branch_deploy_project.id,
+            slug="pr-42",
+        ).first()
+        assert pr_environment is not None
+
+        cloned_pg = PostgresResource.query.filter_by(
+            environment_id=pr_environment.id, slug="auth-db"
+        ).first()
+        assert cloned_pg is not None
+        assert cloned_pg.id != base_pg.id
+        assert cloned_pg.service_version == "18"
+        assert cloned_pg.size_class == "db.small"
+        assert cloned_pg.storage_size == 5
+        assert cloned_pg.ha_enabled is True
+        assert cloned_pg.backup_strategy == "streaming"
+        assert cloned_pg.postgres_parameters == {"shared_buffers": "128MB"}
+        assert cloned_pg.provisioning_status == "pending"
+        assert cloned_pg.connection_info == {}
+
+        cloned_redis = RedisResource.query.filter_by(
+            environment_id=pr_environment.id, slug="cache"
+        ).first()
+        assert cloned_redis is not None
+        assert cloned_redis.id != base_redis.id
+        assert cloned_redis.service_version == "8"
+        assert cloned_redis.size_class == "cache.small"
+        assert cloned_redis.storage_size == 1
+        assert cloned_redis.ha_enabled is True
+        assert cloned_redis.leader_replicas == 2
+        assert cloned_redis.follower_replicas == 4
+        assert cloned_redis.provisioning_status == "pending"
+        assert cloned_redis.connection_info == {}
 
         mock_precreate.assert_called_once_with(pr_environment)
         mock_build_images.assert_called_once()
@@ -580,6 +748,80 @@ class TestBranchDeployNamespaces:
         )
         mock_deactivate.assert_called_once()
         mock_post_comment.assert_called_once()
+
+    @patch(
+        "cabotage.server.ext.kubernetes.Kubernetes.kubernetes_client",
+        new_callable=PropertyMock,
+    )
+    @patch("cabotage.celery.tasks.branch_deploy.update_pr_comment")
+    @patch("cabotage.celery.tasks.branch_deploy._build_images_for_app_envs")
+    @patch("cabotage.celery.tasks.branch_deploy._precreate_ingresses")
+    @patch("cabotage.celery.tasks.branch_deploy._post_teardown_comment")
+    @patch("cabotage.celery.tasks.branch_deploy._deactivate_deployment")
+    @patch("kubernetes.client.CoreV1Api")
+    def test_teardown_branch_deploy_deletes_cloned_backing_services(
+        self,
+        mock_core_api_cls,
+        mock_deactivate,
+        mock_post_comment,
+        mock_precreate,
+        mock_build_images,
+        mock_update_comment,
+        mock_kubernetes_client,
+        db_session,
+        branch_deploy_project,
+        environment,
+        installation_id,
+        app,
+    ):
+        app.config["KUBERNETES_ENABLED"] = True
+        mock_kubernetes_client.return_value = MagicMock()
+
+        application = _make_app(branch_deploy_project, installation_id)
+        _make_app_env(application, environment)
+
+        base_pg = PostgresResource(
+            environment_id=environment.id,
+            name="auth-db",
+            slug="auth-db",
+            service_version="18",
+            size_class="db.small",
+            storage_size=5,
+        )
+        db.session.add(base_pg)
+        db.session.commit()
+
+        from cabotage.celery.tasks.branch_deploy import (
+            create_branch_deploy,
+            teardown_branch_deploy,
+        )
+
+        create_branch_deploy(
+            branch_deploy_project,
+            pr_number=42,
+            head_sha=uuid.uuid4().hex[:40],
+            installation_id=installation_id,
+            head_ref="feature-branch",
+        )
+
+        pr_environment = Environment.query.filter_by(
+            project_id=branch_deploy_project.id,
+            slug="pr-42",
+        ).first()
+        assert pr_environment is not None
+        cloned_pg = PostgresResource.query.filter_by(
+            environment_id=pr_environment.id, slug="auth-db"
+        ).first()
+        assert cloned_pg is not None
+
+        mock_core = MagicMock()
+        mock_core_api_cls.return_value = mock_core
+
+        teardown_branch_deploy(branch_deploy_project, 42)
+
+        assert Environment.query.filter_by(id=pr_environment.id).first() is None
+        assert PostgresResource.query.filter_by(id=cloned_pg.id).first() is None
+        assert PostgresResource.query.filter_by(id=base_pg.id).first() is not None
 
 
 # ---------------------------------------------------------------------------

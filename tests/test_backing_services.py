@@ -2034,6 +2034,7 @@ class TestCeleryTasks:
         self, app, environment
     ):
         from cabotage.celery.tasks.resources import reconcile_backing_services
+        from cabotage.server.models.resources import Resource
 
         r = RedisResource(
             service_version="8",
@@ -2064,8 +2065,10 @@ class TestCeleryTasks:
             patch(
                 "cabotage.celery.tasks.resources.kubernetes.client.NetworkingV1Api"
             ) as mock_networking_api_cls,
+            patch.object(Resource, "query") as mock_query,
         ):
             mock_kext.kubernetes_client = MagicMock()
+            mock_query.filter.return_value.all.return_value = []
             reconcile_backing_services()
 
         mock_core_api_cls.assert_not_called()
@@ -2303,6 +2306,76 @@ class TestCeleryTasks:
             assert r.provisioning_status == "deleted"
         finally:
             app.config["BACKING_SERVICE_POSTGRES_ENABLED"] = True
+
+    def test_reconcile_backing_services_resumes_branch_deploy_releases_when_ready(
+        self, app, environment, project
+    ):
+        from cabotage.celery.tasks.resources import reconcile_backing_services
+        from cabotage.server.models.resources import Resource
+
+        branch_env = Environment(
+            name="pr-42",
+            project_id=project.id,
+            ephemeral=True,
+            uses_environment_namespace=True,
+            forked_from_environment_id=environment.id,
+        )
+        db.session.add(branch_env)
+        db.session.flush()
+
+        r = RedisResource(
+            service_version="8",
+            environment_id=branch_env.id,
+            name="Preview Redis",
+            size_class="cache.small",
+            storage_size=1,
+            provisioning_status="ready",
+        )
+        db.session.add(r)
+        db.session.commit()
+
+        with (
+            patch("cabotage.celery.tasks.resources.kubernetes_ext") as mock_kext,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.CoreV1Api"
+            ) as mock_core_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.CustomObjectsApi"
+            ) as mock_custom_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.AppsV1Api"
+            ) as mock_apps_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.RbacAuthorizationV1Api"
+            ) as mock_rbac_api_cls,
+            patch("cabotage.celery.tasks.resources.kubernetes.client.NetworkingV1Api"),
+            patch("cabotage.celery.tasks.resources.ensure_namespace"),
+            patch.object(Resource, "query") as mock_query,
+            patch(
+                "cabotage.celery.tasks.build.resume_branch_deploy_releases_for_environment"
+            ) as mock_resume,
+        ):
+            mock_kext.kubernetes_client = MagicMock()
+            mock_query.filter.return_value.all.return_value = [r]
+            mock_reconcile_redis = MagicMock()
+            with patch.dict(
+                "cabotage.celery.tasks.resources._RECONCILERS",
+                {"redis": (mock_reconcile_redis, MagicMock())},
+                clear=True,
+            ):
+                reconcile_backing_services()
+
+        mock_reconcile_redis.assert_called_once_with(
+            r,
+            mock_core_api_cls.return_value,
+            mock_custom_api_cls.return_value,
+            mock_apps_api_cls.return_value,
+            mock_rbac_api_cls.return_value,
+        )
+        mock_resume.assert_called_once_with(branch_env.id)
+        db.session.delete(r)
+        db.session.delete(branch_env)
+        db.session.commit()
 
     def test_reconcile_redis_standalone_patches_statefulset_for_backing_pool(
         self, app, environment

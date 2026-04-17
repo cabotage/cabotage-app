@@ -1,6 +1,7 @@
 import datetime
 import logging
 import re
+from copy import deepcopy
 
 from flask import current_app
 from kubernetes.client.rest import ApiException
@@ -23,6 +24,7 @@ from cabotage.server.models.projects import (
     IngressHost,
     IngressPath,
 )
+from cabotage.server.models.resources import PostgresResource, RedisResource
 from cabotage.server.models.utils import readable_k8s_hostname, safe_k8s_name
 from cabotage.utils.github import (
     find_or_create_pr_comment,
@@ -33,6 +35,45 @@ from cabotage.utils.github import (
 logger = logging.getLogger(__name__)
 
 Activity = activity_plugin.activity_cls
+
+
+def _clone_backing_services_for_branch_deploy(base_environment, environment):
+    """Create fresh backing-service rows in a PR environment.
+
+    The cloned resources inherit sizing/topology/version settings from the
+    base environment, but they are provisioned independently in the branch
+    deploy namespace with a clean lifecycle state.
+    """
+    for resource in base_environment.active_resources:
+        if isinstance(resource, PostgresResource):
+            cloned = PostgresResource(
+                environment_id=environment.id,
+                name=resource.name,
+                slug=resource.slug,
+                service_version=resource.service_version,
+                size_class=resource.size_class,
+                storage_size=resource.storage_size,
+                ha_enabled=resource.ha_enabled,
+                backup_strategy=resource.backup_strategy,
+                postgres_parameters=deepcopy(resource.postgres_parameters or {}),
+            )
+        elif isinstance(resource, RedisResource):
+            cloned = RedisResource(
+                environment_id=environment.id,
+                name=resource.name,
+                slug=resource.slug,
+                service_version=resource.service_version,
+                size_class=resource.size_class,
+                storage_size=resource.storage_size,
+                ha_enabled=resource.ha_enabled,
+                leader_replicas=resource.leader_replicas,
+                follower_replicas=resource.follower_replicas,
+            )
+        else:
+            continue
+        db.session.add(cloned)
+
+    db.session.flush()
 
 
 def _create_app_env_for_branch_deploy(
@@ -651,6 +692,8 @@ def maybe_update_pr_comment_for_app_env(app_env):
 
 def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref=None):
     """Create an ephemeral environment for a PR and build images for all enrolled apps."""
+    from cabotage.celery.tasks.resources import reconcile_backing_services
+
     base_env = project.branch_deploy_base_environment
     env_slug = f"pr-{pr_number}"
 
@@ -695,6 +738,8 @@ def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref
         env_config_map[env_config.id] = new_env_config.id
     db.session.flush()
 
+    _clone_backing_services_for_branch_deploy(base_env, environment)
+
     activity = Activity(
         verb="create",
         object=environment,
@@ -720,6 +765,9 @@ def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref
         new_app_envs.append(app_env)
 
     db.session.commit()
+
+    if environment.active_resources:
+        reconcile_backing_services.delay()
 
     # Create K8s namespace + ingresses early so cert-manager can start
     # issuing TLS certificates while image builds run in parallel.

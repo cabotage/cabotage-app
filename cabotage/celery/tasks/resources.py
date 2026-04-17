@@ -1495,6 +1495,9 @@ _RECONCILERS = {
 def reconcile_backing_services():
     """Periodic task: converge all backing service resources to desired state."""
     from cabotage.server.models.resources import Resource
+    from cabotage.celery.tasks.build import (
+        resume_branch_deploy_releases_for_environment,
+    )
 
     resources = Resource.query.filter(
         Resource.provisioning_status != "deleting",
@@ -1535,6 +1538,10 @@ def reconcile_backing_services():
                     ensure_network_policies(networking_api, namespace)
                 reconcile_fn(resource, core_api, custom_api, apps_api, rbac_api)
                 db.session.commit()
+                if resource.environment.forked_from_environment_id is not None:
+                    resume_branch_deploy_releases_for_environment(
+                        resource.environment_id
+                    )
         except Exception:
             log.exception(
                 "Failed to reconcile %s resource %s (%s)",
