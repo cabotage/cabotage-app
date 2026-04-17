@@ -1837,8 +1837,18 @@ def render_podspec(release, process_name, service_account_name):
             )
         except KeyError:
             print("unable to read DD_API_KEY")
+        dd_image = None
+        if "DD_IMAGE" in release.configuration_objects:
+            try:
+                dd_image = release.configuration_objects["DD_IMAGE"].read_value(
+                    config_writer
+                )
+            except KeyError:
+                print("unable to read DD_IMAGE")
         if dd_api_key:
-            init_containers.append(render_datadog_container(dd_api_key, datadog_tags))
+            init_containers.append(
+                render_datadog_container(dd_api_key, datadog_tags, dd_image)
+            )
 
     app_env = release.application_environment
     env = app_env.environment if app_env.k8s_identifier is not None else None
