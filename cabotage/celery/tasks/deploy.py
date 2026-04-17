@@ -1650,11 +1650,11 @@ def render_process_container(
     )
 
 
-def render_datadog_container(dd_api_key, datadog_tags):
+def render_datadog_container(dd_api_key, datadog_tags, datadog_image: str | None = None):
     return kubernetes.client.V1Container(
         name="dogstatsd-sidecar",
         restart_policy="Always",
-        image=current_app.config["DATADOG_IMAGE"],
+        image=datadog_image or current_app.config["DATADOG_IMAGE"],
         image_pull_policy="IfNotPresent",
         env=[
             kubernetes.client.V1EnvVar(name="DD_API_KEY", value=dd_api_key),
