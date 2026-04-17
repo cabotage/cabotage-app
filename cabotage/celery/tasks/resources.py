@@ -1,11 +1,14 @@
 import base64
+import hashlib
 import logging
 import secrets
+import struct
 
 import kubernetes
 from celery import shared_task
 from flask import current_app, has_app_context
 from kubernetes.client.rest import ApiException
+from sqlalchemy import text
 
 from cabotage.server import (
     config_writer,
@@ -21,6 +24,10 @@ from cabotage.server.models.utils import safe_k8s_name
 from cabotage.celery.tasks.deploy import ensure_namespace, ensure_network_policies
 
 log = logging.getLogger(__name__)
+
+_RECONCILE_LOCK_KEY = struct.unpack(
+    ">q", hashlib.sha256(b"cabotage:reconcile_backing_services").digest()[:8]
+)[0]
 
 # ---------------------------------------------------------------------------
 # CNPG (CloudNativePG) constants
@@ -1495,56 +1502,78 @@ _RECONCILERS = {
 def reconcile_backing_services():
     """Periodic task: converge all backing service resources to desired state."""
     from cabotage.server.models.resources import Resource
+    from cabotage.celery.tasks.build import (
+        resume_branch_deploy_releases_for_environment,
+    )
 
-    resources = Resource.query.filter(
-        Resource.provisioning_status != "deleting",
-        Resource.provisioning_status != "deleted",
-    ).all()
-
-    if not resources:
+    lock_conn = _try_acquire_reconcile_lock()
+    if lock_conn is None:
+        log.info("Skipping backing-service reconcile; lock already held")
         return
 
-    api_client = kubernetes_ext.kubernetes_client
-    core_api = kubernetes.client.CoreV1Api(api_client)
-    custom_api = kubernetes.client.CustomObjectsApi(api_client)
-    apps_api = kubernetes.client.AppsV1Api(api_client)
-    rbac_api = kubernetes.client.RbacAuthorizationV1Api(api_client)
-    networking_api = kubernetes.client.NetworkingV1Api(api_client)
+    try:
+        resources = Resource.query.filter(
+            Resource.provisioning_status != "deleting",
+            Resource.provisioning_status != "deleted",
+        ).all()
 
-    for resource in resources:
-        entry = _RECONCILERS.get(resource.type)
-        if entry is None:
-            continue
-        reconcile_fn, delete_fn = entry
+        if not resources:
+            return
 
-        try:
-            if resource.deleted_at is not None:
-                delete_fn(resource, core_api, custom_api, apps_api, rbac_api)
-                resource.provisioning_status = "deleted"
-                db.session.commit()
-            else:
-                if not _backing_service_type_enabled(resource.type):
-                    continue
-                namespace = _resource_namespace(resource)
-                ensure_namespace(core_api, namespace)
-                if (
-                    has_app_context()
-                    and current_app.config.get("NETWORK_POLICIES_ENABLED")
-                    and namespace != "cabotage"
-                ):
-                    ensure_network_policies(networking_api, namespace)
-                reconcile_fn(resource, core_api, custom_api, apps_api, rbac_api)
-                db.session.commit()
-        except Exception:
-            log.exception(
-                "Failed to reconcile %s resource %s (%s)",
-                resource.type,
-                resource.id,
-                resource.slug,
-            )
-            resource.provisioning_status = "error"
-            resource.provisioning_error = "Reconcile failed; will retry"
-            db.session.commit()
+        api_client = kubernetes_ext.kubernetes_client
+        core_api = kubernetes.client.CoreV1Api(api_client)
+        custom_api = kubernetes.client.CustomObjectsApi(api_client)
+        apps_api = kubernetes.client.AppsV1Api(api_client)
+        rbac_api = kubernetes.client.RbacAuthorizationV1Api(api_client)
+        networking_api = kubernetes.client.NetworkingV1Api(api_client)
+
+        for resource in resources:
+            resource_type = resource.type
+            resource_id = resource.id
+            resource_slug = resource.slug
+
+            entry = _RECONCILERS.get(resource_type)
+            if entry is None:
+                continue
+            reconcile_fn, delete_fn = entry
+
+            try:
+                if resource.deleted_at is not None:
+                    delete_fn(resource, core_api, custom_api, apps_api, rbac_api)
+                    resource.provisioning_status = "deleted"
+                    db.session.commit()
+                else:
+                    if not _backing_service_type_enabled(resource_type):
+                        continue
+                    namespace = _resource_namespace(resource)
+                    ensure_namespace(core_api, namespace)
+                    if (
+                        has_app_context()
+                        and current_app.config.get("NETWORK_POLICIES_ENABLED")
+                        and namespace != "cabotage"
+                    ):
+                        ensure_network_policies(networking_api, namespace)
+                    reconcile_fn(resource, core_api, custom_api, apps_api, rbac_api)
+                    db.session.commit()
+                    if resource.environment.forked_from_environment_id is not None:
+                        resume_branch_deploy_releases_for_environment(
+                            resource.environment_id
+                        )
+            except Exception:
+                db.session.rollback()
+                log.exception(
+                    "Failed to reconcile %s resource %s (%s)",
+                    resource_type,
+                    resource_id,
+                    resource_slug,
+                )
+                failed_resource = Resource.query.get(resource_id)
+                if failed_resource is not None:
+                    failed_resource.provisioning_status = "error"
+                    failed_resource.provisioning_error = "Reconcile failed; will retry"
+                    db.session.commit()
+    finally:
+        _release_reconcile_lock(lock_conn)
 
 
 CA_CERT_PATH = "/var/run/secrets/cabotage.io/ca.crt"
@@ -1619,15 +1648,23 @@ def _sync_resource_env_configs(resource, entries):
     namespace = resource.environment.k8s_namespace
     prefix = project.k8s_identifier
 
-    existing = {
+    wanted_names = {name for name, _, _ in entries}
+    managed_configs = {
         c.name: c
         for c in EnvironmentConfiguration.query.filter_by(resource_id=resource.id).all()
     }
-    wanted_names = set()
+    existing_by_name = {
+        c.name: c
+        for c in EnvironmentConfiguration.query.filter_by(
+            project_id=project.id,
+            environment_id=env.id,
+        )
+        .filter(EnvironmentConfiguration.name.in_(wanted_names))
+        .all()
+    }
 
     for name, value, secret in entries:
-        wanted_names.add(name)
-        config = existing.get(name)
+        config = existing_by_name.get(name) or managed_configs.get(name)
         if config is None:
             config = EnvironmentConfiguration(
                 project_id=project.id,
@@ -1640,6 +1677,7 @@ def _sync_resource_env_configs(resource, entries):
             )
             db.session.add(config)
         else:
+            config.resource_id = resource.id
             config.value = value
             config.secret = secret
 
@@ -1659,7 +1697,7 @@ def _sync_resource_env_configs(resource, entries):
             )
 
     # Remove configs no longer in the wanted set
-    for name, config in existing.items():
+    for name, config in managed_configs.items():
         if name not in wanted_names:
             db.session.delete(config)
 
@@ -1675,3 +1713,31 @@ def _cleanup_managed_env_configs(resource):
     for config in configs:
         db.session.delete(config)
     db.session.flush()
+
+
+def _try_acquire_reconcile_lock():
+    """Acquire the backing-service reconcile lock or return None if held."""
+    conn = db.engine.connect()
+    try:
+        acquired = conn.execute(
+            text("SELECT pg_try_advisory_lock(:key)"),
+            {"key": _RECONCILE_LOCK_KEY},
+        ).scalar()
+        if not acquired:
+            conn.close()
+            return None
+        return conn
+    except Exception:
+        conn.close()
+        raise
+
+
+def _release_reconcile_lock(conn):
+    """Release a previously-acquired backing-service reconcile lock."""
+    try:
+        conn.execute(
+            text("SELECT pg_advisory_unlock(:key)"),
+            {"key": _RECONCILE_LOCK_KEY},
+        )
+    finally:
+        conn.close()

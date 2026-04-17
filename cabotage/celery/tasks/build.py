@@ -47,6 +47,7 @@ from cabotage.server import (
 
 from cabotage.server.models.projects import (
     activity_plugin,
+    Environment,
     Image,
     Release,
     Deployment,
@@ -73,6 +74,136 @@ from cabotage.utils.github import (
 from cabotage.utils import procfile
 
 log = logging.getLogger(__name__)
+
+
+def _branch_deploy_environment_backing_services_ready(environment):
+    resources = environment.active_resources
+    if not resources:
+        return True
+    return all(resource.provisioning_status == "ready" for resource in resources)
+
+
+def _branch_deploy_backing_services_ready(app_env):
+    environment = app_env.environment if app_env else None
+    if not environment or environment.forked_from_environment_id is None:
+        return True
+    return _branch_deploy_environment_backing_services_ready(environment)
+
+
+def _mark_image_waiting_for_backing_services(image):
+    image.image_metadata = {
+        **(image.image_metadata or {}),
+        "waiting_for_backing_services": True,
+    }
+    db.session.add(image)
+    db.session.commit()
+
+
+def _clear_image_waiting_for_backing_services(image):
+    metadata = dict(image.image_metadata or {})
+    if "waiting_for_backing_services" in metadata:
+        metadata.pop("waiting_for_backing_services", None)
+        image.image_metadata = metadata
+        db.session.add(image)
+        db.session.commit()
+
+
+def _latest_release_for_image(image):
+    app_env = image.application_environment
+    if not app_env:
+        return None
+    release = app_env.latest_release
+    if not release or not release.release_metadata:
+        return None
+    if release.release_metadata.get("source_image_id") == str(image.id):
+        return release
+    return None
+
+
+def _queue_autodeploy_release_for_image(image):
+    app_env = image.application_environment
+    if not app_env or not image.built:
+        return None
+
+    existing_release = _latest_release_for_image(image)
+    if existing_release is not None:
+        return existing_release
+
+    _clear_image_waiting_for_backing_services(image)
+
+    application = image.application
+    release = image.application.create_release(app_env=app_env)
+    release.release_metadata = {
+        **(image.image_metadata or {}),
+        "source_image_id": str(image.id),
+    }
+    db.session.add(release)
+    db.session.flush()
+    activity = Activity(
+        verb="create",
+        object=release,
+        data={
+            "user_id": "automation",
+            "deployment_id": image.image_metadata.get("id", None),
+            "description": image.image_metadata.get("description", None),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        },
+    )
+    db.session.add(activity)
+    db.session.commit()
+
+    CheckRun.from_metadata(image.image_metadata, app_env).progress(
+        "Building release...",
+        detail="Image built, release build starting.",
+        details_url=cabotage_url(application, f"releases/{release.id}"),
+        Image=f"images/{image.id}",
+        Release=f"releases/{release.id}",
+    )
+    run_release_build.delay(release_id=release.id)
+    try:
+        dispatch_autodeploy_notification(
+            "release_building",
+            image.id,
+            application,
+            app_env,
+            image_url=cabotage_url(application, f"images/{image.id}"),
+            release_url=cabotage_url(application, f"releases/{release.id}"),
+            image_metadata=image.image_metadata,
+        )
+    except Exception:
+        log.warning(
+            "Failed to dispatch autodeploy release_building notification",
+            exc_info=True,
+        )
+    return release
+
+
+def resume_branch_deploy_releases_for_environment(environment_id):
+    environment = Environment.query.filter_by(id=environment_id).first()
+    if (
+        environment is None
+        or environment.forked_from_environment_id is None
+        or not _branch_deploy_environment_backing_services_ready(environment)
+    ):
+        return
+
+    for app_env in environment.application_environments:
+        image = app_env.latest_image
+        if not image or not image.image_metadata:
+            continue
+        if not image.image_metadata.get("auto_deploy"):
+            continue
+        if not image.image_metadata.get("branch_deploy"):
+            continue
+
+        if current_app.config.get("CABOTAGE_OMNIBUS_BUILDS"):
+            if not image.built and image.image_metadata.get(
+                "waiting_for_backing_services"
+            ):
+                _clear_image_waiting_for_backing_services(image)
+                run_omnibus_build.delay(image_id=image.id)
+        elif image.built:
+            _queue_autodeploy_release_for_image(image)
 
 
 def _dispatch_image_failure(image, error_detail):
@@ -1873,48 +2004,21 @@ def run_image_build(image_id: str, buildkit: bool = False):
         and image.image_metadata.get("auto_deploy", False)
     ):
         app_env = image.application_environment
-        release = image.application.create_release(app_env=app_env)
-        release.release_metadata = {
-            **(image.image_metadata or {}),
-            "source_image_id": str(image.id),
-        }
-        db.session.add(release)
-        db.session.flush()
-        activity = Activity(
-            verb="create",
-            object=release,
-            data={
-                "user_id": "automation",
-                "deployment_id": image.image_metadata.get("id", None),
-                "description": image.image_metadata.get("description", None),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            },
-        )
-        db.session.add(activity)
-        db.session.commit()
-        check.progress(
-            "Building release...",
-            detail="Image built, release build starting.",
-            details_url=cabotage_url(application, f"releases/{release.id}"),
-            Image=f"images/{image.id}",
-            Release=f"releases/{release.id}",
-        )
-        run_release_build.delay(release_id=release.id)
-        try:
-            dispatch_autodeploy_notification(
-                "release_building",
-                image.id,
-                application,
-                app_env,
-                image_url=cabotage_url(application, f"images/{image.id}"),
-                release_url=cabotage_url(application, f"releases/{release.id}"),
-                image_metadata=image.image_metadata,
+        if image.image_metadata.get(
+            "branch_deploy"
+        ) and not _branch_deploy_backing_services_ready(app_env):
+            _mark_image_waiting_for_backing_services(image)
+            check.progress(
+                "Waiting for backing services...",
+                detail=(
+                    "Image built successfully. Waiting for backing services "
+                    "to become ready before release build."
+                ),
+                details_url=cabotage_url(application, f"images/{image.id}"),
+                Image=f"images/{image.id}",
             )
-        except Exception:
-            log.warning(
-                "Failed to dispatch autodeploy release_building notification",
-                exc_info=True,
-            )
+        else:
+            _queue_autodeploy_release_for_image(image)
 
 
 @shared_task()
@@ -2245,6 +2349,24 @@ def run_omnibus_build(image_id: str):
 
     release = None
     app_env = image.application_environment
+    if (
+        image.image_metadata
+        and image.image_metadata.get("auto_deploy", False)
+        and image.image_metadata.get("branch_deploy")
+        and not _branch_deploy_backing_services_ready(app_env)
+    ):
+        _mark_image_waiting_for_backing_services(image)
+        check.progress(
+            "Waiting for backing services...",
+            detail=(
+                "Waiting for backing services to become ready before starting "
+                "the branch deploy build."
+            ),
+            details_url=cabotage_url(application, f"images/{image.id}"),
+            Image=f"images/{image.id}",
+        )
+        return
+
     try:
         try:
             # Create the release record upfront so build_omnibus_buildkit
