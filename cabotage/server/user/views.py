@@ -6659,6 +6659,14 @@ def _observe_container_filter():
     return container_filter
 
 
+def _observe_application_pod_join(selector):
+    """Return a PromQL join that keeps only pods belonging to applications."""
+    return (
+        " * on (pod, namespace) group_left() "
+        f'(max by (pod, namespace) (kube_pod_labels{{{selector}, label_application!=""}}))'
+    )
+
+
 def _collect_traefik_svc_names(app_envs, namespace_fn, prefix_fn, process_filter=""):
     """Enumerate traefik service names from ingress configs across app_envs."""
     names = set()
@@ -6714,69 +6722,76 @@ def _build_observe_queries(
     env_re=None,
     proj_re=None,
     network_labels=None,
+    pod_join=None,
 ):
     """Build PromQL queries and execute them. Returns (result, queries)."""
 
     result = None
     queries = []
+    pod_join = pod_join or ""
 
     if metric == "cpu":
+        cpu_source = (
+            f"(rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}]))"
+            f"{pod_join}"
+        )
         if group == "process":
             q = (
                 f"sum by (process) (label_replace("
-                f"sum by (pod) (rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}]))"
+                f"sum by (pod) ({cpu_source})"
                 f', "process", "$1", "pod", "{process_re}"))'
             )
         elif group == "application" and app_re:
             q = (
                 f"sum by (application) (label_replace("
-                f"sum by (pod) (rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}]))"
+                f"sum by (pod) ({cpu_source})"
                 f', "application", "$1", "pod", "{app_re}"))'
             )
         elif group == "environment" and env_re:
             q = (
                 f"sum by (environment) (label_replace("
-                f"sum by (namespace) (rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}]))"
+                f"sum by (namespace) ({cpu_source})"
                 f', "environment", "$1", "namespace", "{env_re}"))'
             )
         elif group == "project" and proj_re:
             q = (
                 f"sum by (project) (label_replace("
-                f"sum by (pod) (rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}]))"
+                f"sum by (pod) ({cpu_source})"
                 f', "project", "$1", "pod", "{proj_re}"))'
             )
         else:
-            q = f"sum(rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}])) {by_clause}"
+            q = f"sum({cpu_source}) {by_clause}"
         queries.append(q)
         result = _query_mimir_range(q, start, end, step)
 
     elif metric == "memory":
+        mem_source = f"(container_memory_working_set_bytes{{{labels}}}){pod_join}"
         if group == "process":
             q = (
                 f"sum by (process) (label_replace("
-                f"sum by (pod) (container_memory_working_set_bytes{{{labels}}})"
+                f"sum by (pod) ({mem_source})"
                 f', "process", "$1", "pod", "{process_re}"))'
             )
         elif group == "application" and app_re:
             q = (
                 f"sum by (application) (label_replace("
-                f"sum by (pod) (container_memory_working_set_bytes{{{labels}}})"
+                f"sum by (pod) ({mem_source})"
                 f', "application", "$1", "pod", "{app_re}"))'
             )
         elif group == "environment" and env_re:
             q = (
                 f"sum by (environment) (label_replace("
-                f"sum by (namespace) (container_memory_working_set_bytes{{{labels}}})"
+                f"sum by (namespace) ({mem_source})"
                 f', "environment", "$1", "namespace", "{env_re}"))'
             )
         elif group == "project" and proj_re:
             q = (
                 f"sum by (project) (label_replace("
-                f"sum by (pod) (container_memory_working_set_bytes{{{labels}}})"
+                f"sum by (pod) ({mem_source})"
                 f', "project", "$1", "pod", "{proj_re}"))'
             )
         else:
-            q = f"sum(container_memory_working_set_bytes{{{labels}}}) {by_clause}"
+            q = f"sum({mem_source}) {by_clause}"
         queries.append(q)
         result = _query_mimir_range(q, start, end, step)
 
@@ -6861,32 +6876,35 @@ def _build_observe_queries(
             ("tx", "container_network_transmit_bytes_total"),
             ("rx", "container_network_receive_bytes_total"),
         ]:
+            network_source = (
+                f"(rate({counter}{{{net_labels}}}[{rate_window}])){pod_join}"
+            )
             if group == "process":
                 q = (
                     f"sum by (process) (label_replace("
-                    f"sum by (pod) (rate({counter}{{{net_labels}}}[{rate_window}]))"
+                    f"sum by (pod) ({network_source})"
                     f', "process", "$1", "pod", "{process_re}"))'
                 )
             elif group == "application" and app_re:
                 q = (
                     f"sum by (application) (label_replace("
-                    f"sum by (pod) (rate({counter}{{{net_labels}}}[{rate_window}]))"
+                    f"sum by (pod) ({network_source})"
                     f', "application", "$1", "pod", "{app_re}"))'
                 )
             elif group == "environment" and env_re:
                 q = (
                     f"sum by (environment) (label_replace("
-                    f"sum by (namespace) (rate({counter}{{{net_labels}}}[{rate_window}]))"
+                    f"sum by (namespace) ({network_source})"
                     f', "environment", "$1", "namespace", "{env_re}"))'
                 )
             elif group == "project" and proj_re:
                 q = (
                     f"sum by (project) (label_replace("
-                    f"sum by (pod) (rate({counter}{{{net_labels}}}[{rate_window}]))"
+                    f"sum by (pod) ({network_source})"
                     f', "project", "$1", "pod", "{proj_re}"))'
                 )
             else:
-                q = f"sum(rate({counter}{{{net_labels}}}[{rate_window}])) {by_clause}"
+                q = f"sum({network_source}) {by_clause}"
             queries.append(q)
             qr = _query_mimir_range(q, start, end, step)
             if qr:
@@ -6973,6 +6991,7 @@ def environment_observe_metric(org_slug, project_slug, env_slug):
         network_labels = base_selector
         # Process RE: extract process from pod name across all apps in namespace
         process_re = ".*-(.*)-[a-z0-9]+-[a-z0-9]+"
+    pod_join = _observe_application_pod_join(base_selector)
 
     # Application grouping RE: extract project-app prefix from pod name
     # Pod format: {project_k8s}-{app_k8s}-{process}-{rs_hash}-{pod_hash}
@@ -7010,6 +7029,7 @@ def environment_observe_metric(org_slug, project_slug, env_slug):
         rate_window,
         app_re=app_re,
         network_labels=network_labels,
+        pod_join=pod_join,
     )
     return jsonify({"result": result, "queries": queries})
 
@@ -7088,6 +7108,7 @@ def project_observe_metric(org_slug, project_slug):
 
     network_labels = f"{ns_label}, {pod_label}"
     labels = f"{ns_label}, {pod_label}, {container_filter}"
+    pod_join = _observe_application_pod_join(f"{ns_label}, {pod_label}")
     process_re = ".*-(.*)-[a-z0-9]+-[a-z0-9]+"
     app_re = f"({escaped_proj_k8s}-.+)-[^-]+-[a-z0-9]+-[a-z0-9]+"
     env_re = f"{escaped_org_k8s}-(.+)"
@@ -7137,6 +7158,7 @@ def project_observe_metric(org_slug, project_slug):
         app_re=app_re,
         env_re=env_re,
         network_labels=network_labels,
+        pod_join=pod_join,
     )
     return jsonify({"result": result, "queries": queries})
 
@@ -7213,6 +7235,7 @@ def organization_observe_metric(org_slug):
 
     network_labels = f"{ns_label}, {pod_label}"
     labels = f"{ns_label}, {pod_label}, {container_filter}"
+    pod_join = _observe_application_pod_join(f"{ns_label}, {pod_label}")
 
     # Grouping regexes
     process_re = ".*-(.*)-[a-z0-9]+-[a-z0-9]+"
@@ -7276,6 +7299,7 @@ def organization_observe_metric(org_slug):
         env_re=env_re,
         proj_re=proj_re,
         network_labels=network_labels,
+        pod_join=pod_join,
     )
     return jsonify({"result": result, "queries": queries})
 
