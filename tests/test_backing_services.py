@@ -1903,6 +1903,55 @@ class TestCeleryTasks:
         assert body["spec"]["redisFollower"]["replicas"] == 2
         assert r.provisioning_status == "ready"
 
+    def test_reconcile_redis_claims_existing_same_name_env_config(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import _reconcile_redis
+
+        r = RedisResource(
+            service_version="8",
+            environment_id=environment.id,
+            name="Cache",
+            slug="cache",
+            size_class="cache.small",
+            storage_size=1,
+        )
+        db.session.add(r)
+        db.session.flush()
+
+        existing = EnvironmentConfiguration(
+            project_id=environment.project.id,
+            environment_id=environment.id,
+            name="CACHE_REDIS_URL",
+            value="rediss://old",
+            secret=False,
+            buildtime=False,
+        )
+        db.session.add(existing)
+        db.session.commit()
+
+        (
+            mock_custom_api,
+            mock_core_api,
+            mock_apps_api,
+            mock_rbac_api,
+        ) = self._mock_k8s_apis()
+        _reconcile_redis(
+            r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api
+        )
+
+        db.session.refresh(existing)
+        assert existing.resource_id == r.id
+        assert existing.secret is True
+        assert existing.value == "**secure**"
+        assert (
+            EnvironmentConfiguration.query.filter_by(
+                environment_id=environment.id,
+                name="CACHE_REDIS_URL",
+            ).count()
+            == 1
+        )
+
     def test_reconcile_redis_cluster_stays_provisioning_until_operator_ready(
         self, app, environment
     ):
@@ -2412,6 +2461,71 @@ class TestCeleryTasks:
         db.session.delete(r)
         db.session.delete(branch_env)
         db.session.commit()
+
+    def test_reconcile_backing_services_rolls_back_poisoned_session_before_marking_error(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import reconcile_backing_services
+        from cabotage.server.models.resources import Resource
+
+        r = RedisResource(
+            service_version="8",
+            environment_id=environment.id,
+            name="Broken Redis",
+            size_class="cache.small",
+            storage_size=1,
+        )
+        db.session.add(r)
+        db.session.commit()
+
+        def poison_session(*_args, **_kwargs):
+            duplicate = EnvironmentConfiguration(
+                project_id=environment.project.id,
+                environment_id=environment.id,
+                name="BROKEN_CONFIG",
+                value="one",
+                secret=False,
+                buildtime=False,
+            )
+            db.session.add(duplicate)
+            db.session.flush()
+            db.session.add(
+                EnvironmentConfiguration(
+                    project_id=environment.project.id,
+                    environment_id=environment.id,
+                    name="BROKEN_CONFIG",
+                    value="two",
+                    secret=False,
+                    buildtime=False,
+                )
+            )
+            db.session.flush()
+
+        with (
+            patch("cabotage.celery.tasks.resources.kubernetes_ext") as mock_kext,
+            patch("cabotage.celery.tasks.resources.kubernetes.client.CoreV1Api"),
+            patch("cabotage.celery.tasks.resources.kubernetes.client.CustomObjectsApi"),
+            patch("cabotage.celery.tasks.resources.kubernetes.client.AppsV1Api"),
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.RbacAuthorizationV1Api"
+            ),
+            patch("cabotage.celery.tasks.resources.kubernetes.client.NetworkingV1Api"),
+            patch("cabotage.celery.tasks.resources.ensure_namespace"),
+            patch.object(Resource, "query") as mock_query,
+        ):
+            mock_kext.kubernetes_client = MagicMock()
+            mock_query.filter.return_value.all.return_value = [r]
+            mock_query.get.side_effect = lambda rid: db.session.get(Resource, rid)
+            with patch.dict(
+                "cabotage.celery.tasks.resources._RECONCILERS",
+                {"redis": (poison_session, MagicMock())},
+                clear=True,
+            ):
+                reconcile_backing_services()
+
+        db.session.refresh(r)
+        assert r.provisioning_status == "error"
+        assert r.provisioning_error == "Reconcile failed; will retry"
 
     def test_reconcile_redis_standalone_patches_statefulset_for_backing_pool(
         self, app, environment

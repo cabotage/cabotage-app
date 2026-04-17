@@ -1515,7 +1515,11 @@ def reconcile_backing_services():
     networking_api = kubernetes.client.NetworkingV1Api(api_client)
 
     for resource in resources:
-        entry = _RECONCILERS.get(resource.type)
+        resource_type = resource.type
+        resource_id = resource.id
+        resource_slug = resource.slug
+
+        entry = _RECONCILERS.get(resource_type)
         if entry is None:
             continue
         reconcile_fn, delete_fn = entry
@@ -1526,7 +1530,7 @@ def reconcile_backing_services():
                 resource.provisioning_status = "deleted"
                 db.session.commit()
             else:
-                if not _backing_service_type_enabled(resource.type):
+                if not _backing_service_type_enabled(resource_type):
                     continue
                 namespace = _resource_namespace(resource)
                 ensure_namespace(core_api, namespace)
@@ -1543,15 +1547,18 @@ def reconcile_backing_services():
                         resource.environment_id
                     )
         except Exception:
+            db.session.rollback()
             log.exception(
                 "Failed to reconcile %s resource %s (%s)",
-                resource.type,
-                resource.id,
-                resource.slug,
+                resource_type,
+                resource_id,
+                resource_slug,
             )
-            resource.provisioning_status = "error"
-            resource.provisioning_error = "Reconcile failed; will retry"
-            db.session.commit()
+            failed_resource = Resource.query.get(resource_id)
+            if failed_resource is not None:
+                failed_resource.provisioning_status = "error"
+                failed_resource.provisioning_error = "Reconcile failed; will retry"
+                db.session.commit()
 
 
 CA_CERT_PATH = "/var/run/secrets/cabotage.io/ca.crt"
@@ -1626,15 +1633,23 @@ def _sync_resource_env_configs(resource, entries):
     namespace = resource.environment.k8s_namespace
     prefix = project.k8s_identifier
 
-    existing = {
+    wanted_names = {name for name, _, _ in entries}
+    managed_configs = {
         c.name: c
         for c in EnvironmentConfiguration.query.filter_by(resource_id=resource.id).all()
     }
-    wanted_names = set()
+    existing_by_name = {
+        c.name: c
+        for c in EnvironmentConfiguration.query.filter_by(
+            project_id=project.id,
+            environment_id=env.id,
+        )
+        .filter(EnvironmentConfiguration.name.in_(wanted_names))
+        .all()
+    }
 
     for name, value, secret in entries:
-        wanted_names.add(name)
-        config = existing.get(name)
+        config = existing_by_name.get(name) or managed_configs.get(name)
         if config is None:
             config = EnvironmentConfiguration(
                 project_id=project.id,
@@ -1647,6 +1662,7 @@ def _sync_resource_env_configs(resource, entries):
             )
             db.session.add(config)
         else:
+            config.resource_id = resource.id
             config.value = value
             config.secret = secret
 
@@ -1666,7 +1682,7 @@ def _sync_resource_env_configs(resource, entries):
             )
 
     # Remove configs no longer in the wanted set
-    for name, config in existing.items():
+    for name, config in managed_configs.items():
         if name not in wanted_names:
             db.session.delete(config)
 

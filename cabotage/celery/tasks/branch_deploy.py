@@ -740,7 +740,7 @@ def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref
     # sharing the same Consul/Vault key_slugs.
     env_config_map = {}  # base config id -> new config id
     for env_config in base_env.environment_configurations:
-        if env_config.deleted:
+        if env_config.deleted or env_config.resource_id is not None:
             continue
         new_env_config = EnvironmentConfiguration(
             project_id=project.id,

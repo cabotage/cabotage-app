@@ -12,6 +12,7 @@ from cabotage.server.models.projects import (
     Application,
     ApplicationEnvironment,
     Environment,
+    EnvironmentConfiguration,
     Hook,
     Project,
 )
@@ -746,6 +747,88 @@ class TestBranchDeployNamespaces:
         assert cloned_redis.follower_replicas == 4
         assert cloned_redis.provisioning_status == "pending"
         assert cloned_redis.connection_info == {}
+
+        mock_precreate.assert_called_once_with(pr_environment)
+        mock_build_images.assert_called_once()
+        mock_update_comment.assert_called_once_with(pr_environment)
+
+    @patch("cabotage.celery.tasks.branch_deploy.update_pr_comment")
+    @patch("cabotage.celery.tasks.branch_deploy._build_images_for_app_envs")
+    @patch("cabotage.celery.tasks.branch_deploy._precreate_ingresses")
+    def test_create_branch_deploy_skips_resource_managed_env_configs(
+        self,
+        mock_precreate,
+        mock_build_images,
+        mock_update_comment,
+        db_session,
+        branch_deploy_project,
+        environment,
+        installation_id,
+    ):
+        application = _make_app(branch_deploy_project, installation_id)
+        _make_app_env(application, environment)
+
+        base_redis = RedisResource(
+            environment_id=environment.id,
+            name="cache",
+            slug="cache",
+            service_version="8",
+            size_class="cache.small",
+            storage_size=1,
+        )
+        db.session.add(base_redis)
+        db.session.flush()
+        db.session.add(
+            EnvironmentConfiguration(
+                project_id=branch_deploy_project.id,
+                environment_id=environment.id,
+                resource_id=base_redis.id,
+                name="CACHE_REDIS_URL",
+                value="rediss://base",
+                secret=True,
+                buildtime=False,
+            )
+        )
+        db.session.add(
+            EnvironmentConfiguration(
+                project_id=branch_deploy_project.id,
+                environment_id=environment.id,
+                name="SHARED_ENV",
+                value="present",
+                secret=False,
+                buildtime=False,
+            )
+        )
+        db.session.commit()
+
+        from cabotage.celery.tasks.branch_deploy import create_branch_deploy
+
+        create_branch_deploy(
+            branch_deploy_project,
+            pr_number=42,
+            head_sha=uuid.uuid4().hex[:40],
+            installation_id=installation_id,
+            head_ref="feature-branch",
+        )
+
+        pr_environment = Environment.query.filter_by(
+            project_id=branch_deploy_project.id,
+            slug="pr-42",
+        ).first()
+        assert pr_environment is not None
+        assert (
+            EnvironmentConfiguration.query.filter_by(
+                environment_id=pr_environment.id,
+                name="CACHE_REDIS_URL",
+            ).first()
+            is None
+        )
+        shared = EnvironmentConfiguration.query.filter_by(
+            environment_id=pr_environment.id,
+            name="SHARED_ENV",
+        ).first()
+        assert shared is not None
+        assert shared.resource_id is None
 
         mock_precreate.assert_called_once_with(pr_environment)
         mock_build_images.assert_called_once()
