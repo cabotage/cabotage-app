@@ -1013,7 +1013,9 @@ _BACKUP_STRATEGY_CHOICES = [
 def _validate_unique_resource_slug(form, slug):
     effective_slug = slug or slugify(form.name.data or "")
     if not effective_slug:
-        return True
+        raise ValidationError(
+            "Name must contain at least one letter or number, or provide a slug."
+        )
     existing = (
         Resource.query.filter_by(
             environment_id=form.environment_id.data,

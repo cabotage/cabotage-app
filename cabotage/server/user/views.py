@@ -312,12 +312,22 @@ def _soft_delete_application(application, organization):
     application.slug = f"{application.slug}--deleted-{uuid.uuid4().hex[:12]}"
 
 
+def _soft_delete_resource(resource):
+    """Soft-delete a backing service resource."""
+    if resource.deleted_at is not None:
+        return
+    resource.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+    resource.slug = f"--deleted-{resource.slug}-{str(resource.id)[:8]}"
+
+
 def _soft_delete_environment(environment, organization):
-    """Soft-delete an Environment and all its ApplicationEnvironments."""
+    """Soft-delete an Environment and all its child records."""
     for app_env in environment.application_environments:
         if app_env.deleted_at is None:
             _enqueue_app_env_cleanup(app_env, organization)
             app_env.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+    for resource in environment.resources:
+        _soft_delete_resource(resource)
     environment.deleted_at = datetime.datetime.now(datetime.timezone.utc)
     environment.slug = f"{environment.slug}--deleted-{uuid.uuid4().hex[:12]}"
 
@@ -1028,7 +1038,9 @@ def project(org_slug, project_slug):
             selectinload(Project.project_applications)
             .selectinload(Application.application_environments)
             .selectinload(ApplicationEnvironment.configurations),
-            selectinload(Project.project_environments),
+            selectinload(Project.project_environments).selectinload(
+                Environment.resources
+            ),
         )
         .first_or_404()
     )
@@ -1093,6 +1105,11 @@ def project(org_slug, project_slug):
         for ae in app.active_application_environments:
             app_config_counts[ae.id] = _config_count(ae, ae.environment)
 
+    resources_by_env = {
+        env.id: sorted(env.active_resources, key=lambda resource: resource.name.lower())
+        for env in active_envs
+    }
+
     return render_template(
         "user/project.html",
         project=project,
@@ -1108,6 +1125,7 @@ def project(org_slug, project_slug):
         errored_ae_ids=errored_ae_ids,
         last_deploy_by_ae=last_deploy_by_ae,
         ae_by_env=ae_by_env,
+        resources_by_env=resources_by_env,
         app_config_counts=app_config_counts,
     )
 
