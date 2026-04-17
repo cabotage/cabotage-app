@@ -6090,6 +6090,48 @@ def _observe_common_groups(allowed):
     return current_groups
 
 
+def _observe_backing_service_groups(allowed):
+    """Parse backing-service group query params, clamping to allowed set."""
+    current_groups = {
+        "cpu": request.args.get("backing_cpu", "total"),
+        "memory": request.args.get("backing_memory", "total"),
+        "network": request.args.get("backing_network", "total"),
+    }
+    for key in current_groups:
+        if current_groups[key] not in allowed:
+            current_groups[key] = "total"
+    return current_groups
+
+
+def _set_default_groupings(current_groups, default_group, prefix=""):
+    for key in ("cpu", "memory", "network"):
+        if key not in current_groups:
+            continue
+        arg_name = f"{prefix}{key}"
+        if request.args.get(arg_name) is None:
+            current_groups[key] = default_group
+    return current_groups
+
+
+def _observe_backing_service_pod_join(selector, resource_id=None):
+    """Return a PromQL join that keeps only backing-service pods."""
+    service_selector = ""
+    if resource_id:
+        service_selector = f', label_cabotage_io_resource_id="{resource_id}"'
+    return (
+        " * on (pod, namespace) "
+        "group_left("
+        "label_backing_service_type, "
+        "label_backing_service_slug, "
+        "label_role, "
+        "label_cabotage_io_resource_id"
+        ") "
+        f"(max by (pod, namespace, label_backing_service_type, "
+        f"label_backing_service_slug, label_role, label_cabotage_io_resource_id) "
+        f'(kube_pod_labels{{{selector}, label_backing_service="true"{service_selector}}}))'
+    )
+
+
 @user_blueprint.route(
     "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/observe",
 )
@@ -6126,6 +6168,8 @@ def project_application_observe(org_slug, project_slug, app_slug, env_slug=None)
         environment=environment,
         app_env=app_env,
         mimir_configured=mimir_configured,
+        show_backing_services_panels=False,
+        backing_service_groups=[],
         metric_url=url_for(
             "user.project_application_observe_metric",
             org_slug=org_slug,
@@ -6134,11 +6178,13 @@ def project_application_observe(org_slug, project_slug, app_slug, env_slug=None)
             env_slug=env_slug,
         ),
         filter_hierarchy_json="[]",
+        backing_service_hierarchy_json="[]",
         label_map_json="{}",
         current_range=request.args.get("range", "1h"),
         process_names=process_names,
         current_process=current_process,
         current_groups=current_groups,
+        current_backing_service_groups={},
         has_time_window=has_time_window,
     )
 
@@ -6171,10 +6217,20 @@ def environment_observe(org_slug, project_slug, env_slug):
     current_groups = _observe_common_groups(
         {"total", "application", "process", "pod", "status"}
     )
+    current_groups = _set_default_groupings(current_groups, "application")
+    backing_service_groups = ["total", "service", "type", "role", "pod"]
+    current_backing_service_groups = _observe_backing_service_groups(
+        set(backing_service_groups)
+    )
+    current_backing_service_groups = _set_default_groupings(
+        current_backing_service_groups, "service", prefix="backing_"
+    )
     has_time_window = bool(request.args.get("start") and request.args.get("end"))
+    has_backing_services = bool(environment.active_resources)
 
     # Build filter hierarchy and label map
     filter_hierarchy = []
+    backing_service_hierarchy = []
     label_map = {}
     for ae in environment.active_application_environments:
         app = ae.application
@@ -6184,15 +6240,23 @@ def environment_observe(org_slug, project_slug, env_slug):
         app_k8s = safe_k8s_name(project.k8s_identifier, app.k8s_identifier)
         label_map[app_k8s] = app.slug
     filter_hierarchy.sort(key=lambda a: a["slug"])
+    for resource in environment.active_resources:
+        label_map[str(resource.id)] = f"{resource.slug} ({resource.type})"
+        backing_service_hierarchy.append(
+            {"id": str(resource.id), "name": f"{resource.slug} ({resource.type})"}
+        )
+    backing_service_hierarchy.sort(key=lambda r: r["name"])
 
     return render_template(
         "user/observe.html",
         observe_level="environment",
         observe_groups=observe_groups,
+        backing_service_groups=backing_service_groups,
         organization=organization,
         project=project,
         environment=environment,
         mimir_configured=mimir_configured,
+        show_backing_services_panels=has_backing_services,
         metric_url=url_for(
             "user.environment_observe_metric",
             org_slug=org_slug,
@@ -6201,11 +6265,14 @@ def environment_observe(org_slug, project_slug, env_slug):
         ),
         filter_hierarchy=filter_hierarchy,
         filter_hierarchy_json=json.dumps(filter_hierarchy),
+        backing_service_hierarchy=backing_service_hierarchy,
+        backing_service_hierarchy_json=json.dumps(backing_service_hierarchy),
         label_map_json=json.dumps(label_map),
         current_range=request.args.get("range", "1h"),
         process_names=[],
         current_process="",
         current_groups=current_groups,
+        current_backing_service_groups=current_backing_service_groups,
         has_time_window=has_time_window,
     )
 
@@ -6233,14 +6300,36 @@ def project_observe(org_slug, project_slug):
     current_groups = _observe_common_groups(
         {"total", "environment", "application", "process", "pod", "status"}
     )
+    current_groups = _set_default_groupings(current_groups, "application")
+    backing_service_groups = ["total", "service", "type", "role", "pod"]
+    current_backing_service_groups = _observe_backing_service_groups(
+        set(backing_service_groups)
+    )
+    current_backing_service_groups = _set_default_groupings(
+        current_backing_service_groups, "service", prefix="backing_"
+    )
     has_time_window = bool(request.args.get("start") and request.args.get("end"))
+    has_backing_services = False
 
     # Build filter hierarchy and label map
     filter_hierarchy = []
     label_map = {}
     for env in project.active_environments:
-        env_entry = {"slug": env.slug, "name": env.name, "applications": []}
+        env_entry = {
+            "slug": env.slug,
+            "name": env.name,
+            "applications": [],
+            "services": [],
+        }
         label_map[env.k8s_identifier] = env.slug
+        for resource in env.active_resources:
+            has_backing_services = True
+            label_map[str(resource.id)] = (
+                f"{env.slug}/{resource.slug} ({resource.type})"
+            )
+            env_entry["services"].append(
+                {"id": str(resource.id), "name": f"{resource.slug} ({resource.type})"}
+            )
         for ae in env.active_application_environments:
             app = ae.application
             if app.deleted_at is not None:
@@ -6249,16 +6338,19 @@ def project_observe(org_slug, project_slug):
             app_k8s = safe_k8s_name(project.k8s_identifier, app.k8s_identifier)
             label_map[app_k8s] = app.slug
         env_entry["applications"].sort(key=lambda a: a["slug"])
+        env_entry["services"].sort(key=lambda r: r["name"])
         filter_hierarchy.append(env_entry)
 
     return render_template(
         "user/observe.html",
         observe_level="project",
         observe_groups=observe_groups,
+        backing_service_groups=backing_service_groups,
         organization=organization,
         project=project,
         environment=None,
         mimir_configured=mimir_configured,
+        show_backing_services_panels=has_backing_services,
         metric_url=url_for(
             "user.project_observe_metric",
             org_slug=org_slug,
@@ -6266,11 +6358,14 @@ def project_observe(org_slug, project_slug):
         ),
         filter_hierarchy=filter_hierarchy,
         filter_hierarchy_json=json.dumps(filter_hierarchy),
+        backing_service_hierarchy=filter_hierarchy,
+        backing_service_hierarchy_json=json.dumps(filter_hierarchy),
         label_map_json=json.dumps(label_map),
         current_range=request.args.get("range", "1h"),
         process_names=[],
         current_process="",
         current_groups=current_groups,
+        current_backing_service_groups=current_backing_service_groups,
         has_time_window=has_time_window,
     )
 
@@ -6297,7 +6392,16 @@ def organization_observe(org_slug):
     current_groups = _observe_common_groups(
         {"total", "project", "environment", "application", "status"}
     )
+    current_groups = _set_default_groupings(current_groups, "application")
+    backing_service_groups = ["total", "service", "type", "role", "pod"]
+    current_backing_service_groups = _observe_backing_service_groups(
+        set(backing_service_groups)
+    )
+    current_backing_service_groups = _set_default_groupings(
+        current_backing_service_groups, "service", prefix="backing_"
+    )
     has_time_window = bool(request.args.get("start") and request.args.get("end"))
+    has_backing_services = False
 
     # Build filter hierarchy and label map
     filter_hierarchy = []
@@ -6310,8 +6414,24 @@ def organization_observe(org_slug):
         }
         label_map[proj.k8s_identifier] = proj.slug
         for env in proj.active_environments:
-            env_entry = {"slug": env.slug, "name": env.name, "applications": []}
+            env_entry = {
+                "slug": env.slug,
+                "name": env.name,
+                "applications": [],
+                "services": [],
+            }
             label_map[env.k8s_identifier] = env.slug
+            for resource in env.active_resources:
+                has_backing_services = True
+                label_map[str(resource.id)] = (
+                    f"{proj.slug}/{env.slug}/{resource.slug} ({resource.type})"
+                )
+                env_entry["services"].append(
+                    {
+                        "id": str(resource.id),
+                        "name": f"{resource.slug} ({resource.type})",
+                    }
+                )
             for ae in env.active_application_environments:
                 app = ae.application
                 if app.deleted_at is not None:
@@ -6320,6 +6440,7 @@ def organization_observe(org_slug):
                 app_k8s = safe_k8s_name(proj.k8s_identifier, app.k8s_identifier)
                 label_map[app_k8s] = app.slug
             env_entry["applications"].sort(key=lambda a: a["slug"])
+            env_entry["services"].sort(key=lambda r: r["name"])
             proj_entry["environments"].append(env_entry)
         filter_hierarchy.append(proj_entry)
     filter_hierarchy.sort(key=lambda p: p["slug"])
@@ -6328,21 +6449,26 @@ def organization_observe(org_slug):
         "user/observe.html",
         observe_level="organization",
         observe_groups=observe_groups,
+        backing_service_groups=backing_service_groups,
         organization=organization,
         project=None,
         environment=None,
         mimir_configured=mimir_configured,
+        show_backing_services_panels=has_backing_services,
         metric_url=url_for(
             "user.organization_observe_metric",
             org_slug=org_slug,
         ),
         filter_hierarchy=filter_hierarchy,
         filter_hierarchy_json=json.dumps(filter_hierarchy),
+        backing_service_hierarchy=filter_hierarchy,
+        backing_service_hierarchy_json=json.dumps(filter_hierarchy),
         label_map_json=json.dumps(label_map),
         current_range=request.args.get("range", "1h"),
         process_names=[],
         current_process="",
         current_groups=current_groups,
+        current_backing_service_groups=current_backing_service_groups,
         has_time_window=has_time_window,
     )
 
@@ -6357,6 +6483,8 @@ _OBSERVE_GROUPS = {
     "environment",
     "project",
 }
+_BACKING_SERVICE_OBSERVE_METRICS = {"cpu", "memory", "network"}
+_BACKING_SERVICE_OBSERVE_GROUPS = {"total", "service", "type", "role", "pod"}
 
 
 @user_blueprint.route(
@@ -6368,6 +6496,10 @@ _OBSERVE_GROUPS = {
 )
 @login_required
 def project_application_observe_metric(org_slug, project_slug, app_slug, env_slug=None):
+    workload = request.args.get("workload", "applications")
+    if workload != "applications":
+        return jsonify({"error": "invalid workload"}), 400
+
     metric = request.args.get("metric")
     if metric not in _OBSERVE_METRICS:
         return jsonify({"error": "invalid metric"}), 400
@@ -6723,19 +6855,23 @@ def _build_observe_queries(
     proj_re=None,
     network_labels=None,
     pod_join=None,
+    group_label_map=None,
 ):
     """Build PromQL queries and execute them. Returns (result, queries)."""
 
     result = None
     queries = []
     pod_join = pod_join or ""
+    group_label_map = group_label_map or {}
 
     if metric == "cpu":
         cpu_source = (
             f"(rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}]))"
             f"{pod_join}"
         )
-        if group == "process":
+        if group in group_label_map:
+            q = f"sum by ({group_label_map[group]}) ({cpu_source})"
+        elif group == "process":
             q = (
                 f"sum by (process) (label_replace("
                 f"sum by (pod) ({cpu_source})"
@@ -6766,7 +6902,9 @@ def _build_observe_queries(
 
     elif metric == "memory":
         mem_source = f"(container_memory_working_set_bytes{{{labels}}}){pod_join}"
-        if group == "process":
+        if group in group_label_map:
+            q = f"sum by ({group_label_map[group]}) ({mem_source})"
+        elif group == "process":
             q = (
                 f"sum by (process) (label_replace("
                 f"sum by (pod) ({mem_source})"
@@ -6879,7 +7017,9 @@ def _build_observe_queries(
             network_source = (
                 f"(rate({counter}{{{net_labels}}}[{rate_window}])){pod_join}"
             )
-            if group == "process":
+            if group in group_label_map:
+                q = f"sum by ({group_label_map[group]}) ({network_source})"
+            elif group == "process":
                 q = (
                     f"sum by (process) (label_replace("
                     f"sum by (pod) ({network_source})"
@@ -6924,11 +7064,19 @@ def _build_observe_queries(
 )
 @login_required
 def environment_observe_metric(org_slug, project_slug, env_slug):
+    workload = request.args.get("workload", "applications")
     metric = request.args.get("metric")
-    if metric not in _OBSERVE_METRICS:
+    if workload == "backing_services":
+        if metric not in _BACKING_SERVICE_OBSERVE_METRICS:
+            return jsonify({"error": "invalid metric"}), 400
+    elif metric not in _OBSERVE_METRICS:
         return jsonify({"error": "invalid metric"}), 400
+
     group = request.args.get("group", "total")
-    if group not in _OBSERVE_GROUPS:
+    if workload == "backing_services":
+        if group not in _BACKING_SERVICE_OBSERVE_GROUPS:
+            group = "total"
+    elif group not in _OBSERVE_GROUPS:
         group = "total"
 
     organization = (
@@ -6956,12 +7104,14 @@ def environment_observe_metric(org_slug, project_slug, env_slug):
     org_k8s = organization.k8s_identifier
     env_namespace = environment.k8s_namespace
     container_filter = _observe_container_filter()
+    is_backing_services = workload == "backing_services"
 
     # Optional application filter
     app_filter = request.args.get("application", "")
+    service_filter = request.args.get("service", "")
     active_aes = environment.active_application_environments
 
-    if app_filter:
+    if app_filter and not is_backing_services:
         active_aes = [
             ae
             for ae in active_aes
@@ -6977,21 +7127,30 @@ def environment_observe_metric(org_slug, project_slug, env_slug):
     else:
         ns_selector = f'namespace="{env_namespace}"'
 
-    if app_filter and active_aes:
-        ae = active_aes[0]
-        prefix = _compute_observe_prefix(ae.application)
-        escaped_prefix = _REGEX_META.sub(r"\\\g<0>", prefix)
-        base_selector = f'{ns_selector}, pod=~"{escaped_prefix}-.*"'
-        labels = f"{base_selector}, {container_filter}"
-        network_labels = base_selector
-        process_re = f"{escaped_prefix}-(.*)-[a-z0-9]+-[a-z0-9]+"
-    else:
+    if is_backing_services:
         base_selector = ns_selector
         labels = f"{base_selector}, {container_filter}"
         network_labels = base_selector
-        # Process RE: extract process from pod name across all apps in namespace
         process_re = ".*-(.*)-[a-z0-9]+-[a-z0-9]+"
-    pod_join = _observe_application_pod_join(base_selector)
+        pod_join = _observe_backing_service_pod_join(
+            base_selector, service_filter or None
+        )
+    else:
+        if app_filter and active_aes:
+            ae = active_aes[0]
+            prefix = _compute_observe_prefix(ae.application)
+            escaped_prefix = _REGEX_META.sub(r"\\\g<0>", prefix)
+            base_selector = f'{ns_selector}, pod=~"{escaped_prefix}-.*"'
+            labels = f"{base_selector}, {container_filter}"
+            network_labels = base_selector
+            process_re = f"{escaped_prefix}-(.*)-[a-z0-9]+-[a-z0-9]+"
+        else:
+            base_selector = ns_selector
+            labels = f"{base_selector}, {container_filter}"
+            network_labels = base_selector
+            # Process RE: extract process from pod name across all apps in namespace
+            process_re = ".*-(.*)-[a-z0-9]+-[a-z0-9]+"
+        pod_join = _observe_application_pod_join(base_selector)
 
     # Application grouping RE: extract project-app prefix from pod name
     # Pod format: {project_k8s}-{app_k8s}-{process}-{rs_hash}-{pod_hash}
@@ -7005,15 +7164,26 @@ def environment_observe_metric(org_slug, project_slug, env_slug):
         "application": "by (application)",
         "total": "",
         "status": "",
+        "service": "",
+        "type": "",
+        "role": "",
     }.get(group, "")
 
-    # Traefik service names
-    traefik_names = _collect_traefik_svc_names(
-        active_aes,
-        lambda ae: _compute_observe_namespace(ae.application, ae),
-        lambda ae: _compute_observe_prefix(ae.application),
-    )
-    traefik_svc = _traefik_svc_label(traefik_names)
+    group_label_map = None
+    traefik_svc = None
+    if not is_backing_services:
+        traefik_names = _collect_traefik_svc_names(
+            active_aes,
+            lambda ae: _compute_observe_namespace(ae.application, ae),
+            lambda ae: _compute_observe_prefix(ae.application),
+        )
+        traefik_svc = _traefik_svc_label(traefik_names)
+    else:
+        group_label_map = {
+            "service": "label_cabotage_io_resource_id",
+            "type": "label_backing_service_type",
+            "role": "label_role",
+        }
 
     result, queries = _build_observe_queries(
         metric,
@@ -7030,6 +7200,7 @@ def environment_observe_metric(org_slug, project_slug, env_slug):
         app_re=app_re,
         network_labels=network_labels,
         pod_join=pod_join,
+        group_label_map=group_label_map,
     )
     return jsonify({"result": result, "queries": queries})
 
@@ -7042,11 +7213,18 @@ def environment_observe_metric(org_slug, project_slug, env_slug):
 )
 @login_required
 def project_observe_metric(org_slug, project_slug):
+    workload = request.args.get("workload", "applications")
     metric = request.args.get("metric")
-    if metric not in _OBSERVE_METRICS:
+    if workload == "backing_services":
+        if metric not in _BACKING_SERVICE_OBSERVE_METRICS:
+            return jsonify({"error": "invalid metric"}), 400
+    elif metric not in _OBSERVE_METRICS:
         return jsonify({"error": "invalid metric"}), 400
     group = request.args.get("group", "total")
-    if group not in _OBSERVE_GROUPS:
+    if workload == "backing_services":
+        if group not in _BACKING_SERVICE_OBSERVE_GROUPS:
+            group = "total"
+    elif group not in _OBSERVE_GROUPS:
         group = "total"
 
     organization = (
@@ -7071,10 +7249,12 @@ def project_observe_metric(org_slug, project_slug):
     proj_k8s = project.k8s_identifier
     escaped_proj_k8s = _REGEX_META.sub(r"\\\g<0>", proj_k8s)
     container_filter = _observe_container_filter()
+    is_backing_services = workload == "backing_services"
 
     # Optional filters
     env_filter = request.args.get("environment", "")
     app_filter = request.args.get("application", "")
+    service_filter = request.args.get("service", "")
 
     # Determine namespace selector
     if env_filter:
@@ -7084,14 +7264,14 @@ def project_observe_metric(org_slug, project_slug):
             .first()
         )
         if env:
-            ns_label = f'namespace="{safe_k8s_name(org_k8s, env.k8s_identifier)}"'
+            ns_label = f'namespace="{env.k8s_namespace}"'
         else:
             ns_label = f'namespace=~"{escaped_org_k8s}(-.*)?$"'
     else:
         ns_label = f'namespace=~"{escaped_org_k8s}(-.*)?$"'
 
     # Determine pod selector
-    if app_filter:
+    if app_filter and not is_backing_services:
         app = (
             Application.query.filter_by(project_id=project.id, slug=app_filter)
             .filter(Application.deleted_at.is_(None))
@@ -7106,9 +7286,15 @@ def project_observe_metric(org_slug, project_slug):
     else:
         pod_label = f'pod=~"{escaped_proj_k8s}-.*"'
 
-    network_labels = f"{ns_label}, {pod_label}"
-    labels = f"{ns_label}, {pod_label}, {container_filter}"
-    pod_join = _observe_application_pod_join(f"{ns_label}, {pod_label}")
+    base_selector = f"{ns_label}, {pod_label}"
+    network_labels = base_selector
+    labels = f"{base_selector}, {container_filter}"
+    if is_backing_services:
+        pod_join = _observe_backing_service_pod_join(
+            base_selector, service_filter or None
+        )
+    else:
+        pod_join = _observe_application_pod_join(base_selector)
     process_re = ".*-(.*)-[a-z0-9]+-[a-z0-9]+"
     app_re = f"({escaped_proj_k8s}-.+)-[^-]+-[a-z0-9]+-[a-z0-9]+"
     env_re = f"{escaped_org_k8s}-(.+)"
@@ -7122,26 +7308,37 @@ def project_observe_metric(org_slug, project_slug):
         "environment": "by (environment)",
         "total": "",
         "status": "",
+        "service": "",
+        "type": "",
+        "role": "",
     }.get(group, "")
 
-    # Collect traefik svc names across all app_envs in this project
-    all_aes = []
-    for env in project.active_environments:
-        if env_filter and env.slug != env_filter:
-            continue
-        for ae in env.active_application_environments:
-            if ae.application.deleted_at is not None:
+    group_label_map = None
+    traefik_svc = None
+    if not is_backing_services:
+        all_aes = []
+        for env in project.active_environments:
+            if env_filter and env.slug != env_filter:
                 continue
-            if app_filter and ae.application.slug != app_filter:
-                continue
-            all_aes.append(ae)
+            for ae in env.active_application_environments:
+                if ae.application.deleted_at is not None:
+                    continue
+                if app_filter and ae.application.slug != app_filter:
+                    continue
+                all_aes.append(ae)
 
-    traefik_names = _collect_traefik_svc_names(
-        all_aes,
-        lambda ae: ae.environment.k8s_namespace,
-        lambda ae: _compute_observe_prefix(ae.application),
-    )
-    traefik_svc = _traefik_svc_label(traefik_names)
+        traefik_names = _collect_traefik_svc_names(
+            all_aes,
+            lambda ae: ae.environment.k8s_namespace,
+            lambda ae: _compute_observe_prefix(ae.application),
+        )
+        traefik_svc = _traefik_svc_label(traefik_names)
+    else:
+        group_label_map = {
+            "service": "label_cabotage_io_resource_id",
+            "type": "label_backing_service_type",
+            "role": "label_role",
+        }
 
     result, queries = _build_observe_queries(
         metric,
@@ -7159,6 +7356,7 @@ def project_observe_metric(org_slug, project_slug):
         env_re=env_re,
         network_labels=network_labels,
         pod_join=pod_join,
+        group_label_map=group_label_map,
     )
     return jsonify({"result": result, "queries": queries})
 
@@ -7169,11 +7367,18 @@ def project_observe_metric(org_slug, project_slug):
 @user_blueprint.route("/organizations/<org_slug>/observe/metric")
 @login_required
 def organization_observe_metric(org_slug):
+    workload = request.args.get("workload", "applications")
     metric = request.args.get("metric")
-    if metric not in _OBSERVE_METRICS:
+    if workload == "backing_services":
+        if metric not in _BACKING_SERVICE_OBSERVE_METRICS:
+            return jsonify({"error": "invalid metric"}), 400
+    elif metric not in _OBSERVE_METRICS:
         return jsonify({"error": "invalid metric"}), 400
     group = request.args.get("group", "total")
-    if group not in _OBSERVE_GROUPS:
+    if workload == "backing_services":
+        if group not in _BACKING_SERVICE_OBSERVE_GROUPS:
+            group = "total"
+    elif group not in _OBSERVE_GROUPS:
         group = "total"
 
     organization = (
@@ -7191,11 +7396,13 @@ def organization_observe_metric(org_slug):
     org_k8s = organization.k8s_identifier
     escaped_org_k8s = _REGEX_META.sub(r"\\\g<0>", org_k8s)
     container_filter = _observe_container_filter()
+    is_backing_services = workload == "backing_services"
 
     # Optional filters
     proj_filter = request.args.get("project", "")
     env_filter = request.args.get("environment", "")
     app_filter = request.args.get("application", "")
+    service_filter = request.args.get("service", "")
 
     # Resolve filtered project once (used for both namespace and pod selectors)
     filtered_proj = None
@@ -7215,11 +7422,11 @@ def organization_observe_metric(org_slug):
             .first()
         )
         if env:
-            ns_label = f'namespace="{safe_k8s_name(org_k8s, env.k8s_identifier)}"'
+            ns_label = f'namespace="{env.k8s_namespace}"'
 
     # Determine pod selector
     pod_label = 'pod=~".*"'
-    if filtered_proj and app_filter:
+    if filtered_proj and app_filter and not is_backing_services:
         app = (
             Application.query.filter_by(project_id=filtered_proj.id, slug=app_filter)
             .filter(Application.deleted_at.is_(None))
@@ -7233,9 +7440,15 @@ def organization_observe_metric(org_slug):
         escaped_proj_k8s = _REGEX_META.sub(r"\\\g<0>", filtered_proj.k8s_identifier)
         pod_label = f'pod=~"{escaped_proj_k8s}-.*"'
 
-    network_labels = f"{ns_label}, {pod_label}"
-    labels = f"{ns_label}, {pod_label}, {container_filter}"
-    pod_join = _observe_application_pod_join(f"{ns_label}, {pod_label}")
+    base_selector = f"{ns_label}, {pod_label}"
+    network_labels = base_selector
+    labels = f"{base_selector}, {container_filter}"
+    if is_backing_services:
+        pod_join = _observe_backing_service_pod_join(
+            base_selector, service_filter or None
+        )
+    else:
+        pod_join = _observe_application_pod_join(base_selector)
 
     # Grouping regexes
     process_re = ".*-(.*)-[a-z0-9]+-[a-z0-9]+"
@@ -7259,29 +7472,40 @@ def organization_observe_metric(org_slug):
         "project": "by (project)",
         "total": "",
         "status": "",
+        "service": "",
+        "type": "",
+        "role": "",
     }.get(group, "")
 
-    # Collect traefik svc names across all projects
-    all_aes = []
-    for proj in organization.active_projects:
-        if proj_filter and proj.slug != proj_filter:
-            continue
-        for env in proj.active_environments:
-            if env_filter and env.slug != env_filter:
+    group_label_map = None
+    traefik_svc = None
+    if not is_backing_services:
+        all_aes = []
+        for proj in organization.active_projects:
+            if proj_filter and proj.slug != proj_filter:
                 continue
-            for ae in env.active_application_environments:
-                if ae.application.deleted_at is not None:
+            for env in proj.active_environments:
+                if env_filter and env.slug != env_filter:
                     continue
-                if app_filter and ae.application.slug != app_filter:
-                    continue
-                all_aes.append(ae)
+                for ae in env.active_application_environments:
+                    if ae.application.deleted_at is not None:
+                        continue
+                    if app_filter and ae.application.slug != app_filter:
+                        continue
+                    all_aes.append(ae)
 
-    traefik_names = _collect_traefik_svc_names(
-        all_aes,
-        lambda ae: ae.environment.k8s_namespace,
-        lambda ae: _compute_observe_prefix(ae.application),
-    )
-    traefik_svc = _traefik_svc_label(traefik_names)
+        traefik_names = _collect_traefik_svc_names(
+            all_aes,
+            lambda ae: ae.environment.k8s_namespace,
+            lambda ae: _compute_observe_prefix(ae.application),
+        )
+        traefik_svc = _traefik_svc_label(traefik_names)
+    else:
+        group_label_map = {
+            "service": "label_cabotage_io_resource_id",
+            "type": "label_backing_service_type",
+            "role": "label_role",
+        }
 
     result, queries = _build_observe_queries(
         metric,
@@ -7300,6 +7524,7 @@ def organization_observe_metric(org_slug):
         proj_re=proj_re,
         network_labels=network_labels,
         pod_join=pod_join,
+        group_label_map=group_label_map,
     )
     return jsonify({"result": result, "queries": queries})
 
