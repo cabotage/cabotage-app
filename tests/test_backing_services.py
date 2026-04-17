@@ -1109,6 +1109,42 @@ class TestEnvironmentDashboardServices:
         assert b"App Cache" in resp.data
 
 
+class TestProjectDashboardServices:
+    def test_resources_shown_in_project_overview(
+        self, client, admin_user, org, project, environment
+    ):
+        _login(client, admin_user)
+        project.environments_enabled = True
+        db.session.add(project)
+        db.session.commit()
+
+        pg = PostgresResource(
+            service_version="18",
+            environment_id=environment.id,
+            name="Main DB",
+            slug="main-db",
+            size_class="db.medium",
+            storage_size=10,
+            backup_strategy="daily",
+        )
+        rd = RedisResource(
+            service_version="8",
+            environment_id=environment.id,
+            name="App Cache",
+            slug="app-cache",
+            size_class="cache.small",
+            storage_size=1,
+        )
+        db.session.add_all([pg, rd])
+        db.session.commit()
+
+        resp = client.get(f"/projects/{org.slug}/{project.slug}")
+        assert resp.status_code == 200
+        assert b"Backing Services" in resp.data
+        assert b"Main DB" in resp.data
+        assert b"App Cache" in resp.data
+
+
 # ---------------------------------------------------------------------------
 # Celery task tests (unit-level, mocking K8s)
 # ---------------------------------------------------------------------------

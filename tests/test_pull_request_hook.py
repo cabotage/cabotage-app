@@ -1,5 +1,6 @@
 """Tests for process_pull_request_hook — branch deploy lifecycle."""
 
+import datetime
 import uuid
 from unittest.mock import MagicMock, PropertyMock, patch
 
@@ -25,6 +26,8 @@ REPO = "myorg/myrepo"
 def app():
     _app.config["TESTING"] = True
     _app.config["WTF_CSRF_ENABLED"] = False
+    _app.config["BACKING_SERVICE_POSTGRES_ENABLED"] = True
+    _app.config["BACKING_SERVICE_REDIS_ENABLED"] = True
     with _app.app_context():
         yield _app
 
@@ -411,6 +414,52 @@ class TestPullRequestBranchDeploy:
 
 
 class TestBranchDeployNamespaces:
+    def test_render_pr_comment_body_skips_deleted_application_environments(
+        self,
+        db_session,
+        branch_deploy_project,
+        environment,
+        installation_id,
+        app,
+    ):
+        active_app = _make_app(branch_deploy_project, installation_id, slug="server")
+        deleted_app = _make_app(branch_deploy_project, installation_id, slug="redis")
+        deleted_app.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        db.session.add(deleted_app)
+        db.session.flush()
+
+        pr_environment = Environment(
+            project_id=branch_deploy_project.id,
+            name="PR #27",
+            slug="pr-27",
+            ephemeral=True,
+            uses_environment_namespace=True,
+            forked_from_environment_id=environment.id,
+        )
+        db.session.add(pr_environment)
+        db.session.flush()
+
+        _make_app_env(
+            active_app,
+            pr_environment,
+            k8s_identifier=pr_environment.k8s_identifier,
+        )
+        deleted_ae = _make_app_env(
+            deleted_app,
+            pr_environment,
+            k8s_identifier=pr_environment.k8s_identifier,
+        )
+        deleted_ae.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        db.session.add(deleted_ae)
+        db.session.commit()
+
+        from cabotage.celery.tasks.branch_deploy import _render_pr_comment_body
+
+        body = _render_pr_comment_body(pr_environment)
+
+        assert "server" in body
+        assert "redis" not in body
+
     @patch("cabotage.celery.tasks.branch_deploy.update_pr_comment")
     @patch("cabotage.celery.tasks.branch_deploy._build_images_for_app_envs")
     @patch("cabotage.celery.tasks.branch_deploy._precreate_ingresses")
@@ -481,6 +530,82 @@ class TestBranchDeployNamespaces:
             head_sha=uuid.uuid4().hex[:40],
             installation_id=installation_id,
             head_ref="feature-branch",
+        )
+
+        mock_reconcile_backing_services.delay.assert_not_called()
+        mock_precreate.assert_called_once()
+        mock_build_images.assert_called_once()
+        mock_update_comment.assert_called_once()
+
+    @patch("cabotage.celery.tasks.branch_deploy.update_pr_comment")
+    @patch("cabotage.celery.tasks.branch_deploy._build_images_for_app_envs")
+    @patch("cabotage.celery.tasks.branch_deploy._precreate_ingresses")
+    @patch("cabotage.celery.tasks.resources.reconcile_backing_services")
+    def test_create_branch_deploy_skips_disabled_backing_services(
+        self,
+        mock_reconcile_backing_services,
+        mock_precreate,
+        mock_build_images,
+        mock_update_comment,
+        db_session,
+        branch_deploy_project,
+        environment,
+        installation_id,
+        app,
+    ):
+        app.config["BACKING_SERVICE_POSTGRES_ENABLED"] = False
+        app.config["BACKING_SERVICE_REDIS_ENABLED"] = False
+
+        application = _make_app(branch_deploy_project, installation_id)
+        _make_app_env(application, environment)
+        db.session.add(
+            PostgresResource(
+                environment_id=environment.id,
+                name="auth-db",
+                slug="auth-db",
+                service_version="18",
+                size_class="db.small",
+                storage_size=5,
+            )
+        )
+        db.session.add(
+            RedisResource(
+                environment_id=environment.id,
+                name="cache",
+                slug="cache",
+                service_version="8",
+                size_class="cache.small",
+                storage_size=1,
+            )
+        )
+        db.session.commit()
+
+        from cabotage.celery.tasks.branch_deploy import create_branch_deploy
+
+        create_branch_deploy(
+            branch_deploy_project,
+            pr_number=42,
+            head_sha=uuid.uuid4().hex[:40],
+            installation_id=installation_id,
+            head_ref="feature-branch",
+        )
+
+        pr_environment = Environment.query.filter_by(
+            project_id=branch_deploy_project.id,
+            slug="pr-42",
+        ).first()
+        assert pr_environment is not None
+        assert (
+            PostgresResource.query.filter_by(
+                environment_id=pr_environment.id, slug="auth-db"
+            ).first()
+            is None
+        )
+        assert (
+            RedisResource.query.filter_by(
+                environment_id=pr_environment.id, slug="cache"
+            ).first()
+            is None
         )
 
         mock_reconcile_backing_services.delay.assert_not_called()
@@ -787,6 +912,7 @@ class TestBranchDeployNamespaces:
             service_version="18",
             size_class="db.small",
             storage_size=5,
+            backup_strategy="streaming",
         )
         db.session.add(base_pg)
         db.session.commit()
@@ -813,6 +939,8 @@ class TestBranchDeployNamespaces:
             environment_id=pr_environment.id, slug="auth-db"
         ).first()
         assert cloned_pg is not None
+
+        db.session.expire_all()
 
         mock_core = MagicMock()
         mock_core_api_cls.return_value = mock_core
