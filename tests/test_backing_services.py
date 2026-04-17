@@ -400,6 +400,26 @@ class TestResourceModels:
         assert isinstance(pg_loaded, PostgresResource)
         assert pg_loaded.backup_strategy == "streaming"
 
+    def test_resource_pod_labels_include_backing_service_markers(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import _resource_pod_labels
+
+        resource = RedisResource(
+            service_version="8",
+            environment_id=environment.id,
+            name="Cache",
+            size_class="cache.small",
+            storage_size=1,
+        )
+        db.session.add(resource)
+        db.session.flush()
+
+        labels = _resource_pod_labels(resource)
+        assert labels["backing-service"] == "true"
+        assert labels["backing-service-type"] == "redis"
+        assert labels["backing-service-slug"] == resource.slug
+
 
 # ---------------------------------------------------------------------------
 # compute_postgres_parameters tests

@@ -109,6 +109,9 @@ def _resource_labels(resource):
 def _resource_pod_labels(resource):
     """Labels applied to pods managed by the operator (via inheritedMetadata)."""
     labels = _resource_labels(resource)
+    labels["backing-service"] = "true"
+    labels["backing-service-type"] = resource.type
+    labels["backing-service-slug"] = resource.slug
     labels["resident-pod.cabotage.io"] = "true"
     labels["ca-admission.cabotage.io"] = "true"
     return labels
