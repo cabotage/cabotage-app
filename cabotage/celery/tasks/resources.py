@@ -128,6 +128,18 @@ def _backing_services_pool():
     return current_app.config.get("BACKING_SERVICES_POOL") or None
 
 
+def _backing_service_type_enabled(resource_type):
+    config_key = {
+        "postgres": "BACKING_SERVICE_POSTGRES_ENABLED",
+        "redis": "BACKING_SERVICE_REDIS_ENABLED",
+    }.get(resource_type)
+    if config_key is None:
+        raise KeyError(f"Unknown backing service type: {resource_type}")
+    if not has_app_context():
+        return True
+    return bool(current_app.config.get(config_key, True))
+
+
 def _tenant_postgres_backups_enabled(resource=None):
     if not has_app_context():
         return False
@@ -1508,6 +1520,8 @@ def reconcile_backing_services():
                 resource.provisioning_status = "deleted"
                 db.session.commit()
             else:
+                if not _backing_service_type_enabled(resource.type):
+                    continue
                 namespace = _resource_namespace(resource)
                 ensure_namespace(core_api, namespace)
                 if (
