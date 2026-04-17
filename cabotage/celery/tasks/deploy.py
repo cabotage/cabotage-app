@@ -1650,7 +1650,9 @@ def render_process_container(
     )
 
 
-def render_datadog_container(dd_api_key, datadog_tags, datadog_image: str | None = None):
+def render_datadog_container(
+    dd_api_key, datadog_tags, datadog_image: str | None = None
+):
     return kubernetes.client.V1Container(
         name="dogstatsd-sidecar",
         restart_policy="Always",
