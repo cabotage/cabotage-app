@@ -2,40 +2,39 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 import cabotage.celery.tasks.deploy as deploy_module
 
-
-def _render(datadog_image=None):
-    mock_app = MagicMock()
-    mock_app.config = {"DATADOG_IMAGE": "gcr.io/datadoghq/dogstatsd:default"}
-    with patch.object(deploy_module, "current_app", mock_app):
-        return deploy_module.render_datadog_container(
-            dd_api_key="secret",
-            datadog_tags={"env": "prod", "service": "api"},
-            datadog_image=datadog_image,
-        )
+DEFAULT_IMAGE = "gcr.io/datadoghq/dogstatsd:default"
 
 
-class TestDatadogImageOverride:
-    def test_default_uses_app_config(self):
-        container = _render()
-        assert container.image == "gcr.io/datadoghq/dogstatsd:default"
+@pytest.fixture
+def mock_app():
+    app = MagicMock()
+    app.config = {"DATADOG_IMAGE": DEFAULT_IMAGE}
+    with patch.object(deploy_module, "current_app", app):
+        yield app
 
-    def test_none_falls_back_to_app_config(self):
-        container = _render(datadog_image=None)
-        assert container.image == "gcr.io/datadoghq/dogstatsd:default"
 
-    def test_explicit_image_overrides_app_config(self):
-        container = _render(datadog_image="custom.registry/dogstatsd:7.50.0")
-        assert container.image == "custom.registry/dogstatsd:7.50.0"
+@pytest.mark.parametrize(
+    ("datadog_image", "expected"),
+    [
+        (None, DEFAULT_IMAGE),
+        ("", DEFAULT_IMAGE),
+        ("custom.registry/dogstatsd:7.50.0", "custom.registry/dogstatsd:7.50.0"),
+    ],
+    ids=["none-falls-back", "empty-falls-back", "explicit-overrides"],
+)
+def test_datadog_image_override(mock_app, datadog_image, expected):
+    container = deploy_module.render_datadog_container(
+        dd_api_key="secret",
+        datadog_tags={"env": "prod"},
+        datadog_image=datadog_image,
+    )
+    assert container.image == expected
 
-    def test_empty_string_falls_back_to_app_config(self):
-        container = _render(datadog_image="")
-        assert container.image == "gcr.io/datadoghq/dogstatsd:default"
 
-    def test_positional_call_without_override(self):
-        mock_app = MagicMock()
-        mock_app.config = {"DATADOG_IMAGE": "gcr.io/datadoghq/dogstatsd:default"}
-        with patch.object(deploy_module, "current_app", mock_app):
-            container = deploy_module.render_datadog_container("k", {"env": "p"})
-        assert container.image == "gcr.io/datadoghq/dogstatsd:default"
+def test_positional_call_without_override(mock_app):
+    container = deploy_module.render_datadog_container("k", {"env": "p"})
+    assert container.image == DEFAULT_IMAGE
