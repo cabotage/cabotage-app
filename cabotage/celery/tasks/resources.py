@@ -1729,6 +1729,11 @@ def _sync_resource_env_configs(resource, entries):
         .filter(EnvironmentConfiguration.name.in_(wanted_names))
         .all()
     }
+    created_count = 0
+    claimed_count = 0
+    wrote_count = 0
+    deleted_count = 0
+    preserved_legacy_count = 0
 
     for name, value, secret in entries:
         config = existing_by_name.get(name) or managed_configs.get(name)
@@ -1745,7 +1750,10 @@ def _sync_resource_env_configs(resource, entries):
             )
             db.session.add(config)
             should_write = True
+            created_count += 1
         else:
+            if config.resource_id != resource.id:
+                claimed_count += 1
             _set_if_changed(config, "resource_id", resource.id)
             _set_if_changed(config, "secret", secret)
             _set_if_changed(config, "buildtime", False)
@@ -1766,6 +1774,7 @@ def _sync_resource_env_configs(resource, entries):
             try:
                 key_slugs = config_writer.write_configuration(namespace, prefix, config)
                 config.key_slug = key_slugs["config_key_slug"]
+                wrote_count += 1
                 if config.secret:
                     config.value = "**secure**"
                     config.secret_fingerprint = _secret_fingerprint(value)
@@ -1783,11 +1792,22 @@ def _sync_resource_env_configs(resource, entries):
     for name, config in managed_configs.items():
         if name not in wanted_names:
             if _is_legacy_resource_url_config(name):
+                preserved_legacy_count += 1
                 continue
             db.session.delete(config)
+            deleted_count += 1
 
     db.session.flush()
-    log.info("Synced %d env configs for resource %s", len(entries), resource.slug)
+    log.info(
+        "Reconciled %d env configs for resource %s (%d created, %d claimed, %d wrote, %d deleted, %d legacy preserved)",
+        len(entries),
+        resource.slug,
+        created_count,
+        claimed_count,
+        wrote_count,
+        deleted_count,
+        preserved_legacy_count,
+    )
 
 
 def _cleanup_managed_env_configs(resource):
