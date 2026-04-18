@@ -1262,6 +1262,7 @@ class EnvironmentConfiguration(Model, Timestamp):
     value: Mapped[str] = mapped_column(String(2048))
     key_slug: Mapped[str | None] = mapped_column(Text())
     build_key_slug: Mapped[str | None] = mapped_column(Text())
+    secret_fingerprint: Mapped[str | None] = mapped_column(Text())
     resource_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True),
         ForeignKey("resources.id"),

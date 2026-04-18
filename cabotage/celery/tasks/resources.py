@@ -1,8 +1,10 @@
 import base64
 import hashlib
+import hmac
 import logging
 import secrets
 import struct
+from collections.abc import Mapping
 
 import kubernetes
 from celery import shared_task
@@ -94,6 +96,86 @@ def _resource_k8s_name(resource):
 def _set_if_changed(obj, attr, value):
     if getattr(obj, attr) != value:
         setattr(obj, attr, value)
+
+
+_MISSING = object()
+
+
+def _serialize_k8s_object(obj):
+    if isinstance(obj, (str, int, float, bool)) or obj is None:
+        return obj
+    if isinstance(obj, list):
+        return [_serialize_k8s_object(item) for item in obj]
+    if isinstance(obj, Mapping):
+        return {key: _serialize_k8s_object(value) for key, value in obj.items()}
+    return kubernetes.client.ApiClient().sanitize_for_serialization(obj)
+
+
+def _extract_desired_subset(current, desired):
+    if isinstance(desired, list):
+        if not isinstance(current, list) or len(current) != len(desired):
+            return _MISSING
+        subset = []
+        for current_item, desired_item in zip(current, desired):
+            item = _extract_desired_subset(current_item, desired_item)
+            if item is _MISSING:
+                return _MISSING
+            subset.append(item)
+        return subset
+
+    if isinstance(desired, Mapping):
+        if not isinstance(current, Mapping):
+            return _MISSING
+        subset = {}
+        for key, desired_value in desired.items():
+            if key not in current:
+                return _MISSING
+            value = _extract_desired_subset(current[key], desired_value)
+            if value is _MISSING:
+                return _MISSING
+            subset[key] = value
+        return subset
+
+    return current
+
+
+def _k8s_object_matches_desired(current, desired):
+    current_dict = _serialize_k8s_object(current)
+    desired_dict = _serialize_k8s_object(desired)
+    subset = _extract_desired_subset(current_dict, desired_dict)
+    return subset is not _MISSING and subset == desired_dict
+
+
+def _secret_fingerprint(value):
+    if not has_app_context():
+        raise RuntimeError("SECRET_KEY is required for secret fingerprinting")
+    secret_key = current_app.config.get("SECRET_KEY")
+    if not secret_key:
+        raise RuntimeError("SECRET_KEY is required for secret fingerprinting")
+    digest = hmac.new(
+        secret_key.encode(),
+        value.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    return digest
+
+
+def _resource_env_config_is_current(config, value, secret):
+    if config.secret != secret:
+        return False
+    if config.buildtime:
+        return False
+    if config.key_slug is None:
+        if secret:
+            return False
+        return config.value == value
+    if not secret:
+        return config.value == value
+    return config.secret_fingerprint == _secret_fingerprint(value)
+
+
+def _is_legacy_resource_url_config(name):
+    return name.endswith("_DATABASE_URL") or name.endswith("_REDIS_URL")
 
 
 def _resource_labels(resource):
@@ -379,46 +461,16 @@ def _render_scheduled_backup(resource, settings, immediate=False):
 
 def _ensure_scheduled_backup(custom_api, namespace, resource, settings):
     name = _resource_k8s_name(resource)
-    try:
-        custom_api.get_namespaced_custom_object(
-            CNPG_GROUP,
-            CNPG_VERSION,
-            namespace,
-            CNPG_SCHEDULED_BACKUP_PLURAL,
-            name,
-        )
-        custom_api.patch_namespaced_custom_object(
-            CNPG_GROUP,
-            CNPG_VERSION,
-            namespace,
-            CNPG_SCHEDULED_BACKUP_PLURAL,
-            name,
-            _render_scheduled_backup(resource, settings, immediate=False),
-        )
-        log.info(
-            "Patched %s/%s %s/%s",
-            CNPG_GROUP,
-            CNPG_SCHEDULED_BACKUP_PLURAL,
-            namespace,
-            name,
-        )
-    except ApiException as exc:
-        if exc.status != 404:
-            raise
-        custom_api.create_namespaced_custom_object(
-            CNPG_GROUP,
-            CNPG_VERSION,
-            namespace,
-            CNPG_SCHEDULED_BACKUP_PLURAL,
-            _render_scheduled_backup(resource, settings, immediate=True),
-        )
-        log.info(
-            "Created %s/%s %s/%s",
-            CNPG_GROUP,
-            CNPG_SCHEDULED_BACKUP_PLURAL,
-            namespace,
-            name,
-        )
+    _ensure_custom_object(
+        custom_api,
+        CNPG_GROUP,
+        CNPG_VERSION,
+        namespace,
+        CNPG_SCHEDULED_BACKUP_PLURAL,
+        name,
+        _render_scheduled_backup(resource, settings, immediate=False),
+        create_body=_render_scheduled_backup(resource, settings, immediate=True),
+    )
 
 
 def _redis_role_affinity(resource, role, replicas):
@@ -701,16 +753,22 @@ def _ensure_password_secret(core_api, namespace, secret_name, labels):
             raise
 
 
-def _ensure_custom_object(custom_api, group, version, namespace, plural, name, body):
+def _ensure_custom_object(
+    custom_api, group, version, namespace, plural, name, body, create_body=None
+):
     """Create or patch a namespaced custom object."""
+    if create_body is None:
+        create_body = body
     try:
-        custom_api.get_namespaced_custom_object(
+        current = custom_api.get_namespaced_custom_object(
             group,
             version,
             namespace,
             plural,
             name,
         )
+        if _k8s_object_matches_desired(current, body):
+            return
         custom_api.patch_namespaced_custom_object(
             group,
             version,
@@ -729,7 +787,7 @@ def _ensure_custom_object(custom_api, group, version, namespace, plural, name, b
             version,
             namespace,
             plural,
-            body,
+            create_body,
         )
         log.info("Created %s/%s %s/%s", group, plural, namespace, name)
 
@@ -752,6 +810,9 @@ def _ensure_ca_secret(core_api, namespace):
         data=source.data,
     )
     try:
+        current = core_api.read_namespaced_secret(TLS_CA_SECRET, namespace)
+        if _k8s_object_matches_desired(current, body):
+            return
         core_api.replace_namespaced_secret(TLS_CA_SECRET, namespace, body)
     except ApiException as exc:
         if exc.status == 404:
@@ -775,6 +836,11 @@ def _ensure_backup_service_account(core_api, namespace, settings):
     )
 
     try:
+        current = core_api.read_namespaced_service_account(
+            settings["service_account_name"], namespace
+        )
+        if _k8s_object_matches_desired(current, body):
+            return
         core_api.replace_namespaced_service_account(
             settings["service_account_name"], namespace, body
         )
@@ -815,6 +881,11 @@ def _ensure_rustfs_secret(core_api, namespace, settings):
     )
 
     try:
+        current = core_api.read_namespaced_secret(
+            settings["rustfs_secret_name"], namespace
+        )
+        if _k8s_object_matches_desired(current, body):
+            return
         core_api.replace_namespaced_secret(
             settings["rustfs_secret_name"], namespace, body
         )
@@ -1591,12 +1662,6 @@ def _postgres_config_entries(resource, namespace, name, password):
     slug_upper = resource.slug.upper().replace("-", "_")
     host = f"{name}-rw.{namespace}.svc.cluster.local"
     return [
-        (
-            f"{slug_upper}_DATABASE_URL",
-            f"postgresql://app:{password}@{host}:5432/app"
-            f"?sslmode=verify-full&sslrootcert={CA_CERT_PATH}",
-            True,
-        ),
         (f"{slug_upper}_PGHOST", host, False),
         (f"{slug_upper}_PGPORT", "5432", False),
         (f"{slug_upper}_PGDATABASE", "app", False),
@@ -1621,11 +1686,6 @@ def _redis_config_entries(resource, namespace, name, password):
     slug_upper = resource.slug.upper().replace("-", "_")
     host = _redis_service_host(resource, namespace, name)
     entries = [
-        (
-            f"{slug_upper}_REDIS_URL",
-            f"rediss://:{password}@{host}:6379",
-            True,
-        ),
         (f"{slug_upper}_REDIS_HOST", host, False),
         (f"{slug_upper}_REDIS_PORT", "6379", False),
         (f"{slug_upper}_REDIS_PASSWORD", password, True),
@@ -1672,6 +1732,7 @@ def _sync_resource_env_configs(resource, entries):
 
     for name, value, secret in entries:
         config = existing_by_name.get(name) or managed_configs.get(name)
+        should_write = False
         if config is None:
             config = EnvironmentConfiguration(
                 project_id=project.id,
@@ -1683,29 +1744,46 @@ def _sync_resource_env_configs(resource, entries):
                 buildtime=False,
             )
             db.session.add(config)
+            should_write = True
         else:
-            config.resource_id = resource.id
+            _set_if_changed(config, "resource_id", resource.id)
+            _set_if_changed(config, "secret", secret)
+            _set_if_changed(config, "buildtime", False)
+            if not secret or config.key_slug is None:
+                _set_if_changed(config, "value", value)
+            elif config.value != "**secure**":
+                _set_if_changed(config, "value", "**secure**")
+            if not secret and config.secret_fingerprint is not None:
+                _set_if_changed(config, "secret_fingerprint", None)
+            should_write = not _resource_env_config_is_current(config, value, secret)
+
+        if should_write:
             config.value = value
-            config.secret = secret
 
         db.session.flush()
 
-        try:
-            key_slugs = config_writer.write_configuration(namespace, prefix, config)
-            config.key_slug = key_slugs["config_key_slug"]
-            config.build_key_slug = key_slugs["build_key_slug"]
-            if config.secret:
-                config.value = "**secure**"
-        except Exception:
-            log.warning(
-                "Failed to write config %s to config_writer, storing direct",
-                name,
-                exc_info=True,
-            )
+        if should_write:
+            try:
+                key_slugs = config_writer.write_configuration(namespace, prefix, config)
+                config.key_slug = key_slugs["config_key_slug"]
+                if config.secret:
+                    config.value = "**secure**"
+                    config.secret_fingerprint = _secret_fingerprint(value)
+                else:
+                    config.build_key_slug = key_slugs["build_key_slug"]
+                    config.secret_fingerprint = None
+            except Exception:
+                log.warning(
+                    "Failed to write config %s to config_writer, storing direct",
+                    name,
+                    exc_info=True,
+                )
 
     # Remove configs no longer in the wanted set
     for name, config in managed_configs.items():
         if name not in wanted_names:
+            if _is_legacy_resource_url_config(name):
+                continue
             db.session.delete(config)
 
     db.session.flush()
