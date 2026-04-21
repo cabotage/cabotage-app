@@ -1688,11 +1688,17 @@ class TestCeleryTasks:
                 r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api
             )
 
-            replaced_secret_names = [
+            replaced_secret_names = {
                 call[0][0]
                 for call in mock_core_api.replace_namespaced_secret.call_args_list
-            ]
-            assert "cnpg-backups-objectstore" in replaced_secret_names
+            }
+            created_secret_names = {
+                call[0][1].metadata.name
+                for call in mock_core_api.create_namespaced_secret.call_args_list
+            }
+            assert "cnpg-backups-objectstore" in (
+                replaced_secret_names | created_secret_names
+            )
         finally:
             _reset_tenant_postgres_backups(app)
 
@@ -2083,7 +2089,10 @@ class TestCeleryTasks:
     def test_reconcile_redis_claims_existing_same_name_env_config(
         self, app, environment
     ):
-        from cabotage.celery.tasks.resources import _reconcile_redis
+        from cabotage.celery.tasks.resources import (
+            _reconcile_redis,
+            _secret_fingerprint,
+        )
 
         r = RedisResource(
             service_version="8",
@@ -2099,8 +2108,8 @@ class TestCeleryTasks:
         existing = EnvironmentConfiguration(
             project_id=environment.project.id,
             environment_id=environment.id,
-            name="CACHE_REDIS_URL",
-            value="rediss://old",
+            name="CACHE_REDIS_PASSWORD",
+            value="oldpassword",
             secret=False,
             buildtime=False,
         )
@@ -2128,6 +2137,63 @@ class TestCeleryTasks:
         assert existing.resource_id == r.id
         assert existing.secret is True
         assert existing.value == "**secure**"
+        assert existing.secret_fingerprint == _secret_fingerprint("testpassword")
+        assert (
+            EnvironmentConfiguration.query.filter_by(
+                environment_id=environment.id,
+                name="CACHE_REDIS_PASSWORD",
+            ).count()
+            == 1
+        )
+
+    def test_reconcile_redis_preserves_legacy_redis_url_env_config(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import _reconcile_redis
+
+        r = RedisResource(
+            service_version="8",
+            environment_id=environment.id,
+            name="Cache",
+            slug="cache",
+            size_class="cache.small",
+            storage_size=1,
+        )
+        db.session.add(r)
+        db.session.flush()
+
+        legacy_url = EnvironmentConfiguration(
+            project_id=environment.project.id,
+            environment_id=environment.id,
+            resource_id=r.id,
+            name="CACHE_REDIS_URL",
+            value="rediss://legacy",
+            secret=True,
+            buildtime=False,
+        )
+        db.session.add(legacy_url)
+        db.session.commit()
+
+        (
+            mock_custom_api,
+            mock_core_api,
+            mock_apps_api,
+            mock_rbac_api,
+        ) = self._mock_k8s_apis()
+        with patch(
+            "cabotage.celery.tasks.resources.config_writer.write_configuration",
+            return_value={
+                "config_key_slug": "kv/test/config",
+                "build_key_slug": None,
+            },
+        ):
+            _reconcile_redis(
+                r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api
+            )
+
+        db.session.refresh(legacy_url)
+        assert legacy_url.name == "CACHE_REDIS_URL"
+        assert legacy_url.value == "rediss://legacy"
         assert (
             EnvironmentConfiguration.query.filter_by(
                 environment_id=environment.id,
@@ -2135,6 +2201,165 @@ class TestCeleryTasks:
             ).count()
             == 1
         )
+
+    def test_ensure_custom_object_skips_patch_when_current_matches(self, app):
+        from cabotage.celery.tasks.resources import _ensure_custom_object
+
+        mock_custom_api = MagicMock()
+        body = {
+            "apiVersion": "example.io/v1",
+            "kind": "Thing",
+            "metadata": {
+                "name": "demo",
+                "labels": {"app": "demo"},
+            },
+            "spec": {
+                "enabled": True,
+                "items": [{"name": "one"}],
+            },
+        }
+        mock_custom_api.get_namespaced_custom_object.return_value = {
+            **body,
+            "metadata": {
+                **body["metadata"],
+                "namespace": "testing",
+                "resourceVersion": "123",
+            },
+            "status": {"state": "Ready"},
+        }
+
+        _ensure_custom_object(
+            mock_custom_api,
+            "example.io",
+            "v1",
+            "testing",
+            "things",
+            "demo",
+            body,
+        )
+
+        mock_custom_api.patch_namespaced_custom_object.assert_not_called()
+        mock_custom_api.create_namespaced_custom_object.assert_not_called()
+
+    def test_ensure_ca_secret_skips_replace_when_current_matches(self, app):
+        import base64
+
+        from cabotage.celery.tasks.resources import _ensure_ca_secret
+
+        mock_core_api = MagicMock()
+        secret_data = {"ca.crt": base64.b64encode(b"fake-ca").decode()}
+
+        def _read_secret(name, namespace):
+            if (name, namespace) == ("operators-ca-crt", "cert-manager"):
+                secret = MagicMock()
+                secret.type = "Opaque"
+                secret.data = secret_data
+                return secret
+            if (name, namespace) == ("operators-ca-crt", "testing"):
+                return {
+                    "metadata": {
+                        "name": "operators-ca-crt",
+                        "namespace": "testing",
+                        "labels": {"cnpg.io/reload": ""},
+                        "resourceVersion": "123",
+                    },
+                    "type": "Opaque",
+                    "data": secret_data,
+                }
+            raise ApiException(status=404)
+
+        mock_core_api.read_namespaced_secret.side_effect = _read_secret
+
+        _ensure_ca_secret(mock_core_api, "testing")
+
+        mock_core_api.replace_namespaced_secret.assert_not_called()
+        mock_core_api.create_namespaced_secret.assert_not_called()
+
+    def test_ensure_backup_service_account_skips_replace_when_current_matches(
+        self, app
+    ):
+        from cabotage.celery.tasks.resources import _ensure_backup_service_account
+
+        mock_core_api = MagicMock()
+        settings = {
+            "provider": "s3",
+            "irsa_role_arn": "arn:aws:iam::123456789012:role/tenant-postgres-backups",
+            "service_account_name": "cnpg-backups",
+        }
+        mock_core_api.read_namespaced_service_account.return_value = {
+            "metadata": {
+                "name": "cnpg-backups",
+                "namespace": "testing",
+                "annotations": {
+                    "eks.amazonaws.com/role-arn": settings["irsa_role_arn"],
+                },
+                "resourceVersion": "123",
+            }
+        }
+
+        _ensure_backup_service_account(mock_core_api, "testing", settings)
+
+        mock_core_api.replace_namespaced_service_account.assert_not_called()
+        mock_core_api.create_namespaced_service_account.assert_not_called()
+
+    def test_reconcile_redis_does_not_rewrite_env_configs_when_unchanged(
+        self, app, environment
+    ):
+        from cabotage.celery.tasks.resources import _reconcile_redis
+
+        r = RedisResource(
+            service_version="8",
+            environment_id=environment.id,
+            name="Cache",
+            slug="cache",
+            size_class="cache.small",
+            storage_size=1,
+        )
+        db.session.add(r)
+        db.session.commit()
+
+        (
+            mock_custom_api,
+            mock_core_api,
+            mock_apps_api,
+            mock_rbac_api,
+        ) = self._mock_k8s_apis()
+
+        def _write_config(_namespace, _prefix, config):
+            storage = "vault" if config.secret else "consul"
+            return {
+                "config_key_slug": f"{storage}:test/configuration/{config.name}/1",
+                "build_key_slug": None,
+            }
+
+        with patch(
+            "cabotage.celery.tasks.resources.config_writer.write_configuration",
+            side_effect=_write_config,
+        ):
+            _reconcile_redis(
+                r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api
+            )
+
+        first_versions = {
+            cfg.name: cfg.version_id
+            for cfg in EnvironmentConfiguration.query.filter_by(resource_id=r.id).all()
+        }
+
+        with (
+            patch(
+                "cabotage.celery.tasks.resources.config_writer.write_configuration"
+            ) as mock_write,
+        ):
+            _reconcile_redis(
+                r, mock_core_api, mock_custom_api, mock_apps_api, mock_rbac_api
+            )
+
+        refreshed_versions = {
+            cfg.name: cfg.version_id
+            for cfg in EnvironmentConfiguration.query.filter_by(resource_id=r.id).all()
+        }
+        assert refreshed_versions == first_versions
+        mock_write.assert_not_called()
 
     def test_reconcile_redis_cluster_stays_provisioning_until_operator_ready(
         self, app, environment
