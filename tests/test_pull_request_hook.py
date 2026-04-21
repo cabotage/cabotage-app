@@ -1028,6 +1028,7 @@ class TestBranchDeployNamespaces:
             slug="pr-42",
         ).first()
         assert pr_environment is not None
+        pr_app_env = pr_environment.application_environments[0]
         cloned_pg = PostgresResource.query.filter_by(
             environment_id=pr_environment.id, slug="auth-db"
         ).first()
@@ -1040,10 +1041,22 @@ class TestBranchDeployNamespaces:
         pvc_one.metadata.name = "pgdata-auth-db-0"
         pvc_two = MagicMock()
         pvc_two.metadata.name = "pgdata-auth-db-1"
-        mock_core.list_namespaced_persistent_volume_claim.return_value.items = [
-            pvc_one,
-            pvc_two,
-        ]
+        build_cache_pvc = MagicMock()
+        from cabotage.celery.tasks.build import build_cache_pvc_name
+
+        build_cache_pvc.metadata.name = build_cache_pvc_name(pr_app_env)
+
+        def _list_pvcs(namespace, label_selector=None):
+            response = MagicMock()
+            if namespace == pr_environment.k8s_namespace:
+                response.items = [pvc_one, pvc_two]
+            elif namespace == "cabotage-tenant-builds":
+                response.items = [build_cache_pvc]
+            else:
+                response.items = []
+            return response
+
+        mock_core.list_namespaced_persistent_volume_claim.side_effect = _list_pvcs
         mock_core_api_cls.return_value = mock_core
         mock_delete_postgres = MagicMock()
 
@@ -1071,6 +1084,29 @@ class TestBranchDeployNamespaces:
             "pgdata-auth-db-0",
             "pgdata-auth-db-1",
         }
+        build_cache_calls = [
+            call
+            for call in mock_core.delete_namespaced_persistent_volume_claim.call_args_list
+            if call.args[1] == "cabotage-tenant-builds"
+        ]
+        assert {call.args[0] for call in build_cache_calls} == {
+            build_cache_pvc.metadata.name
+        }
+        build_cache_list_calls = [
+            call
+            for call in mock_core.list_namespaced_persistent_volume_claim.call_args_list
+            if call.args[0] == "cabotage-tenant-builds"
+        ]
+        assert len(build_cache_list_calls) == 1
+        assert (
+            build_cache_list_calls[0].kwargs["label_selector"]
+            == f"cabotage.io/application={pr_app_env.application.k8s_identifier},"
+            "cabotage.io/build-cache=true,"
+            f"cabotage.io/environment={pr_environment.k8s_identifier},"
+            "cabotage.io/organization="
+            f"{branch_deploy_project.organization.k8s_identifier},"
+            f"cabotage.io/project={branch_deploy_project.k8s_identifier}"
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -302,7 +302,11 @@ def _teardown_environment(environment):
     """Delete k8s namespace and all DB records for an ephemeral environment."""
     import kubernetes
 
-    from cabotage.celery.tasks.build import build_cache_pvc_name
+    from cabotage.celery.tasks.build import (
+        _build_namespace,
+        build_cache_pvc_labels,
+        build_cache_pvc_name,
+    )
     from cabotage.celery.tasks.resources import (
         _RECONCILERS,
         _acquire_reconcile_lock,
@@ -382,16 +386,65 @@ def _teardown_environment(environment):
 
             # Clean up build cache PVCs
             for app_env in environment.active_application_environments:
+                build_namespace = _build_namespace(app_env)
                 pvc_name = build_cache_pvc_name(app_env)
+                deleted_cache_pvcs = set()
+                selector = ",".join(
+                    f"{key}={value}"
+                    for key, value in sorted(build_cache_pvc_labels(app_env).items())
+                )
                 try:
-                    core_api.delete_namespaced_persistent_volume_claim(
-                        pvc_name, "default", propagation_policy="Foreground"
+                    pvcs = core_api.list_namespaced_persistent_volume_claim(
+                        build_namespace,
+                        label_selector=selector,
                     )
-                    logger.info("Deleted build cache PVC %s", pvc_name)
+                    for pvc in pvcs.items:
+                        try:
+                            core_api.delete_namespaced_persistent_volume_claim(
+                                pvc.metadata.name,
+                                build_namespace,
+                                propagation_policy="Foreground",
+                            )
+                            deleted_cache_pvcs.add(pvc.metadata.name)
+                            logger.info(
+                                "Deleted build cache PVC %s/%s",
+                                build_namespace,
+                                pvc.metadata.name,
+                            )
+                        except ApiException as exc:
+                            if exc.status != 404:
+                                logger.warning(
+                                    "Failed to delete build cache PVC %s/%s: %s",
+                                    build_namespace,
+                                    pvc.metadata.name,
+                                    exc,
+                                )
                 except ApiException as exc:
                     if exc.status != 404:
                         logger.warning(
-                            "Failed to delete build cache PVC %s: %s",
+                            "Failed to list build cache PVCs in %s with %s: %s",
+                            build_namespace,
+                            selector,
+                            exc,
+                        )
+
+                if pvc_name in deleted_cache_pvcs:
+                    continue
+
+                try:
+                    core_api.delete_namespaced_persistent_volume_claim(
+                        pvc_name,
+                        build_namespace,
+                        propagation_policy="Foreground",
+                    )
+                    logger.info(
+                        "Deleted build cache PVC %s/%s", build_namespace, pvc_name
+                    )
+                except ApiException as exc:
+                    if exc.status != 404:
+                        logger.warning(
+                            "Failed to delete build cache PVC %s/%s: %s",
+                            build_namespace,
                             pvc_name,
                             exc,
                         )

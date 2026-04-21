@@ -45,7 +45,9 @@ def _make_release(org_k8s="test-org", env_k8s="production", env_enabled=True):
     release.application.project.organization.slug = "test-org"
     release.application.project.organization.k8s_identifier = org_k8s
     release.application.project.slug = "test-project"
+    release.application.project.k8s_identifier = "test-project-d4e5f6"
     release.application.slug = "test-app"
+    release.application.k8s_identifier = "test-app-g7h8i9"
     release.version = 1
     release.build_job_id = "abc123"
     release.repository_name = "test-org/test-app"
@@ -63,7 +65,9 @@ def _make_image(org_k8s="test-org", env_k8s="production", env_enabled=True):
     image.application.project.organization.slug = "test-org"
     image.application.project.organization.k8s_identifier = org_k8s
     image.application.project.slug = "test-project"
+    image.application.project.k8s_identifier = "test-project-d4e5f6"
     image.application.slug = "test-app"
+    image.application.k8s_identifier = "test-app-g7h8i9"
     image.application.github_repository = "test-org/test-repo"
     image.application.github_repository_is_private = False
     image.application.github_app_installation_id = 12345
@@ -393,6 +397,28 @@ class TestBuildCachePVC:
 
         create_call = mock_core.create_namespaced_persistent_volume_claim.call_args
         assert create_call[0][0] == "cabotage-tenant-builds"
+
+    def test_pvc_created_with_safe_labels(self):
+        from kubernetes.client.rest import ApiException
+
+        image = _make_image(org_k8s="myorg", env_k8s="prod")
+        mock_core = MagicMock()
+        mock_core.read_namespaced_persistent_volume_claim.side_effect = ApiException(
+            status=404
+        )
+        mock_core.create_namespaced_persistent_volume_claim.return_value = MagicMock()
+
+        build_module.fetch_image_build_cache_volume_claim(mock_core, image)
+
+        create_call = mock_core.create_namespaced_persistent_volume_claim.call_args
+        pvc_object = create_call[0][1]
+        assert pvc_object.metadata.labels == {
+            "cabotage.io/organization": "myorg",
+            "cabotage.io/project": "test-project-d4e5f6",
+            "cabotage.io/application": "test-app-g7h8i9",
+            "cabotage.io/environment": "prod",
+            "cabotage.io/build-cache": "true",
+        }
 
     def test_pvc_read_in_tenant_namespace(self):
         image = _make_image(org_k8s="myorg", env_k8s="prod")
