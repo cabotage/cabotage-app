@@ -955,6 +955,15 @@ def build_cache_pvc_name(app_env):
     return name
 
 
+def build_cache_pvc_labels(app_env):
+    """Build labels for a build-cache PVC."""
+    labels = _safe_labels_from_application(app_env.application)
+    if app_env.environment.uses_environment_namespace:
+        labels["cabotage.io/environment"] = app_env.environment.k8s_identifier
+    labels["cabotage.io/build-cache"] = "true"
+    return labels
+
+
 def fetch_image_build_cache_volume_claim(core_api_instance, buildable):
     namespace = _build_namespace(buildable.application_environment)
     volume_claim_name = build_cache_pvc_name(buildable.application_environment)
@@ -969,6 +978,9 @@ def fetch_image_build_cache_volume_claim(core_api_instance, buildable):
                 kubernetes.client.V1PersistentVolumeClaim(
                     metadata=kubernetes.client.V1ObjectMeta(
                         name=volume_claim_name,
+                        labels=build_cache_pvc_labels(
+                            buildable.application_environment
+                        ),
                     ),
                     spec=kubernetes.client.V1PersistentVolumeClaimSpec(
                         access_modes=["ReadWriteOncePod"],
