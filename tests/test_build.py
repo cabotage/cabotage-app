@@ -356,6 +356,61 @@ class TestBuildImageBuildkit:
         with pytest.raises(BuildError, match="No Procfile"):
             build_image_buildkit(image)
 
+    @patch("cabotage.celery.tasks.build._fetch_github_file")
+    def test_fetch_image_source_uses_custom_procfile_path(
+        self,
+        mock_fetch_file,
+        app,
+        db_session,
+        image,
+    ):
+        """A configured procfile_path is fetched instead of the default candidates."""
+        from cabotage.celery.tasks.build import _fetch_image_source
+
+        image.application.subdirectory = "services/api"
+        image.application.procfile_path = "deploy/Procfile.web"
+        mock_fetch_file.side_effect = [
+            None,
+            DOCKERFILE_BODY,
+            PROCFILE_BODY,
+        ]
+
+        result = _fetch_image_source(image, access_token=None)
+
+        assert result["procfile_body"] == PROCFILE_BODY
+        assert [call.kwargs["filename"] for call in mock_fetch_file.call_args_list] == [
+            "services/api/Dockerfile.cabotage",
+            "services/api/Dockerfile",
+            "services/api/deploy/Procfile.web",
+        ]
+
+    @patch("cabotage.celery.tasks.build._fetch_github_file")
+    def test_fetch_image_source_custom_procfile_path_does_not_fallback(
+        self,
+        mock_fetch_file,
+        app,
+        db_session,
+        image,
+    ):
+        """A configured procfile_path mirrors dockerfile_path and disables fallback."""
+        from cabotage.celery.tasks.build import _fetch_image_source, BuildError
+
+        image.application.procfile_path = "deploy/Procfile.web"
+        mock_fetch_file.side_effect = [
+            None,
+            DOCKERFILE_BODY,
+            None,
+        ]
+
+        with pytest.raises(BuildError, match="No Procfile"):
+            _fetch_image_source(image, access_token=None)
+
+        assert [call.kwargs["filename"] for call in mock_fetch_file.call_args_list] == [
+            "Dockerfile.cabotage",
+            "Dockerfile",
+            "deploy/Procfile.web",
+        ]
+
     @patch("cabotage.celery.tasks.build.GithubIntegration")
     @patch("cabotage.celery.tasks.build.GithubAppAuth")
     @patch("cabotage.celery.tasks.build.github_app")

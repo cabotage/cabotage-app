@@ -537,6 +537,21 @@ class TestComputeAuditChangesIntegration:
         fields = {c["field"] for c in result[entry.id]}
         assert "auto deploy branch" in fields
 
+    def test_app_edit_procfile_path_uses_human_label(self, db_session, application):
+        self._create_activity(db_session, "create", application)
+        db_session.commit()
+
+        application.procfile_path = "deploy/Procfile.web"
+        db_session.flush()
+        act = self._create_activity(db_session, "edit", application)
+        db_session.commit()
+        entry = self._audit_entry_for(db_session, act)
+
+        result = compute_audit_changes([entry])
+        assert entry.id in result
+        fields = {c["field"] for c in result[entry.id]}
+        assert "Procfile path" in fields
+
     def test_app_edit_no_op(self, db_session, application):
         self._create_activity(db_session, "create", application)
         db_session.commit()

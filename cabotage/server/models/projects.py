@@ -554,6 +554,7 @@ class Application(Model, Timestamp):
     subdirectory: Mapped[str | None] = mapped_column(Text())
 
     dockerfile_path: Mapped[str | None] = mapped_column(Text())
+    procfile_path: Mapped[str | None] = mapped_column(Text())
     branch_deploy_watch_paths: Mapped[Any | None] = mapped_column(
         postgresql.JSONB(),
     )

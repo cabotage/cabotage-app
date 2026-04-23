@@ -66,6 +66,14 @@ _postgres_memory_bytes: dict[str, int] = {
 }
 
 redis_size_classes: dict[str, dict[str, dict[str, str]]] = {
+    "cache.nano": {
+        "cpu": {"requests": "33m", "limits": "66m"},
+        "memory": {"requests": "64Mi", "limits": "64Mi"},
+    },
+    "cache.micro": {
+        "cpu": {"requests": "66m", "limits": "132m"},
+        "memory": {"requests": "128Mi", "limits": "128Mi"},
+    },
     "cache.small": {
         "cpu": {"requests": "125m", "limits": "250m"},
         "memory": {"requests": "256Mi", "limits": "256Mi"},
