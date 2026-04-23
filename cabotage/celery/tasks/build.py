@@ -446,22 +446,23 @@ def _fetch_image_source(image, access_token):
             f"{git_ref(image.application.github_repository, image.commit_sha)}"
         )
 
-    procfile_body = _fetch_github_file(
-        image.application.github_repository,
-        image.commit_sha,
-        access_token=access_token,
-        filename=file_path("Procfile.cabotage"),
-    )
-    if procfile_body is None:
+    procfile_candidates = ["Procfile.cabotage", "Procfile"]
+    if image.application.procfile_path:
+        procfile_candidates = [image.application.procfile_path]
+
+    procfile_body = None
+    for candidate in procfile_candidates:
         procfile_body = _fetch_github_file(
             image.application.github_repository,
             image.commit_sha,
             access_token=access_token,
-            filename=file_path("Procfile"),
+            filename=file_path(candidate),
         )
+        if procfile_body is not None:
+            break
     if procfile_body is None:
         raise BuildError(
-            "No Procfile.cabotage or Procfile found in root of "
+            "No Procfile found in "
             f"{git_ref(image.application.github_repository, image.commit_sha)}"
         )
 

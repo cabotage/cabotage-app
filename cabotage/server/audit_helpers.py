@@ -38,6 +38,7 @@ _APP_DIFF_FIELDS = {
     "process_pod_classes": "pod classes",
     "subdirectory": "subdirectory",
     "dockerfile_path": "Dockerfile path",
+    "procfile_path": "Procfile path",
     "branch_deploy_watch_paths": "watch paths",
 }
 

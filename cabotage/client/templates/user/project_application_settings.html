@@ -67,6 +67,7 @@
             {{ render_field_compact(form.auto_deploy_branch, placeholder='main', label='Branch') }}
             {{ render_field_compact(form.subdirectory, placeholder='/', label='Subdirectory') }}
             {{ render_field_compact(form.dockerfile_path, placeholder='Dockerfile.cabotage', label='Dockerfile Path') }}
+            {{ render_field_compact(form.procfile_path, placeholder='Procfile.cabotage', label='Procfile Path') }}
           </div>
           <div class="mt-2">
             {{ render_field_compact(form.branch_deploy_watch_paths, placeholder='src/**', label='Watch Paths', extra_class='auto-grow') }}

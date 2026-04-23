@@ -362,6 +362,14 @@ class EditApplicationSettingsForm(FlaskForm):
             (lambda x: x if x else None),
         ],
     )
+    procfile_path = StringField(
+        "Procfile Path",
+        description="Custom path to Procfile (e.g. deploy/Procfile), falls back to Procfile.cabotage then Procfile",
+        filters=[
+            (lambda x: x.strip() if (x and isinstance(x, str)) else x),
+            (lambda x: x if x else None),
+        ],
+    )
     branch_deploy_watch_paths = TextAreaField(
         "Watch Paths",
         description="Only deploy this app when files matching these patterns change. One .gitignore-style pattern per line (e.g. src/**, Dockerfile). Leave empty to always deploy.",
