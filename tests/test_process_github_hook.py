@@ -213,6 +213,25 @@ class TestProcessGithubHookDispatcher:
             db_session.delete(hook)
             db_session.commit()
 
+    def test_installation_target_event_marks_processed(self, db_session, app):
+        hook = self._commit_hook(
+            Hook(
+                headers={"X-Github-Event": "installation_target"},
+                payload={"action": "renamed"},
+                processed=False,
+            )
+        )
+        try:
+            from cabotage.celery.tasks.github import process_github_hook
+
+            process_github_hook.run(hook.id)
+
+            db_session.refresh(hook)
+            assert hook.processed is True
+        finally:
+            db_session.delete(hook)
+            db_session.commit()
+
     @patch("cabotage.celery.tasks.github.process_pull_request_hook")
     def test_pull_request_event_marks_processed(self, mock_pr_hook, db_session, app):
         hook = self._commit_hook(

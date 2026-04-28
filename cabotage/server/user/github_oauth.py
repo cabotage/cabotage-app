@@ -7,16 +7,22 @@ from flask import (
     current_app,
     flash,
     redirect,
+    render_template,
     request,
     session,
     url_for,
 )
-from flask_security import login_user
+from flask_security import current_user, login_user
 from flask_security.tf_plugin import tf_verify_validity_token
+from flask_wtf import FlaskForm
+from itsdangerous import BadData
+import requests
 
 from cabotage.server import db
+from cabotage.server.acl import AdministerOrganizationPermission
 from cabotage.server.mfa import get_mfa_status
-from cabotage.server.models.auth import GitHubIdentity, User
+from cabotage.server.models.auth import GitHubIdentity, Organization, User
+from cabotage.server.user import github_installations
 
 github_oauth_bp = Blueprint("github_oauth", __name__, url_prefix="/auth/github")
 oauth = OAuth()
@@ -34,6 +40,10 @@ def login():
 
 @github_oauth_bp.route("/callback")
 def callback():
+    state = request.args.get("state")
+    if state and _is_github_installation_connect_state(state):
+        return _connect_installation_callback(state)
+
     token = oauth.github.authorize_access_token()
     if token is None:
         flash("GitHub authentication failed.", "error")
@@ -166,6 +176,163 @@ def _complete_oauth_login(user, next_url):
     login_user(user)
     db.session.commit()
     return redirect(next_url)
+
+
+def _is_github_installation_connect_state(state):
+    return github_installations.is_connect_state(state)
+
+
+def _connect_installation_callback(state):
+    if not current_user.is_authenticated:
+        flash("Please sign in before connecting GitHub installations.", "error")
+        return redirect(url_for("security.login"))
+
+    try:
+        payload = github_installations.connect_state_serializer().loads(
+            state, max_age=github_installations.GITHUB_INSTALL_STATE_MAX_AGE_SECONDS
+        )
+    except BadData:
+        flash("The GitHub connect link expired or could not be verified.", "danger")
+        return redirect(url_for("user.organizations"))
+
+    if payload.get("user_id") != str(current_user.id):
+        flash("The GitHub connect link belongs to a different user.", "danger")
+        return redirect(url_for("user.organizations"))
+
+    organization = Organization.query.filter_by(
+        id=payload.get("organization_id")
+    ).first_or_404()
+    if not AdministerOrganizationPermission(organization.id).can():
+        return redirect(url_for("user.organizations"))
+
+    access_token = _fetch_github_user_access_token(request.args.get("code"))
+    if access_token is None:
+        flash("Cabotage could not authorize your GitHub account.", "danger")
+        return redirect(
+            url_for("user.organization_settings", org_slug=organization.slug)
+        )
+
+    installations = _fetch_github_user_installations(access_token)
+    if installations is None:
+        flash("Cabotage could not load your GitHub App installations.", "danger")
+        return redirect(
+            url_for("user.organization_settings", org_slug=organization.slug)
+        )
+
+    requested_installation_id = payload.get("installation_id")
+    if requested_installation_id:
+        try:
+            requested_installation_id = int(requested_installation_id)
+        except (TypeError, ValueError):
+            flash("The GitHub connect link expired or could not be verified.", "danger")
+            return redirect(
+                url_for("user.organization_settings", org_slug=organization.slug)
+            )
+
+        requested_installation = next(
+            (
+                installation
+                for installation in installations
+                if installation.get("id") == requested_installation_id
+            ),
+            None,
+        )
+        if requested_installation is None:
+            flash(
+                "Your GitHub account is not authorized to connect that installation.",
+                "danger",
+            )
+            return redirect(
+                url_for("user.organization_settings", org_slug=organization.slug)
+            )
+
+        session["github_verified_installation"] = github_installations.connect_option(
+            organization,
+            current_user.id,
+            requested_installation,
+            application_id=payload.get("application_id"),
+        )
+        return redirect(
+            url_for("user.github_connect_verified", org_slug=organization.slug)
+        )
+
+    existing_installation_ids = {
+        installation.installation_id
+        for installation in organization.github_app_installations
+    }
+    installation_options = []
+    for installation in installations:
+        installation_id = installation.get("id")
+        account = installation.get("account") or {}
+        if not installation_id or int(installation_id) in existing_installation_ids:
+            continue
+        installation_options.append(
+            {
+                "account_login": account.get("login") or "Unknown",
+                "repository_selection": installation.get("repository_selection"),
+                "token": github_installations.connect_option(
+                    organization, current_user.id, installation
+                ),
+            }
+        )
+
+    return render_template(
+        "user/github_installation_connect.html",
+        organization=organization,
+        installations=installation_options,
+        csrf_form=FlaskForm(),
+    )
+
+
+def _fetch_github_user_access_token(code):
+    if not code:
+        return None
+    scheme = current_app.config["EXT_PREFERRED_URL_SCHEME"]
+    server = current_app.config["EXT_SERVER_NAME"]
+    redirect_uri = f"{scheme}://{server}{url_for('github_oauth.callback')}"
+    try:
+        resp = requests.post(
+            "https://github.com/login/oauth/access_token",
+            headers={"Accept": "application/json"},
+            data={
+                "client_id": current_app.config["GITHUB_APP_CLIENT_ID"],
+                "client_secret": current_app.config["GITHUB_APP_CLIENT_SECRET"],
+                "code": code,
+                "redirect_uri": redirect_uri,
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return resp.json().get("access_token")
+    except (requests.RequestException, ValueError, KeyError):
+        current_app.logger.exception("Unable to fetch GitHub user access token")
+        return None
+
+
+def _fetch_github_user_installations(access_token):
+    try:
+        installations = []
+        url = "https://api.github.com/user/installations"
+        params = {"per_page": 100}
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {access_token}",
+        }
+        while url:
+            resp = requests.get(
+                url,
+                headers=headers,
+                params=params,
+                timeout=10,
+            )
+            resp.raise_for_status()
+            installations.extend(resp.json().get("installations") or [])
+            url = resp.links.get("next", {}).get("url")
+            params = None
+        return installations
+    except (requests.RequestException, ValueError, AttributeError):
+        current_app.logger.exception("Unable to fetch GitHub user installations")
+        return None
 
 
 def init_github_oauth(app):
