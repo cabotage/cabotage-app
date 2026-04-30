@@ -160,13 +160,21 @@ def _run_image_build(image, mock_core, mock_run_job):
 
 
 class TestBuildNamespace:
-    def test_always_returns_tenant_builds_namespace(self):
+    def test_always_returns_tenant_builds_namespace(self, mock_app):
         app_env = _make_app_env(org_k8s="myorg", env_k8s="staging", env_enabled=True)
         assert _build_namespace(app_env) == "cabotage-tenant-builds"
 
-    def test_env_disabled_still_returns_tenant_builds(self):
+    def test_env_disabled_still_returns_tenant_builds(self, mock_app):
         app_env = _make_app_env(org_k8s="myorg", env_enabled=False)
         assert _build_namespace(app_env) == "cabotage-tenant-builds"
+
+    def test_uses_configured_build_namespace(self):
+        app_env = _make_app_env(org_k8s="myorg", env_k8s="staging", env_enabled=True)
+        mock_app = MagicMock()
+        mock_app.config = {"KUBERNETES_BUILD_NAMESPACE": "tenant-builds-custom"}
+
+        with patch.object(build_module, "current_app", mock_app):
+            assert _build_namespace(app_env) == "tenant-builds-custom"
 
 
 class TestBuildCachePVCName:
@@ -383,7 +391,7 @@ class TestReaperIgnoresBuildJobs:
 
 
 class TestBuildCachePVC:
-    def test_pvc_created_in_tenant_namespace(self):
+    def test_pvc_created_in_tenant_namespace(self, mock_app):
         from kubernetes.client.rest import ApiException
 
         image = _make_image(org_k8s="myorg", env_k8s="prod")
@@ -398,7 +406,7 @@ class TestBuildCachePVC:
         create_call = mock_core.create_namespaced_persistent_volume_claim.call_args
         assert create_call[0][0] == "cabotage-tenant-builds"
 
-    def test_pvc_created_with_safe_labels(self):
+    def test_pvc_created_with_safe_labels(self, mock_app):
         from kubernetes.client.rest import ApiException
 
         image = _make_image(org_k8s="myorg", env_k8s="prod")
@@ -420,7 +428,7 @@ class TestBuildCachePVC:
             "cabotage.io/build-cache": "true",
         }
 
-    def test_pvc_read_in_tenant_namespace(self):
+    def test_pvc_read_in_tenant_namespace(self, mock_app):
         image = _make_image(org_k8s="myorg", env_k8s="prod")
         mock_core = MagicMock()
 

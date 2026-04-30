@@ -268,7 +268,9 @@ def _dispatch_release_failure(release, error_detail):
 
 def _build_namespace(app_env):
     """Return the namespace where build jobs run."""
-    return "cabotage-tenant-builds"
+    return current_app.config.get(
+        "KUBERNETES_BUILD_NAMESPACE", "cabotage-tenant-builds"
+    )
 
 
 Activity = activity_plugin.activity_cls
