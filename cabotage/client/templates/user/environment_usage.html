@@ -1,14 +1,14 @@
 {% extends "_base.html" %}
 {% from "_macros.html" import icon, resource_path, page_header, stat_card %}
 
-{% block title %}Usage - {{ environment.name }} - {{ project.name }} - Cabotage{% endblock title %}
+{% block title %}Cost - {{ environment.name }} - {{ project.name }} - Cabotage{% endblock title %}
 
 {% block resource_path %}
   {{ resource_path([
     {'label': project.organization.slug, 'url': url_for('user.organization', org_slug=project.organization.slug) },
     {'label': project.slug, 'url': url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug) },
     {'label': environment.slug, 'url': url_for('user.project_environment', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) },
-    {'label': 'usage'}
+    {'label': 'cost'}
   ]) }}
 {% endblock resource_path %}
 
@@ -24,13 +24,13 @@
       <span class="tab-item tab-disabled" data-tab="observe">{{ icon('bar-chart', 'w-4 h-4') }} Observe</span>
       {% endif %}
       <a href="{{ url_for('user.environment_usage', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}"
-         class="tab-item tab-active" data-tab="usage">{{ icon('dollar-sign', 'w-4 h-4') }} Usage</a>
+         class="tab-item tab-active" data-tab="usage">{{ icon('dollar-sign', 'w-4 h-4') }} Cost</a>
     </div>
   </div>
 {% endblock tab_bar %}
 
 {% block content %}
-  {{ page_header('Usage', environment.name ~ ' · ' ~ project.name) }}
+  {{ page_header('Cost', environment.name ~ ' · ' ~ project.name) }}
 
   <div id="env-usage-content">
     <div class="flex items-center justify-center py-12">
@@ -74,7 +74,7 @@
     redis_gb_hours: {label: 'Redis', icon: 'layers', unit: 'GB-hr'},
   };
 
-  fetch(`/billing/${ORG_SLUG}/billing-env-usage/${PROJECT_SLUG}/${ENV_SLUG}`)
+  fetch(`/cost/${ORG_SLUG}/env-cost/${PROJECT_SLUG}/${ENV_SLUG}`)
     .then(r => r.json())
     .then(render)
     .catch(() => {
