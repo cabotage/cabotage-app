@@ -23,8 +23,10 @@
       {% else %}
       <span class="tab-item tab-disabled" data-tab="observe">{{ icon('bar-chart', 'w-4 h-4') }} Observe</span>
       {% endif %}
+      {% if config.SHOW_COST_ESTIMATES %}
       <a href="{{ url_for('user.project_usage', org_slug=project.organization.slug, project_slug=project.slug) }}"
-         class="tab-item" data-tab="usage">{{ icon('dollar-sign', 'w-4 h-4') }} Usage</a>
+         class="tab-item" data-tab="usage">{{ icon('dollar-sign', 'w-4 h-4') }} Cost</a>
+      {% endif %}
     </div>
   </div>
 {% endblock tab_bar %}
