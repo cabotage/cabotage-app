@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, stat_card %}
+{% from "_macros.html" import icon, resource_path, page_header, project_tab_nav %}
 
 {% block title %}Cost - {{ project.name }} - Cabotage{% endblock title %}
 
@@ -12,26 +12,13 @@
 {% endblock resource_path %}
 
 {% block tab_bar %}
-  <div class="app-content-padded !py-0">
-    <div class="tab-bar" data-tabs data-tabs-links>
-      <a href="{{ url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug) }}"
-         class="tab-item" data-tab="overview">{{ icon('activity', 'w-4 h-4') }} Overview</a>
-      {% if config.MIMIR_URL %}
-      <a href="{{ url_for('user.project_observe', org_slug=project.organization.slug, project_slug=project.slug) }}"
-         class="tab-item" data-tab="observe">{{ icon('bar-chart', 'w-4 h-4') }} Observe</a>
-      {% else %}
-      <span class="tab-item tab-disabled" data-tab="observe">{{ icon('bar-chart', 'w-4 h-4') }} Observe</span>
-      {% endif %}
-      <a href="{{ url_for('user.project_usage', org_slug=project.organization.slug, project_slug=project.slug) }}"
-         class="tab-item tab-active" data-tab="usage">{{ icon('dollar-sign', 'w-4 h-4') }} Cost</a>
-    </div>
-  </div>
+  {{ project_tab_nav(project, 'cost') }}
 {% endblock tab_bar %}
 
 {% block content %}
   {{ page_header('Cost', project.name) }}
 
-  <div id="project-usage-content">
+  <div id="project-cost-content">
     <div class="flex items-center justify-center py-12">
       <span class="loading loading-spinner loading-md text-base-content/30"></span>
     </div>
@@ -40,7 +27,7 @@
 
 {% block js %}
 <div id="icon-bank" hidden>
-  {% for name in ['cpu', 'hard-drive', 'upload', 'tool', 'globe', 'layers', 'activity', 'box', 'bar-chart', 'info', 'dollar-sign'] %}
+  {% for name in ['cpu', 'hard-drive', 'upload', 'tool', 'globe', 'layers', 'box', 'bar-chart'] %}
     <template data-icon="{{ name }}">{{ icon(name) }}</template>
   {% endfor %}
 </div>
@@ -50,7 +37,6 @@
   const PROJECT_SLUG = {{ project.slug|tojson }};
 
   function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
-
   function svg(name, cls) {
     const tpl = document.querySelector(`#icon-bank template[data-icon="${name}"]`);
     if (!tpl) return '';
@@ -58,201 +44,198 @@
     el.setAttribute('class', cls);
     return el.outerHTML;
   }
-
-  const METER_COLORS = ['#8b5cf6','#3b82f6','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#6366f1'];
-  const SVC_COLORS = ['#8b5cf6','#3b82f6','#10b981','#f59e0b','#ef4444','#ec4899'];
+  function fmtNum(v) {
+    if (v == null) return '';
+    if (v >= 100) return v.toFixed(0);
+    if (v >= 10) return v.toFixed(1);
+    return v.toFixed(2);
+  }
 
   const METER_META = {
-    vcpu_hours: {label: 'vCPU Hours', icon: 'cpu', unit: 'hr'},
-    ram_gb_hours: {label: 'RAM', icon: 'hard-drive', unit: 'GB-hr'},
-    egress_gb: {label: 'Egress', icon: 'upload', unit: 'GB'},
-    build_minutes: {label: 'Builds', icon: 'tool', unit: 'min'},
-    block_storage_gb: {label: 'Block Storage', icon: 'hard-drive', unit: 'GB'},
-    object_storage_gb: {label: 'Object Storage', icon: 'hard-drive', unit: 'GB'},
-    db_storage_gb: {label: 'DB Storage', icon: 'layers', unit: 'GB'},
-    postgres_gb_hours: {label: 'PostgreSQL', icon: 'layers', unit: 'GB-hr'},
-    redis_gb_hours: {label: 'Redis', icon: 'layers', unit: 'GB-hr'},
-  };
-
-  const METER_RATES = {
-    vcpu_hours: 0.02, ram_gb_hours: 0.01, egress_gb: 0.045,
-    build_minutes: 0.004, block_storage_gb: 0.12, object_storage_gb: 0.03,
-    db_storage_gb: 0.15, postgres_gb_hours: 0.015, redis_gb_hours: 0.015,
+    vcpu_hours:        { short: 'vCPU',   label: 'vCPU Hours',   unit: 'hr',     icon: 'cpu',         rate: 0.020, rateUnit: 'hr' },
+    ram_gb_hours:      { short: 'RAM',    label: 'RAM',          unit: 'GB-hr',  icon: 'hard-drive',  rate: 0.010, rateUnit: 'GB-hr' },
+    egress_gb:         { short: 'Egress', label: 'Egress',       unit: 'GB',     icon: 'upload',      rate: 0.045, rateUnit: 'GB' },
+    build_minutes:     { short: 'Builds', label: 'Build Minutes',unit: 'min',    icon: 'tool',        rate: 0.004, rateUnit: 'min' },
+    block_storage_gb:  { short: 'Block',  label: 'Block Storage',unit: 'GB-mo',  icon: 'hard-drive',  rate: 0.120, rateUnit: 'GB-mo' },
+    object_storage_gb: { short: 'Object', label: 'Object Storage',unit: 'GB-mo', icon: 'hard-drive',  rate: 0.030, rateUnit: 'GB-mo' },
+    db_storage_gb:     { short: 'DB',     label: 'DB Storage',   unit: 'GB-mo',  icon: 'layers',      rate: 0.150, rateUnit: 'GB-mo' },
+    postgres_gb_hours: { short: 'PG',     label: 'PostgreSQL',   unit: 'GB-hr',  icon: 'layers',      rate: 0.015, rateUnit: 'GB-hr' },
+    redis_gb_hours:    { short: 'Redis',  label: 'Redis',        unit: 'GB-hr',  icon: 'layers',      rate: 0.015, rateUnit: 'GB-hr' },
   };
 
   fetch(`/cost/${ORG_SLUG}/project-cost/${PROJECT_SLUG}`)
     .then(r => r.json())
     .then(render)
     .catch(() => {
-      document.getElementById('project-usage-content').innerHTML =
-        '<p class="text-sm text-error/60 py-8 text-center">Failed to load usage data.</p>';
+      document.getElementById('project-cost-content').innerHTML =
+        '<p class="text-sm text-error/60 py-8 text-center">Failed to load cost data.</p>';
     });
 
   function render(data) {
-    const el = document.getElementById('project-usage-content');
+    const el = document.getElementById('project-cost-content');
     const services = data.services || [];
     const totals = data.totals || {};
     const totalCost = data.total_cost || 0;
 
     if (!services.length) {
-      el.innerHTML = `<div class="text-center py-12">
-        <div class="text-base-content/15 mb-2">${svg('bar-chart', 'w-8 h-8 inline-block')}</div>
-        <p class="text-sm text-base-content/40">No usage data for this project.</p>
+      el.innerHTML = `<div class="py-16 text-center">
+        <p class="text-sm text-base-content/40">No usage in this project for the current period.</p>
       </div>`;
       return;
     }
 
-    // Build active meters from totals
     const activeMeters = Object.entries(totals)
       .filter(([k, v]) => v > 0 && METER_META[k])
-      .map(([k, v]) => ({key: k, value: v, ...METER_META[k], rate: METER_RATES[k] || 0, cost: v * (METER_RATES[k] || 0)}))
+      .map(([k, v]) => ({ key: k, value: v, ...METER_META[k], cost: v * METER_META[k].rate }))
       .sort((a, b) => b.cost - a.cost);
-
     const meterTotal = activeMeters.reduce((s, m) => s + m.cost, 0) || 1;
-    const svcTotal = services.reduce((s, x) => s + x.cost, 0) || 1;
+
+    // Group services by environment
+    const envs = {};
+    services.forEach(svc => {
+      const env = svc.environment || 'default';
+      if (!envs[env]) envs[env] = { services: [], cost: 0 };
+      envs[env].services.push(svc);
+      envs[env].cost += svc.cost;
+    });
+    const envEntries = Object.entries(envs).sort((a, b) => b[1].cost - a[1].cost);
 
     el.innerHTML = `
-      {# Summary stats #}
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <div class="stat-card">
-          <div class="flex items-center gap-2">
-            ${svg('dollar-sign', 'w-4 h-4 text-primary/60')}
-            <span class="stat-card-value text-primary">$${totalCost.toFixed(2)}</span>
-          </div>
-          <span class="stat-card-label">Total Cost</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-card-value">${services.length}</span>
-          <span class="stat-card-label">Services</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-card-value">${activeMeters.length}</span>
-          <span class="stat-card-label">Active Meters</span>
-        </div>
-        <div class="stat-card">
-          <div class="flex items-center gap-2">
-            ${svg('activity', 'w-4 h-4 text-info/60')}
-            <span class="stat-card-value text-info">${totals.vcpu_hours ? totals.vcpu_hours.toFixed(0) : '0'}</span>
-          </div>
-          <span class="stat-card-label">vCPU Hours</span>
-        </div>
-      </div>
+      ${primaryHeader(totalCost, services.length, envEntries.length)}
+      ${resourceBreakdown(activeMeters, meterTotal)}
+      ${costByEnvironment(envEntries, totalCost, activeMeters)}
+    `;
+  }
 
-      {# Two-column: resource bars + service breakdown #}
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {# Resource breakdown #}
-        <div>
-          <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Resource Breakdown</h2>
-          <div class="card bg-base-200/50 border border-base-300/50">
-            <div class="card-body p-5">
-              <div class="flex flex-col gap-3">
-                ${activeMeters.map((m, i) => {
-                  const share = (m.cost / meterTotal) * 100;
-                  const pct = Math.max(share, 0.5);
-                  const color = METER_COLORS[i % METER_COLORS.length];
-                  return `<div>
-                    <div class="flex items-center justify-between mb-1">
-                      <div class="flex items-center gap-2 text-sm text-base-content/70">
-                        ${svg(m.icon, 'w-3.5 h-3.5 text-base-content/40')}
-                        <span>${esc(m.label)}</span>
-                      </div>
-                      <div class="flex items-center gap-3">
-                        <span class="text-xs font-mono text-base-content/40">${m.value.toFixed(1)} ${esc(m.unit)}</span>
-                        <span class="text-xs font-mono text-base-content/30 tabular-nums w-12 text-right">${share.toFixed(1)}%</span>
-                        <span class="text-xs font-mono font-semibold text-base-content min-w-[3.5rem] text-right">$${m.cost.toFixed(2)}</span>
-                      </div>
-                    </div>
-                    <div class="h-1.5 rounded-full bg-base-content/[0.06] overflow-hidden">
-                      <div class="h-full rounded-full" style="width:${pct}%;background:${color};transition:width 0.6s ease ${i*0.05}s"></div>
-                    </div>
-                  </div>`;
-                }).join('')}
-              </div>
+  // ── Primary cost line (replaces the four-card hero-metric grid) ──
+  function primaryHeader(totalCost, svcCount, envCount) {
+    const envLabel = envCount === 1 ? '1 environment' : `${envCount} environments`;
+    const svcLabel = svcCount === 1 ? '1 service' : `${svcCount} services`;
+    return `
+      <div class="mb-8">
+        <div class="flex items-baseline gap-2">
+          <span class="text-3xl font-bold tabular-nums text-base-content" style="font-family:'JetBrains Mono',ui-monospace,monospace">$${totalCost.toFixed(2)}</span>
+          <span class="text-xs text-base-content/30 uppercase tracking-wider">est. AWS spend</span>
+        </div>
+        <p class="text-xs text-base-content/40 mt-1">${svcLabel} across ${envLabel}, current ~30 day period.</p>
+      </div>
+    `;
+  }
+
+  // ── Resource Breakdown: meter rows with rate inline, share-of-total bars ──
+  function resourceBreakdown(meters, meterTotal) {
+    return `
+      <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Resource Breakdown</h2>
+      <div class="flex flex-col gap-3 mb-8">
+        ${meters.map((m, i) => {
+          const share = (m.cost / meterTotal) * 100;
+          const pct = Math.max(share, 0.4);
+          return `<div>
+            <div class="grid grid-cols-[1.25rem_minmax(7rem,1fr)_auto_auto_auto_auto] items-center gap-x-3 mb-1.5">
+              <span class="text-base-content/30">${svg(m.icon, 'w-3.5 h-3.5')}</span>
+              <span class="text-sm text-base-content/70 truncate">${esc(m.label)}</span>
+              <span class="text-[11px] tabular-nums text-base-content/30" style="font-family:'JetBrains Mono',ui-monospace,monospace">@&nbsp;$${m.rate.toFixed(3)}/${esc(m.rateUnit)}</span>
+              <span class="text-xs tabular-nums text-base-content/40 text-right" style="font-family:'JetBrains Mono',ui-monospace,monospace">${fmtNum(m.value)}&nbsp;${esc(m.unit)}</span>
+              <span class="text-xs tabular-nums text-base-content/30 text-right w-12" style="font-family:'JetBrains Mono',ui-monospace,monospace">${share.toFixed(1)}%</span>
+              <span class="text-sm tabular-nums font-semibold text-base-content text-right w-16" style="font-family:'JetBrains Mono',ui-monospace,monospace">$${m.cost.toFixed(2)}</span>
             </div>
-          </div>
-        </div>
-
-        {# Per-environment cost comparison #}
-        <div>
-          <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Cost by Environment</h2>
-          ${(() => {
-            // Group services by environment
-            const envs = {};
-            services.forEach((svc, i) => {
-              const env = svc.environment || 'default';
-              if (!envs[env]) envs[env] = {services: [], cost: 0};
-              envs[env].services.push({...svc, _idx: i});
-              envs[env].cost += svc.cost;
-            });
-            const envEntries = Object.entries(envs).sort((a, b) => b[1].cost - a[1].cost);
-            const envTotal = envEntries.reduce((s, [, e]) => s + e.cost, 0) || 1;
-
-            return envEntries.map(([envName, envData]) => {
-              const envShare = (envData.cost / envTotal) * 100;
-              const envPct = Math.max(envShare, 0.5);
-              return `<div class="card bg-base-200/50 border border-base-300/50 mb-3 overflow-hidden">
-                <div class="card-body p-0">
-                  {# Env header #}
-                  <div class="flex items-center justify-between px-4 py-3 border-b border-base-content/[0.04]">
-                    <div class="flex items-center gap-2">
-                      ${svg('box', 'w-3.5 h-3.5 text-base-content/30')}
-                      <span class="text-sm font-semibold text-base-content">${esc(envName)}</span>
-                      <span class="text-xs text-base-content/25">${envData.services.length} service${envData.services.length > 1 ? 's' : ''}</span>
-                    </div>
-                    <div class="flex items-center gap-3">
-                      <span class="text-xs font-mono text-base-content/30 tabular-nums">${envShare.toFixed(1)}%</span>
-                      <span class="text-sm font-mono font-bold text-base-content">$${envData.cost.toFixed(2)}</span>
-                    </div>
-                  </div>
-                  <div class="px-4 pt-2 pb-1">
-                    <div class="h-1 rounded-full bg-base-content/[0.06] overflow-hidden">
-                      <div class="h-full rounded-full bg-primary/60" style="width:${envPct}%;transition:width 0.5s ease"></div>
-                    </div>
-                  </div>
-                  {# Services in this env #}
-                  ${envData.services.map(svc => {
-                    const color = SVC_COLORS[svc._idx % SVC_COLORS.length];
-                    const svcPct = Math.max((svc.cost / envData.cost) * 100, 2);
-                    const meters = Object.entries(METER_META)
-                      .filter(([k]) => svc.usage && svc.usage[k] > 0)
-                      .map(([k, m]) => ({key: k, value: svc.usage[k], ...m}));
-                    return `<div class="px-4 py-2.5 border-t border-base-content/[0.03]">
-                      <div class="flex items-center justify-between mb-1.5">
-                        <div class="flex items-center gap-2">
-                          <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${color}"></span>
-                          <span class="text-sm text-base-content/80">${esc(svc.service)}</span>
-                        </div>
-                        <span class="text-xs font-mono font-semibold text-base-content">$${svc.cost.toFixed(2)}</span>
-                      </div>
-                      <div class="flex flex-wrap gap-x-3 gap-y-0.5">
-                        ${meters.map(m => `
-                          <span class="text-[11px] font-mono"><span class="font-semibold text-base-content/50">${m.label}</span> <span class="text-base-content/35">${m.value.toFixed(1)} ${m.unit}</span></span>
-                        `).join('')}
-                      </div>
-                    </div>`;
-                  }).join('')}
-                </div>
-              </div>`;
-            }).join('');
-          })()}
-        </div>
+            <div class="h-px rounded-full bg-base-content/[0.05] overflow-hidden">
+              <div class="h-full rounded-full bg-primary/70" style="width:${pct}%;transition:width 0.6s cubic-bezier(0.16,1,0.3,1) ${i * 0.04}s"></div>
+            </div>
+          </div>`;
+        }).join('')}
       </div>
+    `;
+  }
 
-      {# Rate reference #}
-      <div class="card bg-base-200/30 border border-base-300/30">
-        <div class="card-body py-3 px-5"><div class="flex items-start gap-3">
-          <span class="text-base-content/30 mt-0.5">${svg('info', 'w-4 h-4')}</span>
-          <div class="flex flex-wrap gap-x-5 gap-y-1 text-xs text-base-content/40">
-            <span><strong class="text-base-content/55">vCPU</strong> $0.020/hr</span>
-            <span><strong class="text-base-content/55">RAM</strong> $0.010/GB-hr</span>
-            <span><strong class="text-base-content/55">Egress</strong> $0.045/GB</span>
-            <span><strong class="text-base-content/55">Builds</strong> $0.004/min</span>
-            <span><strong class="text-base-content/55">Storage</strong> $0.12/GB-mo</span>
-            <span><strong class="text-base-content/55">PostgreSQL</strong> $0.015/GB-hr</span>
-            <span><strong class="text-base-content/55">Redis</strong> $0.015/GB-hr</span>
-          </div>
-        </div></div>
-      </div>`;
+  // ── Cost by Environment: section header per env + tabular service rows ──
+  function costByEnvironment(envEntries, projectTotal, activeMeters) {
+    if (envEntries.length === 0) return '';
+
+    const meterOrder = ['vcpu_hours','ram_gb_hours','egress_gb','build_minutes','block_storage_gb','postgres_gb_hours','redis_gb_hours','db_storage_gb','object_storage_gb'];
+    const cols = activeMeters
+      .map(m => m.key)
+      .sort((a, b) => meterOrder.indexOf(a) - meterOrder.indexOf(b))
+      .slice(0, 6);
+
+    return `
+      <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Cost by Environment</h2>
+      <div class="flex flex-col gap-7">
+        ${envEntries.map(([envName, envData]) => {
+          const envShare = (envData.cost / projectTotal) * 100;
+          return `
+            <section>
+              <header class="flex items-baseline justify-between pb-2 mb-1 border-b border-base-content/[0.06]">
+                <div class="flex items-baseline gap-3">
+                  <h3 class="text-sm font-semibold text-base-content">${esc(envName)}</h3>
+                  <span class="text-xs text-base-content/30">${envData.services.length} service${envData.services.length === 1 ? '' : 's'}</span>
+                </div>
+                <div class="flex items-baseline gap-3">
+                  <span class="text-[11px] tabular-nums text-base-content/30" style="font-family:'JetBrains Mono',ui-monospace,monospace">${envShare.toFixed(1)}%</span>
+                  <span class="text-sm tabular-nums font-semibold text-base-content" style="font-family:'JetBrains Mono',ui-monospace,monospace">$${envData.cost.toFixed(2)}</span>
+                </div>
+              </header>
+
+              <div class="overflow-x-auto -mx-2 px-2">
+                <table class="w-full text-sm border-separate border-spacing-0">
+                  <thead>
+                    <tr class="text-[10px] uppercase tracking-wider text-base-content/40">
+                      <th class="text-left font-semibold pb-2 pr-3">Service</th>
+                      ${cols.map(k => {
+                        const m = METER_META[k];
+                        return `<th class="text-right font-semibold pb-2 px-3 whitespace-nowrap">${esc(m.short)}<span class="text-base-content/20 normal-case font-normal ml-1.5">${esc(m.unit)}</span></th>`;
+                      }).join('')}
+                      <th class="text-right font-semibold pb-2 px-3 w-14 pl-6">%</th>
+                      <th class="text-right font-semibold pb-2 pr-2 w-24">Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${envData.services.map((svc) => {
+                      const svcShare = (svc.cost / envData.cost) * 100;
+                      return `
+                        <tr class="group">
+                          <td class="py-2.5 pr-3 border-t border-base-content/[0.04] group-hover:bg-base-content/[0.02] transition-colors rounded-l-md">
+                            <span class="text-sm text-base-content">${esc(svc.service)}</span>
+                          </td>
+                          ${cols.map((k) => {
+                            const v = svc.usage && svc.usage[k];
+                            const cellCls = `py-2.5 px-3 text-right border-t border-base-content/[0.04] group-hover:bg-base-content/[0.02] transition-colors`;
+                            if (!v) return `<td class="${cellCls}"><span class="text-base-content/15">·</span></td>`;
+                            return `<td class="${cellCls}"><span class="text-xs tabular-nums text-base-content/65 whitespace-nowrap" style="font-family:'JetBrains Mono',ui-monospace,monospace">${fmtNum(v)}</span></td>`;
+                          }).join('')}
+                          <td class="py-2.5 px-3 pl-6 text-right border-t border-base-content/[0.04] group-hover:bg-base-content/[0.02] transition-colors">
+                            <span class="text-[11px] tabular-nums text-base-content/30" style="font-family:'JetBrains Mono',ui-monospace,monospace">${svcShare.toFixed(1)}%</span>
+                          </td>
+                          <td class="py-2.5 pr-2 text-right border-t border-base-content/[0.04] group-hover:bg-base-content/[0.02] transition-colors rounded-r-md">
+                            <span class="text-sm tabular-nums font-semibold text-base-content" style="font-family:'JetBrains Mono',ui-monospace,monospace">$${svc.cost.toFixed(2)}</span>
+                          </td>
+                        </tr>
+                      `;
+                    }).join('')}
+                    ${envData.services.length > 1 ? `
+                      <tr>
+                        <td class="pt-2.5 pr-3 border-t border-base-content/[0.08]">
+                          <span class="text-[10px] uppercase tracking-wider text-base-content/30">Total</span>
+                        </td>
+                        ${cols.map(k => {
+                          const v = envData.services.reduce((s, svc) => s + ((svc.usage && svc.usage[k]) || 0), 0);
+                          if (!v) return `<td class="pt-2.5 px-3 text-right border-t border-base-content/[0.08]"></td>`;
+                          return `<td class="pt-2.5 px-3 text-right border-t border-base-content/[0.08]"><span class="text-xs tabular-nums text-base-content/40 whitespace-nowrap" style="font-family:'JetBrains Mono',ui-monospace,monospace">${fmtNum(v)}</span></td>`;
+                        }).join('')}
+                        <td class="pt-2.5 px-3 pl-6 border-t border-base-content/[0.08]"></td>
+                        <td class="pt-2.5 pr-2 text-right border-t border-base-content/[0.08]">
+                          <span class="text-sm tabular-nums font-semibold text-base-content" style="font-family:'JetBrains Mono',ui-monospace,monospace">$${envData.cost.toFixed(2)}</span>
+                        </td>
+                      </tr>
+                    ` : ''}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          `;
+        }).join('')}
+      </div>
+    `;
   }
 })();
 </script>

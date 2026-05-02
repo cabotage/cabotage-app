@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, stat_card, tab_nav %}
+{% from "_macros.html" import icon, resource_path, page_header, org_tab_nav %}
 
 {% block title %}Cost - {{ org.name }} - Cabotage{% endblock title %}
 
@@ -11,47 +11,22 @@
 {% endblock resource_path %}
 
 {% block tab_bar %}
-  <div class="app-content-padded !py-0">
-    {{ tab_nav([
-      {'id': 'overview', 'label': 'Overview', 'icon': 'activity'},
-      {'id': 'services', 'label': 'Services', 'icon': 'box'}
-    ]) }}
-  </div>
+  {{ org_tab_nav(org, 'cost') }}
 {% endblock tab_bar %}
 
 {% block content %}
-  {{ page_header('Cost Estimate', org.name) }}
+  {{ page_header('Cost', org.name) }}
 
-  <div class="card bg-base-200/30 border border-base-300/30 mb-6">
-    <div class="card-body py-3 px-5"><div class="flex items-start gap-3">
-      <span class="text-base-content/30 mt-0.5">{{ icon('info', 'w-4 h-4') }}</span>
-      <p class="text-xs text-base-content/40">
-        Estimated underlying AWS cost based on resource requests for the current
-        ~30 day period.
-      </p>
-    </div></div>
-  </div>
-
-  <div data-tab-panel="overview" class="tab-panel">
-    <div id="cost-overview">
-      <div class="flex items-center justify-center py-12">
-        <span class="loading loading-spinner loading-md text-base-content/30"></span>
-      </div>
-    </div>
-  </div>
-
-  <div data-tab-panel="services" class="tab-panel">
-    <div id="cost-services">
-      <div class="flex items-center justify-center py-12">
-        <span class="loading loading-spinner loading-md text-base-content/30"></span>
-      </div>
+  <div id="org-cost-content">
+    <div class="flex items-center justify-center py-12">
+      <span class="loading loading-spinner loading-md text-base-content/30"></span>
     </div>
   </div>
 {% endblock content %}
 
 {% block js %}
 <div id="icon-bank" hidden>
-  {% for name in ['cpu', 'hard-drive', 'upload', 'tool', 'globe', 'layers', 'activity', 'box', 'bar-chart', 'info', 'dollar-sign'] %}
+  {% for name in ['cpu', 'hard-drive', 'upload', 'tool', 'globe', 'layers', 'box', 'bar-chart'] %}
     <template data-icon="{{ name }}">{{ icon(name) }}</template>
   {% endfor %}
 </div>
@@ -67,146 +42,170 @@
     el.setAttribute('class', cls);
     return el.outerHTML;
   }
-  const fail = el => { el.innerHTML = '<p class="text-sm text-error/60 py-8 text-center">Failed to load cost data.</p>'; };
+  function fmtNum(v) {
+    if (v == null) return '';
+    if (v >= 100) return v.toFixed(0);
+    if (v >= 10) return v.toFixed(1);
+    return v.toFixed(2);
+  }
 
-  const METER_COLORS = ['#8b5cf6','#3b82f6','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#6366f1','#14b8a6','#f97316'];
-  const SVC_COLORS = ['#8b5cf6','#3b82f6','#10b981','#f59e0b','#ef4444','#ec4899'];
+  const METER_META = {
+    vcpu_hours:        { short: 'vCPU',   label: 'vCPU Hours',   unit: 'hr',     icon: 'cpu',         rate: 0.020, rateUnit: 'hr' },
+    ram_gb_hours:      { short: 'RAM',    label: 'RAM',          unit: 'GB-hr',  icon: 'hard-drive',  rate: 0.010, rateUnit: 'GB-hr' },
+    egress_gb:         { short: 'Egress', label: 'Egress',       unit: 'GB',     icon: 'upload',      rate: 0.045, rateUnit: 'GB' },
+    build_minutes:     { short: 'Builds', label: 'Build Minutes',unit: 'min',    icon: 'tool',        rate: 0.004, rateUnit: 'min' },
+    block_storage_gb:  { short: 'Block',  label: 'Block Storage',unit: 'GB-mo',  icon: 'hard-drive',  rate: 0.120, rateUnit: 'GB-mo' },
+    object_storage_gb: { short: 'Object', label: 'Object Storage',unit: 'GB-mo', icon: 'hard-drive',  rate: 0.030, rateUnit: 'GB-mo' },
+    db_storage_gb:     { short: 'DB',     label: 'DB Storage',   unit: 'GB-mo',  icon: 'layers',      rate: 0.150, rateUnit: 'GB-mo' },
+    postgres_gb_hours: { short: 'PG',     label: 'PostgreSQL',   unit: 'GB-hr',  icon: 'layers',      rate: 0.015, rateUnit: 'GB-hr' },
+    redis_gb_hours:    { short: 'Redis',  label: 'Redis',        unit: 'GB-hr',  icon: 'layers',      rate: 0.015, rateUnit: 'GB-hr' },
+  };
 
   fetch(`/cost/${ORG_SLUG}/org-cost`)
     .then(r => r.json())
-    .then(data => {
-      renderOverview(data);
-      renderServices(data.services || []);
-    })
+    .then(render)
     .catch(() => {
-      fail(document.getElementById('cost-overview'));
-      fail(document.getElementById('cost-services'));
+      document.getElementById('org-cost-content').innerHTML =
+        '<p class="text-sm text-error/60 py-8 text-center">Failed to load cost data.</p>';
     });
 
-  function renderOverview(data) {
-    const el = document.getElementById('cost-overview');
+  function render(data) {
+    const el = document.getElementById('org-cost-content');
     const meters = data.meters || [];
-    const totalCost = data.total_cost || 0;
     const services = data.services || [];
+    const totalCost = data.total_cost || 0;
+    const projectCount = data.project_count || 0;
 
-    if (!meters.length) {
-      el.innerHTML = `<div class="text-center py-12">
-        <div class="text-base-content/15 mb-2">${svg('bar-chart', 'w-8 h-8 inline-block')}</div>
-        <p class="text-sm text-base-content/40">No usage to estimate yet.</p>
+    if (!services.length) {
+      el.innerHTML = `<div class="py-16 text-center">
+        <p class="text-sm text-base-content/40">No services in this organization have usage in the current period.</p>
       </div>`;
       return;
     }
 
     const meterTotal = meters.reduce((s, m) => s + m.cost, 0) || 1;
 
-    el.innerHTML = `
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <div class="stat-card">
-          <div class="flex items-center gap-2">
-            ${svg('dollar-sign', 'w-4 h-4 text-primary/60')}
-            <span class="stat-card-value text-primary">$${totalCost.toFixed(2)}</span>
-          </div>
-          <span class="stat-card-label">Estimated Cost</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-card-value">${data.project_count || 0}</span>
-          <span class="stat-card-label">Projects</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-card-value">${services.length}</span>
-          <span class="stat-card-label">Services</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-card-value">${meters.length}</span>
-          <span class="stat-card-label">Active Meters</span>
-        </div>
-      </div>
+    // Decorate meters with rate from META
+    const decoratedMeters = meters.map(m => {
+      const meta = METER_META[m.key] || {};
+      return { ...m, rate: meta.rate || 0, rateUnit: meta.rateUnit || m.unit };
+    });
 
-      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Resource Breakdown</h2>
-      <div class="card bg-base-200/50 border border-base-300/50 mb-6">
-        <div class="card-body p-5">
-          <div class="flex flex-col gap-3">
-            ${meters.map((m, i) => {
-              const share = (m.cost / meterTotal) * 100;
-              const pct = Math.max(share, 0.5);
-              const color = METER_COLORS[i % METER_COLORS.length];
-              return `<div>
-                <div class="flex items-center justify-between mb-1">
-                  <div class="flex items-center gap-2 text-sm text-base-content/70">
-                    ${svg(m.icon, 'w-3.5 h-3.5 text-base-content/40')}
-                    <span>${esc(m.label)}</span>
-                  </div>
-                  <div class="flex items-center gap-3">
-                    <span class="text-xs font-mono text-base-content/40">${m.used} ${esc(m.unit)}</span>
-                    <span class="text-xs font-mono text-base-content/30 tabular-nums w-12 text-right">${share.toFixed(1)}%</span>
-                    <span class="text-xs font-mono font-semibold text-base-content min-w-[3.5rem] text-right">$${m.cost.toFixed(2)}</span>
-                  </div>
-                </div>
-                <div class="h-1.5 rounded-full bg-base-content/[0.06] overflow-hidden">
-                  <div class="h-full rounded-full" style="width:${pct}%;background:${color};transition:width 0.6s ease ${i * 0.05}s"></div>
-                </div>
-              </div>`;
-            }).join('')}
-          </div>
-        </div>
-      </div>`;
+    el.innerHTML = `
+      ${primaryHeader(totalCost, services.length, projectCount)}
+      ${resourceBreakdown(decoratedMeters, meterTotal)}
+      ${costTree(services, totalCost)}
+    `;
   }
 
-  function renderServices(services) {
-    const el = document.getElementById('cost-services');
-    if (!services.length) {
-      el.innerHTML = `<div class="text-center py-12">
-        <div class="text-base-content/15 mb-2">${svg('box', 'w-8 h-8 inline-block')}</div>
-        <p class="text-sm text-base-content/40">No services with usage in this period.</p>
-      </div>`;
-      return;
-    }
+  function primaryHeader(totalCost, svcCount, projectCount) {
+    const projLabel = projectCount === 1 ? '1 project' : `${projectCount} projects`;
+    const svcLabel = svcCount === 1 ? '1 service' : `${svcCount} services`;
+    return `
+      <div class="mb-8">
+        <div class="flex items-baseline gap-2">
+          <span class="text-3xl font-bold tabular-nums text-base-content" style="font-family:'JetBrains Mono',ui-monospace,monospace">$${totalCost.toFixed(2)}</span>
+          <span class="text-xs text-base-content/30 uppercase tracking-wider">est. AWS spend</span>
+        </div>
+        <p class="text-xs text-base-content/40 mt-1">${svcLabel} across ${projLabel}, current ~30 day period. Not a bill.</p>
+      </div>
+    `;
+  }
 
-    const svcTotal = services.reduce((s, x) => s + x.cost, 0) || 1;
-
-    el.innerHTML = `
-      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Cost by Service</h2>
-      <div class="flex flex-col gap-3">
-        ${services.map((svc, i) => {
-          const color = SVC_COLORS[i % SVC_COLORS.length];
-          const share = (svc.cost / svcTotal) * 100;
-          const pct = Math.max(share, 0.5);
-          const meters = [
-            {k: 'vcpu_hours', label: 'vCPU', unit: 'hr'},
-            {k: 'ram_gb_hours', label: 'RAM', unit: 'GB-hr'},
-            {k: 'egress_gb', label: 'Egress', unit: 'GB'},
-            {k: 'build_minutes', label: 'Builds', unit: 'min'},
-            {k: 'block_storage_gb', label: 'Storage', unit: 'GB'},
-            {k: 'postgres_gb_hours', label: 'PG', unit: 'GB-hr'},
-          ].filter(m => svc[m.k] > 0);
-
-          return `<div class="card bg-base-200/50 border border-base-300/50 overflow-hidden">
-            <div class="card-body p-4">
-              <div class="flex items-center justify-between mb-2">
-                <div class="flex items-center gap-2.5">
-                  <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${color}"></span>
-                  <div>
-                    <span class="text-sm font-medium text-base-content">${esc(svc.service)}</span>
-                    <span class="text-xs text-base-content/30 ml-1.5">${esc(svc.project)} · ${esc(svc.environment)}</span>
-                  </div>
-                </div>
-                <div class="flex items-center gap-3">
-                  <span class="text-xs font-mono text-base-content/30 tabular-nums">${share.toFixed(1)}%</span>
-                  <span class="text-sm font-mono font-semibold text-base-content">$${svc.cost.toFixed(2)}</span>
-                </div>
-              </div>
-              <div class="h-1 rounded-full bg-base-content/[0.06] overflow-hidden mb-2">
-                <div class="h-full rounded-full" style="width:${pct}%;background:${color};transition:width 0.5s ease"></div>
-              </div>
-              <div class="flex flex-wrap gap-x-4 gap-y-0.5">
-                ${meters.map(m => `
-                  <span class="text-[11px] text-base-content/35 font-mono">${m.label} <span class="text-base-content/50">${svc[m.k]}${m.unit}</span></span>
-                `).join('')}
-              </div>
+  function resourceBreakdown(meters, meterTotal) {
+    return `
+      <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Resource Breakdown</h2>
+      <div class="flex flex-col gap-3 mb-8">
+        ${meters.map((m, i) => {
+          const share = (m.cost / meterTotal) * 100;
+          const pct = Math.max(share, 0.4);
+          return `<div>
+            <div class="grid grid-cols-[1.25rem_minmax(7rem,1fr)_auto_auto_auto_auto] items-center gap-x-3 mb-1.5">
+              <span class="text-base-content/30">${svg(m.icon, 'w-3.5 h-3.5')}</span>
+              <span class="text-sm text-base-content/70 truncate">${esc(m.label)}</span>
+              <span class="text-[11px] tabular-nums text-base-content/30" style="font-family:'JetBrains Mono',ui-monospace,monospace">@&nbsp;$${m.rate.toFixed(3)}/${esc(m.rateUnit)}</span>
+              <span class="text-xs tabular-nums text-base-content/40 text-right" style="font-family:'JetBrains Mono',ui-monospace,monospace">${fmtNum(m.used)}&nbsp;${esc(m.unit)}</span>
+              <span class="text-xs tabular-nums text-base-content/30 text-right w-12" style="font-family:'JetBrains Mono',ui-monospace,monospace">${share.toFixed(1)}%</span>
+              <span class="text-sm tabular-nums font-semibold text-base-content text-right w-16" style="font-family:'JetBrains Mono',ui-monospace,monospace">$${m.cost.toFixed(2)}</span>
+            </div>
+            <div class="h-px rounded-full bg-base-content/[0.05] overflow-hidden">
+              <div class="h-full rounded-full bg-primary/70" style="width:${pct}%;transition:width 0.6s cubic-bezier(0.16,1,0.3,1) ${i * 0.04}s"></div>
             </div>
           </div>`;
         }).join('')}
-      </div>`;
+      </div>
+    `;
+  }
+
+  // ── Cost tree: project › environment › service. Drops meter columns
+  //    (drill into a project for those). Each leaf is a row with
+  //    service identity, share-of-total bar, share %, and cost.
+  function costTree(services, totalCost) {
+    // Group services into project › environment buckets
+    const projects = {};
+    services.forEach(svc => {
+      const proj = svc.project || 'default';
+      const env = svc.environment || 'default';
+      if (!projects[proj]) projects[proj] = { envs: {}, cost: 0 };
+      if (!projects[proj].envs[env]) projects[proj].envs[env] = { services: [], cost: 0 };
+      projects[proj].envs[env].services.push(svc);
+      projects[proj].envs[env].cost += svc.cost;
+      projects[proj].cost += svc.cost;
+    });
+    const projectEntries = Object.entries(projects).sort((a, b) => b[1].cost - a[1].cost);
+
+    return `
+      <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Cost by Service</h2>
+      <div class="flex flex-col gap-7">
+        ${projectEntries.map(([projName, projData]) => {
+          const projShare = (projData.cost / totalCost) * 100;
+          const envEntries = Object.entries(projData.envs).sort((a, b) => b[1].cost - a[1].cost);
+          return `
+            <section>
+              <header class="flex items-baseline justify-between pb-2 mb-2 border-b border-base-content/[0.06]">
+                <h3 class="text-sm font-semibold text-base-content">${esc(projName)}</h3>
+                <div class="flex items-baseline gap-3">
+                  <span class="text-[11px] tabular-nums text-base-content/30" style="font-family:'JetBrains Mono',ui-monospace,monospace">${projShare.toFixed(1)}%</span>
+                  <span class="text-sm tabular-nums font-semibold text-base-content" style="font-family:'JetBrains Mono',ui-monospace,monospace">$${projData.cost.toFixed(2)}</span>
+                </div>
+              </header>
+              <div class="flex flex-col gap-4 pl-3">
+                ${envEntries.map(([envName, envData]) => {
+                  const envShare = (envData.cost / totalCost) * 100;
+                  return `
+                    <div>
+                      <div class="flex items-baseline justify-between mb-2">
+                        <h4 class="text-[11px] uppercase tracking-wider text-base-content/40">${esc(envName)}</h4>
+                        <div class="flex items-baseline gap-3">
+                          <span class="text-[11px] tabular-nums text-base-content/30" style="font-family:'JetBrains Mono',ui-monospace,monospace">${envShare.toFixed(1)}%</span>
+                          <span class="text-xs tabular-nums text-base-content/50" style="font-family:'JetBrains Mono',ui-monospace,monospace">$${envData.cost.toFixed(2)}</span>
+                        </div>
+                      </div>
+                      <div class="flex flex-col gap-1.5">
+                        ${envData.services.map(svc => {
+                          const share = (svc.cost / totalCost) * 100;
+                          const pct = Math.max(share, 0.4);
+                          return `
+                            <div class="grid grid-cols-[1fr_minmax(6rem,12rem)_3rem_4.5rem] items-center gap-x-4 group rounded-md hover:bg-base-content/[0.025] -mx-2 px-2 py-1.5 transition-colors">
+                              <span class="text-sm text-base-content truncate">${esc(svc.service)}</span>
+                              <div class="h-1 rounded-full bg-base-content/[0.05] overflow-hidden">
+                                <div class="h-full rounded-full bg-primary/60 group-hover:bg-primary/80 transition-colors" style="width:${pct}%"></div>
+                              </div>
+                              <span class="text-[11px] tabular-nums text-base-content/30 text-right" style="font-family:'JetBrains Mono',ui-monospace,monospace">${share.toFixed(1)}%</span>
+                              <span class="text-sm tabular-nums font-semibold text-base-content text-right" style="font-family:'JetBrains Mono',ui-monospace,monospace">$${svc.cost.toFixed(2)}</span>
+                            </div>
+                          `;
+                        }).join('')}
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </section>
+          `;
+        }).join('')}
+      </div>
+    `;
   }
 })();
 </script>
