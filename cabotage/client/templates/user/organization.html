@@ -17,12 +17,12 @@
     {% set proj_count = organization.active_projects|length %}
     {% set member_count = organization.members|length %}
     {% set observe_tab = {'id': 'observe', 'label': 'Observe', 'icon': 'bar-chart', 'url': url_for('user.organization_observe', org_slug=organization.slug)} if config.MIMIR_URL else {'id': 'observe', 'label': 'Observe', 'icon': 'bar-chart', 'disabled': true} %}
-    {% if is_admin and config.ENABLE_BILLING %}
+    {% if is_admin and config.SHOW_COST_ESTIMATES %}
       {{ tab_nav([
           {'id': 'projects', 'label': 'Projects', 'icon': 'folder', 'badge': proj_count},
           {'id': 'members', 'label': 'Members', 'icon': 'users', 'badge': member_count},
           observe_tab,
-          {'id': 'billing', 'label': 'Billing', 'icon': 'credit-card', 'url': url_for('billing.dashboard', org_slug=organization.slug)}
+          {'id': 'cost', 'label': 'Cost', 'icon': 'dollar-sign', 'url': url_for('cost.org_cost', org_slug=organization.slug)}
       ]) }}
     {% else %}
       {{ tab_nav([
