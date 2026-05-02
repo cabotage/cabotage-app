@@ -299,18 +299,13 @@ def create_app():
     app.register_blueprint(main_blueprint)
     app.register_blueprint(oidc_blueprint)
     app.register_blueprint(registry_auth_blueprint)
-    if app.config.get("ENABLE_BILLING"):
-        import stripe
-        from cabotage.utils.billing.core import stripe_blueprint
-        import cabotage.utils.billing.views  # noqa: F401
+    if app.config.get("SHOW_COST_ESTIMATES"):
+        from cabotage.utils.cost.views import cost_blueprint
 
-        stripe.api_key = app.config["STRIPE_SECRET_KEY"]
-        app.register_blueprint(stripe_blueprint)
+        app.register_blueprint(cost_blueprint)
 
     # GitHub webhook uses HMAC validation, not CSRF tokens
     csrf.exempt("cabotage.server.user.views.github_hooks")
-    # Stripe webhook uses signature verification, not CSRF tokens
-    csrf.exempt("cabotage.utils.billing.core.receive_stripe_webhook")
 
     from cabotage.server.mfa import register_mfa_guards
 
@@ -337,8 +332,6 @@ def create_app():
     from cabotage.server.models.auth import (
         Organization,
         Team,
-        Billing,
-        BillingWebhookEvent,
     )
     from cabotage.server.models.projects import (
         Project,
@@ -367,8 +360,6 @@ def create_app():
     admin.add_view(AdminModelView(Deployment, db.session))
     admin.add_view(AdminModelView(Hook, db.session))
     admin.add_view(AdminModelView(User, db.session))
-    admin.add_view(AdminModelView(Billing, db.session))
-    admin.add_view(AdminModelView(BillingWebhookEvent, db.session))
 
     num_proxies = app.config.get("PROXY_FIX_NUM_PROXIES", 1)
     app.wsgi_app = ProxyFix(
