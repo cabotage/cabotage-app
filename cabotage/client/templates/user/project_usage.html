@@ -134,10 +134,10 @@
             <div class="grid grid-cols-[1.25rem_minmax(7rem,1fr)_auto_auto_auto_auto] items-center gap-x-3 mb-1.5">
               <span class="text-base-content/30">${svg(m.icon, 'w-3.5 h-3.5')}</span>
               <span class="text-sm text-base-content/70 truncate">${esc(m.label)}</span>
-              <span class="text-[11px] tabular-nums text-base-content/30" style="font-family:'JetBrains Mono',ui-monospace,monospace">@&nbsp;$${m.rate.toFixed(3)}/${esc(m.rateUnit)}</span>
               <span class="text-xs tabular-nums text-base-content/40 text-right" style="font-family:'JetBrains Mono',ui-monospace,monospace">${fmtNum(m.value)}&nbsp;${esc(m.unit)}</span>
-              <span class="text-xs tabular-nums text-base-content/30 text-right w-12" style="font-family:'JetBrains Mono',ui-monospace,monospace">${share.toFixed(1)}%</span>
-              <span class="text-sm tabular-nums font-semibold text-base-content text-right w-16" style="font-family:'JetBrains Mono',ui-monospace,monospace">$${m.cost.toFixed(2)}</span>
+              <span class="text-[11px] tabular-nums text-base-content/30" style="font-family:'JetBrains Mono',ui-monospace,monospace">@&nbsp;$${m.rate.toFixed(3)}/${esc(m.rateUnit)}</span>
+              <span class="text-xs tabular-nums text-base-content/30 text-right w-14" style="font-family:'JetBrains Mono',ui-monospace,monospace">${share.toFixed(1)}%</span>
+              <span class="text-sm tabular-nums font-semibold text-base-content text-right w-20" style="font-family:'JetBrains Mono',ui-monospace,monospace">$${m.cost.toFixed(2)}</span>
             </div>
             <div class="h-px rounded-full bg-base-content/[0.05] overflow-hidden">
               <div class="h-full rounded-full bg-primary/70" style="width:${pct}%;transition:width 0.6s cubic-bezier(0.16,1,0.3,1) ${i * 0.04}s"></div>
@@ -180,13 +180,13 @@
                 <table class="w-full text-sm border-separate border-spacing-0">
                   <thead>
                     <tr class="text-[10px] uppercase tracking-wider text-base-content/40">
-                      <th class="text-left font-semibold pb-2 pr-3">Service</th>
+                      <th class="text-left font-semibold pb-2 pl-3 pr-3">Service</th>
                       ${cols.map(k => {
                         const m = METER_META[k];
                         return `<th class="text-right font-semibold pb-2 px-3 whitespace-nowrap">${esc(m.short)}<span class="text-base-content/20 normal-case font-normal ml-1.5">${esc(m.unit)}</span></th>`;
                       }).join('')}
                       <th class="text-right font-semibold pb-2 px-3 w-14 pl-6">%</th>
-                      <th class="text-right font-semibold pb-2 pr-2 w-24">Cost</th>
+                      <th class="text-right font-semibold pb-2 pr-3 w-24">Cost</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -194,7 +194,7 @@
                       const svcShare = (svc.cost / envData.cost) * 100;
                       return `
                         <tr class="group">
-                          <td class="py-2.5 pr-3 border-t border-base-content/[0.04] group-hover:bg-base-content/[0.02] transition-colors rounded-l-md">
+                          <td class="py-2.5 pl-3 pr-3 border-t border-base-content/[0.04] group-hover:bg-base-content/[0.02] transition-colors rounded-l-md">
                             <span class="text-sm text-base-content">${esc(svc.service)}</span>
                           </td>
                           ${cols.map((k) => {
@@ -206,7 +206,7 @@
                           <td class="py-2.5 px-3 pl-6 text-right border-t border-base-content/[0.04] group-hover:bg-base-content/[0.02] transition-colors">
                             <span class="text-[11px] tabular-nums text-base-content/30" style="font-family:'JetBrains Mono',ui-monospace,monospace">${svcShare.toFixed(1)}%</span>
                           </td>
-                          <td class="py-2.5 pr-2 text-right border-t border-base-content/[0.04] group-hover:bg-base-content/[0.02] transition-colors rounded-r-md">
+                          <td class="py-2.5 pr-3 text-right border-t border-base-content/[0.04] group-hover:bg-base-content/[0.02] transition-colors rounded-r-md">
                             <span class="text-sm tabular-nums font-semibold text-base-content" style="font-family:'JetBrains Mono',ui-monospace,monospace">$${svc.cost.toFixed(2)}</span>
                           </td>
                         </tr>
@@ -214,7 +214,7 @@
                     }).join('')}
                     ${envData.services.length > 1 ? `
                       <tr>
-                        <td class="pt-2.5 pr-3 border-t border-base-content/[0.08]">
+                        <td class="pt-2.5 pl-3 pr-3 border-t border-base-content/[0.08]">
                           <span class="text-[10px] uppercase tracking-wider text-base-content/30">Total</span>
                         </td>
                         ${cols.map(k => {
@@ -223,7 +223,7 @@
                           return `<td class="pt-2.5 px-3 text-right border-t border-base-content/[0.08]"><span class="text-xs tabular-nums text-base-content/40 whitespace-nowrap" style="font-family:'JetBrains Mono',ui-monospace,monospace">${fmtNum(v)}</span></td>`;
                         }).join('')}
                         <td class="pt-2.5 px-3 pl-6 border-t border-base-content/[0.08]"></td>
-                        <td class="pt-2.5 pr-2 text-right border-t border-base-content/[0.08]">
+                        <td class="pt-2.5 pr-3 text-right border-t border-base-content/[0.08]">
                           <span class="text-sm tabular-nums font-semibold text-base-content" style="font-family:'JetBrains Mono',ui-monospace,monospace">$${envData.cost.toFixed(2)}</span>
                         </td>
                       </tr>
