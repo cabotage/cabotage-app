@@ -72,7 +72,6 @@
     db_storage_gb: {label: 'DB Storage', icon: 'layers', unit: 'GB'},
     postgres_gb_hours: {label: 'PostgreSQL', icon: 'layers', unit: 'GB-hr'},
     redis_gb_hours: {label: 'Redis', icon: 'layers', unit: 'GB-hr'},
-    tailscale_nodes: {label: 'Tailscale', icon: 'globe', unit: 'nodes'},
   };
 
   fetch(`/billing/${ORG_SLUG}/billing-env-usage/${PROJECT_SLUG}/${ENV_SLUG}`)
