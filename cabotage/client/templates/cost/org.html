@@ -190,7 +190,10 @@
                     <span class="text-xs text-base-content/30 ml-1.5">${esc(svc.project)} · ${esc(svc.environment)}</span>
                   </div>
                 </div>
-                <span class="text-sm font-mono font-semibold text-base-content">$${svc.cost.toFixed(2)}</span>
+                <div class="flex items-center gap-3">
+                  <span class="text-xs font-mono text-base-content/30 tabular-nums">${share.toFixed(1)}%</span>
+                  <span class="text-sm font-mono font-semibold text-base-content">$${svc.cost.toFixed(2)}</span>
+                </div>
               </div>
               <div class="h-1 rounded-full bg-base-content/[0.06] overflow-hidden mb-2">
                 <div class="h-full rounded-full" style="width:${pct}%;background:${color};transition:width 0.5s ease"></div>

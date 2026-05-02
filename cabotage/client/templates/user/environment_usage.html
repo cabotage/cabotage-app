@@ -101,7 +101,7 @@
       .map(([k, v]) => ({key: k, value: v, ...METER_META[k]}))
       .sort((a, b) => b.value - a.value);
 
-    const maxSvcCost = Math.max(...services.map(s => s.cost), 1);
+    const svcTotal = services.reduce((s, x) => s + x.cost, 0) || 1;
 
     el.innerHTML = `
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
@@ -133,7 +133,8 @@
       <div class="flex flex-col gap-3 mb-6">
         ${services.map((svc, i) => {
           const color = SVC_COLORS[i % SVC_COLORS.length];
-          const pct = Math.max((svc.cost / maxSvcCost) * 100, 3);
+          const share = (svc.cost / svcTotal) * 100;
+          const pct = Math.max(share, 0.5);
           const meters = Object.entries(METER_META)
             .filter(([k]) => svc.usage && svc.usage[k] > 0)
             .map(([k, m]) => ({key: k, value: svc.usage[k], ...m}));
@@ -144,7 +145,10 @@
                   <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${color}"></span>
                   <span class="text-sm font-medium text-base-content">${esc(svc.service)}</span>
                 </div>
-                <span class="text-sm font-mono font-semibold text-base-content">$${svc.cost.toFixed(2)}</span>
+                <div class="flex items-center gap-3">
+                  <span class="text-xs font-mono text-base-content/30 tabular-nums">${share.toFixed(1)}%</span>
+                  <span class="text-sm font-mono font-semibold text-base-content">$${svc.cost.toFixed(2)}</span>
+                </div>
               </div>
               <div class="h-1 rounded-full bg-base-content/[0.06] overflow-hidden mb-2">
                 <div class="h-full rounded-full" style="width:${pct}%;background:${color};transition:width 0.5s ease"></div>
