@@ -97,7 +97,7 @@
       return;
     }
 
-    const maxCost = Math.max(...meters.map(m => m.cost), 1);
+    const meterTotal = meters.reduce((s, m) => s + m.cost, 0) || 1;
 
     el.innerHTML = `
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
@@ -127,7 +127,8 @@
         <div class="card-body p-5">
           <div class="flex flex-col gap-3">
             ${meters.map((m, i) => {
-              const pct = Math.max((m.cost / maxCost) * 100, 2);
+              const share = (m.cost / meterTotal) * 100;
+              const pct = Math.max(share, 0.5);
               const color = METER_COLORS[i % METER_COLORS.length];
               return `<div>
                 <div class="flex items-center justify-between mb-1">
@@ -137,6 +138,7 @@
                   </div>
                   <div class="flex items-center gap-3">
                     <span class="text-xs font-mono text-base-content/40">${m.used} ${esc(m.unit)}</span>
+                    <span class="text-xs font-mono text-base-content/30 tabular-nums w-12 text-right">${share.toFixed(1)}%</span>
                     <span class="text-xs font-mono font-semibold text-base-content min-w-[3.5rem] text-right">$${m.cost.toFixed(2)}</span>
                   </div>
                 </div>
@@ -160,14 +162,15 @@
       return;
     }
 
-    const maxCost = Math.max(...services.map(s => s.cost), 1);
+    const svcTotal = services.reduce((s, x) => s + x.cost, 0) || 1;
 
     el.innerHTML = `
       <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Cost by Service</h2>
       <div class="flex flex-col gap-3">
         ${services.map((svc, i) => {
           const color = SVC_COLORS[i % SVC_COLORS.length];
-          const pct = Math.max((svc.cost / maxCost) * 100, 3);
+          const share = (svc.cost / svcTotal) * 100;
+          const pct = Math.max(share, 0.5);
           const meters = [
             {k: 'vcpu_hours', label: 'vCPU', unit: 'hr'},
             {k: 'ram_gb_hours', label: 'RAM', unit: 'GB-hr'},
