@@ -160,17 +160,11 @@ def _resolve_tcp_service(app_env, process_name, app_slug, prop="svc"):
     #   {resource_prefix}-{process_name}.{namespace}.svc.cluster.local
     app = app_env.application
     project = app.project
-    org = project.organization
 
     resource_prefix = safe_k8s_name(project.k8s_identifier, app.k8s_identifier)
     service_name = f"{resource_prefix}-{process_name}"
 
-    if app_env.k8s_identifier is not None:
-        namespace = safe_k8s_name(
-            org.k8s_identifier, app_env.environment.k8s_identifier
-        )
-    else:
-        namespace = org.k8s_identifier
+    namespace = app_env.environment.k8s_namespace
 
     fqdn = f"{service_name}.{namespace}.svc.cluster.local"
 

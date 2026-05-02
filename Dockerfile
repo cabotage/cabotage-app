@@ -1,6 +1,6 @@
-FROM python:3.11-slim-bullseye
+FROM python:3.13-slim-trixie
 
-ARG DEVEL=no
+ARG DEVEL no
 
 # By default, Docker has special steps to avoid keeping APT caches in the layers, which
 # is good, but in our case, we're going to mount a special cache volume (kept between
@@ -27,13 +27,13 @@ COPY --from=moby/buildkit:v0.28.0-rootless /usr/bin/fuse-overlayfs /usr/bin/fuse
 COPY --from=moby/buildkit:v0.28.0-rootless /usr/bin/newuidmap /usr/bin/newuidmap
 COPY --from=moby/buildkit:v0.28.0-rootless /usr/bin/newgidmap /usr/bin/newgidmap
 
-ENV PYTHONUNBUFFERED 1
-ENV UV_PROJECT_ENVIRONMENT=/opt/cabotage-app \
-    UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy
+ENV PYTHONUNBUFFERED=1
+ENV UV_PROJECT_ENVIRONMENT=/opt/cabotage-app
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
 ENV PATH="/opt/cabotage-app/bin:${PATH}"
 
-COPY --from=ghcr.io/astral-sh/uv:0.7 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11.2 /uv /usr/local/bin/uv
 
 RUN uv venv /opt/cabotage-app
 
@@ -46,14 +46,17 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-install-project --no-editable \
     $(if [ "$DEVEL" != "yes" ]; then echo '--no-dev'; fi)
 
-COPY . /opt/cabotage-app/src/
-
 # Build and minify static assets for production
 COPY --from=oven/bun:1-slim /usr/local/bin/bun /usr/local/bin/bun
+COPY package.json bun.lock /opt/cabotage-app/src/
+COPY cabotage/ /opt/cabotage-app/src/cabotage/
 RUN if [ "$DEVEL" != "yes" ]; then \
     cd /opt/cabotage-app/src && \
     bun install --frozen-lockfile && \
     bun run build && \
     rm -rf node_modules; \
     fi
+
+COPY migrations/ /opt/cabotage-app/src/migrations/
+COPY gunicorn.conf.py /opt/cabotage-app/src/
 

@@ -65,5 +65,9 @@ class ConfigWriter(object):
 
     def read(self, key_slug, build=False, secret=False):
         if secret:
+            if self.vault is None:
+                raise RuntimeError("No Vault extension configured!")
             return self.vault.vault_connection.read(key_slug)
+        if self.consul is None:
+            raise RuntimeError("No Consul extension configured!")
         return self.consul.consul_connection.read(key_slug)

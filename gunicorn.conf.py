@@ -1,4 +1,4 @@
-bind = 'unix:/tmp/nginx.socket'
+bind = "unix:/tmp/nginx.socket"
 backlog = 2048
 preload_app = True
 
@@ -6,10 +6,11 @@ worker_connections = 1000
 timeout = 30
 keepalive = 2
 
-errorlog = '-'
-loglevel = 'info'
-accesslog = '-'
+errorlog = "-"
+loglevel = "info"
+accesslog = "-"
 access_log_format = '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"'
 
+
 def when_ready(server):
-    open('/tmp/app-initialized', 'w').close()
+    open("/tmp/app-initialized", "w").close()  # nosec B108

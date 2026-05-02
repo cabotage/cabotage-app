@@ -5,6 +5,7 @@ import datetime
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey
 from cryptography.x509.oid import NameOID
 
 """
@@ -24,9 +25,12 @@ def issue_dummy_cert(public_key_pem, common_name):
         curve=ec.SECP256R1(),
     )
 
-    public_key = serialization.load_pem_public_key(
+    loaded_key = serialization.load_pem_public_key(
         public_key_pem,
     )
+    if not isinstance(loaded_key, EllipticCurvePublicKey):
+        raise TypeError(f"Expected EC public key, got {type(loaded_key).__name__}")
+    public_key = loaded_key
 
     one_day = datetime.timedelta(1, 0, 0)
     one_year = datetime.timedelta(365, 0, 0)

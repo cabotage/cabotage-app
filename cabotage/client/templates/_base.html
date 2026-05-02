@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0f0f17" />
     <meta name="csrf-token" content="{{ csrf_token() }}" />
+    <meta name="referrer" content="same-origin" />
     <script>
     // Apply theme + accent before render to prevent flash
     (function() {
@@ -259,6 +260,10 @@
                    class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Projects</a>
                 <a href="{{ url_for('user.guide') }}"
                    class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Guide</a>
+                {% if current_user.admin %}
+                <a href="{{ url_for('user.infra_observe') }}"
+                   class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Infra</a>
+                {% endif %}
               </nav>
               <div class="dropdown dropdown-hover dropdown-end theme-toggle-wrap">
                 <div tabindex="0" role="button" id="theme-toggle"
@@ -302,7 +307,7 @@
                     <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
                   </svg>
                 </div>
-                <div tabindex="0" class="theme-dropdown dropdown-content z-[60] bg-base-300 rounded-lg border border-base-content/10 shadow-xl p-1 min-w-[140px] mt-2">
+                <div tabindex="0" class="theme-dropdown dropdown-content z-[60] bg-base-300 rounded-lg border border-base-content/10 shadow-xl p-1 min-w-[140px] mt-1">
                   <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
                           data-theme-val="light">
                     <svg class="w-3.5 h-3.5 shrink-0"
@@ -494,7 +499,7 @@
                     <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
                   </svg>
                 </div>
-                <div tabindex="0" class="theme-dropdown dropdown-content z-[60] bg-base-300 rounded-lg border border-base-content/10 shadow-xl p-1 min-w-[140px] mt-2">
+                <div tabindex="0" class="theme-dropdown dropdown-content z-[60] bg-base-300 rounded-lg border border-base-content/10 shadow-xl p-1 min-w-[140px] mt-1">
                   <button class="theme-opt flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors"
                           data-theme-val="light">
                     <svg class="w-3.5 h-3.5 shrink-0"
@@ -616,6 +621,10 @@
                class="btn btn-ghost btn-sm justify-start text-sm">Projects</a>
             <a href="{{ url_for('user.guide') }}"
                class="btn btn-ghost btn-sm justify-start text-sm">Guide</a>
+            {% if current_user.admin %}
+            <a href="{{ url_for('user.infra_observe') }}"
+               class="btn btn-ghost btn-sm justify-start text-sm">Infrastructure</a>
+            {% endif %}
           </nav>
         {% endif %}
 

@@ -21,7 +21,8 @@ def upgrade():
 
     # Backfill tailscale defaults into deployment release snapshots so that
     # existing deployments don't show spurious diffs against current ingresses.
-    conn.execute(sa.text("""
+    conn.execute(
+        sa.text("""
             UPDATE deployments
             SET release = jsonb_set(
                 release,
@@ -39,10 +40,12 @@ def upgrade():
             )
             WHERE release->'ingresses' IS NOT NULL
               AND release->'ingresses' != '{}'::jsonb
-        """))
+        """)
+    )
 
     # Backfill the releases table as well
-    conn.execute(sa.text("""
+    conn.execute(
+        sa.text("""
             UPDATE project_app_releases
             SET ingresses = (
                 SELECT coalesce(jsonb_object_agg(
@@ -56,13 +59,15 @@ def upgrade():
             )
             WHERE ingresses IS NOT NULL
               AND ingresses != '{}'::jsonb
-        """))
+        """)
+    )
 
 
 def downgrade():
     conn = op.get_bind()
 
-    conn.execute(sa.text("""
+    conn.execute(
+        sa.text("""
             UPDATE deployments
             SET release = jsonb_set(
                 release,
@@ -77,9 +82,11 @@ def downgrade():
             )
             WHERE release->'ingresses' IS NOT NULL
               AND release->'ingresses' != '{}'::jsonb
-        """))
+        """)
+    )
 
-    conn.execute(sa.text("""
+    conn.execute(
+        sa.text("""
             UPDATE project_app_releases
             SET ingresses = (
                 SELECT coalesce(jsonb_object_agg(
@@ -90,4 +97,5 @@ def downgrade():
             )
             WHERE ingresses IS NOT NULL
               AND ingresses != '{}'::jsonb
-        """))
+        """)
+    )

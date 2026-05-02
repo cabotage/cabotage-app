@@ -87,7 +87,7 @@ class VaultDBCreds(object):
                 lease_file.write(self.vault_lease_id.encode("utf-8"))
             self.logger.info(
                 "wrote lease file to "
-                f'{os.path.join(self.vault_lease_path, "leases", lease_sha)}'
+                f"{os.path.join(self.vault_lease_path, 'leases', lease_sha)}"
             )
         else:
             self.logger.warning(

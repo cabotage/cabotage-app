@@ -1,6 +1,7 @@
 import datetime
 import logging
 import re
+from copy import deepcopy
 
 from flask import current_app
 from kubernetes.client.rest import ApiException
@@ -23,6 +24,7 @@ from cabotage.server.models.projects import (
     IngressHost,
     IngressPath,
 )
+from cabotage.server.models.resources import PostgresResource, RedisResource
 from cabotage.server.models.utils import readable_k8s_hostname, safe_k8s_name
 from cabotage.utils.github import (
     find_or_create_pr_comment,
@@ -33,6 +35,49 @@ from cabotage.utils.github import (
 logger = logging.getLogger(__name__)
 
 Activity = activity_plugin.activity_cls
+
+
+def _clone_backing_services_for_branch_deploy(base_environment, environment):
+    """Create fresh backing-service rows in a PR environment.
+
+    The cloned resources inherit sizing/topology/version settings from the
+    base environment, but they are provisioned independently in the branch
+    deploy namespace with a clean lifecycle state.
+    """
+    from cabotage.celery.tasks.resources import _backing_service_type_enabled
+
+    for resource in base_environment.active_resources:
+        if not _backing_service_type_enabled(resource.type):
+            continue
+        if isinstance(resource, PostgresResource):
+            cloned = PostgresResource(
+                environment_id=environment.id,
+                name=resource.name,
+                slug=resource.slug,
+                service_version=resource.service_version,
+                size_class=resource.size_class,
+                storage_size=resource.storage_size,
+                ha_enabled=resource.ha_enabled,
+                backup_strategy=resource.backup_strategy,
+                postgres_parameters=deepcopy(resource.postgres_parameters or {}),
+            )
+        elif isinstance(resource, RedisResource):
+            cloned = RedisResource(
+                environment_id=environment.id,
+                name=resource.name,
+                slug=resource.slug,
+                service_version=resource.service_version,
+                size_class=resource.size_class,
+                storage_size=resource.storage_size,
+                ha_enabled=resource.ha_enabled,
+                leader_replicas=resource.leader_replicas,
+                follower_replicas=resource.follower_replicas,
+            )
+        else:
+            continue
+        db.session.add(cloned)
+
+    db.session.flush()
 
 
 def _create_app_env_for_branch_deploy(
@@ -56,7 +101,11 @@ def _create_app_env_for_branch_deploy(
     app_env = ApplicationEnvironment(
         application_id=application.id,
         environment_id=environment.id,
-        k8s_identifier=environment.k8s_identifier,
+        k8s_identifier=(
+            environment.k8s_identifier
+            if environment.uses_environment_namespace
+            else None
+        ),
         process_counts=base_app_env.process_counts if base_app_env else {},
         process_pod_classes=base_app_env.process_pod_classes if base_app_env else {},
         auto_deploy_branch=auto_deploy_branch,
@@ -166,7 +215,7 @@ def _create_app_env_for_branch_deploy(
     activity = Activity(
         verb="create",
         object=app_env,
-        data={"timestamp": datetime.datetime.utcnow().isoformat()},
+        data={"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()},
     )
     db.session.add(activity)
     return app_env
@@ -180,13 +229,17 @@ def _precreate_ingresses(environment):
     """
     import kubernetes
 
-    from cabotage.celery.tasks.deploy import ensure_ingresses, ensure_network_policies
+    from cabotage.celery.tasks.deploy import (
+        ensure_cabotage_ca_configmap,
+        ensure_ingresses,
+        ensure_network_policies,
+    )
 
     if not current_app.config.get("KUBERNETES_ENABLED"):
         return
 
     org = environment.project.organization
-    ns_name = safe_k8s_name(org.k8s_identifier, environment.k8s_identifier)
+    ns_name = environment.k8s_namespace
     api_client = kubernetes_ext.kubernetes_client
     core_api = kubernetes.client.CoreV1Api(api_client)
     networking_api = kubernetes.client.NetworkingV1Api(api_client)
@@ -218,10 +271,12 @@ def _precreate_ingresses(environment):
             logger.exception("Failed to create namespace %s", ns_name)
             return
 
+    ensure_cabotage_ca_configmap(core_api, ns_name)
+
     if current_app.config.get("NETWORK_POLICIES_ENABLED"):
         ensure_network_policies(networking_api, ns_name)
 
-    for app_env in environment.application_environments:
+    for app_env in environment.active_application_environments:
         app = app_env.application
         ensure_ingresses(
             networking_api,
@@ -233,6 +288,9 @@ def _precreate_ingresses(environment):
                 "organization": org.slug,
                 "project": environment.project.slug,
                 "application": app.slug,
+                "cabotage.io/organization": org.k8s_identifier,
+                "cabotage.io/project": environment.project.k8s_identifier,
+                "cabotage.io/application": app.k8s_identifier,
             },
             ingresses=app_env.ingresses,
             org_k8s_identifier=org.k8s_identifier,
@@ -244,34 +302,158 @@ def _teardown_environment(environment):
     """Delete k8s namespace and all DB records for an ephemeral environment."""
     import kubernetes
 
-    from cabotage.celery.tasks.build import build_cache_pvc_name
+    from cabotage.celery.tasks.build import (
+        _build_namespace,
+        build_cache_pvc_labels,
+        build_cache_pvc_name,
+    )
+    from cabotage.celery.tasks.resources import (
+        _RECONCILERS,
+        _acquire_reconcile_lock,
+        _release_reconcile_lock,
+    )
 
+    reconcile_lock_conn = None
     if current_app.config["KUBERNETES_ENABLED"]:
-        org = environment.project.organization
-        ns_name = safe_k8s_name(org.k8s_identifier, environment.k8s_identifier)
+        ns_name = environment.k8s_namespace
         api_client = kubernetes_ext.kubernetes_client
         core_api = kubernetes.client.CoreV1Api(api_client)
-        try:
-            core_api.delete_namespace(ns_name, propagation_policy="Foreground")
-        except ApiException as exc:
-            if exc.status != 404:
-                raise
+        custom_api = kubernetes.client.CustomObjectsApi(api_client)
+        apps_api = kubernetes.client.AppsV1Api(api_client)
+        rbac_api = kubernetes.client.RbacAuthorizationV1Api(api_client)
+        resources = list(environment.active_resources)
+        if resources:
+            reconcile_lock_conn = _acquire_reconcile_lock()
 
-        # Clean up build cache PVCs
-        for app_env in environment.application_environments:
-            pvc_name = build_cache_pvc_name(app_env)
-            try:
-                core_api.delete_namespaced_persistent_volume_claim(
-                    pvc_name, "default", propagation_policy="Foreground"
+        try:
+            for resource in resources:
+                resource.deleted_at = resource.deleted_at or datetime.datetime.now(
+                    datetime.timezone.utc
                 )
-                logger.info("Deleted build cache PVC %s", pvc_name)
+                resource.provisioning_status = "deleting"
+                resource.provisioning_error = None
+            db.session.flush()
+
+            for resource in resources:
+                entry = _RECONCILERS.get(resource.type)
+                if entry is None:
+                    continue
+                _, delete_fn = entry
+                try:
+                    delete_fn(resource, core_api, custom_api, apps_api, rbac_api)
+                    resource.provisioning_status = "deleted"
+                except Exception:
+                    logger.warning(
+                        "Failed to tear down backing service %s (%s) in %s",
+                        resource.slug,
+                        resource.type,
+                        ns_name,
+                        exc_info=True,
+                    )
+            db.session.flush()
+
+            try:
+                pvcs = core_api.list_namespaced_persistent_volume_claim(ns_name)
+                for pvc in pvcs.items:
+                    try:
+                        core_api.delete_namespaced_persistent_volume_claim(
+                            pvc.metadata.name,
+                            ns_name,
+                            propagation_policy="Foreground",
+                        )
+                        logger.info(
+                            "Deleted branch namespace PVC %s/%s",
+                            ns_name,
+                            pvc.metadata.name,
+                        )
+                    except ApiException as exc:
+                        if exc.status != 404:
+                            logger.warning(
+                                "Failed to delete branch namespace PVC %s/%s: %s",
+                                ns_name,
+                                pvc.metadata.name,
+                                exc,
+                            )
             except ApiException as exc:
                 if exc.status != 404:
-                    logger.warning(
-                        "Failed to delete build cache PVC %s: %s", pvc_name, exc
-                    )
+                    logger.warning("Failed to list PVCs in %s: %s", ns_name, exc)
 
-    for app_env in environment.application_environments:
+            try:
+                core_api.delete_namespace(ns_name, propagation_policy="Foreground")
+            except ApiException as exc:
+                if exc.status != 404:
+                    raise
+
+            # Clean up build cache PVCs
+            for app_env in environment.active_application_environments:
+                build_namespace = _build_namespace(app_env)
+                pvc_name = build_cache_pvc_name(app_env)
+                deleted_cache_pvcs = set()
+                selector = ",".join(
+                    f"{key}={value}"
+                    for key, value in sorted(build_cache_pvc_labels(app_env).items())
+                )
+                try:
+                    pvcs = core_api.list_namespaced_persistent_volume_claim(
+                        build_namespace,
+                        label_selector=selector,
+                    )
+                    for pvc in pvcs.items:
+                        try:
+                            core_api.delete_namespaced_persistent_volume_claim(
+                                pvc.metadata.name,
+                                build_namespace,
+                                propagation_policy="Foreground",
+                            )
+                            deleted_cache_pvcs.add(pvc.metadata.name)
+                            logger.info(
+                                "Deleted build cache PVC %s/%s",
+                                build_namespace,
+                                pvc.metadata.name,
+                            )
+                        except ApiException as exc:
+                            if exc.status != 404:
+                                logger.warning(
+                                    "Failed to delete build cache PVC %s/%s: %s",
+                                    build_namespace,
+                                    pvc.metadata.name,
+                                    exc,
+                                )
+                except ApiException as exc:
+                    if exc.status != 404:
+                        logger.warning(
+                            "Failed to list build cache PVCs in %s with %s: %s",
+                            build_namespace,
+                            selector,
+                            exc,
+                        )
+
+                if pvc_name in deleted_cache_pvcs:
+                    continue
+
+                try:
+                    core_api.delete_namespaced_persistent_volume_claim(
+                        pvc_name,
+                        build_namespace,
+                        propagation_policy="Foreground",
+                    )
+                    logger.info(
+                        "Deleted build cache PVC %s/%s", build_namespace, pvc_name
+                    )
+                except ApiException as exc:
+                    if exc.status != 404:
+                        logger.warning(
+                            "Failed to delete build cache PVC %s/%s: %s",
+                            build_namespace,
+                            pvc_name,
+                            exc,
+                        )
+        finally:
+            if reconcile_lock_conn is not None:
+                _release_reconcile_lock(reconcile_lock_conn)
+                reconcile_lock_conn = None
+
+    for app_env in environment.active_application_environments:
         for config in list(app_env.configurations):
             db.session.delete(config)
         for image in app_env.images.all():
@@ -282,6 +464,16 @@ def _teardown_environment(environment):
             db.session.delete(deployment)
         for job_log in app_env.job_logs.all():
             db.session.delete(job_log)
+
+    # Force-load joined-table inheritance columns before delete cascade so
+    # SQLAlchemy Continuum can version subtype rows during flush.
+    for resource in list(environment.active_resources):
+        if isinstance(resource, PostgresResource):
+            resource.backup_strategy
+            resource.postgres_parameters
+        elif isinstance(resource, RedisResource):
+            resource.leader_replicas
+            resource.follower_replicas
     db.session.flush()
     # Deleting the environment cascades to its application_environments
     db.session.delete(environment)
@@ -399,7 +591,9 @@ def _build_images_for_app_envs(app_envs, commit_sha, installation_id):
         activity = Activity(
             verb="submit",
             object=image,
-            data={"timestamp": datetime.datetime.utcnow().isoformat()},
+            data={
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            },
         )
         db.session.add(activity)
         images.append(image)
@@ -509,13 +703,13 @@ def _render_pr_comment_body(environment):
     base_url = f"{scheme}://{server}"
 
     lines = [
-        f"**Branch Deploy** for `{environment.slug}` " f"in **{project.name}**",
+        f"**Branch Deploy** for `{environment.slug}` in **{project.name}**",
         "",
         "| Service | Status | Preview | Updated (UTC) |",
         "| :--- | :--- | :--- | :--- |",
     ]
 
-    for app_env in environment.application_environments:
+    for app_env in environment.active_application_environments:
         app = app_env.application
         emoji, label, log_path, updated_at = _app_env_status(app_env)
 
@@ -542,9 +736,14 @@ def _render_pr_comment_body(environment):
 
 def _aggregate_deployment_state(environment):
     """Derive consolidated GitHub deployment state from all app_envs."""
-    statuses = [_app_env_status(ae) for ae in environment.application_environments]
+    statuses = [
+        _app_env_status(ae) for ae in environment.active_application_environments
+    ]
     labels = [s[1] for s in statuses]
     total = len(labels)
+
+    if total == 0:
+        return "inactive", "No active services"
 
     if any("Failed" in label for label in labels):
         failed = sum("Failed" in label for label in labels)
@@ -566,7 +765,7 @@ def _aggregate_deployment_state(environment):
 
 def _find_statuses_url(environment):
     """Find the consolidated GitHub deployment statuses_url from any app_env."""
-    for app_env in environment.application_environments:
+    for app_env in environment.active_application_environments:
         image = app_env.latest_image
         if image and image.image_metadata and image.image_metadata.get("statuses_url"):
             return image.image_metadata["statuses_url"]
@@ -580,7 +779,7 @@ def update_pr_comment(environment):
         return
 
     pr_number = int(match.group(1))
-    app_env = next(iter(environment.application_environments), None)
+    app_env = next(iter(environment.active_application_environments), None)
     if not app_env:
         return
 
@@ -643,13 +842,15 @@ def maybe_update_pr_comment_for_app_env(app_env):
 
 def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref=None):
     """Create an ephemeral environment for a PR and build images for all enrolled apps."""
+    from cabotage.celery.tasks.resources import reconcile_backing_services
+
     base_env = project.branch_deploy_base_environment
     env_slug = f"pr-{pr_number}"
 
     existing = Environment.query.filter_by(project_id=project.id, slug=env_slug).first()
     if existing:
         _build_images_for_app_envs(
-            existing.application_environments, head_sha, installation_id
+            existing.active_application_environments, head_sha, installation_id
         )
         update_pr_comment(existing)
         return
@@ -659,6 +860,7 @@ def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref
         name=f"PR #{pr_number}",
         slug=env_slug,
         ephemeral=True,
+        uses_environment_namespace=True,
         forked_from_environment_id=base_env.id,
         sort_order=999,
     )
@@ -669,7 +871,7 @@ def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref
     # sharing the same Consul/Vault key_slugs.
     env_config_map = {}  # base config id -> new config id
     for env_config in base_env.environment_configurations:
-        if env_config.deleted:
+        if env_config.deleted or env_config.resource_id is not None:
             continue
         new_env_config = EnvironmentConfiguration(
             project_id=project.id,
@@ -686,18 +888,21 @@ def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref
         env_config_map[env_config.id] = new_env_config.id
     db.session.flush()
 
+    _clone_backing_services_for_branch_deploy(base_env, environment)
+
     activity = Activity(
         verb="create",
         object=environment,
-        data={"timestamp": datetime.datetime.utcnow().isoformat()},
+        data={"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()},
     )
     db.session.add(activity)
 
     new_app_envs = []
-    for app in project.project_applications:
+    for app in project.active_applications:
         base_app_env = ApplicationEnvironment.query.filter_by(
             application_id=app.id,
             environment_id=base_env.id,
+            deleted_at=None,
         ).first()
         if not base_app_env:
             continue
@@ -711,6 +916,9 @@ def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref
         new_app_envs.append(app_env)
 
     db.session.commit()
+
+    if environment.active_resources:
+        reconcile_backing_services.delay()
 
     # Create K8s namespace + ingresses early so cert-manager can start
     # issuing TLS certificates while image builds run in parallel.
@@ -739,7 +947,7 @@ def sync_branch_deploy(project, pr_number, head_sha, installation_id):
 
     # Filter app_envs by watch paths — only rebuild apps whose watched
     # files changed in this push.  Apps without watch paths always rebuild.
-    app_envs = list(environment.application_environments)
+    app_envs = list(environment.active_application_environments)
     any_has_watch_paths = any(
         ae.application.branch_deploy_watch_paths for ae in app_envs
     )
@@ -755,7 +963,7 @@ def sync_branch_deploy(project, pr_number, head_sha, installation_id):
                 )
             ]
 
-    all_app_envs = list(environment.application_environments)
+    all_app_envs = list(environment.active_application_environments)
     skipped = [ae for ae in all_app_envs if ae not in app_envs]
     if skipped:
         _create_skipped_check_runs(skipped, head_sha, installation_id)
@@ -786,7 +994,7 @@ def teardown_branch_deploy(project, pr_number):
 
 def _deactivate_deployment(environment):
     """Mark all GitHub Deployments for this environment as inactive."""
-    app_env = next(iter(environment.application_environments), None)
+    app_env = next(iter(environment.active_application_environments), None)
     if not app_env:
         return
     application = app_env.application
@@ -835,7 +1043,7 @@ def _deactivate_deployment(environment):
 
 
 def _post_teardown_comment(environment, pr_number):
-    app_env = next(iter(environment.application_environments), None)
+    app_env = next(iter(environment.active_application_environments), None)
     if not app_env:
         return
 

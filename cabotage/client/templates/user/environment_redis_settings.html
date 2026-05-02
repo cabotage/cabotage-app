@@ -1,0 +1,74 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, resource_path, page_header, render_field, danger_zone_delete, env_tab_nav %}
+
+{% block title %}
+  Settings - {{ resource.name }} - {{ environment.name }} - {{ project.name }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': project.organization.slug, 'url': url_for('user.organization', org_slug=project.organization.slug) },
+    {'label': project.slug, 'url': url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug)},
+    {'label': 'environments', 'url': url_for('user.project_environments', org_slug=project.organization.slug, project_slug=project.slug)},
+    {'label': environment.slug, 'url': url_for('user.project_environment', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug)},
+    {'label': 'redis'},
+    {'label': resource.slug, 'url': url_for('user.environment_redis_detail', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug, resource_slug=resource.slug)},
+    {'label': 'settings'}
+  ]) }}
+{% endblock resource_path %}
+
+{% block tab_bar %}
+  {{ env_tab_nav(project, environment, '') }}
+{% endblock tab_bar %}
+
+{% block content %}
+  {{ page_header('Redis Settings', resource.name) }}
+
+  <div class="card bg-base-200/50 border border-base-300/50 max-w-2xl">
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('user.environment_redis_settings', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug, resource_slug=resource.slug) }}">
+        {{ form.hidden_tag() }}
+        <div class="form-control mb-4">
+          <label class="label">
+            <span class="label-text">Topology</span>
+          </label>
+          <div class="rounded-lg border border-base-300/50 bg-base-100/50 px-4 py-3 text-sm">
+            <div class="font-medium">
+              {{ 'Redis Cluster' if resource.ha_enabled else 'Standalone Redis' }}
+            </div>
+            <div class="text-base-content/60 mt-1">
+              Topology is fixed after creation. Create a new Redis service if you need to switch modes.
+            </div>
+          </div>
+        </div>
+        {{ render_field(form.size_class) }}
+        {{ render_field(form.storage_size) }}
+        {% if resource.ha_enabled %}
+          {{ render_field(form.leader_replicas) }}
+          {{ render_field(form.follower_replicas) }}
+        {% else %}
+          {{ form.leader_replicas(type='hidden') }}
+          {{ form.follower_replicas(type='hidden') }}
+        {% endif %}
+        <div class="mt-4">
+          <button type="submit" class="btn btn-primary gap-2">
+            {{ icon('check', 'w-4 h-4') }}
+            Save Changes
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="max-w-2xl">
+    {{ danger_zone_delete(
+      modal_id='delete-resource-modal',
+      title='Delete Redis Instance',
+      confirm_slug=resource.slug,
+      form=delete_form,
+      action_url=url_for('user.environment_redis_delete', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug, resource_slug=resource.slug),
+      description='Deleting this Redis instance will permanently destroy all data. This action cannot be undone.',
+      impact_items=[]
+    ) }}
+  </div>
+{% endblock content %}

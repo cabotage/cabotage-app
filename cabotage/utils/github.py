@@ -1,4 +1,6 @@
+import hashlib
 import logging
+import struct
 
 import requests
 from flask import current_app
@@ -269,12 +271,25 @@ class CheckRun:
         self._notify_pr()
 
 
+def _pr_advisory_lock(repo, pr_number):
+    """Acquire a transaction-level advisory lock for a PR to serialize
+    concurrent comment/status updates."""
+    from cabotage.server import db
+    import sqlalchemy as sa
+
+    lock_hash = hashlib.sha256(f"pr:{repo}:{pr_number}".encode()).digest()
+    lock_key = struct.unpack(">q", lock_hash[:8])[0]
+    db.session.execute(sa.text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
+
+
 def find_or_create_pr_comment(access_token, repo, pr_number, body):
     """Find an existing bot comment by marker and update it, or create a new one."""
     if access_token is None:
         return
     headers = _github_headers(access_token)
     body_with_marker = f"{COMMENT_MARKER}\n{body}"
+
+    _pr_advisory_lock(repo, pr_number)
 
     try:
         page = 1
@@ -351,7 +366,7 @@ def fetch_pr_changed_files(access_token, repo, pr_number):
 def matches_watch_paths(changed_files, watch_patterns):
     """Check if any changed file matches any watch pattern.
 
-    Uses pathspec with gitwildmatch (the same algorithm as .gitignore):
+    Uses pathspec with gitignore pattern matching:
     - ``*`` matches anything except ``/``
     - ``**`` matches any number of directories
     - ``src/*.py`` matches files directly in src/
@@ -365,5 +380,5 @@ def matches_watch_paths(changed_files, watch_patterns):
         return True
     import pathspec
 
-    spec = pathspec.PathSpec.from_lines("gitwildmatch", watch_patterns)
+    spec = pathspec.PathSpec.from_lines("gitignore", watch_patterns)
     return any(spec.match_file(f) for f in changed_files)

@@ -80,7 +80,7 @@ def run_and_stream(
         stderr=subprocess.STDOUT,
         text=True,
     )
-    for line in proc.stdout:
+    for line in proc.stdout or []:
         line = line.rstrip("\n")
         publish_log_line(redis_client, log_key, line)
         output_lines.append(line)

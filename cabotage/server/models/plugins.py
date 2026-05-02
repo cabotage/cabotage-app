@@ -1,7 +1,10 @@
+from typing import Any
+
 import sqlalchemy as sa
+import sqlalchemy.orm
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy_utils import JSONType, generic_relationship
+from sqlalchemy_utils import generic_relationship
 
 from sqlalchemy_continuum.plugins.base import Plugin
 from sqlalchemy_continuum.factory import ModelFactory
@@ -17,6 +20,7 @@ class ActivityBase(object):
     )
 
     verb = sa.Column(sa.Unicode(255))
+    transaction: Any = None  # set by sqlalchemy-continuum relationship
 
     @hybrid_property
     def actor(self):
@@ -37,7 +41,7 @@ class ActivityFactory(ModelFactory):
 
             transaction_id = sa.Column(sa.BigInteger, index=True, nullable=False)
 
-            data = sa.Column(JSONType)
+            data = sa.Column(postgresql.JSONB())
 
             object_type = sa.Column(sa.String(255))
 
@@ -53,7 +57,7 @@ class ActivityFactory(ModelFactory):
 
             def _calculate_tx_id(self, obj):
                 session = sa.orm.object_session(self)
-                if obj:
+                if obj and session is not None:
                     object_version = version_obj(session, obj)
                     if object_version:
                         return object_version.transaction_id

@@ -72,6 +72,7 @@ class FakeRelease:
         class Env:
             slug = "production"
             k8s_identifier = "production-xyz"
+            uses_environment_namespace = True
 
         k8s_identifier = "appenv-123"
         environment = Env()

@@ -1,11 +1,12 @@
 """Tests for tenant namespace network policy support."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from kubernetes.client.rest import ApiException
 
 from cabotage.celery.tasks.deploy import (
     TENANT_NETWORK_POLICIES,
+    ensure_cabotage_ca_configmap,
     ensure_network_policies,
     render_namespace,
 )
@@ -44,6 +45,7 @@ class FakeRelease:
         class Env:
             slug = "production"
             k8s_identifier = "production-xyz"
+            k8s_namespace = "myorg-abc123-production-xyz"
 
         k8s_identifier = "appenv-123"
         environment = Env()
@@ -75,16 +77,37 @@ class TestRenderNamespace:
 
 
 class TestTenantNetworkPoliciesData:
-    def test_five_policies_defined(self):
-        assert len(TENANT_NETWORK_POLICIES) == 5
+    def test_policies_defined(self):
+        assert len(TENANT_NETWORK_POLICIES) == 8
 
     def test_policy_names(self):
         names = [p["name"] for p in TENANT_NETWORK_POLICIES]
         assert "default-deny-ingress" in names
+        assert "allow-ingress-from-redis-operator" in names
         assert "allow-ingress-from-traefik" in names
         assert "allow-ingress-from-tailscale" in names
         assert "allow-intra-namespace" in names
         assert "restrict-egress" in names
+
+    def test_redis_operator_ingress_rule(self):
+        policy = next(
+            p
+            for p in TENANT_NETWORK_POLICIES
+            if p["name"] == "allow-ingress-from-redis-operator"
+        )
+        assert policy["spec"]["podSelector"]["matchLabels"] == {
+            "resident-redis.cabotage.io": "true"
+        }
+        from_clause = policy["spec"]["ingress"][0]["from"][0]
+        assert (
+            from_clause["namespaceSelector"]["matchLabels"][
+                "kubernetes.io/metadata.name"
+            ]
+            == "redis"
+        )
+        assert from_clause["podSelector"]["matchLabels"] == {"name": "redis-operator"}
+        ports = policy["spec"]["ingress"][0]["ports"]
+        assert ports == [{"port": 6379, "protocol": "TCP"}]
 
     def test_default_deny_ingress_has_no_ingress_rules(self):
         policy = next(
@@ -142,12 +165,31 @@ class TestTenantNetworkPoliciesData:
         policy = next(
             p for p in TENANT_NETWORK_POLICIES if p["name"] == "restrict-egress"
         )
+        assert policy["spec"]["podSelector"]["matchExpressions"] == [
+            {
+                "key": "cnpg.io/cluster",
+                "operator": "DoesNotExist",
+            }
+        ]
         dns_rule = policy["spec"]["egress"][0]
         ns_label = dns_rule["to"][0]["namespaceSelector"]["matchLabels"]
         assert ns_label["kubernetes.io/metadata.name"] == "kube-system"
         ports = {(p["port"], p["protocol"]) for p in dns_rule["ports"]}
         assert (53, "UDP") in ports
         assert (53, "TCP") in ports
+
+    def test_allow_egress_cnpg_pods_targets_only_cnpg_pods(self):
+        policy = next(
+            p for p in TENANT_NETWORK_POLICIES if p["name"] == "allow-egress-cnpg-pods"
+        )
+        assert policy["spec"]["podSelector"]["matchExpressions"] == [
+            {
+                "key": "cnpg.io/cluster",
+                "operator": "Exists",
+            }
+        ]
+        assert policy["spec"]["policyTypes"] == ["Egress"]
+        assert policy["spec"]["egress"] == [{}]
 
     def test_restrict_egress_allows_vault(self):
         policy = next(
@@ -248,12 +290,13 @@ class TestEnsureNetworkPolicies:
 
         ensure_network_policies(api, "tenant-ns")
 
-        assert api.create_namespaced_network_policy.call_count == 5
+        assert api.create_namespaced_network_policy.call_count == 8
         created_names = [
             c.args[1]["metadata"]["name"]
             for c in api.create_namespaced_network_policy.call_args_list
         ]
         assert "default-deny-ingress" in created_names
+        assert "allow-ingress-from-redis-operator" in created_names
         assert "allow-ingress-from-traefik" in created_names
         assert "allow-ingress-from-tailscale" in created_names
         assert "allow-intra-namespace" in created_names
@@ -265,7 +308,7 @@ class TestEnsureNetworkPolicies:
 
         ensure_network_policies(api, "tenant-ns")
 
-        assert api.patch_namespaced_network_policy.call_count == 5
+        assert api.patch_namespaced_network_policy.call_count == 8
         assert api.create_namespaced_network_policy.call_count == 0
 
     def test_sets_namespace_on_created_policies(self):
@@ -303,7 +346,7 @@ class TestEnsureNetworkPolicies:
         ensure_network_policies(api, "tenant-ns")
 
         assert api.patch_namespaced_network_policy.call_count == 2
-        assert api.create_namespaced_network_policy.call_count == 3
+        assert api.create_namespaced_network_policy.call_count == 6
 
 
 # ---------------------------------------------------------------------------
@@ -320,11 +363,38 @@ class TestFetchNamespaceLabel:
         ns.metadata.labels = {}
         core_api.read_namespace.return_value = ns
 
-        fetch_namespace(core_api, FakeRelease())
+        with patch(
+            "cabotage.celery.tasks.deploy.ensure_cabotage_ca_configmap"
+        ) as mock_ensure_ca:
+            fetch_namespace(core_api, FakeRelease())
 
         core_api.patch_namespace.assert_called_once()
         patch_arg = core_api.patch_namespace.call_args.args[1]
         assert patch_arg.metadata.labels["resident-namespace.cabotage.io"] == "true"
+        mock_ensure_ca.assert_called_once_with(
+            core_api, FakeRelease().application_environment.environment.k8s_namespace
+        )
+
+
+class TestEnsureCabotageCAConfigMap:
+    def test_tolerates_create_race(self):
+        core_api = MagicMock()
+        existing = MagicMock()
+        core_api.read_namespaced_config_map.side_effect = [
+            _api_exception(404),
+            existing,
+        ]
+        core_api.create_namespaced_config_map.side_effect = _api_exception(409)
+
+        with patch(
+            "cabotage.celery.tasks.deploy.render_cabotage_ca_configmap",
+            return_value=MagicMock(),
+        ):
+            result = ensure_cabotage_ca_configmap(core_api, "tenant-ns")
+
+        assert result == existing
+        assert core_api.read_namespaced_config_map.call_count == 2
+        core_api.create_namespaced_config_map.assert_called_once()
 
     def test_skips_patch_when_label_present(self):
         from cabotage.celery.tasks.deploy import fetch_namespace
@@ -334,9 +404,15 @@ class TestFetchNamespaceLabel:
         ns.metadata.labels = {"resident-namespace.cabotage.io": "true"}
         core_api.read_namespace.return_value = ns
 
-        fetch_namespace(core_api, FakeRelease())
+        with patch(
+            "cabotage.celery.tasks.deploy.ensure_cabotage_ca_configmap"
+        ) as mock_ensure_ca:
+            fetch_namespace(core_api, FakeRelease())
 
         core_api.patch_namespace.assert_not_called()
+        mock_ensure_ca.assert_called_once_with(
+            core_api, FakeRelease().application_environment.environment.k8s_namespace
+        )
 
     def test_creates_with_label_on_404(self):
         from cabotage.celery.tasks.deploy import fetch_namespace
@@ -346,8 +422,14 @@ class TestFetchNamespaceLabel:
         created_ns = MagicMock()
         core_api.create_namespace.return_value = created_ns
 
-        result = fetch_namespace(core_api, FakeRelease())
+        with patch(
+            "cabotage.celery.tasks.deploy.ensure_cabotage_ca_configmap"
+        ) as mock_ensure_ca:
+            result = fetch_namespace(core_api, FakeRelease())
 
         assert result == created_ns
         create_arg = core_api.create_namespace.call_args.args[0]
         assert create_arg.metadata.labels["resident-namespace.cabotage.io"] == "true"
+        mock_ensure_ca.assert_called_once_with(
+            core_api, FakeRelease().application_environment.environment.k8s_namespace
+        )

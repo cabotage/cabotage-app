@@ -8,7 +8,6 @@ Create Date: 2026-03-16 23:02:07.286727
 
 from alembic import op
 import sqlalchemy as sa
-import citext
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
@@ -43,7 +42,7 @@ def upgrade():
             autoincrement=False,
             nullable=True,
         ),
-        sa.Column("name", citext.CIText(), autoincrement=False, nullable=True),
+        sa.Column("name", postgresql.CITEXT(), autoincrement=False, nullable=True),
         sa.Column("value", sa.String(length=2048), autoincrement=False, nullable=True),
         sa.Column("key_slug", sa.Text(), autoincrement=False, nullable=True),
         sa.Column("build_key_slug", sa.Text(), autoincrement=False, nullable=True),
@@ -104,7 +103,7 @@ def upgrade():
         ),
         sa.Column("project_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("environment_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("name", citext.CIText(), nullable=False),
+        sa.Column("name", postgresql.CITEXT(), nullable=False),
         sa.Column("value", sa.String(length=2048), nullable=False),
         sa.Column("key_slug", sa.Text(), nullable=True),
         sa.Column("build_key_slug", sa.Text(), nullable=True),

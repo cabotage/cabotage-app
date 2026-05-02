@@ -7,7 +7,6 @@ Create Date: 2026-03-03 15:33:56.450224
 """
 
 from alembic import op
-import citext
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
@@ -125,7 +124,7 @@ def upgrade():
             nullable=True,
         ),
         sa.Column("name", sa.Text(), autoincrement=False, nullable=True),
-        sa.Column("slug", citext.CIText(), autoincrement=False, nullable=True),
+        sa.Column("slug", postgresql.CITEXT(), autoincrement=False, nullable=True),
         sa.Column(
             "k8s_identifier", sa.String(length=64), autoincrement=False, nullable=True
         ),
@@ -173,7 +172,7 @@ def upgrade():
         ),
         sa.Column("project_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("name", sa.Text(), nullable=False),
-        sa.Column("slug", citext.CIText(), nullable=False),
+        sa.Column("slug", postgresql.CITEXT(), nullable=False),
         sa.Column("k8s_identifier", sa.String(length=64), nullable=False),
         sa.Column("sort_order", sa.Integer(), nullable=False),
         sa.Column("ephemeral", sa.Boolean(), nullable=False),

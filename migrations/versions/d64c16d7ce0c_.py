@@ -10,7 +10,6 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-import citext
 import sqlalchemy_utils.types.json
 
 # revision identifiers, used by Alembic.
@@ -51,7 +50,7 @@ def upgrade():
             nullable=False,
         ),
         sa.Column("name", sa.Text(), nullable=False),
-        sa.Column("slug", citext.CIText(), nullable=False),
+        sa.Column("slug", postgresql.CITEXT(), nullable=False),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_organizations")),
         sa.UniqueConstraint("slug", name=op.f("uq_organizations_slug")),
     )
@@ -65,7 +64,7 @@ def upgrade():
             nullable=False,
         ),
         sa.Column("name", sa.Text(), autoincrement=False, nullable=True),
-        sa.Column("slug", citext.CIText(), autoincrement=False, nullable=True),
+        sa.Column("slug", postgresql.CITEXT(), autoincrement=False, nullable=True),
         sa.Column(
             "transaction_id", sa.BigInteger(), autoincrement=False, nullable=False
         ),
@@ -110,7 +109,7 @@ def upgrade():
             autoincrement=False,
             nullable=True,
         ),
-        sa.Column("name", citext.CIText(), autoincrement=False, nullable=True),
+        sa.Column("name", postgresql.CITEXT(), autoincrement=False, nullable=True),
         sa.Column("value", sa.String(length=2048), autoincrement=False, nullable=True),
         sa.Column("key_slug", sa.Text(), autoincrement=False, nullable=True),
         sa.Column("version_id", sa.Integer(), autoincrement=False, nullable=True),
@@ -341,7 +340,7 @@ def upgrade():
             nullable=True,
         ),
         sa.Column("name", sa.Text(), autoincrement=False, nullable=True),
-        sa.Column("slug", citext.CIText(), autoincrement=False, nullable=True),
+        sa.Column("slug", postgresql.CITEXT(), autoincrement=False, nullable=True),
         sa.Column(
             "platform",
             postgresql.ENUM(
@@ -402,7 +401,7 @@ def upgrade():
             nullable=True,
         ),
         sa.Column("name", sa.Text(), autoincrement=False, nullable=True),
-        sa.Column("slug", citext.CIText(), autoincrement=False, nullable=True),
+        sa.Column("slug", postgresql.CITEXT(), autoincrement=False, nullable=True),
         sa.Column(
             "transaction_id", sa.BigInteger(), autoincrement=False, nullable=False
         ),
@@ -686,7 +685,7 @@ def upgrade():
         ),
         sa.Column("organization_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("name", sa.Text(), nullable=False),
-        sa.Column("slug", citext.CIText(), nullable=False),
+        sa.Column("slug", postgresql.CITEXT(), nullable=False),
         sa.ForeignKeyConstraint(
             ["organization_id"],
             ["organizations.id"],
@@ -747,7 +746,7 @@ def upgrade():
         ),
         sa.Column("project_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("name", sa.Text(), nullable=False),
-        sa.Column("slug", citext.CIText(), nullable=False),
+        sa.Column("slug", postgresql.CITEXT(), nullable=False),
         sa.Column(
             "platform",
             postgresql.ENUM(
@@ -783,7 +782,7 @@ def upgrade():
             nullable=False,
         ),
         sa.Column("application_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("name", citext.CIText(), nullable=False),
+        sa.Column("name", postgresql.CITEXT(), nullable=False),
         sa.Column("value", sa.String(length=2048), nullable=False),
         sa.Column("key_slug", sa.Text(), nullable=True),
         sa.Column("version_id", sa.Integer(), nullable=False),

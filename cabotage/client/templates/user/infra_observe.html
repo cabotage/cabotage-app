@@ -1,0 +1,833 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, resource_path %}
+
+{% block title %}Infrastructure Observe - Cabotage{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': 'Infrastructure'},
+    {'label': 'Observe'}
+  ]) }}
+{% endblock resource_path %}
+
+{% block content %}
+  <div class="settings-page">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h1 class="text-lg font-semibold text-base-content">Infrastructure Metrics</h1>
+        <p class="text-xs text-base-content/40">
+          Resource usage for cabotage infrastructure workloads
+        </p>
+      </div>
+      <div class="flex flex-col items-end gap-1">
+        <div class="flex items-center gap-2">
+          <label class="flex items-center gap-1.5 text-xs text-base-content/40 cursor-pointer select-none" title="Include sidecar containers in resource metrics">
+            <input type="checkbox" id="system-containers-toggle" class="checkbox checkbox-xs">
+            <span>System</span>
+          </label>
+
+          {# Workload type filter #}
+          <select id="filter-workload-kind" class="select select-sm select-bordered text-xs">
+            <option value="">All types</option>
+            {% set kinds = workloads | map(attribute='kind') | unique | sort %}
+            {% for k in kinds %}
+              <option value="{{ k }}">{{ k }}s</option>
+            {% endfor %}
+          </select>
+
+          {# Workload name filter #}
+          <select id="filter-workload" class="select select-sm select-bordered text-xs">
+            <option value="">All workloads</option>
+          </select>
+
+          {# Pod filter #}
+          <select id="filter-pod" class="select select-sm select-bordered text-xs">
+            <option value="">All pods</option>
+          </select>
+
+          <div class="flex gap-1.5" id="range-selector">
+            {% for r in ['1h', '6h', '24h', '7d', '30d'] %}
+              <button data-range="{{ r }}"
+                 class="btn btn-xs {% if current_range == r %}btn-primary{% else %}btn-ghost{% endif %}">{{ r }}</button>
+            {% endfor %}
+          </div>
+        </div>
+        <span id="time-nav" class="inline-flex items-center gap-0.5 mt-1">
+          <span class="relative flex flex-col items-center">
+            <button id="nav-left" class="btn btn-xs btn-ghost btn-square" title="Back &frac12; interval">{{ icon('chevron-left', 'w-3.5 h-3.5') }}</button>
+            <span id="nav-left-label" class="text-[0.5rem] absolute -bottom-2"></span>
+          </span>
+          <button id="nav-now" class="btn btn-xs text-xs {% if has_time_window %}btn-ghost{% else %}btn-primary btn-outline animate-pulse-gentle pointer-events-none{% endif %}" title="Back to live view">Live</button>
+          <span id="nav-right-wrap" class="relative flex flex-col items-center {% if not has_time_window %}opacity-30 pointer-events-none{% endif %}">
+            <button id="nav-right" class="btn btn-xs btn-ghost btn-square" title="Forward &frac12; interval">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</button>
+            <span id="nav-right-label" class="text-[0.5rem] absolute -bottom-2"></span>
+          </span>
+        </span>
+      </div>
+    </div>
+
+    {# Infra-specific panels: CPU, Memory, Network only (no traefik metrics) #}
+    {% if not mimir_configured %}
+      <div class="alert alert-warning">
+        {{ icon('alert-triangle', 'w-4 h-4') }}
+        <span>Metrics are not configured. Set <code>CABOTAGE_MIMIR_URL</code> to enable observability.</span>
+      </div>
+    {% else %}
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        {# CPU panel with group selector #}
+        <div class="card bg-base-200/50 border border-base-content/5">
+          <div class="card-body p-4">
+            <div class="flex items-center justify-between">
+              <h2 class="card-title text-sm font-medium text-base-content/70">{{ icon('activity', 'w-4 h-4') }} CPU Usage</h2>
+              <div class="flex gap-0.5" data-group-selector="cpu">
+                {% for g in observe_groups %}
+                  <button class="btn btn-xs {% if current_groups.cpu == g %}btn-primary{% else %}btn-ghost{% endif %}" data-group="{{ g }}">{{ g|capitalize }}</button>
+                {% endfor %}
+              </div>
+            </div>
+            <div id="chart-cpu" class="metric-panel" data-metric-panel>
+              <div class="flex items-center justify-center h-full text-base-content/20">
+                {{ icon('loader', 'w-5 h-5 animate-spin') }}
+              </div>
+            </div>
+            <p class="text-[0.6rem] text-base-content/20 mt-1 break-all leading-tight hidden" data-query-debug="cpu"></p>
+          </div>
+        </div>
+
+        {# Memory panel with group selector #}
+        <div class="card bg-base-200/50 border border-base-content/5">
+          <div class="card-body p-4">
+            <div class="flex items-center justify-between">
+              <h2 class="card-title text-sm font-medium text-base-content/70">{{ icon('bar-chart', 'w-4 h-4') }} Memory Usage</h2>
+              <div class="flex gap-0.5" data-group-selector="memory">
+                {% for g in observe_groups %}
+                  <button class="btn btn-xs {% if current_groups.memory == g %}btn-primary{% else %}btn-ghost{% endif %}" data-group="{{ g }}">{{ g|capitalize }}</button>
+                {% endfor %}
+              </div>
+            </div>
+            <div id="chart-memory" class="metric-panel" data-metric-panel>
+              <div class="flex items-center justify-center h-full text-base-content/20">
+                {{ icon('loader', 'w-5 h-5 animate-spin') }}
+              </div>
+            </div>
+            <p class="text-[0.6rem] text-base-content/20 mt-1 break-all leading-tight hidden" data-query-debug="memory"></p>
+          </div>
+        </div>
+
+        {# Network I/O #}
+        <div class="card bg-base-200/50 border border-base-content/5 lg:col-span-2">
+          <div class="card-body p-4">
+            <div class="flex items-center justify-between">
+              <h2 class="card-title text-sm font-medium text-base-content/70">{{ icon('globe', 'w-4 h-4') }} Network I/O</h2>
+              <div class="flex gap-0.5" data-group-selector="network">
+                {% for g in observe_groups %}
+                  <button class="btn btn-xs {% if current_groups.network == g %}btn-primary{% else %}btn-ghost{% endif %}" data-group="{{ g }}">{{ g|capitalize }}</button>
+                {% endfor %}
+              </div>
+            </div>
+            <div id="chart-network" class="metric-panel" data-metric-panel>
+              <div class="flex items-center justify-center h-full text-base-content/20">
+                {{ icon('loader', 'w-5 h-5 animate-spin') }}
+              </div>
+            </div>
+            <p class="text-[0.6rem] text-base-content/20 mt-1 break-all leading-tight hidden" data-query-debug="network"></p>
+          </div>
+        </div>
+
+      </div>
+      <div class="flex justify-end mt-2">
+        <label class="label cursor-pointer gap-1.5">
+          <span class="text-[0.6rem] text-base-content/20">Show queries</span>
+          <input type="checkbox" id="show-debug" class="checkbox checkbox-xs checkbox-ghost">
+        </label>
+      </div>
+    {% endif %}
+  </div>
+{% endblock content %}
+
+{% block js %}
+<link rel="stylesheet" href="https://unpkg.com/uplot@1.6.31/dist/uPlot.min.css">
+<script>
+(function() {
+  {% if not mimir_configured %}return;{% endif %}
+
+  var script = document.createElement('script');
+  script.src = 'https://unpkg.com/uplot@1.6.31/dist/uPlot.iife.min.js';
+  script.onload = init;
+  document.head.appendChild(script);
+  function init() {
+
+  var METRIC_URL = {{ metric_url|tojson }};
+  var RANGE = {{ current_range|tojson }};
+  var OBSERVE_LEVEL = 'infra';
+  var REFRESH_MAP = { '1h': 15000, '6h': 60000, '24h': 60000, '7d': 60000, '30d': 60000 };
+  var REFRESH_MS = REFRESH_MAP[RANGE] || 15000;
+  var RANGE_SECS = { '1h': 3600, '6h': 21600, '24h': 86400, '7d': 604800, '30d': 2592000 };
+
+  var WORKLOADS = {{ workloads_json|safe }};
+  var LABEL_MAP = {};
+
+  var windowEnd = null;
+  var windowStart = null;
+  var initParams = new URLSearchParams(window.location.search);
+  var _windowEnd = initParams.get('end') ? parseInt(initParams.get('end'), 10) : null;
+  var _windowStart = initParams.get('start') ? parseInt(initParams.get('start'), 10) : null;
+  if (_windowEnd && _windowStart && _windowEnd > _windowStart) {
+    windowEnd = _windowEnd;
+    windowStart = _windowStart;
+  }
+
+  function xBounds() {
+    if (windowEnd && windowStart) {
+      return { min: windowStart, max: windowEnd };
+    }
+    var now = Math.floor(Date.now() / 1000);
+    return { min: now - (RANGE_SECS[RANGE] || 3600), max: now };
+  }
+
+  function isLive() { return windowEnd === null; }
+
+  function getAxisStroke() {
+    return document.documentElement.getAttribute('data-theme') !== 'light'
+      ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)';
+  }
+  function getGridStroke() {
+    return document.documentElement.getAttribute('data-theme') !== 'light'
+      ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  }
+
+  var COLORS = [
+    '#8b5cf6', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b',
+    '#ef4444', '#ec4899', '#6366f1', '#14b8a6', '#f97316'
+  ];
+
+  function shortLabel(full) {
+    var parts = full.split('-');
+    if (parts.length > 2) return parts.slice(-2).join('-');
+    return full;
+  }
+
+  function promToUplot(result, labelKey, shortLabels) {
+    if (!result || !result.length) return null;
+    var tsSet = {};
+    result.forEach(function(s) {
+      s.values.forEach(function(v) { tsSet[v[0]] = true; });
+    });
+    var timestamps = Object.keys(tsSet).map(Number).sort(function(a, b) { return a - b; });
+    var tsIndex = {};
+    timestamps.forEach(function(t, i) { tsIndex[t] = i; });
+
+    var data = [timestamps];
+    var labels = [];
+    var refs = [];  // parallel array: null for normal series, 'requests'/'limits' for ref lines
+    result.forEach(function(s) {
+      var vals = new Array(timestamps.length).fill(null);
+      s.values.forEach(function(v) {
+        var idx = tsIndex[v[0]];
+        var num = parseFloat(v[1]);
+        if (!isNaN(num) && isFinite(num)) vals[idx] = num;
+      });
+      data.push(vals);
+      var ref = s.metric['__ref__'] || null;
+      refs.push(ref);
+      if (ref) {
+        // For reference series, use the ref type as the label
+        var refEntity = '';
+        if (labelKey === '__pod_container__') {
+          refEntity = (s.metric.pod || '') + '/' + (s.metric.container || '');
+        } else if (labelKey !== '__total__') {
+          refEntity = s.metric[labelKey] || '';
+        }
+        var suffix = refEntity ? ' (' + (shortLabels ? shortLabel(refEntity) : refEntity) + ')' : '';
+        labels.push(ref + suffix);
+      } else if (labelKey === '__pod_container__') {
+        var pod = s.metric.pod || '';
+        var ctr = s.metric.container || '';
+        var composite = pod + '/' + ctr;
+        labels.push(shortLabels ? shortLabel(pod) + '/' + ctr : composite);
+      } else {
+        var raw = s.metric[labelKey] || (labelKey === '__total__' ? 'total' : labelKey);
+        var display = LABEL_MAP[raw] || raw;
+        labels.push(shortLabels ? shortLabel(display) : display);
+      }
+    });
+    return { data: data, labels: labels, refs: refs };
+  }
+
+  function tooltipPlugin(valueFmt, rawData, showTotal) {
+    var tip = document.createElement('div');
+    tip.className = 'chart-tip';
+
+    function fmtTime(ts) {
+      var d = new Date(ts * 1000);
+      var mon = d.toLocaleString(undefined, { month: 'short' });
+      var day = d.getDate();
+      var time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+      return mon + ' ' + day + ' \u00b7 ' + time;
+    }
+
+    return {
+      hooks: {
+        init: function(u) { u.over.appendChild(tip); },
+        setCursor: function(u) {
+          var idx = u.cursor.idx;
+          if (idx == null) { tip.style.display = 'none'; return; }
+          var ts = u.data[0][idx];
+          var src = rawData || u.data;
+          var rows = '';
+          var total = 0;
+          var hasAny = false;
+          for (var i = 1; i < u.series.length; i++) {
+            var s = u.series[i];
+            if (!s.show) continue;
+            var v = src[i] ? src[i][idx] : null;
+            if (v == null) continue;
+            hasAny = true;
+            total += v;
+            var color = s._stroke || s.stroke || s._fill || s.fill;
+            if (typeof color === 'function') color = color(u, i);
+            rows += '<div class="chart-tip-row">' +
+              '<span class="chart-tip-dot" style="background:' + color + '"></span>' +
+              '<span class="chart-tip-label">' + (s.label || '') + '</span>' +
+              '<strong class="chart-tip-value">' + valueFmt(v) + '</strong></div>';
+          }
+          if (!hasAny) { tip.style.display = 'none'; return; }
+          if (showTotal) {
+            rows += '<div class="chart-tip-row chart-tip-total">' +
+              '<span class="chart-tip-dot"></span>' +
+              '<span class="chart-tip-label">Total</span>' +
+              '<strong class="chart-tip-value">' + valueFmt(total) + '</strong></div>';
+          }
+          tip.innerHTML = '<div class="chart-tip-time">' + fmtTime(ts) + '</div>' + rows;
+          tip.style.display = 'block';
+          var left = u.cursor.left;
+          var top = u.cursor.top;
+          var ow = u.over.clientWidth;
+          var tw = tip.offsetWidth;
+          var x = left + 12;
+          if (x + tw > ow) x = left - tw - 12;
+          var y = top - tip.offsetHeight - 8;
+          if (y < 0) y = top + 12;
+          tip.style.left = x + 'px';
+          tip.style.top = y + 'px';
+        }
+      }
+    };
+  }
+
+  var REF_COLORS = { 'requests': '#f59e0b', 'limits': '#ef4444' };
+
+  function makeLineChart(el, result, labelKey, valueFmt, shortLabels, colorMap) {
+    var parsed = promToUplot(result, labelKey, shortLabels);
+    if (!parsed) {
+      el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/30 text-sm">No data</div>';
+      return;
+    }
+    el.innerHTML = '';
+    var width = el.clientWidth || 400;
+    var height = parseInt(getComputedStyle(el).minHeight) || 220;
+    var series = [{ label: '', value: '' }];
+    var colorIdx = 0;
+    parsed.labels.forEach(function(label, i) {
+      var ref = parsed.refs[i];
+      if (ref) {
+        // Reference line: dashed, fixed color
+        series.push({
+          label: label,
+          stroke: REF_COLORS[ref] || '#888',
+          width: 1.5,
+          dash: [6, 4],
+          points: { show: false },
+          value: ''
+        });
+      } else {
+        var color = colorMap ? (colorMap[label] || COLORS[colorIdx % COLORS.length]) : COLORS[colorIdx % COLORS.length];
+        colorIdx++;
+        series.push({
+          label: label,
+          stroke: color,
+          width: 1.5,
+          points: { show: false },
+          value: ''
+        });
+      }
+    });
+    var opts = {
+      width: width,
+      height: height,
+      series: series,
+      axes: [
+        { stroke: getAxisStroke(), grid: { stroke: getGridStroke() } },
+        {
+          stroke: getAxisStroke(),
+          grid: { stroke: getGridStroke() },
+          size: 70,
+          values: function(u, vals) { return vals.map(valueFmt); }
+        }
+      ],
+      plugins: [tooltipPlugin(valueFmt)],
+      cursor: { drag: { x: false, y: false } },
+      legend: { show: parsed.labels.length <= 8, live: false },
+      scales: { x: { time: true, min: xBounds().min, max: xBounds().max }, y: { range: function(u, dmin, dmax) { return [0, (dmax || 1) * 1.1]; } } }
+    };
+    new uPlot(opts, parsed.data, el);
+  }
+
+  function makeMirrorChart(el, result, labelKey, valueFmt, shortLabels, colorMap) {
+    if (!result || !result.length) {
+      el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/30 text-sm">No data</div>';
+      return;
+    }
+    var txSeries = result.filter(function(s) { return s.metric.direction === 'tx'; });
+    var rxSeries = result.filter(function(s) { return s.metric.direction === 'rx'; });
+
+    var TX_COLORS = ['#8b5cf6', '#f59e0b', '#ef4444', '#ec4899', '#f97316'];
+    var RX_COLORS = ['#3b82f6', '#10b981', '#06b6d4', '#14b8a6', '#6366f1'];
+
+    var entityKey = txSeries.length > 1 ? (txSeries[0].metric.pod ? 'pod' : null) : null;
+
+    var tsSet = {};
+    result.forEach(function(s) {
+      s.values.forEach(function(v) { tsSet[v[0]] = true; });
+    });
+    var timestamps = Object.keys(tsSet).map(Number).sort(function(a, b) { return a - b; });
+    var tsIndex = {};
+    timestamps.forEach(function(t, i) { tsIndex[t] = i; });
+
+    var data = [timestamps];
+    var seriesDefs = [];
+
+    txSeries.forEach(function(s, i) {
+      var vals = new Array(timestamps.length).fill(null);
+      s.values.forEach(function(v) {
+        var idx = tsIndex[v[0]];
+        var num = parseFloat(v[1]);
+        if (!isNaN(num) && isFinite(num)) vals[idx] = num;
+      });
+      data.push(vals);
+      var entity = entityKey ? (s.metric[entityKey] || '') : null;
+      var extra = entity ? ' (' + (shortLabels ? shortLabel(entity) : entity) + ')' : '';
+      seriesDefs.push({ label: 'TX' + extra, color: TX_COLORS[i % TX_COLORS.length] });
+    });
+
+    rxSeries.forEach(function(s, i) {
+      var vals = new Array(timestamps.length).fill(null);
+      s.values.forEach(function(v) {
+        var idx = tsIndex[v[0]];
+        var num = parseFloat(v[1]);
+        if (!isNaN(num) && isFinite(num)) vals[idx] = -num;
+      });
+      data.push(vals);
+      var entity = entityKey ? (s.metric[entityKey] || '') : null;
+      var extra = entity ? ' (' + (shortLabels ? shortLabel(entity) : entity) + ')' : '';
+      seriesDefs.push({ label: 'RX' + extra, color: RX_COLORS[i % RX_COLORS.length] });
+    });
+
+    el.innerHTML = '';
+    var width = el.clientWidth || 400;
+    var height = parseInt(getComputedStyle(el).minHeight) || 220;
+
+    var series = [{ label: '', value: '' }];
+    seriesDefs.forEach(function(def) {
+      series.push({
+        label: def.label,
+        stroke: def.color,
+        fill: def.color + '20',
+        width: 1.5,
+        points: { show: false },
+        value: ''
+      });
+    });
+
+    var absFmt = function(v) { return valueFmt(Math.abs(v)); };
+    var opts = {
+      width: width,
+      height: height,
+      series: series,
+      axes: [
+        { stroke: getAxisStroke(), grid: { stroke: getGridStroke() } },
+        {
+          stroke: getAxisStroke(),
+          grid: { stroke: getGridStroke() },
+          size: 70,
+          values: function(u, vals) { return vals.map(absFmt); }
+        }
+      ],
+      plugins: [tooltipPlugin(absFmt)],
+      cursor: { drag: { x: false, y: false } },
+      legend: { show: seriesDefs.length <= 8, live: false },
+      scales: {
+        x: { time: true, min: xBounds().min, max: xBounds().max },
+        y: { range: function(u, dmin, dmax) {
+          var absMax = Math.max(Math.abs(dmin || 0), Math.abs(dmax || 0)) * 1.1 || 1;
+          return [-absMax, absMax];
+        }}
+      }
+    };
+    new uPlot(opts, data, el);
+  }
+
+  function fmtCpu(v) { return (v * 1000).toFixed(0) + 'm'; }
+  function fmtMem(v) {
+    if (v >= 1073741824) return (v / 1073741824).toFixed(1) + ' GiB';
+    return (v / 1048576).toFixed(0) + ' MiB';
+  }
+  function fmtBytes(v) {
+    if (v >= 1073741824) return (v / 1073741824).toFixed(1) + ' GB/s';
+    if (v >= 1048576) return (v / 1048576).toFixed(1) + ' MB/s';
+    if (v >= 1024) return (v / 1024).toFixed(1) + ' KB/s';
+    return Math.round(v) + ' B/s';
+  }
+
+  function updateURL() {
+    var url = new URL(window.location);
+    url.searchParams.set('range', RANGE);
+    if (windowStart && windowEnd) {
+      url.searchParams.set('start', windowStart);
+      url.searchParams.set('end', windowEnd);
+    } else {
+      url.searchParams.delete('start');
+      url.searchParams.delete('end');
+    }
+    ['cpu', 'memory', 'network'].forEach(function(m) {
+      var g = panelGroups[m];
+      if (g && g !== 'total') url.searchParams.set(m, g);
+      else url.searchParams.delete(m);
+    });
+    var kindEl = document.getElementById('filter-workload-kind');
+    var wlEl = document.getElementById('filter-workload');
+    var podEl = document.getElementById('filter-pod');
+    if (kindEl && kindEl.value) url.searchParams.set('workload_kind', kindEl.value);
+    else url.searchParams.delete('workload_kind');
+    if (wlEl && wlEl.value) {
+      var parts = wlEl.value.split('|');
+      url.searchParams.set('workload_name', parts[0] || '');
+      url.searchParams.set('workload_namespace', parts[1] || '');
+    } else {
+      url.searchParams.delete('workload_name');
+      url.searchParams.delete('workload_namespace');
+    }
+    if (podEl && podEl.value) url.searchParams.set('pod', podEl.value);
+    else url.searchParams.delete('pod');
+    history.replaceState(null, '', url);
+  }
+
+  var panelGroups = {
+    cpu: {{ current_groups.cpu|tojson }},
+    memory: {{ current_groups.memory|tojson }},
+    network: {{ current_groups.network|tojson }}
+  };
+
+  var panels = {
+    cpu:      { labelKey: 'pod', fmt: fmtCpu,   type: 'line', short: false },
+    memory:   { labelKey: 'pod', fmt: fmtMem,   type: 'line', short: false },
+    network:  { labelKey: 'direction', fmt: fmtBytes, type: 'mirror', short: false }
+  };
+
+  var _panelCache = {};
+
+  function renderPanel(metric, result) {
+    var panel = panels[metric];
+    var el = document.getElementById('chart-' + metric);
+    var group = panelGroups[metric] || 'total';
+    var labelKey = panel.labelKey;
+    if (metric === 'cpu' || metric === 'memory' || metric === 'network') {
+      if (group === 'total') labelKey = '__total__';
+      else if (group === 'container') labelKey = '__pod_container__';
+      else if (group === 'workload') labelKey = 'pod';
+      else labelKey = 'pod';
+    }
+    var short = (group === 'pod' || group === 'container');
+    if (panel.type === 'mirror') {
+      makeMirrorChart(el, result, labelKey, panel.fmt, short, panel.colors);
+    } else {
+      makeLineChart(el, result, labelKey, panel.fmt, short, panel.colors);
+    }
+  }
+
+  function fetchAndRender(metric) {
+    var panel = panels[metric];
+    var el = document.getElementById('chart-' + metric);
+    var group = panelGroups[metric] || 'total';
+
+    var sysToggle = document.getElementById('system-containers-toggle');
+    var includeSys = sysToggle && sysToggle.checked;
+    var qs = '?metric=' + metric + '&range=' + RANGE + '&group=' + group;
+    if (includeSys) qs += '&system_containers=1';
+    if (windowStart && windowEnd) {
+      qs += '&start=' + windowStart + '&end=' + windowEnd;
+    }
+    // Workload filters
+    var kindEl = document.getElementById('filter-workload-kind');
+    var wlEl = document.getElementById('filter-workload');
+    var podEl = document.getElementById('filter-pod');
+    if (kindEl && kindEl.value) qs += '&workload_kind=' + encodeURIComponent(kindEl.value);
+    if (wlEl && wlEl.value) {
+      var parts = wlEl.value.split('|');
+      qs += '&workload_name=' + encodeURIComponent(parts[0]);
+      qs += '&workload_namespace=' + encodeURIComponent(parts[1]);
+      if (kindEl && kindEl.value) qs += '&workload_kind=' + encodeURIComponent(kindEl.value);
+    }
+    if (podEl && podEl.value) qs += '&pod=' + encodeURIComponent(podEl.value);
+
+    var debugEl = document.querySelector('[data-query-debug="' + metric + '"]');
+    fetch(METRIC_URL + qs, { credentials: 'same-origin' })
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) {
+        if (debugEl && data && data.queries) {
+          debugEl.textContent = data.queries.join('\n');
+        }
+        if (!data || !data.result) {
+          el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/30 text-sm">No data</div>';
+          return;
+        }
+        _panelCache[metric] = data.result;
+        renderPanel(metric, data.result);
+      })
+      .catch(function() {
+        el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/30 text-sm">Unavailable</div>';
+      });
+  }
+
+  // Group selector buttons
+  document.querySelectorAll('[data-group-selector]').forEach(function(sel) {
+    var metric = sel.getAttribute('data-group-selector');
+    sel.querySelectorAll('button[data-group]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        sel.querySelectorAll('button').forEach(function(b) {
+          b.className = 'btn btn-xs btn-ghost';
+        });
+        btn.className = 'btn btn-xs btn-primary';
+        panelGroups[metric] = btn.getAttribute('data-group');
+        updateURL();
+        var el = document.getElementById('chart-' + metric);
+        el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/20"><span class="loading loading-spinner loading-sm"></span></div>';
+        fetchAndRender(metric);
+      });
+    });
+  });
+
+  // Debug toggle
+  var debugCheckbox = document.getElementById('show-debug');
+  var debugEls = document.querySelectorAll('[data-query-debug]');
+  if (debugCheckbox) {
+    debugCheckbox.addEventListener('change', function() {
+      debugEls.forEach(function(el) {
+        el.classList.toggle('hidden', !debugCheckbox.checked);
+      });
+    });
+  }
+
+  // System containers toggle
+  var sysToggleEl = document.getElementById('system-containers-toggle');
+  if (sysToggleEl) {
+    sysToggleEl.addEventListener('change', function() {
+      refreshAllPanels();
+    });
+  }
+
+  function refreshAllPanels() {
+    document.querySelectorAll('[data-metric-panel]').forEach(function(el) {
+      el.innerHTML = '<div class="flex items-center justify-center h-full text-base-content/20"><span class="loading loading-spinner loading-sm"></span></div>';
+    });
+    Object.keys(panels).forEach(fetchAndRender);
+  }
+
+  // ── Cascading workload filters ──
+  var filterKind = document.getElementById('filter-workload-kind');
+  var filterWorkload = document.getElementById('filter-workload');
+  var filterPod = document.getElementById('filter-pod');
+
+  function populateWorkloads() {
+    if (!filterWorkload) return;
+    var prev = filterWorkload.value;
+    var kindFilter = filterKind ? filterKind.value : '';
+    filterWorkload.innerHTML = '<option value="">All workloads</option>';
+    var filtered = WORKLOADS.filter(function(w) {
+      return !kindFilter || w.kind === kindFilter;
+    });
+    filtered.forEach(function(w) {
+      var opt = document.createElement('option');
+      opt.value = w.name + '|' + w.namespace;
+      opt.textContent = w.name + ' (' + w.kind + ')';
+      filterWorkload.appendChild(opt);
+    });
+    if (prev && filtered.some(function(w) { return (w.name + '|' + w.namespace) === prev; })) {
+      filterWorkload.value = prev;
+    }
+    populatePods();
+  }
+
+  function populatePods() {
+    if (!filterPod) return;
+    var prev = filterPod.value;
+    var wlVal = filterWorkload ? filterWorkload.value : '';
+    filterPod.innerHTML = '<option value="">All pods</option>';
+    var pods = [];
+    if (wlVal) {
+      var parts = wlVal.split('|');
+      var wl = WORKLOADS.find(function(w) { return w.name === parts[0] && w.namespace === parts[1]; });
+      if (wl) pods = wl.pods;
+    } else {
+      var kindFilter = filterKind ? filterKind.value : '';
+      var seen = {};
+      WORKLOADS.forEach(function(w) {
+        if (kindFilter && w.kind !== kindFilter) return;
+        w.pods.forEach(function(p) {
+          if (!seen[p]) { seen[p] = true; pods.push(p); }
+        });
+      });
+      pods.sort();
+    }
+    pods.forEach(function(p) {
+      var opt = document.createElement('option');
+      opt.value = p;
+      opt.textContent = p;
+      filterPod.appendChild(opt);
+    });
+    if (prev && pods.indexOf(prev) !== -1) {
+      filterPod.value = prev;
+    }
+  }
+
+  if (filterKind) {
+    filterKind.addEventListener('change', function() {
+      populateWorkloads();
+      updateURL();
+      refreshAllPanels();
+    });
+  }
+  if (filterWorkload) {
+    filterWorkload.addEventListener('change', function() {
+      populatePods();
+      updateURL();
+      refreshAllPanels();
+    });
+  }
+  if (filterPod) {
+    filterPod.addEventListener('change', function() {
+      updateURL();
+      refreshAllPanels();
+    });
+  }
+
+  // Initialize filters from URL params
+  (function() {
+    var params = new URLSearchParams(window.location.search);
+    if (filterKind && params.get('workload_kind')) {
+      filterKind.value = params.get('workload_kind');
+    }
+    populateWorkloads();
+    if (filterWorkload && params.get('workload_name') && params.get('workload_namespace')) {
+      filterWorkload.value = params.get('workload_name') + '|' + params.get('workload_namespace');
+    }
+    populatePods();
+    if (filterPod && params.get('pod')) {
+      filterPod.value = params.get('pod');
+    }
+  })();
+
+  // Range selector
+  document.querySelectorAll('#range-selector button[data-range]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var newRange = btn.getAttribute('data-range');
+      if (newRange === RANGE) return;
+      RANGE = newRange;
+      REFRESH_MS = REFRESH_MAP[RANGE] || 15000;
+      windowStart = null;
+      windowEnd = null;
+      updateNavUI();
+      document.querySelectorAll('#range-selector button[data-range]').forEach(function(b) {
+        b.className = 'btn btn-xs btn-ghost';
+      });
+      btn.className = 'btn btn-xs btn-primary';
+      updateURL();
+      refreshAllPanels();
+      if (typeof resetRefreshTimer === 'function') resetRefreshTimer();
+    });
+  });
+
+  // Time navigation
+  var timeNav = document.getElementById('time-nav');
+  var navLeft = document.getElementById('nav-left');
+  var navRight = document.getElementById('nav-right');
+  var navNow = document.getElementById('nav-now');
+  var navLeftLabel = document.getElementById('nav-left-label');
+  var navRightLabel = document.getElementById('nav-right-label');
+  var HALF_LABELS = { '1h': '30m', '6h': '3h', '24h': '12h', '7d': '3.5d', '30d': '15d' };
+
+  function updateNavUI() {
+    if (!timeNav) return;
+    var half = HALF_LABELS[RANGE] || '';
+    if (navLeftLabel) navLeftLabel.textContent = '-' + half;
+    if (navRightLabel) navRightLabel.textContent = '+' + half;
+    var live = isLive();
+    navNow.className = live
+      ? 'btn btn-xs text-xs btn-primary btn-outline animate-pulse-gentle pointer-events-none'
+      : 'btn btn-xs text-xs btn-ghost';
+    navRight.className = live
+      ? 'btn btn-xs btn-ghost btn-square opacity-30 pointer-events-none'
+      : 'btn btn-xs btn-ghost btn-square';
+  }
+
+  function navigate(direction) {
+    var dur = RANGE_SECS[RANGE] || 3600;
+    var halfDur = Math.floor(dur / 2);
+    var bounds = xBounds();
+    if (direction < 0) {
+      windowEnd = bounds.max - halfDur;
+      windowStart = bounds.min - halfDur;
+    } else {
+      var newEnd = bounds.max + halfDur;
+      var now = Math.floor(Date.now() / 1000);
+      if (newEnd >= now) {
+        windowEnd = null;
+        windowStart = null;
+      } else {
+        windowEnd = newEnd;
+        windowStart = bounds.min + halfDur;
+      }
+    }
+    updateNavUI();
+    updateURL();
+    refreshAllPanels();
+  }
+
+  if (navLeft) navLeft.addEventListener('click', function() { navigate(-1); });
+  if (navRight) navRight.addEventListener('click', function() { navigate(1); });
+  if (navNow) navNow.addEventListener('click', function() {
+    windowEnd = null;
+    windowStart = null;
+    updateNavUI();
+    updateURL();
+    refreshAllPanels();
+  });
+
+  updateNavUI();
+
+  // Initial load
+  Object.keys(panels).forEach(fetchAndRender);
+
+  // Re-render on theme change
+  new MutationObserver(function() {
+    Object.keys(panels).forEach(function(metric) {
+      if (_panelCache[metric]) renderPanel(metric, _panelCache[metric]);
+    });
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  // Auto-refresh
+  var refreshTimer = setInterval(function() {
+    Object.keys(panels).forEach(fetchAndRender);
+  }, REFRESH_MS);
+  function resetRefreshTimer() {
+    clearInterval(refreshTimer);
+    refreshTimer = setInterval(function() {
+      Object.keys(panels).forEach(fetchAndRender);
+    }, REFRESH_MS);
+  }
+
+  } // end init()
+})();
+</script>
+{% endblock js %}
