@@ -1,13 +1,13 @@
 {% extends "_base.html" %}
 {% from "_macros.html" import icon, resource_path, page_header, stat_card %}
 
-{% block title %}Usage - {{ project.name }} - Cabotage{% endblock title %}
+{% block title %}Cost - {{ project.name }} - Cabotage{% endblock title %}
 
 {% block resource_path %}
   {{ resource_path([
     {'label': project.organization.slug, 'url': url_for('user.organization', org_slug=project.organization.slug) },
     {'label': project.slug, 'url': url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug) },
-    {'label': 'usage'}
+    {'label': 'cost'}
   ]) }}
 {% endblock resource_path %}
 
@@ -23,13 +23,13 @@
       <span class="tab-item tab-disabled" data-tab="observe">{{ icon('bar-chart', 'w-4 h-4') }} Observe</span>
       {% endif %}
       <a href="{{ url_for('user.project_usage', org_slug=project.organization.slug, project_slug=project.slug) }}"
-         class="tab-item tab-active" data-tab="usage">{{ icon('dollar-sign', 'w-4 h-4') }} Usage</a>
+         class="tab-item tab-active" data-tab="usage">{{ icon('dollar-sign', 'w-4 h-4') }} Cost</a>
     </div>
   </div>
 {% endblock tab_bar %}
 
 {% block content %}
-  {{ page_header('Usage', project.name) }}
+  {{ page_header('Cost', project.name) }}
 
   <div id="project-usage-content">
     <div class="flex items-center justify-center py-12">
@@ -72,17 +72,15 @@
     db_storage_gb: {label: 'DB Storage', icon: 'layers', unit: 'GB'},
     postgres_gb_hours: {label: 'PostgreSQL', icon: 'layers', unit: 'GB-hr'},
     redis_gb_hours: {label: 'Redis', icon: 'layers', unit: 'GB-hr'},
-    tailscale_nodes: {label: 'Tailscale', icon: 'globe', unit: 'nodes'},
   };
 
   const METER_RATES = {
     vcpu_hours: 0.02, ram_gb_hours: 0.01, egress_gb: 0.045,
     build_minutes: 0.004, block_storage_gb: 0.12, object_storage_gb: 0.03,
     db_storage_gb: 0.15, postgres_gb_hours: 0.015, redis_gb_hours: 0.015,
-    tailscale_nodes: 5.00,
   };
 
-  fetch(`/billing/${ORG_SLUG}/billing-project-usage/${PROJECT_SLUG}`)
+  fetch(`/cost/${ORG_SLUG}/project-cost/${PROJECT_SLUG}`)
     .then(r => r.json())
     .then(render)
     .catch(() => {
@@ -246,7 +244,6 @@
             <span><strong class="text-base-content/55">Storage</strong> $0.12/GB-mo</span>
             <span><strong class="text-base-content/55">PostgreSQL</strong> $0.015/GB-hr</span>
             <span><strong class="text-base-content/55">Redis</strong> $0.015/GB-hr</span>
-            <span><strong class="text-base-content/55">Tailscale</strong> $5.00/node</span>
           </div>
         </div></div>
       </div>`;
