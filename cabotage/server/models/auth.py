@@ -1,6 +1,4 @@
 import datetime
-from enum import StrEnum
-from uuid import UUID
 
 from citext import CIText
 from flask_security.models.fsqla_v3 import (
@@ -11,8 +9,6 @@ from flask_security.models.fsqla_v3 import (
 )
 from sqlalchemy import text
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy_continuum import make_versioned
 
 from cabotage.server import db, Model
@@ -202,7 +198,6 @@ class Organization(Model):
 
     members = db.relationship("OrganizationMember", back_populates="organization")
     teams = db.relationship("OrganizationTeam", back_populates="organization")
-    billing = db.relationship("Billing", back_populates="organization", uselist=False)
 
     projects = db.relationship("Project", backref="organization")
 
@@ -264,48 +259,3 @@ class Team(Model):
             db.session.delete(association)
 
 
-class BillingSubsctriptionStatus(StrEnum):
-    ACTIVE = "active"
-    PAST_DUE = "past_due"
-    CANCELED = "canceled"
-    """not sure what else we will want here yet"""
-
-
-class Billing(Model):
-    __versioned__: dict = {}
-    __tablename__ = "billing"
-
-    org_id: Mapped[UUID] = mapped_column(
-        postgresql.UUID(as_uuid=True),
-        db.ForeignKey("organizations.id"),
-        primary_key=True,
-    )
-    stripe_customer_id: Mapped[str] = mapped_column(
-        db.String, nullable=True, unique=True, index=True
-    )
-    stripe_sub_id: Mapped[str] = mapped_column(
-        db.String, nullable=True, unique=True, index=True
-    )
-    stripe_sub_status: Mapped[BillingSubsctriptionStatus | None] = mapped_column(
-        db.String, nullable=True
-    )
-    stripe_sub_plan: Mapped[str] = mapped_column(db.String, default="free")
-
-    organization = db.relationship("Organization", back_populates="billing")
-
-
-class BillingWebhookEvent(Model):
-    __versioned__: dict = {}
-    __tablename__ = "billing_webhook_events"
-
-    id: Mapped[UUID] = mapped_column(
-        postgresql.UUID(as_uuid=True),
-        server_default=text("gen_random_uuid()"),
-        primary_key=True,
-    )
-    stripe_event_id: Mapped[str] = mapped_column(unique=True, index=True)
-    event_type: Mapped[str] = mapped_column()
-    processed_at: Mapped[datetime.datetime] = mapped_column(
-        server_default=text("now()")
-    )
-    payload: Mapped[dict] = mapped_column(JSONB)
