@@ -19,13 +19,20 @@ from itsdangerous import BadData
 import requests
 
 from cabotage.server import db
-from cabotage.server.acl import AdministerOrganizationPermission
+from cabotage.server.acl import (
+    AdministerApplicationPermission,
+    AdministerOrganizationPermission,
+)
 from cabotage.server.mfa import get_mfa_status
+from sqlalchemy.exc import DataError
+
 from cabotage.server.models.auth import GitHubIdentity, Organization, User
+from cabotage.server.models.projects import Application, activity_plugin
 from cabotage.server.user import github_installations
 
 github_oauth_bp = Blueprint("github_oauth", __name__, url_prefix="/auth/github")
 oauth = OAuth()
+Activity = activity_plugin.activity_cls
 
 
 @github_oauth_bp.route("/login")
@@ -246,14 +253,22 @@ def _connect_installation_callback(state):
                 url_for("user.organization_settings", org_slug=organization.slug)
             )
 
-        session["github_verified_installation"] = github_installations.connect_option(
-            organization,
-            current_user.id,
-            requested_installation,
-            application_id=payload.get("application_id"),
+        accessible_repository_ids = _fetch_github_user_installation_repository_ids(
+            access_token, requested_installation_id
         )
-        return redirect(
-            url_for("user.github_connect_verified", org_slug=organization.slug)
+        if accessible_repository_ids is None:
+            flash(
+                "Cabotage could not verify your repository access for that installation.",
+                "danger",
+            )
+            return redirect(
+                url_for("user.organization_settings", org_slug=organization.slug)
+            )
+
+        return _complete_verified_installation_connection(
+            organization,
+            payload,
+            accessible_repository_ids=accessible_repository_ids,
         )
 
     existing_installation_ids = {
@@ -271,7 +286,9 @@ def _connect_installation_callback(state):
                 "account_login": account.get("login") or "Unknown",
                 "repository_selection": installation.get("repository_selection"),
                 "token": github_installations.connect_option(
-                    organization, current_user.id, installation
+                    organization,
+                    current_user.id,
+                    installation,
                 ),
             }
         )
@@ -282,6 +299,108 @@ def _connect_installation_callback(state):
         installations=installation_options,
         csrf_form=FlaskForm(),
     )
+
+
+def _safe_get(model, pk):
+    try:
+        return model.query.get(pk)
+    except DataError:
+        db.session.rollback()
+        return None
+
+
+def _complete_verified_installation_connection(
+    organization, payload, *, accessible_repository_ids
+):
+    app_installation, repositories_synced = github_installations.upsert_installation(
+        organization,
+        payload.get("installation_id"),
+        installed_by_user_id=current_user.id,
+        accessible_repository_ids=accessible_repository_ids,
+    )
+    if app_installation is None:
+        flash("Cabotage could not verify the GitHub App installation.", "danger")
+        return redirect(
+            url_for("user.organization_settings", org_slug=organization.slug)
+        )
+
+    application = None
+    application_repository_disconnected = False
+    application_id = payload.get("application_id")
+    if application_id:
+        application = _safe_get(Application, application_id)
+        if (
+            application is None
+            or application.deleted_at is not None
+            or application.project.organization_id != organization.id
+            or not AdministerApplicationPermission(application.id).can()
+        ):
+            flash("The GitHub install link does not match this application.", "danger")
+            return redirect(
+                url_for("user.organization_settings", org_slug=organization.slug)
+            )
+        application.github_app_installation_id = app_installation.installation_id
+        selected_repository = github_installations.repository_by_name(
+            app_installation, application.github_repository
+        )
+        if (
+            repositories_synced
+            and application.github_repository
+            and app_installation.repository_selection == "selected"
+            and app_installation.repositories is not None
+            and selected_repository is None
+        ):
+            application.github_app_installation_id = None
+            application.github_repository_id = None
+            application.github_repository_is_private = False
+            application_repository_disconnected = True
+        elif selected_repository is not None:
+            application.github_repository_id = github_installations.repository_id(
+                selected_repository
+            )
+            application.github_repository_is_private = bool(
+                selected_repository.get("private")
+            )
+
+    db.session.flush()
+    db.session.add(
+        Activity(
+            verb="edit",
+            object=organization,
+            data={
+                "user_id": str(current_user.id),
+                "action": "github_app_install",
+                "installation_id": app_installation.installation_id,
+                "account_login": app_installation.account_login,
+                "application_id": str(application.id)
+                if application is not None
+                else None,
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            },
+        )
+    )
+    db.session.commit()
+
+    if application is not None:
+        if application_repository_disconnected:
+            flash(
+                "GitHub App installed, but this application's repository is not "
+                "available to that installation. Choose an accessible repository.",
+                "warning",
+            )
+        else:
+            flash("GitHub App installed and connected to this application.", "success")
+        return redirect(
+            url_for(
+                "user.project_application_settings",
+                org_slug=organization.slug,
+                project_slug=application.project.slug,
+                app_slug=application.slug,
+            )
+        )
+
+    flash("GitHub App installation connected.", "success")
+    return redirect(url_for("user.organization_settings", org_slug=organization.slug))
 
 
 def _fetch_github_user_access_token(code):
@@ -332,6 +451,41 @@ def _fetch_github_user_installations(access_token):
         return installations
     except (requests.RequestException, ValueError, AttributeError):
         current_app.logger.exception("Unable to fetch GitHub user installations")
+        return None
+
+
+def _fetch_github_user_installation_repository_ids(access_token, installation_id):
+    try:
+        repository_ids = []
+        url = (
+            f"https://api.github.com/user/installations/{installation_id}/repositories"
+        )
+        params = {"per_page": 100}
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {access_token}",
+        }
+        while url:
+            resp = requests.get(
+                url,
+                headers=headers,
+                params=params,
+                timeout=10,
+            )
+            resp.raise_for_status()
+            repository_ids.extend(
+                repo["id"]
+                for repo in resp.json().get("repositories") or []
+                if repo.get("id") is not None
+            )
+            url = resp.links.get("next", {}).get("url")
+            params = None
+        return repository_ids
+    except (requests.RequestException, ValueError, AttributeError, KeyError):
+        current_app.logger.exception(
+            "Unable to fetch GitHub user repositories for installation %s",
+            installation_id,
+        )
         return None
 
 

@@ -946,7 +946,7 @@ def github_install_start(org_slug):
 @user_blueprint.route("/github/install/callback")
 @login_required
 def github_install_callback():
-    state = request.args.get("state") or session.get("github_install_state")
+    state = request.args.get("state")
     installation_id = request.args.get("installation_id")
     setup_action = request.args.get("setup_action")
 
@@ -1040,100 +1040,6 @@ def github_connect_start(org_slug):
     return redirect(authorize_url)
 
 
-def _complete_github_installation_connection(organization, payload):
-    app_installation, repositories_synced = github_installations.upsert_installation(
-        organization,
-        payload.get("installation_id"),
-        installed_by_user_id=current_user.id,
-    )
-    if app_installation is None:
-        flash("Cabotage could not verify the GitHub App installation.", "danger")
-        return redirect(
-            url_for("user.organization_settings", org_slug=organization.slug)
-        )
-
-    application = None
-    application_repository_disconnected = False
-    application_id = payload.get("application_id")
-    if application_id:
-        application = _safe_get(Application, application_id)
-        if (
-            application is None
-            or application.deleted_at is not None
-            or application.project.organization_id != organization.id
-            or not AdministerApplicationPermission(application.id).can()
-        ):
-            abort(404)
-        application.github_app_installation_id = app_installation.installation_id
-        selected_repository = github_installations.repository_by_name(
-            app_installation, application.github_repository
-        )
-        if (
-            repositories_synced
-            and application.github_repository
-            and app_installation.repository_selection == "selected"
-            and app_installation.repositories is not None
-            and selected_repository is None
-        ):
-            application.github_app_installation_id = None
-            application.github_repository_is_private = False
-            application_repository_disconnected = True
-        elif selected_repository is not None:
-            application.github_repository_is_private = bool(
-                selected_repository.get("private")
-            )
-
-    db.session.flush()
-    activity = Activity(
-        verb="edit",
-        object=organization,
-        data={
-            "user_id": str(current_user.id),
-            "action": "github_app_install",
-            "installation_id": app_installation.installation_id,
-            "account_login": app_installation.account_login,
-            "application_id": str(application.id) if application is not None else None,
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        },
-    )
-    db.session.add(activity)
-    db.session.commit()
-
-    if application is not None:
-        if application_repository_disconnected:
-            flash(
-                "GitHub App installed, but this application's repository is not "
-                "available to that installation. Choose an accessible repository.",
-                "warning",
-            )
-        elif repositories_synced:
-            flash("GitHub App installed and connected to this application.", "success")
-        else:
-            flash(
-                "GitHub App installed and connected, but repositories could not be loaded. "
-                "Use Refresh repos before choosing a repository.",
-                "warning",
-            )
-        return redirect(
-            url_for(
-                "user.project_application_settings",
-                org_slug=organization.slug,
-                project_slug=application.project.slug,
-                app_slug=application.slug,
-            )
-        )
-
-    if repositories_synced:
-        flash("GitHub App installation connected.", "success")
-    else:
-        flash(
-            "GitHub App installation connected, but repositories could not be loaded. "
-            "Use Refresh repos before choosing a repository.",
-            "warning",
-        )
-    return redirect(url_for("user.organization_settings", org_slug=organization.slug))
-
-
 @user_blueprint.route("/github/connect/<org_slug>/verified")
 @login_required
 def github_connect_verified(org_slug):
@@ -1145,35 +1051,12 @@ def github_connect_verified(org_slug):
     if not AdministerOrganizationPermission(organization.id).can():
         abort(403)
 
-    token = session.pop("github_verified_installation", None)
-    if not token:
-        flash(
-            "The GitHub installation verification expired or could not be verified.",
-            "danger",
-        )
-        return redirect(url_for("user.organization_settings", org_slug=org_slug))
-
-    try:
-        payload = github_installations.connect_state_serializer().loads(
-            token, max_age=github_installations.GITHUB_INSTALL_STATE_MAX_AGE_SECONDS
-        )
-    except BadData:
-        flash(
-            "The GitHub installation verification expired or could not be verified.",
-            "danger",
-        )
-        return redirect(url_for("user.organization_settings", org_slug=org_slug))
-
-    if payload.get("user_id") != str(current_user.id) or payload.get(
-        "organization_id"
-    ) != str(organization.id):
-        flash(
-            "The GitHub installation verification does not match this organization.",
-            "danger",
-        )
-        return redirect(url_for("user.organization_settings", org_slug=org_slug))
-
-    return _complete_github_installation_connection(organization, payload)
+    session.pop("github_verified_installation", None)
+    flash(
+        "The GitHub installation verification expired or could not be verified.",
+        "danger",
+    )
+    return redirect(url_for("user.organization_settings", org_slug=org_slug))
 
 
 @user_blueprint.route("/github/connect/<org_slug>/complete", methods=["POST"])
@@ -1215,7 +1098,24 @@ def github_connect_complete(org_slug):
         )
         return redirect(url_for("user.organization_settings", org_slug=org_slug))
 
-    return _complete_github_installation_connection(organization, payload)
+    if not payload.get("installation_id"):
+        flash(
+            "The GitHub installation selection expired or could not be verified.",
+            "danger",
+        )
+        return redirect(url_for("user.organization_settings", org_slug=org_slug))
+
+    authorize_url = github_installations.user_authorize_url(
+        github_installations.connect_state(
+            organization,
+            current_user.id,
+            installation_id=payload.get("installation_id"),
+        )
+    )
+    if authorize_url is None:
+        flash("GitHub user authorization is not configured.", "danger")
+        return redirect(url_for("user.organization_settings", org_slug=org_slug))
+    return redirect(authorize_url)
 
 
 @user_blueprint.route(
@@ -4025,8 +3925,17 @@ def project_application_settings(org_slug, project_slug, app_slug):
         if form.github_app_installation_id.errors or form.github_repository.errors:
             return _render_application_settings(application, org, project, form)
 
+        previous_github_app_installation_id = application.github_app_installation_id
+        previous_github_repository = application.github_repository
         _coerce_application_settings_form(form)
         form.populate_obj(application)
+        _apply_github_source_metadata(
+            form,
+            application,
+            org,
+            previous_github_app_installation_id=previous_github_app_installation_id,
+            previous_github_repository=previous_github_repository,
+        )
         db.session.flush()
         activity = Activity(
             verb="edit",
@@ -4130,6 +4039,41 @@ def _validate_github_source_settings(form, application, org):
         )
     elif selected_installation is None:
         form.github_repository_is_private.data = False
+
+
+def _apply_github_source_metadata(
+    form,
+    application,
+    org,
+    *,
+    previous_github_app_installation_id,
+    previous_github_repository,
+):
+    selected_installation = github_installations.installation_for_org(
+        org, form.github_app_installation_id.data
+    )
+    selected_repository = github_installations.repository_by_name(
+        selected_installation, form.github_repository.data
+    )
+    current_repository_is_preserved = (
+        form.github_repository.data
+        and form.github_repository.data == previous_github_repository
+        and (
+            str(form.github_app_installation_id.data or "")
+            == str(previous_github_app_installation_id or "")
+        )
+    )
+    if selected_repository is not None:
+        application.github_repository_id = github_installations.repository_id(
+            selected_repository
+        )
+        application.github_repository_is_private = bool(
+            selected_repository.get("private")
+        )
+    elif not current_repository_is_preserved:
+        application.github_repository_id = None
+    if not application.github_app_installation_id:
+        application.github_repository_id = None
 
 
 def _coerce_application_settings_form(form):

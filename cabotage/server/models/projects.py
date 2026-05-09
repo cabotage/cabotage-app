@@ -545,6 +545,7 @@ class Application(Model, Timestamp):
     version_id: Mapped[int] = mapped_column(Integer)
 
     github_app_installation_id: Mapped[int | None] = mapped_column(BigInteger)
+    github_repository_id: Mapped[int | None] = mapped_column(BigInteger)
     github_repository: Mapped[str | None] = mapped_column(Text())
     github_repository_is_private: Mapped[bool] = mapped_column(
         Boolean,

@@ -1,3 +1,4 @@
+import re
 import time
 import uuid
 from unittest.mock import patch
@@ -195,6 +196,10 @@ def test_verified_installation_connects_application(app, client, admin_user, org
             return_value=[installation],
         ),
         patch(
+            "cabotage.server.user.github_oauth._fetch_github_user_installation_repository_ids",
+            return_value=[1],
+        ),
+        patch(
             "cabotage.server.user.github_installations.github_app.fetch_installation",
             return_value=installation,
         ),
@@ -276,6 +281,30 @@ def test_install_callback_rejects_non_integer_installation_id(
     assert response.status_code == 302
 
 
+def test_install_callback_does_not_use_stale_session_state(
+    app, client, admin_user, org
+):
+    _login(client, admin_user)
+    stale_state = github_installations.install_state(org, admin_user.id)
+    with client.session_transaction() as sess:
+        sess["github_install_state"] = stale_state
+
+    response = client.get(
+        "/github/install/callback",
+        query_string={"installation_id": "123456"},
+    )
+
+    assert response.status_code == 302
+    assert response.location.endswith("/organizations")
+    assert (
+        GitHubAppInstallation.query.filter_by(
+            organization_id=org.id,
+            installation_id=123456,
+        ).first()
+        is None
+    )
+
+
 def test_connect_existing_filters_already_connected_installations(
     app, client, admin_user, org
 ):
@@ -312,6 +341,34 @@ def test_connect_existing_filters_already_connected_installations(
     assert response.status_code == 200
     assert b"<td>new-org</td>" in response.data
     assert b"<td>existing-org</td>" not in response.data
+    token = re.search(rb'name="installation" value="([^"]+)"', response.data).group(1)
+    payload = github_installations.connect_state_serializer().loads(token.decode())
+    assert payload["installation_id"] == 444444
+    assert "accessible_repository_ids" not in payload
+
+
+def test_connect_complete_reauthorizes_selected_installation(
+    app, client, admin_user, org
+):
+    _login(client, admin_user)
+    token = github_installations.connect_option(
+        org, admin_user.id, _installation(555555, "new-org")
+    )
+
+    response = client.post(
+        f"/github/connect/{org.slug}/complete",
+        data={"installation": token},
+    )
+
+    assert response.status_code == 302
+    assert response.location.startswith("https://github.com/login/oauth/authorize?")
+    assert (
+        GitHubAppInstallation.query.filter_by(
+            organization_id=org.id,
+            installation_id=555555,
+        ).first()
+        is None
+    )
 
 
 def test_application_settings_rejects_unconnected_installation_id(
@@ -582,6 +639,59 @@ def test_application_settings_all_repo_cache_does_not_reject_uncached_repository
     db.session.refresh(application)
     assert application.github_app_installation_id == installation.installation_id
     assert application.github_repository == "all-org/not-yet-cached"
+    assert application.github_repository_id is None
+
+
+def test_application_settings_sets_repository_id_from_selected_repository(
+    app, client, admin_user, org
+):
+    _login(client, admin_user)
+    installation = GitHubAppInstallation(
+        organization_id=org.id,
+        installation_id=202023,
+        account_login="selected-org",
+        account_type="Organization",
+        repository_selection="selected",
+        repositories=[
+            {"id": 777, "full_name": "selected-org/private", "private": True}
+        ],
+    )
+    db.session.add(installation)
+    project = Project(name=f"Project {uuid.uuid4().hex[:8]}", organization_id=org.id)
+    db.session.add(project)
+    db.session.flush()
+    application = Application(
+        name=f"App {uuid.uuid4().hex[:8]}",
+        slug=f"app-{uuid.uuid4().hex[:8]}",
+        project_id=project.id,
+    )
+    db.session.add(application)
+    db.session.commit()
+
+    response = client.post(
+        f"/projects/{org.slug}/{project.slug}/applications/{application.slug}/settings",
+        data={
+            "application_id": str(application.id),
+            "github_app_installation_id": str(installation.installation_id),
+            "github_repository": "selected-org/private",
+            "auto_deploy_branch": "main",
+            "subdirectory": "",
+            "dockerfile_path": "",
+            "procfile_path": "",
+            "branch_deploy_watch_paths": "",
+            "github_environment_name": "",
+            "health_check_path": "",
+            "health_check_host": "",
+            "deployment_timeout": "300",
+        },
+    )
+
+    assert response.status_code == 302
+    db.session.refresh(application)
+    assert application.github_app_installation_id == installation.installation_id
+    assert application.github_repository_id == 777
+    assert application.github_repository == "selected-org/private"
+    assert application.github_repository_is_private is True
 
 
 def test_refresh_reconciles_applications_for_removed_selected_repositories(
@@ -609,6 +719,7 @@ def test_refresh_reconciles_applications_for_removed_selected_repositories(
         slug=f"removed-{uuid.uuid4().hex[:8]}",
         project_id=project.id,
         github_app_installation_id=installation_id,
+        github_repository_id=1,
         github_repository="selected-org/removed",
         github_repository_is_private=True,
     )
@@ -617,6 +728,7 @@ def test_refresh_reconciles_applications_for_removed_selected_repositories(
         slug=f"kept-{uuid.uuid4().hex[:8]}",
         project_id=project.id,
         github_app_installation_id=installation_id,
+        github_repository_id=2,
         github_repository="selected-org/kept",
         github_repository_is_private=True,
     )
@@ -643,8 +755,10 @@ def test_refresh_reconciles_applications_for_removed_selected_repositories(
     db.session.refresh(removed_app)
     db.session.refresh(kept_app)
     assert removed_app.github_app_installation_id is None
+    assert removed_app.github_repository_id is None
     assert removed_app.github_repository_is_private is False
     assert kept_app.github_app_installation_id == installation_id
+    assert kept_app.github_repository_id == 2
     assert kept_app.github_repository_is_private is True
 
 
@@ -692,6 +806,55 @@ def test_refresh_caches_repositories_when_selection_becomes_all(
     assert installation.repositories_synced_at is not None
 
 
+def test_refresh_backfills_application_repository_id(app, client, admin_user, org):
+    _login(client, admin_user)
+    installation_id = 222224
+    installation = GitHubAppInstallation(
+        organization_id=org.id,
+        installation_id=installation_id,
+        account_login="selected-org",
+        account_type="Organization",
+        repository_selection="selected",
+        repositories=[],
+    )
+    db.session.add(installation)
+    project = Project(name=f"Project {uuid.uuid4().hex[:8]}", organization_id=org.id)
+    db.session.add(project)
+    db.session.flush()
+    application = Application(
+        name=f"App {uuid.uuid4().hex[:8]}",
+        slug=f"app-{uuid.uuid4().hex[:8]}",
+        project_id=project.id,
+        github_app_installation_id=installation_id,
+        github_repository="selected-org/current",
+        github_repository_is_private=False,
+    )
+    db.session.add(application)
+    db.session.commit()
+
+    with (
+        patch(
+            "cabotage.server.user.views.github_app.fetch_installation",
+            return_value=_installation(installation_id, "selected-org"),
+        ),
+        patch(
+            "cabotage.server.user.github_installations.github_app.fetch_installation_repositories",
+            return_value=[
+                {"id": 55, "full_name": "selected-org/current", "private": True}
+            ],
+        ),
+    ):
+        response = client.post(
+            f"/github/installations/{org.slug}/{installation.id}/refresh",
+            follow_redirects=True,
+        )
+
+    assert response.status_code == 200
+    db.session.refresh(application)
+    assert application.github_repository_id == 55
+    assert application.github_repository_is_private is True
+
+
 def test_refresh_clears_stale_repository_cache_when_all_repo_sync_fails(
     app, client, admin_user, org
 ):
@@ -732,7 +895,9 @@ def test_refresh_clears_stale_repository_cache_when_all_repo_sync_fails(
     assert installation.repositories_synced_at is None
 
 
-def test_connect_warns_when_repository_sync_fails(app, client, admin_user, org):
+def test_connect_rejects_when_app_repository_access_cannot_be_verified(
+    app, client, admin_user, org
+):
     _login(client, admin_user)
     installation_id = 232323
     installation = _installation(installation_id, "sync-failed-org")
@@ -750,6 +915,10 @@ def test_connect_warns_when_repository_sync_fails(app, client, admin_user, org):
             return_value=[installation],
         ),
         patch(
+            "cabotage.server.user.github_oauth._fetch_github_user_installation_repository_ids",
+            return_value=[],
+        ),
+        patch(
             "cabotage.server.user.github_installations.github_app.fetch_installation",
             return_value=installation,
         ),
@@ -765,12 +934,66 @@ def test_connect_warns_when_repository_sync_fails(app, client, admin_user, org):
         )
 
     assert response.status_code == 200
-    assert b"repositories could not be loaded" in response.data
-    app_installation = GitHubAppInstallation.query.filter_by(
-        organization_id=org.id,
-        installation_id=installation_id,
-    ).one()
-    assert app_installation.repositories is None
+    assert b"could not verify the GitHub App installation" in response.data
+    assert (
+        GitHubAppInstallation.query.filter_by(
+            organization_id=org.id,
+            installation_id=installation_id,
+        ).first()
+        is None
+    )
+
+
+def test_connect_rejects_when_user_cannot_access_all_app_repositories(
+    app, client, admin_user, org
+):
+    _login(client, admin_user)
+    installation_id = 232324
+    installation = _installation(installation_id, "limited-org")
+    state = github_installations.connect_state(
+        org, admin_user.id, installation_id=installation_id
+    )
+
+    with (
+        patch(
+            "cabotage.server.user.github_oauth._fetch_github_user_access_token",
+            return_value="user-token",
+        ),
+        patch(
+            "cabotage.server.user.github_oauth._fetch_github_user_installations",
+            return_value=[installation],
+        ),
+        patch(
+            "cabotage.server.user.github_oauth._fetch_github_user_installation_repository_ids",
+            return_value=[1],
+        ),
+        patch(
+            "cabotage.server.user.github_installations.github_app.fetch_installation",
+            return_value=installation,
+        ),
+        patch(
+            "cabotage.server.user.github_installations.github_app.fetch_installation_repositories",
+            return_value=[
+                {"id": 1, "full_name": "limited-org/visible", "private": True},
+                {"id": 2, "full_name": "limited-org/hidden", "private": True},
+            ],
+        ),
+    ):
+        response = client.get(
+            "/auth/github/callback",
+            query_string={"state": state, "code": "oauth-code"},
+            follow_redirects=True,
+        )
+
+    assert response.status_code == 200
+    assert b"could not verify the GitHub App installation" in response.data
+    assert (
+        GitHubAppInstallation.query.filter_by(
+            organization_id=org.id,
+            installation_id=installation_id,
+        ).first()
+        is None
+    )
 
 
 def test_application_connect_clears_inaccessible_selected_repository(
@@ -807,6 +1030,10 @@ def test_application_connect_clears_inaccessible_selected_repository(
         patch(
             "cabotage.server.user.github_oauth._fetch_github_user_installations",
             return_value=[installation],
+        ),
+        patch(
+            "cabotage.server.user.github_oauth._fetch_github_user_installation_repository_ids",
+            return_value=[1],
         ),
         patch(
             "cabotage.server.user.github_installations.github_app.fetch_installation",
@@ -867,6 +1094,10 @@ def test_application_connect_sets_private_flag_from_selected_repository(
             return_value=[installation],
         ),
         patch(
+            "cabotage.server.user.github_oauth._fetch_github_user_installation_repository_ids",
+            return_value=[1],
+        ),
+        patch(
             "cabotage.server.user.github_installations.github_app.fetch_installation",
             return_value=installation,
         ),
@@ -886,6 +1117,7 @@ def test_application_connect_sets_private_flag_from_selected_repository(
     assert response.status_code == 200
     db.session.refresh(application)
     assert application.github_app_installation_id == installation_id
+    assert application.github_repository_id == 1
     assert application.github_repository_is_private is True
 
 
