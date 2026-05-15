@@ -5810,9 +5810,13 @@ def application_clear_cache(org_slug, project_slug, app_slug):
     image = application.images.first()
     if image is not None and current_app.config["KUBERNETES_ENABLED"]:
         from cabotage.celery.tasks.deploy import run_job
-        from cabotage.celery.tasks.build import fetch_image_build_cache_volume_claim
+        from cabotage.celery.tasks.build import (
+            _build_namespace,
+            fetch_image_build_cache_volume_claim,
+        )
 
         buildkit_image = current_app.config["BUILDKIT_IMAGE"]
+        build_namespace = _build_namespace(app_env)
 
         from cabotage.celery.tasks.deploy import _safe_labels_from_application
 
@@ -5897,7 +5901,7 @@ def application_clear_cache(org_slug, project_slug, app_slug):
         )
 
         job_complete, job_logs = run_job(
-            core_api_instance, batch_api_instance, "default", job_object
+            core_api_instance, batch_api_instance, build_namespace, job_object
         )
 
     def auth(dxf, response):

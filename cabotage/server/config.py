@@ -131,6 +131,7 @@ class Config(metaclass=MetaFlaskEnv):
     CELERY_RESULT_BACKEND = "redis://redis:6379"
     KUBERNETES_ENABLED = False
     KUBERNETES_CONTEXT = "cabotage"
+    KUBERNETES_BUILD_NAMESPACE = "cabotage-tenant-builds"
     NETWORK_POLICIES_ENABLED = False
     BACKING_SERVICE_POSTGRES_ENABLED = False
     BACKING_SERVICE_REDIS_ENABLED = False
