@@ -31,7 +31,7 @@ def app():
     _app.config["REQUIRE_MFA"] = False
     _app.config["GITHUB_APP_CLIENT_ID"] = "github-client-id"
     _app.config["GITHUB_APP_CLIENT_SECRET"] = "github-client-secret"
-    _app.config["EXT_PREFERRED_URL_SCHEME"] = "http"
+    _app.config["EXT_PREFERRED_URL_SCHEME"] = "https"
     _app.config["EXT_SERVER_NAME"] = "localhost"
 
     from cabotage.server.user.github_oauth import github_oauth_bp
