@@ -101,6 +101,10 @@ class GitHubApp(object):
         self._fetch_app_metadata()
         return self._bot_login
 
+    @property
+    def install_url(self):
+        return f"https://github.com/apps/{self.slug}/installations/new"
+
     def fetch_installation_access_token(self, installation_id):
         try:
             resp = github_session.post(
@@ -116,6 +120,57 @@ class GitHubApp(object):
         except (requests.exceptions.RequestException, KeyError, ValueError):
             logger.exception(
                 "Unable to fetch access token for installation %s",
+                installation_id,
+            )
+            return None
+
+    def fetch_installation_repositories(self, installation_id):
+        access_token = self.fetch_installation_access_token(installation_id)
+        if access_token is None:
+            return None
+
+        try:
+            repositories = []
+            url = "https://api.github.com/installation/repositories"
+            params = {"per_page": 100}
+            headers = {
+                "Accept": "application/vnd.github+json",
+                "Authorization": f"Bearer {access_token}",
+            }
+            while url:
+                resp = github_session.get(
+                    url,
+                    headers=headers,
+                    params=params,
+                    timeout=10,
+                )
+                resp.raise_for_status()
+                repositories.extend(resp.json().get("repositories") or [])
+                url = resp.links.get("next", {}).get("url")
+                params = None
+            return repositories
+        except (requests.exceptions.RequestException, ValueError, AttributeError):
+            logger.exception(
+                "Unable to fetch repositories for GitHub installation %s",
+                installation_id,
+            )
+            return None
+
+    def fetch_installation(self, installation_id):
+        try:
+            resp = github_session.get(
+                f"https://api.github.com/app/installations/{installation_id}",
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "Authorization": f"Bearer {self.bearer_token}",
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except (requests.exceptions.RequestException, ValueError):
+            logger.exception(
+                "Unable to fetch GitHub installation %s",
                 installation_id,
             )
             return None

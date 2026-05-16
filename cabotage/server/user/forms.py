@@ -42,6 +42,9 @@ from cabotage.server.models.resources import (
 )
 from cabotage.server.models.utils import slugify
 
+BIGINT_MIN = -(2**63)
+BIGINT_MAX = 2**63 - 1
+
 
 class ExtendedLoginForm(LoginForm):
     email = StringField("Username or Email Address", [InputRequired()])
@@ -336,8 +339,12 @@ class EditApplicationSettingsForm(FlaskForm):
     )
     github_repository = StringField(
         "GitHub Repository",
+        [Optional()],
         description="GitHub Repository to deploy from",
-        render_kw={"placeholder": "org_name/repo_name"},
+        filters=[
+            (lambda x: x.strip() if (x and isinstance(x, str)) else x),
+            (lambda x: x if x else None),
+        ],
     )
     github_repository_is_private = BooleanField(
         "Private Repository",
@@ -374,13 +381,15 @@ class EditApplicationSettingsForm(FlaskForm):
         "Watch Paths",
         description="Only deploy this app when files matching these patterns change. One .gitignore-style pattern per line (e.g. src/**, Dockerfile). Leave empty to always deploy.",
     )
-    github_app_installation_id = StringField(
-        "GitHub Application Installation ID",
-        description="Application Installation ID from GitHub",
+    github_app_installation_id = SelectField(
+        "GitHub App Installation",
+        [Optional()],
+        description="GitHub App installation connected to this organization",
         filters=[
             (lambda x: x.strip() if (x and isinstance(x, str)) else x),
             (lambda x: x if x else None),
         ],
+        validate_choice=False,
     )
     github_environment_name = StringField(
         "GitHub Environment Name",
@@ -390,13 +399,30 @@ class EditApplicationSettingsForm(FlaskForm):
         filters=[(lambda x: x.strip() if x else x), (lambda x: x if x else None)],
     )
 
+    def validate_github_app_installation_id(form, field):
+        if field.data is None:
+            return True
+        try:
+            installation_id = int(field.data)
+        except (TypeError, ValueError):
+            raise ValidationError("Select a valid GitHub installation.")
+        if installation_id < BIGINT_MIN or installation_id > BIGINT_MAX:
+            raise ValidationError("Select a valid GitHub installation.")
+        return True
+
     def validate_github_environment_name(form, field):
         if field.data is None:
             return True
+        installation_id = None
+        if form.github_app_installation_id.data is not None:
+            try:
+                installation_id = int(form.github_app_installation_id.data)
+            except (TypeError, ValueError):
+                return True
+            if installation_id < BIGINT_MIN or installation_id > BIGINT_MAX:
+                return True
         app = (
-            Application.query.filter_by(
-                github_app_installation_id=form.github_app_installation_id.data
-            )
+            Application.query.filter_by(github_app_installation_id=installation_id)
             .filter_by(github_repository=form.github_repository.data)
             .filter_by(github_environment_name=field.data)
             .first()

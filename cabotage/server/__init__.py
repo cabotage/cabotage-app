@@ -163,6 +163,11 @@ def celery_init_app(app):
             "schedule": 15.0,
             "args": None,
         },
+        "github-app-installation-sync": {
+            "task": "cabotage.celery.tasks.github.sync_github_app_installations",
+            "schedule": crontab(minute="17"),
+            "args": None,
+        },
         "backing-service-reconciler": {
             "task": "cabotage.celery.tasks.resources.reconcile_backing_services",
             "schedule": 10.0,
