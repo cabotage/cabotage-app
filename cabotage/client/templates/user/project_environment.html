@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, service_card, danger_zone_delete, env_tab_nav %}
+{% from "_macros.html" import icon, resource_path, page_header, application_card, service_card, danger_zone_delete, env_tab_nav %}
 
 {% block title %}
   {{ environment.name }} - {{ project.name }} - Cabotage
@@ -44,14 +44,7 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {% for app_env in active_app_envs %}
         {% set app = app_env.application %}
-        {% set cc = app_config_counts.get(app_env.id, 0) %}
-        {% set proc_count = app_env.process_counts.values()|sum if app_env.process_counts else 0 %}
         {% set last_dep = app_env.latest_deployment_completed %}
-        {% set meta = [
-          (proc_count ~ ' instance' ~ ('s' if proc_count != 1 else '')) if proc_count else 'No pods',
-          cc ~ ' config' ~ ('s' if cc != 1 else ''),
-          ('deployed ' ~ last_dep.created|humanize) if last_dep else ''
-        ]|select|list %}
         {% if app_env.latest_deployment %}
           {% if app_env.latest_deployment.complete %}
             {% set status = 'running' %}
@@ -63,23 +56,14 @@
         {% else %}
           {% set status = '' %}
         {% endif %}
-        {% set hosts = [] %}
-        {% for ing in app_env.ingresses if ing.enabled %}
-          {% for host in ing.hosts %}
-            {% if hosts.append({'hostname': host.hostname, 'is_auto': host.is_auto_generated, 'ingress_name': ing.name}) %}{% endif %}
-          {% endfor %}
-        {% endfor %}
-        {% set pr_num = environment.slug[3:] if environment.slug.startswith('pr-') else '' %}
-        {{ service_card(name=app.name,
-                slug=app.slug,
-                url=url_for('user.project_application', org_slug=project.organization.slug, project_slug=project.slug, app_slug=app.slug, env_slug=environment.slug),
-        status=status,
-        meta_items=meta,
-        color='accent',
-        github_repo=app.github_repository or '',
-        github_branch=app_env.effective_auto_deploy_branch or '',
-        github_pr_number=pr_num,
-        app_hosts=hosts
+        {{ application_card(
+          project,
+          app,
+          app_env=app_env,
+          env_slug=environment.slug,
+          status=status,
+          config_count=app_config_counts.get(app_env.id, 0),
+          last_deploy_at=last_dep.created if last_dep else none
         ) }}
       {% endfor %}
     </div>
