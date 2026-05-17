@@ -5809,7 +5809,10 @@ def account_security_qr():
     if not uri.startswith("otpauth://"):
         abort(400)
 
-    img = qrcode.make(uri, image_factory=qrcode.image.svg.SvgPathImage)
+    class TotpQrImage(qrcode.image.svg.SvgPathImage):
+        background = "#ffffff"
+
+    img = qrcode.make(uri, image_factory=TotpQrImage)
     buf = io.BytesIO()
     img.save(buf)
     resp = make_response(buf.getvalue())
