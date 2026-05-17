@@ -1,4 +1,4 @@
-from flask import render_template, Blueprint
+from flask import current_app, render_template, Blueprint
 from flask_login import current_user
 from sqlalchemy import func
 
@@ -19,6 +19,9 @@ def home():
     project_count = 0
     app_count = 0
     deploy_count = 0
+    organization_requests_enabled = current_app.config.get(
+        "ORGANIZATION_REQUESTS_ENABLED", False
+    )
     if current_user.is_authenticated:
         user_orgs = (
             db.session.query(OrganizationMember.organization_id)
@@ -60,6 +63,7 @@ def home():
         project_count=project_count,
         app_count=app_count,
         deploy_count=deploy_count,
+        organization_requests_enabled=organization_requests_enabled,
     )
 
 

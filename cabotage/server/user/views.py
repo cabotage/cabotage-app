@@ -31,7 +31,7 @@ import kubernetes.stream.ws_client
 from dxf import DXF
 import requests as requests_lib
 from requests.exceptions import HTTPError
-from sqlalchemy import and_, desc, func, or_
+from sqlalchemy import and_, case, desc, func, or_
 from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import joinedload, subqueryload
 from sqlalchemy.orm.attributes import flag_modified
@@ -58,6 +58,7 @@ from cabotage.server.models.auth import (
     GitHubAppInstallation,
     GitHubIdentity,
     Organization,
+    OrganizationRequest,
     TailscaleIntegration,
     User,
 )
@@ -127,6 +128,8 @@ from cabotage.server.user.forms import (
     EditProjectSettingsForm,
     IngressSettingsForm,
     IngressHostForm,
+    RequestOrganizationForm,
+    ReviewOrganizationRequestForm,
     TailscaleIntegrationForm,
     TailscaleIngressSettingsForm,
     ReleaseDeployForm,
@@ -182,6 +185,15 @@ user_blueprint = Blueprint(
     "user",
     __name__,
 )
+
+
+def _organization_requests_enabled():
+    return current_app.config.get("ORGANIZATION_REQUESTS_ENABLED", False)
+
+
+def _require_organization_requests_enabled():
+    if not _organization_requests_enabled():
+        abort(404)
 
 
 def _config_k8s_namespace(organization, app_env):
@@ -580,6 +592,7 @@ def organizations():
         organizations=memberships,
         last_deploy_by_org=last_deploy_by_org,
         org_create_form=org_create_form,
+        organization_requests_enabled=_organization_requests_enabled(),
     )
 
 
@@ -1194,6 +1207,134 @@ def organization_create():
     return render_template(
         "user/organization_create.html", organization_create_form=form
     )
+
+
+@user_blueprint.route("/organization-requests/create", methods=["GET", "POST"])
+@login_required
+def organization_request_create():
+    _require_organization_requests_enabled()
+    form = RequestOrganizationForm()
+
+    if form.validate_on_submit():
+        org_request = OrganizationRequest(
+            requester_user_id=current_user.id,
+            name=form.name.data,
+            slug=form.slug.data,
+            note=form.note.data,
+        )
+        db.session.add(org_request)
+        db.session.commit()
+        flash("Organization request submitted.", "success")
+        return redirect(url_for("main.home"))
+
+    return render_template(
+        "user/organization_request_create.html", organization_request_form=form
+    )
+
+
+@user_blueprint.route("/organization-requests")
+@login_required
+def organization_requests():
+    _require_organization_requests_enabled()
+    if not current_user.admin:
+        abort(403)
+
+    requests = (
+        OrganizationRequest.query.options(
+            joinedload(OrganizationRequest.requester),
+            joinedload(OrganizationRequest.reviewer),
+            joinedload(OrganizationRequest.organization),
+        )
+        .order_by(
+            case(
+                (OrganizationRequest.status == OrganizationRequest.STATUS_PENDING, 0),
+                else_=1,
+            ),
+            OrganizationRequest.created_at.asc(),
+        )
+        .all()
+    )
+    review_form = ReviewOrganizationRequestForm()
+    return render_template(
+        "user/organization_requests.html",
+        organization_requests=requests,
+        review_form=review_form,
+    )
+
+
+@user_blueprint.route("/organization-requests/<request_id>/approve", methods=["POST"])
+@login_required
+def organization_request_approve(request_id):
+    _require_organization_requests_enabled()
+    if not current_user.admin:
+        abort(403)
+
+    form = ReviewOrganizationRequestForm()
+    if not form.validate_on_submit():
+        abort(400)
+
+    org_request = _safe_get(OrganizationRequest, request_id)
+    if org_request is None:
+        abort(404)
+    if not org_request.is_pending:
+        flash("That organization request has already been reviewed.", "warning")
+        return redirect(url_for("user.organization_requests"))
+    if Organization.query.filter_by(slug=org_request.slug).first() is not None:
+        flash("That organization slug is already in use.", "danger")
+        return redirect(url_for("user.organization_requests"))
+
+    organization = Organization(name=org_request.name, slug=org_request.slug)
+    organization.add_user(org_request.requester, admin=True)
+    db.session.add(organization)
+    db.session.flush()
+
+    org_request.status = OrganizationRequest.STATUS_APPROVED
+    org_request.reviewer_user_id = current_user.id
+    org_request.reviewed_at = datetime.datetime.now(datetime.timezone.utc).replace(
+        tzinfo=None
+    )
+    org_request.organization_id = organization.id
+
+    org_create = Activity(
+        verb="create",
+        object=organization,
+        data={
+            "user_id": str(current_user.id),
+            "organization_request_id": str(org_request.id),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        },
+    )
+    db.session.add(org_create)
+    db.session.commit()
+    flash("Organization request approved.", "success")
+    return redirect(url_for("user.organization_requests"))
+
+
+@user_blueprint.route("/organization-requests/<request_id>/deny", methods=["POST"])
+@login_required
+def organization_request_deny(request_id):
+    _require_organization_requests_enabled()
+    if not current_user.admin:
+        abort(403)
+
+    form = ReviewOrganizationRequestForm()
+    if not form.validate_on_submit():
+        abort(400)
+
+    org_request = _safe_get(OrganizationRequest, request_id)
+    if org_request is None:
+        abort(404)
+    if org_request.is_pending:
+        org_request.status = OrganizationRequest.STATUS_DENIED
+        org_request.reviewer_user_id = current_user.id
+        org_request.reviewed_at = datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        )
+        db.session.commit()
+        flash("Organization request denied.", "success")
+    else:
+        flash("That organization request has already been reviewed.", "warning")
+    return redirect(url_for("user.organization_requests"))
 
 
 @user_blueprint.route("/organizations/<org_slug>/projects")
