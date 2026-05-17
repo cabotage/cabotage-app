@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, empty_state, service_card, stat_card, create_modal, render_field, project_tab_nav %}
+{% from "_macros.html" import icon, resource_path, page_header, empty_state, application_card, service_card, stat_card, create_modal, render_field, project_tab_nav %}
 
 {% block title %}
   {{ project.name }} - Cabotage
@@ -80,37 +80,15 @@
         {% set status = "running" %}
       {% endif %}
 
-      {% set proc_counts = ae.process_counts %}
     {% endif %}
-    {% set proc_count = proc_counts.values()|sum if proc_counts is defined and proc_counts else 0 %}
-    {% set meta = [
-              (proc_count ~ ' instance' ~ ('s' if proc_count != 1 else '')) if proc_count else 'No pods',
-              (app_config_counts.get(ae.id, 0) ~ ' config' ~ ('s' if app_config_counts.get(ae.id, 0) != 1 else '')) if ae else ''
-            ]|select|list %}
-    {% if ae and ae.id in last_deploy_by_ae %}
-      {% set _ = meta.append('deployed ' ~ last_deploy_by_ae[ae.id]|humanize) %}
-    {% endif %}
-    {% set branch = ae.effective_auto_deploy_branch if ae else application.auto_deploy_branch %}
-    {% set pr_num = env_slug[3:] if env_slug and env_slug.startswith('pr-') else '' %}
-    {% set hosts = [] %}
-    {% set ts_int = application.project.organization.tailscale_integration %}
-    {% if ae %}
-      {% for ing in ae.ingresses if ing.enabled %}
-        {% for host in ing.hosts %}
-          {% if hosts.append({'hostname': host.hostname, 'is_auto': host.is_auto_generated, 'ingress_name': ing.name, 'ingress_class': ing.ingress_class_name, 'tailnet': ts_int.tailnet if ts_int else ''}) %}{% endif %}
-        {% endfor %}
-      {% endfor %}
-    {% endif %}
-    {{ service_card(name=application.name,
-            slug=application.slug,
-            url=url_for('user.project_application', org_slug=project.organization.slug, project_slug=project.slug, app_slug=application.slug, env_slug=env_slug),
-    status=status,
-    meta_items=meta,
-    color='accent',
-    github_repo=application.github_repository or '',
-    github_branch=branch or '',
-    github_pr_number=pr_num,
-    app_hosts=hosts
+    {{ application_card(
+      project,
+      application,
+      app_env=ae,
+      env_slug=env_slug,
+      status=status,
+      config_count=app_config_counts.get(ae.id, 0) if ae else 0,
+      last_deploy_at=last_deploy_by_ae[ae.id] if ae and ae.id in last_deploy_by_ae else none
     ) }}
   {% endmacro %}
 

@@ -14,6 +14,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    session,
     url_for,
     flash,
 )
@@ -22,6 +23,7 @@ from flask_security import (
     login_required,
 )
 from flask_wtf import FlaskForm
+from itsdangerous import BadData
 
 import kubernetes
 import kubernetes.stream.ws_client
@@ -29,7 +31,7 @@ import kubernetes.stream.ws_client
 from dxf import DXF
 import requests as requests_lib
 from requests.exceptions import HTTPError
-from sqlalchemy import and_, desc, func, or_
+from sqlalchemy import and_, case, desc, func, or_
 from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import joinedload, subqueryload
 from sqlalchemy.orm.attributes import flag_modified
@@ -53,8 +55,10 @@ from cabotage.server.acl import (
 )
 
 from cabotage.server.models.auth import (
+    GitHubAppInstallation,
     GitHubIdentity,
     Organization,
+    OrganizationRequest,
     TailscaleIntegration,
     User,
 )
@@ -124,6 +128,8 @@ from cabotage.server.user.forms import (
     EditProjectSettingsForm,
     IngressSettingsForm,
     IngressHostForm,
+    RequestOrganizationForm,
+    ReviewOrganizationRequestForm,
     TailscaleIntegrationForm,
     TailscaleIngressSettingsForm,
     ReleaseDeployForm,
@@ -135,6 +141,7 @@ from cabotage.server.user.forms import (
     EditRedisResourceForm,
     DeleteRedisResourceForm,
 )
+from cabotage.server.user import github_installations
 
 from cabotage.utils.docker_auth import (
     generate_docker_registry_jwt,
@@ -178,6 +185,15 @@ user_blueprint = Blueprint(
     "user",
     __name__,
 )
+
+
+def _organization_requests_enabled():
+    return current_app.config.get("ORGANIZATION_REQUESTS_ENABLED", False)
+
+
+def _require_organization_requests_enabled():
+    if not _organization_requests_enabled():
+        abort(404)
 
 
 def _config_k8s_namespace(organization, app_env):
@@ -576,6 +592,7 @@ def organizations():
         organizations=memberships,
         last_deploy_by_org=last_deploy_by_org,
         org_create_form=org_create_form,
+        organization_requests_enabled=_organization_requests_enabled(),
     )
 
 
@@ -894,6 +911,275 @@ def organization_settings(org_slug):
     )
 
 
+@user_blueprint.route("/github/install/<org_slug>")
+@login_required
+def github_install_start(org_slug):
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .first_or_404()
+    )
+    if not AdministerOrganizationPermission(organization.id).can():
+        abort(403)
+
+    application = None
+    application_id = request.args.get("application_id")
+    if application_id:
+        application = _safe_get(Application, application_id)
+        if (
+            application is None
+            or application.deleted_at is not None
+            or application.project.organization_id != organization.id
+            or not AdministerApplicationPermission(application.id).can()
+        ):
+            abort(404)
+
+    state = github_installations.install_state(
+        organization, current_user.id, application
+    )
+    install_url = github_installations.install_url(state)
+    if install_url is None:
+        flash("GitHub App install URL is not configured.", "danger")
+        if application is not None:
+            return redirect(
+                url_for(
+                    "user.project_application_settings",
+                    org_slug=organization.slug,
+                    project_slug=application.project.slug,
+                    app_slug=application.slug,
+                )
+            )
+        return redirect(
+            url_for("user.organization_settings", org_slug=organization.slug)
+        )
+    session["github_install_state"] = state
+    return redirect(install_url)
+
+
+@user_blueprint.route("/github/install/callback")
+@login_required
+def github_install_callback():
+    state = request.args.get("state")
+    installation_id = request.args.get("installation_id")
+    setup_action = request.args.get("setup_action")
+
+    if setup_action == "request":
+        flash(
+            "GitHub recorded the install request. An organization owner still needs to approve it.",
+            "info",
+        )
+        return redirect(url_for("user.organizations"))
+
+    if setup_action == "update" and not state:
+        flash(
+            "GitHub App installation updated. Use Refresh to sync repository access.",
+            "success",
+        )
+        return redirect(url_for("user.organizations"))
+
+    if not state or not installation_id:
+        flash("GitHub did not return enough information to connect the app.", "danger")
+        return redirect(url_for("user.organizations"))
+    try:
+        installation_id = int(installation_id)
+    except (TypeError, ValueError):
+        flash("GitHub did not return enough information to connect the app.", "danger")
+        return redirect(url_for("user.organizations"))
+
+    try:
+        payload = github_installations.install_state_serializer().loads(
+            state, max_age=github_installations.GITHUB_INSTALL_STATE_MAX_AGE_SECONDS
+        )
+    except BadData:
+        flash("The GitHub install link expired or could not be verified.", "danger")
+        return redirect(url_for("user.organizations"))
+
+    if payload.get("user_id") != str(current_user.id):
+        flash("The GitHub install link belongs to a different user.", "danger")
+        return redirect(url_for("user.organizations"))
+    session.pop("github_install_state", None)
+
+    organization = _safe_get(Organization, payload.get("organization_id"))
+    if organization is None or organization.deleted_at is not None:
+        abort(404)
+    if not AdministerOrganizationPermission(organization.id).can():
+        abort(403)
+
+    application = None
+    application_id = payload.get("application_id")
+    if application_id:
+        application = _safe_get(Application, application_id)
+        if (
+            application is None
+            or application.deleted_at is not None
+            or application.project.organization_id != organization.id
+            or not AdministerApplicationPermission(application.id).can()
+        ):
+            abort(404)
+
+    authorize_url = github_installations.user_authorize_url(
+        github_installations.connect_state(
+            organization,
+            current_user.id,
+            installation_id=installation_id,
+            application=application,
+        )
+    )
+    if authorize_url is None:
+        flash("GitHub user authorization is not configured.", "danger")
+        return redirect(
+            url_for("user.organization_settings", org_slug=organization.slug)
+        )
+    return redirect(authorize_url)
+
+
+@user_blueprint.route("/github/connect/<org_slug>")
+@login_required
+def github_connect_start(org_slug):
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .first_or_404()
+    )
+    if not AdministerOrganizationPermission(organization.id).can():
+        abort(403)
+
+    authorize_url = github_installations.user_authorize_url(
+        github_installations.connect_state(organization, current_user.id)
+    )
+    if authorize_url is None:
+        flash("GitHub user authorization is not configured.", "danger")
+        return redirect(url_for("user.organization_settings", org_slug=org_slug))
+    return redirect(authorize_url)
+
+
+@user_blueprint.route("/github/connect/<org_slug>/verified")
+@login_required
+def github_connect_verified(org_slug):
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .first_or_404()
+    )
+    if not AdministerOrganizationPermission(organization.id).can():
+        abort(403)
+
+    session.pop("github_verified_installation", None)
+    flash(
+        "The GitHub installation verification expired or could not be verified.",
+        "danger",
+    )
+    return redirect(url_for("user.organization_settings", org_slug=org_slug))
+
+
+@user_blueprint.route("/github/connect/<org_slug>/complete", methods=["POST"])
+@login_required
+def github_connect_complete(org_slug):
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .first_or_404()
+    )
+    if not AdministerOrganizationPermission(organization.id).can():
+        abort(403)
+
+    token = request.form.get("installation")
+    if not token:
+        flash(
+            "The GitHub installation selection expired or could not be verified.",
+            "danger",
+        )
+        return redirect(url_for("user.organization_settings", org_slug=org_slug))
+
+    try:
+        payload = github_installations.connect_state_serializer().loads(
+            token, max_age=github_installations.GITHUB_INSTALL_STATE_MAX_AGE_SECONDS
+        )
+    except BadData:
+        flash(
+            "The GitHub installation selection expired or could not be verified.",
+            "danger",
+        )
+        return redirect(url_for("user.organization_settings", org_slug=org_slug))
+
+    if payload.get("user_id") != str(current_user.id) or payload.get(
+        "organization_id"
+    ) != str(organization.id):
+        flash(
+            "The GitHub installation selection does not match this organization.",
+            "danger",
+        )
+        return redirect(url_for("user.organization_settings", org_slug=org_slug))
+
+    if not payload.get("installation_id"):
+        flash(
+            "The GitHub installation selection expired or could not be verified.",
+            "danger",
+        )
+        return redirect(url_for("user.organization_settings", org_slug=org_slug))
+
+    authorize_url = github_installations.user_authorize_url(
+        github_installations.connect_state(
+            organization,
+            current_user.id,
+            installation_id=payload.get("installation_id"),
+        )
+    )
+    if authorize_url is None:
+        flash("GitHub user authorization is not configured.", "danger")
+        return redirect(url_for("user.organization_settings", org_slug=org_slug))
+    return redirect(authorize_url)
+
+
+@user_blueprint.route(
+    "/github/installations/<org_slug>/<installation_id>/refresh", methods=["POST"]
+)
+@login_required
+def github_installation_refresh(org_slug, installation_id):
+    organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .first_or_404()
+    )
+    if not AdministerOrganizationPermission(organization.id).can():
+        abort(403)
+
+    app_installation = GitHubAppInstallation.query.filter_by(
+        organization_id=organization.id,
+        id=installation_id,
+    ).first_or_404()
+
+    installation = github_app.fetch_installation(app_installation.installation_id)
+    if installation is None:
+        flash("Cabotage could not refresh the GitHub App installation.", "danger")
+        return redirect(url_for("user.organization_settings", org_slug=org_slug))
+
+    account = installation.get("account") or {}
+    app_installation.account_id = account.get("id")
+    app_installation.account_login = account.get("login")
+    app_installation.account_type = account.get("type")
+    app_installation.repository_selection = installation.get("repository_selection")
+    if github_installations.sync_installation_repositories(app_installation):
+        disconnected = github_installations.reconcile_selected_repository_applications(
+            app_installation
+        )
+        if disconnected:
+            flash(
+                f"GitHub App installation refreshed. Disconnected {disconnected} "
+                "application(s) from repositories that are no longer accessible.",
+                "warning",
+            )
+        else:
+            flash("GitHub App installation refreshed.", "success")
+    else:
+        flash(
+            "GitHub App metadata refreshed, but repositories could not be loaded.",
+            "warning",
+        )
+    db.session.commit()
+    return redirect(url_for("user.organization_settings", org_slug=org_slug))
+
+
 @user_blueprint.route("/organizations/create", methods=["GET", "POST"])
 @login_required
 def organization_create():
@@ -921,6 +1207,134 @@ def organization_create():
     return render_template(
         "user/organization_create.html", organization_create_form=form
     )
+
+
+@user_blueprint.route("/organization-requests/create", methods=["GET", "POST"])
+@login_required
+def organization_request_create():
+    _require_organization_requests_enabled()
+    form = RequestOrganizationForm()
+
+    if form.validate_on_submit():
+        org_request = OrganizationRequest(
+            requester_user_id=current_user.id,
+            name=form.name.data,
+            slug=form.slug.data,
+            note=form.note.data,
+        )
+        db.session.add(org_request)
+        db.session.commit()
+        flash("Organization request submitted.", "success")
+        return redirect(url_for("main.home"))
+
+    return render_template(
+        "user/organization_request_create.html", organization_request_form=form
+    )
+
+
+@user_blueprint.route("/organization-requests")
+@login_required
+def organization_requests():
+    _require_organization_requests_enabled()
+    if not current_user.admin:
+        abort(403)
+
+    requests = (
+        OrganizationRequest.query.options(
+            joinedload(OrganizationRequest.requester),
+            joinedload(OrganizationRequest.reviewer),
+            joinedload(OrganizationRequest.organization),
+        )
+        .order_by(
+            case(
+                (OrganizationRequest.status == OrganizationRequest.STATUS_PENDING, 0),
+                else_=1,
+            ),
+            OrganizationRequest.created_at.asc(),
+        )
+        .all()
+    )
+    review_form = ReviewOrganizationRequestForm()
+    return render_template(
+        "user/organization_requests.html",
+        organization_requests=requests,
+        review_form=review_form,
+    )
+
+
+@user_blueprint.route("/organization-requests/<request_id>/approve", methods=["POST"])
+@login_required
+def organization_request_approve(request_id):
+    _require_organization_requests_enabled()
+    if not current_user.admin:
+        abort(403)
+
+    form = ReviewOrganizationRequestForm()
+    if not form.validate_on_submit():
+        abort(400)
+
+    org_request = _safe_get(OrganizationRequest, request_id)
+    if org_request is None:
+        abort(404)
+    if not org_request.is_pending:
+        flash("That organization request has already been reviewed.", "warning")
+        return redirect(url_for("user.organization_requests"))
+    if Organization.query.filter_by(slug=org_request.slug).first() is not None:
+        flash("That organization slug is already in use.", "danger")
+        return redirect(url_for("user.organization_requests"))
+
+    organization = Organization(name=org_request.name, slug=org_request.slug)
+    organization.add_user(org_request.requester, admin=True)
+    db.session.add(organization)
+    db.session.flush()
+
+    org_request.status = OrganizationRequest.STATUS_APPROVED
+    org_request.reviewer_user_id = current_user.id
+    org_request.reviewed_at = datetime.datetime.now(datetime.timezone.utc).replace(
+        tzinfo=None
+    )
+    org_request.organization_id = organization.id
+
+    org_create = Activity(
+        verb="create",
+        object=organization,
+        data={
+            "user_id": str(current_user.id),
+            "organization_request_id": str(org_request.id),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        },
+    )
+    db.session.add(org_create)
+    db.session.commit()
+    flash("Organization request approved.", "success")
+    return redirect(url_for("user.organization_requests"))
+
+
+@user_blueprint.route("/organization-requests/<request_id>/deny", methods=["POST"])
+@login_required
+def organization_request_deny(request_id):
+    _require_organization_requests_enabled()
+    if not current_user.admin:
+        abort(403)
+
+    form = ReviewOrganizationRequestForm()
+    if not form.validate_on_submit():
+        abort(400)
+
+    org_request = _safe_get(OrganizationRequest, request_id)
+    if org_request is None:
+        abort(404)
+    if org_request.is_pending:
+        org_request.status = OrganizationRequest.STATUS_DENIED
+        org_request.reviewer_user_id = current_user.id
+        org_request.reviewed_at = datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        )
+        db.session.commit()
+        flash("Organization request denied.", "success")
+    else:
+        flash("That organization request has already been reviewed.", "warning")
+    return redirect(url_for("user.organization_requests"))
 
 
 @user_blueprint.route("/organizations/<org_slug>/projects")
@@ -3645,36 +4059,24 @@ def project_application_settings(org_slug, project_slug, app_slug):
         org_slug, project_slug, app_slug, require_admin=True
     )
 
-    form = EditApplicationSettingsForm(obj=application)
-    # Pre-populate watch paths as newline-separated text
-    if not form.is_submitted():
-        if application.branch_deploy_watch_paths:
-            form.branch_deploy_watch_paths.data = "\n".join(
-                application.branch_deploy_watch_paths
-            )
-        else:
-            form.branch_deploy_watch_paths.data = ""
-    form.application_id.choices = [
-        (
-            str(application.id),
-            (
-                f"{application.project.organization.slug}/{application.project.slug}: "
-                f"{application.slug}"
-            ),
-        )
-    ]
-    form.application_id.data = str(application.id)
+    form = _prepare_application_settings_form(application, org)
 
     if form.validate_on_submit():
-        # Convert watch paths from newline-separated text to JSON array
-        raw = form.branch_deploy_watch_paths.data
-        if raw and raw.strip():
-            form.branch_deploy_watch_paths.data = [
-                line.strip() for line in raw.splitlines() if line.strip()
-            ]
-        else:
-            form.branch_deploy_watch_paths.data = None
+        _validate_github_source_settings(form, application, org)
+        if form.github_app_installation_id.errors or form.github_repository.errors:
+            return _render_application_settings(application, org, project, form)
+
+        previous_github_app_installation_id = application.github_app_installation_id
+        previous_github_repository = application.github_repository
+        _coerce_application_settings_form(form)
         form.populate_obj(application)
+        _apply_github_source_metadata(
+            form,
+            application,
+            org,
+            previous_github_app_installation_id=previous_github_app_installation_id,
+            previous_github_repository=previous_github_repository,
+        )
         db.session.flush()
         activity = Activity(
             verb="edit",
@@ -3697,6 +4099,140 @@ def project_application_settings(org_slug, project_slug, app_slug):
             )
         )
 
+    return _render_application_settings(application, org, project, form)
+
+
+def _prepare_application_settings_form(application, org):
+    form = EditApplicationSettingsForm(obj=application)
+
+    if not form.is_submitted():
+        if application.branch_deploy_watch_paths:
+            form.branch_deploy_watch_paths.data = "\n".join(
+                application.branch_deploy_watch_paths
+            )
+        else:
+            form.branch_deploy_watch_paths.data = ""
+
+    form.application_id.choices = [
+        (
+            str(application.id),
+            (
+                f"{application.project.organization.slug}/{application.project.slug}: "
+                f"{application.slug}"
+            ),
+        )
+    ]
+    form.application_id.data = str(application.id)
+    form.github_app_installation_id.choices = github_installations.installation_choices(
+        org, application.github_app_installation_id
+    )
+    if not form.is_submitted():
+        form.github_app_installation_id.data = (
+            str(application.github_app_installation_id)
+            if application.github_app_installation_id
+            else ""
+        )
+        form.github_repository.data = application.github_repository
+    return form
+
+
+def _validate_github_source_settings(form, application, org):
+    selected_installation = github_installations.installation_for_org(
+        org, form.github_app_installation_id.data
+    )
+    selected_repository = github_installations.repository_by_name(
+        selected_installation, form.github_repository.data
+    )
+    if form.github_app_installation_id.data and selected_installation is None:
+        form.github_app_installation_id.errors = [
+            *form.github_app_installation_id.errors,
+            "Select a GitHub installation connected to this organization.",
+        ]
+
+    current_repository_is_preserved = (
+        form.github_repository.data
+        and form.github_repository.data == application.github_repository
+        and (
+            str(form.github_app_installation_id.data or "")
+            == str(application.github_app_installation_id or "")
+        )
+    )
+    if (
+        form.github_repository.data
+        and selected_installation is not None
+        and selected_repository is None
+        and selected_installation.repository_selection == "selected"
+        and selected_installation.repositories is not None
+        and not current_repository_is_preserved
+    ):
+        form.github_repository.errors = [
+            *form.github_repository.errors,
+            "Select a repository available to the chosen GitHub installation.",
+        ]
+
+    if selected_repository is not None:
+        form.github_repository_is_private.data = bool(
+            selected_repository.get("private")
+        )
+    elif current_repository_is_preserved:
+        form.github_repository_is_private.data = (
+            application.github_repository_is_private
+        )
+    elif selected_installation is None:
+        form.github_repository_is_private.data = False
+
+
+def _apply_github_source_metadata(
+    form,
+    application,
+    org,
+    *,
+    previous_github_app_installation_id,
+    previous_github_repository,
+):
+    selected_installation = github_installations.installation_for_org(
+        org, form.github_app_installation_id.data
+    )
+    selected_repository = github_installations.repository_by_name(
+        selected_installation, form.github_repository.data
+    )
+    current_repository_is_preserved = (
+        form.github_repository.data
+        and form.github_repository.data == previous_github_repository
+        and (
+            str(form.github_app_installation_id.data or "")
+            == str(previous_github_app_installation_id or "")
+        )
+    )
+    if selected_repository is not None:
+        application.github_repository_id = github_installations.repository_id(
+            selected_repository
+        )
+        application.github_repository_is_private = bool(
+            selected_repository.get("private")
+        )
+    elif not current_repository_is_preserved:
+        application.github_repository_id = None
+    if not application.github_app_installation_id:
+        application.github_repository_id = None
+
+
+def _coerce_application_settings_form(form):
+    raw = form.branch_deploy_watch_paths.data
+    if raw and raw.strip():
+        form.branch_deploy_watch_paths.data = [
+            line.strip() for line in raw.splitlines() if line.strip()
+        ]
+    else:
+        form.branch_deploy_watch_paths.data = None
+
+    if form.github_app_installation_id.data:
+        form.github_app_installation_id.data = int(form.github_app_installation_id.data)
+    else:
+        form.github_app_installation_id.data = None
+
+
+def _application_delete_context(application):
     delete_form = DeleteApplicationForm()
     delete_form.application_id.data = str(application.id)
     delete_form.name.data = application.slug
@@ -3713,11 +4249,23 @@ def project_application_settings(org_slug, project_slug, app_slug):
             ("ingress domains", _ingress_hostnames(active_app_envs)),
         ],
     )
+    return delete_form, delete_impact
+
+
+def _render_application_settings(application, org, project, form):
+    delete_form, delete_impact = _application_delete_context(application)
     return render_template(
         "user/project_application_settings.html",
         application=application,
         form=form,
-        app_url=current_app.config.get("GITHUB_APP_URL", "https://github.com"),
+        app_url=url_for(
+            "user.github_install_start",
+            org_slug=org.slug,
+            application_id=application.id,
+        ),
+        github_repository_options=github_installations.repository_options_by_installation(
+            org
+        ),
         environment=_default_environment(project),
         delete_form=delete_form,
         delete_impact=delete_impact,
@@ -5261,7 +5809,10 @@ def account_security_qr():
     if not uri.startswith("otpauth://"):
         abort(400)
 
-    img = qrcode.make(uri, image_factory=qrcode.image.svg.SvgPathImage)
+    class TotpQrImage(qrcode.image.svg.SvgPathImage):
+        background = "#ffffff"
+
+    img = qrcode.make(uri, image_factory=TotpQrImage)
     buf = io.BytesIO()
     img.save(buf)
     resp = make_response(buf.getvalue())
