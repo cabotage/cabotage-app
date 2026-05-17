@@ -448,6 +448,70 @@ class Organization(Model):
         db.session.add(association)
 
 
+class OrganizationRequest(Model):
+    __tablename__ = "organization_requests"
+
+    STATUS_PENDING = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_DENIED = "denied"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        primary_key=True,
+    )
+    requester_user_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        index=True,
+    )
+    reviewer_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        index=True,
+    )
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("organizations.id"),
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(Text())
+    slug: Mapped[str] = mapped_column(postgresql.CITEXT(), index=True)
+    note: Mapped[str | None] = mapped_column(Text())
+    status: Mapped[str] = mapped_column(String(32), default=STATUS_PENDING, index=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
+        index=True,
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
+        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
+    )
+    reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+
+    requester: Mapped[User] = relationship(
+        foreign_keys=[requester_user_id],
+        backref=backref("organization_requests", lazy="dynamic"),
+    )
+    reviewer: Mapped[User | None] = relationship(foreign_keys=[reviewer_user_id])
+    organization: Mapped[Organization | None] = relationship()
+
+    @property
+    def is_pending(self):
+        return self.status == self.STATUS_PENDING
+
+    def __repr__(self):
+        return f"<OrganizationRequest {self.slug} {self.status}>"
+
+
 class Team(Model):
     __versioned__: dict = {}
     __tablename__ = "teams"
