@@ -428,7 +428,7 @@ def create_app():
         return render_template("errors/500.html"), 500
 
     from cabotage.server.models.admin import AdminModelView
-    from cabotage.server.models.auth import Organization, Team
+    from cabotage.server.models.auth import Organization, OrganizationRequest, Team
     from cabotage.server.models.projects import (
         Project,
         Application,
@@ -445,6 +445,8 @@ def create_app():
 
     admin.add_view(AdminModelView(Role, db.session))
     admin.add_view(AdminModelView(Organization, db.session))
+    if app.config.get("ORGANIZATION_REQUESTS_ENABLED", False):
+        admin.add_view(AdminModelView(OrganizationRequest, db.session))
     admin.add_view(AdminModelView(Team, db.session))
     admin.add_view(AdminModelView(Project, db.session))
     admin.add_view(AdminModelView(Application, db.session))

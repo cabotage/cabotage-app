@@ -260,6 +260,10 @@
                 <a href="{{ url_for('user.guide') }}"
                    class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Guide</a>
                 {% if current_user.admin %}
+                {% if config.ORGANIZATION_REQUESTS_ENABLED %}
+                <a href="{{ url_for('user.organization_requests') }}"
+                   class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Requests</a>
+                {% endif %}
                 <a href="{{ url_for('user.infra_observe') }}"
                    class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Infra</a>
                 {% endif %}
@@ -616,6 +620,10 @@
             <a href="{{ url_for('user.guide') }}"
                class="btn btn-ghost btn-sm justify-start text-sm">Guide</a>
             {% if current_user.admin %}
+            {% if config.ORGANIZATION_REQUESTS_ENABLED %}
+            <a href="{{ url_for('user.organization_requests') }}"
+               class="btn btn-ghost btn-sm justify-start text-sm">Requests</a>
+            {% endif %}
             <a href="{{ url_for('user.infra_observe') }}"
                class="btn btn-ghost btn-sm justify-start text-sm">Infrastructure</a>
             {% endif %}

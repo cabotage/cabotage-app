@@ -22,7 +22,7 @@ from wtforms.validators import (
     ValidationError,
 )
 
-from cabotage.server.models.auth import Organization
+from cabotage.server.models.auth import Organization, OrganizationRequest
 from cabotage.server.models.projects import (
     Application,
     ApplicationEnvironment,
@@ -86,6 +86,45 @@ class CreateOrganizationForm(FlaskForm):
         if organization is not None:
             raise ValidationError("Organization slugs must be globally unique.")
         return True
+
+
+class RequestOrganizationForm(FlaskForm):
+    name = StringField(
+        "Organization Name",
+        [InputRequired()],
+        description="Friendly and descriptive name for the organization.",
+    )
+    slug = StringField(
+        "Organization Slug",
+        [
+            InputRequired(),
+            Regexp("^[-a-z0-9]+$", message="Invalid Slug! Must match ^[-a-z0-9]+$"),
+        ],
+        description="URL-safe short name for the organization.",
+    )
+    note = TextAreaField(
+        "Note",
+        [Optional(), Length(max=2000)],
+        description="Optional context for the administrators reviewing this request.",
+    )
+
+    def validate_slug(form, field):
+        organization = Organization.query.filter_by(slug=field.data).first()
+        if organization is not None:
+            raise ValidationError("That organization slug is already in use.")
+        org_request = OrganizationRequest.query.filter_by(
+            slug=field.data,
+            status=OrganizationRequest.STATUS_PENDING,
+        ).first()
+        if org_request is not None:
+            raise ValidationError(
+                "That organization slug already has a pending request."
+            )
+        return True
+
+
+class ReviewOrganizationRequestForm(FlaskForm):
+    pass
 
 
 class CreateProjectForm(FlaskForm):
