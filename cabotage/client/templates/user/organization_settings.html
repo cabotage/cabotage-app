@@ -36,6 +36,89 @@
     </div>
   </div>
 
+  <div class="card bg-base-200/50 border border-base-300/50 max-w-2xl mt-6">
+    <div class="card-body">
+      <div class="flex items-start justify-between gap-6">
+        <div class="min-w-0">
+          <h2 class="card-title text-lg">GitHub App</h2>
+          <p class="text-sm opacity-70">Install the GitHub App once per GitHub account, then choose that installation from application settings.</p>
+        </div>
+        <div class="flex shrink-0 flex-col items-stretch gap-2">
+          <a href="{{ url_for('user.github_install_start', org_slug=organization.slug) }}"
+             class="btn btn-primary btn-sm w-40 justify-start gap-2 whitespace-nowrap">
+            {{ icon('github', 'w-4 h-4') }}
+            Install
+          </a>
+          <a href="{{ url_for('user.github_connect_start', org_slug=organization.slug) }}"
+             class="btn btn-outline btn-primary btn-sm w-40 justify-start gap-2 whitespace-nowrap">
+            {{ icon('link', 'w-4 h-4') }}
+            Connect existing
+          </a>
+        </div>
+      </div>
+      {% if organization.github_app_installations %}
+        <div class="overflow-x-auto mt-4">
+          <table class="table table-sm">
+            <thead>
+              <tr>
+                <th>Account</th>
+                <th>Repositories</th>
+                <th class="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for installation in organization.github_app_installations %}
+                <tr>
+                  <td>{{ installation.account_login or 'Unknown' }}</td>
+                  <td>
+                    {% if installation.repository_selection == 'all' %}
+                      All repositories
+                    {% elif installation.repository_selection == 'selected' %}
+                      {% set repos = installation.repositories %}
+                      {% if repos %}
+                        <div class="flex flex-col gap-1">
+                          {% for repo in repos %}
+                            <span class="inline-flex items-center gap-2 text-sm">
+                              {{ repo.full_name }}
+                              <span class="badge badge-xs badge-outline">{{ 'private' if repo.private else 'public' }}</span>
+                            </span>
+                          {% endfor %}
+                        </div>
+                      {% else %}
+                        Selected repositories
+                      {% endif %}
+                    {% else %}
+                      Unknown
+                    {% endif %}
+                  </td>
+                  <td class="text-right">
+                    <div class="flex flex-col items-end gap-1">
+                      <a href="{{ installation.github_settings_url }}"
+                         target="_blank"
+                         rel="noopener"
+                         class="btn btn-ghost btn-xs gap-1">
+                        {{ icon('settings', 'w-3 h-3') }}
+                        Manage
+                      </a>
+                      <form method="post"
+                            action="{{ url_for('user.github_installation_refresh', org_slug=organization.slug, installation_id=installation.id) }}">
+                        {{ form.csrf_token }}
+                        <button type="submit" class="btn btn-ghost btn-xs gap-1">
+                          {{ icon('refresh-cw', 'w-3 h-3') }}
+                          Refresh repos
+                        </button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
   {# Tailscale Integration #}
   {% if config.TAILSCALE_OPERATOR_ENABLED %}
   <div class="card bg-base-200/50 border border-base-300/50 max-w-2xl mt-6">

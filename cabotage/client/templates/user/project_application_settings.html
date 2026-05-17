@@ -51,38 +51,76 @@
             <div class="settings-row-hint">
               {% if application.github_app_installation_id %}
                 {{ icon('check-circle', 'w-3 h-3 text-success/60 flex-shrink-0') }}
-                <span class="text-success/70">GitHub App connected (installation {{ application.github_app_installation_id }})</span>
+                <span class="text-success/70">GitHub App connected</span>
               {% else %}
                 {{ icon('external-link', 'w-3 h-3 text-info/60 flex-shrink-0') }}
-                <span>To enable, <a href="{{ app_url }}"
-    class="text-accent hover:underline"
-    target="_blank">install the GitHub App</a> and grant access.</span>
+                <span><a href="{{ app_url }}" class="text-accent hover:underline">Install the GitHub App</a> to connect this application.</span>
               {% endif %}
             </div>
           </div>
         </div>
         <div class="settings-row-fields">
           <div class="settings-field-grid-3">
-            {{ render_field_compact(form.github_repository, placeholder='owner/repo', label='Repository') }}
+            <div class="settings-field-span-2">
+              {{ render_field_compact(form.github_app_installation_id, label='GitHub Installation') }}
+            </div>
+          </div>
+          <div class="settings-field-grid-3">
+            <fieldset class="fieldset w-full settings-field-span-2">
+              <legend class="fieldset-legend text-xs text-base-content/50 font-medium uppercase tracking-wider"
+                      style="display:flex;
+                             align-items:center;
+                             gap:0.375rem">
+                Repository
+                {% if form.github_repository.description %}
+                  <div class="info-popup-anchor" style="display:inline-flex">
+                    {{ icon('info', 'w-3 h-3 text-base-content/25 cursor-help') }}
+                    <div class="info-popup"
+                         style="min-width:14rem;
+                                white-space:normal;
+                                text-transform:none;
+                                letter-spacing:0;
+                                font-weight:400">
+                      <div class="info-popup-header">
+                        {{ icon('info', 'w-3 h-3 info-popup-header-icon') }}
+                        <span class="info-popup-header-text">Repository</span>
+                      </div>
+                      <div class="info-popup-body">
+                        <div class="text-xs" style="line-height:1.5;padding:0.5rem 0.75rem">{{ form.github_repository.description }}</div>
+                      </div>
+                    </div>
+                  </div>
+                {% endif %}
+              </legend>
+              <input type="text"
+                     id="github_repository_text"
+                     name="github_repository"
+                     class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary"
+                     placeholder="owner/repo"
+                     value="{{ form.github_repository.data or '' }}">
+              <select id="github_repository_select"
+                      class="select select-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary hidden">
+              </select>
+              {% for error in form.github_repository.errors %}<p class="text-xs text-error mt-0.5">{{ error }}</p>{% endfor %}
+            </fieldset>
             {{ render_field_compact(form.auto_deploy_branch, placeholder='main', label='Branch') }}
+          </div>
+          <div class="settings-field-grid-3">
             {{ render_field_compact(form.subdirectory, placeholder='/', label='Subdirectory') }}
             {{ render_field_compact(form.dockerfile_path, placeholder='Dockerfile.cabotage', label='Dockerfile Path') }}
             {{ render_field_compact(form.procfile_path, placeholder='Procfile.cabotage', label='Procfile Path') }}
+          </div>
+          <div id="github_repository_private_field" class="mt-2">
+            {{ render_field_compact(form.github_repository_is_private, label='Private Repository') }}
           </div>
           <div class="mt-2">
             {{ render_field_compact(form.branch_deploy_watch_paths, placeholder='src/**', label='Watch Paths', extra_class='auto-grow') }}
           </div>
           {% if not application.project.environments_enabled %}
-          <div class="settings-field-grid-2">
-            {{ render_field_compact(form.github_app_installation_id, label='Installation ID') }}
+          <div class="settings-field-grid-1">
             {{ render_field_compact(form.github_environment_name, placeholder=project_slug + '/' + app_slug, label='Environment') }}
           </div>
-          {% else %}
-          <div class="settings-field-grid-1">
-            {{ render_field_compact(form.github_app_installation_id, label='Installation ID') }}
-          </div>
           {% endif %}
-          {{ render_field_compact(form.github_repository_is_private, label='Private Repository') }}
         </div>
       </div>
 
@@ -126,4 +164,73 @@
       ) }}
     {% endif %}
   </div>
+
+  <script>
+    (() => {
+      const repositoryOptions = {{ github_repository_options|tojson }};
+      const installationSelect = document.getElementById("github_app_installation_id");
+      const repositoryInput = document.getElementById("github_repository_text");
+      const repositorySelect = document.getElementById("github_repository_select");
+
+      if (!installationSelect || !repositoryInput || !repositorySelect) {
+        return;
+      }
+
+      function addOption(value, label) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        repositorySelect.appendChild(option);
+      }
+
+      function syncRepositoryOptions(clearRepository) {
+        const installationId = installationSelect.value;
+        const repositories = repositoryOptions[installationId] || [];
+        const currentValue = clearRepository ? "" : repositoryInput.value || repositorySelect.value;
+
+        repositorySelect.replaceChildren();
+        addOption("", "Select repository");
+        for (const repository of repositories) {
+          addOption(repository.name, repository.name);
+        }
+        const hasCurrentValue = [...repositorySelect.options].some(
+          (option) => option.value === currentValue
+        );
+        if (currentValue && !hasCurrentValue && !clearRepository) {
+          addOption(currentValue, currentValue);
+        }
+
+        if (
+          installationId &&
+          Object.prototype.hasOwnProperty.call(repositoryOptions, installationId)
+        ) {
+          repositoryInput.classList.add("hidden");
+          repositoryInput.disabled = true;
+          repositoryInput.removeAttribute("name");
+          repositorySelect.classList.remove("hidden");
+          repositorySelect.disabled = false;
+          repositorySelect.setAttribute("name", "github_repository");
+          repositorySelect.value = currentValue;
+          document.getElementById("github_repository_private_field")?.classList.add("hidden");
+          return;
+        }
+
+        repositorySelect.classList.add("hidden");
+        repositorySelect.disabled = true;
+        repositorySelect.removeAttribute("name");
+        repositoryInput.classList.remove("hidden");
+        repositoryInput.disabled = false;
+        repositoryInput.setAttribute("name", "github_repository");
+        document
+          .getElementById("github_repository_private_field")
+          ?.classList.toggle("hidden", !installationId);
+        if (clearRepository) {
+          repositoryInput.value = "";
+        }
+      }
+
+      installationSelect.addEventListener("change", () => syncRepositoryOptions(true));
+      syncRepositoryOptions(false);
+    })();
+  </script>
 {% endblock content %}

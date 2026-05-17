@@ -3444,12 +3444,19 @@ a.pipeline-stage-body:hover {
   grid-template-columns: 1fr;
   gap: 0 1rem;
 }
+.settings-row-fields > .settings-field-grid-3 + .settings-field-grid-3,
+.settings-row-fields > .settings-field-grid-1 + .settings-field-grid-3 {
+  margin-top: 0.5rem;
+}
 @media (min-width: 640px) {
   .settings-field-grid-2 {
     grid-template-columns: 1fr 1fr;
   }
   .settings-field-grid-3 {
     grid-template-columns: 1fr 1fr 1fr;
+  }
+  .settings-field-span-2 {
+    grid-column: span 2;
   }
 }
 .settings-row-actions {

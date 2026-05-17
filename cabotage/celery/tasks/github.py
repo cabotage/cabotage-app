@@ -19,7 +19,16 @@ from cabotage.server.models.projects import (
     ApplicationEnvironment,
     Project,
 )
-from cabotage.server.models.auth import Organization
+from cabotage.server.models.auth import (
+    GitHubAppInstallation,
+    Organization,
+)
+from cabotage.server.user.github_installations import (
+    merge_repository_metadata,
+    reconcile_selected_repository_applications,
+    sync_application_repository_metadata,
+    sync_installation_repositories,
+)
 from cabotage.celery.tasks import (
     run_image_build,
     run_omnibus_build,
@@ -267,17 +276,388 @@ def process_deployment_hook(hook):
 
 
 def process_installation_hook(hook):
-    if hook.payload["action"] == "created":
-        pass
-    if hook.payload["action"] == "deleted":
-        pass
+    installation_id = hook.payload.get("installation", {}).get("id")
+    if installation_id is None:
+        return False
+
+    action = hook.payload.get("action")
+    if action in ("created", "new_permissions_accepted"):
+        _sync_known_installation_metadata(hook.payload["installation"])
+        return True
+    if action == "deleted":
+        GitHubAppInstallation.query.filter_by(installation_id=installation_id).delete()
+        (
+            Application.query.filter_by(
+                github_app_installation_id=installation_id
+            ).update(
+                {
+                    "github_app_installation_id": None,
+                    "github_repository_id": None,
+                    "github_repository_is_private": False,
+                },
+                synchronize_session=False,
+            )
+        )
+        return True
+    return False
 
 
 def process_installation_repositories_hook(hook):
-    if hook.payload["action"] == "created":
-        pass
-    if hook.payload["action"] == "deleted":
-        pass
+    installation_id = hook.payload.get("installation", {}).get("id")
+    if installation_id is None:
+        return False
+
+    action = hook.payload.get("action")
+    if action not in ("added", "removed"):
+        return False
+
+    _sync_known_installation_repository_delta(
+        hook.payload["installation"],
+        action,
+        repositories_added=hook.payload.get("repositories_added", []),
+        repositories_removed=hook.payload.get("repositories_removed", []),
+    )
+    if action == "removed":
+        removed_ids = [
+            repo.get("id")
+            for repo in hook.payload.get("repositories_removed", [])
+            if repo.get("id") is not None
+        ]
+        removed_repos = [
+            repo.get("full_name")
+            for repo in hook.payload.get("repositories_removed", [])
+            if repo.get("full_name")
+        ]
+        if removed_ids or removed_repos:
+            (
+                Application.query.filter(
+                    Application.github_app_installation_id == installation_id,
+                    or_(
+                        Application.github_repository_id.in_(removed_ids),
+                        Application.github_repository.in_(removed_repos),
+                    ),
+                ).update(
+                    {
+                        "github_app_installation_id": None,
+                        "github_repository_id": None,
+                        "github_repository_is_private": False,
+                    },
+                    synchronize_session=False,
+                )
+            )
+        return True
+    if action == "added":
+        return True
+    return False
+
+
+def process_installation_target_hook(hook):
+    action = hook.payload.get("action")
+    if action != "renamed":
+        return False
+
+    installation_id = hook.payload.get("installation", {}).get("id")
+    if installation_id is None:
+        return False
+
+    account = hook.payload.get("account") or {}
+    known_installations = GitHubAppInstallation.query.filter_by(
+        installation_id=installation_id
+    ).all()
+
+    new_login = account.get("login")
+
+    for app_installation in known_installations:
+        old_login = app_installation.account_login
+        if old_login and new_login and old_login != new_login:
+            app_installation.repositories = _rename_cached_repository_owner(
+                app_installation.repositories,
+                old_login=old_login,
+                new_login=new_login,
+            )
+            _rename_application_repository_owner(
+                app_installation,
+                old_login=old_login,
+                new_login=new_login,
+            )
+            sync_application_repository_metadata(app_installation)
+        app_installation.account_id = account.get("id")
+        app_installation.account_login = new_login
+        app_installation.account_type = account.get("type")
+
+    return bool(known_installations)
+
+
+def process_repository_hook(hook):
+    installation_id = hook.payload.get("installation", {}).get("id")
+    repository = hook.payload.get("repository") or {}
+    repository_id = repository.get("id")
+    repository_full_name = repository.get("full_name")
+    if installation_id is None or repository_id is None or not repository_full_name:
+        return False
+
+    known_installations = GitHubAppInstallation.query.filter_by(
+        installation_id=installation_id
+    ).all()
+    repository_metadata = {
+        "id": repository_id,
+        "full_name": repository_full_name,
+        "private": bool(repository.get("private")),
+    }
+
+    for app_installation in known_installations:
+        previous_names = _update_cached_repository_metadata(
+            app_installation,
+            repository_metadata,
+        )
+        if previous_names:
+            _rename_application_repositories(
+                app_installation.installation_id,
+                previous_names=previous_names,
+                repo_id=repository_id,
+                new_name=repository_full_name,
+                private=bool(repository.get("private")),
+            )
+        else:
+            _update_application_repository_privacy(
+                app_installation.installation_id,
+                repo_id=repository_id,
+                repository_name=repository_full_name,
+                private=bool(repository.get("private")),
+            )
+
+    return bool(known_installations)
+
+
+def _update_cached_repository_metadata(app_installation, repository_metadata):
+    if app_installation.repositories is None:
+        return set()
+
+    repository_id = repository_metadata["id"]
+    repository_full_name = repository_metadata["full_name"]
+    previous_names = set()
+    updated = False
+    repositories = []
+    for repository in app_installation.repositories:
+        if not isinstance(repository, dict):
+            repositories.append(repository)
+            continue
+
+        if (
+            repository.get("id") == repository_id
+            or repository.get("full_name") == repository_full_name
+        ):
+            previous_name = repository.get("full_name")
+            if previous_name:
+                previous_names.add(previous_name)
+            repositories.append(repository_metadata)
+            updated = True
+        else:
+            repositories.append(repository)
+
+    if updated:
+        app_installation.repositories = sorted(
+            repositories,
+            key=lambda repo: repo.get("full_name") if isinstance(repo, dict) else "",
+        )
+        app_installation.repositories_synced_at = datetime.datetime.now(
+            datetime.timezone.utc
+        ).replace(tzinfo=None)
+    return previous_names
+
+
+def _rename_application_repositories(
+    installation_id,
+    *,
+    previous_names,
+    repo_id,
+    new_name,
+    private,
+):
+    (
+        Application.query.filter(
+            Application.github_app_installation_id == installation_id,
+            Application.github_repository.in_(previous_names),
+        ).update(
+            {
+                "github_repository_id": repo_id,
+                "github_repository": new_name,
+                "github_repository_is_private": private,
+            },
+            synchronize_session=False,
+        )
+    )
+
+
+def _update_application_repository_privacy(
+    installation_id, *, repo_id, repository_name, private
+):
+    (
+        Application.query.filter(
+            Application.github_app_installation_id == installation_id,
+            or_(
+                Application.github_repository_id == repo_id,
+                Application.github_repository == repository_name,
+            ),
+        ).update(
+            {
+                "github_repository_id": repo_id,
+                "github_repository": repository_name,
+                "github_repository_is_private": private,
+            },
+            synchronize_session=False,
+        )
+    )
+
+
+def _rename_cached_repository_owner(repositories, *, old_login, new_login):
+    if repositories is None:
+        return None
+
+    old_prefix = f"{old_login}/"
+    new_prefix = f"{new_login}/"
+    renamed_repositories = []
+    for repository in repositories:
+        if not isinstance(repository, dict):
+            renamed_repositories.append(repository)
+            continue
+
+        renamed_repository = dict(repository)
+        full_name = renamed_repository.get("full_name")
+        if isinstance(full_name, str) and full_name.startswith(old_prefix):
+            renamed_repository["full_name"] = (
+                f"{new_prefix}{full_name[len(old_prefix) :]}"
+            )
+        renamed_repositories.append(renamed_repository)
+    return renamed_repositories
+
+
+def _rename_application_repository_owner(app_installation, *, old_login, new_login):
+    old_prefix = f"{old_login}/"
+    new_prefix = f"{new_login}/"
+    for application in Application.query.filter_by(
+        github_app_installation_id=app_installation.installation_id,
+    ).filter(Application.github_repository.startswith(old_prefix)):
+        application.github_repository = (
+            f"{new_prefix}{application.github_repository[len(old_prefix) :]}"
+        )
+
+
+def _sync_known_installation_repository_delta(
+    installation,
+    action,
+    *,
+    repositories_added,
+    repositories_removed,
+):
+    installation_id = installation.get("id")
+    if installation_id is None:
+        return 0
+
+    account = installation.get("account") or {}
+    known_installations = GitHubAppInstallation.query.filter_by(
+        installation_id=installation_id
+    ).all()
+
+    removed_ids = {
+        repo.get("id") for repo in repositories_removed if repo.get("id") is not None
+    }
+    removed_names = {
+        repo.get("full_name") for repo in repositories_removed if repo.get("full_name")
+    }
+
+    for app_installation in known_installations:
+        app_installation.account_id = account.get("id")
+        app_installation.account_login = account.get("login")
+        app_installation.account_type = account.get("type")
+        app_installation.repository_selection = installation.get("repository_selection")
+        if app_installation.repositories is None:
+            continue
+        if action == "added":
+            app_installation.repositories = merge_repository_metadata(
+                app_installation.repositories,
+                repositories_added,
+            )
+            app_installation.repositories_synced_at = datetime.datetime.now(
+                datetime.timezone.utc
+            ).replace(tzinfo=None)
+            sync_application_repository_metadata(app_installation)
+        elif action == "removed":
+            app_installation.repositories = [
+                repo
+                for repo in app_installation.repositories
+                if repo.get("id") not in removed_ids
+                and repo.get("full_name") not in removed_names
+            ]
+            app_installation.repositories_synced_at = datetime.datetime.now(
+                datetime.timezone.utc
+            ).replace(tzinfo=None)
+            reconcile_selected_repository_applications(app_installation)
+
+    return len(known_installations)
+
+
+def _sync_known_installation_metadata(installation):
+    installation_id = installation.get("id")
+    if installation_id is None:
+        return 0
+
+    account = installation.get("account") or {}
+    known_installations = GitHubAppInstallation.query.filter_by(
+        installation_id=installation_id
+    ).all()
+
+    for app_installation in known_installations:
+        previous_selection = app_installation.repository_selection
+        app_installation.account_id = account.get("id")
+        app_installation.account_login = account.get("login")
+        app_installation.account_type = account.get("type")
+        app_installation.repository_selection = installation.get("repository_selection")
+        if "repositories" in installation:
+            app_installation.repositories = merge_repository_metadata(
+                [], installation.get("repositories", [])
+            )
+            app_installation.repositories_synced_at = datetime.datetime.now(
+                datetime.timezone.utc
+            ).replace(tzinfo=None)
+            sync_application_repository_metadata(app_installation)
+        elif (
+            app_installation.repository_selection == "all"
+            and previous_selection != "all"
+        ):
+            app_installation.repositories = None
+            app_installation.repositories_synced_at = None
+
+    return len(known_installations)
+
+
+@shared_task()
+def sync_github_app_installations():
+    synced = 0
+    disconnected = 0
+    failed = 0
+    for app_installation in GitHubAppInstallation.query.all():
+        installation = github_app.fetch_installation(app_installation.installation_id)
+        if installation is None:
+            failed += 1
+            continue
+
+        account = installation.get("account") or {}
+        app_installation.account_id = account.get("id")
+        app_installation.account_login = account.get("login")
+        app_installation.account_type = account.get("type")
+        app_installation.repository_selection = installation.get("repository_selection")
+        if sync_installation_repositories(
+            app_installation,
+            clear_all_cache_on_failure=False,
+        ):
+            disconnected += reconcile_selected_repository_applications(app_installation)
+            synced += 1
+        else:
+            failed += 1
+
+    db.session.commit()
+    return {"synced": synced, "failed": failed, "disconnected": disconnected}
 
 
 def _required_contexts_for_branch(access_token, repository_name, branch):
@@ -912,6 +1292,14 @@ def process_github_hook(hook_id):
         db.session.commit()
     if event == "installation_repositories":
         process_installation_repositories_hook(hook)
+        hook.processed = True
+        db.session.commit()
+    if event == "installation_target":
+        process_installation_target_hook(hook)
+        hook.processed = True
+        db.session.commit()
+    if event == "repository":
+        process_repository_hook(hook)
         hook.processed = True
         db.session.commit()
     if event == "pull_request":

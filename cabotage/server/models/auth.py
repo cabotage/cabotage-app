@@ -142,6 +142,77 @@ class GitHubIdentity(Model):
     user: Mapped[User] = relationship(backref=backref("github_identity", uselist=False))
 
 
+class GitHubAppInstallation(Model):
+    __tablename__ = "github_app_installations"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        primary_key=True,
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("organizations.id"),
+        index=True,
+    )
+    installation_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    account_id: Mapped[int | None] = mapped_column(BigInteger)
+    account_login: Mapped[str | None] = mapped_column(String(255))
+    account_type: Mapped[str | None] = mapped_column(String(32))
+    repository_selection: Mapped[str | None] = mapped_column(String(32))
+    repositories: Mapped[list[dict[str, object]] | None] = mapped_column(
+        postgresql.JSONB()
+    )
+    repositories_synced_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    installed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("users.id"),
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
+        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
+    )
+
+    organization: Mapped[Organization] = relationship(
+        back_populates="github_app_installations"
+    )
+    installed_by: Mapped[User | None] = relationship(
+        foreign_keys=[installed_by_user_id]
+    )
+
+    @property
+    def display_name(self):
+        return self.account_login or "Unknown account"
+
+    @property
+    def github_settings_url(self):
+        if self.account_type == "Organization" and self.account_login:
+            return (
+                f"https://github.com/organizations/{self.account_login}"
+                f"/settings/installations/{self.installation_id}"
+            )
+        return f"https://github.com/settings/installations/{self.installation_id}"
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "organization_id",
+            "installation_id",
+            name="uq_github_app_installations_org_installation",
+        ),
+    )
+
+
 class WebAuthn(Model, FsWebAuthnMixin):
     __tablename__ = "webauthn"
 
@@ -347,6 +418,11 @@ class Organization(Model):
     discord_integration: Mapped[DiscordIntegration | None] = relationship(
         back_populates="organization", uselist=False
     )
+    github_app_installations: Mapped[list[GitHubAppInstallation]] = relationship(
+        back_populates="organization",
+        cascade="all, delete-orphan",
+        order_by="GitHubAppInstallation.account_login",
+    )
 
     @property
     def active_projects(self):
@@ -370,6 +446,70 @@ class Organization(Model):
         association.organization = self
         association.team = team
         db.session.add(association)
+
+
+class OrganizationRequest(Model):
+    __tablename__ = "organization_requests"
+
+    STATUS_PENDING = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_DENIED = "denied"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        primary_key=True,
+    )
+    requester_user_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        index=True,
+    )
+    reviewer_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        index=True,
+    )
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("organizations.id"),
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(Text())
+    slug: Mapped[str] = mapped_column(postgresql.CITEXT(), index=True)
+    note: Mapped[str | None] = mapped_column(Text())
+    status: Mapped[str] = mapped_column(String(32), default=STATUS_PENDING, index=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
+        index=True,
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
+        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+            tzinfo=None
+        ),
+    )
+    reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+
+    requester: Mapped[User] = relationship(
+        foreign_keys=[requester_user_id],
+        backref=backref("organization_requests", lazy="dynamic"),
+    )
+    reviewer: Mapped[User | None] = relationship(foreign_keys=[reviewer_user_id])
+    organization: Mapped[Organization | None] = relationship()
+
+    @property
+    def is_pending(self):
+        return self.status == self.STATUS_PENDING
+
+    def __repr__(self):
+        return f"<OrganizationRequest {self.slug} {self.status}>"
 
 
 class Team(Model):

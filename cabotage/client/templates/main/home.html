@@ -13,7 +13,14 @@
       <div class="empty-state py-16">
         <div class="text-base-content/15 mb-4">{{ icon('building', 'w-12 h-12') }}</div>
         <h1 class="text-xl font-semibold text-base-content mb-2">Welcome, {{ (current_user.username or current_user.email) | display_username }}</h1>
-        <p class="text-sm text-base-content/40 max-w-sm">You're not a member of any organizations yet. An administrator will need to add you to one.</p>
+        <p class="text-sm text-base-content/40 max-w-sm">{% if organization_requests_enabled %}You're not a member of any organizations yet. Request an organization to get started.{% else %}You're not a member of any organizations yet. An administrator will need to add you to one.{% endif %}</p>
+        {% if organization_requests_enabled %}
+        <a href="{{ url_for('user.organization_request_create') }}"
+           class="btn btn-primary btn-sm gap-2 mt-4">
+          {{ icon('plus', 'w-4 h-4') }}
+          Request Organization
+        </a>
+        {% endif %}
       </div>
     </div>
     {% else %}

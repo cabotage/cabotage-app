@@ -31,6 +31,7 @@ _APP_DIFF_FIELDS = {
     "deployment_timeout": "deployment timeout",
     "privileged": "privileged",
     "github_app_installation_id": "GitHub App",
+    "github_repository_id": "GitHub repository ID",
     "github_repository": "GitHub repository",
     "github_environment_name": "GitHub environment",
     "github_repository_is_private": "private repository",
