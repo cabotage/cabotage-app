@@ -817,8 +817,7 @@ def render_cabotage_enrollment(release):
     env = release.application_environment.environment
     forked_from = env.forked_from_environment
     if forked_from:
-        org_k8s = release.application.project.organization.k8s_identifier
-        base_ns = safe_k8s_name(org_k8s, forked_from.k8s_identifier)
+        base_ns = forked_from.k8s_namespace
         spec["inheritsFrom"] = [
             {
                 "namespace": base_ns,
