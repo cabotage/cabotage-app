@@ -4,7 +4,8 @@ import hmac
 import logging
 import secrets
 import struct
-from collections.abc import Mapping
+from typing import TYPE_CHECKING
+from collections.abc import Mapping, Callable
 
 import kubernetes
 from celery import shared_task
@@ -21,9 +22,44 @@ from cabotage.server.config import validate_tenant_postgres_backup_config
 from cabotage.server.models.resources import (
     postgres_size_classes,
     redis_size_classes,
+    Resource,
+    RedisResource,
+    PostgresResource,
 )
 from cabotage.server.models.utils import safe_k8s_name
 from cabotage.celery.tasks.deploy import ensure_namespace, ensure_network_policies
+
+if TYPE_CHECKING:
+    from sqlalchemy import Connection
+    from ._types import (
+        BackingServicePodAnnotations,
+        BackupSettings,
+        CnpgAffinity,
+        CnpgCluster,
+        CnpgSpec,
+        HealthStatus,
+        InheritedMetadata,
+        NodeSelector,
+        Plugin,
+        PodAffinityTerm,
+        PodAntiAffinity,
+        PostgresClusterStatus,
+        PostgresConfig,
+        PostgresObjectStore,
+        PreferredPodAntiAffinityTerm,
+        RedisCertificate,
+        RedisCluster,
+        RedisFollower,
+        RedisLeader,
+        RedisRoleAffinity,
+        RedisSpec,
+        RedisStandalone,
+        ScheduledBackup,
+        Toleration,
+    )
+
+    type ConfigEntry = tuple[str, str, bool]
+
 
 log = logging.getLogger(__name__)
 
@@ -84,16 +120,16 @@ POSTGRES_IMAGES: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 
-def _resource_namespace(resource):
+def _resource_namespace(resource: Resource) -> str:
     return resource.environment.k8s_namespace
 
 
-def _resource_k8s_name(resource):
+def _resource_k8s_name(resource: Resource) -> str:
     project = resource.environment.project
     return safe_k8s_name(project.k8s_identifier, resource.k8s_identifier)
 
 
-def _set_if_changed(obj, attr, value):
+def _set_if_changed(obj: object, attr: str, value: object) -> None:
     if getattr(obj, attr) != value:
         setattr(obj, attr, value)
 
@@ -178,7 +214,7 @@ def _is_legacy_resource_url_config(name):
     return name.endswith("_DATABASE_URL") or name.endswith("_REDIS_URL")
 
 
-def _resource_labels(resource):
+def _resource_labels(resource: Resource) -> dict[str, str | None]:
     """Labels applied to the operator CRD object itself."""
     org = resource.environment.project.organization
     project = resource.environment.project
@@ -200,7 +236,7 @@ def _resource_labels(resource):
     }
 
 
-def _resource_pod_labels(resource):
+def _resource_pod_labels(resource: Resource) -> dict[str, str | None]:
     """Labels applied to pods managed by the operator (via inheritedMetadata)."""
     labels = _resource_labels(resource)
     labels["backing-service"] = "true"
@@ -211,21 +247,21 @@ def _resource_pod_labels(resource):
     return labels
 
 
-def _tls_secret_name(resource):
+def _tls_secret_name(resource: Resource) -> str:
     return f"{_resource_k8s_name(resource)}-tls"
 
 
-def _password_secret_name(resource):
+def _password_secret_name(resource: Resource) -> str:
     return f"{_resource_k8s_name(resource)}-password"
 
 
-def _backing_services_pool():
+def _backing_services_pool() -> str | None:
     if not has_app_context():
         return None
     return current_app.config.get("BACKING_SERVICES_POOL") or None
 
 
-def _backing_service_type_enabled(resource_type):
+def _backing_service_type_enabled(resource_type: str) -> bool:
     config_key = {
         "postgres": "BACKING_SERVICE_POSTGRES_ENABLED",
         "redis": "BACKING_SERVICE_REDIS_ENABLED",
@@ -234,10 +270,10 @@ def _backing_service_type_enabled(resource_type):
         raise KeyError(f"Unknown backing service type: {resource_type}")
     if not has_app_context():
         return True
-    return bool(current_app.config.get(config_key, True))
+    return current_app.config.get(config_key, True)
 
 
-def _tenant_postgres_backups_enabled(resource=None):
+def _tenant_postgres_backups_enabled(resource: PostgresResource | None = None) -> bool:
     if not has_app_context():
         return False
     if not current_app.config.get("TENANT_POSTGRES_BACKUPS_ENABLED"):
@@ -247,11 +283,11 @@ def _tenant_postgres_backups_enabled(resource=None):
     return True
 
 
-def _postgres_backup_requires_continuous_archiving(resource):
+def _postgres_backup_requires_continuous_archiving(resource: Resource) -> bool:
     return getattr(resource, "backup_strategy", None) == "streaming"
 
 
-def _tenant_postgres_backup_settings():
+def _tenant_postgres_backup_settings() -> BackupSettings | None:
     if not _tenant_postgres_backups_enabled():
         return None
 
@@ -290,13 +326,13 @@ def _tenant_postgres_backup_settings():
     }
 
 
-def _node_selector_for_pool(node_pool):
+def _node_selector_for_pool(node_pool: str | None) -> NodeSelector | None:
     if not node_pool:
         return None
     return {NODE_POOL_LABEL: node_pool}
 
 
-def _tolerations_for_pool(node_pool):
+def _tolerations_for_pool(node_pool: str | None) -> list[Toleration] | None:
     if not node_pool:
         return None
     return [
@@ -309,13 +345,15 @@ def _tolerations_for_pool(node_pool):
     ]
 
 
-def _backing_service_pod_annotations():
+def _backing_service_pod_annotations() -> BackingServicePodAnnotations:
     if not _backing_services_pool():
         return {}
     return {DO_NOT_DISRUPT_ANNOTATION: "true"}
 
 
-def _preferred_pod_anti_affinity_term(match_labels, topology_key, weight=100):
+def _preferred_pod_anti_affinity_term(
+    match_labels: dict[str, str], topology_key: str, weight: int = 100
+) -> PreferredPodAntiAffinityTerm:
     return {
         "weight": weight,
         "podAffinityTerm": {
@@ -325,7 +363,9 @@ def _preferred_pod_anti_affinity_term(match_labels, topology_key, weight=100):
     }
 
 
-def _required_same_resource_role_anti_affinity(resource, role):
+def _required_same_resource_role_anti_affinity(
+    resource: Resource, role: str
+) -> list[PodAffinityTerm]:
     return [
         {
             "labelSelector": {
@@ -339,12 +379,12 @@ def _required_same_resource_role_anti_affinity(resource, role):
     ]
 
 
-def _cnpg_affinity(resource):
+def _cnpg_affinity(resource: Resource) -> CnpgAffinity | None:
     node_pool = _backing_services_pool()
     if not node_pool:
         return None
 
-    affinity = {
+    affinity: CnpgAffinity = {
         "nodeSelector": _node_selector_for_pool(node_pool),
         "tolerations": _tolerations_for_pool(node_pool),
     }
@@ -373,20 +413,24 @@ def _cnpg_affinity(resource):
     return affinity
 
 
-def _backup_objectstore_name(resource):
+def _backup_objectstore_name(resource: Resource) -> str:
     return f"{_resource_k8s_name(resource)}-backups"
 
 
-def _backup_destination_path(namespace, cluster_name, settings):
+def _backup_destination_path(
+    namespace: str, cluster_name: str, settings: BackupSettings
+) -> str:
     path_prefix = settings["path_prefix"].strip("/")
     path_parts = [part for part in (path_prefix, namespace, cluster_name) if part]
     return f"s3://{settings['bucket']}/{'/'.join(path_parts)}/"
 
 
-def _render_postgres_object_store(resource, settings):
+def _render_postgres_object_store(
+    resource: PostgresResource, settings: BackupSettings
+) -> PostgresObjectStore:
     namespace = _resource_namespace(resource)
     cluster_name = _resource_k8s_name(resource)
-    configuration = {
+    configuration: PostgresConfig = {
         "destinationPath": _backup_destination_path(namespace, cluster_name, settings),
         "data": {"compression": "gzip"},
         "wal": {"compression": "gzip"},
@@ -433,8 +477,10 @@ def _render_postgres_object_store(resource, settings):
     }
 
 
-def _render_scheduled_backup(resource, settings, immediate=False):
-    body = {
+def _render_scheduled_backup(
+    resource: Resource, settings: BackupSettings, immediate: bool = False
+) -> ScheduledBackup:
+    body: ScheduledBackup = {
         "apiVersion": f"{CNPG_GROUP}/{CNPG_VERSION}",
         "kind": "ScheduledBackup",
         "metadata": {
@@ -459,7 +505,12 @@ def _render_scheduled_backup(resource, settings, immediate=False):
     return body
 
 
-def _ensure_scheduled_backup(custom_api, namespace, resource, settings):
+def _ensure_scheduled_backup(
+    custom_api: kubernetes.client.CustomObjectsApi,
+    namespace: str,
+    resource: Resource,
+    settings: BackupSettings,
+) -> None:
     name = _resource_k8s_name(resource)
     _ensure_custom_object(
         custom_api,
@@ -473,7 +524,9 @@ def _ensure_scheduled_backup(custom_api, namespace, resource, settings):
     )
 
 
-def _redis_role_affinity(resource, role, replicas):
+def _redis_role_affinity(
+    resource: RedisResource, role: str, replicas: int
+) -> RedisRoleAffinity | None:
     node_pool = _backing_services_pool()
     if not node_pool:
         return None
@@ -496,7 +549,7 @@ def _redis_role_affinity(resource, role, replicas):
             )
         )
 
-    pod_anti_affinity = {
+    pod_anti_affinity: PodAntiAffinity = {
         "preferredDuringSchedulingIgnoredDuringExecution": preferred_terms,
     }
     if replicas > 1:
@@ -558,14 +611,14 @@ def _sync_statefulset_pod_annotations(apps_api, namespace, statefulset_name):
 # ---------------------------------------------------------------------------
 
 
-def _render_postgres_certificate(resource):
+def _render_postgres_certificate(resource: PostgresResource) -> RedisCertificate:
     """Render a cert-manager Certificate for a CNPG Cluster."""
     name = _resource_k8s_name(resource)
     namespace = _resource_namespace(resource)
     secret_name = _tls_secret_name(resource)
 
     # DNS names for the CNPG service endpoints
-    dns_names = []
+    dns_names: list[str] = []
     for suffix in (f"{name}-rw", f"{name}-r", f"{name}-ro"):
         dns_names.append(suffix)
         dns_names.append(f"{suffix}.{namespace}")
@@ -598,7 +651,7 @@ def _render_postgres_certificate(resource):
     }
 
 
-def _service_dns_names(service_name, namespace):
+def _service_dns_names(service_name: str, namespace: str) -> list[str]:
     return [
         service_name,
         f"{service_name}.{namespace}",
@@ -607,7 +660,12 @@ def _service_dns_names(service_name, namespace):
     ]
 
 
-def _add_pod_dns_names(dns_names, pod_name, namespace, service_names=()):
+def _add_pod_dns_names(
+    dns_names: set[str],
+    pod_name: str,
+    namespace: str,
+    service_names: list[str] | tuple[()] = (),
+) -> None:
     dns_names.update(
         [
             pod_name,
@@ -627,7 +685,7 @@ def _add_pod_dns_names(dns_names, pod_name, namespace, service_names=()):
         )
 
 
-def _render_redis_certificate(resource):
+def _render_redis_certificate(resource: RedisResource) -> RedisCertificate:
     """Render a cert-manager Certificate for a Redis instance."""
     name = _resource_k8s_name(resource)
     namespace = _resource_namespace(resource)
@@ -643,7 +701,7 @@ def _render_redis_certificate(resource):
             f"{name}-follower-additional",
             f"{name}-follower-headless",
         ]
-        dns_names = set()
+        dns_names = set[str]()
         for service_name in service_names:
             dns_names.update(_service_dns_names(service_name, namespace))
 
@@ -669,7 +727,7 @@ def _render_redis_certificate(resource):
                 pod_service_names,
             )
     else:
-        dns_names = set()
+        dns_names = set[str]()
         service_names = [
             name,
             f"{name}-additional",
@@ -715,7 +773,11 @@ def _render_redis_certificate(resource):
 # ---------------------------------------------------------------------------
 
 
-def _ensure_certificate(custom_api, namespace, cert_body):
+def _ensure_certificate(
+    custom_api: kubernetes.client.CustomObjectsApi,
+    namespace: str,
+    cert_body: RedisCertificate,
+) -> None:
     """Create or patch a cert-manager Certificate custom resource."""
     name = cert_body["metadata"]["name"]
     _ensure_custom_object(
@@ -754,7 +816,16 @@ def _ensure_password_secret(core_api, namespace, secret_name, labels):
 
 
 def _ensure_custom_object(
-    custom_api, group, version, namespace, plural, name, body, create_body=None
+    custom_api: kubernetes.client.CustomObjectsApi,
+    group: str,
+    version: str,
+    namespace: str,
+    plural: str,
+    name: str,
+    # FIXME: wrong type
+    body: RedisCertificate,
+    # FIXME: missing type
+    create_body=None,
 ):
     """Create or patch a namespaced custom object."""
     if create_body is None:
@@ -792,7 +863,7 @@ def _ensure_custom_object(
         log.info("Created %s/%s %s/%s", group, plural, namespace, name)
 
 
-def _ensure_ca_secret(core_api, namespace):
+def _ensure_ca_secret(core_api: kubernetes.client.CoreV1Api, namespace: str) -> None:
     """Copy the operators CA certificate secret into the target namespace.
 
     CNPG requires the CA secret (operators-ca-crt) to be present in the
@@ -902,8 +973,11 @@ def _ensure_rustfs_secret(core_api, namespace, settings):
 
 
 def _sync_barman_rolebinding_subject(
-    rbac_api, namespace, cluster_name, service_account_name
-):
+    rbac_api: kubernetes.client.RbacAuthorizationV1Api | None,
+    namespace: str,
+    cluster_name: str,
+    service_account_name: str,
+) -> None:
     if rbac_api is None:
         return
 
@@ -950,20 +1024,24 @@ def _sync_barman_rolebinding_subject(
     )
 
 
-def _delete_k8s_resource_quiet(fn, *args):
+def _delete_k8s_resource_quiet[**P](
+    fn: Callable[P, None], *args: P.args, **kwargs: P.kwargs
+) -> None:
     """Call a K8s delete function, ignoring 404."""
     try:
-        fn(*args)
+        fn(*args, **kwargs)
     except ApiException as exc:
         if exc.status != 404:
             raise
 
 
-def _zero_if_none(value):
+def _zero_if_none(value: int | None) -> int:
     return value if value is not None else 0
 
 
-def _field(obj, name, default=None):
+def _field[T](
+    obj: object | dict[str, T] | None, name: str, default: T | None = None
+) -> T | None:
     if obj is None:
         return default
     if isinstance(obj, dict):
@@ -978,7 +1056,7 @@ def _find_condition(conditions, cond_type):
     return None
 
 
-def _condition_is_true(conditions, cond_type):
+def _condition_is_true(conditions, cond_type) -> bool:
     condition = _find_condition(conditions, cond_type)
     return _field(condition, "status") == "True"
 
@@ -997,7 +1075,7 @@ def _container_failure_reason(container_statuses):
     return None
 
 
-def _pod_is_ready(pod):
+def _pod_is_ready(pod) -> bool:
     if pod is None:
         return False
     if _field(_field(pod, "metadata"), "deletion_timestamp") is not None:
@@ -1023,7 +1101,9 @@ def _read_postgres_cluster_status(custom_api, namespace, name):
     return cluster.get("status") or {}
 
 
-def _postgres_cluster_is_ready(status, expected_instances):
+def _postgres_cluster_is_ready(
+    status: PostgresClusterStatus, expected_instances: int
+) -> bool:
     if not status:
         return False
     return (
@@ -1033,7 +1113,7 @@ def _postgres_cluster_is_ready(status, expected_instances):
     )
 
 
-def _postgres_cluster_has_plugin(status, plugin_name):
+def _postgres_cluster_has_plugin(status, plugin_name) -> bool:
     for plugin_status in status.get("pluginStatus") or []:
         if _field(plugin_status, "name") == plugin_name:
             return True
@@ -1041,7 +1121,7 @@ def _postgres_cluster_has_plugin(status, plugin_name):
 
 
 def _postgres_cluster_is_backup_ready(
-    status, expected_instances, plugin_name, require_continuous_archiving=True
+    status, expected_instances, plugin_name, require_continuous_archiving: bool = True
 ):
     if not _postgres_cluster_is_ready(status, expected_instances):
         return False
@@ -1052,7 +1132,9 @@ def _postgres_cluster_is_backup_ready(
     return _postgres_cluster_has_plugin(status, plugin_name)
 
 
-def _read_redis_cluster_status(custom_api, namespace, name):
+def _read_redis_cluster_status(
+    custom_api: kubernetes.client.CustomObjectsApi, namespace: str, name: str
+):
     try:
         cluster = custom_api.get_namespaced_custom_object(
             REDIS_GROUP,
@@ -1068,7 +1150,9 @@ def _read_redis_cluster_status(custom_api, namespace, name):
     return cluster.get("status") or {}
 
 
-def _redis_cluster_health(status, expected_leader_replicas, expected_follower_replicas):
+def _redis_cluster_health(
+    status, expected_leader_replicas: int, expected_follower_replicas: int
+) -> tuple[HealthStatus, str | None]:
     if not status:
         return "provisioning", None
 
@@ -1089,7 +1173,9 @@ def _redis_cluster_health(status, expected_leader_replicas, expected_follower_re
     return "provisioning", None
 
 
-def _read_redis_standalone_health(core_api, namespace, name):
+def _read_redis_standalone_health(
+    core_api: kubernetes.client.CoreV1Api, namespace: str, name: str
+) -> tuple[HealthStatus, str | None]:
     try:
         pod = core_api.read_namespaced_pod(f"{name}-0", namespace)
     except ApiException as exc:
@@ -1118,7 +1204,10 @@ def _read_redis_standalone_health(core_api, namespace, name):
 # ---------------------------------------------------------------------------
 
 
-def _render_cnpg_cluster(resource, backup_settings=None):
+def _render_cnpg_cluster(
+    resource: PostgresResource,
+    backup_settings: BackupSettings | None = None,
+) -> CnpgCluster:
     size = postgres_size_classes[resource.size_class]
     instances = 2 if resource.ha_enabled else 1
     name = _resource_k8s_name(resource)
@@ -1126,14 +1215,14 @@ def _render_cnpg_cluster(resource, backup_settings=None):
 
     pod_labels = _resource_pod_labels(resource)
 
-    inherited_metadata = {
+    inherited_metadata: InheritedMetadata = {
         "labels": pod_labels,
     }
     pod_annotations = _backing_service_pod_annotations()
     if pod_annotations:
         inherited_metadata["annotations"] = pod_annotations
 
-    spec: dict[str, object] = {
+    spec: CnpgSpec = {
         "instances": instances,
         "imageName": POSTGRES_IMAGES[resource.service_version],
         "inheritedMetadata": inherited_metadata,
@@ -1166,7 +1255,7 @@ def _render_cnpg_cluster(resource, backup_settings=None):
         backup_settings = _tenant_postgres_backup_settings()
 
     if backup_settings:
-        plugin = {
+        plugin: Plugin = {
             "name": backup_settings["plugin_name"],
             "parameters": {
                 "barmanObjectName": _backup_objectstore_name(resource),
@@ -1178,7 +1267,7 @@ def _render_cnpg_cluster(resource, backup_settings=None):
         spec["serviceAccountName"] = backup_settings["service_account_name"]
         spec["plugins"] = [plugin]
 
-    cluster = {
+    return {
         "apiVersion": f"{CNPG_GROUP}/{CNPG_VERSION}",
         "kind": "Cluster",
         "metadata": {
@@ -1187,7 +1276,6 @@ def _render_cnpg_cluster(resource, backup_settings=None):
         },
         "spec": spec,
     }
-    return cluster
 
 
 # ---------------------------------------------------------------------------
@@ -1195,10 +1283,10 @@ def _render_cnpg_cluster(resource, backup_settings=None):
 # ---------------------------------------------------------------------------
 
 
-def _redis_spec_common(resource):
+def _redis_spec_common(resource: RedisResource) -> RedisSpec:
     """Return the common spec fields for both Redis and RedisCluster."""
     size = redis_size_classes[resource.size_class]
-    spec = {
+    spec: RedisSpec = {
         "TLS": {
             "secret": {
                 "optional": False,
@@ -1245,7 +1333,7 @@ def _redis_spec_common(resource):
     return spec
 
 
-def _render_redis_standalone(resource):
+def _render_redis_standalone(resource: RedisResource) -> RedisStandalone:
     name = _resource_k8s_name(resource)
     spec = _redis_spec_common(resource)
 
@@ -1260,25 +1348,21 @@ def _render_redis_standalone(resource):
     }
 
 
-def _render_redis_cluster(resource):
+def _render_redis_cluster(resource: RedisResource) -> RedisCluster:
     name = _resource_k8s_name(resource)
     spec = _redis_spec_common(resource)
-    spec["clusterSize"] = max(resource.leader_replicas, resource.follower_replicas)
-    spec["clusterVersion"] = f"v{resource.service_version}"
-    spec["persistenceEnabled"] = True
-    redis_leader = {"replicas": resource.leader_replicas}
+    redis_leader: RedisLeader = {"replicas": resource.leader_replicas}
     leader_affinity = _redis_role_affinity(resource, "leader", resource.leader_replicas)
-    if leader_affinity:
-        redis_leader["affinity"] = leader_affinity
-    spec["redisLeader"] = redis_leader
-
-    redis_follower = {"replicas": resource.follower_replicas}
+    redis_follower: RedisFollower = {"replicas": resource.follower_replicas}
     follower_affinity = _redis_role_affinity(
         resource, "follower", resource.follower_replicas
     )
+
+    if leader_affinity:
+        redis_leader["affinity"] = leader_affinity
+
     if follower_affinity:
         redis_follower["affinity"] = follower_affinity
-    spec["redisFollower"] = redis_follower
 
     return {
         "apiVersion": f"{REDIS_GROUP}/{REDIS_VERSION}",
@@ -1287,7 +1371,14 @@ def _render_redis_cluster(resource):
             "name": name,
             "labels": _resource_pod_labels(resource),
         },
-        "spec": spec,
+        "spec": {
+            **spec,
+            "clusterSize": max(resource.leader_replicas, resource.follower_replicas),
+            "clusterVersion": f"v{resource.service_version}",
+            "persistenceEnabled": True,
+            "redisLeader": redis_leader,
+            "redisFollower": redis_follower,
+        },
     }
 
 
@@ -1296,7 +1387,13 @@ def _render_redis_cluster(resource):
 # ---------------------------------------------------------------------------
 
 
-def _reconcile_postgres(resource, core_api, custom_api, apps_api=None, rbac_api=None):
+def _reconcile_postgres(
+    resource: PostgresResource,
+    core_api: kubernetes.client.CoreV1Api,
+    custom_api: kubernetes.client.CustomObjectsApi,
+    apps_api: kubernetes.client.AppsV1Api | None = None,
+    rbac_api: kubernetes.client.RbacAuthorizationV1Api | None = None,
+) -> None:
     """Converge a single PostgresResource to its desired K8s state."""
     namespace = _resource_namespace(resource)
     name = _resource_k8s_name(resource)
@@ -1409,7 +1506,13 @@ def _reconcile_postgres(resource, core_api, custom_api, apps_api=None, rbac_api=
         _set_if_changed(resource, "provisioning_error", None)
 
 
-def _reconcile_redis(resource, core_api, custom_api, apps_api=None, rbac_api=None):
+def _reconcile_redis(
+    resource: RedisResource,
+    core_api: kubernetes.client.CoreV1Api,
+    custom_api: kubernetes.client.CustomObjectsApi,
+    apps_api: kubernetes.client.AppsV1Api | None = None,
+    rbac_api: kubernetes.client.RbacAuthorizationV1Api | None = None,
+) -> None:
     """Converge a single RedisResource to its desired K8s state."""
     namespace = _resource_namespace(resource)
     name = _resource_k8s_name(resource)
@@ -1484,7 +1587,13 @@ def _reconcile_redis(resource, core_api, custom_api, apps_api=None, rbac_api=Non
     _set_if_changed(resource, "provisioning_error", health_reason)
 
 
-def _delete_postgres(resource, core_api, custom_api, apps_api=None, rbac_api=None):
+def _delete_postgres(
+    resource: PostgresResource,
+    core_api: kubernetes.client.CoreV1Api,
+    custom_api: kubernetes.client.CustomObjectsApi,
+    apps_api: kubernetes.client.AppsV1Api | None = None,
+    rbac_api: kubernetes.client.RbacAuthorizationV1Api | None = None,
+) -> None:
     """Remove all K8s objects for a deleted PostgresResource."""
     namespace = _resource_namespace(resource)
     name = _resource_k8s_name(resource)
@@ -1530,7 +1639,13 @@ def _delete_postgres(resource, core_api, custom_api, apps_api=None, rbac_api=Non
     log.info("Cleaned up PostgresResource %s (%s/%s)", resource.id, namespace, name)
 
 
-def _delete_redis(resource, core_api, custom_api, apps_api=None, rbac_api=None):
+def _delete_redis(
+    resource: RedisResource,
+    core_api: kubernetes.client.CoreV1Api,
+    custom_api: kubernetes.client.CustomObjectsApi,
+    apps_api: kubernetes.client.AppsV1Api | None = None,
+    rbac_api: kubernetes.client.RbacAuthorizationV1Api | None = None,
+) -> None:
     """Remove all K8s objects for a deleted RedisResource."""
     namespace = _resource_namespace(resource)
     name = _resource_k8s_name(resource)
@@ -1577,7 +1692,7 @@ _RECONCILERS = {
 
 
 @shared_task()
-def reconcile_backing_services():
+def reconcile_backing_services() -> None:
     """Periodic task: converge all backing service resources to desired state."""
     from cabotage.server.models.resources import Resource
     from cabotage.celery.tasks.build import (
@@ -1657,7 +1772,9 @@ def reconcile_backing_services():
 CA_CERT_PATH = "/var/run/secrets/cabotage.io/ca.crt"
 
 
-def _postgres_config_entries(resource, namespace, name, password):
+def _postgres_config_entries(
+    resource: Resource, namespace: str, name: str, password: str
+) -> list[ConfigEntry]:
     """Build the (name, value, secret) tuples for a Postgres resource."""
     slug_upper = resource.slug.upper().replace("-", "_")
     host = f"{name}-rw.{namespace}.svc.cluster.local"
@@ -1672,7 +1789,7 @@ def _postgres_config_entries(resource, namespace, name, password):
     ]
 
 
-def _redis_service_host(resource, namespace, name):
+def _redis_service_host(resource: Resource, namespace: str, name: str) -> str:
     """Return the stable in-cluster Redis service hostname for this resource."""
     if resource.ha_enabled:
         service_name = f"{name}-master"
@@ -1681,7 +1798,9 @@ def _redis_service_host(resource, namespace, name):
     return f"{service_name}.{namespace}.svc.cluster.local"
 
 
-def _redis_config_entries(resource, namespace, name, password):
+def _redis_config_entries(
+    resource: Resource, namespace: str, name: str, password: str
+) -> list[ConfigEntry]:
     """Build the (name, value, secret) tuples for a Redis resource."""
     slug_upper = resource.slug.upper().replace("-", "_")
     host = _redis_service_host(resource, namespace, name)
@@ -1701,7 +1820,7 @@ def _redis_config_entries(resource, namespace, name, password):
     return entries
 
 
-def _sync_resource_env_configs(resource, entries):
+def _sync_resource_env_configs(resource: Resource, entries: list[ConfigEntry]) -> None:
     """Create or update EnvironmentConfiguration rows managed by a resource.
 
     entries: list of (name, value, secret) tuples.
@@ -1716,11 +1835,11 @@ def _sync_resource_env_configs(resource, entries):
     prefix = project.k8s_identifier
 
     wanted_names = {name for name, _, _ in entries}
-    managed_configs = {
+    managed_configs: dict[str, EnvironmentConfiguration] = {
         c.name: c
         for c in EnvironmentConfiguration.query.filter_by(resource_id=resource.id).all()
     }
-    existing_by_name = {
+    existing_by_name: dict[str, EnvironmentConfiguration] = {
         c.name: c
         for c in EnvironmentConfiguration.query.filter_by(
             project_id=project.id,
@@ -1810,7 +1929,7 @@ def _sync_resource_env_configs(resource, entries):
     )
 
 
-def _cleanup_managed_env_configs(resource):
+def _cleanup_managed_env_configs(resource: Resource) -> None:
     """Remove EnvironmentConfiguration rows managed by this resource."""
     from cabotage.server.models.projects import EnvironmentConfiguration
 
@@ -1820,7 +1939,7 @@ def _cleanup_managed_env_configs(resource):
     db.session.flush()
 
 
-def _try_acquire_reconcile_lock():
+def _try_acquire_reconcile_lock() -> Connection | None:
     """Acquire the backing-service reconcile lock or return None if held."""
     conn = db.engine.connect()
     try:
@@ -1837,7 +1956,7 @@ def _try_acquire_reconcile_lock():
         raise
 
 
-def _acquire_reconcile_lock():
+def _acquire_reconcile_lock() -> Connection:
     """Acquire the backing-service reconcile lock, waiting if needed."""
     conn = db.engine.connect()
     try:
@@ -1851,7 +1970,7 @@ def _acquire_reconcile_lock():
         raise
 
 
-def _release_reconcile_lock(conn):
+def _release_reconcile_lock(conn: Connection) -> None:
     """Release a previously-acquired backing-service reconcile lock."""
     try:
         conn.execute(

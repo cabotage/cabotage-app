@@ -9,14 +9,19 @@ import hvac
 from flask import current_app
 from flask import g
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from flask import Flask
+
 
 class VaultDBCreds(object):
-    def __init__(self, app=None):
+    def __init__(self, app: Flask | None = None):
         self.app = app
         if app is not None:
             self.init_app(app)
 
-    def init_app(self, app):
+    def init_app(self, app: Flask) -> None:
         if app.config.get("SQLALCHEMY_DATABASE_URI", None):
             return
         if app.config.get("VAULT_DB_CREDS_PATH", None):

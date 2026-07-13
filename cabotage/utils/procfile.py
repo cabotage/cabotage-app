@@ -28,6 +28,17 @@ THE SOFTWARE.
 """
 
 import re
+from typing import Iterable, TYPE_CHECKING, TypedDict
+
+if TYPE_CHECKING:
+    from _typeshed import SupportsRead, StrOrBytesPath
+    from collections.abc import Generator
+
+
+class Procfile(TypedDict):
+    env: list[tuple[str, str]]
+    cmd: str
+
 
 _PROCFILE_LINE = re.compile(
     "".join(
@@ -42,9 +53,9 @@ _PROCFILE_LINE = re.compile(
 _ENV_VAR = re.compile(r"""(\S+)=(?:"([^"]*)"|(\S+))""")
 
 
-def _find_duplicates(items):
-    seen = {}
-    duplicates = []
+def _find_duplicates(items: Iterable[tuple[int, str]]) -> list[tuple[int, str, int]]:
+    seen: dict[str, int] = {}
+    duplicates: list[tuple[int, str, int]] = []
     for i, item in items:
         if item in seen:
             duplicates.append((i, item, seen[item]))
@@ -53,8 +64,9 @@ def _find_duplicates(items):
     return duplicates
 
 
-def _group_lines(lines):
-    start, group = (0, [])
+def _group_lines(lines: Iterable[str]) -> Generator[tuple[int, str]]:
+    start = 0
+    group: list[str] = []
     for i, line in enumerate(lines):
         if line.rstrip().endswith("\\"):
             group.append(line[:-1])
@@ -64,12 +76,12 @@ def _group_lines(lines):
             else:
                 group.append(line)
             yield start, "".join(group)
-            start, group = (i + 1, [])
+            start, group = (i + 1, list[str]())
     if group:
         yield start, "".join(group[:-1]) + group[-1].rstrip()
 
 
-def _parse_procfile_line(line):
+def _parse_procfile_line(line: str) -> tuple[str, str, list[tuple[str, str]]]:
     line = line.strip()
     match = _PROCFILE_LINE.match(line)
     if match is None:
@@ -82,7 +94,7 @@ def _parse_procfile_line(line):
             for m in _ENV_VAR.finditer(environment)
         ]
     else:
-        environment = []
+        environment = list[tuple[str, str]]()
     return (
         parts["process_type"],
         parts["command"],
@@ -90,7 +102,7 @@ def _parse_procfile_line(line):
     )
 
 
-def loads(content):
+def loads(content: str) -> dict[str, Procfile]:
     """Load a Procfile from a string."""
     lines = _group_lines(line for line in content.split("\n"))
     lines = [
@@ -98,7 +110,7 @@ def loads(content):
         for i, line in lines
         if line.strip() and not line.lstrip().startswith("#")
     ]
-    errors = []
+    errors: list[str] = []
     # Reject files with duplicate process types (no sane default).
     duplicates = _find_duplicates(((i, line[0]) for i, line in lines))
     for i, process_type, j in duplicates:
@@ -131,12 +143,12 @@ def loads(content):
     return {k: {"cmd": cmd, "env": env} for _, (k, cmd, env) in lines}
 
 
-def load(stream):
+def load(stream: SupportsRead[bytes]) -> dict[str, Procfile]:
     """Load a Procfile from a file-like object."""
     return loads(stream.read().decode("utf-8"))
 
 
-def loadfile(path):
+def loadfile(path: StrOrBytesPath) -> dict[str, Procfile]:
     """Load a Procfile from a file."""
     with open(path, "rb") as stream:
         return load(stream)

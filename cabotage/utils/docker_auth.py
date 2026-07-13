@@ -3,6 +3,7 @@ import hashlib
 import json
 import time
 import uuid
+from typing import TypedDict
 
 from base64 import (
     b32encode,
@@ -24,13 +25,19 @@ from itsdangerous import (
 from cabotage.server import vault
 
 
-def number_to_bytes(num, num_bytes):
+class DockerScope(TypedDict):
+    type: str
+    name: str
+    actions: list[str]
+
+
+def number_to_bytes(num: int, num_bytes: int) -> bytes:
     padded_hex = "%0*x" % (2 * num_bytes, num)
     big_endian = binascii.a2b_hex(padded_hex.encode("ascii"))
     return big_endian
 
 
-def generate_libcrypt_key_id(public_key_pem):
+def generate_libcrypt_key_id(public_key_pem: bytes) -> str:
     pub_key = load_pem_public_key(public_key_pem)
 
     der_bytes = pub_key.public_bytes(
@@ -49,7 +56,7 @@ def generate_libcrypt_key_id(public_key_pem):
     return fingerprint
 
 
-def public_key_to_jwk(public_key_pem):
+def public_key_to_jwk(public_key_pem: bytes) -> dict[str, str]:
     """Convert a PEM-encoded EC public key to a JWK dict."""
     pub_key = load_pem_public_key(public_key_pem)
     if not isinstance(pub_key, EllipticCurvePublicKey):
@@ -71,11 +78,11 @@ def public_key_to_jwk(public_key_pem):
     }
 
 
-def generate_signing_jwks(public_key_pem):
+def generate_signing_jwks(public_key_pem: bytes) -> str:
     return json.dumps({"keys": [public_key_to_jwk(public_key_pem)]})
 
 
-def generate_docker_jose_header(public_key_pem):
+def generate_docker_jose_header(public_key_pem: bytes) -> str:
     return json.dumps(
         {
             "typ": "JWT",
@@ -87,11 +94,11 @@ def generate_docker_jose_header(public_key_pem):
 
 
 def generate_docker_claim_set(
-    issuer="cabotage-app",
-    subject="cabotage-builder",
-    audience="cabotage-registry",
-    access=None,
-):
+    issuer: str = "cabotage-app",
+    subject: str = "cabotage-builder",
+    audience: str = "cabotage-registry",
+    access: list[DockerScope] | None = None,
+) -> str:
     if access is None:
         access = []
 
@@ -102,7 +109,7 @@ def generate_docker_claim_set(
             "iss": issuer,
             "sub": subject,
             "aud": audience,
-            "exp": int(issued_at + 600),  # Effectively limits builds to 10 minutes
+            "exp": issued_at + 600,  # Effectively limits builds to 10 minutes
             "nbf": issued_at,
             "iat": issued_at,
             "jti": jti,
@@ -112,30 +119,34 @@ def generate_docker_claim_set(
     )
 
 
-def _docker_credential_serializer(secret=None):
+def _docker_credential_serializer(secret: str | None = None) -> URLSafeTimedSerializer:
     if secret is None:
-        return ValueError("secret must be supplied!")
+        raise ValueError("secret must be supplied!")
     serializer = URLSafeTimedSerializer(secret)
     return serializer
 
 
-def parse_docker_scope(scope_string):
-    scopes = []
+def parse_docker_scope(scope_string: str) -> list[DockerScope]:
+    scopes: list[DockerScope] = []
     for scope in scope_string.split(" "):
-        if len(scope.split(":")) == 3:
-            r_type, r_name, r_actions = scope.split(":")
-        elif len(scope.split(":")) > 3:
-            r_type, r_host, r_port, r_actions = scope.split(":")
+        if len(splits := scope.split(":")) == 3:
+            r_type, r_name, r_actions = splits
+        elif len(splits) > 3:
+            r_type, r_host, r_port, r_actions = splits
             r_name = f"{r_host}:{r_port}"
+        else:
+            assert False, "unreachable"
         r_actions = r_actions.split(",")
         scopes.append({"type": r_type, "name": r_name, "actions": r_actions})
     return scopes
 
 
-def docker_access_intersection(scope0, scope1):
-    scope0 = {f"{x['type']}:{x['name']}": x["actions"] for x in scope0}
-    scope1 = {f"{x['type']}:{x['name']}": x["actions"] for x in scope1}
-    intersection = []
+def docker_access_intersection(
+    scope_0: list[DockerScope], scope_1: list[DockerScope]
+) -> list[DockerScope]:
+    scope0 = {f"{x['type']}:{x['name']}": x["actions"] for x in scope_0}
+    scope1 = {f"{x['type']}:{x['name']}": x["actions"] for x in scope_1}
+    intersection: list[DockerScope] = []
     for key in frozenset(scope0.keys()) & frozenset(scope1.keys()):
         actions = list(frozenset(scope0[key]) & frozenset(scope1[key]))
         if actions:
@@ -145,27 +156,27 @@ def docker_access_intersection(scope0, scope1):
 
 
 def generate_docker_credentials(
-    secret=None,
-    resource_type="registry",
-    resource_name="catalog",
-    resource_actions=None,
-):
+    secret: str | None = None,
+    resource_type: str = "registry",
+    resource_name: str = "catalog",
+    resource_actions: list[str] | None = None,
+) -> str:
     if resource_actions is None:
         resource_actions = ["*"]
     serializer = _docker_credential_serializer(secret=secret)
-    access = [
+    access: list[DockerScope] = [
         {"type": resource_type, "name": resource_name, "actions": resource_actions}
     ]
     return serializer.dumps(access)
 
 
 def generate_kubernetes_imagepullsecrets(
-    secret,
-    registry_urls=None,
-    resource_type="registry",
-    resource_name="catalog",
-    resource_actions=None,
-):
+    secret: str | None,
+    registry_urls: list[str] | None = None,
+    resource_type: str = "registry",
+    resource_name: str = "catalog",
+    resource_actions: list[str] | None = None,
+) -> str:
     if registry_urls is None:
         registry_urls = []
     password = generate_docker_credentials(
@@ -184,7 +195,9 @@ def generate_kubernetes_imagepullsecrets(
     )
 
 
-def check_docker_credentials(token, secret=None, max_age=60):
+def check_docker_credentials(
+    token: str, secret: str | None = None, max_age: int = 60
+) -> list[DockerScope]:
     serializer = _docker_credential_serializer(secret=secret)
     try:
         access = serializer.loads(token, max_age=max_age)
@@ -193,7 +206,7 @@ def check_docker_credentials(token, secret=None, max_age=60):
         return []
 
 
-def generate_docker_registry_jwt(access=None):
+def generate_docker_registry_jwt(access: list[DockerScope] | None = None) -> str:
     if access is None:
         access = []
 

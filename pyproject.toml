@@ -50,14 +50,15 @@ dependencies = [
 dev = [
     "bandit",
     "hupper",
-    "pytest",
+    "pyrefly",
     "pytest-cov",
+    "pytest",
     "ruff",
     "ty",
     "types-croniter",
+    "types-hvac",
     "types-pyyaml",
     "types-pygments",
-    "types-redis",
     "types-requests",
     "types-toml",
     "typing-extensions",
@@ -82,3 +83,7 @@ exclude_dirs = ["bin", "lib", "tests"]
 
 [tool.uv]
 exclude-newer = "1 week"
+
+
+[tool.pyrefly]
+preset = "all"

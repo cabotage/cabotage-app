@@ -1,26 +1,51 @@
+from typing import TYPE_CHECKING, TypedDict
+
+if TYPE_CHECKING:
+    from flask import Flask
+
+    from cabotage.server.ext.vault import Vault
+    from cabotage.server.ext.consul import Consul
+    from cabotage.server.models.projects import EnvironmentConfiguration
+
+
+class KeySlug(TypedDict):
+    config_key_slug: str
+    build_key_slug: str
+
+
 class ConfigWriter(object):
-    def __init__(self, app=None, consul=None, vault=None):
+    def __init__(
+        self,
+        app: Flask | None = None,
+        consul: Consul | None = None,
+        vault: Vault | None = None,
+    ):
         self.app = app
         self.consul = consul
         self.vault = vault
         if app is not None:
             self.init_app(app, consul, vault)
 
-    def init_app(self, app, consul, vault):
+    def init_app(self, app: Flask, consul: Consul | None, vault: Vault | None):
         self.consul = consul
         self.vault = vault
-        self.consul_prefix = app.config.get("CONSUL_PREFIX", "cabotage")
-        self.vault_prefix = app.config.get("VAULT_PREFIX", "secret/cabotage")
+        self.consul_prefix: str = app.config.get("CONSUL_PREFIX", "cabotage")
+        self.vault_prefix: str = app.config.get("VAULT_PREFIX", "secret/cabotage")
 
         app.teardown_appcontext(self.teardown)
 
-    def teardown(self, exception):
+    def teardown(self, exception: BaseException | None):
         pass
 
-    def _config_path_segment(self, k8s_namespace, k8s_resource_prefix):
+    def _config_path_segment(self, k8s_namespace: str, k8s_resource_prefix: str) -> str:
         return f"/{k8s_namespace}/{k8s_resource_prefix}"
 
-    def write_configuration(self, k8s_namespace, k8s_resource_prefix, configuration):
+    def write_configuration(
+        self,
+        k8s_namespace: str,
+        k8s_resource_prefix: str,
+        configuration: EnvironmentConfiguration,
+    ) -> KeySlug:
         version = configuration.version_id + 1 if configuration.version_id else 1
         path_segment = self._config_path_segment(k8s_namespace, k8s_resource_prefix)
         if configuration.secret:
@@ -63,7 +88,7 @@ class ConfigWriter(object):
             "build_key_slug": f"{storage}:{build_key_name}",
         }
 
-    def read(self, key_slug, build=False, secret=False):
+    def read(self, key_slug: str, build: bool = False, secret: bool = False):
         if secret:
             if self.vault is None:
                 raise RuntimeError("No Vault extension configured!")

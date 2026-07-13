@@ -20,7 +20,7 @@ from cabotage.utils.docker_auth import (
 )
 
 
-def issuer_url():
+def issuer_url() -> str:
     """Return cabotage's OIDC issuer URL.
 
     Enforces HTTPS — an HTTP issuer URL would allow MITM of JWKS
@@ -36,7 +36,7 @@ def issuer_url():
     return f"{scheme}://{server}"
 
 
-def jwks_json():
+def jwks_json() -> str:
     """Return the JWKS document containing all active signing key versions.
 
     Vault transit supports key versioning — when a key is rotated, old
@@ -52,14 +52,14 @@ def jwks_json():
     return json.dumps({"keys": keys})
 
 
-def _b64url(data):
+def _b64url(data: str | bytes) -> str:
     """Base64url-encode without padding."""
     if isinstance(data, str):
         data = data.encode("utf-8")
     return urlsafe_b64encode(data).rstrip(b"=").decode()
 
 
-def _jose_header():
+def _jose_header() -> str:
     """Build a JWT header using cabotage's signing key."""
     public_key_pem = vault.signing_public_key
     kid = generate_libcrypt_key_id(public_key_pem)
@@ -69,7 +69,7 @@ def _jose_header():
     )
 
 
-def mint_jwt(subject, audience, ttl=3600):
+def mint_jwt(subject: str, audience: str, ttl: int = 3600) -> str:
     """Mint a signed JWT with the given subject and audience.
 
     Args:
@@ -100,7 +100,7 @@ def mint_jwt(subject, audience, ttl=3600):
     return f"{payload}.{signature}"
 
 
-def mint_tailscale_jwt(org_k8s_identifier, client_id, ttl=3600):
+def mint_tailscale_jwt(org_k8s_identifier: str, client_id: str, ttl: int = 3600) -> str:
     """Mint a JWT for Tailscale workload identity federation.
 
     The audience must be api.tailscale.com/{client_id} per Tailscale's

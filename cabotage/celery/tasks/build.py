@@ -6,6 +6,7 @@ import re
 import secrets
 import shlex
 import subprocess  # nosec
+from typing import TYPE_CHECKING
 
 from celery import shared_task
 from base64 import b64encode, b64decode
@@ -74,6 +75,10 @@ from cabotage.utils.github import (
 from cabotage.utils import procfile
 
 log = logging.getLogger(__name__)
+
+
+if TYPE_CHECKING:
+    from uuid import UUID
 
 
 def _branch_deploy_environment_backing_services_ready(environment):
@@ -178,7 +183,7 @@ def _queue_autodeploy_release_for_image(image):
     return release
 
 
-def resume_branch_deploy_releases_for_environment(environment_id):
+def resume_branch_deploy_releases_for_environment(environment_id: UUID) -> None:
     environment = Environment.query.filter_by(id=environment_id).first()
     if (
         environment is None

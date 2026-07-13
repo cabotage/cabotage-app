@@ -321,7 +321,9 @@ def create_namespace(core_api_instance, release):
         )
 
 
-def ensure_namespace(core_api_instance, namespace_name):
+def ensure_namespace(
+    core_api_instance: kubernetes.client.CoreV1Api, namespace_name: str
+) -> str:
     """Create the namespace if it doesn't exist, ensure resident label is set."""
     try:
         namespace = core_api_instance.read_namespace(namespace_name)
@@ -742,7 +744,9 @@ def create_cabotage_ca_configmap(core_api_instance, namespace_name):
         )
 
 
-def ensure_cabotage_ca_configmap(core_api_instance, namespace_name):
+def ensure_cabotage_ca_configmap(
+    core_api_instance: kubernetes.client.CoreV1Api, namespace_name: str
+):
     try:
         configmap = core_api_instance.read_namespaced_config_map(
             "cabotage-ca", namespace_name

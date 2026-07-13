@@ -37,7 +37,9 @@ logger = logging.getLogger(__name__)
 Activity = activity_plugin.activity_cls
 
 
-def _clone_backing_services_for_branch_deploy(base_environment, environment):
+def _clone_backing_services_for_branch_deploy(
+    base_environment: Environment, environment: Environment
+):
     """Create fresh backing-service rows in a PR environment.
 
     The cloned resources inherit sizing/topology/version settings from the
@@ -298,7 +300,7 @@ def _precreate_ingresses(environment):
         )
 
 
-def _teardown_environment(environment):
+def _teardown_environment(environment: Environment):
     """Delete k8s namespace and all DB records for an ephemeral environment."""
     import kubernetes
 

@@ -1,21 +1,22 @@
 import hashlib
 import re
 import secrets
+from typing import Final, Any
 
 from unidecode import unidecode
 
-_punct_re = re.compile(r'[\t !"#$%&\'()*\-/<=>?@\[\\\]^_`{|},.]+')
+_punct_re: Final = re.compile(r'[\t !"#$%&\'()*\-/<=>?@\[\\\]^_`{|},.]+')
 
 
-def slugify(text, delim="-"):
+def slugify(text: str, delim: str = "-") -> str:
     """Generates an ASCII-only slug."""
-    result = []
+    result: list[str] = []
     for word in _punct_re.split(text.lower()):
         result.extend(unidecode(word).split())
-    return str(delim.join(result))
+    return delim.join(result)
 
 
-def generate_k8s_identifier(slug, hex_bytes=4):
+def generate_k8s_identifier(slug: str, hex_bytes: int = 4) -> str:
     """Generate a k8s-safe identifier: '{slug_prefix}-{random_hex}'.
 
     Truncates slug to keep total length <= 40 chars.
@@ -26,7 +27,7 @@ def generate_k8s_identifier(slug, hex_bytes=4):
     return f"{prefix}-{hex_suffix}"
 
 
-def safe_k8s_name(*parts, max_len=63):
+def safe_k8s_name(*parts: str, max_len: int = 63) -> str:
     """Join parts with hyphens, truncating with a hash suffix if too long."""
     name = "-".join(parts)
     if len(name) <= max_len:
@@ -35,7 +36,7 @@ def safe_k8s_name(*parts, max_len=63):
     return name[: max_len - 9].rstrip("-") + "-" + digest
 
 
-def compact_k8s_name(*pairs, max_len=63):
+def compact_k8s_name(*pairs: tuple[str, str], max_len: int = 63) -> str:
     """Build a compact, unique k8s name from (slug, k8s_identifier) pairs.
 
     Uses slugs for readability.  When any k8s_identifier differs from its
@@ -60,8 +61,8 @@ def compact_k8s_name(*pairs, max_len=63):
                          ('registry', 'registry-07f189ea'), ('server', 'server-bf4ba994'))
         => 'astral-prod-registry-server-<hash>'
     """
-    slugs = []
-    identifiers = []
+    slugs: list[str] = []
+    identifiers: list[str] = []
     has_generated = False
     for slug, k8s_id in pairs:
         slugs.append(slug)
@@ -85,7 +86,7 @@ def compact_k8s_name(*pairs, max_len=63):
     return truncated + "-" + digest
 
 
-def readable_k8s_hostname(*pairs):
+def readable_k8s_hostname(*pairs: tuple[str, str]) -> str:
     """Build a readable hostname prefix from (slug, k8s_identifier) pairs.
 
     Uses slugs for readability, and always appends a hash derived from all
@@ -98,8 +99,8 @@ def readable_k8s_hostname(*pairs):
                               ('server', 'server-bf4ba994'))
         => 'astral-prod-registry-server-<hash>'
     """
-    slugs = []
-    identifiers = []
+    slugs: list[str] = []
+    identifiers: list[str] = []
     for slug, k8s_id in pairs:
         slugs.append(slug)
         identifiers.append(k8s_id)
@@ -114,7 +115,7 @@ def readable_k8s_hostname(*pairs):
     return truncated + "-" + digest
 
 
-class DictDiffer(object):
+class DictDiffer[K, V]:
     """
     Calculate the difference between two dictionaries as:
     (1) items added
@@ -147,46 +148,51 @@ class DictDiffer(object):
     THE SOFTWARE.
     """
 
-    def __init__(self, current_dict, past_dict, ignored_keys=None):
+    def __init__(
+        self,
+        current_dict: dict[K, Any],
+        past_dict: dict[K, Any],
+        ignored_keys: list[K] | None = None,
+    ):
         if ignored_keys is None:
             ignored_keys = []
-        self.ignored_keys = set(ignored_keys)
+        self.ignored_keys = set(ignored_keys or [])
         self.current_dict, self.past_dict = current_dict, past_dict
         self.current_keys, self.past_keys = [
             set(d.keys()) for d in (current_dict, past_dict)
         ]
         self.intersect = self.current_keys.intersection(self.past_keys)
 
-    def _strip(self, val):
+    def _strip(self, val: dict[K, V] | V) -> dict[K, V] | V:
         """Strip ignored_keys from inner dicts for comparison."""
         if not self.ignored_keys or not isinstance(val, dict):
             return val
         return {k: v for k, v in val.items() if k not in self.ignored_keys}
 
-    def added(self):
+    def added(self) -> set[K]:
         return self.current_keys - self.intersect
 
-    def removed(self):
+    def removed(self) -> set[K]:
         return self.past_keys - self.intersect
 
-    def changed(self):
+    def changed(self) -> set[K]:
         return set(
             o
             for o in self.intersect
             if self._strip(self.past_dict[o]) != self._strip(self.current_dict[o])
         )
 
-    def unchanged(self):
+    def unchanged(self) -> set[K]:
         return set(
             o
             for o in self.intersect
             if self._strip(self.past_dict[o]) == self._strip(self.current_dict[o])
         )
 
-    def has_changes(self):
+    def has_changes(self) -> set[K]:
         return self.added() or self.removed() or self.changed()
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             "<DictDiffer "
             f"Added: {self.added()}, "
@@ -196,7 +202,7 @@ class DictDiffer(object):
         )
 
     @property
-    def asdict(self):
+    def asdict(self) -> dict[str, list[K]]:
         return {
             "added": list(self.added()),
             "removed": list(self.removed()),

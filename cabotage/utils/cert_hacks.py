@@ -1,5 +1,6 @@
 import base64
 import datetime
+from typing import TYPE_CHECKING
 
 
 from cryptography import x509
@@ -7,6 +8,9 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey
 from cryptography.x509.oid import NameOID
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 """
 TODO
@@ -19,7 +23,7 @@ See: https://github.com/hashicorp/vault/issues/3845#event-10158156553
 """
 
 
-def issue_dummy_cert(public_key_pem, common_name):
+def issue_dummy_cert(public_key_pem: bytes, common_name: str) -> x509.Certificate:
     """A kind courtesy of @reaperhulk"""
     discarding_private_key = ec.generate_private_key(
         curve=ec.SECP256R1(),
@@ -65,7 +69,7 @@ def issue_dummy_cert(public_key_pem, common_name):
     return certificate
 
 
-def certificate_squisher(cert, signature):
+def certificate_squisher(cert: x509.Certificate, signature: bytes) -> bytes:
     """A kind courtesy of @reaperhulk
 
     Function assumes cert is a parsed cryptography x509 cert and that the
@@ -80,7 +84,9 @@ def certificate_squisher(cert, signature):
     return bytes(cert_bytes)[: -len(cert.signature)] + signature
 
 
-def construct_cert_from_public_key(signer, public_key_pem, common_name):
+def construct_cert_from_public_key(
+    signer: Callable[[str], bytes], public_key_pem: bytes, common_name: str
+) -> str:
     dummy_cert = issue_dummy_cert(public_key_pem, common_name)
     bytes_to_sign = dummy_cert.tbs_certificate_bytes
     payload = base64.b64encode(bytes_to_sign).decode()
