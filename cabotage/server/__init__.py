@@ -303,13 +303,9 @@ def create_app():
     mail.init_app(app)
     migrate.init_app(app, db)
 
-    @app.template_filter("display_username")
-    def display_username_filter(value):
-        if value and value.startswith("github:"):
-            parts = value.split(":", 2)
-            if len(parts) == 3:
-                return parts[2]
-        return value
+    from cabotage.utils.github import display_username
+
+    app.add_template_filter(display_username, "display_username")
 
     @app.template_filter("humanize")
     def humanize_filter(value):
