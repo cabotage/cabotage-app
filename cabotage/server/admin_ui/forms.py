@@ -3,16 +3,8 @@ from wtforms import BooleanField, HiddenField, StringField
 from wtforms.validators import DataRequired
 
 
-class AdminUserActionForm(FlaskForm):
-    """CSRF-only form for user _action posts."""
-
-
-class AdminOrgActionForm(FlaskForm):
-    """CSRF-only form for organization lifecycle _action posts."""
-
-
-class AdminProjectActionForm(FlaskForm):
-    """CSRF-only form for project lifecycle _action posts."""
+class AdminActionForm(FlaskForm):
+    """CSRF-only form for `_action` posts (user, org, and project actions)."""
 
 
 class AdminOrgMemberActionForm(FlaskForm):
