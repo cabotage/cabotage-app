@@ -1043,6 +1043,51 @@ a.live-commit-sha:hover {
   border: 1px solid color-mix(in oklch, currentColor 15%, transparent);
   padding-left: 0.5rem;
 }
+/* Semantic Badges & Alerts
+   Tinted like .flash-* below instead of daisyUI's solid fill, which can't clear
+   4.5:1 on this palette. Unlayered, so these win over @layer daisyui. */
+.badge-error,
+.badge-warning,
+.badge-success,
+.badge-info {
+  --badge-bg: color-mix(in srgb, var(--badge-color) 12%, transparent);
+  --badge-fg: color-mix(in srgb, var(--badge-color) 75%, var(--color-base-content));
+  border-color: color-mix(in srgb, var(--badge-color) 40%, transparent);
+}
+.alert-error,
+.alert-warning,
+.alert-success,
+.alert-info {
+  --alert-color: color-mix(in srgb, var(--alert-tint) 12%, transparent);
+  --alert-border-color: color-mix(in srgb, var(--alert-tint) 40%, transparent);
+  color: color-mix(in srgb, var(--alert-tint) 75%, var(--color-base-content));
+}
+.alert-error {
+  --alert-tint: var(--color-error);
+}
+.alert-warning {
+  --alert-tint: var(--color-warning);
+}
+.alert-success {
+  --alert-tint: var(--color-success);
+}
+.alert-info {
+  --alert-tint: var(--color-info);
+}
+[data-theme='light'] :is(.badge-error, .badge-warning, .badge-success, .badge-info) {
+  --badge-fg: color-mix(in srgb, var(--badge-color) 60%, var(--color-base-content));
+}
+[data-theme='light'] :is(.alert-error, .alert-warning, .alert-success, .alert-info) {
+  color: color-mix(in srgb, var(--alert-tint) 60%, var(--color-base-content));
+}
+/* terminal's base-content is green — mixing would tint everything green */
+[data-theme='terminal'] :is(.badge-error, .badge-warning, .badge-success, .badge-info) {
+  --badge-fg: var(--badge-color);
+}
+[data-theme='terminal'] :is(.alert-error, .alert-warning, .alert-success, .alert-info) {
+  color: var(--alert-tint);
+}
+
 /* Flash messages */
 .flash-message {
   display: flex;
