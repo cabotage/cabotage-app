@@ -665,7 +665,7 @@
             // Mutations 403 server-side for non-member super admins; disable
             // submit controls so the UI reads as the read-only view it is.
             document.addEventListener('DOMContentLoaded', function () {
-              document.querySelectorAll('main form button:not([type]), main form button[type="submit"], main form input[type="submit"]').forEach(function (el) {
+              document.querySelectorAll('main form[method="post" i] button:not([type]), main form[method="post" i] button[type="submit"], main form[method="post" i] input[type="submit"]').forEach(function (el) {
                 el.disabled = true;
                 el.title = 'Read-only super-admin access';
               });

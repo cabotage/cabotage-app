@@ -1,6 +1,6 @@
 {% extends "_base.html" %}
 {% from "_macros.html" import icon, page_header %}
-{% from "admin_ui/_shared.html" import admin_tab_nav, confirm_action_modal %}
+{% from "admin_ui/_shared.html" import admin_tab_nav, confirm_action_modal, state_badge, org_role %}
 
 {% block title %}{{ organization.name }} - Admin - Cabotage{% endblock %}
 
@@ -41,11 +41,7 @@
               <div class="text-xs text-base-content/40">{{ member.user.email }}</div>
             </td>
             <td>
-              {% if member.admin %}
-                <span class="badge badge-sm badge-neutral">org admin</span>
-              {% else %}
-                <span class="text-xs text-base-content/40">member</span>
-              {% endif %}
+              {{ org_role(member.admin) }}
             </td>
             <td class="text-right">
               <div class="flex justify-end gap-2">
@@ -117,11 +113,7 @@
               <span class="text-xs text-base-content/40 ml-2">{{ project.slug }}</span>
             </td>
             <td>
-              {% if project.deleted_at %}
-                <span class="badge badge-error badge-sm" title="{{ project.deleted_at }}">deleted</span>
-              {% else %}
-                <span class="text-xs text-base-content/40">active</span>
-              {% endif %}
+              {{ state_badge(project) }}
             </td>
           </tr>
           {% endfor %}

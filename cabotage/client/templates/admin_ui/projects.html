@@ -1,6 +1,6 @@
 {% extends "_base.html" %}
 {% from "_macros.html" import icon, page_header, empty_state %}
-{% from "admin_ui/_shared.html" import admin_tab_nav, confirm_action_modal %}
+{% from "admin_ui/_shared.html" import admin_tab_nav, confirm_action_modal, state_badge %}
 
 {% block title %}Projects - Admin - Cabotage{% endblock %}
 
@@ -44,11 +44,7 @@
               {% endif %}
             </td>
             <td>
-              {% if project.deleted_at %}
-                <span class="badge badge-error badge-sm" title="{{ project.deleted_at }}">deleted</span>
-              {% else %}
-                <span class="text-xs text-base-content/40">active</span>
-              {% endif %}
+              {{ state_badge(project) }}
             </td>
             <td class="text-right">
               {% if project.deleted_at %}

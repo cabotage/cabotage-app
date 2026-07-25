@@ -1,6 +1,6 @@
 {% extends "_base.html" %}
 {% from "_macros.html" import page_header, empty_state %}
-{% from "admin_ui/_shared.html" import admin_tab_nav %}
+{% from "admin_ui/_shared.html" import admin_tab_nav, state_badge %}
 
 {% block title %}Organizations - Admin - Cabotage{% endblock %}
 
@@ -34,11 +34,7 @@
             <td class="text-right tabular-nums">{{ member_counts.get(org.id, 0) }}</td>
             <td class="text-right tabular-nums">{{ project_counts.get(org.id, 0) }}</td>
             <td>
-              {% if org.deleted_at %}
-                <span class="badge badge-error badge-sm" title="{{ org.deleted_at }}">deleted</span>
-              {% else %}
-                <span class="text-xs text-base-content/40">active</span>
-              {% endif %}
+              {{ state_badge(org) }}
             </td>
           </tr>
           {% endfor %}

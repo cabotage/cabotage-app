@@ -22,6 +22,22 @@
   </div>
 {% endmacro %}
 
+{% macro state_badge(obj) %}
+  {% if obj.deleted_at %}
+    <span class="badge badge-error badge-sm" title="{{ obj.deleted_at }}">deleted</span>
+  {% else %}
+    <span class="text-xs text-base-content/40">active</span>
+  {% endif %}
+{% endmacro %}
+
+{% macro org_role(is_admin) %}
+  {% if is_admin %}
+    <span class="badge badge-sm badge-neutral">org admin</span>
+  {% else %}
+    <span class="text-xs text-base-content/40">member</span>
+  {% endif %}
+{% endmacro %}
+
 {# Confirmation dialog for an `_action` POST. Renders the <dialog> only; the
    trigger button lives at the call site and calls showModal(). Pass
    confirm_text to require typed confirmation for destructive actions. #}
@@ -54,4 +70,17 @@
     </div>
     <form method="dialog" class="modal-backdrop"><button>close</button></form>
   </dialog>
+  {% if confirm_text %}
+    <script>
+      (function () {
+        var d = document.getElementById('{{ modal_id }}');
+        d.addEventListener('close', function () {
+          var i = d.querySelector('input[name="confirm"]');
+          if (i) i.value = '';
+          var b = d.querySelector('.btn-modal-confirm');
+          if (b) b.disabled = true;
+        });
+      })();
+    </script>
+  {% endif %}
 {% endmacro %}

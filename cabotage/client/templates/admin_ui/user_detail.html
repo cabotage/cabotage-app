@@ -1,6 +1,6 @@
 {% extends "_base.html" %}
 {% from "_macros.html" import icon, page_header, status_badge %}
-{% from "admin_ui/_shared.html" import admin_tab_nav, confirm_action_modal %}
+{% from "admin_ui/_shared.html" import admin_tab_nav, confirm_action_modal, org_role %}
 
 {% block title %}{{ user.username | display_username }} - Admin - Cabotage{% endblock %}
 
@@ -87,11 +87,7 @@
               <span class="text-xs text-base-content/40 ml-2">{{ membership.organization.slug }}</span>
             </td>
             <td>
-              {% if membership.admin %}
-                <span class="badge badge-sm badge-neutral">org admin</span>
-              {% else %}
-                <span class="text-xs text-base-content/40">member</span>
-              {% endif %}
+              {{ org_role(membership.admin) }}
             </td>
           </tr>
           {% endfor %}
