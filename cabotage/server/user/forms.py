@@ -46,7 +46,7 @@ BIGINT_MIN = -(2**63)
 BIGINT_MAX = 2**63 - 1
 
 
-def strip_or_none(value):
+def strip_or_none(value: str | None) -> str | None:
     """Trim a text field, treating a blank result as unset."""
     return (value or "").strip() or None
 
