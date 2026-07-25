@@ -4,7 +4,7 @@ import datetime
 import uuid
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, text
+from sqlalchemy import DateTime, ForeignKey, String, Text, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -50,10 +50,6 @@ class Feedback(Model):
     )
 
     user = relationship("User")
-
-    __table_args__ = (
-        Index("ix_feedback_remote_addr_created_at", "remote_addr", "created_at"),
-    )
 
     def __repr__(self):
         return f"<Feedback {self.id} kind={self.kind} endpoint={self.endpoint}>"

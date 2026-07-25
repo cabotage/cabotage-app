@@ -1,17 +1,13 @@
-import datetime
-
 from urllib.parse import urlsplit, urlunsplit
 
 from flask import abort, Blueprint, current_app, jsonify, request
 from flask_login import current_user
-from sqlalchemy import func
 
 from cabotage.server import db
 from cabotage.server.models.feedback import Feedback, FEEDBACK_KINDS
 
 MAX_MESSAGE_LENGTH = 5000
 MAX_URL_LENGTH = 2048
-DEFAULT_RATE_LIMIT_PER_HOUR = 10
 
 feedback_bp = Blueprint("feedback", __name__)
 
@@ -37,24 +33,6 @@ def _clean_view_args(raw):
     if not isinstance(raw, dict):
         return {}
     return {str(key)[:64]: str(value)[:256] for key, value in raw.items()}
-
-
-def _rate_limited(remote_addr):
-    """Cap submissions per IP per hour. created_at is stored naive UTC."""
-    if not remote_addr:
-        return False
-    cutoff = datetime.datetime.now(datetime.timezone.utc).replace(
-        tzinfo=None
-    ) - datetime.timedelta(hours=1)
-    recent = (
-        db.session.query(func.count(Feedback.id))
-        .filter(Feedback.remote_addr == remote_addr, Feedback.created_at > cutoff)
-        .scalar()
-    )
-    limit = current_app.config.get(
-        "FEEDBACK_RATE_LIMIT_PER_HOUR", DEFAULT_RATE_LIMIT_PER_HOUR
-    )
-    return recent >= limit
 
 
 def _notify(feedback_id):
@@ -83,12 +61,6 @@ def submit_feedback():
     if len(message) > MAX_MESSAGE_LENGTH:
         return jsonify({"error": "Feedback message is too long."}), 400
 
-    remote_addr = request.remote_addr
-    if _rate_limited(remote_addr):
-        return jsonify(
-            {"error": "Too much feedback too quickly — please try again later."}
-        ), 429
-
     kind = data.get("kind")
     feedback = Feedback(
         user_id=current_user.id if current_user.is_authenticated else None,
@@ -102,7 +74,7 @@ def submit_feedback():
         user_agent=_clamp(request.headers.get("User-Agent"), 512),
         viewport=_clamp(data.get("viewport"), 32),
         theme=_clamp(data.get("theme"), 16),
-        remote_addr=_clamp(remote_addr, 64),
+        remote_addr=_clamp(request.remote_addr, 64),
     )
     db.session.add(feedback)
     db.session.commit()

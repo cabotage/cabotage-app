@@ -50,15 +50,8 @@ def upgrade():
         sa.PrimaryKeyConstraint("id", name=op.f("pk_feedback")),
     )
     op.create_index(op.f("ix_feedback_user_id"), "feedback", ["user_id"], unique=False)
-    op.create_index(
-        "ix_feedback_remote_addr_created_at",
-        "feedback",
-        ["remote_addr", "created_at"],
-        unique=False,
-    )
 
 
 def downgrade():
-    op.drop_index("ix_feedback_remote_addr_created_at", table_name="feedback")
     op.drop_index(op.f("ix_feedback_user_id"), table_name="feedback")
     op.drop_table("feedback")

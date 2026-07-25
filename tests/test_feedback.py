@@ -20,7 +20,6 @@ def app():
         "FEEDBACK_WIDGET_ENABLED": _app.config.get("FEEDBACK_WIDGET_ENABLED"),
         "FEEDBACK_DISCORD_WEBHOOK_URL": _app.config.get("FEEDBACK_DISCORD_WEBHOOK_URL"),
         "FEEDBACK_SLACK_WEBHOOK_URL": _app.config.get("FEEDBACK_SLACK_WEBHOOK_URL"),
-        "FEEDBACK_RATE_LIMIT_PER_HOUR": _app.config.get("FEEDBACK_RATE_LIMIT_PER_HOUR"),
     }
     _app.config["TESTING"] = True
     _app.config["WTF_CSRF_ENABLED"] = False
@@ -28,7 +27,6 @@ def app():
     _app.config["FEEDBACK_WIDGET_ENABLED"] = True
     _app.config["FEEDBACK_DISCORD_WEBHOOK_URL"] = None
     _app.config["FEEDBACK_SLACK_WEBHOOK_URL"] = None
-    _app.config["FEEDBACK_RATE_LIMIT_PER_HOUR"] = 10
 
     with _app.app_context():
         yield _app
@@ -218,27 +216,6 @@ def test_submit_survives_enqueue_failure(client, monkeypatch):
     assert response.status_code == 201
     feedback = db.session.query(Feedback).filter_by(email="boom@example.com").one()
     _cleanup(feedback.id)
-
-
-def test_rate_limit(app, client):
-    rows = [
-        Feedback(kind="other", message=f"filler {i}", remote_addr="127.0.0.1")
-        for i in range(10)
-    ]
-    db.session.add_all(rows)
-    db.session.commit()
-    try:
-        response = client.post(
-            "/feedback", json={"message": "over the limit", "email": "rl@example.com"}
-        )
-        assert response.status_code == 429
-        assert (
-            db.session.query(Feedback).filter_by(email="rl@example.com").one_or_none()
-            is None
-        )
-    finally:
-        for row in rows:
-            _cleanup(row.id)
 
 
 def test_csrf_required_when_enabled(app, client):
