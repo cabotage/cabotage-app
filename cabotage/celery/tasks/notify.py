@@ -1025,14 +1025,14 @@ def dispatch_feedback_notification(feedback_id):
 
     from cabotage.server.models.feedback import Feedback
 
-    webhooks = [
-        (service, current_app.config.get(key))
-        for service, key in (
-            ("Discord", "FEEDBACK_DISCORD_WEBHOOK_URL"),
-            ("Slack", "FEEDBACK_SLACK_WEBHOOK_URL"),
-        )
-        if current_app.config.get(key)
-    ]
+    webhooks: list[tuple[str, str]] = []
+    for service, key in (
+        ("Discord", "FEEDBACK_DISCORD_WEBHOOK_URL"),
+        ("Slack", "FEEDBACK_SLACK_WEBHOOK_URL"),
+    ):
+        url = current_app.config.get(key)
+        if url:
+            webhooks.append((service, url))
     if not webhooks:
         return
     feedback = Feedback.query.filter_by(id=feedback_id).first()
