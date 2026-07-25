@@ -69,24 +69,9 @@ def cabotage_on_identity_loaded(sender, identity):
                         identity.provides.add(AdministerApplicationNeed(application.id))
 
 
-class ViewOrganizationPermission(Permission):
-    def __init__(self, organization_id):
-        need = ViewOrganizationNeed(organization_id)
-        super().__init__(need, AdminViewAllNeed)
-
-
-class ViewProjectPermission(Permission):
-    def __init__(self, project_id):
-        need = ViewProjectNeed(project_id)
-        super().__init__(need, AdminViewAllNeed)
-
-
-class ViewApplicationPermission(Permission):
-    def __init__(self, application_id):
-        need = ViewApplicationNeed(application_id)
-        super().__init__(need, AdminViewAllNeed)
-
-
+# MemberView* carry only the membership-derived need — use them to gate
+# mutations. View* extend them with the super-admin sentinel, granting
+# read access everywhere.
 class MemberViewOrganizationPermission(Permission):
     def __init__(self, organization_id):
         need = ViewOrganizationNeed(organization_id)
@@ -103,6 +88,24 @@ class MemberViewApplicationPermission(Permission):
     def __init__(self, application_id):
         need = ViewApplicationNeed(application_id)
         super().__init__(need)
+
+
+class ViewOrganizationPermission(MemberViewOrganizationPermission):
+    def __init__(self, organization_id):
+        super().__init__(organization_id)
+        self.needs.add(AdminViewAllNeed)
+
+
+class ViewProjectPermission(MemberViewProjectPermission):
+    def __init__(self, project_id):
+        super().__init__(project_id)
+        self.needs.add(AdminViewAllNeed)
+
+
+class ViewApplicationPermission(MemberViewApplicationPermission):
+    def __init__(self, application_id):
+        super().__init__(application_id)
+        self.needs.add(AdminViewAllNeed)
 
 
 def is_direct_org_member(organization_id):
