@@ -1,0 +1,51 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import page_header, empty_state %}
+{% from "admin_ui/_shared.html" import admin_tab_nav %}
+
+{% block title %}Organizations - Admin - Cabotage{% endblock %}
+
+{% block tab_bar %}
+  {{ admin_tab_nav('organizations') }}
+{% endblock tab_bar %}
+
+{% block content %}
+  {% call page_header('Organizations', 'All organizations, including soft-deleted') %}
+  {% endcall %}
+
+  {% if organizations %}
+    <div class="overflow-x-auto border border-base-300 rounded-lg">
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th>Organization</th>
+            <th class="text-right">Members</th>
+            <th class="text-right">Projects</th>
+            <th>State</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for org in organizations %}
+          <tr class="{% if org.deleted_at %}opacity-60{% endif %}">
+            <td>
+              <a href="{{ url_for('admin.organization_detail', org_id=org.id) }}"
+                 class="link link-hover font-medium">{{ org.name }}</a>
+              <div class="text-xs text-base-content/40">{{ org.slug }}</div>
+            </td>
+            <td class="text-right tabular-nums">{{ member_counts.get(org.id, 0) }}</td>
+            <td class="text-right tabular-nums">{{ project_counts.get(org.id, 0) }}</td>
+            <td>
+              {% if org.deleted_at %}
+                <span class="badge badge-error badge-sm" title="{{ org.deleted_at }}">deleted</span>
+              {% else %}
+                <span class="text-xs text-base-content/40">active</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    {{ empty_state('No organizations', icon_name='building') }}
+  {% endif %}
+{% endblock %}

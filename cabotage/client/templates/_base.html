@@ -260,12 +260,8 @@
                 <a href="{{ url_for('user.guide') }}"
                    class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Guide</a>
                 {% if current_user.admin %}
-                {% if config.ORGANIZATION_REQUESTS_ENABLED %}
-                <a href="{{ url_for('user.organization_requests') }}"
-                   class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Requests</a>
-                {% endif %}
-                <a href="{{ url_for('user.infra_observe') }}"
-                   class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Infra</a>
+                <a href="{{ url_for('admin.index') }}"
+                   class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Admin</a>
                 {% endif %}
               </nav>
               <div class="dropdown dropdown-hover dropdown-end theme-toggle-wrap">
@@ -620,12 +616,8 @@
             <a href="{{ url_for('user.guide') }}"
                class="btn btn-ghost btn-sm justify-start text-sm">Guide</a>
             {% if current_user.admin %}
-            {% if config.ORGANIZATION_REQUESTS_ENABLED %}
-            <a href="{{ url_for('user.organization_requests') }}"
-               class="btn btn-ghost btn-sm justify-start text-sm">Requests</a>
-            {% endif %}
-            <a href="{{ url_for('user.infra_observe') }}"
-               class="btn btn-ghost btn-sm justify-start text-sm">Infrastructure</a>
+            <a href="{{ url_for('admin.index') }}"
+               class="btn btn-ghost btn-sm justify-start text-sm">Admin</a>
             {% endif %}
           </nav>
         {% endif %}
@@ -658,6 +650,29 @@
           </div>
         {% endif %}
       {% endwith %}
+
+      {% if current_user.is_authenticated and current_user.admin %}
+        {% set _banner_org = organization if organization is defined and organization
+           else (project.organization if project is defined and project
+           else (application.project.organization if application is defined and application else none)) %}
+        {% if _banner_org and not is_direct_org_member(_banner_org.id) %}
+          <div class="app-content-padded !py-3">
+            <div role="status" class="flash-message flash-warning" data-flash-auto="false">
+              <span>Viewing read-only with super-admin access — you are not a member of {{ _banner_org.name }}.</span>
+            </div>
+          </div>
+          <script>
+            // Mutations 403 server-side for non-member super admins; disable
+            // submit controls so the UI reads as the read-only view it is.
+            document.addEventListener('DOMContentLoaded', function () {
+              document.querySelectorAll('main form button:not([type]), main form button[type="submit"], main form input[type="submit"]').forEach(function (el) {
+                el.disabled = true;
+                el.title = 'Read-only super-admin access';
+              });
+            });
+          </script>
+        {% endif %}
+      {% endif %}
 
       <main class="app-content">
         {% block content_full %}

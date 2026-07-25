@@ -1,0 +1,82 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, page_header, empty_state %}
+{% from "admin_ui/_shared.html" import admin_tab_nav, confirm_action_modal %}
+
+{% block title %}Projects - Admin - Cabotage{% endblock %}
+
+{% block tab_bar %}
+  {{ admin_tab_nav('projects') }}
+{% endblock tab_bar %}
+
+{% block content %}
+  {% call page_header('Projects', 'All projects, including soft-deleted') %}
+  {% endcall %}
+
+  {% if projects %}
+    <div class="overflow-x-auto border border-base-300 rounded-lg">
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th>Project</th>
+            <th>Organization</th>
+            <th>State</th>
+            <th class="text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for project in projects %}
+          <tr class="{% if project.deleted_at %}opacity-60{% endif %}">
+            <td>
+              {% if project.deleted_at %}
+                <span class="font-medium">{{ project.name }}</span>
+              {% else %}
+                <a href="{{ url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug) }}"
+                   class="link link-hover font-medium">{{ project.name }}</a>
+              {% endif %}
+              <div class="text-xs text-base-content/40">{{ project.slug }}</div>
+            </td>
+            <td>
+              {% if project.organization %}
+                <a href="{{ url_for('admin.organization_detail', org_id=project.organization_id) }}"
+                   class="link link-hover">{{ project.organization.name }}</a>
+              {% else %}
+                <span class="text-base-content/40">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if project.deleted_at %}
+                <span class="badge badge-error badge-sm" title="{{ project.deleted_at }}">deleted</span>
+              {% else %}
+                <span class="text-xs text-base-content/40">active</span>
+              {% endif %}
+            </td>
+            <td class="text-right">
+              {% if project.deleted_at %}
+                {% if not project.organization or project.organization.deleted_at %}
+                  <span class="text-xs text-base-content/40" title="Restore the organization first">org deleted</span>
+                {% else %}
+                  <button type="button" class="btn btn-ghost btn-xs"
+                          onclick="document.getElementById('restore-project-{{ project.id }}').showModal()">Restore</button>
+                  {{ confirm_action_modal('restore-project-' ~ project.id, 'Restore project', 'restore',
+                       project_action_form, url_for('admin.project_action', project_id=project.id),
+                       description='Restore %s in %s. Database-level only — applications need redeploys and backing services stay deleted.'|format(project.name, project.organization.name),
+                       submit_label='Restore', submit_class='btn-primary') }}
+                {% endif %}
+              {% else %}
+                <button type="button" class="btn btn-ghost btn-xs text-error"
+                        onclick="document.getElementById('delete-project-{{ project.id }}').showModal()">Delete</button>
+                {{ confirm_action_modal('delete-project-' ~ project.id, 'Delete project', 'soft_delete',
+                     project_action_form, url_for('admin.project_action', project_id=project.id),
+                     description='All applications in %s stop being served. Cluster cleanup is scheduled immediately.'|format(project.name),
+                     confirm_text=project.slug, submit_label='Delete') }}
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    {{ empty_state('No projects', icon_name='folder') }}
+  {% endif %}
+{% endblock %}
