@@ -58,8 +58,11 @@ def submit_feedback():
         abort(404)
 
     data = request.get_json(silent=True)
-    message = data.get("message") if isinstance(data, dict) else None
-    message = message.strip() if isinstance(message, str) else ""
+    if not isinstance(data, dict):
+        return jsonify({"error": "Feedback message is required."}), 400
+
+    # Clamp one over the limit so an oversized message survives to be rejected.
+    message = _clamp(data.get("message"), MAX_MESSAGE_LENGTH + 1)
     if not message:
         return jsonify({"error": "Feedback message is required."}), 400
     if len(message) > MAX_MESSAGE_LENGTH:
