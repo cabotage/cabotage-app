@@ -2499,7 +2499,6 @@ function initFeedbackWidget() {
   var form = document.getElementById('feedback-form');
   var thanks = document.getElementById('feedback-thanks');
   var messageEl = document.getElementById('feedback-message');
-  var emailEl = document.getElementById('feedback-email');
   var errorEl = document.getElementById('feedback-error');
   var submitBtn = document.getElementById('feedback-submit');
   var closeBtn = document.getElementById('feedback-close');
@@ -2543,7 +2542,6 @@ function initFeedbackWidget() {
       body: JSON.stringify({
         kind: form.elements.kind.value,
         message: message,
-        email: emailEl ? emailEl.value.trim() : '',
         page_url: window.location.origin + window.location.pathname,
         page_title: document.title,
         endpoint: widget.getAttribute('data-endpoint'),
