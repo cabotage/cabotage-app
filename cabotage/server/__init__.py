@@ -188,7 +188,10 @@ def create_app():
 
     from cabotage.server.models.admin import AdminIndexView
 
-    admin = Admin(name="cabotage_admin", index_view=AdminIndexView())
+    admin = Admin(
+        name="cabotage_admin",
+        index_view=AdminIndexView(name="Database", endpoint="dbadmin", url="/admin/db"),
+    )
 
     from cabotage.server.models.auth import User, Role, WebAuthn
 
