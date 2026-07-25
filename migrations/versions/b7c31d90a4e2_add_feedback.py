@@ -27,7 +27,6 @@ def upgrade():
             nullable=False,
         ),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("email", sa.String(length=255), nullable=True),
         sa.Column("kind", sa.String(length=16), nullable=False),
         sa.Column("message", sa.Text(), nullable=False),
         sa.Column("page_url", sa.String(length=2048), nullable=True),

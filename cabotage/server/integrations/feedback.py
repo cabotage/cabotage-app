@@ -1,7 +1,7 @@
 from urllib.parse import urlsplit, urlunsplit
 
 from flask import abort, Blueprint, current_app, jsonify, request
-from flask_login import current_user
+from flask_login import current_user, login_required
 
 from cabotage.server import db
 from cabotage.server.models.feedback import Feedback, FEEDBACK_KINDS
@@ -18,12 +18,14 @@ def init_feedback(app):
 
 def _clamp(value, limit):
     """Normalize to a stripped, truncated string, or None if empty."""
-    return (value or "").strip()[:limit] or None
+    if not isinstance(value, str):
+        return None
+    return value.strip()[:limit] or None
 
 
 def _clean_page_url(raw):
     """Strip query strings and fragments — they can carry tokens or PII."""
-    if not raw:
+    if not isinstance(raw, str) or not raw:
         return None
     scheme, netloc, path, _, _ = urlsplit(raw[:MAX_URL_LENGTH])
     return urlunsplit((scheme, netloc, path, "", "")) or None
@@ -39,7 +41,7 @@ def _notify(feedback_id):
     # Deferred import avoids an import cycle at module load. Callers dispatch
     # after commit so workers see the row; a dead broker must not fail the
     # submission.
-    from cabotage.celery.tasks.notify import dispatch_feedback_notification
+    from cabotage.celery.tasks.feedback import dispatch_feedback_notification
 
     try:
         dispatch_feedback_notification.delay(str(feedback_id))
@@ -50,12 +52,14 @@ def _notify(feedback_id):
 
 
 @feedback_bp.route("/feedback", methods=["POST"])
+@login_required
 def submit_feedback():
     if not current_app.config.get("FEEDBACK_WIDGET_ENABLED", False):
         abort(404)
 
-    data = request.get_json(silent=True) or {}
-    message = (data.get("message") or "").strip()
+    data = request.get_json(silent=True)
+    message = data.get("message") if isinstance(data, dict) else None
+    message = message.strip() if isinstance(message, str) else ""
     if not message:
         return jsonify({"error": "Feedback message is required."}), 400
     if len(message) > MAX_MESSAGE_LENGTH:
@@ -63,8 +67,7 @@ def submit_feedback():
 
     kind = data.get("kind")
     feedback = Feedback(
-        user_id=current_user.id if current_user.is_authenticated else None,
-        email=_clamp(data.get("email"), 255),
+        user_id=current_user.id,
         kind=kind if kind in FEEDBACK_KINDS else "other",
         message=message,
         page_url=_clean_page_url(data.get("page_url")),
