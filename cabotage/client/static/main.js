@@ -2491,6 +2491,92 @@ document.addEventListener('click', function (e) {
   }
 });
 
+function initFeedbackWidget() {
+  var widget = document.getElementById('feedback-widget');
+  if (!widget) return;
+  var toggle = document.getElementById('feedback-toggle');
+  var panel = document.getElementById('feedback-panel');
+  var form = document.getElementById('feedback-form');
+  var thanks = document.getElementById('feedback-thanks');
+  var messageEl = document.getElementById('feedback-message');
+  var emailEl = document.getElementById('feedback-email');
+  var errorEl = document.getElementById('feedback-error');
+  var submitBtn = document.getElementById('feedback-submit');
+  var closeBtn = document.getElementById('feedback-close');
+
+  function setOpen(open) {
+    panel.classList.toggle('hidden', !open);
+    toggle.setAttribute('aria-expanded', String(open));
+    if (open) messageEl.focus();
+  }
+
+  toggle.addEventListener('click', function () {
+    setOpen(panel.classList.contains('hidden'));
+  });
+  closeBtn.addEventListener('click', function () {
+    setOpen(false);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !panel.classList.contains('hidden')) setOpen(false);
+  });
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    errorEl.classList.add('hidden');
+    var message = messageEl.value.trim();
+    if (!message) {
+      errorEl.textContent = 'Please enter a message.';
+      errorEl.classList.remove('hidden');
+      return;
+    }
+    var viewArgs = {};
+    try {
+      viewArgs = JSON.parse(widget.getAttribute('data-view-args') || '{}');
+    } catch (err) { /* leave empty */ }
+    submitBtn.disabled = true;
+    fetch(widget.getAttribute('data-post-url'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': widget.getAttribute('data-csrf'),
+      },
+      body: JSON.stringify({
+        kind: form.elements.kind.value,
+        message: message,
+        email: emailEl ? emailEl.value.trim() : '',
+        page_url: window.location.origin + window.location.pathname,
+        page_title: document.title,
+        endpoint: widget.getAttribute('data-endpoint'),
+        view_args: viewArgs,
+        viewport: window.innerWidth + 'x' + window.innerHeight,
+        theme: document.documentElement.getAttribute('data-theme') || '',
+      }),
+    })
+      .then(function (resp) {
+        if (!resp.ok) {
+          return resp.json().catch(function () { return {}; }).then(function (data) {
+            throw new Error(data.error || 'Something went wrong. Please try again.');
+          });
+        }
+        form.classList.add('hidden');
+        thanks.classList.remove('hidden');
+        setTimeout(function () {
+          setOpen(false);
+          form.reset();
+          form.classList.remove('hidden');
+          thanks.classList.add('hidden');
+        }, 2500);
+      })
+      .catch(function (err) {
+        errorEl.textContent = err.message;
+        errorEl.classList.remove('hidden');
+      })
+      .finally(function () {
+        submitBtn.disabled = false;
+      });
+  });
+}
+
 document.addEventListener('DOMContentLoaded', function () {
   initTabs();
   initCompactTopbar();
@@ -2526,6 +2612,7 @@ document.addEventListener('DOMContentLoaded', function () {
   initTfSelect();
   initSecuritySettings();
   initHdrActionTips();
+  initFeedbackWidget();
   window.addEventListener('resize', function () {
     autoExpandCollapsibleCards();
     syncDetailLogHeight();
