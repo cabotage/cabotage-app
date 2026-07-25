@@ -720,8 +720,12 @@
       </div>
     </div>
 
-    <div id="pipeline-toasts"
-         class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+    <div class="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2 pointer-events-none">
+      <div id="pipeline-toasts" class="flex flex-col items-end gap-2"></div>
+      {% if config.FEEDBACK_WIDGET_ENABLED %}
+        {% include "_feedback.html" %}
+      {% endif %}
+    </div>
 
   </body>
 </html>
