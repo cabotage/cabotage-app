@@ -1436,8 +1436,8 @@ details[open] summary .collapse-icon {
   border-color: rgba(239, 68, 68, 0.2);
 }
 .action-banner-changes {
-  background: rgba(124, 58, 237, 0.04);
-  border: 1px solid rgba(124, 58, 237, 0.12);
+  background: color-mix(in srgb, var(--color-primary) 4%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
 .action-banner-deploy {
   background: rgba(34, 197, 94, 0.04);
@@ -2037,9 +2037,9 @@ a.pipeline-stage-body:hover {
   color: rgba(34, 197, 94, 0.7);
 }
 .deploy-step-inline-next {
-  background: rgba(124, 58, 237, 0.1);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
   color: var(--accent-text);
-  box-shadow: 0 0 8px rgba(124, 58, 237, 0.1);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-primary) 10%, transparent);
 }
 .deploy-step-inline-pending {
   background: var(--hover-overlay);
@@ -2078,8 +2078,8 @@ a.pipeline-stage-body:hover {
   color: rgba(59, 130, 246, 0.85);
 }
 .change-pill-config {
-  background: rgba(124, 58, 237, 0.08);
-  color: rgba(124, 58, 237, 0.85);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  color: color-mix(in srgb, var(--color-primary) 85%, transparent);
 }
 .change-details-toggle {
   all: unset;
@@ -2141,21 +2141,32 @@ a.pipeline-stage-body:hover {
 }
 .change-item em {
   font-style: normal;
-  opacity: 0.55;
+  opacity: 0.7;
 }
+/* Same convention as the semantic badges above: a 12% tint with the text mixed
+   toward --color-base-content, so these stay legible on the banner's own tint. */
 .change-item-added {
-  background: rgba(34, 197, 94, 0.06);
-  color: rgba(34, 197, 94, 0.8);
+  --chg-tint: var(--color-success);
 }
 .change-item-updated {
-  background: rgba(59, 130, 246, 0.06);
-  color: rgba(59, 130, 246, 0.8);
+  --chg-tint: var(--color-info);
 }
 .change-item-removed {
-  background: rgba(239, 68, 68, 0.06);
-  color: rgba(239, 68, 68, 0.8);
+  --chg-tint: var(--color-error);
   text-decoration: line-through;
-  text-decoration-color: rgba(239, 68, 68, 0.25);
+  text-decoration-color: color-mix(in srgb, var(--chg-tint) 35%, transparent);
+}
+.change-item-added,
+.change-item-updated,
+.change-item-removed {
+  background: color-mix(in srgb, var(--chg-tint) 12%, transparent);
+  color: color-mix(in srgb, var(--chg-tint) 75%, var(--color-base-content));
+}
+[data-theme='light'] :is(.change-item-added, .change-item-updated, .change-item-removed) {
+  color: color-mix(in srgb, var(--chg-tint) 60%, var(--color-base-content));
+}
+[data-theme='terminal'] :is(.change-item-added, .change-item-updated, .change-item-removed) {
+  color: var(--chg-tint);
 }
 .change-tag {
   font-size: 0.6rem;
