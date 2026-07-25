@@ -108,7 +108,12 @@
           {% for project in projects %}
           <tr class="{% if project.deleted_at %}opacity-60{% endif %}">
             <td>
-              <span class="font-medium">{{ project.name }}</span>
+              {% if project.deleted_at or organization.deleted_at %}
+                <span class="font-medium">{{ project.name }}</span>
+              {% else %}
+                <a href="{{ url_for('user.project', org_slug=organization.slug, project_slug=project.slug) }}"
+                   class="link link-hover font-medium">{{ project.name }}</a>
+              {% endif %}
               <span class="text-xs text-base-content/40 ml-2">{{ project.slug }}</span>
             </td>
             <td>
