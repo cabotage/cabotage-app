@@ -395,6 +395,10 @@ class EditApplicationSettingsForm(FlaskForm):
     auto_deploy_branch = StringField(
         "Branch",
         description="GitHub Repository branch to auto-deploy from",
+        filters=[
+            (lambda x: x.strip() if (x and isinstance(x, str)) else x),
+            (lambda x: x if x else None),
+        ],
     )
     subdirectory = StringField(
         "Subdirectory",
@@ -757,6 +761,7 @@ class EditApplicationEnvironmentSettingsForm(FlaskForm):
         "Branch",
         [Optional()],
         description="Branch to auto-deploy for this environment (blank = inherit from app)",
+        filters=[(lambda x: x.strip() if x else x), (lambda x: x if x else None)],
     )
     auto_deploy_wait_for_ci = BooleanField(
         "Wait for CI",
