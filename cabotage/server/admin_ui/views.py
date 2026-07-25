@@ -17,18 +17,16 @@ from sqlalchemy.orm import joinedload
 
 from cabotage.server import db
 from cabotage.server.admin_ui.forms import (
+    AdminActionForm,
     AdminAddOrgMemberForm,
-    AdminOrgActionForm,
     AdminOrgMemberActionForm,
-    AdminProjectActionForm,
-    AdminUserActionForm,
 )
 from cabotage.server.mfa import get_mfa_status
+from cabotage.utils.github import display_username
 from cabotage.server.models.auth import Organization, User
 from cabotage.server.models.auth_associations import OrganizationMember
 from cabotage.server.models.projects import (
     Application,
-    Environment,
     Project,
     activity_plugin,
 )
@@ -46,7 +44,7 @@ _CASCADE_WINDOW = datetime.timedelta(minutes=2)
 @admin_blueprint.before_request
 def _require_super_admin():
     if not current_user.is_authenticated:
-        return current_app.login_manager.unauthorized()
+        return current_app.login_manager.unauthorized()  # ty: ignore[unresolved-attribute]  # flask-login attaches login_manager to the app at init time
     if not getattr(current_user, "admin", False):
         abort(403)
 
@@ -67,15 +65,6 @@ def _record_activity(verb, obj, **data):
 
 def _security_datastore():
     return current_app.extensions["security"].datastore
-
-
-def _display_username(username):
-    # Mirrors the display_username Jinja filter.
-    if username and username.startswith("github:"):
-        parts = username.split(":", 2)
-        if len(parts) == 3:
-            return parts[2]
-    return username
 
 
 def _confirmed(expected):
@@ -164,7 +153,7 @@ def user_detail(user_id):
     if user is None:
         abort(404)
 
-    action_form = AdminUserActionForm()
+    action_form = AdminActionForm()
 
     if request.method == "POST":
         if not action_form.validate_on_submit():
@@ -216,7 +205,7 @@ def user_detail(user_id):
                 )
 
         elif action == "reset_mfa":
-            if _confirmed(_display_username(user.username)):
+            if _confirmed(display_username(user.username)):
                 _security_datastore().reset_user_access(user)
                 _record_activity("reset-mfa", user)
                 db.session.commit()
@@ -249,19 +238,20 @@ def user_detail(user_id):
 
 @admin_blueprint.route("/organizations")
 def organizations():
-    member_counts = dict(
-        db.session.query(
+    member_counts = {
+        org_id: count
+        for org_id, count in db.session.query(
             OrganizationMember.organization_id, func.count(OrganizationMember.user_id)
+        ).group_by(OrganizationMember.organization_id)
+    }
+    project_counts = {
+        org_id: count
+        for org_id, count in db.session.query(
+            Project.organization_id, func.count(Project.id)
         )
-        .group_by(OrganizationMember.organization_id)
-        .all()
-    )
-    project_counts = dict(
-        db.session.query(Project.organization_id, func.count(Project.id))
         .filter(Project.deleted_at.is_(None))
         .group_by(Project.organization_id)
-        .all()
-    )
+    }
     orgs = Organization.query.order_by(
         Organization.deleted_at.isnot(None), Organization.name
     ).all()
@@ -287,57 +277,49 @@ def _within_cascade_window(child_deleted_at, parent_deleted_at):
     )
 
 
+def _restore_tombstone(obj, warnings, **owner_filter):
+    """Clear a soft-delete tombstone, restoring the pre-delete slug.
+
+    Appends a warning and returns False when the restored slug is already
+    taken by an active sibling (matched via owner_filter).
+    """
+    model = type(obj)
+    restored = _restored_slug(obj.slug)
+    collision = (
+        model.query.filter_by(slug=restored, **owner_filter)
+        .filter(model.deleted_at.is_(None), model.id != obj.id)
+        .first()
+    )
+    if collision is not None:
+        warnings.append(f"{model.__name__} slug '{restored}' is taken; left deleted.")
+        return False
+    obj.slug = restored
+    obj.deleted_at = None
+    return True
+
+
 def _restore_project(project, warnings):
     """Un-tombstone a project and the children deleted by the same cascade.
 
     Backing-service resources stay deleted; k8s state is not resurrected.
     """
     deleted_at = project.deleted_at
-    restored = _restored_slug(project.slug)
-    collision = (
-        Project.query.filter_by(organization_id=project.organization_id, slug=restored)
-        .filter(Project.deleted_at.is_(None))
-        .first()
-    )
-    if collision is not None:
-        warnings.append(f"Slug '{restored}' is taken; project not restored.")
+    if not _restore_tombstone(
+        project, warnings, organization_id=project.organization_id
+    ):
         return False
-
-    project.slug = restored
-    project.deleted_at = None
 
     for application in project.project_applications:
         if not _within_cascade_window(application.deleted_at, deleted_at):
             continue
-        app_slug = _restored_slug(application.slug)
-        app_collision = (
-            Application.query.filter_by(project_id=project.id, slug=app_slug)
-            .filter(Application.deleted_at.is_(None), Application.id != application.id)
-            .first()
-        )
-        if app_collision is not None:
-            warnings.append(f"Application slug '{app_slug}' is taken; left deleted.")
-            continue
-        application.slug = app_slug
-        application.deleted_at = None
-        for app_env in application.application_environments:
-            if _within_cascade_window(app_env.deleted_at, deleted_at):
-                app_env.deleted_at = None
+        if _restore_tombstone(application, warnings, project_id=project.id):
+            for app_env in application.application_environments:
+                if _within_cascade_window(app_env.deleted_at, deleted_at):
+                    app_env.deleted_at = None
 
     for environment in project.project_environments:
-        if not _within_cascade_window(environment.deleted_at, deleted_at):
-            continue
-        env_slug = _restored_slug(environment.slug)
-        env_collision = (
-            Environment.query.filter_by(project_id=project.id, slug=env_slug)
-            .filter(Environment.deleted_at.is_(None), Environment.id != environment.id)
-            .first()
-        )
-        if env_collision is not None:
-            warnings.append(f"Environment slug '{env_slug}' is taken; left deleted.")
-            continue
-        environment.slug = env_slug
-        environment.deleted_at = None
+        if _within_cascade_window(environment.deleted_at, deleted_at):
+            _restore_tombstone(environment, warnings, project_id=project.id)
 
     return True
 
@@ -350,7 +332,7 @@ def organization_detail(org_id):
 
     add_member_form = AdminAddOrgMemberForm()
     member_action_form = AdminOrgMemberActionForm()
-    org_action_form = AdminOrgActionForm()
+    org_action_form = AdminActionForm()
 
     if request.method == "POST":
         action = request.form.get("_action")
@@ -364,7 +346,12 @@ def organization_detail(org_id):
             ).first()
             if user is None:
                 flash(f"No user found for '{identity}'.", "error")
-            elif any(m.user_id == user.id for m in organization.members):
+            elif (
+                OrganizationMember.query.filter_by(
+                    organization_id=organization.id, user_id=user.id
+                ).first()
+                is not None
+            ):
                 flash(f"{user.username} is already a member.", "info")
             else:
                 organization.add_user(user, admin=add_member_form.admin.data)
@@ -410,33 +397,27 @@ def organization_detail(org_id):
                     db.session.delete(member)
                     db.session.commit()
                     flash(f"{username} removed from {organization.name}.", "success")
-            elif action == "promote_member":
-                if member.admin:
-                    flash(f"{member.user.username} is already an org admin.", "info")
-                else:
-                    member.admin = True
-                    _record_activity(
-                        "promote-member",
-                        organization,
-                        member_user_id=str(member.user_id),
-                        member_username=member.user.username,
+            else:
+                make_admin = action == "promote_member"
+                if member.admin == make_admin:
+                    flash(
+                        f"{member.user.username} is "
+                        f"{'already' if make_admin else 'not'} an org admin.",
+                        "info",
                     )
-                    db.session.commit()
-                    flash(f"{member.user.username} is now an org admin.", "success")
-            elif action == "demote_member":
-                if not member.admin:
-                    flash(f"{member.user.username} is not an org admin.", "info")
                 else:
-                    member.admin = False
+                    member.admin = make_admin
                     _record_activity(
-                        "demote-member",
+                        "promote-member" if make_admin else "demote-member",
                         organization,
                         member_user_id=str(member.user_id),
                         member_username=member.user.username,
                     )
                     db.session.commit()
                     flash(
-                        f"Org admin removed for {member.user.username}.",
+                        f"{member.user.username} is now an org admin."
+                        if make_admin
+                        else f"Org admin removed for {member.user.username}.",
                         "success",
                     )
 
@@ -459,22 +440,12 @@ def organization_detail(org_id):
             if organization.deleted_at is None:
                 flash(f"{organization.name} is not deleted.", "info")
             else:
-                restored = _restored_slug(organization.slug)
-                collision = (
-                    Organization.query.filter_by(slug=restored)
-                    .filter(Organization.deleted_at.is_(None))
-                    .first()
-                )
-                if collision is not None:
-                    flash(
-                        f"Slug '{restored}' is taken; organization not restored.",
-                        "error",
-                    )
+                org_deleted_at = organization.deleted_at
+                warnings = []
+                if not _restore_tombstone(organization, warnings):
+                    db.session.rollback()
+                    flash(warnings[0], "error")
                 else:
-                    org_deleted_at = organization.deleted_at
-                    organization.slug = restored
-                    organization.deleted_at = None
-                    warnings = []
                     for project in organization.projects:
                         if _within_cascade_window(project.deleted_at, org_deleted_at):
                             _restore_project(project, warnings)
@@ -522,7 +493,7 @@ def projects():
         .order_by(Project.deleted_at.isnot(None), Project.name)
         .all()
     )
-    project_action_form = AdminProjectActionForm()
+    project_action_form = AdminActionForm()
     return render_template(
         "admin_ui/projects.html",
         projects=all_projects,
@@ -536,7 +507,7 @@ def project_action(project_id):
     if project is None:
         abort(404)
 
-    form = AdminProjectActionForm()
+    form = AdminActionForm()
     if not form.validate_on_submit():
         abort(400)
     action = request.form.get("_action")
