@@ -266,6 +266,10 @@ def create_app():
 
     app.jinja_env.globals.update(url_for=_hashed_url_for)  # ty: ignore[invalid-argument-type]  # Jinja infers globals as a narrow dict; should be dict[str, Any]
 
+    from cabotage.server.acl import is_direct_org_member
+
+    app.jinja_env.globals.update(is_direct_org_member=is_direct_org_member)  # ty: ignore[invalid-argument-type]
+
     # set up extensions
     admin.init_app(app)
     bcrypt.init_app(app)
@@ -397,12 +401,14 @@ def create_app():
     from cabotage.server.oidc.views import oidc_blueprint
     from cabotage.server.registry_auth.views import registry_auth_blueprint
     from cabotage.server.alerting.views import alerting_blueprint
+    from cabotage.server.admin_ui.views import admin_blueprint
 
     app.register_blueprint(user_blueprint)
     app.register_blueprint(main_blueprint)
     app.register_blueprint(oidc_blueprint)
     app.register_blueprint(registry_auth_blueprint)
     app.register_blueprint(alerting_blueprint)
+    app.register_blueprint(admin_blueprint)
 
     # GitHub webhook uses HMAC validation, not CSRF tokens
     csrf.exempt("cabotage.server.user.views.github_hooks")
@@ -430,7 +436,7 @@ def create_app():
     def server_error_page(error):
         return render_template("errors/500.html"), 500
 
-    from cabotage.server.models.admin import AdminModelView
+    from cabotage.server.models.admin import AdminModelView, UserAdminModelView
     from cabotage.server.models.auth import Organization, OrganizationRequest, Team
     from cabotage.server.models.projects import (
         Project,
@@ -462,7 +468,7 @@ def create_app():
     admin.add_view(AdminModelView(Deployment, db.session))
     admin.add_view(AdminModelView(Hook, db.session))
     admin.add_view(AdminModelView(Alert, db.session))
-    admin.add_view(AdminModelView(User, db.session))
+    admin.add_view(UserAdminModelView(User, db.session))
 
     num_proxies = app.config.get("PROXY_FIX_NUM_PROXIES", 1)
     app.wsgi_app = ProxyFix(  # ty: ignore[invalid-assignment]  # Flask types wsgi_app as a method but documents reassignment
