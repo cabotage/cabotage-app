@@ -10,10 +10,8 @@ import logging
 import struct
 import uuid as _uuid
 from datetime import UTC, datetime, timedelta
-from urllib.parse import urlsplit
 
 from celery import shared_task
-import requests
 import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 
@@ -983,87 +981,3 @@ def _reconcile_autodeploy_notification(sent):
         return True
 
     return False  # still deploying
-
-
-def format_feedback_message(feedback):
-    kind_colors = {
-        "bug": (COLOR_RED, DISCORD_RED),
-        "idea": (COLOR_GREEN, DISCORD_GREEN),
-        "other": (COLOR_BLUE, DISCORD_BLUE),
-    }
-    color_hex, color_int = kind_colors.get(feedback.kind, (COLOR_BLUE, DISCORD_BLUE))
-    if feedback.user is not None:
-        submitter = feedback.user.username or feedback.user.email
-    elif feedback.email:
-        submitter = feedback.email
-    else:
-        submitter = "anonymous"
-    body_parts = [feedback.message[:3000], "", f"From: {submitter}"]
-    if feedback.page_url:
-        body_parts.append(f"Page: {feedback.page_url}")
-    if feedback.endpoint:
-        route = feedback.endpoint
-        if feedback.view_args:
-            route += " " + " ".join(f"{k}={v}" for k, v in feedback.view_args.items())
-        body_parts.append(f"Route: {route}")
-    meta = " · ".join(v for v in (feedback.viewport, feedback.theme) if v)
-    if meta:
-        body_parts.append(meta)
-    return _build_message(
-        f"New feedback: {feedback.kind}", color_hex, color_int, body_parts
-    )
-
-
-@shared_task()
-def dispatch_feedback_notification(feedback_id):
-    """Deliver a feedback submission to any configured incoming webhooks.
-
-    Best-effort: webhook failures are logged, never retried — feedback is
-    already persisted and browsable in the admin.
-    """
-    from flask import current_app
-
-    from cabotage.server.models.feedback import Feedback
-
-    webhooks: list[tuple[str, str]] = []
-    for service, key in (
-        ("Discord", "FEEDBACK_DISCORD_WEBHOOK_URL"),
-        ("Slack", "FEEDBACK_SLACK_WEBHOOK_URL"),
-    ):
-        url = current_app.config.get(key)
-        if url:
-            webhooks.append((service, url))
-    if not webhooks:
-        return
-    feedback = Feedback.query.filter_by(id=feedback_id).first()
-    if feedback is None:
-        log.warning("Feedback %s not found for notification", feedback_id)
-        return
-
-    message = format_feedback_message(feedback)
-    # Discord webhooks reject footer icon URLs whose host isn't a public
-    # domain (e.g. local-dev EXT_SERVER_NAME like "cabotage-app:8000").
-    for embed in message["discord_embeds"]:
-        footer = embed.get("footer") or {}
-        host = urlsplit(footer.get("icon_url") or "").hostname or ""
-        if "." not in host:
-            footer.pop("icon_url", None)
-    payloads = {
-        "Discord": {"embeds": message["discord_embeds"]},
-        "Slack": {"text": "", "attachments": message["slack_attachments"]},
-    }
-    for service, url in webhooks:
-        try:
-            resp = requests.post(url, json=payloads[service], timeout=5)
-            if resp.status_code >= 400:
-                log.warning(
-                    "%s webhook rejected feedback %s: %s %s",
-                    service,
-                    feedback_id,
-                    resp.status_code,
-                    resp.text[:200],
-                )
-        except requests.RequestException:
-            log.warning(
-                "Failed to deliver feedback %s to %s webhook", feedback_id, service
-            )
