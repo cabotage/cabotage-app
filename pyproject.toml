@@ -36,7 +36,7 @@ dependencies = [
     "qrcode",
     "redis",
     "sentry-sdk[flask]",
-    "setuptools>=81.0.0,<82",
+    "setuptools>=83.0.0,<84",
     "sqlalchemy",
     "sqlalchemy-continuum",
     "sqlalchemy-utils",
