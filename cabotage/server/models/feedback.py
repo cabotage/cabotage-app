@@ -29,7 +29,6 @@ class Feedback(Model):
         nullable=True,
         index=True,
     )
-    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     kind: Mapped[str] = mapped_column(String(16), default="other")
     message: Mapped[str] = mapped_column(Text)
     page_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)

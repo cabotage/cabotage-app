@@ -40,13 +40,6 @@
                 maxlength="5000"
                 placeholder="What's working? What's not?"
                 required></textarea>
-      {% if not current_user.is_authenticated %}
-        <input id="feedback-email"
-               type="email"
-               class="input input-bordered input-sm w-full text-sm mb-2"
-               maxlength="255"
-               placeholder="Email (optional, if you'd like a reply)" />
-      {% endif %}
       <p class="text-[11px] text-base-content/40 mb-3">
         Includes the page you're on and basic browser info so we can debug faster.
       </p>
