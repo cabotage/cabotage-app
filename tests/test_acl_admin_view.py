@@ -19,6 +19,8 @@ def app():
         "WTF_CSRF_ENABLED": _app.config.get("WTF_CSRF_ENABLED"),
         "REQUIRE_MFA": _app.config.get("REQUIRE_MFA"),
         "DEBUG_TB_ENABLED": _app.config.get("DEBUG_TB_ENABLED"),
+        "EXT_PREFERRED_URL_SCHEME": _app.config.get("EXT_PREFERRED_URL_SCHEME"),
+        "EXT_SERVER_NAME": _app.config.get("EXT_SERVER_NAME"),
     }
     _app.config["TESTING"] = True
     _app.config["WTF_CSRF_ENABLED"] = False
@@ -26,6 +28,9 @@ def app():
     # The debug toolbar (on in docker-compose dev) injects template context
     # into every page, which breaks content assertions.
     _app.config["DEBUG_TB_ENABLED"] = False
+    # Org settings renders oidc.issuer_url(), which requires HTTPS.
+    _app.config["EXT_PREFERRED_URL_SCHEME"] = "https"
+    _app.config["EXT_SERVER_NAME"] = "localhost"
 
     with _app.app_context():
         yield _app
@@ -196,6 +201,21 @@ def test_admin_non_member_can_view_settings_readonly(
         f"/projects/{organization.slug}/{project.slug}/settings",
     ):
         assert client.get(path).status_code == 403, path
+
+    # An ordinary (non-org-admin) member must not see settings either —
+    # only org admins and super admins may.
+    plain_member = _make_user("acl-plain-member")
+    try:
+        organization.add_user(plain_member, admin=False)
+        db.session.commit()
+        _login(client, plain_member)
+        for path in (
+            f"/organizations/{organization.slug}/settings",
+            f"/projects/{organization.slug}/{project.slug}/settings",
+        ):
+            assert client.get(path).status_code == 403, path
+    finally:
+        _delete_user(plain_member.id)
 
 
 def test_admin_non_member_cannot_post_org_settings(client, admin_user, organization):
