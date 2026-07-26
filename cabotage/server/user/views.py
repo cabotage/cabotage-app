@@ -429,6 +429,32 @@ def _lookup_app_context(org_slug, project_slug, app_slug, require_admin=False):
     return organization, project, application
 
 
+def _app_env_for_env_slug(application, env_slug):
+    """ApplicationEnvironment for a display-only env hint; never aborts."""
+    if not env_slug:
+        return None
+    return next(
+        (
+            ae
+            for ae in application.active_application_environments
+            if ae.environment and ae.environment.slug == env_slug
+        ),
+        None,
+    )
+
+
+def _settings_env_context(application, project, env_slug):
+    """(environment, env_context) for app-wide settings.
+
+    env_context is the enrolment the user navigated from, or None; environment
+    falls back to the project default so breadcrumbs stay populated.
+    """
+    env_context = _app_env_for_env_slug(application, env_slug)
+    if env_context:
+        return env_context.environment, env_context
+    return _default_environment(project), None
+
+
 def _default_environment(project):
     """Return the default environment for breadcrumbs, or None."""
     if not project.environments_enabled:
@@ -934,8 +960,11 @@ def github_install_start(org_slug):
         ):
             abort(404)
 
+    # Keep the environment the user came from across the GitHub round trip,
+    # otherwise they land back on the default-environment settings page.
+    env_slug = request.args.get("env_slug")
     state = github_installations.install_state(
-        organization, current_user.id, application
+        organization, current_user.id, application, env_slug=env_slug
     )
     install_url = github_installations.install_url(state)
     if install_url is None:
@@ -947,6 +976,7 @@ def github_install_start(org_slug):
                     org_slug=organization.slug,
                     project_slug=application.project.slug,
                     app_slug=application.slug,
+                    env_slug=env_slug,
                 )
             )
         return redirect(
@@ -1023,6 +1053,7 @@ def github_install_callback():
             current_user.id,
             installation_id=installation_id,
             application=application,
+            env_slug=payload.get("env_slug"),
         )
     )
     if authorize_url is None:
@@ -4059,12 +4090,18 @@ def project_application_settings(org_slug, project_slug, app_slug):
         org_slug, project_slug, app_slug, require_admin=True
     )
 
+    environment, env_context = _settings_env_context(
+        application, project, request.args.get("env_slug")
+    )
+
     form = _prepare_application_settings_form(application, org)
 
     if form.validate_on_submit():
         _validate_github_source_settings(form, application, org)
         if form.github_app_installation_id.errors or form.github_repository.errors:
-            return _render_application_settings(application, org, project, form)
+            return _render_application_settings(
+                application, org, form, environment, env_context
+            )
 
         previous_github_app_installation_id = application.github_app_installation_id
         previous_github_repository = application.github_repository
@@ -4088,7 +4125,6 @@ def project_application_settings(org_slug, project_slug, app_slug):
         )
         db.session.add(activity)
         db.session.commit()
-        environment = _default_environment(project)
         return redirect(
             url_for(
                 "user.project_application",
@@ -4099,7 +4135,9 @@ def project_application_settings(org_slug, project_slug, app_slug):
             )
         )
 
-    return _render_application_settings(application, org, project, form)
+    return _render_application_settings(
+        application, org, form, environment, env_context
+    )
 
 
 def _prepare_application_settings_form(application, org):
@@ -4252,8 +4290,11 @@ def _application_delete_context(application):
     return delete_form, delete_impact
 
 
-def _render_application_settings(application, org, project, form):
-    delete_form, delete_impact = _application_delete_context(application)
+def _render_application_settings(application, org, form, environment, env_context):
+    # The env-scoped view links to the real destructive actions instead.
+    delete_form, delete_impact = (
+        (None, None) if env_context else _application_delete_context(application)
+    )
     return render_template(
         "user/project_application_settings.html",
         application=application,
@@ -4262,11 +4303,13 @@ def _render_application_settings(application, org, project, form):
             "user.github_install_start",
             org_slug=org.slug,
             application_id=application.id,
+            env_slug=env_context.environment.slug if env_context else None,
         ),
         github_repository_options=github_installations.repository_options_by_installation(
             org
         ),
-        environment=_default_environment(project),
+        environment=environment,
+        env_context=env_context,
         delete_form=delete_form,
         delete_impact=delete_impact,
     )
