@@ -430,11 +430,7 @@ def _lookup_app_context(org_slug, project_slug, app_slug, require_admin=False):
 
 
 def _app_env_for_env_slug(application, env_slug):
-    """Best-effort ApplicationEnvironment for a display-only env hint.
-
-    Unlike _resolve_app_env this never aborts: an unknown or deleted slug just
-    means "no environment context".
-    """
+    """ApplicationEnvironment for a display-only env hint; never aborts."""
     if not env_slug:
         return None
     return next(
@@ -445,6 +441,18 @@ def _app_env_for_env_slug(application, env_slug):
         ),
         None,
     )
+
+
+def _settings_env_context(application, project, env_slug):
+    """(environment, env_context) for app-wide settings.
+
+    env_context is the enrolment the user navigated from, or None; environment
+    falls back to the project default so breadcrumbs stay populated.
+    """
+    env_context = _app_env_for_env_slug(application, env_slug)
+    if env_context:
+        return env_context.environment, env_context
+    return _default_environment(project), None
 
 
 def _default_environment(project):
@@ -4077,13 +4085,8 @@ def project_application_settings(org_slug, project_slug, app_slug):
         org_slug, project_slug, app_slug, require_admin=True
     )
 
-    # These settings are app-wide, but keep the environment the user navigated
-    # from so the breadcrumbs and tabs don't silently jump to the default one.
-    # Resolved leniently: a stale or unknown slug is only a display hint, so it
-    # must not 404 the page you would go to in order to fix things.
-    env_context = _app_env_for_env_slug(application, request.args.get("env_slug"))
-    environment = (
-        env_context.environment if env_context else _default_environment(project)
+    environment, env_context = _settings_env_context(
+        application, project, request.args.get("env_slug")
     )
 
     form = _prepare_application_settings_form(application, org)
@@ -4283,8 +4286,7 @@ def _application_delete_context(application):
 
 
 def _render_application_settings(application, org, form, environment, env_context):
-    # The env-scoped view points at the two real destructive actions instead of
-    # offering an all-environments delete, so skip building that context.
+    # The env-scoped view links to the real destructive actions instead.
     delete_form, delete_impact = (
         (None, None) if env_context else _application_delete_context(application)
     )
