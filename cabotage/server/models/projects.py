@@ -490,7 +490,7 @@ class ApplicationEnvironment(Model, Timestamp):
 
     @property
     def overridden_settings(self):
-        """Labels of the application settings this environment overrides."""
+        """Labels of the settings this environment overrides."""
         return [
             label
             for attr, label in self.OVERRIDABLE_SETTINGS
