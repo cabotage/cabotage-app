@@ -1,9 +1,11 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import render_field_compact, icon, resource_path, app_tab_nav, app_resource_path, danger_zone_delete %}
+{% from "_macros.html" import render_field_compact, icon, resource_path, app_tab_nav, app_resource_path, danger_zone, danger_zone_delete %}
 
 {% set org_slug = application.project.organization.slug %}
 {% set project_slug = application.project.slug %}
 {% set app_slug = application.slug %}
+{# env_context is set only when the user navigated here from an environment #}
+{% set env_url = url_for('user.project_application_environment_settings', org_slug=org_slug, project_slug=project_slug, env_slug=env_context.environment.slug, app_slug=app_slug) if env_context else none %}
 
 {% block title %}
   Settings - {{ app_slug }} - Cabotage
@@ -24,7 +26,19 @@
       <div class="flex items-center gap-3">
         <div>
           <h1 class="text-xl font-semibold text-base-content">Application Settings</h1>
-          <p class="text-sm text-base-content/40">Configure how your application builds, deploys, and stays healthy</p>
+          <p class="text-sm text-base-content/40">
+            Configure how your application builds, deploys, and stays healthy.
+            {% if env_context %}
+              These apply to <span class="text-base-content/60">every environment</span>.
+              {% set overridden = env_context.overridden_settings %}
+              {% if overridden %}
+                <span class="text-warning">{{ env_context.environment.name }} overrides {{ overridden|join(', ') }}</span> —
+                <a class="link link-hover text-accent" href="{{ env_url }}">edit those</a>.
+              {% else %}
+                <a class="link link-hover text-accent" href="{{ env_url }}">Override for {{ env_context.environment.name }}</a>.
+              {% endif %}
+            {% endif %}
+          </p>
         </div>
       </div>
       <button type="submit"
@@ -35,7 +49,7 @@
       </button>
     </div>
 
-    <form action="{{ url_for('user.project_application_settings', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}"
+    <form action="{{ url_for('user.project_application_settings', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug, env_slug=env_context.environment.slug if env_context else none) }}"
           method="post"
           id="settings-form"
           name="project_application_settings_form">
@@ -104,6 +118,14 @@
               {% for error in form.github_repository.errors %}<p class="text-xs text-error mt-0.5">{{ error }}</p>{% endfor %}
             </fieldset>
             {{ render_field_compact(form.auto_deploy_branch, placeholder='main', label='Branch') }}
+            {% if env_context and env_context.auto_deploy_branch %}
+              <p class="text-xs text-warning mt-1">
+                {{ icon('alert-triangle', 'w-3 h-3 inline align-text-bottom') }}
+                {{ env_context.environment.name }} deploys
+                <code class="font-semibold">{{ env_context.auto_deploy_branch }}</code> instead, so this
+                does not affect it — <a class="link link-hover" href="{{ env_url }}">edit the override</a>.
+              </p>
+            {% endif %}
           </div>
           <div class="settings-field-grid-3">
             {{ render_field_compact(form.subdirectory, placeholder='/', label='Subdirectory') }}
@@ -152,7 +174,21 @@
       </div>
     </form>
 
-    {% if delete_form %}
+    {% if env_context %}
+      {# Viewed from inside an environment: don't offer an all-environments delete
+         here, it reads as "delete in test". Point at the two real actions. #}
+      {% call danger_zone('You are viewing ' ~ env_context.environment.name ~ '. Deleting the application affects every environment, so it lives on the application-wide settings page.') %}
+        <div class="flex flex-wrap gap-2">
+          <a class="btn btn-outline btn-error btn-sm gap-1.5" href="{{ env_url }}">
+            {{ icon('layers', 'w-3.5 h-3.5') }} Remove from {{ env_context.environment.name }} only
+          </a>
+          <a class="btn btn-ghost btn-sm gap-1.5 text-base-content/50"
+             href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}">
+            {{ icon('trash-2', 'w-3.5 h-3.5') }} Delete across all environments
+          </a>
+        </div>
+      {% endcall %}
+    {% else %}
       {{ danger_zone_delete(
         modal_id='delete-app-modal',
         title='Delete Application',
