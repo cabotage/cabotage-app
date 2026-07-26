@@ -960,8 +960,11 @@ def github_install_start(org_slug):
         ):
             abort(404)
 
+    # Keep the environment the user came from across the GitHub round trip,
+    # otherwise they land back on the default-environment settings page.
+    env_slug = request.args.get("env_slug")
     state = github_installations.install_state(
-        organization, current_user.id, application
+        organization, current_user.id, application, env_slug=env_slug
     )
     install_url = github_installations.install_url(state)
     if install_url is None:
@@ -973,6 +976,7 @@ def github_install_start(org_slug):
                     org_slug=organization.slug,
                     project_slug=application.project.slug,
                     app_slug=application.slug,
+                    env_slug=env_slug,
                 )
             )
         return redirect(
@@ -1049,6 +1053,7 @@ def github_install_callback():
             current_user.id,
             installation_id=installation_id,
             application=application,
+            env_slug=payload.get("env_slug"),
         )
     )
     if authorize_url is None:
@@ -4298,6 +4303,7 @@ def _render_application_settings(application, org, form, environment, env_contex
             "user.github_install_start",
             org_slug=org.slug,
             application_id=application.id,
+            env_slug=env_context.environment.slug if env_context else None,
         ),
         github_repository_options=github_installations.repository_options_by_installation(
             org
