@@ -25,17 +25,21 @@ def connect_state_serializer():
     )
 
 
-def install_state(organization, user_id, application=None):
+def install_state(organization, user_id, application=None, env_slug=None):
     payload = {
         "organization_id": str(organization.id),
         "user_id": str(user_id),
     }
     if application is not None:
         payload["application_id"] = str(application.id)
+    if env_slug:
+        payload["env_slug"] = env_slug
     return install_state_serializer().dumps(payload)
 
 
-def connect_state(organization, user_id, *, installation_id=None, application=None):
+def connect_state(
+    organization, user_id, *, installation_id=None, application=None, env_slug=None
+):
     payload = {
         "organization_id": str(organization.id),
         "user_id": str(user_id),
@@ -44,6 +48,8 @@ def connect_state(organization, user_id, *, installation_id=None, application=No
         payload["installation_id"] = str(installation_id)
     if application is not None:
         payload["application_id"] = str(application.id)
+    if env_slug:
+        payload["env_slug"] = env_slug
     return connect_state_serializer().dumps(payload)
 
 
