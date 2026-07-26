@@ -25,11 +25,6 @@ def app():
 
 
 @pytest.fixture
-def client(app):
-    return app.test_client()
-
-
-@pytest.fixture
 def db_session(app):
     yield db.session
     db.session.rollback()
@@ -53,7 +48,7 @@ def project(db_session, org):
 
 @pytest.fixture
 def environment(db_session, project):
-    e = Environment(name="test", slug="test", project_id=project.id, ephemeral=False)
+    e = Environment(name="default", project_id=project.id, ephemeral=False)
     db_session.add(e)
     db_session.flush()
     return e
@@ -61,12 +56,7 @@ def environment(db_session, project):
 
 @pytest.fixture
 def application(db_session, project):
-    a = Application(
-        name="webapp",
-        slug="webapp",
-        project_id=project.id,
-        auto_deploy_branch="main",
-    )
+    a = Application(name="webapp", slug="webapp", project_id=project.id)
     db_session.add(a)
     db_session.flush()
     return a
@@ -106,6 +96,6 @@ def make_app_env(db_session):
 
 @pytest.fixture
 def no_k8s_cleanup():
-    """Deletion paths queue a Celery task; the semantics under test are DB-side."""
-    with patch("cabotage.server.user.views.cleanup_app_env_k8s") as task:
-        yield task
+    """Deletion paths queue k8s cleanup; the semantics under test are DB-side."""
+    with patch("cabotage.server.user.views._enqueue_app_env_cleanup") as enqueue:
+        yield enqueue
