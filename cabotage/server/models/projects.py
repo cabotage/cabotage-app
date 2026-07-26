@@ -480,6 +480,23 @@ class ApplicationEnvironment(Model, Timestamp):
     def effective_health_check_host(self):
         return self.health_check_host or self.application.health_check_host
 
+    OVERRIDABLE_SETTINGS = (
+        ("auto_deploy_branch", "Branch"),
+        ("github_environment_name", "GitHub Environment"),
+        ("deployment_timeout", "Deploy Timeout"),
+        ("health_check_path", "Health Path"),
+        ("health_check_host", "Health Host"),
+    )
+
+    @property
+    def overridden_settings(self):
+        """Labels of the application settings this environment overrides."""
+        return [
+            label
+            for attr, label in self.OVERRIDABLE_SETTINGS
+            if getattr(self, attr) is not None
+        ]
+
 
 class Application(Model, Timestamp):
     __versioned__: dict = {}
