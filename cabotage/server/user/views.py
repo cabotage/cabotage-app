@@ -429,6 +429,24 @@ def _lookup_app_context(org_slug, project_slug, app_slug, require_admin=False):
     return organization, project, application
 
 
+def _app_env_for_env_slug(application, env_slug):
+    """Best-effort ApplicationEnvironment for a display-only env hint.
+
+    Unlike _resolve_app_env this never aborts: an unknown or deleted slug just
+    means "no environment context".
+    """
+    if not env_slug:
+        return None
+    return next(
+        (
+            ae
+            for ae in application.active_application_environments
+            if ae.environment and ae.environment.slug == env_slug
+        ),
+        None,
+    )
+
+
 def _default_environment(project):
     """Return the default environment for breadcrumbs, or None."""
     if not project.environments_enabled:
@@ -4059,12 +4077,23 @@ def project_application_settings(org_slug, project_slug, app_slug):
         org_slug, project_slug, app_slug, require_admin=True
     )
 
+    # These settings are app-wide, but keep the environment the user navigated
+    # from so the breadcrumbs and tabs don't silently jump to the default one.
+    # Resolved leniently: a stale or unknown slug is only a display hint, so it
+    # must not 404 the page you would go to in order to fix things.
+    env_context = _app_env_for_env_slug(application, request.args.get("env_slug"))
+    environment = (
+        env_context.environment if env_context else _default_environment(project)
+    )
+
     form = _prepare_application_settings_form(application, org)
 
     if form.validate_on_submit():
         _validate_github_source_settings(form, application, org)
         if form.github_app_installation_id.errors or form.github_repository.errors:
-            return _render_application_settings(application, org, project, form)
+            return _render_application_settings(
+                application, org, form, environment, env_context
+            )
 
         previous_github_app_installation_id = application.github_app_installation_id
         previous_github_repository = application.github_repository
@@ -4088,7 +4117,6 @@ def project_application_settings(org_slug, project_slug, app_slug):
         )
         db.session.add(activity)
         db.session.commit()
-        environment = _default_environment(project)
         return redirect(
             url_for(
                 "user.project_application",
@@ -4099,7 +4127,9 @@ def project_application_settings(org_slug, project_slug, app_slug):
             )
         )
 
-    return _render_application_settings(application, org, project, form)
+    return _render_application_settings(
+        application, org, form, environment, env_context
+    )
 
 
 def _prepare_application_settings_form(application, org):
@@ -4252,8 +4282,12 @@ def _application_delete_context(application):
     return delete_form, delete_impact
 
 
-def _render_application_settings(application, org, project, form):
-    delete_form, delete_impact = _application_delete_context(application)
+def _render_application_settings(application, org, form, environment, env_context):
+    # The env-scoped view points at the two real destructive actions instead of
+    # offering an all-environments delete, so skip building that context.
+    delete_form, delete_impact = (
+        (None, None) if env_context else _application_delete_context(application)
+    )
     return render_template(
         "user/project_application_settings.html",
         application=application,
@@ -4266,7 +4300,8 @@ def _render_application_settings(application, org, project, form):
         github_repository_options=github_installations.repository_options_by_installation(
             org
         ),
-        environment=_default_environment(project),
+        environment=environment,
+        env_context=env_context,
         delete_form=delete_form,
         delete_impact=delete_impact,
     )
