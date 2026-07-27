@@ -5,6 +5,8 @@ transit engine (ES256/P-256). This is used for Tailscale workload identity
 federation and can be extended to other OIDC-aware systems.
 """
 
+from __future__ import annotations
+
 import json
 import time
 import uuid

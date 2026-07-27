@@ -1,4 +1,6 @@
 # used for local buildkit emulation only
+from __future__ import annotations
+
 import subprocess  # nosec
 from typing import Generator
 

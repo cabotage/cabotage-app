@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import hashlib
 import re
 import secrets
@@ -150,13 +152,14 @@ class DictDiffer[K, V]:
 
     def __init__(
         self,
+        # FIXME: use proper type instead of Any
         current_dict: dict[K, Any],
         past_dict: dict[K, Any],
         ignored_keys: list[K] | None = None,
-    ):
+    ) -> None:
         if ignored_keys is None:
             ignored_keys = []
-        self.ignored_keys = set(ignored_keys or [])
+        self.ignored_keys = set(ignored_keys)
         self.current_dict, self.past_dict = current_dict, past_dict
         self.current_keys, self.past_keys = [
             set(d.keys()) for d in (current_dict, past_dict)
