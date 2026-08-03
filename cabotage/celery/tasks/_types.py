@@ -5,13 +5,7 @@ from typing import (
     Literal,
     ReadOnly,
     NotRequired,
-    Any,
-    TYPE_CHECKING,
 )
-
-
-if TYPE_CHECKING:
-    pass
 
 
 class Metadata(TypedDict):
@@ -202,8 +196,7 @@ class CngStorage(TypedDict):
 
 
 class PostgresqlParam(TypedDict):
-    # FIXME: Any
-    parameters: dict[str, Any]
+    parameters: dict[str, str]
 
 
 class CnpgAffinity(Affinity, total=False):

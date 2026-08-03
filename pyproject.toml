@@ -62,6 +62,7 @@ dev = [
     "types-requests",
     "types-toml",
     "typing-extensions",
+    "kubernetes-stubs-elephant-fork",
 ]
 
 [tool.pytest.ini_options]
