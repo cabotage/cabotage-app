@@ -375,7 +375,7 @@ class TestReaperIgnoresBuildJobs:
         with (
             patch.object(reap_jobs, "current_app", mock_app),
             patch.object(reap_jobs, "kubernetes_ext") as mock_kext,
-            patch("kubernetes.client.BatchV1Api", return_value=mock_batch),
+            patch.object(reap_jobs, "BatchV1Api", return_value=mock_batch),
         ):
             mock_kext.kubernetes_client = MagicMock()
             reap_jobs.reap_finished_jobs()
