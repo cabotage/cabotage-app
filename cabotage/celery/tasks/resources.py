@@ -12,7 +12,7 @@ from collections.abc import Mapping, Callable
 import kubernetes
 from celery import shared_task
 from flask import current_app, has_app_context
-from kubernetes.client.rest import ApiException
+from kubernetes.client.exceptions import ApiException
 from sqlalchemy import text
 
 from cabotage.server import (

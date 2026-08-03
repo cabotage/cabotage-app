@@ -5,11 +5,15 @@ Pending/Running, records metadata into the job_logs table, then deletes
 them from the cluster.
 """
 
+from __future__ import annotations
+
 import datetime
 import os
+from typing import TYPE_CHECKING
 
-import kubernetes
-from kubernetes.client.rest import ApiException
+
+from kubernetes.client.exceptions import ApiException
+from kubernetes.client import BatchV1Api
 from sqlalchemy.exc import IntegrityError
 
 from celery import shared_task
@@ -24,11 +28,17 @@ from cabotage.server.models.projects import (
     Project,
 )
 
+if TYPE_CHECKING:
+    from kubernetes.client import V1Job
+    from cabotage.celery.tasks._types import Resources
+
 DEFAULT_REAP_LIMIT = 10
 
 
-def _is_finished(job):
+def _is_finished(job: V1Job) -> bool:
     """Return True if the Job has a Complete or Failed condition."""
+    assert job.status
+
     if not job.status.conditions:
         return False
     for cond in job.status.conditions:
@@ -37,8 +47,10 @@ def _is_finished(job):
     return False
 
 
-def _is_succeeded(job):
+def _is_succeeded(job: V1Job) -> bool:
     """Return True if the Job completed successfully."""
+    assert job.status
+
     if not job.status.conditions:
         return False
     for cond in job.status.conditions:
@@ -47,7 +59,7 @@ def _is_succeeded(job):
     return False
 
 
-def _parse_datetime(value):
+def _parse_datetime(value: datetime.datetime | str | None) -> None | datetime.datetime:
     """Parse a K8s datetime value (may be a datetime or string)."""
     if value is None:
         return None
@@ -56,12 +68,13 @@ def _parse_datetime(value):
     return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-def _extract_resources(job):
+def _extract_resources(job: V1Job) -> Resources | None:
     """Extract CPU/memory requests and limits from the process container."""
+    assert job.metadata
     process_name = (job.metadata.labels or {}).get("process")
     containers = (
         job.spec.template.spec.containers
-        if job.spec.template and job.spec.template.spec
+        if job.spec and job.spec.template and job.spec.template.spec
         else []
     )
     for container in containers or []:
@@ -69,16 +82,20 @@ def _extract_resources(job):
             res = container.resources
             if res is None:
                 return None
-            result = {}
+            result: Resources = {}
             if res.requests:
+                # FIXME: probably a bit strict
                 result["requests"] = {k: str(v) for k, v in res.requests.items()}
             if res.limits:
+                # FIXME: probably a bit strict
                 result["limits"] = {k: str(v) for k, v in res.limits.items()}
             return result or None
     return None
 
 
-def _resolve_app_env(labels):
+def _resolve_app_env(
+    labels: dict[str, str],
+) -> tuple[None, None] | tuple[Application, ApplicationEnvironment]:
     """Look up Application and ApplicationEnvironment from job labels."""
     org_slug = labels.get("organization")
     project_slug = labels.get("project")
@@ -119,7 +136,7 @@ def _resolve_app_env(labels):
     return application, app_env
 
 
-def _reap_limit():
+def _reap_limit() -> int:
     try:
         return int(os.environ.get("CABOTAGE_JOBS_REAPED_PER_RUN", DEFAULT_REAP_LIMIT))
     except (ValueError, TypeError):
@@ -133,7 +150,7 @@ def reap_finished_jobs():
         return
 
     api_client = kubernetes_ext.kubernetes_client
-    batch_api = kubernetes.client.BatchV1Api(api_client)
+    batch_api = BatchV1Api(api_client)
 
     label_selector = "resident-job.cabotage.io=true"
     limit = _reap_limit()
@@ -154,10 +171,16 @@ def reap_finished_jobs():
         if not _is_finished(job):
             continue
 
+        assert job.metadata
+
         labels = job.metadata.labels or {}
         annotations = job.metadata.annotations or {}
         namespace = job.metadata.namespace
         job_name = job.metadata.name
+
+        assert job_name
+        assert namespace
+        assert job.status
 
         application, app_env = _resolve_app_env(labels)
         if application is None or app_env is None:
@@ -221,7 +244,7 @@ def reap_finished_jobs():
         current_app.logger.info(f"Reaped {reaped} finished job(s)")
 
 
-def _delete_job(batch_api, name, namespace):
+def _delete_job(batch_api: BatchV1Api, name: str, namespace: str) -> None:
     """Delete a Job and its dependent pods."""
     try:
         batch_api.delete_namespaced_job(
