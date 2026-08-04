@@ -31,6 +31,7 @@ dependencies = [
     "psycopg[binary]",
     "py-consul",
     "pygithub",
+    "pygments",
     "pyjwt",
     "python-dxf",
     "qrcode",
