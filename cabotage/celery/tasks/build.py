@@ -13,10 +13,35 @@ from typing import TYPE_CHECKING
 from celery import shared_task
 from base64 import b64encode, b64decode
 
-import kubernetes
 import toml
 
-from kubernetes.client.rest import ApiException
+from kubernetes.client import (
+    BatchV1Api,
+    CoreV1Api,
+    V1ConfigMap,
+    V1ConfigMapVolumeSource,
+    V1Container,
+    V1EnvVar,
+    V1Job,
+    V1JobSpec,
+    V1KeyToPath,
+    V1ObjectMeta,
+    V1PersistentVolumeClaim,
+    V1PersistentVolumeClaimSpec,
+    V1PersistentVolumeClaimVolumeSource,
+    V1PodSecurityContext,
+    V1PodSpec,
+    V1PodTemplateSpec,
+    V1SeccompProfile,
+    V1Secret,
+    V1SecretVolumeSource,
+    V1SecurityContext,
+    V1Volume,
+    V1VolumeMount,
+    V1VolumeResourceRequirements,
+)
+
+from kubernetes.client.exceptions import ApiException
 
 from tempfile import (
     TemporaryDirectory,
@@ -82,22 +107,25 @@ log = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from uuid import UUID
 
+    from dxf import DXFBase
+    from requests import Response
 
-def _branch_deploy_environment_backing_services_ready(environment):
+    from cabotage.server.models.projects import ApplicationEnvironment, Application
+
+
+def _branch_deploy_environment_backing_services_ready(environment: Environment) -> bool:
     resources = environment.active_resources
-    if not resources:
-        return True
     return all(resource.provisioning_status == "ready" for resource in resources)
 
 
-def _branch_deploy_backing_services_ready(app_env):
-    environment = app_env.environment if app_env else None
-    if not environment or environment.forked_from_environment_id is None:
+def _branch_deploy_backing_services_ready(app_env: ApplicationEnvironment) -> bool:
+    environment = app_env.environment
+    if environment.forked_from_environment_id is None:
         return True
     return _branch_deploy_environment_backing_services_ready(environment)
 
 
-def _mark_image_waiting_for_backing_services(image):
+def _mark_image_waiting_for_backing_services(image: Image) -> None:
     image.image_metadata = {
         **(image.image_metadata or {}),
         "waiting_for_backing_services": True,
@@ -106,7 +134,7 @@ def _mark_image_waiting_for_backing_services(image):
     db.session.commit()
 
 
-def _clear_image_waiting_for_backing_services(image):
+def _clear_image_waiting_for_backing_services(image: Image) -> None:
     metadata = dict(image.image_metadata or {})
     if "waiting_for_backing_services" in metadata:
         metadata.pop("waiting_for_backing_services", None)
@@ -115,7 +143,7 @@ def _clear_image_waiting_for_backing_services(image):
         db.session.commit()
 
 
-def _latest_release_for_image(image):
+def _latest_release_for_image(image: Image) -> Release | None:
     app_env = image.application_environment
     if not app_env:
         return None
@@ -127,7 +155,7 @@ def _latest_release_for_image(image):
     return None
 
 
-def _queue_autodeploy_release_for_image(image):
+def _queue_autodeploy_release_for_image(image: Image) -> Release | None:
     app_env = image.application_environment
     if not app_env or not image.built:
         return None
@@ -146,6 +174,7 @@ def _queue_autodeploy_release_for_image(image):
     }
     db.session.add(release)
     db.session.flush()
+    assert image.image_metadata
     activity = Activity(
         verb="create",
         object=release,
@@ -213,7 +242,7 @@ def resume_branch_deploy_releases_for_environment(environment_id: UUID) -> None:
             _queue_autodeploy_release_for_image(image)
 
 
-def _dispatch_image_failure(image, error_detail):
+def _dispatch_image_failure(image: Image, error_detail: str) -> None:
     try:
         app = image.application
         if image.image_metadata and image.image_metadata.get("auto_deploy"):
@@ -242,7 +271,7 @@ def _dispatch_image_failure(image, error_detail):
         log.warning("Failed to dispatch image failure notification", exc_info=True)
 
 
-def _dispatch_release_failure(release, error_detail):
+def _dispatch_release_failure(release: Release, error_detail: str) -> None:
     try:
         app = release.application
         if release.release_metadata and release.release_metadata.get("auto_deploy"):
@@ -273,13 +302,14 @@ def _dispatch_release_failure(release, error_detail):
         log.warning("Failed to dispatch release failure notification", exc_info=True)
 
 
-def _build_namespace(app_env):
+def _build_namespace(app_env: ApplicationEnvironment) -> str:
     """Return the namespace where build jobs run."""
     return current_app.config.get(
         "KUBERNETES_BUILD_NAMESPACE", "cabotage-tenant-builds"
     )
 
 
+# TODO: find out what this is
 Activity = activity_plugin.activity_cls
 
 
@@ -290,12 +320,12 @@ class BuildError(RuntimeError):
 class BuildkitEnv:
     """Shared registry and buildkit configuration."""
 
-    def __init__(self, repository_name):
-        self.secret = current_app.config["REGISTRY_AUTH_SECRET"]
-        self.registry = current_app.config["REGISTRY_BUILD"]
-        self.registry_secure = current_app.config["REGISTRY_SECURE"]
-        self.registry_ca = current_app.config["REGISTRY_VERIFY"]
-        self.buildkit_image = current_app.config["BUILDKIT_IMAGE"]
+    def __init__(self, repository_name: str) -> None:
+        self.secret: str = current_app.config["REGISTRY_AUTH_SECRET"]
+        self.registry: str = current_app.config["REGISTRY_BUILD"]
+        self.registry_secure: bool = current_app.config["REGISTRY_SECURE"]
+        self.registry_ca: str | bool = current_app.config["REGISTRY_VERIFY"]
+        self.buildkit_image: str = current_app.config["BUILDKIT_IMAGE"]
 
         self.insecure_reg = ""
         registry_url = f"https://{self.registry}/v2"
@@ -340,10 +370,10 @@ class BuildkitEnv:
             buildkitd_config["registry"][self.registry]["http"] = True
         self.buildkitd_toml = toml.dumps(buildkitd_config)
 
-    def verify_registry_tag(self, repository_name, tag):
+    def verify_registry_tag(self, repository_name: str, tag: str):
         """Verify a tag was pushed to the registry. Returns the digest."""
 
-        def auth(dxf, response):
+        def auth(dxf: DXFBase, response: Response) -> None:
             dxf.token = generate_docker_registry_jwt(
                 access=[
                     {
@@ -368,7 +398,7 @@ class BuildkitEnv:
         )
         return client.get_digest(tag)
 
-    def tls_context_args(self):
+    def tls_context_args(self) -> list[str]:
         """Return --registry-auth-tlscontext args if needed, else empty list."""
         if self.registry_ca and not isinstance(self.registry_ca, bool):
             return [
@@ -378,7 +408,7 @@ class BuildkitEnv:
         return []
 
 
-def _fetch_github_access_token(application):
+def _fetch_github_access_token(application: Application):
     """Get a GitHub access token for the application's installation."""
     access_token = current_app.config.get("GITHUB_TOKEN")
     if (
@@ -393,8 +423,6 @@ def _fetch_github_access_token(application):
             access_token = gi.get_access_token(
                 application.github_app_installation_id
             ).token
-            if access_token is None:
-                raise Exception
         except Exception:
             raise BuildError(
                 "Unable to authenticate for Installation ID "
@@ -403,7 +431,7 @@ def _fetch_github_access_token(application):
     return access_token
 
 
-def _fetch_image_source(image, access_token):
+def _fetch_image_source(image: Image, access_token):
     """Fetch Dockerfile, Procfile from GitHub and parse processes.
 
     Returns dict with keys: dockerfile_body, dockerfile_name, procfile_body,
@@ -419,7 +447,7 @@ def _fetch_image_source(image, access_token):
         # Reassign the whole dict so SQLAlchemy detects the JSONB mutation
         image.image_metadata = {**(image.image_metadata or {}), "sha": commit_sha}
 
-    def git_ref(repository, sha):
+    def git_ref(repository: str | None, sha: str) -> str:
         git_sha = image.commit_sha
         if git_sha == "null":
             git_sha = image.build_ref or "main"
@@ -428,7 +456,7 @@ def _fetch_image_source(image, access_token):
             return f"{ref}:{image.application.subdirectory}"
         return ref
 
-    def file_path(filename):
+    def file_path(filename: str) -> str:
         if image.application.subdirectory:
             return os.path.join(image.application.subdirectory, filename)
         return filename
@@ -518,7 +546,7 @@ def _fetch_image_source(image, access_token):
     }
 
 
-def build_release_buildkit(release):
+def build_release_buildkit(release: Release):
     bke = BuildkitEnv(release.repository_name)
     registry = bke.registry
     buildkit_image = bke.buildkit_image
@@ -571,23 +599,23 @@ def build_release_buildkit(release):
                 "context=/context",
             ]
             api_client = kubernetes_ext.kubernetes_client
-            core_api_instance = kubernetes.client.CoreV1Api(api_client)
-            batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+            core_api_instance = CoreV1Api(api_client)
+            batch_api_instance = BatchV1Api(api_client)
             # Create PersistentVolumeClaim
             volume_claim = fetch_image_build_cache_volume_claim(
                 core_api_instance, release
             )
-            docker_secret_object = kubernetes.client.V1Secret(
+            docker_secret_object = V1Secret(
                 type="kubernetes.io/dockerconfigjson",
-                metadata=kubernetes.client.V1ObjectMeta(
+                metadata=V1ObjectMeta(
                     name=f"buildkit-registry-auth-{release.build_job_id}",
                 ),
                 data={
                     ".dockerconfigjson": b64encode(dockerconfigjson.encode()).decode(),
                 },
             )
-            buildkitd_toml_configmap_object = kubernetes.client.V1ConfigMap(
-                metadata=kubernetes.client.V1ObjectMeta(
+            buildkitd_toml_configmap_object = V1ConfigMap(
+                metadata=V1ObjectMeta(
                     name=f"buildkitd-toml-{release.build_job_id}",
                 ),
                 data={
@@ -596,8 +624,8 @@ def build_release_buildkit(release):
             )
             context_configmap_object = release.release_build_context_configmap
             safe_labels = _safe_labels_from_application(release.application)
-            job_object = kubernetes.client.V1Job(
-                metadata=kubernetes.client.V1ObjectMeta(
+            job_object = V1Job(
+                metadata=V1ObjectMeta(
                     name=f"releasebuild-{release.build_job_id}",
                     labels={
                         "organization": release.application.project.organization.slug,
@@ -609,13 +637,13 @@ def build_release_buildkit(release):
                         **safe_labels,
                     },
                 ),
-                spec=kubernetes.client.V1JobSpec(
+                spec=V1JobSpec(
                     active_deadline_seconds=1800,
                     backoff_limit=0,
                     parallelism=1,
                     completions=1,
-                    template=kubernetes.client.V1PodTemplateSpec(
-                        metadata=kubernetes.client.V1ObjectMeta(
+                    template=V1PodTemplateSpec(
+                        metadata=V1ObjectMeta(
                             labels={
                                 "organization": release.application.project.organization.slug,  # noqa: E501
                                 "project": release.application.project.slug,
@@ -630,57 +658,57 @@ def build_release_buildkit(release):
                                 "container.apparmor.security.beta.kubernetes.io/build": "unconfined",  # noqa: E501
                             },
                         ),
-                        spec=kubernetes.client.V1PodSpec(
+                        spec=V1PodSpec(
                             restart_policy="Never",
                             termination_grace_period_seconds=0,
-                            security_context=kubernetes.client.V1PodSecurityContext(
+                            security_context=V1PodSecurityContext(
                                 fs_group=1000,
                                 fs_group_change_policy="OnRootMismatch",
                             ),
                             containers=[
-                                kubernetes.client.V1Container(
+                                V1Container(
                                     name="build",
                                     image=buildkit_image,
                                     command=buildctl_command,
                                     args=buildctl_args,
                                     env=[
-                                        kubernetes.client.V1EnvVar(
+                                        V1EnvVar(
                                             name="BUILDKITD_FLAGS",
                                             value="--config /home/user/.config/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",  # noqa: E501
                                         ),
                                     ],
-                                    security_context=kubernetes.client.V1SecurityContext(
-                                        seccomp_profile=kubernetes.client.V1SeccompProfile(
+                                    security_context=V1SecurityContext(
+                                        seccomp_profile=V1SeccompProfile(
                                             type="Unconfined",
                                         ),
                                         run_as_user=1000,
                                         run_as_group=1000,
                                     ),
                                     volume_mounts=[
-                                        kubernetes.client.V1VolumeMount(
+                                        V1VolumeMount(
                                             mount_path="/home/user/.local/share/buildkit",
                                             name="build-cache",
                                         ),
-                                        kubernetes.client.V1VolumeMount(
+                                        V1VolumeMount(
                                             mount_path="/home/user/.config/buildkit",
                                             name="buildkitd-toml",
                                         ),
-                                        kubernetes.client.V1VolumeMount(
+                                        V1VolumeMount(
                                             mount_path="/home/user/.docker",
                                             name="buildkit-registry-auth",
                                         ),
-                                        kubernetes.client.V1VolumeMount(
+                                        V1VolumeMount(
                                             mount_path="/context/Dockerfile",
                                             sub_path="Dockerfile",
                                             name="build-context",
                                         ),
-                                        kubernetes.client.V1VolumeMount(
+                                        V1VolumeMount(
                                             mount_path="/context/entrypoint.sh",
                                             sub_path="entrypoint.sh",
                                             name="build-context",
                                         ),
                                         *[
-                                            kubernetes.client.V1VolumeMount(
+                                            V1VolumeMount(
                                                 mount_path=f"/context/envconsul-{process_name}.hcl",
                                                 sub_path=f"envconsul-{process_name}.hcl",
                                                 name="build-context",
@@ -691,39 +719,39 @@ def build_release_buildkit(release):
                                 ),
                             ],
                             volumes=[
-                                kubernetes.client.V1Volume(
+                                V1Volume(
                                     name="build-cache",
-                                    persistent_volume_claim=kubernetes.client.V1PersistentVolumeClaimVolumeSource(
+                                    persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(
                                         claim_name=volume_claim.metadata.name
                                     ),
                                 ),
-                                kubernetes.client.V1Volume(
+                                V1Volume(
                                     name="buildkitd-toml",
-                                    config_map=kubernetes.client.V1ConfigMapVolumeSource(
+                                    config_map=V1ConfigMapVolumeSource(
                                         name=f"buildkitd-toml-{release.build_job_id}",
                                         items=[
-                                            kubernetes.client.V1KeyToPath(
+                                            V1KeyToPath(
                                                 key="buildkitd.toml",
                                                 path="buildkitd.toml",
                                             ),
                                         ],
                                     ),
                                 ),
-                                kubernetes.client.V1Volume(
+                                V1Volume(
                                     name="buildkit-registry-auth",
-                                    secret=kubernetes.client.V1SecretVolumeSource(
+                                    secret=V1SecretVolumeSource(
                                         secret_name=f"buildkit-registry-auth-{release.build_job_id}",
                                         items=[
-                                            kubernetes.client.V1KeyToPath(
+                                            V1KeyToPath(
                                                 key=".dockerconfigjson",
                                                 path="config.json",
                                             ),
                                         ],
                                     ),
                                 ),
-                                kubernetes.client.V1Volume(
+                                V1Volume(
                                     name="build-context",
-                                    config_map=kubernetes.client.V1ConfigMapVolumeSource(
+                                    config_map=V1ConfigMapVolumeSource(
                                         name=f"build-context-{release.build_job_id}"
                                     ),
                                 ),
@@ -882,8 +910,11 @@ def build_release_buildkit(release):
 
 
 def _fetch_github_file(
-    github_repository="owner/repo", ref="main", access_token=None, filename="Dockerfile"
-):
+    github_repository: str = "owner/repo",
+    ref: str = "main",
+    access_token: str | None = None,
+    filename: str = "Dockerfile",
+) -> str | None:
     g = Github(access_token)
     try:
         content_file = g.get_repo(github_repository).get_contents(filename, ref=ref)
@@ -894,47 +925,55 @@ def _fetch_github_file(
         if content_file.encoding == "base64":
             return b64decode(content_file.content).decode()
         return content_file.content
+    except UnknownObjectException:
+        return None
     except GithubException as e:
         if e.status == 404:
             return None
-    except UnknownObjectException:
-        return None
 
 
-def _is_imposter_commit(github_repository="owner/repo", *, ref, sha, access_token=None):
+def _is_imposter_commit(
+    github_repository: str = "owner/repo",
+    *,
+    ref: str,
+    sha: str,
+    access_token: str | None = None,
+) -> bool | None:
     g = Github(access_token)
 
     try:
         repo = g.get_repo(github_repository)
-    except GithubException as e:
-        if e.status == 404:
-            return None
     except UnknownObjectException:
         return True
-
-    try:
-        result = repo.compare(f"refs/heads/{ref}", sha).status
     except GithubException as e:
         if e.status == 404:
             return None
-    except UnknownObjectException:
-        raise BuildError(f"branch: {ref} does not exist in {github_repository}")
-
-    return not (result == "behind" or result == "identical")
+    else:
+        try:
+            result = repo.compare(f"refs/heads/{ref}", sha).status
+        except UnknownObjectException:
+            raise BuildError(f"branch: {ref} does not exist in {github_repository}")
+        except GithubException as e:
+            if e.status == 404:
+                return None
+        else:
+            return not (result == "behind" or result == "identical")
 
 
 def _fetch_commit_sha_for_ref(
-    github_repository="owner/repo", ref="main", access_token=None
-):
+    github_repository: str = "owner/repo",
+    ref: str = "main",
+    access_token: str | None = None,
+) -> str | None:
     g = Github(access_token)
     try:
         sha = g.get_repo(github_repository).get_commit(ref).sha
+    except UnknownObjectException:
+        return None
     except GithubException as e:
         if e.status == 404:
             return None
         raise
-    except UnknownObjectException:
-        return None
 
     if _is_imposter_commit(
         github_repository=github_repository, ref=ref, sha=sha, access_token=access_token
@@ -946,7 +985,7 @@ def _fetch_commit_sha_for_ref(
     return sha
 
 
-def build_cache_pvc_name(app_env):
+def build_cache_pvc_name(app_env: ApplicationEnvironment) -> str:
     """Compute the PVC name for an application-environment's build cache."""
     import hashlib
 
@@ -965,7 +1004,7 @@ def build_cache_pvc_name(app_env):
     return name
 
 
-def build_cache_pvc_labels(app_env):
+def build_cache_pvc_labels(app_env: ApplicationEnvironment) -> dict[str, str]:
     """Build labels for a build-cache PVC."""
     labels = _safe_labels_from_application(app_env.application)
     if app_env.environment.uses_environment_namespace:
@@ -985,16 +1024,16 @@ def fetch_image_build_cache_volume_claim(core_api_instance, buildable):
         if exc.status == 404:
             volume_claim = core_api_instance.create_namespaced_persistent_volume_claim(
                 namespace,
-                kubernetes.client.V1PersistentVolumeClaim(
-                    metadata=kubernetes.client.V1ObjectMeta(
+                V1PersistentVolumeClaim(
+                    metadata=V1ObjectMeta(
                         name=volume_claim_name,
                         labels=build_cache_pvc_labels(
                             buildable.application_environment
                         ),
                     ),
-                    spec=kubernetes.client.V1PersistentVolumeClaimSpec(
+                    spec=V1PersistentVolumeClaimSpec(
                         access_modes=["ReadWriteOncePod"],
-                        resources=kubernetes.client.V1VolumeResourceRequirements(
+                        resources=V1VolumeResourceRequirements(
                             requests={"storage": "50Gi"},
                         ),
                     ),
@@ -1082,8 +1121,8 @@ def build_image_buildkit(image: Image):
     try:
         if current_app.config["KUBERNETES_ENABLED"]:
             api_client = kubernetes_ext.kubernetes_client
-            core_api_instance = kubernetes.client.CoreV1Api(api_client)
-            batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+            core_api_instance = CoreV1Api(api_client)
+            batch_api_instance = BatchV1Api(api_client)
             # Create PersistentVolumeClaim
             volume_claim = fetch_image_build_cache_volume_claim(
                 core_api_instance, image
@@ -1093,17 +1132,17 @@ def build_image_buildkit(image: Image):
                 buildctl_args.append(
                     "id=GIT_AUTH_TOKEN,src=/home/user/.secret/github_access_token"
                 )
-            docker_secret_object = kubernetes.client.V1Secret(
+            docker_secret_object = V1Secret(
                 type="kubernetes.io/dockerconfigjson",
-                metadata=kubernetes.client.V1ObjectMeta(
+                metadata=V1ObjectMeta(
                     name=f"buildkit-registry-auth-{image.build_job_id}",
                 ),
                 data={
                     ".dockerconfigjson": b64encode(dockerconfigjson.encode()).decode(),
                 },
             )
-            github_secret_object = kubernetes.client.V1Secret(
-                metadata=kubernetes.client.V1ObjectMeta(
+            github_secret_object = V1Secret(
+                metadata=V1ObjectMeta(
                     name=f"github-access-token-{image.build_job_id}",
                 ),
                 data={
@@ -1112,8 +1151,8 @@ def build_image_buildkit(image: Image):
                     ).decode(),
                 },
             )
-            buildkitd_toml_configmap_object = kubernetes.client.V1ConfigMap(
-                metadata=kubernetes.client.V1ObjectMeta(
+            buildkitd_toml_configmap_object = V1ConfigMap(
+                metadata=V1ObjectMeta(
                     name=f"buildkitd-toml-{image.build_job_id}",
                 ),
                 data={
@@ -1121,8 +1160,8 @@ def build_image_buildkit(image: Image):
                 },
             )
             safe_labels = _safe_labels_from_application(image.application)
-            job_object = kubernetes.client.V1Job(
-                metadata=kubernetes.client.V1ObjectMeta(
+            job_object = V1Job(
+                metadata=V1ObjectMeta(
                     name=f"imagebuild-{image.build_job_id}",
                     labels={
                         "organization": image.application.project.organization.slug,
@@ -1134,13 +1173,13 @@ def build_image_buildkit(image: Image):
                         **safe_labels,
                     },
                 ),
-                spec=kubernetes.client.V1JobSpec(
+                spec=V1JobSpec(
                     active_deadline_seconds=1800,
                     backoff_limit=0,
                     parallelism=1,
                     completions=1,
-                    template=kubernetes.client.V1PodTemplateSpec(
-                        metadata=kubernetes.client.V1ObjectMeta(
+                    template=V1PodTemplateSpec(
+                        metadata=V1ObjectMeta(
                             labels={
                                 "organization": image.application.project.organization.slug,  # noqa: E501
                                 "project": image.application.project.slug,
@@ -1155,46 +1194,46 @@ def build_image_buildkit(image: Image):
                                 "container.apparmor.security.beta.kubernetes.io/build": "unconfined",  # noqa: E501
                             },
                         ),
-                        spec=kubernetes.client.V1PodSpec(
+                        spec=V1PodSpec(
                             restart_policy="Never",
                             termination_grace_period_seconds=0,
-                            security_context=kubernetes.client.V1PodSecurityContext(
+                            security_context=V1PodSecurityContext(
                                 fs_group=1000,
                                 fs_group_change_policy="OnRootMismatch",
                             ),
                             containers=[
-                                kubernetes.client.V1Container(
+                                V1Container(
                                     name="build",
                                     image=buildkit_image,
                                     command=buildctl_command,
                                     args=buildctl_args,
                                     env=[
-                                        kubernetes.client.V1EnvVar(
+                                        V1EnvVar(
                                             name="BUILDKITD_FLAGS",
                                             value="--config /home/user/.config/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",  # noqa: E501
                                         ),
                                     ],
-                                    security_context=kubernetes.client.V1SecurityContext(
-                                        seccomp_profile=kubernetes.client.V1SeccompProfile(
+                                    security_context=V1SecurityContext(
+                                        seccomp_profile=V1SeccompProfile(
                                             type="Unconfined",
                                         ),
                                         run_as_user=1000,
                                         run_as_group=1000,
                                     ),
                                     volume_mounts=[
-                                        kubernetes.client.V1VolumeMount(
+                                        V1VolumeMount(
                                             mount_path="/home/user/.config/buildkit",
                                             name="buildkitd-toml",
                                         ),
-                                        kubernetes.client.V1VolumeMount(
+                                        V1VolumeMount(
                                             mount_path="/home/user/.docker",
                                             name="buildkit-registry-auth",
                                         ),
-                                        kubernetes.client.V1VolumeMount(
+                                        V1VolumeMount(
                                             mount_path="/home/user/.secret",
                                             name="build-secrets",
                                         ),
-                                        kubernetes.client.V1VolumeMount(
+                                        V1VolumeMount(
                                             mount_path="/home/user/.local/share/buildkit",
                                             name="build-cache",
                                         ),
@@ -1202,45 +1241,45 @@ def build_image_buildkit(image: Image):
                                 ),
                             ],
                             volumes=[
-                                kubernetes.client.V1Volume(
+                                V1Volume(
                                     name="buildkitd-toml",
-                                    config_map=kubernetes.client.V1ConfigMapVolumeSource(
+                                    config_map=V1ConfigMapVolumeSource(
                                         name=f"buildkitd-toml-{image.build_job_id}",
                                         items=[
-                                            kubernetes.client.V1KeyToPath(
+                                            V1KeyToPath(
                                                 key="buildkitd.toml",
                                                 path="buildkitd.toml",
                                             ),
                                         ],
                                     ),
                                 ),
-                                kubernetes.client.V1Volume(
+                                V1Volume(
                                     name="buildkit-registry-auth",
-                                    secret=kubernetes.client.V1SecretVolumeSource(
+                                    secret=V1SecretVolumeSource(
                                         secret_name=f"buildkit-registry-auth-{image.build_job_id}",
                                         items=[
-                                            kubernetes.client.V1KeyToPath(
+                                            V1KeyToPath(
                                                 key=".dockerconfigjson",
                                                 path="config.json",
                                             ),
                                         ],
                                     ),
                                 ),
-                                kubernetes.client.V1Volume(
+                                V1Volume(
                                     name="build-secrets",
-                                    secret=kubernetes.client.V1SecretVolumeSource(
+                                    secret=V1SecretVolumeSource(
                                         secret_name=f"github-access-token-{image.build_job_id}",
                                         items=[
-                                            kubernetes.client.V1KeyToPath(
+                                            V1KeyToPath(
                                                 key="github_access_token",
                                                 path="github_access_token",
                                             ),
                                         ],
                                     ),
                                 ),
-                                kubernetes.client.V1Volume(
+                                V1Volume(
                                     name="build-cache",
-                                    persistent_volume_claim=kubernetes.client.V1PersistentVolumeClaimVolumeSource(
+                                    persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(
                                         claim_name=volume_claim.metadata.name
                                     ),
                                 ),
@@ -1405,7 +1444,7 @@ def build_image_buildkit(image: Image):
     }
 
 
-def build_omnibus_buildkit(image, release):
+def build_omnibus_buildkit(image: Image, release: Release):
     """Build image and release in a single K8s Job.
 
     Uses an init container for the image build and the main container for the
@@ -1550,29 +1589,29 @@ def build_omnibus_buildkit(image, release):
 
     try:
         api_client = kubernetes_ext.kubernetes_client
-        core_api_instance = kubernetes.client.CoreV1Api(api_client)
-        batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+        core_api_instance = CoreV1Api(api_client)
+        batch_api_instance = BatchV1Api(api_client)
         # Single PVC mount for both build steps
         volume_claim = fetch_image_build_cache_volume_claim(core_api_instance, image)
-        docker_secret_object = kubernetes.client.V1Secret(
+        docker_secret_object = V1Secret(
             type="kubernetes.io/dockerconfigjson",
-            metadata=kubernetes.client.V1ObjectMeta(
+            metadata=V1ObjectMeta(
                 name=f"buildkit-registry-auth-{image.build_job_id}",
             ),
             data={
                 ".dockerconfigjson": b64encode(dockerconfigjson.encode()).decode(),
             },
         )
-        github_secret_object = kubernetes.client.V1Secret(
-            metadata=kubernetes.client.V1ObjectMeta(
+        github_secret_object = V1Secret(
+            metadata=V1ObjectMeta(
                 name=f"github-access-token-{image.build_job_id}",
             ),
             data={
                 "github_access_token": b64encode(str(access_token).encode()).decode(),
             },
         )
-        buildkitd_toml_configmap_object = kubernetes.client.V1ConfigMap(
-            metadata=kubernetes.client.V1ObjectMeta(
+        buildkitd_toml_configmap_object = V1ConfigMap(
+            metadata=V1ObjectMeta(
                 name=f"buildkitd-toml-{image.build_job_id}",
             ),
             data={
@@ -1584,35 +1623,35 @@ def build_omnibus_buildkit(image, release):
         context_configmap_object.metadata.name = f"build-context-{image.build_job_id}"
 
         shared_env = [
-            kubernetes.client.V1EnvVar(
+            V1EnvVar(
                 name="BUILDKITD_FLAGS",
                 value="--config /home/user/.config/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",  # noqa: E501
             ),
         ]
-        shared_security_context = kubernetes.client.V1SecurityContext(
-            seccomp_profile=kubernetes.client.V1SeccompProfile(
+        shared_security_context = V1SecurityContext(
+            seccomp_profile=V1SeccompProfile(
                 type="Unconfined",
             ),
             run_as_user=1000,
             run_as_group=1000,
         )
         shared_volume_mounts = [
-            kubernetes.client.V1VolumeMount(
+            V1VolumeMount(
                 mount_path="/home/user/.local/share/buildkit",
                 name="build-cache",
             ),
-            kubernetes.client.V1VolumeMount(
+            V1VolumeMount(
                 mount_path="/home/user/.config/buildkit",
                 name="buildkitd-toml",
             ),
-            kubernetes.client.V1VolumeMount(
+            V1VolumeMount(
                 mount_path="/home/user/.docker",
                 name="buildkit-registry-auth",
             ),
         ]
 
         # Init container: image build
-        image_build_container = kubernetes.client.V1Container(
+        image_build_container = V1Container(
             name="image-build",
             image=buildkit_image,
             command=buildctl_command,
@@ -1621,7 +1660,7 @@ def build_omnibus_buildkit(image, release):
             security_context=shared_security_context,
             volume_mounts=shared_volume_mounts
             + [
-                kubernetes.client.V1VolumeMount(
+                V1VolumeMount(
                     mount_path="/home/user/.secret",
                     name="build-secrets",
                 ),
@@ -1629,7 +1668,7 @@ def build_omnibus_buildkit(image, release):
         )
 
         # Main container: release build
-        release_build_container = kubernetes.client.V1Container(
+        release_build_container = V1Container(
             name="build",
             image=buildkit_image,
             command=buildctl_command,
@@ -1638,18 +1677,18 @@ def build_omnibus_buildkit(image, release):
             security_context=shared_security_context,
             volume_mounts=shared_volume_mounts
             + [
-                kubernetes.client.V1VolumeMount(
+                V1VolumeMount(
                     mount_path="/context/Dockerfile",
                     sub_path="Dockerfile",
                     name="build-context",
                 ),
-                kubernetes.client.V1VolumeMount(
+                V1VolumeMount(
                     mount_path="/context/entrypoint.sh",
                     sub_path="entrypoint.sh",
                     name="build-context",
                 ),
                 *[
-                    kubernetes.client.V1VolumeMount(
+                    V1VolumeMount(
                         mount_path=f"/context/envconsul-{process_name}.hcl",
                         sub_path=f"envconsul-{process_name}.hcl",
                         name="build-context",
@@ -1659,9 +1698,11 @@ def build_omnibus_buildkit(image, release):
             ],
         )
 
+        assert image.build_job_id
+
         safe_labels = _safe_labels_from_application(image.application)
-        job_object = kubernetes.client.V1Job(
-            metadata=kubernetes.client.V1ObjectMeta(
+        job_object = V1Job(
+            metadata=V1ObjectMeta(
                 name=f"omnibusbuild-{image.build_job_id}",
                 labels={
                     "organization": image.application.project.organization.slug,
@@ -1673,13 +1714,13 @@ def build_omnibus_buildkit(image, release):
                     **safe_labels,
                 },
             ),
-            spec=kubernetes.client.V1JobSpec(
+            spec=V1JobSpec(
                 active_deadline_seconds=3600,
                 backoff_limit=0,
                 parallelism=1,
                 completions=1,
-                template=kubernetes.client.V1PodTemplateSpec(
-                    metadata=kubernetes.client.V1ObjectMeta(
+                template=V1PodTemplateSpec(
+                    metadata=V1ObjectMeta(
                         labels={
                             "organization": image.application.project.organization.slug,  # noqa: E501
                             "project": image.application.project.slug,
@@ -1695,61 +1736,61 @@ def build_omnibus_buildkit(image, release):
                             "container.apparmor.security.beta.kubernetes.io/build": "unconfined",  # noqa: E501
                         },
                     ),
-                    spec=kubernetes.client.V1PodSpec(
+                    spec=V1PodSpec(
                         restart_policy="Never",
                         termination_grace_period_seconds=0,
-                        security_context=kubernetes.client.V1PodSecurityContext(
+                        security_context=V1PodSecurityContext(
                             fs_group=1000,
                             fs_group_change_policy="OnRootMismatch",
                         ),
                         init_containers=[image_build_container],
                         containers=[release_build_container],
                         volumes=[
-                            kubernetes.client.V1Volume(
+                            V1Volume(
                                 name="build-cache",
-                                persistent_volume_claim=kubernetes.client.V1PersistentVolumeClaimVolumeSource(
+                                persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(
                                     claim_name=volume_claim.metadata.name
                                 ),
                             ),
-                            kubernetes.client.V1Volume(
+                            V1Volume(
                                 name="buildkitd-toml",
-                                config_map=kubernetes.client.V1ConfigMapVolumeSource(
+                                config_map=V1ConfigMapVolumeSource(
                                     name=f"buildkitd-toml-{image.build_job_id}",
                                     items=[
-                                        kubernetes.client.V1KeyToPath(
+                                        V1KeyToPath(
                                             key="buildkitd.toml",
                                             path="buildkitd.toml",
                                         ),
                                     ],
                                 ),
                             ),
-                            kubernetes.client.V1Volume(
+                            V1Volume(
                                 name="buildkit-registry-auth",
-                                secret=kubernetes.client.V1SecretVolumeSource(
+                                secret=V1SecretVolumeSource(
                                     secret_name=f"buildkit-registry-auth-{image.build_job_id}",
                                     items=[
-                                        kubernetes.client.V1KeyToPath(
+                                        V1KeyToPath(
                                             key=".dockerconfigjson",
                                             path="config.json",
                                         ),
                                     ],
                                 ),
                             ),
-                            kubernetes.client.V1Volume(
+                            V1Volume(
                                 name="build-secrets",
-                                secret=kubernetes.client.V1SecretVolumeSource(
+                                secret=V1SecretVolumeSource(
                                     secret_name=f"github-access-token-{image.build_job_id}",
                                     items=[
-                                        kubernetes.client.V1KeyToPath(
+                                        V1KeyToPath(
                                             key="github_access_token",
                                             path="github_access_token",
                                         ),
                                     ],
                                 ),
                             ),
-                            kubernetes.client.V1Volume(
+                            V1Volume(
                                 name="build-context",
-                                config_map=kubernetes.client.V1ConfigMapVolumeSource(
+                                config_map=V1ConfigMapVolumeSource(
                                     name=f"build-context-{image.build_job_id}"
                                 ),
                             ),
@@ -2044,7 +2085,7 @@ def run_image_build(image_id: str, buildkit: bool = False):
 
 
 @shared_task()
-def run_release_build(release_id: str):
+def run_release_build(release_id: str) -> None:
     from cabotage.utils.config_templates import TemplateResolutionError
 
     release = None
@@ -2307,7 +2348,7 @@ def run_release_build(release_id: str):
 
 
 @shared_task()
-def run_omnibus_build(image_id: str):
+def run_omnibus_build(image_id: str) -> None:
     """Build image + release in a single K8s Job for auto-deploys.
 
     Avoids mounting the build cache volume twice by combining both build

@@ -1,11 +1,19 @@
+from __future__ import annotations
+
 import hashlib
 import logging
 import struct
+from typing import TYPE_CHECKING
 
 import requests
 from flask import current_app
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+if TYPE_CHECKING:
+    from typing import Self
+    from collections.abc import Iterable
+    from cabotage.server.models.projects import Application, ApplicationEnvironment
 
 logger = logging.getLogger(__name__)
 
@@ -28,11 +36,11 @@ github_session = requests.Session()
 github_session.mount("https://", _adapter)
 
 
-def _github_headers(access_token):
+def _github_headers(access_token: str) -> dict[str, str]:
     return {**_GITHUB_HEADERS, "Authorization": f"token {access_token}"}
 
 
-def cabotage_url(application, path=""):
+def cabotage_url(application: Application, path: str = "") -> str:
     """Build an external URL to a cabotage page for the given application.
 
     ``path`` is appended after the application base, e.g.
@@ -53,8 +61,12 @@ def cabotage_url(application, path=""):
 
 
 def post_deployment_status_update(
-    access_token, status_url, state, description, environment_url=None
-):
+    access_token: str | None,
+    status_url: str,
+    state: str,
+    description: str,
+    environment_url: str | None = None,
+) -> None:
     if access_token is None:
         return
     try:
@@ -88,8 +100,13 @@ class CheckRun:
     """
 
     def __init__(
-        self, access_token, repo, application, check_run_id=None, app_env=None
-    ):
+        self,
+        access_token: str | None,
+        repo: str | None,
+        application: Application,
+        check_run_id: int | None = None,
+        app_env: ApplicationEnvironment | None = None,
+    ) -> None:
         self.access_token = access_token
         self.repo = repo
         self.application = application
@@ -103,14 +120,14 @@ class CheckRun:
     @classmethod
     def create(
         cls,
-        access_token,
-        repo,
-        head_sha,
-        name,
-        application,
-        details_url=None,
-        app_env=None,
-    ):
+        access_token: str | None,
+        repo: str,
+        head_sha: str,
+        name: str,
+        application: Application,
+        details_url: str | None = None,
+        app_env: ApplicationEnvironment | None = None,
+    ) -> Self:
         """Create a new check run on GitHub. Returns a CheckRun instance."""
         check_run_id = None
         if access_token:
@@ -135,7 +152,7 @@ class CheckRun:
         return cls(access_token, repo, application, check_run_id, app_env=app_env)
 
     @classmethod
-    def from_metadata(cls, metadata, app_env):
+    def from_metadata(cls, metadata, app_env: ApplicationEnvironment | None) -> Self:
         """Restore a CheckRun from pipeline metadata (image/release/deploy).
 
         ``app_env`` is an ApplicationEnvironment (or None).  The application
@@ -155,7 +172,7 @@ class CheckRun:
         return cls(access_token, repo, application, check_run_id, app_env=app_env)
 
     @property
-    def active(self):
+    def active(self) -> bool:
         """True if this check run was successfully created / restored."""
         return self.check_run_id is not None and self.access_token is not None
 
@@ -163,15 +180,15 @@ class CheckRun:
     # URL / summary helpers
     # ------------------------------------------------------------------
 
-    def _url(self, path=""):
+    def _url(self, path: str = "") -> str:
         return cabotage_url(self.application, path)
 
-    def _links(self, **resources):
+    def _links(self, **resources: str) -> str:
         """Build a list of markdown links from keyword label=path pairs.
 
         Always appends an Application link at the end.
         """
-        parts = []
+        parts: list[str] = []
         for label, path in resources.items():
             if path:
                 parts.append(f"[{label}]({self._url(path)})")
@@ -182,7 +199,7 @@ class CheckRun:
     # Notifications
     # ------------------------------------------------------------------
 
-    def _notify_pr(self):
+    def _notify_pr(self) -> None:
         """Update the PR comment if this check run is for a branch deploy."""
         if self.app_env is None:
             return
@@ -196,7 +213,7 @@ class CheckRun:
     # API calls
     # ------------------------------------------------------------------
 
-    def _patch(self, payload):
+    def _patch(self, payload) -> None:
         if not self.active:
             return
         try:
@@ -212,7 +229,13 @@ class CheckRun:
                 "Failed to update check run %s on %s", self.check_run_id, self.repo
             )
 
-    def progress(self, title, detail="", details_url=None, **link_resources):
+    def progress(
+        self,
+        title: str,
+        detail: str = "",
+        details_url: str | None = None,
+        **link_resources: str,
+    ) -> None:
         """Update the check run output while it stays in_progress."""
         links = self._links(**link_resources) if link_resources else ""
         summary = f"**{title}**"
@@ -230,11 +253,11 @@ class CheckRun:
 
     def succeed(
         self,
-        title="Deployment complete!",
-        detail="",
-        details_url=None,
-        **link_resources,
-    ):
+        title: str = "Deployment complete!",
+        detail: str = "",
+        details_url: str | None = None,
+        **link_resources: str,
+    ) -> None:
         """Complete the check run with success."""
         links = self._links(**link_resources) if link_resources else ""
         summary = f"**{title}**"
@@ -252,7 +275,13 @@ class CheckRun:
         self._patch(payload)
         self._notify_pr()
 
-    def fail(self, title, detail="", details_url=None, **link_resources):
+    def fail(
+        self,
+        title: str,
+        detail: str = "",
+        details_url: str | None = None,
+        **link_resources: str,
+    ) -> None:
         """Complete the check run with failure."""
         links = self._links(**link_resources) if link_resources else ""
         summary = f"**{title}**"
@@ -271,7 +300,7 @@ class CheckRun:
         self._notify_pr()
 
 
-def _pr_advisory_lock(repo, pr_number):
+def _pr_advisory_lock(repo: str, pr_number: int) -> None:
     """Acquire a transaction-level advisory lock for a PR to serialize
     concurrent comment/status updates."""
     from cabotage.server import db
@@ -282,7 +311,9 @@ def _pr_advisory_lock(repo, pr_number):
     db.session.execute(sa.text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
 
 
-def find_or_create_pr_comment(access_token, repo, pr_number, body):
+def find_or_create_pr_comment(
+    access_token: str | None, repo: str, pr_number: int, body: str
+) -> None:
     """Find an existing bot comment by marker and update it, or create a new one."""
     if access_token is None:
         return
@@ -329,7 +360,9 @@ def find_or_create_pr_comment(access_token, repo, pr_number, body):
         )
 
 
-def fetch_pr_changed_files(access_token, repo, pr_number):
+def fetch_pr_changed_files(
+    access_token: str | None, repo: str, pr_number: int
+) -> set[str] | None:
     """Fetch the set of changed file paths for a PR.
 
     Paginates through all pages of the GitHub PR files endpoint.
@@ -338,7 +371,7 @@ def fetch_pr_changed_files(access_token, repo, pr_number):
     if access_token is None:
         return None
     headers = _github_headers(access_token)
-    changed_files = set()
+    changed_files = set[str]()
     page = 1
     try:
         while True:
@@ -363,7 +396,9 @@ def fetch_pr_changed_files(access_token, repo, pr_number):
     return changed_files
 
 
-def matches_watch_paths(changed_files, watch_patterns):
+def matches_watch_paths(
+    changed_files: set[str], watch_patterns: Iterable[str] | None
+) -> bool:
     """Check if any changed file matches any watch pattern.
 
     Uses pathspec with gitignore pattern matching:

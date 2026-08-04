@@ -36,7 +36,7 @@ class ConfigWriter(object):
 
         app.teardown_appcontext(self.teardown)
 
-    def teardown(self, exception: BaseException | None):
+    def teardown(self, exception: BaseException | None) -> None:
         pass
 
     def _config_path_segment(self, k8s_namespace: str, k8s_resource_prefix: str) -> str:

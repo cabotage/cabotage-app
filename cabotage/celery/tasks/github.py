@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import datetime
 import logging
+from typing import TYPE_CHECKING
 
 from celery import shared_task
 from flask import current_app
@@ -45,6 +48,9 @@ from cabotage.utils.github import (
     post_deployment_status_update,
 )
 from cabotage.celery.tasks.notify import dispatch_autodeploy_notification
+
+if TYPE_CHECKING:
+    from uuid import UUID
 
 Activity = activity_plugin.activity_cls
 logger = logging.getLogger(__name__)
@@ -1140,7 +1146,7 @@ def _base_ref_chains_to_auto_deploy_branch(
     return False
 
 
-def process_pull_request_hook(hook):
+def process_pull_request_hook(hook: Hook) -> None:
     action = hook.payload["action"]
     if action not in ("opened", "reopened", "synchronize", "closed"):
         return
@@ -1174,7 +1180,7 @@ def process_pull_request_hook(hook):
     base_ref = pr["base"]["ref"]
     hook.commit_sha = head_sha
 
-    projects = (
+    projects: list[Project] = (
         Project.query.join(Application)
         .filter(
             Application.github_app_installation_id == installation_id,
@@ -1254,7 +1260,7 @@ def process_pull_request_hook(hook):
 
 
 @shared_task()
-def process_github_hook(hook_id):
+def process_github_hook(hook_id: UUID):
     hook = Hook.query.filter_by(id=hook_id).first()
     event = hook.headers["X-Github-Event"]
     if event == "deployment":

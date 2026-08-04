@@ -8,6 +8,7 @@ from typing import Any, TYPE_CHECKING
 if TYPE_CHECKING:
     from cabotage.server.models.auth import Organization
     from cabotage.server.models.resources import Resource
+    from cabotage.server import ConfigWriter
 
 from flask import current_app
 from sqlalchemy import (
@@ -264,15 +265,15 @@ class Environment(Model, Timestamp):
         return org_k8s
 
     @property
-    def active_resources(self):
+    def active_resources(self) -> list[Resource]:
         return [r for r in self.resources if r.deleted_at is None]
 
     @property
-    def active_postgres_resources(self):
+    def active_postgres_resources(self) -> list[Resource]:
         return [r for r in self.active_resources if r.type == "postgres"]
 
     @property
-    def active_redis_resources(self):
+    def active_redis_resources(self) -> list[Resource]:
         return [r for r in self.active_resources if r.type == "redis"]
 
     __table_args__ = (
@@ -306,7 +307,7 @@ class ApplicationEnvironment(Model, Timestamp):
         ForeignKey("project_environments.id"),
         index=True,
     )
-    process_counts: Mapped[Any | None] = mapped_column(
+    process_counts: Mapped[dict[str, int] | None] = mapped_column(
         postgresql.JSONB(), server_default=text("json_object('{}')")
     )
     process_pod_classes: Mapped[Any | None] = mapped_column(
@@ -582,7 +583,7 @@ class Application(Model, Timestamp):
     )
 
     @property
-    def default_app_env(self):
+    def default_app_env(self) -> ApplicationEnvironment | None:
         """Return the implicit/default ApplicationEnvironment for this app."""
         active = self.active_application_environments
         return next(
@@ -622,7 +623,7 @@ class Application(Model, Timestamp):
         ae = self.default_app_env
         return ae.latest_deployment_running if ae else None
 
-    def ready_for_deployment_in_env(self, app_env):
+    def ready_for_deployment_in_env(self, app_env: ApplicationEnvironment):
         current = {}
         latest_deployed = app_env.latest_deployment_completed
         if latest_deployed:
@@ -646,7 +647,7 @@ class Application(Model, Timestamp):
         return image_diff, configuration_diff, ingress_diff
 
     @staticmethod
-    def _resolved_configuration(app_env):
+    def _resolved_configuration(app_env: ApplicationEnvironment):
         """Merge environment-level configs (base) with app-level configs (override)."""
         config = {}
         for sub in app_env.environment_config_subscriptions:
@@ -658,7 +659,7 @@ class Application(Model, Timestamp):
                 config[c.name] = c.asdict
         return config
 
-    def release_candidate_for_env(self, app_env):
+    def release_candidate_for_env(self, app_env: ApplicationEnvironment):
         release = Release(
             application_id=self.id,
             application_environment_id=app_env.id,
@@ -671,7 +672,7 @@ class Application(Model, Timestamp):
         )
         return release.asdict
 
-    def registry_repository_name(self, app_env):
+    def registry_repository_name(self, app_env: ApplicationEnvironment) -> str:
         """Build the registry repo name using k8s identifiers."""
         org_k8s = self.project.organization.k8s_identifier
         project_k8s = self.project.k8s_identifier
@@ -683,7 +684,7 @@ class Application(Model, Timestamp):
         )
         return Image._build_repository_name(org_k8s, project_k8s, app_k8s, env_k8s)
 
-    def create_release(self, app_env):
+    def create_release(self, app_env: ApplicationEnvironment):
         image_diff, configuration_diff, ingress_diff = self.ready_for_deployment_in_env(
             app_env
         )
@@ -1211,7 +1212,7 @@ class Configuration(Model, Timestamp):
         path = self.key_slug.split(":", 1)[1]
         return f'{directive} {{\n  no_prefix = true\n  path = "{path}"\n}}'
 
-    def read_value(self, reader):
+    def read_value(self, reader: ConfigWriter) -> str:
         from cabotage.utils.config_templates import (
             has_template_variables,
             resolve_template_variables,
@@ -1317,7 +1318,7 @@ class EnvironmentConfiguration(Model, Timestamp):
         path = self.key_slug.split(":", 1)[1]
         return f'{directive} {{\n  no_prefix = true\n  path = "{path}"\n}}'
 
-    def read_value(self, reader):
+    def read_value(self, reader: ConfigWriter) -> str:
         from cabotage.utils.config_templates import has_template_variables
 
         if self.secret:
@@ -1467,13 +1468,15 @@ class Image(Model, Timestamp):
         )
 
     @staticmethod
-    def _build_repository_name(org_k8s, project_k8s, app_k8s, env_k8s=None):
+    def _build_repository_name(
+        org_k8s: str, project_k8s: str, app_k8s: str, env_k8s: str | None = None
+    ) -> str:
         if env_k8s is not None:
             return f"cabotage/{org_k8s}/{env_k8s}/{project_k8s}/{app_k8s}"
         return f"cabotage/{org_k8s}/{project_k8s}/{app_k8s}"
 
-    def buildargs(self, reader):
-        args = {}
+    def buildargs(self, reader: ConfigWriter) -> dict[str, str]:
+        args: dict[str, str] = {}
         # Subscribed env configs first (base), then app configs (override)
         for sub in self.application_environment.environment_config_subscriptions:
             ec = sub.environment_configuration
@@ -1485,7 +1488,7 @@ class Image(Model, Timestamp):
         return args
 
     @property
-    def commit_sha(self):
+    def commit_sha(self) -> str:
         if self.image_metadata is None or self.image_metadata.get("sha") is None:
             return "null"
         return self.image_metadata.get("sha")
@@ -1844,7 +1847,9 @@ def _ingress_hostname_pairs(app_env):
     return pairs
 
 
-def create_default_ingresses(app_env, process_names=None):
+def create_default_ingresses(
+    app_env: ApplicationEnvironment, process_names: list[str] | None = None
+) -> None:
     """Create default Ingress records for web processes on an app_env.
 
     Called at app_env creation time so ingresses exist before the first release.
