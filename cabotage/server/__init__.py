@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import hashlib
 import os
 from html import escape
@@ -5,15 +7,10 @@ from typing import Any, ClassVar, TYPE_CHECKING
 
 import sentry_sdk
 
-try:
-    from pygments import highlight
-    from pygments.formatters import HtmlFormatter
-    from pygments.lexers import DockerLexer, TextLexer
-except ImportError:
-    highlight: Any = None
-    HtmlFormatter: Any = None
-    DockerLexer: Any = None
-    TextLexer: Any = None
+from pygments import highlight
+from pygments.formatters import HtmlFormatter
+from pygments.lexers.configs import DockerLexer
+from pygments.lexers.special import TextLexer
 
 from flask import Flask, render_template, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -75,8 +72,16 @@ if TYPE_CHECKING:
     class Model(Base):
         """Type-checking stub: at runtime this is db.Model which adds query etc."""
 
-        query: ClassVar[Any]
+        query: ClassVar[Any]  # type: ignore[explicit-any]  # TODO: use SQLA directly?
         query_class: ClassVar[type]
+
+    from collections.abc import Callable, Iterable
+    from types import TracebackType
+    from datetime import datetime
+
+    from sentry_sdk.types import Event, Hint
+    from wsgiref.types import WSGIEnvironment, StartResponse
+
 else:
     Model = db.Model
 
@@ -94,12 +99,12 @@ csrf = CSRFProtect()
 babel = Babel()
 
 
-def _sentry_before_send(event, hint):
+def _sentry_before_send(event: Event, hint: Hint) -> Event | None:  # type: ignore[explicit-any]  # indirect Any usage, from sentry
     """Filter out the StopIteration raised by flask-sock to signal
     gunicorn that a WebSocket connection has closed (not an error)."""
     exc_info = hint.get("exc_info")
     if exc_info:
-        exc_type, exc_value, tb = exc_info
+        exc_type, _exc_value, tb = exc_info
         if exc_type is StopIteration and tb is not None:
             # Walk to the innermost frame
             while tb.tb_next:
@@ -117,7 +122,7 @@ sentry_sdk.init(
 )
 
 
-def celery_init_app(app):
+def celery_init_app(app: Flask) -> Celery:
     class FlaskTask(Task):
         def __call__(self, *args: object, **kwargs: object) -> object:
             with app.app_context():
@@ -178,7 +183,7 @@ def celery_init_app(app):
     return celery_app
 
 
-def create_app():
+def create_app() -> Flask:
     # instantiate the app
     app = Flask(
         __name__,
@@ -236,9 +241,9 @@ def create_app():
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 31536000  # 1 year; cache-busted by hash
 
     # Static file cache-busting: append ?v=<hash> to static URLs
-    _static_hashes = {}
+    _static_hashes: dict[str, str | None] = {}
 
-    def _get_static_hash(filename):
+    def _get_static_hash(filename: str) -> str | None:
         if filename not in _static_hashes:
             if app.static_folder is None:
                 return None
@@ -252,16 +257,30 @@ def create_app():
                 _static_hashes[filename] = None
         return _static_hashes.get(filename)
 
-    def _hashed_url_for(endpoint, **values):
+    def _hashed_url_for(
+        endpoint: str,
+        _anchor: str | None = None,
+        _method: str | None = None,
+        _scheme: str | None = None,
+        _external: bool | None = None,
+        **values: str,
+    ) -> str:
         if endpoint == "static":
             filename = values.get("filename")
             if filename:
                 h = _get_static_hash(filename)
                 if h:
                     values["v"] = h
-        return url_for(endpoint, **values)
+        return url_for(
+            endpoint,
+            _anchor=_anchor,
+            _method=_method,
+            _scheme=_scheme,
+            _external=_external,
+            **values,
+        )
 
-    app.jinja_env.globals.update(url_for=_hashed_url_for)  # ty: ignore[invalid-argument-type]  # Jinja infers globals as a narrow dict; should be dict[str, Any]
+    app.jinja_env.globals.update(url_for=_hashed_url_for)  # ty: ignore[invalid-argument-type]  # Jinja infers globals as a narrow dict; should be dict[str, Any]  # type: ignore[bad-argument-type]
 
     # set up extensions
     admin.init_app(app)
@@ -297,7 +316,7 @@ def create_app():
     migrate.init_app(app, db)
 
     @app.template_filter("display_username")
-    def display_username_filter(value):
+    def display_username_filter(value: str) -> str:
         if value and value.startswith("github:"):
             parts = value.split(":", 2)
             if len(parts) == 3:
@@ -305,11 +324,11 @@ def create_app():
         return value
 
     @app.template_filter("humanize")
-    def humanize_filter(value):
+    def humanize_filter(value: datetime) -> str:
         return humanize_lib.naturaltime(value)
 
     @app.template_filter("timeago")
-    def timeago_filter(value):
+    def timeago_filter(value: datetime | None) -> str:
         """Server-side timeago matching the JS timeago() function exactly."""
         if value is None:
             return ""
@@ -339,13 +358,13 @@ def create_app():
         return f"{d} days ago"
 
     @app.template_filter("isoformat_utc")
-    def isoformat_utc_filter(value):
+    def isoformat_utc_filter(value: datetime | None) -> str:
         if value is None:
             return ""
         return value.isoformat() + "Z"
 
     @app.template_filter("duration")
-    def duration_filter(obj):
+    def duration_filter(obj: Deployment) -> str:
         if not getattr(obj, "created", None) or not getattr(obj, "updated", None):
             return ""
         total = int((obj.updated - obj.created).total_seconds())
@@ -360,8 +379,8 @@ def create_app():
         return f"{h}h {m}m"
 
     @app.template_filter("highlight_code")
-    def highlight_code_filter(value, language="text"):
-        text = "" if value is None else str(value)
+    def highlight_code_filter(value: str | None, language: str = "text") -> str:
+        text = value or ""
         if not text or text == "None":
             return ""
         if (
@@ -412,19 +431,19 @@ def create_app():
 
     # error handlers
     @app.errorhandler(401)
-    def unauthorized_page(error):
+    def unauthorized_page(error: Exception) -> tuple[str, int]:
         return render_template("errors/401.html"), 401
 
     @app.errorhandler(403)
-    def forbidden_page(error):
+    def forbidden_page(error: Exception) -> tuple[str, int]:
         return render_template("errors/403.html"), 403
 
     @app.errorhandler(404)
-    def page_not_found(error):
+    def page_not_found(error: Exception) -> tuple[str, int]:
         return render_template("errors/404.html"), 404
 
     @app.errorhandler(500)
-    def server_error_page(error):
+    def server_error_page(error: Exception) -> tuple[str, int]:
         return render_template("errors/500.html"), 500
 
     from cabotage.server.models.admin import AdminModelView
@@ -472,12 +491,21 @@ def create_app():
 
     original_wsgi = app.wsgi_app
 
-    def _static_cache_headers_middleware(environ, start_response):
+    def _static_cache_headers_middleware(
+        environ: WSGIEnvironment,  # type: ignore[explicit-any]  # indirect Any usage, from wsgiref
+        start_response: StartResponse,
+    ) -> Iterable[bytes]:
         path = environ.get("PATH_INFO", "")
         if not path.startswith("/static/"):
             return original_wsgi(environ, start_response)
 
-        def _filtered_start_response(status, headers, exc_info=None):
+        def _filtered_start_response(
+            status: str,
+            headers: list[tuple[str, str]],
+            exc_info: tuple[type[BaseException], BaseException, TracebackType]
+            | tuple[None, None, None]
+            | None = None,
+        ) -> Callable[[bytes], object]:
             headers = [
                 (k, v) for k, v in headers if k.lower() not in ("set-cookie", "vary")
             ]
