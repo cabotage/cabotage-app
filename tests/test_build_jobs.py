@@ -107,8 +107,8 @@ def _run_release_build(release, mock_core, mock_run_job):
 
     with (
         patch(f"{_BUILD_MODULE}.kubernetes_ext") as mock_kext,
-        patch(f"{_BUILD_MODULE}.kubernetes.client.CoreV1Api", return_value=mock_core),
-        patch(f"{_BUILD_MODULE}.kubernetes.client.BatchV1Api", return_value=mock_batch),
+        patch(f"{_BUILD_MODULE}.CoreV1Api", return_value=mock_core),
+        patch(f"{_BUILD_MODULE}.BatchV1Api", return_value=mock_batch),
         patch(f"{_BUILD_MODULE}.run_job", mock_run_job),
         patch(f"{_BUILD_MODULE}.BuildkitEnv", return_value=mock_bke),
         patch(f"{_BUILD_MODULE}.fetch_image_build_cache_volume_claim"),
@@ -131,8 +131,8 @@ def _run_image_build(image, mock_core, mock_run_job):
 
     with (
         patch(f"{_BUILD_MODULE}.kubernetes_ext") as mock_kext,
-        patch(f"{_BUILD_MODULE}.kubernetes.client.CoreV1Api", return_value=mock_core),
-        patch(f"{_BUILD_MODULE}.kubernetes.client.BatchV1Api", return_value=mock_batch),
+        patch(f"{_BUILD_MODULE}.CoreV1Api", return_value=mock_core),
+        patch(f"{_BUILD_MODULE}.BatchV1Api", return_value=mock_batch),
         patch(f"{_BUILD_MODULE}.run_job", mock_run_job),
         patch(f"{_BUILD_MODULE}.BuildkitEnv", return_value=mock_bke),
         patch(f"{_BUILD_MODULE}.fetch_image_build_cache_volume_claim"),
