@@ -280,6 +280,7 @@ dev = [
     { name = "ruff" },
     { name = "ty" },
     { name = "types-croniter" },
+    { name = "types-dockerfile-parse" },
     { name = "types-hvac" },
     { name = "types-pygments" },
     { name = "types-pyyaml" },
@@ -344,6 +345,7 @@ dev = [
     { name = "ruff" },
     { name = "ty" },
     { name = "types-croniter" },
+    { name = "types-dockerfile-parse" },
     { name = "types-hvac" },
     { name = "types-pygments" },
     { name = "types-pyyaml" },
@@ -1803,6 +1805,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/c5/e4/89a0101471d6fe4e912dad24c54ae7afd90a9eaa5c74adef2c81f383f8da/types_croniter-6.2.2.20260408.tar.gz", hash = "sha256:a28a18908db371654990d30a3fd99856adc5137e475a23dbda4b10dce85525da", size = 12040, upload-time = "2026-04-08T04:27:20.068Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c3/05/b32e67944ff33e83c181cadf5835858d63f4292a2f2ff5bf6a1edb7f6fed/types_croniter-6.2.2.20260408-py3-none-any.whl", hash = "sha256:242087a5b6e201b7004e55f71ed34f466951b74551c64ef1c6a8a08c47d3cc0d", size = 9732, upload-time = "2026-04-08T04:27:19.229Z" },
+]
+
+[[package]]
+name = "types-dockerfile-parse"
+version = "2.0.0.20260508"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/37/34/29ef7fdeff78e87ff550c7c01f43bcad88109f3473ae92d7f076c6dd0160/types_dockerfile_parse-2.0.0.20260508.tar.gz", hash = "sha256:529640ee6c97be77d36d9d38edb3ba005cb643bb6bc1ed1281fb192a30839df6", size = 8761, upload-time = "2026-05-08T04:48:31.865Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0d/da/4fad63c79ed69219d55c35786d9920b94368eb116fd3ea40beac677ab219/types_dockerfile_parse-2.0.0.20260508-py3-none-any.whl", hash = "sha256:cd2d907079552190d35456e9722d1a124761ef6bf772c8259514f06361f7fd8c", size = 9345, upload-time = "2026-05-08T04:48:31.016Z" },
 ]
 
 [[package]]
