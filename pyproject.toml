@@ -50,20 +50,21 @@ dependencies = [
 dev = [
     "bandit",
     "hupper",
+    "kubernetes-stubs-elephant-fork",
     "pyrefly",
     "pytest-cov",
     "pytest",
     "ruff",
     "ty",
     "types-croniter",
+    "types-dockerfile-parse",
+    "types-flask-migrate",
     "types-hvac",
-    "types-pyyaml",
     "types-pygments",
+    "types-pyyaml",
     "types-requests",
     "types-toml",
     "typing-extensions",
-    "kubernetes-stubs-elephant-fork",
-    "types-dockerfile-parse",
 ]
 
 [tool.pytest.ini_options]
