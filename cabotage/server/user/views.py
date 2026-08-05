@@ -49,6 +49,8 @@ from cabotage.server.acl import (
     ViewOrganizationPermission,
     ViewProjectPermission,
     ViewApplicationPermission,
+    MemberViewOrganizationPermission,
+    MemberViewApplicationPermission,
     AdministerOrganizationPermission,
     AdministerProjectPermission,
     AdministerApplicationPermission,
@@ -185,6 +187,15 @@ user_blueprint = Blueprint(
     "user",
     __name__,
 )
+
+
+def _require_settings_access(admin_permission):
+    """Settings pages require administer access; super admins may GET a
+    read-only view. Ordinary members never see settings."""
+    if admin_permission.can():
+        return
+    if request.method == "POST" or not getattr(current_user, "admin", False):
+        abort(403)
 
 
 def _organization_requests_enabled():
@@ -360,6 +371,18 @@ def _soft_delete_project(project, organization):
     project.slug = f"{project.slug}--deleted-{uuid.uuid4().hex[:12]}"
 
 
+def _soft_delete_organization(organization):
+    """Soft-delete an Organization, its projects, and tear down integrations."""
+    if organization.tailscale_integration:
+        organization.tailscale_integration.operator_state = "removing"
+        teardown_tailscale_operator.delay(str(organization.id))
+    for project in list(organization.projects):
+        if project.deleted_at is None:
+            _soft_delete_project(project, organization)
+    organization.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+    organization.slug = f"{organization.slug}--deleted-{uuid.uuid4().hex[:12]}"
+
+
 def _associate_app_with_environment(application, environment, organization, project):
     """Create ApplicationEnvironment + sentinel config + activity log."""
     app_env = ApplicationEnvironment(
@@ -404,8 +427,14 @@ def _associate_app_with_environment(application, environment, organization, proj
     return app_env
 
 
-def _lookup_app_context(org_slug, project_slug, app_slug, require_admin=False):
-    """Resolve org/project/app from slugs and check permissions."""
+def _lookup_app_context(
+    org_slug, project_slug, app_slug, require_admin=False, require_member=False
+):
+    """Resolve org/project/app from slugs and check permissions.
+
+    require_member gates on actual membership, excluding super-admin view
+    access — use it for anything that mutates state.
+    """
     organization = (
         Organization.query.filter_by(slug=org_slug)
         .filter(Organization.deleted_at.is_(None))
@@ -421,9 +450,12 @@ def _lookup_app_context(org_slug, project_slug, app_slug, require_admin=False):
         .filter(Application.deleted_at.is_(None))
         .first_or_404()
     )
-    perm = (
-        AdministerApplicationPermission if require_admin else ViewApplicationPermission
-    )
+    if require_admin:
+        perm = AdministerApplicationPermission
+    elif require_member:
+        perm = MemberViewApplicationPermission
+    else:
+        perm = ViewApplicationPermission
     if not perm(application.id).can():
         abort(403)
     return organization, project, application
@@ -706,8 +738,7 @@ def organization_settings(org_slug):
         .filter(Organization.deleted_at.is_(None))
         .first_or_404()
     )
-    if not AdministerOrganizationPermission(organization.id).can():
-        abort(403)
+    _require_settings_access(AdministerOrganizationPermission(organization.id))
 
     form = EditOrganizationForm()
     ts_form = TailscaleIntegrationForm()
@@ -1352,7 +1383,7 @@ def organization_projects(org_slug):
 @login_required
 def organization_project_create(org_slug):
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
-    if not ViewOrganizationPermission(organization.id).can():
+    if not MemberViewOrganizationPermission(organization.id).can():
         abort(403)
 
     form = CreateProjectForm()
@@ -1553,8 +1584,7 @@ def project_settings(org_slug, project_slug):
     project = Project.query.filter_by(
         organization_id=organization.id, slug=project_slug
     ).first_or_404()
-    if not AdministerProjectPermission(project.id).can():
-        abort(403)
+    _require_settings_access(AdministerProjectPermission(project.id))
 
     form = EditProjectSettingsForm(obj=project)
     form.project_id.data = str(project.id)
@@ -1899,8 +1929,7 @@ def project_environment_settings(org_slug, project_slug, env_slug):
     project = Project.query.filter_by(
         organization_id=organization.id, slug=project_slug
     ).first_or_404()
-    if not AdministerProjectPermission(project.id).can():
-        abort(403)
+    _require_settings_access(AdministerProjectPermission(project.id))
     environment = Environment.query.filter_by(
         project_id=project.id, slug=env_slug
     ).first_or_404()
@@ -2559,8 +2588,7 @@ def environment_postgres_settings(org_slug, project_slug, env_slug, resource_slu
     organization, project, environment = _resolve_environment(
         org_slug, project_slug, env_slug
     )
-    if not AdministerProjectPermission(project.id).can():
-        abort(403)
+    _require_settings_access(AdministerProjectPermission(project.id))
     resource = (
         PostgresResource.query.filter_by(
             environment_id=environment.id, slug=resource_slug
@@ -2753,8 +2781,7 @@ def environment_redis_settings(org_slug, project_slug, env_slug, resource_slug):
     organization, project, environment = _resolve_environment(
         org_slug, project_slug, env_slug
     )
-    if not AdministerProjectPermission(project.id).can():
-        abort(403)
+    _require_settings_access(AdministerProjectPermission(project.id))
     resource = (
         RedisResource.query.filter_by(environment_id=environment.id, slug=resource_slug)
         .filter(RedisResource.deleted_at.is_(None))
@@ -3103,15 +3130,7 @@ def organization_delete(org_slug):
         abort(403)
     form = DeleteOrganizationForm()
     if form.validate_on_submit():
-        # Tear down Tailscale operator if configured
-        if organization.tailscale_integration:
-            organization.tailscale_integration.operator_state = "removing"
-            teardown_tailscale_operator.delay(str(organization.id))
-        for project in list(organization.projects):
-            if project.deleted_at is None:
-                _soft_delete_project(project, organization)
-        organization.deleted_at = datetime.datetime.now(datetime.timezone.utc)
-        organization.slug = f"{organization.slug}--deleted-{uuid.uuid4().hex[:12]}"
+        _soft_delete_organization(organization)
         activity = Activity(
             verb="delete",
             object=organization,
@@ -4056,7 +4075,12 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
 @login_required
 def project_application_settings(org_slug, project_slug, app_slug):
     org, project, application = _lookup_app_context(
-        org_slug, project_slug, app_slug, require_admin=True
+        org_slug,
+        project_slug,
+        app_slug,
+        # Same policy as _require_settings_access: administer required,
+        # super admins may GET a read-only view.
+        require_admin=(request.method == "POST" or not current_user.admin),
     )
 
     form = _prepare_application_settings_form(application, org)
@@ -4278,7 +4302,10 @@ def _render_application_settings(application, org, project, form):
 @login_required
 def project_application_settings_legacy(application_id):
     application = Application.query.filter_by(id=application_id).first_or_404()
-    if not AdministerApplicationPermission(application.id).can():
+    if (
+        not AdministerApplicationPermission(application.id).can()
+        and not current_user.admin
+    ):
         abort(403)
     return redirect(
         url_for(
@@ -4300,7 +4327,12 @@ def project_application_environment_settings(
     org_slug, project_slug, env_slug, app_slug
 ):
     org, project, application = _lookup_app_context(
-        org_slug, project_slug, app_slug, require_admin=True
+        org_slug,
+        project_slug,
+        app_slug,
+        # Same policy as _require_settings_access: administer required,
+        # super admins may GET a read-only view.
+        require_admin=(request.method == "POST" or not current_user.admin),
     )
 
     environment = Environment.query.filter_by(
@@ -4945,8 +4977,20 @@ def _render_audit_log(scope_filter, template_context):
 
     entry_changes = compute_audit_changes(entries)
 
+    org_names = {}
+    if template_context.get("scope_type") == "global":
+        org_ids = {e.organization_id for e in entries if e.organization_id}
+        if org_ids:
+            org_names = {
+                org_id: name
+                for org_id, name in db.session.query(
+                    Organization.id, Organization.name
+                ).filter(Organization.id.in_(org_ids))
+            }
+
     return render_template(
         "user/audit_log.html",
+        org_names=org_names,
         entries=entries,
         entry_changes=entry_changes,
         has_newer=has_newer,
@@ -5639,7 +5683,9 @@ def deployment_detail_legacy(deployment_id):
 )
 @login_required
 def application_release_create(org_slug, project_slug, app_slug):
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    org, project, application = _lookup_app_context(
+        org_slug, project_slug, app_slug, require_member=True
+    )
 
     environment_id = request.form.get("environment_id")
     app_env = _resolve_app_env(application, environment_id=environment_id)
@@ -5688,7 +5734,7 @@ def application_release_create(org_slug, project_slug, app_slug):
 @login_required
 def application_release_create_legacy(application_id):
     application = Application.query.filter_by(id=application_id).first_or_404()
-    if not ViewApplicationPermission(application.id).can():
+    if not MemberViewApplicationPermission(application.id).can():
         abort(403)
     return redirect(
         url_for(

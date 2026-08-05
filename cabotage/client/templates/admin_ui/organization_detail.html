@@ -1,0 +1,164 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, page_header %}
+{% from "admin_ui/_shared.html" import admin_tab_nav, confirm_action_modal, state_badge, org_role %}
+
+{% block title %}{{ organization.name }} - Admin - Cabotage{% endblock %}
+
+{% block tab_bar %}
+  {{ admin_tab_nav('organizations') }}
+{% endblock tab_bar %}
+
+{% set action_url = url_for('admin.organization_detail', org_id=organization.id) %}
+
+{% block content %}
+  {% call page_header(organization.name, organization.slug) %}
+    {% if organization.deleted_at %}
+      <span class="badge badge-error badge-sm" title="{{ organization.deleted_at }}">deleted</span>
+    {% else %}
+      <a href="{{ url_for('user.organization', org_slug=organization.slug) }}"
+         class="btn btn-ghost btn-sm gap-1.5">{{ icon('arrow-up-right', 'w-3.5 h-3.5') }} View org</a>
+    {% endif %}
+    <a href="{{ url_for('admin.organizations') }}" class="btn btn-ghost btn-sm gap-1.5">{{ icon('arrow-left', 'w-3.5 h-3.5') }} Organizations</a>
+  {% endcall %}
+
+  <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Members</h2>
+  {% if members %}
+    <div class="overflow-x-auto border border-base-300 rounded-lg mb-4">
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Role</th>
+            <th class="text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for member in members %}
+          <tr>
+            <td>
+              <a href="{{ url_for('admin.user_detail', user_id=member.user_id) }}"
+                 class="link link-hover font-medium">{{ member.user.username | display_username }}</a>
+              <div class="text-xs text-base-content/40">{{ member.user.email }}</div>
+            </td>
+            <td>
+              {{ org_role(member.admin) }}
+            </td>
+            <td class="text-right">
+              <div class="flex justify-end gap-2">
+                <form method="post" action="{{ action_url }}">
+                  {{ member_action_form.csrf_token }}
+                  <input type="hidden" name="user_id" value="{{ member.user_id }}">
+                  {% if member.admin %}
+                    <input type="hidden" name="_action" value="demote_member">
+                    <button type="submit" class="btn btn-ghost btn-xs">Demote</button>
+                  {% else %}
+                    <input type="hidden" name="_action" value="promote_member">
+                    <button type="submit" class="btn btn-ghost btn-xs">Make org admin</button>
+                  {% endif %}
+                </form>
+                <button type="button" class="btn btn-ghost btn-xs text-error"
+                        onclick="document.getElementById('remove-member-{{ member.user_id }}').showModal()">Remove</button>
+              </div>
+              {{ confirm_action_modal('remove-member-' ~ member.user_id, 'Remove member', 'remove_member',
+                   org_action_form, action_url,
+                   description='Remove %s from %s. They lose access to all of its projects.'|format(member.user.username | display_username, organization.name),
+                   submit_label='Remove', hidden_fields={'user_id': member.user_id}) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="text-sm text-base-content/40 mb-4">No members — add one below to repair access.</p>
+  {% endif %}
+
+  <form method="post" action="{{ action_url }}"
+        class="flex flex-wrap items-end gap-3 border border-base-300 rounded-lg p-4 mb-6">
+    {{ add_member_form.csrf_token }}
+    <input type="hidden" name="_action" value="add_member">
+    <div>
+      <label class="label py-0 pb-1" for="add-member-identity">
+        <span class="label-text text-xs text-base-content/60">Email or username</span>
+      </label>
+      {{ add_member_form.identity(class_="input input-bordered input-sm w-64", id="add-member-identity", placeholder="user@example.com") }}
+    </div>
+    <label class="label cursor-pointer gap-2 py-1.5">
+      {{ add_member_form.admin(class_="checkbox checkbox-sm") }}
+      <span class="label-text text-sm">org admin</span>
+    </label>
+    <button type="submit" class="btn btn-primary btn-sm gap-1.5">{{ icon('plus', 'w-3.5 h-3.5') }} Add member</button>
+  </form>
+
+  <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Projects</h2>
+  {% if projects %}
+    <div class="overflow-x-auto border border-base-300 rounded-lg">
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th>Project</th>
+            <th>State</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for project in projects %}
+          <tr class="{% if project.deleted_at %}opacity-60{% endif %}">
+            <td>
+              {% if project.deleted_at or organization.deleted_at %}
+                <span class="font-medium">{{ project.name }}</span>
+              {% else %}
+                <a href="{{ url_for('user.project', org_slug=organization.slug, project_slug=project.slug) }}"
+                   class="link link-hover font-medium">{{ project.name }}</a>
+              {% endif %}
+              <span class="text-xs text-base-content/40 ml-2">{{ project.slug }}</span>
+            </td>
+            <td>
+              {{ state_badge(project) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="text-sm text-base-content/40">No projects.</p>
+  {% endif %}
+
+  {% if organization.deleted_at %}
+    <div class="border border-base-300 rounded-lg mt-6 p-4 flex items-center justify-between gap-4">
+      <div>
+        <div class="text-sm font-medium">Restore organization</div>
+        <p class="text-xs text-base-content/40">
+          Database-level only: projects deleted with it are restored, but cluster
+          resources, certificates, and integrations are not recreated.
+          Applications need redeploys.
+        </p>
+      </div>
+      <button type="button" class="btn btn-primary btn-sm"
+              onclick="document.getElementById('org-restore-modal').showModal()">Restore</button>
+    </div>
+    {{ confirm_action_modal('org-restore-modal', 'Restore organization', 'restore',
+         org_action_form, action_url,
+         description='Restore %s and the projects deleted with it.'|format(organization.name),
+         submit_label='Restore', submit_class='btn-primary') }}
+  {% else %}
+    <div class="collapse collapse-arrow bg-error/5 border border-error/20 rounded-lg mt-6">
+      <input type="checkbox" />
+      <div class="collapse-title text-sm font-medium text-error">Danger Zone</div>
+      <div class="collapse-content">
+        <p class="text-sm text-base-content/60 mb-3">
+          Soft-deletes the organization and all its projects, tears down the
+          Tailscale operator, and schedules cluster cleanup.
+        </p>
+        <button type="button" class="btn btn-error btn-sm gap-1.5"
+                onclick="document.getElementById('org-delete-modal').showModal()">
+          {{ icon('trash', 'w-3.5 h-3.5') }} Delete organization
+        </button>
+      </div>
+    </div>
+    {{ confirm_action_modal('org-delete-modal', 'Delete organization', 'soft_delete',
+         org_action_form, action_url,
+         description='All projects and applications in %s stop being served. Cluster cleanup is scheduled immediately.'|format(organization.name),
+         confirm_text=organization.slug, submit_label='Delete') }}
+  {% endif %}
+{% endblock %}

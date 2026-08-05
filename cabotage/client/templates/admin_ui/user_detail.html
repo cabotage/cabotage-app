@@ -1,0 +1,154 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, page_header, status_badge %}
+{% from "admin_ui/_shared.html" import admin_tab_nav, confirm_action_modal, org_role %}
+
+{% block title %}{{ user.username | display_username }} - Admin - Cabotage{% endblock %}
+
+{% block tab_bar %}
+  {{ admin_tab_nav('users') }}
+{% endblock tab_bar %}
+
+{% set display_name = user.username | display_username %}
+{% set action_url = url_for('admin.user_detail', user_id=user.id) %}
+
+{% block content %}
+  {% call page_header(display_name, user.email) %}
+    <a href="{{ url_for('admin.users') }}" class="btn btn-ghost btn-sm gap-1.5">{{ icon('arrow-left', 'w-3.5 h-3.5') }} Users</a>
+  {% endcall %}
+
+  <div class="grid md:grid-cols-2 gap-4 mb-6">
+    <div class="border border-base-300 rounded-lg p-4">
+      <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Account</h2>
+      <dl class="text-sm grid grid-cols-[auto_1fr] gap-x-6 gap-y-2">
+        <dt class="text-base-content/40">Status</dt>
+        <dd>{{ status_badge('Active' if user.active else 'Inactive') }}</dd>
+        <dt class="text-base-content/40">Access</dt>
+        <dd>
+          {% if user.admin %}
+            <span class="badge badge-primary badge-sm gap-1">{{ icon('shield', 'w-3 h-3') }} super admin</span>
+          {% else %}
+            <span class="text-base-content/60">member</span>
+          {% endif %}
+        </dd>
+        <dt class="text-base-content/40">Registered</dt>
+        <dd class="tabular-nums" title="{{ user.registered_at }}">{{ user.registered_at | timeago }}</dd>
+        {% if user.last_login_at %}
+          <dt class="text-base-content/40">Last login</dt>
+          <dd class="tabular-nums" title="{{ user.last_login_at }}">{{ user.last_login_at | timeago }}</dd>
+        {% endif %}
+        {% if user.github_identity %}
+          <dt class="text-base-content/40">GitHub</dt>
+          <dd>
+            <a href="https://github.com/{{ user.github_identity.github_username }}"
+               class="link link-hover inline-flex items-center gap-1"
+               rel="noopener" target="_blank">
+              {{ icon('github', 'w-3.5 h-3.5') }} {{ user.github_identity.github_username }}
+            </a>
+          </dd>
+        {% endif %}
+      </dl>
+    </div>
+
+    <div class="border border-base-300 rounded-lg p-4">
+      <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">Multi-factor Auth</h2>
+      <dl class="text-sm grid grid-cols-[auto_1fr] gap-x-6 gap-y-2">
+        <dt class="text-base-content/40">Enrolled</dt>
+        <dd>
+          {% if has_mfa %}
+            <span class="badge badge-success badge-sm gap-1">{{ icon('lock', 'w-3 h-3') }} yes</span>
+          {% else %}
+            <span class="badge badge-neutral badge-sm gap-1">{{ icon('unlock', 'w-3 h-3') }} no</span>
+          {% endif %}
+        </dd>
+        <dt class="text-base-content/40">Authenticator</dt>
+        <dd class="text-base-content/60">{{ 'configured' if has_totp else '—' }}</dd>
+        <dt class="text-base-content/40">Security keys</dt>
+        <dd class="tabular-nums text-base-content/60">{{ num_webauthn }}</dd>
+      </dl>
+    </div>
+  </div>
+
+  <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Organizations</h2>
+  {% if memberships %}
+    <div class="overflow-x-auto border border-base-300 rounded-lg mb-6">
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th>Organization</th>
+            <th>Role</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for membership in memberships %}
+          <tr>
+            <td>
+              <a href="{{ url_for('admin.organization_detail', org_id=membership.organization_id) }}"
+                 class="link link-hover font-medium">{{ membership.organization.name }}</a>
+              <span class="text-xs text-base-content/40 ml-2">{{ membership.organization.slug }}</span>
+            </td>
+            <td>
+              {{ org_role(membership.admin) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="text-sm text-base-content/40 mb-6">Not a member of any organization.</p>
+  {% endif %}
+
+  <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Actions</h2>
+  <div class="border border-base-300 rounded-lg divide-y divide-base-300">
+    <div class="flex items-center justify-between px-4 py-3 gap-4">
+      <div>
+        <div class="text-sm font-medium">Super admin</div>
+        <p class="text-xs text-base-content/40">Platform-wide view access and this admin panel.</p>
+      </div>
+      {% if user.admin %}
+        <button type="button" class="btn btn-outline btn-error btn-sm"
+                onclick="document.getElementById('revoke-admin-modal').showModal()">Revoke</button>
+      {% else %}
+        <button type="button" class="btn btn-primary btn-sm"
+                onclick="document.getElementById('grant-admin-modal').showModal()">Grant</button>
+      {% endif %}
+    </div>
+    <div class="flex items-center justify-between px-4 py-3 gap-4">
+      <div>
+        <div class="text-sm font-medium">Account access</div>
+        <p class="text-xs text-base-content/40">Deactivating blocks login and revokes active sessions.</p>
+      </div>
+      {% if user.active %}
+        <button type="button" class="btn btn-outline btn-error btn-sm"
+                onclick="document.getElementById('deactivate-modal').showModal()">Deactivate</button>
+      {% else %}
+        <form method="post" action="{{ action_url }}">
+          {{ action_form.hidden_tag() }}
+          <input type="hidden" name="_action" value="activate">
+          <button type="submit" class="btn btn-primary btn-sm">Activate</button>
+        </form>
+      {% endif %}
+    </div>
+    <div class="flex items-center justify-between px-4 py-3 gap-4">
+      <div>
+        <div class="text-sm font-medium">Reset MFA</div>
+        <p class="text-xs text-base-content/40">Clears authenticator, security keys, and recovery codes; revokes all sessions. They re-enroll at next login.</p>
+      </div>
+      <button type="button" class="btn btn-outline btn-error btn-sm"
+              onclick="document.getElementById('reset-mfa-modal').showModal()">Reset MFA</button>
+    </div>
+  </div>
+
+  {{ confirm_action_modal('grant-admin-modal', 'Grant super admin', 'grant_admin', action_form, action_url,
+       description='%s will be able to view every organization and use this admin panel.'|format(display_name),
+       submit_label='Grant admin', submit_class='btn-primary') }}
+  {{ confirm_action_modal('revoke-admin-modal', 'Revoke super admin', 'revoke_admin', action_form, action_url,
+       description='%s will lose platform-wide access immediately.'|format(display_name),
+       submit_label='Revoke admin') }}
+  {{ confirm_action_modal('deactivate-modal', 'Deactivate account', 'deactivate', action_form, action_url,
+       description='%s will be unable to log in and all their active sessions are revoked.'|format(display_name),
+       submit_label='Deactivate') }}
+  {{ confirm_action_modal('reset-mfa-modal', 'Reset MFA', 'reset_mfa', action_form, action_url,
+       description='All second factors for %s are removed and their sessions revoked. Only do this after verifying the request out-of-band.'|format(display_name),
+       confirm_text=display_name, submit_label='Reset MFA') }}
+{% endblock %}
