@@ -4,15 +4,15 @@ import os
 from typing import TYPE_CHECKING
 
 from flask_env import MetaFlaskEnv
-from flask_security import uia_username_mapper, uia_email_mapper
+from flask_security.utils import uia_username_mapper, uia_email_mapper
 
 if TYPE_CHECKING:
-    from flask import Config as FlaskConfig
+    from cabotage._types.config import ConfigDict
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 
 
-def validate_tenant_postgres_backup_config(config: FlaskConfig) -> None:
+def validate_tenant_postgres_backup_config(config: ConfigDict) -> None:
     if not config.get("TENANT_POSTGRES_BACKUPS_ENABLED"):
         return
 

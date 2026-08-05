@@ -21,7 +21,8 @@ from flask_debugtoolbar import DebugToolbarExtension
 import humanize as humanize_lib
 from flask_mail import Mail
 from flask_migrate import Migrate
-from flask_security import Security, SQLAlchemyUserDatastore
+from flask_security.core import Security
+from flask_security.datastore import SQLAlchemyUserDatastore
 from flask_principal import Principal, identity_loaded
 
 from flask_sqlalchemy import SQLAlchemy
@@ -76,11 +77,15 @@ if TYPE_CHECKING:
         query_class: ClassVar[type]
 
     from collections.abc import Callable, Iterable
+    from typing import cast
     from types import TracebackType
     from datetime import datetime
 
     from sentry_sdk.types import Event, Hint
     from wsgiref.types import WSGIEnvironment, StartResponse
+
+    from cabotage._types.server import TypedFlask
+
 
 else:
     Model = db.Model
@@ -122,7 +127,7 @@ sentry_sdk.init(
 )
 
 
-def celery_init_app(app: Flask) -> Celery:
+def celery_init_app(app: TypedFlask) -> Celery:
     class FlaskTask(Task):
         def __call__(self, *args: object, **kwargs: object) -> object:
             with app.app_context():
@@ -207,6 +212,9 @@ def create_app() -> Flask:
     # set config
     app_settings = os.getenv("APP_SETTINGS", "cabotage.server.config.Config")
     app.config.from_object(app_settings)
+
+    if TYPE_CHECKING:
+        app = cast(TypedFlask, app)
 
     # TOTP_SECRETS must be a dict — deserialize if loaded as a string from env
     totp_secrets = app.config.get("SECURITY_TOTP_SECRETS")

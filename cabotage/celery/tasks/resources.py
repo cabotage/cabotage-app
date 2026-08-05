@@ -33,7 +33,7 @@ from cabotage.celery.tasks.deploy import ensure_namespace, ensure_network_polici
 
 if TYPE_CHECKING:
     from sqlalchemy import Connection
-    from ._types import (
+    from cabotage._types.tasks import (
         BackingServicePodAnnotations,
         BackupSettings,
         CnpgAffinity,

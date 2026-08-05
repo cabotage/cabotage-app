@@ -1,18 +1,27 @@
+from __future__ import annotations
+
+
 import hmac
 import logging
+from typing import TYPE_CHECKING, cast
 
-from flask import Blueprint, abort, current_app, jsonify, request
+from flask import Blueprint, abort, current_app, jsonify, request, Response
 
 from cabotage.server import db
 from cabotage.server.alerting.ingest import parse_alertmanager_timestamp, upsert_alert
+
+if TYPE_CHECKING:
+    from uuid import UUID
+
+    from cabotage._types.config import ConfigDict
 
 log = logging.getLogger(__name__)
 
 alerting_blueprint = Blueprint("alerting", __name__)
 
 
-def _validate_bearer_token():
-    secret = current_app.config.get("ALERTMANAGER_WEBHOOK_SECRET")
+def _validate_bearer_token() -> bool:
+    secret = cast("ConfigDict", current_app.config).get("ALERTMANAGER_WEBHOOK_SECRET")
     if not secret:
         log.warning("ALERTMANAGER_WEBHOOK_SECRET not configured, rejecting request")
         return False
@@ -26,7 +35,7 @@ def _validate_bearer_token():
 
 
 @alerting_blueprint.route("/alertmanager/webhooks", methods=["POST"])
-def alertmanager_webhook():
+def alertmanager_webhook() -> Response:
     if not _validate_bearer_token():
         abort(403)
 
@@ -42,7 +51,7 @@ def alertmanager_webhook():
     receiver = payload.get("receiver")
 
     alerts_processed = 0
-    dispatch_ids = []
+    dispatch_ids: list[UUID] = []
     for alert_data in alerts_data:
         labels = alert_data.get("labels", {})
         processed, dispatch_id = upsert_alert(

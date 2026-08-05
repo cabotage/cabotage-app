@@ -36,10 +36,11 @@ if TYPE_CHECKING:
     from _typeshed import SupportsRead, StrOrBytesPath
     from collections.abc import Generator
 
+    class Entry(TypedDict):
+        env: list[tuple[str, str]]
+        cmd: str
 
-class Procfile(TypedDict):
-    env: list[tuple[str, str]]
-    cmd: str
+    type Procfile = dict[str, Entry]
 
 
 _PROCFILE_LINE = re.compile(
@@ -104,7 +105,7 @@ def _parse_procfile_line(line: str) -> tuple[str, str, list[tuple[str, str]]]:
     )
 
 
-def loads(content: str) -> dict[str, Procfile]:
+def loads(content: str) -> Procfile:
     """Load a Procfile from a string."""
     lines = _group_lines(line for line in content.split("\n"))
     lines = [
@@ -145,12 +146,12 @@ def loads(content: str) -> dict[str, Procfile]:
     return {k: {"cmd": cmd, "env": env} for _, (k, cmd, env) in lines}
 
 
-def load(stream: SupportsRead[bytes]) -> dict[str, Procfile]:
+def load(stream: SupportsRead[bytes]) -> Procfile:
     """Load a Procfile from a file-like object."""
     return loads(stream.read().decode("utf-8"))
 
 
-def loadfile(path: StrOrBytesPath) -> dict[str, Procfile]:
+def loadfile(path: StrOrBytesPath) -> Procfile:
     """Load a Procfile from a file."""
     with open(path, "rb") as stream:
         return load(stream)

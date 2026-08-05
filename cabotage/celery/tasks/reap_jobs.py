@@ -30,7 +30,7 @@ from cabotage.server.models.projects import (
 
 if TYPE_CHECKING:
     from kubernetes.client import V1Job
-    from cabotage.celery.tasks._types import Resources
+    from cabotage._types.tasks import Resources
 
 DEFAULT_REAP_LIMIT = 10
 

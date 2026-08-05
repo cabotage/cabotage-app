@@ -8,16 +8,16 @@ from kubernetes.client.api_client import ApiClient
 from kubernetes.config import load_incluster_config, load_kube_config
 
 if TYPE_CHECKING:
-    from flask import Flask
+    from cabotage._types.server import TypedFlask
 
 
 class Kubernetes(object):
-    def __init__(self, app: Flask | None = None) -> None:
+    def __init__(self, app: TypedFlask | None = None) -> None:
         self.app = app
         if app is not None:
             self.init_app(app)
 
-    def init_app(self, app: Flask) -> None:
+    def init_app(self, app: TypedFlask) -> None:
         try:
             load_incluster_config()
         except Exception:

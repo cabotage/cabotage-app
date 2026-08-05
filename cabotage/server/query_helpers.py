@@ -4,7 +4,24 @@ These helpers extract duplicated N+1-avoidance patterns from view functions
 into reusable functions.
 """
 
+from __future__ import annotations
+
 import uuid as _uuid
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from cabotage._types.query_helpers import (
+        AppEnvStatusSet,
+        AppStatus,
+        ChangeDetails,
+        ConfigItem,
+        IngressItem,
+        LatestVariants,
+    )
+    from cabotage.utils.procfile import Procfile
+
 
 from sqlalchemy import and_, case, func, or_
 
@@ -17,16 +34,16 @@ from cabotage.server.models.projects import (
 )
 
 
-def compute_app_status_sets(app_ids):
+def compute_app_status_sets(app_ids: list[_uuid.UUID]) -> AppStatus:
     """Batch-compute deployed/errored/building status for a list of application IDs.
 
     Queries via the default ApplicationEnvironment (k8s_identifier IS NULL).
 
     Returns dict with keys: deployed_app_ids, errored_app_ids, building_app_ids
     """
-    deployed_app_ids = set()
-    errored_app_ids = set()
-    building_app_ids = set()
+    deployed_app_ids: set[_uuid.UUID] = set()
+    errored_app_ids: set[_uuid.UUID] = set()
+    building_app_ids: set[_uuid.UUID] = set()
 
     if not app_ids:
         return {
@@ -45,10 +62,10 @@ def compute_app_status_sets(app_ids):
             ApplicationEnvironment.deleted_at.is_(None),
             ApplicationEnvironment.k8s_identifier.is_(None),
             or_(
-                Deployment.complete == True,  # noqa: E712
+                Deployment.complete.is_(True),
                 and_(
-                    Deployment.complete == False,  # noqa: E712
-                    Deployment.error == False,  # noqa: E712
+                    Deployment.complete.is_(False),
+                    Deployment.error.is_(False),
                 ),
             ),
         )
@@ -66,7 +83,7 @@ def compute_app_status_sets(app_ids):
             Image.application_id.in_(app_ids),
             ApplicationEnvironment.deleted_at.is_(None),
             ApplicationEnvironment.k8s_identifier.is_(None),
-            Image.error == True,  # noqa: E712
+            Image.error.is_(True),
         )
         .group_by(Image.application_id)
         .subquery()
@@ -81,7 +98,7 @@ def compute_app_status_sets(app_ids):
             Image.application_id.in_(app_ids),
             ApplicationEnvironment.deleted_at.is_(None),
             ApplicationEnvironment.k8s_identifier.is_(None),
-            Image.built == True,  # noqa: E712
+            Image.built.is_(True),
         )
         .group_by(Image.application_id)
         .subquery()
@@ -105,8 +122,8 @@ def compute_app_status_sets(app_ids):
             Image.application_id.in_(app_ids),
             ApplicationEnvironment.deleted_at.is_(None),
             ApplicationEnvironment.k8s_identifier.is_(None),
-            Image.built == False,  # noqa: E712
-            Image.error == False,  # noqa: E712
+            Image.built.is_(False),
+            Image.error.is_(False),
         )
         .distinct()
     }
@@ -118,17 +135,17 @@ def compute_app_status_sets(app_ids):
     }
 
 
-def compute_ae_status_sets(ae_ids):
+def compute_ae_status_sets(ae_ids: list[_uuid.UUID]) -> AppEnvStatusSet:
     """Batch-compute deployment/image status for a list of ApplicationEnvironment IDs.
 
     Returns dict with keys: deploying_ae_ids, completed_ae_ids, running_ae_ids,
     building_ae_ids, errored_ae_ids, last_deploy_by_ae, deploy_count
     """
-    deploying_ae_ids = set()
-    completed_ae_ids = set()
-    running_ae_ids = set()
-    building_ae_ids = set()
-    errored_ae_ids = set()
+    deploying_ae_ids: set[_uuid.UUID] = set()
+    completed_ae_ids: set[_uuid.UUID] = set()
+    running_ae_ids: set[_uuid.UUID] = set()
+    building_ae_ids: set[_uuid.UUID] = set()
+    errored_ae_ids: set[_uuid.UUID] = set()
     last_deploy_by_ae = {}
     deploy_count = 0
 
@@ -181,7 +198,7 @@ def compute_ae_status_sets(ae_ids):
         )
         .filter(
             Deployment.application_environment_id.in_(ae_ids),
-            Deployment.complete == True,  # noqa: E712
+            Deployment.complete.is_(True),
         )
         .group_by(Deployment.application_environment_id)
         .all()
@@ -194,18 +211,18 @@ def compute_ae_status_sets(ae_ids):
     image_stats = (
         db.session.query(
             Image.application_environment_id,
-            func.max(
-                case((Image.error == True, Image.version), else_=None)  # noqa: E712
-            ).label("max_error_v"),
-            func.max(
-                case((Image.built == True, Image.version), else_=None)  # noqa: E712
-            ).label("max_built_v"),
+            func.max(case((Image.error.is_(True), Image.version), else_=None)).label(
+                "max_error_v"
+            ),
+            func.max(case((Image.built.is_(True), Image.version), else_=None)).label(
+                "max_built_v"
+            ),
             func.count(
                 case(
                     (
                         and_(
-                            Image.built == False,  # noqa: E712
-                            Image.error == False,  # noqa: E712
+                            Image.built.is_(False),
+                            Image.error.is_(False),
                         ),
                         1,
                     )
@@ -238,33 +255,37 @@ class RelatedObjectResolver:
     Avoids cascading queries like deployment.release_object → release.image_object.
     """
 
-    def __init__(self, images=None, releases=None):
-        self._release_cache = {}
+    def __init__(
+        self, images: list[Image] | None = None, releases: list[Release] | None = None
+    ) -> None:
+        self._release_cache: dict[_uuid.UUID, Release] = {}
         self._image_cache = {i.id: i for i in (images or [])}
         self._all_releases = releases or []
 
-    def warm_caches(self, deployments, releases):
+    def warm_caches(
+        self, deployments: list[Deployment], releases: list[Release]
+    ) -> None:
         """Pre-resolve all Release/Image references from deployments and releases."""
         for d in deployments:
             self._get_release(d)
         for r in releases:
             self._get_image_for_release(r)
 
-    def build_lookup_dicts(self):
+    def build_lookup_dicts(self) -> tuple[dict[str, Release], dict[str, Image]]:
         """Return (release_by_id, image_by_id) dicts keyed by string UUID."""
-        release_by_id = {str(k): v for k, v in self._release_cache.items() if v}
-        image_by_id = {str(k): v for k, v in self._image_cache.items() if v}
+        release_by_id = {str(k): v for k, v in self._release_cache.items()}
+        image_by_id = {str(k): v for k, v in self._image_cache.items()}
         return release_by_id, image_by_id
 
-    def get_release(self, deploy):
+    def get_release(self, deploy: Deployment | None) -> Release | None:
         """Get the Release object referenced by a Deployment's JSONB field."""
         return self._get_release(deploy)
 
-    def get_image_for_release(self, rel):
+    def get_image_for_release(self, rel: Release | None) -> Image | None:
         """Get the Image object referenced by a Release's JSONB field."""
         return self._get_image_for_release(rel)
 
-    def _get_release(self, deploy):
+    def _get_release(self, deploy: Deployment | None) -> Release | None:
         if not deploy or not deploy.release:
             return None
         rid = deploy.release.get("id")
@@ -278,7 +299,7 @@ class RelatedObjectResolver:
             self._release_cache[rid] = found
         return self._release_cache[rid]
 
-    def _get_image_for_release(self, rel):
+    def _get_image_for_release(self, rel: Release | None) -> Image | None:
         if not rel or not rel.image:
             return None
         iid = rel.image.get("id")
@@ -290,7 +311,9 @@ class RelatedObjectResolver:
         return self._image_cache[iid]
 
 
-def extract_latest_variants(images, releases, deployments):
+def extract_latest_variants(
+    images: list[Image], releases: list[Release], deployments: list[Deployment]
+) -> LatestVariants:
     """Extract latest_* variants from pre-fetched lists.
 
     Returns dict with keys: latest_image, latest_image_built, latest_image_error,
@@ -317,12 +340,14 @@ def extract_latest_variants(images, releases, deployments):
     }
 
 
-def compute_process_counts(releases, resolver):
+def compute_process_counts(
+    releases: list[Release], resolver: RelatedObjectResolver
+) -> dict[str, int]:
     """Compute service process count per release (excludes release/postdeploy commands).
 
     Returns {str(release_id): int}.
     """
-    release_proc_counts = {}
+    release_proc_counts: dict[str, int] = {}
     for r in releases:
         img = resolver.get_image_for_release(r)
         if r.built and img and img.processes:
@@ -357,9 +382,9 @@ _INGRESS_SETTING_KEYS = {
 }
 
 
-def _diff_config_item(old, new):
+def _diff_config_item(old: ConfigItem, new: ConfigItem) -> list[str]:
     """Return list of human-readable descriptions for a changed config entry."""
-    changes = []
+    changes: list[str] = []
     if old.get("version_id") != new.get("version_id"):
         changes.append("value changed")
     if old.get("secret") != new.get("secret"):
@@ -371,14 +396,14 @@ def _diff_config_item(old, new):
     return changes
 
 
-def _strip_id(d):
+def _strip_id(d: Mapping[str, object]) -> Mapping[str, object]:
     """Return a dict copy without the 'id' key (for comparing snapshots)."""
     return {k: v for k, v in d.items() if k != "id"}
 
 
-def _diff_ingress_item(old, new):
+def _diff_ingress_item(old: IngressItem, new: IngressItem) -> list[str]:
     """Return list of human-readable descriptions for a changed ingress entry."""
-    parts = []
+    parts: list[str] = []
 
     # --- Hosts: added, removed, and property changes on existing hosts ---
     old_hosts_by_name = {h["hostname"]: h for h in old.get("hosts", [])}
@@ -390,7 +415,7 @@ def _diff_ingress_item(old, new):
     if h_removed:
         parts.append("hosts removed: " + ", ".join(h_removed))
     # Check property changes on hosts that exist in both
-    h_changed = []
+    h_changed: list[str] = []
     for hostname in sorted(set(old_hosts_by_name) & set(new_hosts_by_name)):
         oh = _strip_id(old_hosts_by_name[hostname])
         nh = _strip_id(new_hosts_by_name[hostname])
@@ -423,7 +448,7 @@ def _diff_ingress_item(old, new):
                 for p in p_removed
             )
         )
-    p_changed = []
+    p_changed: list[str] = []
     for path in sorted(set(old_paths_by_path) & set(new_paths_by_path)):
         op = _strip_id(old_paths_by_path[path])
         np = _strip_id(new_paths_by_path[path])
@@ -444,7 +469,9 @@ def _diff_ingress_item(old, new):
     return parts
 
 
-def compute_release_change_details(releases, deployments=None):
+def compute_release_change_details(
+    releases: list[Release], deployments: list[Deployment] | None = None
+) -> dict[str, ChangeDetails]:
     """Compute granular change descriptions for a list of releases.
 
     For each release that has config or ingress changes, diffs the release's
@@ -471,7 +498,7 @@ def compute_release_change_details(releases, deployments=None):
                 if rid:
                     deployed_release_by_id[str(rid)] = d
 
-    result = {}
+    result: dict[str, ChangeDetails] = {}
     for i, rel in enumerate(releases):
         cfg_ch = rel.configuration_changes or {}
         ing_ch = rel.ingress_changes or {}
@@ -498,7 +525,7 @@ def compute_release_change_details(releases, deployments=None):
         prev_ing = (prev_rel.ingresses or {}) if prev_rel else {}
         cur_cfg = rel.configuration or {}
         cur_ing = rel.ingresses or {}
-        details = {"config": {}, "ingress": {}}
+        details: ChangeDetails = {"config": {}, "ingress": {}}
 
         for name in cfg_changed:
             field_changes = _diff_config_item(
@@ -516,7 +543,9 @@ def compute_release_change_details(releases, deployments=None):
     return result
 
 
-def split_image_processes(image):
+def split_image_processes(
+    image: Image | None,
+) -> tuple[Procfile, Procfile, Procfile, Procfile]:
     """Split image.processes into (service_procs, release_cmds, postdeploy_cmds, job_procs).
 
     Mirrors Release.processes / release_commands / postdeploy_commands / job_processes
@@ -524,7 +553,7 @@ def split_image_processes(image):
     """
     if not image or not image.processes:
         return {}, {}, {}, {}
-    all_procs = image.processes
+    all_procs = cast("Procfile", image.processes)
     service_procs = {
         k: v
         for k, v in all_procs.items()

@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import collections
 import datetime
 import json
 import re
 import time
 import uuid
+from typing import TYPE_CHECKING, overload, Literal, NamedTuple
 
 from flask import (
     Blueprint,
@@ -168,10 +171,15 @@ from cabotage.utils.build_log_stream import (
 
 from cabotage.utils import oidc
 
+if TYPE_CHECKING:
+    from flask import Response
+    from werkzeug import Response as BaseResponse
+    from cabotage.server import Model
+
 _REGEX_META = re.compile(r"[.*+?{}()|\\^$\[\]]")
 
 
-def _safe_get(model, pk):
+def _safe_get[T: Model](model: T, pk: uuid.UUID) -> T | None:
     """Look up a model by primary key, returning None on invalid input."""
     try:
         return model.query.get(pk)
@@ -187,7 +195,7 @@ user_blueprint = Blueprint(
 )
 
 
-def _organization_requests_enabled():
+def _organization_requests_enabled() -> bool:
     return current_app.config.get("ORGANIZATION_REQUESTS_ENABLED", False)
 
 
@@ -196,7 +204,9 @@ def _require_organization_requests_enabled():
         abort(404)
 
 
-def _config_k8s_namespace(organization, app_env):
+def _config_k8s_namespace(
+    organization: Organization, app_env: ApplicationEnvironment
+) -> str:
     if app_env.environment.uses_environment_namespace:
         return safe_k8s_name(
             organization.k8s_identifier, app_env.environment.k8s_identifier
@@ -404,7 +414,9 @@ def _associate_app_with_environment(application, environment, organization, proj
     return app_env
 
 
-def _lookup_app_context(org_slug, project_slug, app_slug, require_admin=False):
+def _lookup_app_context(
+    org_slug: str, project_slug: str, app_slug: str, require_admin: bool = False
+) -> tuple[Organization, Project, Application]:
     """Resolve org/project/app from slugs and check permissions."""
     organization = (
         Organization.query.filter_by(slug=org_slug)
@@ -477,9 +489,42 @@ def _eager_env_configs(project, environment):
     )
 
 
+@overload
 def _resolve_app_env(
-    application, environment_id=None, env_slug=None, project=None, required=True
-):
+    application: Application,
+    environment_id: uuid.UUID | None = None,
+    env_slug: str | None = None,
+    project: Project | None = None,
+) -> ApplicationEnvironment: ...
+
+
+@overload
+def _resolve_app_env(
+    application: Application,
+    environment_id: uuid.UUID | None = None,
+    env_slug: str | None = None,
+    project: Project | None = None,
+    required: Literal[True] = ...,
+) -> ApplicationEnvironment: ...
+
+
+@overload
+def _resolve_app_env(
+    application: Application,
+    environment_id: uuid.UUID | None = None,
+    env_slug: str | None = None,
+    project: Project | None = None,
+    required: Literal[False] = ...,
+) -> ApplicationEnvironment | None: ...
+
+
+def _resolve_app_env(
+    application: Application,
+    environment_id: uuid.UUID | None = None,
+    env_slug: str | None = None,
+    project: Project | None = None,
+    required: bool = True,
+) -> ApplicationEnvironment | None:
     """Resolve an ApplicationEnvironment for the given application.
 
     For env-enabled projects with an env_slug or environment_id, resolves the
@@ -520,7 +565,9 @@ def _resolve_app_env(
     return app_env
 
 
-def _create_bare_app_env(application, environment):
+def _create_bare_app_env(
+    application: Application, environment: Environment
+) -> ApplicationEnvironment:
     """Create an ApplicationEnvironment without sentinel config or enrollment.
 
     Used for non-env projects where k8s_identifier=NULL signals legacy paths.
@@ -624,9 +671,9 @@ def organization(org_slug):
     org_app_count = len(app_ids)
     org_deploy_count = 0
     last_deploy_ts = None
-    deployed_app_ids = set()
-    errored_app_ids = set()
-    building_app_ids = set()
+    deployed_app_ids: set[uuid.UUID] = set()
+    errored_app_ids: set[uuid.UUID] = set()
+    building_app_ids: set[uuid.UUID] = set()
 
     if app_ids:
         # Deploy count + last deploy timestamp in one query
@@ -640,7 +687,7 @@ def organization(org_slug):
                 Deployment.application_id.in_(app_ids),
                 ApplicationEnvironment.deleted_at.is_(None),
                 ApplicationEnvironment.k8s_identifier.is_(None),
-                Deployment.complete == True,  # noqa: E712
+                Deployment.complete.is_(True),
             )
             .one()
         )
@@ -670,7 +717,7 @@ def organization(org_slug):
 
 @user_blueprint.route("/organizations/<org_slug>/members")
 @login_required
-def organization_members(org_slug):
+def organization_members(org_slug: str) -> str:
     organization = (
         Organization.query.filter_by(slug=org_slug)
         .filter(Organization.deleted_at.is_(None))
@@ -700,7 +747,7 @@ def organization_members(org_slug):
 
 @user_blueprint.route("/organizations/<org_slug>/settings", methods=["GET", "POST"])
 @login_required
-def organization_settings(org_slug):
+def organization_settings(org_slug: str):
     organization = (
         Organization.query.filter_by(slug=org_slug)
         .filter(Organization.deleted_at.is_(None))
@@ -2902,8 +2949,6 @@ def project_application_env_config_subscribe(
 
     env_slug = request.form.get("env_slug")
     app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
-    if app_env is None:
-        abort(404)
 
     # Check that this env config belongs to the same environment
     if env_config.environment_id != app_env.environment_id:
@@ -2971,8 +3016,6 @@ def project_application_env_config_unsubscribe(
 
     env_slug = request.form.get("env_slug")
     app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
-    if app_env is None:
-        abort(404)
 
     existing = EnvironmentConfigSubscription.query.filter_by(
         application_environment_id=app_env.id,
@@ -3132,7 +3175,9 @@ def organization_delete(org_slug):
     "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>"
 )
 @login_required
-def project_application(org_slug, project_slug, app_slug, env_slug=None):
+def project_application(
+    org_slug: str, project_slug: str, app_slug: str, env_slug: str | None = None
+):
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     project = Project.query.filter_by(
         organization_id=organization.id, slug=project_slug
@@ -3616,10 +3661,10 @@ def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
     "/projects/<org_slug>/<project_slug>/applications/create", methods=["GET", "POST"]
 )
 @login_required
-def project_application_create(org_slug, project_slug):
+def project_application_create(org_slug: str, project_slug: str):
     form = CreateApplicationForm()
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
-    project = Project.query.filter_by(
+    project: Project = Project.query.filter_by(
         organization_id=organization.id, slug=project_slug
     ).first_or_404()
     if not AdministerProjectPermission(project.id).can():
@@ -6340,7 +6385,7 @@ def release_deploy(org_slug, project_slug, app_slug, release_id):
 
 @user_blueprint.route("/release/<release_id>/deploy", methods=["POST"])
 @login_required
-def release_deploy_legacy(release_id):
+def release_deploy_legacy(release_id: uuid.UUID) -> BaseResponse:
     release = Release.query.filter_by(id=release_id).first_or_404()
     if not AdministerApplicationPermission(release.application.id).can():
         abort(403)
@@ -6563,7 +6608,7 @@ def _loki_tenant_id(namespace, organization):
     return "|".join(sorted(tenant_ids))
 
 
-def _project_tenant_ids(organization, project):
+def _project_tenant_ids(organization: Organization, project: Project) -> str:
     """Collect all namespace-based tenant IDs for a project.
 
     Returns a pipe-separated string suitable for X-Scope-OrgID.
@@ -7320,7 +7365,14 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
 # ── Shared helpers for multi-level observe metric endpoints ──
 
 
-def _observe_time_params():
+class TimeParams(NamedTuple):
+    range: int
+    step: int
+    start: int
+    end: int
+
+
+def _observe_time_params() -> TimeParams:
     """Parse range/step/start/end from request args."""
     range_param = request.args.get("range", "1h")
     range_map = {
@@ -7348,7 +7400,7 @@ def _observe_time_params():
     else:
         end = int(time.time()) // step * step
         start = end - duration
-    return duration, step, start, end
+    return TimeParams(duration, step, start, end)
 
 
 def _observe_container_filter():
@@ -8347,12 +8399,14 @@ def _query_loki(query, start, end, limit=500, direction="backward", tenant_id=No
         return None
 
 
-def _escape_logql_line_filter(text):
+def _escape_logql_line_filter(text: str) -> str:
     """Escape special characters for a LogQL line-filter string literal."""
     return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "")
 
 
-def _build_log_selectors(namespace, project_slug=None, app_slug=None, env_slug=None):
+def _build_log_selectors(
+    namespace, project_slug=None, app_slug=None, env_slug=None
+) -> list[str]:
     """Build LogQL label selectors for a given scope.
 
     Returns a list of selector strings like ``'namespace="foo"'``.
@@ -8370,7 +8424,9 @@ def _build_log_selectors(namespace, project_slug=None, app_slug=None, env_slug=N
     return selectors
 
 
-def _loki_query_response(selectors, process_names, tenant_id=None):
+def _loki_query_response(
+    selectors: list[str], process_names: list[str], tenant_id: str | None = None
+) -> tuple[Response, int]:
     """Shared Loki query logic.  Returns a Flask JSON response.
 
     *selectors* is a list of LogQL label matchers (strings).
@@ -8484,7 +8540,7 @@ def _loki_query_response(selectors, process_names, tenant_id=None):
     # Trim to limit
     entries = entries[:limit]
 
-    return jsonify({"entries": entries})
+    return jsonify({"entries": entries}), 200
 
 
 @user_blueprint.route(
@@ -8563,7 +8619,9 @@ def project_application_logs_view(org_slug, project_slug, app_slug, env_slug=Non
     defaults={"env_slug": None},
 )
 @login_required
-def project_application_logs_query(org_slug, project_slug, app_slug, env_slug=None):
+def project_application_logs_query(
+    org_slug: str, project_slug: str, app_slug: str, env_slug: str | None = None
+) -> tuple[Response, int]:
     org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=False
@@ -8591,9 +8649,11 @@ def project_application_logs_query(org_slug, project_slug, app_slug, env_slug=No
     "/projects/<org_slug>/<project_slug>/logs",
 )
 @login_required
-def project_logs_view(org_slug, project_slug):
-    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
-    project = Project.query.filter_by(
+def project_logs_view(org_slug: str, project_slug: str) -> str:
+    organization: Organization = Organization.query.filter_by(
+        slug=org_slug
+    ).first_or_404()
+    project: Project = Project.query.filter_by(
         organization_id=organization.id, slug=project_slug
     ).first_or_404()
     if not ViewProjectPermission(project.id).can():
@@ -8602,7 +8662,7 @@ def project_logs_view(org_slug, project_slug):
     loki_configured = bool(current_app.config.get("LOKI_URL"))
 
     # Collect process names from all app_envs in the project
-    process_names_set = set()
+    process_names_set = set[str]()
     for app in project.active_applications:
         for ae in app.active_application_environments:
             for proc in ae.process_counts or {}:
@@ -8622,9 +8682,11 @@ def project_logs_view(org_slug, project_slug):
     "/projects/<org_slug>/<project_slug>/logs/query",
 )
 @login_required
-def project_logs_query(org_slug, project_slug):
-    organization = Organization.query.filter_by(slug=org_slug).first_or_404()
-    project = Project.query.filter_by(
+def project_logs_query(org_slug: str, project_slug: str):
+    organization: Organization = Organization.query.filter_by(
+        slug=org_slug
+    ).first_or_404()
+    project: Project = Project.query.filter_by(
         organization_id=organization.id, slug=project_slug
     ).first_or_404()
     if not ViewProjectPermission(project.id).can():
@@ -8638,7 +8700,7 @@ def project_logs_query(org_slug, project_slug):
     ]
 
     # Collect process names from all app_envs
-    process_names_set = set()
+    process_names_set = set[str]()
     for app in project.active_applications:
         for ae in app.active_application_environments:
             for proc in ae.process_counts or {}:
@@ -8656,7 +8718,7 @@ _INFRA_OBSERVE_GROUPS = {"total", "pod", "workload", "container"}
 _INFRA_TENANT = "cabotage-infra"
 
 
-def _require_admin():
+def _require_admin() -> None:
     """Abort 403 unless the current user is a super admin."""
     if not current_user.admin:
         abort(403)
@@ -8736,7 +8798,7 @@ def _discover_infra_workloads():
 
 @user_blueprint.route("/infra/observe")
 @login_required
-def infra_observe():
+def infra_observe() -> str:
     _require_admin()
 
     mimir_configured = bool(current_app.config.get("MIMIR_URL"))

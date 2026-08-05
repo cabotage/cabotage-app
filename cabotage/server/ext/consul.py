@@ -1,18 +1,24 @@
+from __future__ import annotations
+
 import os
+from typing import TYPE_CHECKING
 
 import consul
 
 from cabotage.utils.context import modified_environ
 from flask import g
 
+if TYPE_CHECKING:
+    from cabotage._types.server import TypedFlask
+
 
 class Consul(object):
-    def __init__(self, app=None):
+    def __init__(self, app: TypedFlask | None = None) -> None:
         self.app = app
         if app is not None:
             self.init_app(app)
 
-    def init_app(self, app):
+    def init_app(self, app: TypedFlask) -> None:
         self.consul_host = app.config.get("CONSUL_HOST", "127.0.0.1")
         self.consul_port = app.config.get("CONSUL_PORT", "8500")
         self.consul_scheme = app.config.get("CONSUL_SCHEME", "http")
@@ -31,7 +37,7 @@ class Consul(object):
 
         app.teardown_appcontext(self.teardown)
 
-    def connect_consul(self):
+    def connect_consul(self) -> consul.Consul:
         # Ignore default environment variables
         with modified_environ(
             "CONSUL_HTTP_ADDR", "CONSUL_HTTP_SSL", "CONSUL_HTTP_SSL_VERIFY"
@@ -46,11 +52,11 @@ class Consul(object):
             )
         return consul_client
 
-    def teardown(self, exception):
+    def teardown(self, exception: BaseException | None) -> None:
         g.pop("consul_client", None)
 
     @property
-    def consul_connection(self):
+    def consul_connection(self) -> consul.Consul:
         if "consul_client" not in g:
             g.consul_client = self.connect_consul()
         return g.consul_client

@@ -16,13 +16,13 @@ from cabotage.utils.github import github_session
 
 
 if TYPE_CHECKING:
-    from flask import Flask
+    from cabotage._types.server import TypedFlask
 
 logger = logging.getLogger(__name__)
 
 
 class GitHubApp(object):
-    def __init__(self, app: Flask | None = None) -> None:
+    def __init__(self, app: TypedFlask | None = None) -> None:
         self.app = app
         self.webhook_secret: str | None = None
         self.app_id: str | None = None
@@ -35,7 +35,7 @@ class GitHubApp(object):
         if app is not None:
             self.init_app(app)
 
-    def init_app(self, app: Flask) -> None:
+    def init_app(self, app: TypedFlask) -> None:
         if app.config["GITHUB_WEBHOOK_SECRET"]:
             self.webhook_secret = app.config["GITHUB_WEBHOOK_SECRET"]
 

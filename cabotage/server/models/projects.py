@@ -1825,7 +1825,7 @@ class ReleaseSnapshot:
         return "null"
 
 
-def _ingress_hostname_pairs(app_env):
+def _ingress_hostname_pairs(app_env: ApplicationEnvironment) -> list[tuple[str, str]]:
     """Build (slug, k8s_identifier) pairs for ingress hostname generation.
 
     Skips the environment pair when environments are not enabled so that

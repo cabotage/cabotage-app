@@ -110,6 +110,7 @@ if TYPE_CHECKING:
     from dxf import DXFBase
     from requests import Response
 
+    from cabotage._types.tasks import ImageSource
     from cabotage.server.models.projects import ApplicationEnvironment, Application
 
 
@@ -431,7 +432,7 @@ def _fetch_github_access_token(application: Application):
     return access_token
 
 
-def _fetch_image_source(image: Image, access_token):
+def _fetch_image_source(image: Image, access_token) -> ImageSource:
     """Fetch Dockerfile, Procfile from GitHub and parse processes.
 
     Returns dict with keys: dockerfile_body, dockerfile_name, procfile_body,

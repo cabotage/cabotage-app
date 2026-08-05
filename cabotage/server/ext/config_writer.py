@@ -3,8 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
-    from flask import Flask
-
+    from cabotage._types.server import TypedFlask
     from cabotage.server.ext.vault import Vault
     from cabotage.server.ext.consul import Consul
     from cabotage.server.models.projects import Configuration
@@ -18,7 +17,7 @@ class KeySlug(TypedDict):
 class ConfigWriter(object):
     def __init__(
         self,
-        app: Flask | None = None,
+        app: TypedFlask | None = None,
         consul: Consul | None = None,
         vault: Vault | None = None,
     ):
@@ -28,11 +27,11 @@ class ConfigWriter(object):
         if app is not None:
             self.init_app(app, consul, vault)
 
-    def init_app(self, app: Flask, consul: Consul | None, vault: Vault | None):
+    def init_app(self, app: TypedFlask, consul: Consul | None, vault: Vault | None):
         self.consul = consul
         self.vault = vault
-        self.consul_prefix: str = app.config.get("CONSUL_PREFIX", "cabotage")
-        self.vault_prefix: str = app.config.get("VAULT_PREFIX", "secret/cabotage")
+        self.consul_prefix = app.config.get("CONSUL_PREFIX", "cabotage")
+        self.vault_prefix = app.config.get("VAULT_PREFIX", "secret/cabotage")
 
         app.teardown_appcontext(self.teardown)
 

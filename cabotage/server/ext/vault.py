@@ -6,13 +6,16 @@ from base64 import (
     b64decode,
     b64encode,
 )
-from typing import cast, Any, overload, Literal
+from typing import cast, Any, overload, Literal, TYPE_CHECKING
 
 import hvac
 
-from flask import g, Flask
+from flask import g
 
 from cabotage.utils.cert_hacks import construct_cert_from_public_key
+
+if TYPE_CHECKING:
+    from cabotage._types.server import TypedFlask
 
 
 class Vault(object):
@@ -26,12 +29,12 @@ class Vault(object):
     vault_signing_mount: str
     vault_signing_key: str
 
-    def __init__(self, app: Flask | None = None) -> None:
+    def __init__(self, app: TypedFlask | None = None) -> None:
         self.app = app
         if app is not None:
             self.init_app(app)
 
-    def init_app(self, app: Flask) -> None:
+    def init_app(self, app: TypedFlask) -> None:
         self.vault_url = app.config.get("VAULT_URL", "http://127.0.0.1:8200")
         self.vault_verify = app.config.get("VAULT_VERIFY", False)
         self.vault_cert = app.config.get("VAULT_CERT", None)
@@ -94,7 +97,7 @@ class Vault(object):
         self,
         payload: str,
         algorithm: str = ...,
-        marshaling_algorithm: Literal["asn1"] = "asn1",
+        marshaling_algorithm: Literal["asn1"] = ...,
     ) -> bytes: ...
 
     @overload

@@ -2,12 +2,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from typing import (
         TypedDict,
         Literal,
         ReadOnly,
         NotRequired,
     )
+
+    from ..utils.procfile import Procfile
 
     class Metadata(TypedDict):
         name: str
@@ -280,3 +283,11 @@ if TYPE_CHECKING:
     class ScheduledBackup(_Common):
         kind: Literal["ScheduledBackup"]
         spec: ScheduledBackupSpec
+
+    class ImageSource(TypedDict):
+        git_ref: Callable[[str, str], str]
+        dockerfile_body: str
+        dockerfile_name: str | None
+        procfile_body: str
+        processes: Procfile
+        dockerfile_env_vars: list[str]
