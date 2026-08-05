@@ -46,6 +46,11 @@ BIGINT_MIN = -(2**63)
 BIGINT_MAX = 2**63 - 1
 
 
+def strip_or_none(value: str | None) -> str | None:
+    """Trim a text field, treating a blank result as unset."""
+    return (value or "").strip() or None
+
+
 class ExtendedLoginForm(LoginForm):
     email = StringField("Username or Email Address", [InputRequired()])
 
@@ -395,6 +400,7 @@ class EditApplicationSettingsForm(FlaskForm):
     auto_deploy_branch = StringField(
         "Branch",
         description="GitHub Repository branch to auto-deploy from",
+        filters=[strip_or_none],
     )
     subdirectory = StringField(
         "Subdirectory",
@@ -757,6 +763,7 @@ class EditApplicationEnvironmentSettingsForm(FlaskForm):
         "Branch",
         [Optional()],
         description="Branch to auto-deploy for this environment (blank = inherit from app)",
+        filters=[strip_or_none],
     )
     auto_deploy_wait_for_ci = BooleanField(
         "Wait for CI",
