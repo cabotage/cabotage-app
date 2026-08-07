@@ -151,11 +151,11 @@ class TestApplicationClearCache:
         with (
             patch("cabotage.server.user.views.kubernetes_ext") as mock_kext,
             patch(
-                "cabotage.server.user.views.kubernetes.client.CoreV1Api",
+                "cabotage.server.user.views.CoreV1Api",
                 return_value=MagicMock(),
             ),
             patch(
-                "cabotage.server.user.views.kubernetes.client.BatchV1Api",
+                "cabotage.server.user.views.BatchV1Api",
                 return_value=MagicMock(),
             ),
             patch(

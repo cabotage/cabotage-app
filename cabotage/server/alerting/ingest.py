@@ -1,8 +1,12 @@
 """Shared alert ingestion logic used by both the webhook endpoint and
 the reconciliation task."""
 
+from __future__ import annotations
+
+
 import logging
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from cabotage.server import db
 from cabotage.server.models.projects import (
@@ -15,10 +19,23 @@ from cabotage.server.models.auth import Organization
 
 log = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    from uuid import UUID
+
+    from cabotage.server.models.projects import (
+        Alert,
+        Application,
+        ApplicationEnvironment,
+    )
+
+    type ResolvedApplication = tuple[Application | None, ApplicationEnvironment | None]
+
 Activity = activity_plugin.activity_cls
 
 
-def _record_activity(verb, alert, application=None):
+def _record_activity(
+    verb: str, alert: Alert, application: Application | None = None
+) -> None:
     """Record an Activity entry for an alert state change."""
     data = {
         "action": f"alert_{verb}",
@@ -41,7 +58,7 @@ def _record_activity(verb, alert, application=None):
     db.session.add(activity)
 
 
-def parse_alertmanager_timestamp(ts):
+def parse_alertmanager_timestamp(ts: str) -> datetime | None:
     """Parse an Alertmanager timestamp string to a naive UTC datetime."""
     if not ts:
         return None
@@ -57,7 +74,9 @@ def parse_alertmanager_timestamp(ts):
         return None
 
 
-def _resolve_app_env_from_namespace(application, namespace):
+def _resolve_app_env_from_namespace(
+    application: Application, namespace: str | None
+) -> tuple[ApplicationEnvironment | None, bool]:
     """Try to resolve a specific ApplicationEnvironment from the namespace.
 
     Environment-enabled apps use safe_k8s_name(org.k8s_identifier,
@@ -88,7 +107,7 @@ def _resolve_app_env_from_namespace(application, namespace):
     return application.default_app_env, False
 
 
-def _resolve_by_slug_labels(labels):
+def _resolve_by_slug_labels(labels: dict[str, str]) -> ResolvedApplication:
     """Resolve via explicit label_organization/label_project/label_application
     labels injected by the cabotage:resident_deployment_pod recording rule."""
     org_slug = labels.get("label_organization")
@@ -116,7 +135,7 @@ def _resolve_by_slug_labels(labels):
     return None, None
 
 
-def _resolve_by_deployment(labels):
+def _resolve_by_deployment(labels: dict[str, str]) -> ResolvedApplication:
     """Resolve via deployment + namespace labels (pod-level alerts).
 
     deployment = safe_k8s_name(project.k8s_identifier, app.k8s_identifier)
@@ -161,7 +180,7 @@ def _resolve_by_deployment(labels):
     return None, None
 
 
-def _resolve_by_traefik_service(labels):
+def _resolve_by_traefik_service(labels: dict[str, str]) -> ResolvedApplication:
     """Resolve via Traefik service label (ingress-level alerts).
 
     Traefik router names follow the pattern:
@@ -198,7 +217,7 @@ def _resolve_by_traefik_service(labels):
     return None, None
 
 
-def resolve_application(labels):
+def resolve_application(labels: dict[str, str]) -> ResolvedApplication:
     """Try to resolve an Application and ApplicationEnvironment from alert labels.
 
     Tries in order:
@@ -220,17 +239,17 @@ def resolve_application(labels):
 
 def upsert_alert(
     *,
-    fingerprint,
-    status,
-    alertname,
-    labels,
-    annotations,
-    starts_at,
-    ends_at,
-    generator_url=None,
-    group_key=None,
-    receiver=None,
-):
+    fingerprint: str,
+    status: str,
+    alertname: str,
+    labels: dict[str, str],
+    annotations: dict[str, str],
+    starts_at: datetime | None,
+    ends_at: datetime | None,
+    generator_url: str | None = None,
+    group_key: str | None = None,
+    receiver: str | None = None,
+) -> tuple[bool | None, UUID | None]:
     """Upsert an alert by (fingerprint, starts_at).
 
     Returns (processed, dispatch_id) where processed is True if the alert

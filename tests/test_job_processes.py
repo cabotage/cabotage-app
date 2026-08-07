@@ -284,7 +284,7 @@ class TestResizeCronjob:
         with (
             patch(f"{_DEPLOY_MODULE}.kubernetes_ext"),
             patch(
-                f"{_DEPLOY_MODULE}.kubernetes.client.BatchV1Api",
+                f"{_DEPLOY_MODULE}.BatchV1Api",
                 return_value=mock_batch_api,
             ),
             patch(f"{_DEPLOY_MODULE}.k8s_resource_prefix", return_value="proj-app"),
@@ -308,7 +308,7 @@ class TestResizeCronjob:
         assert resources["limits"]["memory"] == expected["memory"]["limits"]
 
     def test_resize_cronjob_noop_on_404(self, mock_app):
-        from kubernetes.client.rest import ApiException
+        from kubernetes.client.exceptions import ApiException
 
         release = _make_release()
         mock_batch_api = MagicMock()
@@ -316,7 +316,7 @@ class TestResizeCronjob:
         with (
             patch(f"{_DEPLOY_MODULE}.kubernetes_ext"),
             patch(
-                f"{_DEPLOY_MODULE}.kubernetes.client.BatchV1Api",
+                f"{_DEPLOY_MODULE}.BatchV1Api",
                 return_value=mock_batch_api,
             ),
             patch(f"{_DEPLOY_MODULE}.k8s_resource_prefix", return_value="proj-app"),

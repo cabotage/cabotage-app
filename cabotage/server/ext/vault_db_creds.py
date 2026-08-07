@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import atexit
 import hashlib
 import os
@@ -9,14 +11,19 @@ import hvac
 from flask import current_app
 from flask import g
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from cabotage._types.server import TypedFlask
+
 
 class VaultDBCreds(object):
-    def __init__(self, app=None):
+    def __init__(self, app: TypedFlask | None = None):
         self.app = app
         if app is not None:
             self.init_app(app)
 
-    def init_app(self, app):
+    def init_app(self, app: TypedFlask) -> None:
         if app.config.get("SQLALCHEMY_DATABASE_URI", None):
             return
         if app.config.get("VAULT_DB_CREDS_PATH", None):
@@ -105,7 +112,7 @@ class VaultDBCreds(object):
         )
         return vault_db_creds_client
 
-    def teardown(self, exception):
+    def teardown(self, exception: BaseException | None) -> None:
         g.pop("vault_db_creds_client", None)
 
     @property

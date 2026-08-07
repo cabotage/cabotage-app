@@ -1,4 +1,11 @@
-import kubernetes
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from kubernetes.client import V1ConfigMap, V1ObjectMeta
+
+if TYPE_CHECKING:
+    from cabotage.server.models.projects import Release
 
 RELEASE_DOCKERFILE_TEMPLATE = """
 FROM {registry}/{image.repository_name}:image-{image.version}
@@ -27,7 +34,7 @@ exec "${@}"
 """
 
 
-def configmap_context_for_release(release, dockerfile):
+def configmap_context_for_release(release: Release, dockerfile: str) -> V1ConfigMap:
     data = {
         "Dockerfile": dockerfile,
         "entrypoint.sh": ENTRYPOINT,
@@ -38,8 +45,8 @@ def configmap_context_for_release(release, dockerfile):
     ) in release.envconsul_configurations.items():
         data[f"envconsul-{process_name}.hcl"] = envconsul_configuration
 
-    return kubernetes.client.V1ConfigMap(
-        metadata=kubernetes.client.V1ObjectMeta(
+    return V1ConfigMap(
+        metadata=V1ObjectMeta(
             name=f"build-context-{release.build_job_id}",
         ),
         data=data,

@@ -5,8 +5,12 @@ into the local alerts table, and marks any locally-firing alerts that are
 no longer present in Alertmanager as resolved.
 """
 
+from __future__ import annotations
+
+
 import logging
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING, cast
 
 import requests
 from celery import shared_task
@@ -23,20 +27,24 @@ from cabotage.celery.tasks.notify import dispatch_alert_notification
 
 log = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    from cabotage._types.config import ConfigDict
+
 
 @shared_task()
-def reconcile_alerts():
-    alertmanager_url = current_app.config.get("ALERTMANAGER_URL")
+def reconcile_alerts() -> None:
+    app_config = cast("ConfigDict", current_app.config)
+    alertmanager_url = app_config.get("ALERTMANAGER_URL")
     if not alertmanager_url:
         return
 
-    verify = current_app.config.get("ALERTMANAGER_VERIFY")
+    verify = app_config.get("ALERTMANAGER_VERIFY")
     if verify is None:
         verify = True
 
-    headers = {"X-Scope-OrgID": current_app.config.get("MIMIR_TENANT_ID")}
+    headers = {"X-Scope-OrgID": app_config.get("MIMIR_TENANT_ID")}
 
-    secret = current_app.config.get("ALERTMANAGER_WEBHOOK_SECRET")
+    secret = app_config.get("ALERTMANAGER_WEBHOOK_SECRET")
     if secret:
         headers["Authorization"] = f"Bearer {secret}"
 

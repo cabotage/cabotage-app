@@ -31,6 +31,7 @@ dependencies = [
     "psycopg[binary]",
     "py-consul",
     "pygithub",
+    "pygments",
     "pyjwt",
     "python-dxf",
     "qrcode",
@@ -50,14 +51,18 @@ dependencies = [
 dev = [
     "bandit",
     "hupper",
-    "pytest",
+    "kubernetes-stubs-elephant-fork",
+    "pyrefly",
     "pytest-cov",
+    "pytest",
     "ruff",
     "ty",
     "types-croniter",
-    "types-pyyaml",
+    "types-dockerfile-parse",
+    "types-flask-migrate",
+    "types-hvac",
     "types-pygments",
-    "types-redis",
+    "types-pyyaml",
     "types-requests",
     "types-toml",
     "typing-extensions",
@@ -82,3 +87,7 @@ exclude_dirs = ["bin", "lib", "tests"]
 
 [tool.uv]
 exclude-newer = "1 week"
+
+
+[tool.pyrefly]
+preset = "all"

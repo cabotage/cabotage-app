@@ -1,9 +1,17 @@
+from __future__ import annotations
+
 from collections import namedtuple
 from functools import partial
+from typing import TYPE_CHECKING
 
 from flask_security import current_user
 from flask_principal import Permission, UserNeed, RoleNeed
 from sqlalchemy.orm import joinedload
+
+
+if TYPE_CHECKING:
+    from flask_principal import Identity
+
 
 OrganizationNeed = namedtuple("OrganizationNeed", ["method", "value"])
 ViewOrganizationNeed = partial(OrganizationNeed, "view")
@@ -18,7 +26,7 @@ ViewApplicationNeed = partial(ApplicationNeed, "view")
 AdministerApplicationNeed = partial(ApplicationNeed, "administer")
 
 
-def cabotage_on_identity_loaded(sender, identity):
+def cabotage_on_identity_loaded(sender, identity: Identity) -> None:
     identity.user = current_user
 
     if hasattr(current_user, "id"):

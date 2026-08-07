@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import re
 
 import requests
@@ -9,13 +11,19 @@ from flask import current_app
 from cabotage.server.models.projects import Application
 from cabotage.utils.docker_auth import generate_docker_registry_jwt
 
+from typing import TYPE_CHECKING
 
-def natsort(s):
+if TYPE_CHECKING:
+    from dxf import DXFBase
+    from requests import Response
+
+
+def natsort(s: str) -> list[str | int]:
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", s)]
 
 
-def _prune_repository(repository_name, dry_run=False):
-    def auth(dxf, response):
+def _prune_repository(repository_name: str, dry_run: bool = False) -> None:
+    def auth(dxf: DXFBase, response: Response) -> None:
         dxf.token = generate_docker_registry_jwt(
             access=[
                 {
@@ -82,7 +90,7 @@ def _prune_repository(repository_name, dry_run=False):
 
 
 @shared_task()
-def prune_images(dry_run=False):
+def prune_images(dry_run: bool = False) -> None:
     for app in reversed(Application.query.all()):
         if app.project.organization is not None:
             for app_env in app.application_environments:

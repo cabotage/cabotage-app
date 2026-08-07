@@ -40,7 +40,7 @@ def db_session(app):
 
 
 @pytest.fixture
-def installation_id():
+def installation_id() -> int:
     return int(uuid.uuid4().int % 2**31)
 
 
@@ -841,8 +841,8 @@ class TestBranchDeployNamespaces:
     @patch("cabotage.celery.tasks.deploy.ensure_cabotage_ca_configmap")
     @patch("cabotage.celery.tasks.deploy.ensure_ingresses")
     @patch("cabotage.celery.tasks.deploy.ensure_network_policies")
-    @patch("kubernetes.client.NetworkingV1Api")
-    @patch("kubernetes.client.CoreV1Api")
+    @patch("cabotage.celery.tasks.branch_deploy.NetworkingV1Api")
+    @patch("cabotage.celery.tasks.branch_deploy.CoreV1Api")
     def test_precreate_ingresses_uses_pr_namespace(
         self,
         mock_core_api_cls,
@@ -884,7 +884,7 @@ class TestBranchDeployNamespaces:
         mock_core_api_cls.return_value = mock_core
         mock_networking_api_cls.return_value = mock_networking
 
-        from kubernetes.client.rest import ApiException
+        from kubernetes.client.exceptions import ApiException
         from cabotage.celery.tasks.branch_deploy import _precreate_ingresses
 
         mock_core.read_namespace.side_effect = ApiException(status=404)
@@ -910,7 +910,7 @@ class TestBranchDeployNamespaces:
     )
     @patch("cabotage.celery.tasks.branch_deploy._post_teardown_comment")
     @patch("cabotage.celery.tasks.branch_deploy._deactivate_deployment")
-    @patch("kubernetes.client.CoreV1Api")
+    @patch("cabotage.celery.tasks.branch_deploy.CoreV1Api")
     def test_teardown_branch_deploy_deletes_pr_namespace(
         self,
         mock_core_api_cls,
@@ -972,7 +972,7 @@ class TestBranchDeployNamespaces:
     @patch("cabotage.celery.tasks.branch_deploy._deactivate_deployment")
     @patch("cabotage.celery.tasks.resources._release_reconcile_lock")
     @patch("cabotage.celery.tasks.resources._acquire_reconcile_lock")
-    @patch("kubernetes.client.CoreV1Api")
+    @patch("cabotage.celery.tasks.branch_deploy.CoreV1Api")
     def test_teardown_branch_deploy_deletes_cloned_backing_services(
         self,
         mock_core_api_cls,

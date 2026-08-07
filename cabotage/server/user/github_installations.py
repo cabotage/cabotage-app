@@ -1,5 +1,9 @@
+from __future__ import annotations
+
 import datetime
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from typing import TYPE_CHECKING, cast, Final
+
 
 from flask import current_app, url_for
 from itsdangerous import BadSignature, URLSafeTimedSerializer
@@ -10,22 +14,36 @@ from cabotage.server import db, github_app
 from cabotage.server.models.auth import GitHubAppInstallation
 from cabotage.server.models.projects import Application, Project
 
-GITHUB_INSTALL_STATE_MAX_AGE_SECONDS = 60 * 60
+if TYPE_CHECKING:
+    from uuid import UUID
+
+    from cabotage.server.models.projects import Organization
+    from cabotage._types.config import ConfigDict
+    from cabotage._types.server import (
+        Installation,
+        Repository,
+        RepositoryOption,
+        RepositoryMetadata,
+    )
+
+GITHUB_INSTALL_STATE_MAX_AGE_SECONDS: Final = 60 * 60
 
 
-def install_state_serializer():
+def install_state_serializer() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(
-        current_app.config["SECRET_KEY"], salt="github-app-install"
+        cast("ConfigDict", current_app.config)["SECRET_KEY"], salt="github-app-install"
     )
 
 
-def connect_state_serializer():
+def connect_state_serializer() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(
-        current_app.config["SECRET_KEY"], salt="github-app-connect"
+        cast("ConfigDict", current_app.config)["SECRET_KEY"], salt="github-app-connect"
     )
 
 
-def install_state(organization, user_id, application=None):
+def install_state(
+    organization: Organization, user_id: UUID, application: Application | None = None
+) -> str:
     payload = {
         "organization_id": str(organization.id),
         "user_id": str(user_id),
@@ -35,7 +53,13 @@ def install_state(organization, user_id, application=None):
     return install_state_serializer().dumps(payload)
 
 
-def connect_state(organization, user_id, *, installation_id=None, application=None):
+def connect_state(
+    organization: Organization,
+    user_id: UUID,
+    *,
+    installation_id: int | None = None,
+    application: Application | None = None,
+) -> str:
     payload = {
         "organization_id": str(organization.id),
         "user_id": str(user_id),
@@ -48,14 +72,14 @@ def connect_state(organization, user_id, *, installation_id=None, application=No
 
 
 def connect_option(
-    organization,
-    user_id,
-    installation,
+    organization: Organization,
+    user_id: UUID,
+    installation: Installation,
     *,
-    application_id=None,
-):
+    application_id: UUID | None = None,
+) -> str:
     account = installation.get("account") or {}
-    payload = {
+    payload: dict[str, str | int] = {
         "organization_id": str(organization.id),
         "user_id": str(user_id),
         "installation_id": installation.get("id"),
@@ -64,11 +88,11 @@ def connect_option(
         "repository_selection": installation.get("repository_selection"),
     }
     if application_id is not None:
-        payload["application_id"] = application_id
+        payload["application_id"] = str(application_id)
     return connect_state_serializer().dumps(payload)
 
 
-def is_connect_state(state):
+def is_connect_state(state: str) -> bool:
     try:
         payload = connect_state_serializer().loads(state)
     except BadSignature:
@@ -78,12 +102,13 @@ def is_connect_state(state):
     return "organization_id" in payload and "user_id" in payload
 
 
-def user_authorize_url(state):
-    client_id = current_app.config.get("GITHUB_APP_CLIENT_ID")
+def user_authorize_url(state: str) -> str | None:
+    app_config = cast("ConfigDict", current_app.config)
+    client_id = app_config.get("GITHUB_APP_CLIENT_ID")
     if not client_id:
         return None
-    scheme = current_app.config["EXT_PREFERRED_URL_SCHEME"]
-    server = current_app.config["EXT_SERVER_NAME"]
+    scheme = app_config["EXT_PREFERRED_URL_SCHEME"]
+    server = app_config["EXT_SERVER_NAME"]
     redirect_uri = f"{scheme}://{server}{url_for('github_oauth.callback')}"
     return "https://github.com/login/oauth/authorize?" + urlencode(
         {
@@ -94,10 +119,11 @@ def user_authorize_url(state):
     )
 
 
-def install_url(state):
-    configured = current_app.config.get("GITHUB_APP_INSTALL_URL")
+def install_url(state: str) -> str | None:
+    app_config = cast("ConfigDict", current_app.config)
+    configured = app_config.get("GITHUB_APP_INSTALL_URL")
     if not configured:
-        configured = current_app.config.get("GITHUB_APP_URL")
+        configured = app_config.get("GITHUB_APP_URL")
     if not configured:
         try:
             configured = github_app.install_url
@@ -115,13 +141,15 @@ def install_url(state):
     )
 
 
-def installation_choices(organization, selected_id=None):
+def installation_choices(
+    organization: Organization, selected_id: int | None = None
+) -> list[tuple[str, str]]:
     installations = sorted(
         organization.github_app_installations,
         key=lambda install: (install.account_login or "", install.installation_id),
     )
     choices = [("", "None")]
-    seen = set()
+    seen = set[str]()
     for installation in installations:
         value = str(installation.installation_id)
         seen.add(value)
@@ -131,20 +159,24 @@ def installation_choices(organization, selected_id=None):
     return choices
 
 
-def installation_for_org(organization, installation_id):
+def installation_for_org(
+    organization: Organization, installation_id: str
+) -> GitHubAppInstallation | None:
     if not installation_id:
         return None
     try:
-        installation_id = int(installation_id)
+        _installation_id = int(installation_id)
     except (TypeError, ValueError):
         return None
     for installation in organization.github_app_installations:
-        if installation.installation_id == installation_id:
+        if installation.installation_id == _installation_id:
             return installation
     return None
 
 
-def repository_by_name(app_installation, repository_name):
+def repository_by_name(
+    app_installation: GitHubAppInstallation | None, repository_name: str | None
+) -> RepositoryMetadata | None:
     if not app_installation or not repository_name:
         return None
     for repository in app_installation.repositories or []:
@@ -153,7 +185,7 @@ def repository_by_name(app_installation, repository_name):
     return None
 
 
-def repository_id(repository):
+def repository_id(repository: RepositoryMetadata) -> int | None:
     if not repository:
         return None
     repo_id = repository.get("id")
@@ -165,7 +197,9 @@ def repository_id(repository):
         return None
 
 
-def repository_by_id(app_installation, repo_id):
+def repository_by_id(
+    app_installation: GitHubAppInstallation | None, repo_id: int | None
+) -> RepositoryMetadata | None:
     if not app_installation or repo_id is None:
         return None
     try:
@@ -178,8 +212,10 @@ def repository_by_id(app_installation, repo_id):
     return None
 
 
-def repository_options_by_installation(organization):
-    options = {}
+def repository_options_by_installation(
+    organization: Organization,
+) -> dict[str, list[RepositoryOption]]:
+    options: dict[str, list[RepositoryOption]] = {}
     for installation in organization.github_app_installations:
         if installation.repositories is None:
             continue
@@ -198,7 +234,7 @@ def repository_options_by_installation(organization):
     return options
 
 
-def repository_metadata(repo):
+def repository_metadata(repo: Repository) -> RepositoryMetadata | None:
     full_name = repo.get("full_name")
     if not full_name:
         return None
@@ -209,12 +245,14 @@ def repository_metadata(repo):
     }
 
 
-def repository_metadata_key(repo):
+def repository_metadata_key(repo: RepositoryMetadata) -> int | str:
     return repo.get("id") or repo.get("full_name")
 
 
-def merge_repository_metadata(existing_repos, added_repos):
-    merged = {}
+def merge_repository_metadata(
+    existing_repos: list[Repository], added_repos: list[Repository]
+) -> list[RepositoryMetadata]:
+    merged: dict[int | str, RepositoryMetadata] = {}
     for repo in existing_repos:
         metadata = repository_metadata(repo)
         if metadata is not None:
@@ -227,8 +265,8 @@ def merge_repository_metadata(existing_repos, added_repos):
 
 
 def sync_installation_repositories(
-    app_installation, *, clear_all_cache_on_failure=True
-):
+    app_installation: GitHubAppInstallation, *, clear_all_cache_on_failure: bool = True
+) -> bool:
     repositories = github_app.fetch_installation_repositories(
         app_installation.installation_id
     )
@@ -249,7 +287,9 @@ def sync_installation_repositories(
     return True
 
 
-def sync_application_repository_metadata(app_installation):
+def sync_application_repository_metadata(
+    app_installation: GitHubAppInstallation,
+) -> int:
     if app_installation.repositories is None:
         return 0
 
@@ -270,7 +310,7 @@ def sync_application_repository_metadata(app_installation):
     project_ids = Project.query.with_entities(Project.id).filter_by(
         organization_id=app_installation.organization_id
     )
-    applications = (
+    applications: list[Application] = (
         Application.query.filter(Application.project_id.in_(project_ids))
         .filter(
             Application.github_app_installation_id == app_installation.installation_id
@@ -300,7 +340,9 @@ def sync_application_repository_metadata(app_installation):
     return updated
 
 
-def user_can_access_installation_repositories(repositories, accessible_repository_ids):
+def user_can_access_installation_repositories(
+    repositories: list, accessible_repository_ids: list | None
+) -> bool:
     if accessible_repository_ids is None:
         return True
 
@@ -313,7 +355,9 @@ def user_can_access_installation_repositories(repositories, accessible_repositor
     return repository_ids.issubset(accessible_repository_ids)
 
 
-def reconcile_selected_repository_applications(app_installation):
+def reconcile_selected_repository_applications(
+    app_installation: GitHubAppInstallation,
+) -> int:
     if (
         app_installation.repository_selection != "selected"
         or app_installation.repositories is None
@@ -366,12 +410,12 @@ def reconcile_selected_repository_applications(app_installation):
 
 
 def upsert_installation(
-    organization,
-    installation_id,
+    organization: Organization,
+    installation_id: str,
     *,
-    installed_by_user_id=None,
-    accessible_repository_ids=None,
-):
+    installed_by_user_id: UUID | None = None,
+    accessible_repository_ids: list[int] | None = None,
+) -> tuple[GitHubAppInstallation | None, bool]:
     installation = github_app.fetch_installation(installation_id)
     if installation is None:
         return None, False

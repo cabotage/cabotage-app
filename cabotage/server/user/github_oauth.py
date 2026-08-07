@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import datetime
 import uuid
+from typing import TYPE_CHECKING, cast
 
 from authlib.integrations.flask_client import OAuth
 from flask import (
@@ -33,6 +36,12 @@ from cabotage.server.user import github_installations
 github_oauth_bp = Blueprint("github_oauth", __name__, url_prefix="/auth/github")
 oauth = OAuth()
 Activity = activity_plugin.activity_cls
+
+if TYPE_CHECKING:
+    from werkzeug import Response as BaseResponse
+
+    from cabotage._types.server import Installation, TypedFlask, Payload
+    from cabotage._types.config import ConfigDict
 
 
 @github_oauth_bp.route("/login")
@@ -185,11 +194,11 @@ def _complete_oauth_login(user, next_url):
     return redirect(next_url)
 
 
-def _is_github_installation_connect_state(state):
+def _is_github_installation_connect_state(state: str) -> bool:
     return github_installations.is_connect_state(state)
 
 
-def _connect_installation_callback(state):
+def _connect_installation_callback(state: str):
     if not current_user.is_authenticated:
         flash("Please sign in before connecting GitHub installations.", "error")
         return redirect(url_for("security.login"))
@@ -310,8 +319,11 @@ def _safe_get(model, pk):
 
 
 def _complete_verified_installation_connection(
-    organization, payload, *, accessible_repository_ids
-):
+    organization: Organization,
+    payload: Payload,
+    *,
+    accessible_repository_ids: list[int],
+) -> BaseResponse:
     app_installation, repositories_synced = github_installations.upsert_installation(
         organization,
         payload.get("installation_id"),
@@ -403,19 +415,20 @@ def _complete_verified_installation_connection(
     return redirect(url_for("user.organization_settings", org_slug=organization.slug))
 
 
-def _fetch_github_user_access_token(code):
+def _fetch_github_user_access_token(code: str | None) -> str | None:
     if not code:
         return None
-    scheme = current_app.config["EXT_PREFERRED_URL_SCHEME"]
-    server = current_app.config["EXT_SERVER_NAME"]
+    app_config = cast("ConfigDict", current_app.config)
+    scheme = app_config["EXT_PREFERRED_URL_SCHEME"]
+    server = app_config["EXT_SERVER_NAME"]
     redirect_uri = f"{scheme}://{server}{url_for('github_oauth.callback')}"
     try:
         resp = requests.post(
             "https://github.com/login/oauth/access_token",
             headers={"Accept": "application/json"},
             data={
-                "client_id": current_app.config["GITHUB_APP_CLIENT_ID"],
-                "client_secret": current_app.config["GITHUB_APP_CLIENT_SECRET"],
+                "client_id": app_config["GITHUB_APP_CLIENT_ID"],
+                "client_secret": app_config["GITHUB_APP_CLIENT_SECRET"],
                 "code": code,
                 "redirect_uri": redirect_uri,
             },
@@ -428,9 +441,9 @@ def _fetch_github_user_access_token(code):
         return None
 
 
-def _fetch_github_user_installations(access_token):
+def _fetch_github_user_installations(access_token: str) -> list[Installation] | None:
     try:
-        installations = []
+        installations: list[Installation] = []
         url = "https://api.github.com/user/installations"
         params = {"per_page": 100}
         headers = {
@@ -454,9 +467,11 @@ def _fetch_github_user_installations(access_token):
         return None
 
 
-def _fetch_github_user_installation_repository_ids(access_token, installation_id):
+def _fetch_github_user_installation_repository_ids(
+    access_token: str, installation_id: int
+) -> list[int] | None:
     try:
-        repository_ids = []
+        repository_ids: list[int] = []
         url = (
             f"https://api.github.com/user/installations/{installation_id}/repositories"
         )
@@ -489,7 +504,7 @@ def _fetch_github_user_installation_repository_ids(access_token, installation_id
         return None
 
 
-def init_github_oauth(app):
+def init_github_oauth(app: TypedFlask):
     if not app.config.get("GITHUB_APP_CLIENT_ID"):
         return
 
@@ -506,7 +521,7 @@ def init_github_oauth(app):
     app.register_blueprint(github_oauth_bp)
 
     @app.context_processor
-    def github_oauth_context():
+    def github_oauth_context() -> dict[str, bool]:
         return {
             "github_oauth_enabled": True,
             "github_oauth_only": bool(app.config.get("GITHUB_OAUTH_ONLY")),

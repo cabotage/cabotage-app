@@ -1,10 +1,22 @@
+from __future__ import annotations
+
 import datetime
 import logging
 import re
 from copy import deepcopy
+from typing import TYPE_CHECKING
 
 from flask import current_app
-from kubernetes.client.rest import ApiException
+from kubernetes.client.exceptions import ApiException
+from kubernetes.client import (
+    CoreV1Api,
+    NetworkingV1Api,
+    V1Namespace,
+    V1ObjectMeta,
+    CustomObjectsApi,
+    AppsV1Api,
+    RbacAuthorizationV1Api,
+)
 
 from cabotage.server import (
     db,
@@ -32,12 +44,18 @@ from cabotage.utils.github import (
     post_deployment_status_update,
 )
 
+if TYPE_CHECKING:
+    from cabotage.server.models.projects import Project, Application
+    from sqlalchemy import Column
+
 logger = logging.getLogger(__name__)
 
 Activity = activity_plugin.activity_cls
 
 
-def _clone_backing_services_for_branch_deploy(base_environment, environment):
+def _clone_backing_services_for_branch_deploy(
+    base_environment: Environment, environment: Environment
+) -> None:
     """Create fresh backing-service rows in a PR environment.
 
     The cloned resources inherit sizing/topology/version settings from the
@@ -81,12 +99,12 @@ def _clone_backing_services_for_branch_deploy(base_environment, environment):
 
 
 def _create_app_env_for_branch_deploy(
-    application,
-    environment,
-    base_environment,
-    auto_deploy_branch=None,
+    application: Application,
+    environment: Environment,
+    base_environment: Environment,
+    auto_deploy_branch: str | None = None,
     env_config_map=None,
-):
+) -> ApplicationEnvironment:
     """Create ApplicationEnvironment for a branch deploy.
 
     Configuration objects are copied from the base environment, sharing the same
@@ -221,13 +239,12 @@ def _create_app_env_for_branch_deploy(
     return app_env
 
 
-def _precreate_ingresses(environment):
+def _precreate_ingresses(environment: Environment) -> None:
     """Create the K8s namespace and Ingress resources for a branch deploy.
 
     Called before image builds start so that cert-manager can begin issuing
     TLS certificates while builds run in parallel.
     """
-    import kubernetes
 
     from cabotage.celery.tasks.deploy import (
         ensure_cabotage_ca_configmap,
@@ -241,18 +258,19 @@ def _precreate_ingresses(environment):
     org = environment.project.organization
     ns_name = environment.k8s_namespace
     api_client = kubernetes_ext.kubernetes_client
-    core_api = kubernetes.client.CoreV1Api(api_client)
-    networking_api = kubernetes.client.NetworkingV1Api(api_client)
+    core_api = CoreV1Api(api_client)
+    networking_api = NetworkingV1Api(api_client)
 
     # Ensure namespace exists with resident-namespace label
     try:
         ns = core_api.read_namespace(ns_name)
+        assert ns.metadata
         labels = ns.metadata.labels or {}
         if labels.get("resident-namespace.cabotage.io") != "true":
             core_api.patch_namespace(
                 ns_name,
-                kubernetes.client.V1Namespace(
-                    metadata=kubernetes.client.V1ObjectMeta(
+                V1Namespace(
+                    metadata=V1ObjectMeta(
                         labels={"resident-namespace.cabotage.io": "true"},
                     ),
                 ),
@@ -260,8 +278,8 @@ def _precreate_ingresses(environment):
     except ApiException as exc:
         if exc.status == 404:
             core_api.create_namespace(
-                kubernetes.client.V1Namespace(
-                    metadata=kubernetes.client.V1ObjectMeta(
+                V1Namespace(
+                    metadata=V1ObjectMeta(
                         name=ns_name,
                         labels={"resident-namespace.cabotage.io": "true"},
                     ),
@@ -298,9 +316,8 @@ def _precreate_ingresses(environment):
         )
 
 
-def _teardown_environment(environment):
+def _teardown_environment(environment: Environment) -> None:
     """Delete k8s namespace and all DB records for an ephemeral environment."""
-    import kubernetes
 
     from cabotage.celery.tasks.build import (
         _build_namespace,
@@ -317,10 +334,10 @@ def _teardown_environment(environment):
     if current_app.config["KUBERNETES_ENABLED"]:
         ns_name = environment.k8s_namespace
         api_client = kubernetes_ext.kubernetes_client
-        core_api = kubernetes.client.CoreV1Api(api_client)
-        custom_api = kubernetes.client.CustomObjectsApi(api_client)
-        apps_api = kubernetes.client.AppsV1Api(api_client)
-        rbac_api = kubernetes.client.RbacAuthorizationV1Api(api_client)
+        core_api = CoreV1Api(api_client)
+        custom_api = CustomObjectsApi(api_client)
+        apps_api = AppsV1Api(api_client)
+        rbac_api = RbacAuthorizationV1Api(api_client)
         resources = list(environment.active_resources)
         if resources:
             reconcile_lock_conn = _acquire_reconcile_lock()
@@ -355,6 +372,8 @@ def _teardown_environment(environment):
             try:
                 pvcs = core_api.list_namespaced_persistent_volume_claim(ns_name)
                 for pvc in pvcs.items:
+                    assert pvc.metadata
+                    assert pvc.metadata.name
                     try:
                         core_api.delete_namespaced_persistent_volume_claim(
                             pvc.metadata.name,
@@ -399,6 +418,8 @@ def _teardown_environment(environment):
                         label_selector=selector,
                     )
                     for pvc in pvcs.items:
+                        assert pvc.metadata
+                        assert pvc.metadata.name
                         try:
                             core_api.delete_namespaced_persistent_volume_claim(
                                 pvc.metadata.name,
@@ -480,7 +501,11 @@ def _teardown_environment(environment):
     db.session.flush()
 
 
-def _create_skipped_check_runs(skipped_app_envs, commit_sha, installation_id):
+def _create_skipped_check_runs(
+    skipped_app_envs: list[ApplicationEnvironment],
+    commit_sha: str,
+    installation_id: int,
+) -> None:
     """Create completed check runs for apps skipped by watch paths."""
     from cabotage.utils.github import CheckRun
 
@@ -513,7 +538,7 @@ def _create_skipped_check_runs(skipped_app_envs, commit_sha, installation_id):
         )
 
 
-def _changed_files_for_sha(commit_sha):
+def _changed_files_for_sha(commit_sha: str) -> set[str] | None:
     """Extract the set of changed files from the stored push hook for a commit."""
     push_hook = (
         Hook.query.filter(Hook.commit_sha == commit_sha)
@@ -522,7 +547,7 @@ def _changed_files_for_sha(commit_sha):
     )
     if not push_hook:
         return None
-    changed = set()
+    changed = set[str]()
     for commit in push_hook.payload.get("commits", []):
         changed.update(commit.get("added", []))
         changed.update(commit.get("modified", []))
@@ -530,7 +555,9 @@ def _changed_files_for_sha(commit_sha):
     return changed or None
 
 
-def _build_images_for_app_envs(app_envs, commit_sha, installation_id):
+def _build_images_for_app_envs(
+    app_envs: list[ApplicationEnvironment], commit_sha: str, installation_id: int
+) -> None:
     """Create Image records and queue builds for a list of ApplicationEnvironments."""
     from cabotage.celery.tasks.github import (
         create_deployment as create_github_deployment,
@@ -550,7 +577,7 @@ def _build_images_for_app_envs(app_envs, commit_sha, installation_id):
             # Build a matrix of ingress URLs per application
             ingress_urls = {}
             for app_env in app_envs:
-                urls = []
+                urls: list[str] = []
                 for ing in app_env.ingresses:
                     if not ing.enabled:
                         continue
@@ -609,7 +636,11 @@ def _build_images_for_app_envs(app_envs, commit_sha, installation_id):
             run_image_build.delay(image_id=image.id)
 
 
-def _app_env_status(app_env):
+# TODO: add proper literal support for label and maybe emoji
+# FIXME: is that datetime or sqla's wrapper? als check how check how SQLA does booleans
+def _app_env_status(
+    app_env: ApplicationEnvironment,
+) -> tuple[str, str, str | None, Column[datetime.datetime] | None]:
     """Determine the current status of a service in a branch deploy.
 
     Returns (emoji, label, log_url_path, updated_at).
@@ -681,7 +712,7 @@ def _app_env_status(app_env):
     return ("\u23f3", "Pending", None, None)
 
 
-def _preview_url(app_env):
+def _preview_url(app_env: ApplicationEnvironment) -> str | None:
     """Return the https:// URL for the first auto-generated ingress host, or None."""
     for ingress in app_env.ingresses:
         if not ingress.enabled:
@@ -692,7 +723,7 @@ def _preview_url(app_env):
     return None
 
 
-def _render_pr_comment_body(environment):
+def _render_pr_comment_body(environment: Environment) -> str:
     """Render the markdown body for a branch deploy PR comment."""
     project = environment.project
     org_slug = project.organization.slug
@@ -734,7 +765,8 @@ def _render_pr_comment_body(environment):
     return "\n".join(lines)
 
 
-def _aggregate_deployment_state(environment):
+# TODO: add proper literal support for status
+def _aggregate_deployment_state(environment: Environment) -> tuple[str, str]:
     """Derive consolidated GitHub deployment state from all app_envs."""
     statuses = [
         _app_env_status(ae) for ae in environment.active_application_environments
@@ -763,7 +795,7 @@ def _aggregate_deployment_state(environment):
     return "pending", "Deployment starting"
 
 
-def _find_statuses_url(environment):
+def _find_statuses_url(environment: Environment) -> str | None:
     """Find the consolidated GitHub deployment statuses_url from any app_env."""
     for app_env in environment.active_application_environments:
         image = app_env.latest_image
@@ -772,7 +804,7 @@ def _find_statuses_url(environment):
     return None
 
 
-def update_pr_comment(environment):
+def update_pr_comment(environment: Environment) -> None:
     """Create or update the PR comment for a branch deploy environment."""
     match = re.match(r"pr-(\d+)", environment.slug)
     if not match:
@@ -833,18 +865,25 @@ def update_pr_comment(environment):
             )
 
 
-def maybe_update_pr_comment_for_app_env(app_env):
+def maybe_update_pr_comment_for_app_env(app_env: ApplicationEnvironment) -> None:
     """Update the PR comment if this app_env belongs to a branch deploy environment."""
     env = app_env.environment
     if env.forked_from_environment_id is not None:
         update_pr_comment(env)
 
 
-def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref=None):
+def create_branch_deploy(
+    project: Project,
+    pr_number: int,
+    head_sha: str,
+    installation_id: int,
+    head_ref: str | None = None,
+) -> None:
     """Create an ephemeral environment for a PR and build images for all enrolled apps."""
     from cabotage.celery.tasks.resources import reconcile_backing_services
 
     base_env = project.branch_deploy_base_environment
+    assert base_env
     env_slug = f"pr-{pr_number}"
 
     existing = Environment.query.filter_by(project_id=project.id, slug=env_slug).first()
@@ -931,10 +970,12 @@ def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref
     update_pr_comment(environment)
 
 
-def sync_branch_deploy(project, pr_number, head_sha, installation_id):
+def sync_branch_deploy(
+    project: Project, pr_number: int, head_sha: str, installation_id: int
+) -> None:
     """Build new images for an existing branch deploy environment."""
     env_slug = f"pr-{pr_number}"
-    environment = Environment.query.filter_by(
+    environment: Environment = Environment.query.filter_by(
         project_id=project.id, slug=env_slug
     ).first()
     if not environment:
@@ -972,7 +1013,7 @@ def sync_branch_deploy(project, pr_number, head_sha, installation_id):
     update_pr_comment(environment)
 
 
-def teardown_branch_deploy(project, pr_number):
+def teardown_branch_deploy(project: Project, pr_number: int) -> None:
     """Tear down an ephemeral environment for a closed PR."""
     env_slug = f"pr-{pr_number}"
     environment = Environment.query.filter_by(
@@ -992,7 +1033,7 @@ def teardown_branch_deploy(project, pr_number):
     )
 
 
-def _deactivate_deployment(environment):
+def _deactivate_deployment(environment: Environment) -> None:
     """Mark all GitHub Deployments for this environment as inactive."""
     app_env = next(iter(environment.active_application_environments), None)
     if not app_env:
@@ -1042,7 +1083,7 @@ def _deactivate_deployment(environment):
         logger.exception("Failed to deactivate deployments for %s", environment.slug)
 
 
-def _post_teardown_comment(environment, pr_number):
+def _post_teardown_comment(environment: Environment, pr_number: int) -> None:
     app_env = next(iter(environment.active_application_environments), None)
     if not app_env:
         return

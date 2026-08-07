@@ -1,9 +1,15 @@
+from __future__ import annotations
+
 import contextlib
 import os
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 
 @contextlib.contextmanager
-def modified_environ(*remove, **update):
+def modified_environ(*remove: str, **update: str) -> Generator[None]:
     """
     Temporarily updates the ``os.environ`` dictionary in-place.
 
@@ -14,8 +20,6 @@ def modified_environ(*remove, **update):
     :param update: Dictionary of environment variables and values to add/update.
     """
     env = os.environ
-    update = update or {}
-    remove = remove or []
 
     # List of environment variables being updated or removed.
     stomped = (set(update.keys()) | set(remove)) & set(env.keys())
