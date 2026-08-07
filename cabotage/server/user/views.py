@@ -28,8 +28,26 @@ from flask_security import (
 from flask_wtf import FlaskForm
 from itsdangerous import BadData
 
-import kubernetes
-import kubernetes.stream.ws_client
+from kubernetes.client import (
+    BatchV1Api,
+    CoreV1Api,
+    V1Container,
+    V1EnvVar,
+    V1Job,
+    V1JobSpec,
+    V1ObjectMeta,
+    V1PersistentVolumeClaimVolumeSource,
+    V1PodSecurityContext,
+    V1PodSpec,
+    V1PodTemplateSpec,
+    V1SeccompProfile,
+    V1SecurityContext,
+    V1Volume,
+    V1VolumeMount,
+)
+from kubernetes.client.exceptions import ApiException
+from kubernetes.stream import stream as kubernetes_stream
+from kubernetes.stream.ws_client import RESIZE_CHANNEL
 
 from dxf import DXF
 import requests as requests_lib
@@ -3571,7 +3589,7 @@ def _shell_socket(ws, org_slug, project_slug, app_slug, env_slug=None):
     db.session.remove()
 
     api_client = kubernetes_ext.kubernetes_client
-    core_api_instance = kubernetes.client.CoreV1Api(api_client)
+    core_api_instance = CoreV1Api(api_client)
 
     # =============================================================================== #
     #  everything below should be replaced with the creation/monitoring of a new pod  #
@@ -3602,7 +3620,7 @@ def _shell_socket(ws, org_slug, project_slug, app_slug, env_slug=None):
 
     # =============================================================================== #
 
-    resp = kubernetes.stream.stream(
+    resp = kubernetes_stream(
         core_api_instance.connect_get_namespaced_pod_exec,
         pod.metadata.name,
         namespace=pod.metadata.namespace,
@@ -3629,7 +3647,7 @@ def _shell_socket(ws, org_slug, project_slug, app_slug, env_slug=None):
             if data[0] == "\x00":
                 resp.write_stdin(data[1:])
             elif data[0] == "\x01":
-                resp.write_channel(kubernetes.stream.ws_client.RESIZE_CHANNEL, data[1:])
+                resp.write_channel(RESIZE_CHANNEL, data[1:])
         if data := resp.read_stdout(timeout=0.01):
             ws.send("\x00" + data)
         if data := resp.read_stderr(timeout=0.01):
@@ -5998,8 +6016,8 @@ def application_clear_cache(org_slug, project_slug, app_slug):
     repository_name = application.registry_repository_name(app_env)
 
     api_client = kubernetes_ext.kubernetes_client
-    core_api_instance = kubernetes.client.CoreV1Api(api_client)
-    batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+    core_api_instance = CoreV1Api(api_client)
+    batch_api_instance = BatchV1Api(api_client)
     image = application.images.first()
     if image is not None and current_app.config["KUBERNETES_ENABLED"]:
         from cabotage.celery.tasks.deploy import run_job
@@ -6015,8 +6033,8 @@ def application_clear_cache(org_slug, project_slug, app_slug):
 
         volume_claim = fetch_image_build_cache_volume_claim(core_api_instance, image)
         safe_labels = _safe_labels_from_application(image.application)
-        job_object = kubernetes.client.V1Job(
-            metadata=kubernetes.client.V1ObjectMeta(
+        job_object = V1Job(
+            metadata=V1ObjectMeta(
                 name=f"clear-cache-{volume_claim.metadata.name}"[:63],
                 labels={
                     "organization": image.application.project.organization.slug,
@@ -6027,13 +6045,13 @@ def application_clear_cache(org_slug, project_slug, app_slug):
                     **safe_labels,
                 },
             ),
-            spec=kubernetes.client.V1JobSpec(
+            spec=V1JobSpec(
                 active_deadline_seconds=1800,
                 backoff_limit=0,
                 parallelism=1,
                 completions=1,
-                template=kubernetes.client.V1PodTemplateSpec(
-                    metadata=kubernetes.client.V1ObjectMeta(
+                template=V1PodTemplateSpec(
+                    metadata=V1ObjectMeta(
                         labels={
                             "organization": image.application.project.organization.slug,  # noqa: E501
                             "project": image.application.project.slug,
@@ -6047,33 +6065,33 @@ def application_clear_cache(org_slug, project_slug, app_slug):
                             "container.apparmor.security.beta.kubernetes.io/clear-cache": "unconfined",  # noqa: E501
                         },
                     ),
-                    spec=kubernetes.client.V1PodSpec(
+                    spec=V1PodSpec(
                         restart_policy="Never",
-                        security_context=kubernetes.client.V1PodSecurityContext(
+                        security_context=V1PodSecurityContext(
                             fs_group=1000,
                             fs_group_change_policy="OnRootMismatch",
                         ),
                         containers=[
-                            kubernetes.client.V1Container(
+                            V1Container(
                                 name="clear-cache",
                                 image=buildkit_image,
                                 command=["buildctl-daemonless.sh"],
                                 args=["prune", "--all"],
                                 env=[
-                                    kubernetes.client.V1EnvVar(
+                                    V1EnvVar(
                                         name="BUILDKITD_FLAGS",
                                         value="--oci-worker-no-process-sandbox",  # noqa: E501
                                     ),
                                 ],
-                                security_context=kubernetes.client.V1SecurityContext(
-                                    seccomp_profile=kubernetes.client.V1SeccompProfile(
+                                security_context=V1SecurityContext(
+                                    seccomp_profile=V1SeccompProfile(
                                         type="Unconfined",
                                     ),
                                     run_as_user=1000,
                                     run_as_group=1000,
                                 ),
                                 volume_mounts=[
-                                    kubernetes.client.V1VolumeMount(
+                                    V1VolumeMount(
                                         mount_path="/home/user/.local/share/buildkit",
                                         name="build-cache",
                                     ),
@@ -6081,9 +6099,9 @@ def application_clear_cache(org_slug, project_slug, app_slug):
                             ),
                         ],
                         volumes=[
-                            kubernetes.client.V1Volume(
+                            V1Volume(
                                 name="build-cache",
-                                persistent_volume_claim=kubernetes.client.V1PersistentVolumeClaimVolumeSource(
+                                persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(
                                     claim_name=volume_claim.metadata.name
                                 ),
                             ),
@@ -8213,7 +8231,7 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
     processes = {}  # {process_name: {"total": N, "ready": N, "pending": N, "crashed": N}}
     try:
         api_client = kubernetes_ext.kubernetes_client
-        core_api = kubernetes.client.CoreV1Api(api_client)
+        core_api = CoreV1Api(api_client)
         label_selector = (
             f"organization={application.project.organization.slug},"
             f"project={application.project.slug},"
@@ -8264,7 +8282,7 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
                 processes[proc]["crashed"] += 1
             else:
                 processes[proc]["pending"] += 1
-    except (kubernetes.client.ApiException, Exception):
+    except (ApiException, Exception):
         current_app.logger.debug("Failed to list pods for live stats", exc_info=True)
 
     end = int(time.time())
