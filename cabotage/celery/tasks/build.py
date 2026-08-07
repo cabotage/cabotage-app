@@ -8,7 +8,7 @@ import re
 import secrets
 import shlex
 import subprocess  # nosec
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from celery import shared_task
 from base64 import b64encode, b64decode
@@ -110,6 +110,7 @@ if TYPE_CHECKING:
     from dxf import DXFBase
     from requests import Response
 
+    from cabotage._types.config import ConfigDict
     from cabotage._types.tasks import ImageSource
     from cabotage.server.models.projects import ApplicationEnvironment, Application
 
@@ -322,11 +323,12 @@ class BuildkitEnv:
     """Shared registry and buildkit configuration."""
 
     def __init__(self, repository_name: str) -> None:
-        self.secret: str = current_app.config["REGISTRY_AUTH_SECRET"]
-        self.registry: str = current_app.config["REGISTRY_BUILD"]
-        self.registry_secure: bool = current_app.config["REGISTRY_SECURE"]
-        self.registry_ca: str | bool = current_app.config["REGISTRY_VERIFY"]
-        self.buildkit_image: str = current_app.config["BUILDKIT_IMAGE"]
+        app_config = cast("ConfigDict", current_app.config)
+        self.secret = app_config["REGISTRY_AUTH_SECRET"]
+        self.registry = app_config["REGISTRY_BUILD"]
+        self.registry_secure = app_config["REGISTRY_SECURE"]
+        self.registry_ca = app_config["REGISTRY_VERIFY"]
+        self.buildkit_image = app_config["BUILDKIT_IMAGE"]
 
         self.insecure_reg = ""
         registry_url = f"https://{self.registry}/v2"
@@ -346,8 +348,8 @@ class BuildkitEnv:
         # Optional Docker Hub pull auth to avoid rate limits.  This is
         # safe because the docker config is mounted on the *host*
         # container, not inside the OCI rootfs that RUN steps execute in.
-        dockerhub_username = current_app.config.get("DOCKERHUB_USERNAME")
-        dockerhub_token = current_app.config.get("DOCKERHUB_TOKEN")
+        dockerhub_username = app_config.get("DOCKERHUB_USERNAME")
+        dockerhub_token = app_config.get("DOCKERHUB_TOKEN")
         if dockerhub_username and dockerhub_token:
             docker_config["auths"]["https://index.docker.io/v1/"] = {
                 "auth": b64encode(

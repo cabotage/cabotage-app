@@ -960,7 +960,7 @@ def organization_settings(org_slug: str):
 
 @user_blueprint.route("/github/install/<org_slug>")
 @login_required
-def github_install_start(org_slug):
+def github_install_start(org_slug: str) -> BaseResponse:
     organization = (
         Organization.query.filter_by(slug=org_slug)
         .filter(Organization.deleted_at.is_(None))
@@ -3493,7 +3493,9 @@ def project_application(
     "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/shell"
 )
 @login_required
-def project_application_shell(org_slug, project_slug, app_slug, env_slug=None):
+def project_application_shell(
+    org_slug: str, project_slug: str, app_slug: str, env_slug: str | None = None
+):
     if not current_app.config.get("SHELLZ_ENABLED", False):
         abort(404)
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
@@ -4147,7 +4149,9 @@ def project_application_settings(org_slug, project_slug, app_slug):
     return _render_application_settings(application, org, project, form)
 
 
-def _prepare_application_settings_form(application, org):
+def _prepare_application_settings_form(
+    application: Application, org: Organization
+) -> EditApplicationSettingsForm:
     form = EditApplicationSettingsForm(obj=application)
 
     if not form.is_submitted():
