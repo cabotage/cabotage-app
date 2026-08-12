@@ -1,4 +1,5 @@
 import os
+import secrets
 
 from flask_env import MetaFlaskEnv
 from flask_security import uia_username_mapper, uia_email_mapper
@@ -54,7 +55,7 @@ class Config(metaclass=MetaFlaskEnv):
     EXT_PREFERRED_URL_SCHEME = "http"
 
     FLASK_ADMIN_SWATCH = "cerulean"
-    SECRET_KEY = "my_precious"  # nosec
+    SECRET_KEY = os.environ.get("CABOTAGE_SECRET_KEY") or secrets.token_hex(32)
     DEBUG = False
     MAX_CONTENT_LENGTH = 32 * 1024 * 1024
     BCRYPT_LOG_ROUNDS = 13
@@ -62,14 +63,14 @@ class Config(metaclass=MetaFlaskEnv):
     DEBUG_TB_ENABLED = False
     DEBUG_TB_INTERCEPT_REDIRECTS = False
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SECURITY_PASSWORD_SALT = "my_precious"  # nosec
+    SECURITY_PASSWORD_SALT = os.environ.get("CABOTAGE_SECURITY_PASSWORD_SALT") or secrets.token_hex(32)
     SECURITY_TRACKABLE = True
     SECURITY_CHANGEABLE = True
     SECURITY_CONFIRMABLE = True
     SECURITY_REGISTERABLE = True
     SECURITY_RECOVERABLE = True
     SECURITY_EMAIL_SENDER = "noreply@localhost"
-    SECURITY_TOTP_SECRETS = {1: "my_precious"}
+    SECURITY_TOTP_SECRETS = {1: os.environ.get("CABOTAGE_SECURITY_TOTP_SECRET_1") or secrets.token_hex(32)}
     SECURITY_TOTP_ISSUER = "cabotage"
     REQUIRE_MFA = True
     SECURITY_TWO_FACTOR = True
@@ -121,7 +122,7 @@ class Config(metaclass=MetaFlaskEnv):
     REGISTRY_PULL = "registry:5001"
     REGISTRY_SECURE = False
     REGISTRY_VERIFY = False
-    REGISTRY_AUTH_SECRET = "v3rys3cur3"  # nosec
+    REGISTRY_AUTH_SECRET = os.environ.get("CABOTAGE_REGISTRY_AUTH_SECRET") or secrets.token_hex(32)
     DOCKERHUB_USERNAME = None
     DOCKERHUB_TOKEN = None
     BUILDKITD_URL = "tcp://cabotage-buildkitd:1234"
