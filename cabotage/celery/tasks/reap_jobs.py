@@ -8,8 +8,8 @@ them from the cluster.
 import datetime
 import os
 
-import kubernetes
-from kubernetes.client.rest import ApiException
+from kubernetes.client import BatchV1Api
+from kubernetes.client.exceptions import ApiException
 from sqlalchemy.exc import IntegrityError
 
 from celery import shared_task
@@ -133,7 +133,7 @@ def reap_finished_jobs():
         return
 
     api_client = kubernetes_ext.kubernetes_client
-    batch_api = kubernetes.client.BatchV1Api(api_client)
+    batch_api = BatchV1Api(api_client)
 
     label_selector = "resident-job.cabotage.io=true"
     limit = _reap_limit()

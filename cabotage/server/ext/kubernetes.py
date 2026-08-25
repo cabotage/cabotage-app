@@ -1,6 +1,7 @@
 from flask import g
 
-import kubernetes
+from kubernetes.client.api_client import ApiClient
+from kubernetes.config import load_incluster_config, load_kube_config
 
 
 class Kubernetes(object):
@@ -11,12 +12,10 @@ class Kubernetes(object):
 
     def init_app(self, app):
         try:
-            kubernetes.config.load_incluster_config()
+            load_incluster_config()
         except Exception:
             try:
-                kubernetes.config.load_kube_config(
-                    context=app.config["KUBERNETES_CONTEXT"]
-                )
+                load_kube_config(context=app.config["KUBERNETES_CONTEXT"])
             except Exception:
                 if app.config["KUBERNETES_ENABLED"]:
                     raise
@@ -24,7 +23,7 @@ class Kubernetes(object):
         app.teardown_appcontext(self.teardown)
 
     def connect_kubernetes(self):
-        kubernetes_client = kubernetes.client.ApiClient()
+        kubernetes_client = ApiClient()
         return kubernetes_client
 
     def teardown(self, exception):

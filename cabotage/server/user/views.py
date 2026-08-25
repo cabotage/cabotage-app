@@ -25,7 +25,24 @@ from flask_security import (
 from flask_wtf import FlaskForm
 from itsdangerous import BadData
 
-import kubernetes
+from kubernetes.client import (
+    BatchV1Api,
+    CoreV1Api,
+    V1Container,
+    V1EnvVar,
+    V1Job,
+    V1JobSpec,
+    V1ObjectMeta,
+    V1PersistentVolumeClaimVolumeSource,
+    V1PodSecurityContext,
+    V1PodSpec,
+    V1PodTemplateSpec,
+    V1SeccompProfile,
+    V1SecurityContext,
+    V1Volume,
+    V1VolumeMount,
+)
+from kubernetes.client.exceptions import ApiException
 import kubernetes.stream.ws_client
 
 from dxf import DXF
@@ -983,7 +1000,7 @@ def github_install_callback():
         return redirect(url_for("user.organizations"))
     try:
         installation_id = int(installation_id)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         flash("GitHub did not return enough information to connect the app.", "danger")
         return redirect(url_for("user.organizations"))
 
@@ -3525,7 +3542,7 @@ def _shell_socket(ws, org_slug, project_slug, app_slug, env_slug=None):
     db.session.remove()
 
     api_client = kubernetes_ext.kubernetes_client
-    core_api_instance = kubernetes.client.CoreV1Api(api_client)
+    core_api_instance = CoreV1Api(api_client)
 
     # =============================================================================== #
     #  everything below should be replaced with the creation/monitoring of a new pod  #
@@ -5950,8 +5967,8 @@ def application_clear_cache(org_slug, project_slug, app_slug):
     repository_name = application.registry_repository_name(app_env)
 
     api_client = kubernetes_ext.kubernetes_client
-    core_api_instance = kubernetes.client.CoreV1Api(api_client)
-    batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+    core_api_instance = CoreV1Api(api_client)
+    batch_api_instance = BatchV1Api(api_client)
     image = application.images.first()
     if image is not None and current_app.config["KUBERNETES_ENABLED"]:
         from cabotage.celery.tasks.deploy import run_job
@@ -5967,8 +5984,8 @@ def application_clear_cache(org_slug, project_slug, app_slug):
 
         volume_claim = fetch_image_build_cache_volume_claim(core_api_instance, image)
         safe_labels = _safe_labels_from_application(image.application)
-        job_object = kubernetes.client.V1Job(
-            metadata=kubernetes.client.V1ObjectMeta(
+        job_object = V1Job(
+            metadata=V1ObjectMeta(
                 name=f"clear-cache-{volume_claim.metadata.name}"[:63],
                 labels={
                     "organization": image.application.project.organization.slug,
@@ -5979,13 +5996,13 @@ def application_clear_cache(org_slug, project_slug, app_slug):
                     **safe_labels,
                 },
             ),
-            spec=kubernetes.client.V1JobSpec(
+            spec=V1JobSpec(
                 active_deadline_seconds=1800,
                 backoff_limit=0,
                 parallelism=1,
                 completions=1,
-                template=kubernetes.client.V1PodTemplateSpec(
-                    metadata=kubernetes.client.V1ObjectMeta(
+                template=V1PodTemplateSpec(
+                    metadata=V1ObjectMeta(
                         labels={
                             "organization": image.application.project.organization.slug,  # noqa: E501
                             "project": image.application.project.slug,
@@ -5999,33 +6016,33 @@ def application_clear_cache(org_slug, project_slug, app_slug):
                             "container.apparmor.security.beta.kubernetes.io/clear-cache": "unconfined",  # noqa: E501
                         },
                     ),
-                    spec=kubernetes.client.V1PodSpec(
+                    spec=V1PodSpec(
                         restart_policy="Never",
-                        security_context=kubernetes.client.V1PodSecurityContext(
+                        security_context=V1PodSecurityContext(
                             fs_group=1000,
                             fs_group_change_policy="OnRootMismatch",
                         ),
                         containers=[
-                            kubernetes.client.V1Container(
+                            V1Container(
                                 name="clear-cache",
                                 image=buildkit_image,
                                 command=["buildctl-daemonless.sh"],
                                 args=["prune", "--all"],
                                 env=[
-                                    kubernetes.client.V1EnvVar(
+                                    V1EnvVar(
                                         name="BUILDKITD_FLAGS",
                                         value="--oci-worker-no-process-sandbox",  # noqa: E501
                                     ),
                                 ],
-                                security_context=kubernetes.client.V1SecurityContext(
-                                    seccomp_profile=kubernetes.client.V1SeccompProfile(
+                                security_context=V1SecurityContext(
+                                    seccomp_profile=V1SeccompProfile(
                                         type="Unconfined",
                                     ),
                                     run_as_user=1000,
                                     run_as_group=1000,
                                 ),
                                 volume_mounts=[
-                                    kubernetes.client.V1VolumeMount(
+                                    V1VolumeMount(
                                         mount_path="/home/user/.local/share/buildkit",
                                         name="build-cache",
                                     ),
@@ -6033,9 +6050,9 @@ def application_clear_cache(org_slug, project_slug, app_slug):
                             ),
                         ],
                         volumes=[
-                            kubernetes.client.V1Volume(
+                            V1Volume(
                                 name="build-cache",
-                                persistent_volume_claim=kubernetes.client.V1PersistentVolumeClaimVolumeSource(
+                                persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(
                                     claim_name=volume_claim.metadata.name
                                 ),
                             ),
@@ -8160,7 +8177,7 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
     processes = {}  # {process_name: {"total": N, "ready": N, "pending": N, "crashed": N}}
     try:
         api_client = kubernetes_ext.kubernetes_client
-        core_api = kubernetes.client.CoreV1Api(api_client)
+        core_api = CoreV1Api(api_client)
         label_selector = (
             f"organization={application.project.organization.slug},"
             f"project={application.project.slug},"
@@ -8172,7 +8189,10 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
         )
         for pod in pod_list.items:
             # Skip terminating pods (deletionTimestamp is set)
-            if pod.metadata.deletion_timestamp is not None:
+            pod_metadata = assume_not_none(
+                pod.metadata, because="Kubernetes objects are required to have metadata"
+            )
+            if pod_metadata.deletion_timestamp is not None:
                 continue
             phase = pod.status.phase or "Unknown"
             # Skip completed/failed pods (e.g. finished Job runs)
@@ -8181,7 +8201,7 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
             pods_by_phase[phase] = pods_by_phase.get(phase, 0) + 1
             pods_total += 1
             if phase == "Running":
-                running_pod_names.append(pod.metadata.name)
+                running_pod_names.append(pod_metadata.name)
             is_ready = False
             is_crashed = False
             if pod.status.conditions:
@@ -8201,7 +8221,7 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
                     if cs.state and cs.state.terminated:
                         is_crashed = True
                         break
-            proc = (pod.metadata.labels or {}).get("process", "unknown")
+            proc = (pod_metadata.labels or {}).get("process", "unknown")
             if proc not in processes:
                 processes[proc] = {"total": 0, "ready": 0, "pending": 0, "crashed": 0}
             processes[proc]["total"] += 1
@@ -8211,7 +8231,7 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
                 processes[proc]["crashed"] += 1
             else:
                 processes[proc]["pending"] += 1
-    except kubernetes.client.ApiException, Exception:
+    except (ApiException, Exception):
         current_app.logger.debug("Failed to list pods for live stats", exc_info=True)
 
     end = int(time.time())
@@ -8397,7 +8417,7 @@ def _loki_query_response(selectors, process_names, tenant_id=None):
     if end_ns is not None:
         try:
             end_ns = int(end_ns)
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             end_ns = None
 
     if end_ns is None:
@@ -8406,7 +8426,7 @@ def _loki_query_response(selectors, process_names, tenant_id=None):
     if start_param is not None:
         try:
             start_ns = int(start_param)
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             start_ns = end_ns - (range_seconds * 1_000_000_000)
     else:
         start_ns = end_ns - (range_seconds * 1_000_000_000)
@@ -8467,7 +8487,7 @@ def _loki_query_response(selectors, process_names, tenant_id=None):
                     if isinstance(parsed, dict) and "log" in parsed:
                         message = parsed["log"]
                         log_stream = parsed.get("stream", "")
-                except json.JSONDecodeError, TypeError:
+                except (json.JSONDecodeError, TypeError):
                     pass
             if message.endswith("\n"):
                 message = message[:-1]
