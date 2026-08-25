@@ -107,8 +107,8 @@ def _run_release_build(release, mock_core, mock_run_job):
 
     with (
         patch(f"{_BUILD_MODULE}.kubernetes_ext") as mock_kext,
-        patch(f"{_BUILD_MODULE}.kubernetes.client.CoreV1Api", return_value=mock_core),
-        patch(f"{_BUILD_MODULE}.kubernetes.client.BatchV1Api", return_value=mock_batch),
+        patch(f"{_BUILD_MODULE}.CoreV1Api", return_value=mock_core),
+        patch(f"{_BUILD_MODULE}.BatchV1Api", return_value=mock_batch),
         patch(f"{_BUILD_MODULE}.run_job", mock_run_job),
         patch(f"{_BUILD_MODULE}.BuildkitEnv", return_value=mock_bke),
         patch(f"{_BUILD_MODULE}.fetch_image_build_cache_volume_claim"),
@@ -131,8 +131,8 @@ def _run_image_build(image, mock_core, mock_run_job):
 
     with (
         patch(f"{_BUILD_MODULE}.kubernetes_ext") as mock_kext,
-        patch(f"{_BUILD_MODULE}.kubernetes.client.CoreV1Api", return_value=mock_core),
-        patch(f"{_BUILD_MODULE}.kubernetes.client.BatchV1Api", return_value=mock_batch),
+        patch(f"{_BUILD_MODULE}.CoreV1Api", return_value=mock_core),
+        patch(f"{_BUILD_MODULE}.BatchV1Api", return_value=mock_batch),
         patch(f"{_BUILD_MODULE}.run_job", mock_run_job),
         patch(f"{_BUILD_MODULE}.BuildkitEnv", return_value=mock_bke),
         patch(f"{_BUILD_MODULE}.fetch_image_build_cache_volume_claim"),
@@ -375,7 +375,7 @@ class TestReaperIgnoresBuildJobs:
         with (
             patch.object(reap_jobs, "current_app", mock_app),
             patch.object(reap_jobs, "kubernetes_ext") as mock_kext,
-            patch("kubernetes.client.BatchV1Api", return_value=mock_batch),
+            patch.object(reap_jobs, "BatchV1Api", return_value=mock_batch),
         ):
             mock_kext.kubernetes_client = MagicMock()
             reap_jobs.reap_finished_jobs()
@@ -392,7 +392,7 @@ class TestReaperIgnoresBuildJobs:
 
 class TestBuildCachePVC:
     def test_pvc_created_in_tenant_namespace(self, mock_app):
-        from kubernetes.client.rest import ApiException
+        from kubernetes.client.exceptions import ApiException
 
         image = _make_image(org_k8s="myorg", env_k8s="prod")
         mock_core = MagicMock()
@@ -407,7 +407,7 @@ class TestBuildCachePVC:
         assert create_call[0][0] == "cabotage-tenant-builds"
 
     def test_pvc_created_with_safe_labels(self, mock_app):
-        from kubernetes.client.rest import ApiException
+        from kubernetes.client.exceptions import ApiException
 
         image = _make_image(org_k8s="myorg", env_k8s="prod")
         mock_core = MagicMock()
