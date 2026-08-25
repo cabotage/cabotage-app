@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import logging
 import secrets
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from base64 import b64encode
 
@@ -108,6 +110,15 @@ from cabotage.celery.tasks.notify import (
     dispatch_autodeploy_notification,
     dispatch_pipeline_notification,
 )
+from cabotage._types import (
+    assume_not_none,
+    K8S_OBJECT_HAS_METADATA,
+    K8S_OBJECT_HAS_NAME,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from cabotage.server.models.projects import Release
 
 if TYPE_CHECKING:
     from cabotage.server.models.projects import Ingress
@@ -153,7 +164,9 @@ def _dispatch_deploy_failure(deployment, error_detail):
 
 
 @shared_task()
-def cleanup_app_env_k8s(app_env_id, namespace, resource_prefix, label_selector):
+def cleanup_app_env_k8s(
+    app_env_id: str, namespace: str, resource_prefix: str, label_selector: str
+) -> None:
     """Best-effort delete of all k8s resources for one ApplicationEnvironment.
 
     All k8s addressing values are passed explicitly because the originating
@@ -182,10 +195,14 @@ def cleanup_app_env_k8s(app_env_id, namespace, resource_prefix, label_selector):
             namespace, label_selector=label_selector
         )
         for d in deps.items:
-            log.info(
-                "k8s cleanup: deleting deployment %s/%s", namespace, d.metadata.name
+            d_metadata_name = assume_not_none(
+                assume_not_none(d.metadata, because=K8S_OBJECT_HAS_METADATA).name,
+                because=K8S_OBJECT_HAS_NAME,
             )
-            apps_api.delete_namespaced_deployment(d.metadata.name, namespace)
+            log.info(
+                "k8s cleanup: deleting deployment %s/%s", namespace, d_metadata_name
+            )
+            apps_api.delete_namespaced_deployment(d_metadata_name, namespace)
     except Exception:
         log.exception("k8s cleanup: failed to delete deployments")
 
@@ -196,8 +213,12 @@ def cleanup_app_env_k8s(app_env_id, namespace, resource_prefix, label_selector):
             namespace, label_selector=svc_label_selector
         )
         for s in svcs.items:
-            log.info("k8s cleanup: deleting service %s/%s", namespace, s.metadata.name)
-            core_api.delete_namespaced_service(s.metadata.name, namespace)
+            s_metadata_name = assume_not_none(
+                assume_not_none(s.metadata, because=K8S_OBJECT_HAS_METADATA).name,
+                because=K8S_OBJECT_HAS_NAME,
+            )
+            log.info("k8s cleanup: deleting service %s/%s", namespace, s_metadata_name)
+            core_api.delete_namespaced_service(s_metadata_name, namespace)
     except Exception:
         log.exception("k8s cleanup: failed to delete services")
 
@@ -207,8 +228,12 @@ def cleanup_app_env_k8s(app_env_id, namespace, resource_prefix, label_selector):
             namespace, label_selector=label_selector
         )
         for i in ings.items:
-            log.info("k8s cleanup: deleting ingress %s/%s", namespace, i.metadata.name)
-            networking_api.delete_namespaced_ingress(i.metadata.name, namespace)
+            i_metadata_name = assume_not_none(
+                assume_not_none(i.metadata, because=K8S_OBJECT_HAS_METADATA).name,
+                because=K8S_OBJECT_HAS_NAME,
+            )
+            log.info("k8s cleanup: deleting ingress %s/%s", namespace, i_metadata_name)
+            networking_api.delete_namespaced_ingress(i_metadata_name, namespace)
     except Exception:
         log.exception("k8s cleanup: failed to delete ingresses")
 
@@ -289,7 +314,7 @@ def _wait_for_tls_certificate(api_client, namespace, cert_name, timeout=120, log
     return False
 
 
-def k8s_namespace(release):
+def k8s_namespace(release: Release) -> str:
     return release.application_environment.environment.k8s_namespace
 
 
@@ -378,12 +403,15 @@ def create_namespace(core_api_instance, release):
         )
 
 
-def ensure_namespace(core_api_instance, namespace_name):
+def ensure_namespace(core_api_instance: CoreV1Api, namespace_name: str) -> V1Namespace:
     """Create the namespace if it doesn't exist, ensure resident label is set."""
     try:
         namespace = core_api_instance.read_namespace(namespace_name)
         # Ensure the resident-namespace label is present on existing namespaces
-        labels = namespace.metadata.labels or {}
+        labels = (
+            assume_not_none(namespace.metadata, because=K8S_OBJECT_HAS_METADATA).labels
+            or {}
+        )
         if labels.get("resident-namespace.cabotage.io") != "true":
             namespace = core_api_instance.patch_namespace(
                 namespace_name,
@@ -411,7 +439,7 @@ def ensure_namespace(core_api_instance, namespace_name):
     return namespace
 
 
-def fetch_namespace(core_api_instance, release):
+def fetch_namespace(core_api_instance: CoreV1Api, release: Release):
     return ensure_namespace(core_api_instance, k8s_namespace(release))
 
 
@@ -843,7 +871,9 @@ def create_service_account(core_api_instance, release):
         )
 
 
-def fetch_service_account(core_api_instance, release):
+def fetch_service_account(
+    core_api_instance: CoreV1Api, release: Release
+) -> V1ServiceAccount:
     namespace = k8s_namespace(release)
     service_account_name = k8s_resource_prefix(release)
     try:
@@ -1585,7 +1615,9 @@ def create_image_pull_secret(core_api_instance, release):
         )
 
 
-def fetch_image_pull_secrets(core_api_instance, release):
+def fetch_image_pull_secrets(
+    core_api_instance: CoreV1Api, release: Release
+) -> V1Secret:
     namespace = k8s_namespace(release)
     secret_name = k8s_resource_prefix(release)
     try:
@@ -2672,9 +2704,9 @@ def _run_job_streaming(
             )
             if container:
                 kwargs["container"] = container
-            for line in w.stream(
-                core_api_instance.read_namespaced_pod_log,
-                **kwargs,
+            for line in cast(
+                "Iterator[str]",
+                w.stream(core_api_instance.read_namespaced_pod_log, **kwargs),
             ):
                 if isinstance(line, bytes):
                     line = line.decode("utf-8", errors="replace")
@@ -2721,7 +2753,7 @@ def _run_job_streaming(
             pass
 
 
-def deploy_release(deployment):
+def deploy_release(deployment: Deployment):
     job_id = secrets.token_hex(4)
     deployment.job_id = job_id
     db.session.add(deployment)
@@ -2915,28 +2947,44 @@ def deploy_release(deployment):
             core_api_instance, deployment.release_object
         )
         log("Patching ServiceAccount with ImagePullSecrets")
+        service_account_metadata_name = assume_not_none(
+            assume_not_none(
+                service_account.metadata, because=K8S_OBJECT_HAS_METADATA
+            ).name,
+            because=K8S_OBJECT_HAS_NAME,
+        )
+        namespace_metadata_name = assume_not_none(
+            assume_not_none(namespace.metadata, because=K8S_OBJECT_HAS_METADATA).name,
+            because=K8S_OBJECT_HAS_NAME,
+        )
+        image_pull_secrets_metadata_name = assume_not_none(
+            assume_not_none(
+                image_pull_secrets.metadata, because=K8S_OBJECT_HAS_METADATA
+            ).name,
+            because=K8S_OBJECT_HAS_NAME,
+        )
         service_account = core_api_instance.patch_namespaced_service_account(
-            service_account.metadata.name,
-            namespace.metadata.name,
+            service_account_metadata_name,
+            namespace_metadata_name,
             V1ServiceAccount(
                 image_pull_secrets=[
-                    V1LocalObjectReference(name=image_pull_secrets.metadata.name)
+                    V1LocalObjectReference(name=image_pull_secrets_metadata_name)
                 ],
             ),
         )
         for release_command in deployment.release_object.release_commands:
             log(f"Running release command {release_command}")
             job_object = render_job(
-                namespace.metadata.name,
+                namespace_metadata_name,
                 deployment.release_object,
-                service_account.metadata.name,
+                service_account_metadata_name,
                 release_command,
                 deployment.job_id,
             )
             job_complete, job_logs = run_job(
                 core_api_instance,
                 batch_api_instance,
-                namespace.metadata.name,
+                namespace_metadata_name,
                 job_object,
                 redis_client=redis_client,
                 log_key=log_key,
@@ -2958,9 +3006,9 @@ def deploy_release(deployment):
             )
             create_deployment(
                 apps_api_instance,
-                namespace.metadata.name,
+                namespace_metadata_name,
                 deployment.release_object,
-                service_account.metadata.name,
+                service_account_metadata_name,
                 process_name,
                 deployment_id=deployment.id,
             )
@@ -2970,9 +3018,9 @@ def deploy_release(deployment):
             log(f"Creating CronJob for {process_name} ({_suspended})")
             create_cronjob(
                 batch_api_instance,
-                namespace.metadata.name,
+                namespace_metadata_name,
                 deployment.release_object,
-                service_account.metadata.name,
+                service_account_metadata_name,
                 process_name,
                 deployment_id=deployment.id,
             )
@@ -2995,9 +3043,9 @@ def deploy_release(deployment):
                     continue
                 dep_obj = fetch_deployment(
                     apps_api_instance,
-                    namespace.metadata.name,
+                    namespace_metadata_name,
                     deployment.release_object,
-                    service_account.metadata.name,
+                    service_account_metadata_name,
                     process_name,
                 )
                 if dep_obj is None:
@@ -3071,16 +3119,16 @@ def deploy_release(deployment):
         for postdeploy_command in deployment.release_object.postdeploy_commands:
             log(f"Running postdeploy command {postdeploy_command}")
             job_object = render_job(
-                namespace.metadata.name,
+                namespace_metadata_name,
                 deployment.release_object,
-                service_account.metadata.name,
+                service_account_metadata_name,
                 postdeploy_command,
                 deployment.job_id,
             )
             job_complete, job_logs = run_job(
                 core_api_instance,
                 batch_api_instance,
-                namespace.metadata.name,
+                namespace_metadata_name,
                 job_object,
                 redis_client=redis_client,
                 log_key=log_key,

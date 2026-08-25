@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import datetime
 import json
 import logging
@@ -6,6 +8,7 @@ import re
 import secrets
 import shlex
 import subprocess  # nosec
+from typing import TYPE_CHECKING
 
 from celery import shared_task
 from base64 import b64encode, b64decode
@@ -96,6 +99,10 @@ from cabotage.utils.github import (
     post_deployment_status_update,
 )
 from cabotage.utils import procfile
+from cabotage._types import assume_not_none
+
+if TYPE_CHECKING:
+    from cabotage.server.models.projects import ApplicationEnvironment
 
 log = logging.getLogger(__name__)
 
@@ -290,7 +297,7 @@ def _dispatch_release_failure(release, error_detail):
         log.warning("Failed to dispatch release failure notification", exc_info=True)
 
 
-def _build_namespace(app_env):
+def _build_namespace(app_env: ApplicationEnvironment) -> str:
     """Return the namespace where build jobs run."""
     return current_app.config.get(
         "KUBERNETES_BUILD_NAMESPACE", "cabotage-tenant-builds"
@@ -982,7 +989,7 @@ def build_cache_pvc_name(app_env):
     return name
 
 
-def build_cache_pvc_labels(app_env):
+def build_cache_pvc_labels(app_env: ApplicationEnvironment) -> dict[str, str]:
     """Build labels for a build-cache PVC."""
     labels = _safe_labels_from_application(app_env.application)
     if app_env.environment.uses_environment_namespace:
@@ -1146,7 +1153,9 @@ def build_image_buildkit(image: Image):
                         "project": image.application.project.slug,
                         "application": image.application.slug,
                         "process": "build",
-                        "build_id": image.build_job_id,
+                        "build_id": assume_not_none(
+                            image.build_job_id, because="Image should have a build id"
+                        ),
                         "build-job.cabotage.io": "true",
                         **safe_labels,
                     },
@@ -1163,7 +1172,10 @@ def build_image_buildkit(image: Image):
                                 "project": image.application.project.slug,
                                 "application": image.application.slug,
                                 "process": "build",
-                                "build_id": image.build_job_id,
+                                "build_id": assume_not_none(
+                                    image.build_job_id,
+                                    because="Image should have a build id",
+                                ),
                                 "ca-admission.cabotage.io": "true",
                                 "resident-pod.cabotage.io": "true",
                                 **safe_labels,
