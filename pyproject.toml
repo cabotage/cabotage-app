@@ -50,6 +50,7 @@ dependencies = [
 dev = [
     "bandit",
     "hupper",
+    "kubernetes-stubs-elephant-fork>=36.0.3.post1",
     "pyrefly>=1.2.0",
     "pytest-cov",
     "pytest",
