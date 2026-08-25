@@ -6,10 +6,21 @@ import secrets
 import struct
 from collections.abc import Mapping
 
-import kubernetes
+
 from celery import shared_task
 from flask import current_app, has_app_context
-from kubernetes.client.rest import ApiException
+from kubernetes.client.api_client import ApiClient
+from kubernetes.client import (
+    AppsV1Api,
+    CoreV1Api,
+    CustomObjectsApi,
+    NetworkingV1Api,
+    RbacAuthorizationV1Api,
+    V1ObjectMeta,
+    V1Secret,
+    V1ServiceAccount,
+)
+from kubernetes.client.exceptions import ApiException
 from sqlalchemy import text
 
 from cabotage.server import (
@@ -108,7 +119,7 @@ def _serialize_k8s_object(obj):
         return [_serialize_k8s_object(item) for item in obj]
     if isinstance(obj, Mapping):
         return {key: _serialize_k8s_object(value) for key, value in obj.items()}
-    return kubernetes.client.ApiClient().sanitize_for_serialization(obj)
+    return ApiClient().sanitize_for_serialization(obj)
 
 
 def _extract_desired_subset(current, desired):
@@ -739,8 +750,8 @@ def _ensure_password_secret(core_api, namespace, secret_name, labels):
             password = secrets.token_urlsafe(48)
             core_api.create_namespaced_secret(
                 namespace,
-                kubernetes.client.V1Secret(
-                    metadata=kubernetes.client.V1ObjectMeta(
+                V1Secret(
+                    metadata=V1ObjectMeta(
                         name=secret_name,
                         namespace=namespace,
                         labels=labels,
@@ -800,8 +811,8 @@ def _ensure_ca_secret(core_api, namespace):
     cert-manager namespace.  Always syncs from source to pick up rotations.
     """
     source = core_api.read_namespaced_secret(TLS_CA_SECRET, "cert-manager")
-    body = kubernetes.client.V1Secret(
-        metadata=kubernetes.client.V1ObjectMeta(
+    body = V1Secret(
+        metadata=V1ObjectMeta(
             name=TLS_CA_SECRET,
             namespace=namespace,
             labels={"cnpg.io/reload": ""},
@@ -827,8 +838,8 @@ def _ensure_backup_service_account(core_api, namespace, settings):
     if settings["provider"] == "s3":
         annotations["eks.amazonaws.com/role-arn"] = settings["irsa_role_arn"]
 
-    body = kubernetes.client.V1ServiceAccount(
-        metadata=kubernetes.client.V1ObjectMeta(
+    body = V1ServiceAccount(
+        metadata=V1ObjectMeta(
             name=settings["service_account_name"],
             namespace=namespace,
             annotations=annotations or None,
@@ -871,8 +882,8 @@ def _ensure_rustfs_secret(core_api, namespace, settings):
             + ", ".join(sorted(missing_keys))
         )
 
-    body = kubernetes.client.V1Secret(
-        metadata=kubernetes.client.V1ObjectMeta(
+    body = V1Secret(
+        metadata=V1ObjectMeta(
             name=settings["rustfs_secret_name"],
             namespace=namespace,
         ),
@@ -1599,11 +1610,11 @@ def reconcile_backing_services():
             return
 
         api_client = kubernetes_ext.kubernetes_client
-        core_api = kubernetes.client.CoreV1Api(api_client)
-        custom_api = kubernetes.client.CustomObjectsApi(api_client)
-        apps_api = kubernetes.client.AppsV1Api(api_client)
-        rbac_api = kubernetes.client.RbacAuthorizationV1Api(api_client)
-        networking_api = kubernetes.client.NetworkingV1Api(api_client)
+        core_api = CoreV1Api(api_client)
+        custom_api = CustomObjectsApi(api_client)
+        apps_api = AppsV1Api(api_client)
+        rbac_api = RbacAuthorizationV1Api(api_client)
+        networking_api = NetworkingV1Api(api_client)
 
         for resource in resources:
             resource_type = resource.type
