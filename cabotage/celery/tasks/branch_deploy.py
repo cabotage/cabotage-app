@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import datetime
 import logging
 import re
@@ -39,6 +41,11 @@ from cabotage.utils.github import (
     find_or_create_pr_comment,
     matches_watch_paths,
     post_deployment_status_update,
+)
+from cabotage._types import (
+    assume_not_none,
+    K8S_OBJECT_HAS_METADATA,
+    K8S_OBJECT_HAS_NAME,
 )
 
 logger = logging.getLogger(__name__)
@@ -230,7 +237,7 @@ def _create_app_env_for_branch_deploy(
     return app_env
 
 
-def _precreate_ingresses(environment):
+def _precreate_ingresses(environment: Environment) -> None:
     """Create the K8s namespace and Ingress resources for a branch deploy.
 
     Called before image builds start so that cert-manager can begin issuing
@@ -255,7 +262,8 @@ def _precreate_ingresses(environment):
     # Ensure namespace exists with resident-namespace label
     try:
         ns = core_api.read_namespace(ns_name)
-        labels = ns.metadata.labels or {}
+        ns_metadata = assume_not_none(ns.metadata, because=K8S_OBJECT_HAS_METADATA)
+        labels = ns_metadata.labels or {}
         if labels.get("resident-namespace.cabotage.io") != "true":
             core_api.patch_namespace(
                 ns_name,
@@ -306,7 +314,7 @@ def _precreate_ingresses(environment):
         )
 
 
-def _teardown_environment(environment):
+def _teardown_environment(environment: Environment) -> None:
     """Delete k8s namespace and all DB records for an ephemeral environment."""
 
     from cabotage.celery.tasks.build import (
@@ -362,23 +370,29 @@ def _teardown_environment(environment):
             try:
                 pvcs = core_api.list_namespaced_persistent_volume_claim(ns_name)
                 for pvc in pvcs.items:
+                    pvc_metadata = assume_not_none(
+                        pvc.metadata, because=K8S_OBJECT_HAS_METADATA
+                    )
+                    pvc_metadata_name = assume_not_none(
+                        pvc_metadata.name, because=K8S_OBJECT_HAS_NAME
+                    )
                     try:
                         core_api.delete_namespaced_persistent_volume_claim(
-                            pvc.metadata.name,
+                            pvc_metadata_name,
                             ns_name,
                             propagation_policy="Foreground",
                         )
                         logger.info(
                             "Deleted branch namespace PVC %s/%s",
                             ns_name,
-                            pvc.metadata.name,
+                            pvc_metadata_name,
                         )
                     except ApiException as exc:
                         if exc.status != 404:
                             logger.warning(
                                 "Failed to delete branch namespace PVC %s/%s: %s",
                                 ns_name,
-                                pvc.metadata.name,
+                                pvc_metadata_name,
                                 exc,
                             )
             except ApiException as exc:
@@ -406,24 +420,30 @@ def _teardown_environment(environment):
                         label_selector=selector,
                     )
                     for pvc in pvcs.items:
+                        pvc_metadata = assume_not_none(
+                            pvc.metadata, because=K8S_OBJECT_HAS_METADATA
+                        )
+                        pvc_metadata_name = assume_not_none(
+                            pvc_metadata.name, because=K8S_OBJECT_HAS_NAME
+                        )
                         try:
                             core_api.delete_namespaced_persistent_volume_claim(
-                                pvc.metadata.name,
+                                pvc_metadata_name,
                                 build_namespace,
                                 propagation_policy="Foreground",
                             )
-                            deleted_cache_pvcs.add(pvc.metadata.name)
+                            deleted_cache_pvcs.add(pvc_metadata_name)
                             logger.info(
                                 "Deleted build cache PVC %s/%s",
                                 build_namespace,
-                                pvc.metadata.name,
+                                pvc_metadata_name,
                             )
                         except ApiException as exc:
                             if exc.status != 404:
                                 logger.warning(
                                     "Failed to delete build cache PVC %s/%s: %s",
                                     build_namespace,
-                                    pvc.metadata.name,
+                                    pvc_metadata_name,
                                     exc,
                                 )
                 except ApiException as exc:
