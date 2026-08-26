@@ -48,6 +48,7 @@ from cabotage.utils.release_build_context import (
     configmap_context_for_release,
     RELEASE_DOCKERFILE_TEMPLATE,
 )
+from cabotage._types import assume_not_none
 
 activity_plugin = ActivityPlugin()
 flask_plugin = FlaskPlugin()
@@ -364,6 +365,9 @@ class ApplicationEnvironment(Model, Timestamp):
         cascade="all, delete-orphan",
     )
     alerts: Mapped[list[Alert]] = relationship(back_populates="application_environment")
+    job_logs: DynamicMapped[list[JobLog]] = relationship(
+        back_populates="application_environment"
+    )
 
     __table_args__ = (
         Index(
@@ -467,10 +471,13 @@ class ApplicationEnvironment(Model, Timestamp):
         return f"{self.application.project.organization.slug}/{self.application.project.slug}/{self.environment.slug}/{self.application.slug}"
 
     @property
-    def effective_deployment_timeout(self):
+    def effective_deployment_timeout(self) -> int:
         if self.deployment_timeout is not None:
             return self.deployment_timeout
-        return self.application.deployment_timeout
+        return assume_not_none(
+            self.application.deployment_timeout,
+            because="server_default populates deployment_timeout on insert",
+        )
 
     @property
     def effective_health_check_path(self):
@@ -822,7 +829,7 @@ class JobLog(Model, Timestamp):
         backref=backref("job_logs", lazy="dynamic"),
     )
     application_environment: Mapped[ApplicationEnvironment] = relationship(
-        backref=backref("job_logs", lazy="dynamic"),
+        back_populates="job_logs"
     )
 
 

@@ -350,8 +350,10 @@ def _teardown_environment(environment: Environment) -> None:
             db.session.flush()
 
             for resource in resources:
-                entry = _RECONCILERS.get(resource.type)
-                if entry is None:
+                if (
+                    resource.type is None
+                    or (entry := _RECONCILERS.get(resource.type)) is None
+                ):
                     continue
                 _, delete_fn = entry
                 try:

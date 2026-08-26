@@ -8,7 +8,7 @@ import re
 import secrets
 import shlex
 import subprocess  # nosec
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from celery import shared_task
 from base64 import b64encode, b64decode
@@ -299,8 +299,10 @@ def _dispatch_release_failure(release, error_detail):
 
 def _build_namespace(app_env: ApplicationEnvironment) -> str:
     """Return the namespace where build jobs run."""
-    return current_app.config.get(
-        "KUBERNETES_BUILD_NAMESPACE", "cabotage-tenant-builds"
+    # FIXME: Remove once "typed config" is implemented
+    return cast(
+        str,
+        current_app.config.get("KUBERNETES_BUILD_NAMESPACE", "cabotage-tenant-builds"),
     )
 
 

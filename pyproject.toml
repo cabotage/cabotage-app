@@ -90,3 +90,6 @@ exclude-newer = "1 week"
 preset = "all"
 project-includes = ["cabotage"]
 baseline = "baseline.json"
+
+[tool.pyrefly.errors]
+implicit-bool = false
