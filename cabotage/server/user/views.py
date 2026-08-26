@@ -167,6 +167,7 @@ from cabotage.utils.build_log_stream import (
 )
 
 from cabotage.utils import oidc
+from cabotage._types import assume_not_none
 
 _REGEX_META = re.compile(r"[.*+?{}()|\\^$\[\]]")
 
@@ -2397,7 +2398,7 @@ def project_environment_configuration_delete(
     form.configuration_id.data = str(configuration.id)
     form.name.data = str(configuration.name)
     form.value.data = str(configuration.value)
-    form.secure.data = str(configuration.secret)
+    form.secure.data = configuration.secret
 
     if form.validate_on_submit():
         db.session.delete(configuration)
@@ -4837,7 +4838,7 @@ def project_application_configuration_delete(
     form.configuration_id.data = str(configuration.id)
     form.name.data = str(configuration.name)
     form.value.data = str(configuration.value)
-    form.secure.data = str(configuration.secret)
+    form.secure.data = configuration.secret
 
     env_slug = (
         configuration.application_environment.environment.slug
@@ -6378,7 +6379,9 @@ def organization_add_user(org_slug):
     all_users = User.query.all() if current_user.admin else None
 
     if form.validate_on_submit():
-        value = form.identity.data.strip()
+        value = assume_not_none(
+            form.identity.data, because="InputRequired has already run"
+        ).strip()
         user = User.query.filter_by(email=value).first()
         if not user:
             # Resolve GitHub username to user ID via API, then match by ID

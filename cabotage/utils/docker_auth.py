@@ -114,7 +114,7 @@ def generate_docker_claim_set(
 
 def _docker_credential_serializer(secret=None):
     if secret is None:
-        return ValueError("secret must be supplied!")
+        raise ValueError("secret must be supplied!")
     serializer = URLSafeTimedSerializer(secret)
     return serializer
 

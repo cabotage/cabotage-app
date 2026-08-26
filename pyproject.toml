@@ -50,16 +50,18 @@ dependencies = [
 dev = [
     "bandit",
     "hupper",
-    "pytest",
+    "pyrefly>=1.2.0",
     "pytest-cov",
+    "pytest",
     "ruff",
     "ty",
     "types-croniter",
-    "types-pyyaml",
     "types-pygments",
+    "types-pyyaml",
     "types-redis",
     "types-requests",
     "types-toml",
+    "types-wtforms>=3.2.1.20260518",
     "typing-extensions",
 ]
 
@@ -82,3 +84,8 @@ exclude_dirs = ["bin", "lib", "tests"]
 
 [tool.uv]
 exclude-newer = "1 week"
+
+[tool.pyrefly]
+preset = "all"
+project-includes = ["cabotage"]
+baseline = "baseline.json"
