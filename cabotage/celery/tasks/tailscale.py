@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
 
 from celery import shared_task
 from kubernetes.client import (
@@ -18,6 +21,9 @@ from cabotage.server import (
 )
 from cabotage.server.models.auth import TailscaleIntegration
 
+if TYPE_CHECKING:
+    from cabotage.server.models.auth import Organization
+
 log = logging.getLogger(__name__)
 
 CRD_GROUP = "cabotage.io"
@@ -25,12 +31,12 @@ CRD_VERSION = "v1"
 CRD_PLURAL = "cabotagetailscaleoperatorconfigs"
 
 
-def _operator_namespace(org):
+def _operator_namespace(org: Organization) -> str:
     """The org-level namespace where the Tailscale operator lives."""
     return org.k8s_identifier
 
 
-def _ensure_namespace(core_api, namespace):
+def _ensure_namespace(core_api: CoreV1Api, namespace: str) -> None:
     """Create the namespace if it doesn't exist."""
     try:
         core_api.read_namespace(namespace)

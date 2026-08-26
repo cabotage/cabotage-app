@@ -242,8 +242,10 @@ def reap_pods() -> None:
         return
     candidate = sorted(
         pods.items,
-        key=lambda pod: assume_not_none(
-            assume_not_none(pod.status, because=K8S_OBJECT_HAS_STATUS).start_time,
+        # FIXME: remove ignores once resolved
+        # https://github.com/facebook/pyrefly/issues/4368
+        key=lambda pod: assume_not_none(  # pyrefly: ignore[implicit-any-lambda]
+            assume_not_none(pod.status, because=K8S_OBJECT_HAS_STATUS).start_time,  # pyrefly: ignore[unknown-argument-type]
             because=K8S_POD_HAS_START_TIME,
         ),
     )[0]
