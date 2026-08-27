@@ -284,7 +284,7 @@ class TestResizeCronjob:
         with (
             patch(f"{_DEPLOY_MODULE}.kubernetes_ext"),
             patch(
-                f"{_DEPLOY_MODULE}.BatchV1Api",
+                f"{_DEPLOY_MODULE}.kubernetes.client.BatchV1Api",
                 return_value=mock_batch_api,
             ),
             patch(f"{_DEPLOY_MODULE}.k8s_resource_prefix", return_value="proj-app"),
@@ -316,7 +316,7 @@ class TestResizeCronjob:
         with (
             patch(f"{_DEPLOY_MODULE}.kubernetes_ext"),
             patch(
-                f"{_DEPLOY_MODULE}.BatchV1Api",
+                f"{_DEPLOY_MODULE}.kubernetes.client.BatchV1Api",
                 return_value=mock_batch_api,
             ),
             patch(f"{_DEPLOY_MODULE}.k8s_resource_prefix", return_value="proj-app"),

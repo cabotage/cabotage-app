@@ -3,14 +3,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+import kubernetes.client
 from celery import shared_task
-from kubernetes.client import (
-    CoreV1Api,
-    CustomObjectsApi,
-    V1Namespace,
-    V1ObjectMeta,
-    V1Secret,
-)
 from kubernetes.client.exceptions import ApiException
 
 from flask import current_app
@@ -22,6 +16,7 @@ from cabotage.server import (
 from cabotage.server.models.auth import TailscaleIntegration
 
 if TYPE_CHECKING:
+    from kubernetes.client import CoreV1Api
     from cabotage.server.models.auth import Organization
 
 log = logging.getLogger(__name__)
@@ -43,8 +38,8 @@ def _ensure_namespace(core_api: CoreV1Api, namespace: str) -> None:
     except ApiException as exc:
         if exc.status == 404:
             core_api.create_namespace(
-                V1Namespace(
-                    metadata=V1ObjectMeta(name=namespace),
+                kubernetes.client.V1Namespace(
+                    metadata=kubernetes.client.V1ObjectMeta(name=namespace),
                 )
             )
         else:
@@ -58,8 +53,8 @@ def _deploy_operator_config(org, integration):
     reconciles all the actual K8s resources (Deployment, RBAC, etc).
     """
     api_client = kubernetes_ext.kubernetes_client
-    core_api = CoreV1Api(api_client)
-    custom_api = CustomObjectsApi(api_client)
+    core_api = kubernetes.client.CoreV1Api(api_client)
+    custom_api = kubernetes.client.CustomObjectsApi(api_client)
 
     namespace = _operator_namespace(org)
     _ensure_namespace(core_api, namespace)
@@ -112,7 +107,7 @@ def _teardown_operator_config(org):
     The tailscale-operator-manager handles cleanup via Kopf finalizers.
     """
     api_client = kubernetes_ext.kubernetes_client
-    custom_api = CustomObjectsApi(api_client)
+    custom_api = kubernetes.client.CustomObjectsApi(api_client)
     namespace = _operator_namespace(org)
 
     try:
@@ -158,14 +153,14 @@ def deploy_tailscale_operator(organization_id):
         namespace = _operator_namespace(org)
         operator_namespace = "tailscale"
         _ensure_namespace(
-            CoreV1Api(kubernetes_ext.kubernetes_client),
+            kubernetes.client.CoreV1Api(kubernetes_ext.kubernetes_client),
             namespace,
         )
         jwt = mint_tailscale_jwt(org.k8s_identifier, integration.client_id)
         secret_name = f"tailscale-tailnet-{org.k8s_identifier}"
-        core_api = CoreV1Api(kubernetes_ext.kubernetes_client)
-        secret_body = V1Secret(
-            metadata=V1ObjectMeta(
+        core_api = kubernetes.client.CoreV1Api(kubernetes_ext.kubernetes_client)
+        secret_body = kubernetes.client.V1Secret(
+            metadata=kubernetes.client.V1ObjectMeta(
                 name=secret_name,
                 namespace=operator_namespace,
             ),
@@ -224,7 +219,7 @@ def teardown_tailscale_operator(organization_id):
             org.slug,
         )
         # Clean up the Tailnet credential Secret
-        core_api = CoreV1Api(kubernetes_ext.kubernetes_client)
+        core_api = kubernetes.client.CoreV1Api(kubernetes_ext.kubernetes_client)
         secret_name = f"tailscale-tailnet-{org.k8s_identifier}"
         try:
             core_api.delete_namespaced_secret(secret_name, "tailscale")
@@ -253,7 +248,7 @@ def reconcile_tailscale_integration_states():
         return
 
     api_client = kubernetes_ext.kubernetes_client
-    custom_api = CustomObjectsApi(api_client)
+    custom_api = kubernetes.client.CustomObjectsApi(api_client)
 
     for integration in integrations:
         org = integration.organization
@@ -306,7 +301,7 @@ def refresh_tailscale_oidc_tokens():
         return
 
     api_client = kubernetes_ext.kubernetes_client
-    core_api = CoreV1Api(api_client)
+    core_api = kubernetes.client.CoreV1Api(api_client)
 
     # JWT Secrets live in the cabotage namespace (where the single operator reads them)
     operator_namespace = "tailscale"
@@ -316,8 +311,8 @@ def refresh_tailscale_oidc_tokens():
         secret_name = f"tailscale-tailnet-{org.k8s_identifier}"
         try:
             jwt = mint_tailscale_jwt(org.k8s_identifier, integration.client_id)
-            secret_body = V1Secret(
-                metadata=V1ObjectMeta(
+            secret_body = kubernetes.client.V1Secret(
+                metadata=kubernetes.client.V1ObjectMeta(
                     name=secret_name,
                     namespace=operator_namespace,
                 ),

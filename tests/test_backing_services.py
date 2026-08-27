@@ -2544,16 +2544,20 @@ class TestCeleryTasks:
 
         with (
             patch("cabotage.celery.tasks.resources.kubernetes_ext") as mock_kext,
-            patch("cabotage.celery.tasks.resources.CoreV1Api") as mock_core_api_cls,
             patch(
-                "cabotage.celery.tasks.resources.CustomObjectsApi"
+                "cabotage.celery.tasks.resources.kubernetes.client.CoreV1Api"
+            ) as mock_core_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.CustomObjectsApi"
             ) as mock_custom_api_cls,
-            patch("cabotage.celery.tasks.resources.AppsV1Api") as mock_apps_api_cls,
             patch(
-                "cabotage.celery.tasks.resources.RbacAuthorizationV1Api"
+                "cabotage.celery.tasks.resources.kubernetes.client.AppsV1Api"
+            ) as mock_apps_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.RbacAuthorizationV1Api"
             ) as mock_rbac_api_cls,
             patch(
-                "cabotage.celery.tasks.resources.NetworkingV1Api"
+                "cabotage.celery.tasks.resources.kubernetes.client.NetworkingV1Api"
             ) as mock_networking_api_cls,
             patch.object(Resource, "query") as mock_query,
         ):
@@ -2577,7 +2581,9 @@ class TestCeleryTasks:
                 return_value=None,
             ) as mock_try_lock,
             patch.object(Resource, "query") as mock_query,
-            patch("cabotage.celery.tasks.resources.CoreV1Api") as mock_core_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.CoreV1Api"
+            ) as mock_core_api_cls,
         ):
             reconcile_backing_services()
 
@@ -2624,16 +2630,20 @@ class TestCeleryTasks:
 
         with (
             patch("cabotage.celery.tasks.resources.kubernetes_ext") as mock_kext,
-            patch("cabotage.celery.tasks.resources.CoreV1Api") as mock_core_api_cls,
             patch(
-                "cabotage.celery.tasks.resources.CustomObjectsApi"
+                "cabotage.celery.tasks.resources.kubernetes.client.CoreV1Api"
+            ) as mock_core_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.CustomObjectsApi"
             ) as mock_custom_api_cls,
-            patch("cabotage.celery.tasks.resources.AppsV1Api") as mock_apps_api_cls,
             patch(
-                "cabotage.celery.tasks.resources.RbacAuthorizationV1Api"
+                "cabotage.celery.tasks.resources.kubernetes.client.AppsV1Api"
+            ) as mock_apps_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.RbacAuthorizationV1Api"
             ) as mock_rbac_api_cls,
             patch(
-                "cabotage.celery.tasks.resources.NetworkingV1Api"
+                "cabotage.celery.tasks.resources.kubernetes.client.NetworkingV1Api"
             ) as mock_networking_api_cls,
             patch("cabotage.celery.tasks.resources.ensure_namespace") as mock_ensure_ns,
             patch(
@@ -2690,16 +2700,20 @@ class TestCeleryTasks:
 
         with (
             patch("cabotage.celery.tasks.resources.kubernetes_ext") as mock_kext,
-            patch("cabotage.celery.tasks.resources.CoreV1Api") as mock_core_api_cls,
             patch(
-                "cabotage.celery.tasks.resources.CustomObjectsApi"
+                "cabotage.celery.tasks.resources.kubernetes.client.CoreV1Api"
+            ) as mock_core_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.CustomObjectsApi"
             ) as mock_custom_api_cls,
-            patch("cabotage.celery.tasks.resources.AppsV1Api") as mock_apps_api_cls,
             patch(
-                "cabotage.celery.tasks.resources.RbacAuthorizationV1Api"
+                "cabotage.celery.tasks.resources.kubernetes.client.AppsV1Api"
+            ) as mock_apps_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.RbacAuthorizationV1Api"
             ) as mock_rbac_api_cls,
             patch(
-                "cabotage.celery.tasks.resources.NetworkingV1Api"
+                "cabotage.celery.tasks.resources.kubernetes.client.NetworkingV1Api"
             ) as mock_networking_api_cls,
             patch("cabotage.celery.tasks.resources.ensure_namespace") as mock_ensure_ns,
             patch(
@@ -2750,16 +2764,20 @@ class TestCeleryTasks:
         try:
             with (
                 patch("cabotage.celery.tasks.resources.kubernetes_ext") as mock_kext,
-                patch("cabotage.celery.tasks.resources.CoreV1Api") as mock_core_api_cls,
                 patch(
-                    "cabotage.celery.tasks.resources.CustomObjectsApi"
+                    "cabotage.celery.tasks.resources.kubernetes.client.CoreV1Api"
+                ) as mock_core_api_cls,
+                patch(
+                    "cabotage.celery.tasks.resources.kubernetes.client.CustomObjectsApi"
                 ) as mock_custom_api_cls,
-                patch("cabotage.celery.tasks.resources.AppsV1Api") as mock_apps_api_cls,
                 patch(
-                    "cabotage.celery.tasks.resources.RbacAuthorizationV1Api"
+                    "cabotage.celery.tasks.resources.kubernetes.client.AppsV1Api"
+                ) as mock_apps_api_cls,
+                patch(
+                    "cabotage.celery.tasks.resources.kubernetes.client.RbacAuthorizationV1Api"
                 ) as mock_rbac_api_cls,
                 patch(
-                    "cabotage.celery.tasks.resources.NetworkingV1Api"
+                    "cabotage.celery.tasks.resources.kubernetes.client.NetworkingV1Api"
                 ) as mock_networking_api_cls,
                 patch.object(Resource, "query") as mock_query,
                 patch(
@@ -2852,15 +2870,19 @@ class TestCeleryTasks:
 
         with (
             patch("cabotage.celery.tasks.resources.kubernetes_ext") as mock_kext,
-            patch("cabotage.celery.tasks.resources.CoreV1Api") as mock_core_api_cls,
             patch(
-                "cabotage.celery.tasks.resources.CustomObjectsApi"
+                "cabotage.celery.tasks.resources.kubernetes.client.CoreV1Api"
+            ) as mock_core_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.CustomObjectsApi"
             ) as mock_custom_api_cls,
-            patch("cabotage.celery.tasks.resources.AppsV1Api") as mock_apps_api_cls,
             patch(
-                "cabotage.celery.tasks.resources.RbacAuthorizationV1Api"
+                "cabotage.celery.tasks.resources.kubernetes.client.AppsV1Api"
+            ) as mock_apps_api_cls,
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.RbacAuthorizationV1Api"
             ) as mock_rbac_api_cls,
-            patch("cabotage.celery.tasks.resources.NetworkingV1Api"),
+            patch("cabotage.celery.tasks.resources.kubernetes.client.NetworkingV1Api"),
             patch("cabotage.celery.tasks.resources.ensure_namespace"),
             patch.object(Resource, "query") as mock_query,
             patch(
@@ -2930,11 +2952,13 @@ class TestCeleryTasks:
 
         with (
             patch("cabotage.celery.tasks.resources.kubernetes_ext") as mock_kext,
-            patch("cabotage.celery.tasks.resources.CoreV1Api"),
-            patch("cabotage.celery.tasks.resources.CustomObjectsApi"),
-            patch("cabotage.celery.tasks.resources.AppsV1Api"),
-            patch("cabotage.celery.tasks.resources.RbacAuthorizationV1Api"),
-            patch("cabotage.celery.tasks.resources.NetworkingV1Api"),
+            patch("cabotage.celery.tasks.resources.kubernetes.client.CoreV1Api"),
+            patch("cabotage.celery.tasks.resources.kubernetes.client.CustomObjectsApi"),
+            patch("cabotage.celery.tasks.resources.kubernetes.client.AppsV1Api"),
+            patch(
+                "cabotage.celery.tasks.resources.kubernetes.client.RbacAuthorizationV1Api"
+            ),
+            patch("cabotage.celery.tasks.resources.kubernetes.client.NetworkingV1Api"),
             patch("cabotage.celery.tasks.resources.ensure_namespace"),
             patch.object(Resource, "query") as mock_query,
         ):

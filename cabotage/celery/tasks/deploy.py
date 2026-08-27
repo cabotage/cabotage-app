@@ -7,63 +7,12 @@ from typing import TYPE_CHECKING, cast
 
 from base64 import b64encode
 
+import kubernetes.client
+import kubernetes.watch
 import yaml
 
 from celery import shared_task
-from kubernetes.client import (
-    AppsV1Api,
-    BatchV1Api,
-    CoreV1Api,
-    CustomObjectsApi,
-    NetworkingV1Api,
-    V1ConfigMap,
-    V1Container,
-    V1ContainerPort,
-    V1CronJob,
-    V1CronJobSpec,
-    V1Deployment,
-    V1DeploymentSpec,
-    V1EmptyDirVolumeSource,
-    V1EnvVar,
-    V1EnvVarSource,
-    V1ExecAction,
-    V1HTTPGetAction,
-    V1HTTPHeader,
-    V1HTTPIngressPath,
-    V1HTTPIngressRuleValue,
-    V1Ingress,
-    V1IngressBackend,
-    V1IngressRule,
-    V1IngressServiceBackend,
-    V1IngressSpec,
-    V1IngressTLS,
-    V1Job,
-    V1JobSpec,
-    V1JobTemplateSpec,
-    V1LabelSelector,
-    V1LocalObjectReference,
-    V1Namespace,
-    V1ObjectFieldSelector,
-    V1ObjectMeta,
-    V1PodSpec,
-    V1PodTemplateSpec,
-    V1Probe,
-    V1ResourceRequirements,
-    V1Scale,
-    V1ScaleSpec,
-    V1Secret,
-    V1Service,
-    V1ServiceAccount,
-    V1ServiceBackendPort,
-    V1ServicePort,
-    V1ServiceSpec,
-    V1TCPSocketAction,
-    V1Toleration,
-    V1Volume,
-    V1VolumeMount,
-)
 from kubernetes.client.exceptions import ApiException
-from kubernetes.watch import Watch
 from sqlalchemy.orm.attributes import flag_modified
 
 from flask import current_app
@@ -118,6 +67,7 @@ from cabotage._types import (
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
     from cabotage.server.models.projects import Release
 
 if TYPE_CHECKING:
@@ -184,9 +134,9 @@ def cleanup_app_env_k8s(
         log.exception("k8s cleanup: failed to get kubernetes client")
         return
 
-    apps_api = AppsV1Api(api_client)
-    core_api = CoreV1Api(api_client)
-    networking_api = NetworkingV1Api(api_client)
+    apps_api = kubernetes.client.AppsV1Api(api_client)
+    core_api = kubernetes.client.CoreV1Api(api_client)
+    networking_api = kubernetes.client.NetworkingV1Api(api_client)
     log.info("k8s cleanup: namespace=%s labels=%s", namespace, label_selector)
 
     # Delete Deployments
@@ -239,7 +189,7 @@ def cleanup_app_env_k8s(
 
     # Delete CabotageEnrollment
     try:
-        custom_api = CustomObjectsApi(api_client)
+        custom_api = kubernetes.client.CustomObjectsApi(api_client)
         custom_api.delete_namespaced_custom_object(
             "cabotage.io", "v1", namespace, "cabotageenrollments", resource_prefix
         )
@@ -289,7 +239,7 @@ def _retry_on_404(fn, *args, retries=5, delay=2, **kwargs):
 
 def _wait_for_tls_certificate(api_client, namespace, cert_name, timeout=120, log=None):
     """Poll until a cert-manager Certificate is Ready, or timeout."""
-    custom_api = CustomObjectsApi(api_client)
+    custom_api = kubernetes.client.CustomObjectsApi(api_client)
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -381,8 +331,8 @@ def _safe_labels_from_application(application):
 
 
 def render_namespace(release):
-    namespace_object = V1Namespace(
-        metadata=V1ObjectMeta(
+    namespace_object = kubernetes.client.V1Namespace(
+        metadata=kubernetes.client.V1ObjectMeta(
             name=k8s_namespace(release),
             labels={
                 "resident-namespace.cabotage.io": "true",
@@ -403,7 +353,9 @@ def create_namespace(core_api_instance, release):
         )
 
 
-def ensure_namespace(core_api_instance: CoreV1Api, namespace_name: str) -> V1Namespace:
+def ensure_namespace(
+    core_api_instance: kubernetes.client.CoreV1Api, namespace_name: str
+) -> kubernetes.client.V1Namespace:
     """Create the namespace if it doesn't exist, ensure resident label is set."""
     try:
         namespace = core_api_instance.read_namespace(namespace_name)
@@ -415,8 +367,8 @@ def ensure_namespace(core_api_instance: CoreV1Api, namespace_name: str) -> V1Nam
         if labels.get("resident-namespace.cabotage.io") != "true":
             namespace = core_api_instance.patch_namespace(
                 namespace_name,
-                V1Namespace(
-                    metadata=V1ObjectMeta(
+                kubernetes.client.V1Namespace(
+                    metadata=kubernetes.client.V1ObjectMeta(
                         labels={"resident-namespace.cabotage.io": "true"},
                     ),
                 ),
@@ -424,8 +376,8 @@ def ensure_namespace(core_api_instance: CoreV1Api, namespace_name: str) -> V1Nam
     except ApiException as exc:
         if exc.status == 404:
             namespace = core_api_instance.create_namespace(
-                V1Namespace(
-                    metadata=V1ObjectMeta(
+                kubernetes.client.V1Namespace(
+                    metadata=kubernetes.client.V1ObjectMeta(
                         name=namespace_name,
                         labels={"resident-namespace.cabotage.io": "true"},
                     ),
@@ -439,7 +391,7 @@ def ensure_namespace(core_api_instance: CoreV1Api, namespace_name: str) -> V1Nam
     return namespace
 
 
-def fetch_namespace(core_api_instance: CoreV1Api, release: Release):
+def fetch_namespace(core_api_instance: kubernetes.client.CoreV1Api, release: Release):
     return ensure_namespace(core_api_instance, k8s_namespace(release))
 
 
@@ -788,8 +740,8 @@ def ensure_network_policies(networking_api, namespace):
 def render_cabotage_ca_configmap():
     with open("/var/run/secrets/cabotage.io/ca.crt", "r") as f:
         ca_crt = f.read()
-    configmap_object = V1ConfigMap(
-        metadata=V1ObjectMeta(
+    configmap_object = kubernetes.client.V1ConfigMap(
+        metadata=kubernetes.client.V1ObjectMeta(
             name="cabotage-ca",
         ),
         data={
@@ -849,8 +801,8 @@ def fetch_cabotage_ca_configmap(core_api_instance, release):
 
 def render_service_account(release):
     service_account_name = k8s_resource_prefix(release)
-    service_account_object = V1ServiceAccount(
-        metadata=V1ObjectMeta(
+    service_account_object = kubernetes.client.V1ServiceAccount(
+        metadata=kubernetes.client.V1ObjectMeta(
             name=service_account_name,
         ),
     )
@@ -872,8 +824,8 @@ def create_service_account(core_api_instance, release):
 
 
 def fetch_service_account(
-    core_api_instance: CoreV1Api, release: Release
-) -> V1ServiceAccount:
+    core_api_instance: kubernetes.client.CoreV1Api, release: Release
+) -> kubernetes.client.V1ServiceAccount:
     namespace = k8s_namespace(release)
     service_account_name = k8s_resource_prefix(release)
     try:
@@ -1058,8 +1010,8 @@ def render_service(release, process_name):
     service_name = f"{resource_prefix}-{process_name}"
     label_value = k8s_label_value(release)
     safe_labels = _safe_labels_from_release(release)
-    service_object = V1Service(
-        metadata=V1ObjectMeta(
+    service_object = kubernetes.client.V1Service(
+        metadata=kubernetes.client.V1ObjectMeta(
             name=service_name,
             labels={
                 "resident-service.cabotage.io": "true",
@@ -1068,9 +1020,9 @@ def render_service(release, process_name):
                 **safe_labels,
             },
         ),
-        spec=V1ServiceSpec(
+        spec=kubernetes.client.V1ServiceSpec(
             ports=[
-                V1ServicePort(
+                kubernetes.client.V1ServicePort(
                     name="https",
                     port=8000,
                     target_port=8000,
@@ -1143,16 +1095,16 @@ def render_ingress(release, ingress):
 
 def _build_ingress_paths(ingress, resource_prefix, process_names=None):
     """Build K8s path objects shared by both nginx and tailscale renderers."""
-    port_spec = V1ServiceBackendPort(name="https")
+    port_spec = kubernetes.client.V1ServiceBackendPort(name="https")
     k8s_paths = []
     for path in ingress.paths:
         target_service = f"{resource_prefix}-{path.target_process_name}"
         k8s_paths.append(
-            V1HTTPIngressPath(
+            kubernetes.client.V1HTTPIngressPath(
                 path=path.path,
                 path_type=path.path_type,
-                backend=V1IngressBackend(
-                    service=V1IngressServiceBackend(
+                backend=kubernetes.client.V1IngressBackend(
+                    service=kubernetes.client.V1IngressServiceBackend(
                         name=target_service,
                         port=port_spec,
                     ),
@@ -1167,11 +1119,11 @@ def _build_ingress_paths(ingress, resource_prefix, process_names=None):
             return None
         target_service = f"{resource_prefix}-{web_procs[0]}"
         k8s_paths.append(
-            V1HTTPIngressPath(
+            kubernetes.client.V1HTTPIngressPath(
                 path="/",
                 path_type="Prefix",
-                backend=V1IngressBackend(
-                    service=V1IngressServiceBackend(
+                backend=kubernetes.client.V1IngressBackend(
+                    service=kubernetes.client.V1IngressServiceBackend(
                         name=target_service,
                         port=port_spec,
                     ),
@@ -1274,7 +1226,7 @@ def render_ingress_object(
         if is_tailscale or host.tls_enabled:
             tls_hosts.append(hostname)
         rules.append(
-            V1IngressRule(
+            kubernetes.client.V1IngressRule(
                 # Tailscale: don't set host on rules — the operator derives
                 # it from tls.hosts and rejects mismatches with the FQDN
                 host=None if is_tailscale else hostname,
@@ -1284,7 +1236,7 @@ def render_ingress_object(
 
     tls = []
     if tls_hosts:
-        tls_entry = V1IngressTLS(hosts=tls_hosts)
+        tls_entry = kubernetes.client.V1IngressTLS(hosts=tls_hosts)
         if not is_tailscale:
             # nginx needs a secret name for cert-manager
             tls_entry.secret_name = f"{ingress_name}-tls"
@@ -1293,13 +1245,13 @@ def render_ingress_object(
     all_labels = {"resident-ingress.cabotage.io": "true", "ingress": ingress.name}
     all_labels.update(labels)
 
-    ingress_object = V1Ingress(
-        metadata=V1ObjectMeta(
+    ingress_object = kubernetes.client.V1Ingress(
+        metadata=kubernetes.client.V1ObjectMeta(
             name=ingress_name,
             labels=all_labels,
             annotations=annotations,
         ),
-        spec=V1IngressSpec(
+        spec=kubernetes.client.V1IngressSpec(
             ingress_class_name=ingress.ingress_class_name,
             rules=rules,
             tls=tls if tls else None,
@@ -1586,9 +1538,9 @@ def cleanup_orphaned_cronjobs(batch_api, release, active_job_names, log=None):
 
 def render_image_pull_secrets(release):
     registry_auth_secret = current_app.config["REGISTRY_AUTH_SECRET"]
-    secret = V1Secret(
+    secret = kubernetes.client.V1Secret(
         type="kubernetes.io/dockerconfigjson",
-        metadata=V1ObjectMeta(
+        metadata=kubernetes.client.V1ObjectMeta(
             name=k8s_resource_prefix(release),
         ),
         data={
@@ -1616,8 +1568,8 @@ def create_image_pull_secret(core_api_instance, release):
 
 
 def fetch_image_pull_secrets(
-    core_api_instance: CoreV1Api, release: Release
-) -> V1Secret:
+    core_api_instance: kubernetes.client.CoreV1Api, release: Release
+) -> kubernetes.client.V1Secret:
     namespace = k8s_namespace(release)
     secret_name = k8s_resource_prefix(release)
     try:
@@ -1652,34 +1604,40 @@ def render_cabotage_sidecar_container(release, process_name, with_tls=True):
         args.append(f"--vault-pki-role={role_name}")
         args.append(f"--service-names={resource_prefix}-{process_name}")
 
-    return V1Container(
+    return kubernetes.client.V1Container(
         name="cabotage-sidecar",
         restart_policy="Always",
         image=current_app.config["SIDECAR_IMAGE"],
         image_pull_policy="IfNotPresent",
         env=[
-            V1EnvVar(
+            kubernetes.client.V1EnvVar(
                 name="NAMESPACE",
-                value_from=V1EnvVarSource(
-                    field_ref=V1ObjectFieldSelector(field_path="metadata.namespace")
+                value_from=kubernetes.client.V1EnvVarSource(
+                    field_ref=kubernetes.client.V1ObjectFieldSelector(
+                        field_path="metadata.namespace"
+                    )
                 ),
             ),
-            V1EnvVar(
+            kubernetes.client.V1EnvVar(
                 name="POD_NAME",
-                value_from=V1EnvVarSource(
-                    field_ref=V1ObjectFieldSelector(field_path="metadata.name")
+                value_from=kubernetes.client.V1EnvVarSource(
+                    field_ref=kubernetes.client.V1ObjectFieldSelector(
+                        field_path="metadata.name"
+                    )
                 ),
             ),
-            V1EnvVar(
+            kubernetes.client.V1EnvVar(
                 name="POD_IP",
-                value_from=V1EnvVarSource(
-                    field_ref=V1ObjectFieldSelector(field_path="status.podIP")
+                value_from=kubernetes.client.V1EnvVarSource(
+                    field_ref=kubernetes.client.V1ObjectFieldSelector(
+                        field_path="status.podIP"
+                    )
                 ),
             ),
         ],
         args=args,
-        startup_probe=V1Probe(
-            _exec=V1ExecAction(
+        startup_probe=kubernetes.client.V1Probe(
+            _exec=kubernetes.client.V1ExecAction(
                 command=[
                     "sh",
                     "-c",
@@ -1691,9 +1649,11 @@ def render_cabotage_sidecar_container(release, process_name, with_tls=True):
             failure_threshold=30,
         ),
         volume_mounts=[
-            V1VolumeMount(name="vault-secrets", mount_path="/var/run/secrets/vault"),
+            kubernetes.client.V1VolumeMount(
+                name="vault-secrets", mount_path="/var/run/secrets/vault"
+            ),
         ],
-        resources=V1ResourceRequirements(
+        resources=kubernetes.client.V1ResourceRequirements(
             limits={
                 "memory": "48Mi",
                 "cpu": "50m",
@@ -1708,26 +1668,30 @@ def render_cabotage_sidecar_container(release, process_name, with_tls=True):
 
 def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
     volume_mounts = [
-        V1VolumeMount(name="vault-secrets", mount_path="/var/run/secrets/vault")
+        kubernetes.client.V1VolumeMount(
+            name="vault-secrets", mount_path="/var/run/secrets/vault"
+        )
     ]
     if unix:
         volume_mounts.append(
-            V1VolumeMount(name="cabotage-sock", mount_path="/var/run/cabotage")
+            kubernetes.client.V1VolumeMount(
+                name="cabotage-sock", mount_path="/var/run/cabotage"
+            )
         )
         target = "unix:///var/run/cabotage/cabotage.sock"
     else:
         target = "127.0.0.1:8001"
     if tcp:
-        liveness_probe = V1Probe(
-            tcp_socket=V1TCPSocketAction(
+        liveness_probe = kubernetes.client.V1Probe(
+            tcp_socket=kubernetes.client.V1TCPSocketAction(
                 port=8000,
             ),
             initial_delay_seconds=10,
             period_seconds=3,
             timeout_seconds=2,
         )
-        readiness_probe = V1Probe(
-            tcp_socket=V1TCPSocketAction(
+        readiness_probe = kubernetes.client.V1Probe(
+            tcp_socket=kubernetes.client.V1TCPSocketAction(
                 port=8000,
             ),
             initial_delay_seconds=10,
@@ -1735,12 +1699,16 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
             timeout_seconds=2,
         )
     else:
-        liveness_probe = V1Probe(
-            http_get=V1HTTPGetAction(
+        liveness_probe = kubernetes.client.V1Probe(
+            http_get=kubernetes.client.V1HTTPGetAction(
                 scheme="HTTPS",
                 port=8000,
                 http_headers=(
-                    [V1HTTPHeader(name="Host", value=release.health_check_host)]
+                    [
+                        kubernetes.client.V1HTTPHeader(
+                            name="Host", value=release.health_check_host
+                        )
+                    ]
                     if release.health_check_host
                     else None
                 ),
@@ -1750,12 +1718,16 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
             period_seconds=3,
             timeout_seconds=2,
         )
-        readiness_probe = V1Probe(
-            http_get=V1HTTPGetAction(
+        readiness_probe = kubernetes.client.V1Probe(
+            http_get=kubernetes.client.V1HTTPGetAction(
                 scheme="HTTPS",
                 port=8000,
                 http_headers=(
-                    [V1HTTPHeader(name="Host", value=release.health_check_host)]
+                    [
+                        kubernetes.client.V1HTTPHeader(
+                            name="Host", value=release.health_check_host
+                        )
+                    ]
                     if release.health_check_host
                     else None
                 ),
@@ -1765,7 +1737,7 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
             period_seconds=3,
             timeout_seconds=2,
         )
-    return V1Container(
+    return kubernetes.client.V1Container(
         name="cabotage-sidecar-tls",
         restart_policy="Always",
         image=current_app.config["SIDECAR_IMAGE"],
@@ -1786,7 +1758,7 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
         ],
         volume_mounts=volume_mounts,
         ports=[
-            V1ContainerPort(
+            kubernetes.client.V1ContainerPort(
                 protocol="TCP",
                 name="tls",
                 container_port=8000,
@@ -1794,7 +1766,7 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
         ],
         liveness_probe=liveness_probe,
         readiness_probe=readiness_probe,
-        resources=V1ResourceRequirements(
+        resources=kubernetes.client.V1ResourceRequirements(
             limits={
                 "memory": "128Mi",
                 "cpu": "100m",
@@ -1811,43 +1783,51 @@ def render_process_container(
     release, process_name, datadog_tags, with_tls=True, unix=True
 ):
     volume_mounts = [
-        V1VolumeMount(name="vault-secrets", mount_path="/var/run/secrets/vault"),
+        kubernetes.client.V1VolumeMount(
+            name="vault-secrets", mount_path="/var/run/secrets/vault"
+        ),
     ]
     if unix:
         volume_mounts.append(
-            V1VolumeMount(name="cabotage-sock", mount_path="/var/run/cabotage")
+            kubernetes.client.V1VolumeMount(
+                name="cabotage-sock", mount_path="/var/run/cabotage"
+            )
         )
     app_env = release.application_environment
     process_pod_cls = (app_env.process_pod_classes or {}).get(
         process_name, DEFAULT_POD_CLASS
     )
     pod_class = pod_classes[process_pod_cls]
-    return V1Container(
+    return kubernetes.client.V1Container(
         name=process_name,
         image=f"{current_app.config['REGISTRY_PULL']}/{release.repository_name}:release-{release.version}",
         image_pull_policy="Always",
         env=[
-            V1EnvVar(
+            kubernetes.client.V1EnvVar(
                 name="VAULT_ADDR", value="https://vault.cabotage.svc.cluster.local"
             ),
-            V1EnvVar(name="VAULT_CACERT", value="/var/run/secrets/cabotage.io/ca.crt"),
-            V1EnvVar(
+            kubernetes.client.V1EnvVar(
+                name="VAULT_CACERT", value="/var/run/secrets/cabotage.io/ca.crt"
+            ),
+            kubernetes.client.V1EnvVar(
                 name="CONSUL_HTTP_ADDR",
                 value="https://consul.cabotage.svc.cluster.local:8443",
             ),
-            V1EnvVar(name="CONSUL_CACERT", value="/var/run/secrets/cabotage.io/ca.crt"),
-            V1EnvVar(
+            kubernetes.client.V1EnvVar(
+                name="CONSUL_CACERT", value="/var/run/secrets/cabotage.io/ca.crt"
+            ),
+            kubernetes.client.V1EnvVar(
                 name="DATADOG_TAGS",
                 value=",".join([f"{k}:{v}" for k, v in datadog_tags.items()]),
             ),
-            V1EnvVar(name="SOURCE_COMMIT", value=release.commit_sha),
+            kubernetes.client.V1EnvVar(name="SOURCE_COMMIT", value=release.commit_sha),
         ],
         args=[
             "envconsul",
             "-kill-signal=SIGTERM",
             f"-config=/etc/cabotage/envconsul-{process_name}.hcl",
         ],
-        resources=V1ResourceRequirements(
+        resources=kubernetes.client.V1ResourceRequirements(
             limits={
                 "memory": pod_class["memory"]["limits"],
                 "cpu": pod_class["cpu"]["limits"],
@@ -1864,56 +1844,64 @@ def render_process_container(
 def render_datadog_container(
     dd_api_key, datadog_tags, datadog_image: str | None = None
 ):
-    return V1Container(
+    return kubernetes.client.V1Container(
         name="dogstatsd-sidecar",
         restart_policy="Always",
         image=datadog_image or current_app.config["DATADOG_IMAGE"],
         image_pull_policy="IfNotPresent",
         env=[
-            V1EnvVar(name="DD_API_KEY", value=dd_api_key),
-            V1EnvVar(
+            kubernetes.client.V1EnvVar(name="DD_API_KEY", value=dd_api_key),
+            kubernetes.client.V1EnvVar(
                 name="DD_HOSTNAME",
-                value_from=V1EnvVarSource(
-                    field_ref=V1ObjectFieldSelector(
+                value_from=kubernetes.client.V1EnvVarSource(
+                    field_ref=kubernetes.client.V1ObjectFieldSelector(
                         api_version="v1", field_path="metadata.name"
                     )
                 ),
             ),
-            V1EnvVar(
+            kubernetes.client.V1EnvVar(
                 name="DD_DOGSTATSD_TAGS",
                 value=" ".join([f"{k}:{v}" for k, v in datadog_tags.items()]),
             ),
-            V1EnvVar(
+            kubernetes.client.V1EnvVar(
                 name="DD_TAGS",
                 value=" ".join([f"{k}:{v}" for k, v in datadog_tags.items()]),
             ),
-            V1EnvVar(name="DD_USE_DOGSTATSD", value="true"),
-            V1EnvVar(name="DD_APM_ENABLED", value="true"),
-            V1EnvVar(name="DD_LOGS_ENABLED", value="false"),
-            V1EnvVar(
+            kubernetes.client.V1EnvVar(name="DD_USE_DOGSTATSD", value="true"),
+            kubernetes.client.V1EnvVar(name="DD_APM_ENABLED", value="true"),
+            kubernetes.client.V1EnvVar(name="DD_LOGS_ENABLED", value="false"),
+            kubernetes.client.V1EnvVar(
                 name="DD_CONFD_PATH",
                 value="/tmp/null",  # nosec
             ),
-            V1EnvVar(
+            kubernetes.client.V1EnvVar(
                 name="DD_AUTOCONF_TEMPLATE_DIR",
                 value="/tmp/null",  # nosec
             ),
-            V1EnvVar(name="DD_ENABLE_GOHAI", value="false"),
-            V1EnvVar(name="DD_COLLECT_KUBERNETES_EVENTS", value="false"),
-            V1EnvVar(name="DD_ENABLE_METADATA_COLLECTION", value="false"),
-            V1EnvVar(name="DD_ENABLE_PAYLOADS_EVENTS", value="true"),
-            V1EnvVar(name="DD_ENABLE_PAYLOADS_SERIES", value="true"),
-            V1EnvVar(name="DD_ENABLE_PAYLOADS_SERVICE_CHECKS", value="false"),
-            V1EnvVar(name="DD_ENABLE_PAYLOADS_SKETCHES", value="false"),
-            V1EnvVar(
+            kubernetes.client.V1EnvVar(name="DD_ENABLE_GOHAI", value="false"),
+            kubernetes.client.V1EnvVar(
+                name="DD_COLLECT_KUBERNETES_EVENTS", value="false"
+            ),
+            kubernetes.client.V1EnvVar(
+                name="DD_ENABLE_METADATA_COLLECTION", value="false"
+            ),
+            kubernetes.client.V1EnvVar(name="DD_ENABLE_PAYLOADS_EVENTS", value="true"),
+            kubernetes.client.V1EnvVar(name="DD_ENABLE_PAYLOADS_SERIES", value="true"),
+            kubernetes.client.V1EnvVar(
+                name="DD_ENABLE_PAYLOADS_SERVICE_CHECKS", value="false"
+            ),
+            kubernetes.client.V1EnvVar(
+                name="DD_ENABLE_PAYLOADS_SKETCHES", value="false"
+            ),
+            kubernetes.client.V1EnvVar(
                 name="DD_PROCESS_CONFIG_PROCESS_COLLECTION_ENABLED", value="false"
             ),
-            V1EnvVar(
+            kubernetes.client.V1EnvVar(
                 name="DD_AUTOCONFIG_EXCLUDE_FEATURES",
                 value="cloudfoundry cri docker ecsec2 ecsfargate eksfargate kubernetes orchestratorexplorer podman",
             ),
         ],
-        resources=V1ResourceRequirements(
+        resources=kubernetes.client.V1ResourceRequirements(
             limits={
                 "memory": "256Mi",
                 "cpu": "50m",
@@ -1936,9 +1924,11 @@ def render_podspec(release, process_name, service_account_name):
         "release": str(release.version),
     }
     volumes = [
-        V1Volume(
+        kubernetes.client.V1Volume(
             name="vault-secrets",
-            empty_dir=V1EmptyDirVolumeSource(medium="Memory", size_limit="1M"),
+            empty_dir=kubernetes.client.V1EmptyDirVolumeSource(
+                medium="Memory", size_limit="1M"
+            ),
         ),
     ]
     init_containers = []
@@ -1947,9 +1937,11 @@ def render_podspec(release, process_name, service_account_name):
 
     if process_name.startswith("web"):
         volumes.append(
-            V1Volume(
+            kubernetes.client.V1Volume(
                 name="cabotage-sock",
-                empty_dir=V1EmptyDirVolumeSource(medium="Memory", size_limit="1M"),
+                empty_dir=kubernetes.client.V1EmptyDirVolumeSource(
+                    medium="Memory", size_limit="1M"
+                ),
             )
         )
         init_containers.append(
@@ -2058,7 +2050,7 @@ def render_podspec(release, process_name, service_account_name):
     node_selector = {"cabotage.dev/node-pool": node_pool} if node_pool else None
     tolerations = (
         [
-            V1Toleration(
+            kubernetes.client.V1Toleration(
                 key="cabotage.dev/node-pool",
                 value=node_pool,
                 effect="NoSchedule",
@@ -2068,7 +2060,7 @@ def render_podspec(release, process_name, service_account_name):
         else None
     )
 
-    return V1PodSpec(
+    return kubernetes.client.V1PodSpec(
         service_account_name=service_account_name,
         node_selector=node_selector,
         tolerations=tolerations,
@@ -2101,8 +2093,8 @@ def render_deployment(
         "resident-pod.cabotage.io": "true",
         **safe_labels,
     }
-    deployment_object = V1Deployment(
-        metadata=V1ObjectMeta(
+    deployment_object = kubernetes.client.V1Deployment(
+        metadata=kubernetes.client.V1ObjectMeta(
             name=f"{resource_prefix}-{process_name}",
             labels={
                 "organization": release.application.project.organization.slug,
@@ -2114,16 +2106,16 @@ def render_deployment(
                 **safe_labels,
             },
         ),
-        spec=V1DeploymentSpec(
+        spec=kubernetes.client.V1DeploymentSpec(
             replicas=process_counts.get(process_name, 0),
-            selector=V1LabelSelector(
+            selector=kubernetes.client.V1LabelSelector(
                 match_labels={
                     "app": label_value,
                     "process": process_name,
                 },
             ),
-            template=V1PodTemplateSpec(
-                metadata=V1ObjectMeta(labels=pod_labels),
+            template=kubernetes.client.V1PodTemplateSpec(
+                metadata=kubernetes.client.V1ObjectMeta(labels=pod_labels),
                 spec=render_podspec(release, process_name, service_account_name),
             ),
         ),
@@ -2244,7 +2236,7 @@ def create_deployment(
 
 def scale_deployment(namespace, release, process_name, replicas):
     api_client = kubernetes_ext.kubernetes_client
-    apps_api_instance = AppsV1Api(api_client)
+    apps_api_instance = kubernetes.client.AppsV1Api(api_client)
     deployment_name = f"{k8s_resource_prefix(release)}-{process_name}"
     deployment = None
     try:
@@ -2255,7 +2247,9 @@ def scale_deployment(namespace, release, process_name, replicas):
         if exc.status == 404:
             pass
     if deployment is not None:
-        scale = V1Scale(spec=V1ScaleSpec(replicas=replicas))
+        scale = kubernetes.client.V1Scale(
+            spec=kubernetes.client.V1ScaleSpec(replicas=replicas)
+        )
         apps_api_instance.patch_namespaced_deployment_scale(
             deployment_name, namespace, scale
         )
@@ -2265,7 +2259,7 @@ def resize_deployment(namespace, release, process_name, pod_class_name):
     """Patch a deployment's container resources to match a new pod class."""
     pod_class = pod_classes[pod_class_name]
     api_client = kubernetes_ext.kubernetes_client
-    apps_api_instance = AppsV1Api(api_client)
+    apps_api_instance = kubernetes.client.AppsV1Api(api_client)
     deployment_name = f"{k8s_resource_prefix(release)}-{process_name}"
     try:
         apps_api_instance.read_namespaced_deployment(deployment_name, namespace)
@@ -2302,8 +2296,8 @@ def resize_deployment(namespace, release, process_name, pod_class_name):
 def render_job(namespace, release, service_account_name, process_name, job_id):
     label_value = k8s_label_value(release)
     safe_labels = _safe_labels_from_release(release)
-    job_object = V1Job(
-        metadata=V1ObjectMeta(
+    job_object = kubernetes.client.V1Job(
+        metadata=kubernetes.client.V1ObjectMeta(
             name=f"deployment-{job_id}",
             labels={
                 "organization": release.application.project.organization.slug,
@@ -2317,12 +2311,12 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
                 **safe_labels,
             },
         ),
-        spec=V1JobSpec(
+        spec=kubernetes.client.V1JobSpec(
             active_deadline_seconds=1800,
             backoff_limit=0,
             parallelism=1,
-            template=V1PodTemplateSpec(
-                metadata=V1ObjectMeta(
+            template=kubernetes.client.V1PodTemplateSpec(
+                metadata=kubernetes.client.V1ObjectMeta(
                     labels={
                         "organization": release.application.project.organization.slug,
                         "project": release.application.project.slug,
@@ -2402,8 +2396,8 @@ def render_cronjob(
         "ca-admission.cabotage.io": "true",
         "resident-pod.cabotage.io": "true",
     }
-    cronjob_object = V1CronJob(
-        metadata=V1ObjectMeta(
+    cronjob_object = kubernetes.client.V1CronJob(
+        metadata=kubernetes.client.V1ObjectMeta(
             name=f"{resource_prefix}-{process_name}",
             labels={
                 "organization": release.application.project.organization.slug,
@@ -2415,19 +2409,19 @@ def render_cronjob(
                 **safe_labels,
             },
         ),
-        spec=V1CronJobSpec(
+        spec=kubernetes.client.V1CronJobSpec(
             schedule=schedule,
             suspend=suspended,
             concurrency_policy="Forbid",
             successful_jobs_history_limit=_history_limit_for_schedule(schedule),
             failed_jobs_history_limit=_history_limit_for_schedule(schedule),
-            job_template=V1JobTemplateSpec(
-                metadata=V1ObjectMeta(labels=job_labels),
-                spec=V1JobSpec(
+            job_template=kubernetes.client.V1JobTemplateSpec(
+                metadata=kubernetes.client.V1ObjectMeta(labels=job_labels),
+                spec=kubernetes.client.V1JobSpec(
                     active_deadline_seconds=3600,
                     backoff_limit=0,
-                    template=V1PodTemplateSpec(
-                        metadata=V1ObjectMeta(labels=pod_labels),
+                    template=kubernetes.client.V1PodTemplateSpec(
+                        metadata=kubernetes.client.V1ObjectMeta(labels=pod_labels),
                         spec=render_podspec(
                             release, process_name, service_account_name
                         ),
@@ -2488,7 +2482,7 @@ def create_cronjob(
 def suspend_cronjob(namespace, release, process_name, suspend):
     """Suspend or unsuspend a CronJob."""
     api_client = kubernetes_ext.kubernetes_client
-    batch_api_instance = BatchV1Api(api_client)
+    batch_api_instance = kubernetes.client.BatchV1Api(api_client)
     cronjob_name = f"{k8s_resource_prefix(release)}-{process_name}"
     try:
         batch_api_instance.read_namespaced_cron_job(cronjob_name, namespace)
@@ -2504,7 +2498,7 @@ def resize_cronjob(namespace, release, process_name, pod_class_name):
     """Patch a CronJob's container resources to match a new pod class."""
     pod_class = pod_classes[pod_class_name]
     api_client = kubernetes_ext.kubernetes_client
-    batch_api_instance = BatchV1Api(api_client)
+    batch_api_instance = kubernetes.client.BatchV1Api(api_client)
     cronjob_name = f"{k8s_resource_prefix(release)}-{process_name}"
     try:
         batch_api_instance.read_namespaced_cron_job(cronjob_name, namespace)
@@ -2695,7 +2689,7 @@ def _run_job_streaming(
         # Stream logs from the pod
         container = job_object.metadata.labels.get("process", None)
         try:
-            w = Watch()
+            w = kubernetes.watch.Watch()
             kwargs = dict(
                 name=pod.metadata.name,
                 namespace=namespace,
@@ -2815,10 +2809,10 @@ def deploy_release(deployment: Deployment):
     try:
         log("Constructing API Clients")
         api_client = kubernetes_ext.kubernetes_client
-        core_api_instance = CoreV1Api(api_client)
-        apps_api_instance = AppsV1Api(api_client)
-        batch_api_instance = BatchV1Api(api_client)
-        custom_objects_api_instance = CustomObjectsApi(api_client)
+        core_api_instance = kubernetes.client.CoreV1Api(api_client)
+        apps_api_instance = kubernetes.client.AppsV1Api(api_client)
+        batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+        custom_objects_api_instance = kubernetes.client.CustomObjectsApi(api_client)
         log("Fetching Namespace")
         namespace = fetch_namespace(core_api_instance, deployment.release_object)
         if (
@@ -2828,7 +2822,7 @@ def deploy_release(deployment: Deployment):
             and namespace.metadata.name != "cabotage"
         ):
             log("Ensuring Network Policies")
-            networking_api_instance = NetworkingV1Api(api_client)
+            networking_api_instance = kubernetes.client.NetworkingV1Api(api_client)
             ensure_network_policies(networking_api_instance, namespace.metadata.name)
         log("Fetching Cabotage CA Cert ConfigMap")
         fetch_cabotage_ca_configmap(core_api_instance, deployment.release_object)
@@ -2909,7 +2903,7 @@ def deploy_release(deployment: Deployment):
             if changed:
                 db.session.commit()
                 db.session.refresh(app_env)
-            networking_api_instance = NetworkingV1Api(api_client)
+            networking_api_instance = kubernetes.client.NetworkingV1Api(api_client)
             if changed or not release_obj.ingresses:
                 # Re-snapshot from live DB after hostname reconciliation,
                 # or for old releases without serialized ingresses.
@@ -2966,9 +2960,11 @@ def deploy_release(deployment: Deployment):
         service_account = core_api_instance.patch_namespaced_service_account(
             service_account_metadata_name,
             namespace_metadata_name,
-            V1ServiceAccount(
+            kubernetes.client.V1ServiceAccount(
                 image_pull_secrets=[
-                    V1LocalObjectReference(name=image_pull_secrets_metadata_name)
+                    kubernetes.client.V1LocalObjectReference(
+                        name=image_pull_secrets_metadata_name
+                    )
                 ],
             ),
         )
