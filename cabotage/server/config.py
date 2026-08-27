@@ -1,5 +1,4 @@
 import os
-import secrets
 
 from flask_env import MetaFlaskEnv
 from flask_security import uia_username_mapper, uia_email_mapper
@@ -47,6 +46,42 @@ def validate_tenant_postgres_backup_config(config):
         )
 
 
+_INSECURE_DEFAULT_SECRETS = {
+    "SECRET_KEY": "my_precious",
+    "SECURITY_PASSWORD_SALT": "my_precious",
+    "REGISTRY_AUTH_SECRET": "v3rys3cur3",
+}
+_INSECURE_DEFAULT_TOTP_SECRET = "my_precious"
+
+
+def validate_security_secrets_config(config):
+    """Fail closed: refuse to run with predictable security secrets outside DEBUG.
+
+    In development (``DEBUG=True``) the baked-in defaults are fine — sessions,
+    TOTP codes and password hashes reset across restarts but that is acceptable
+    locally. In any non-DEBUG run the predictable defaults would allow session
+    forgery, deterministic TOTP codes and registry-auth bypass, so the app must
+    not start until each value is overridden via its ``CABOTAGE_*`` environment
+    variable (``MetaFlaskEnv`` applies ``CABOTAGE_*`` overrides automatically).
+    """
+    if config.get("DEBUG"):
+        return
+
+    for key, default in _INSECURE_DEFAULT_SECRETS.items():
+        if config.get(key) == default:
+            raise RuntimeError(
+                f"{key} is still set to its insecure default {default!r}. "
+                f"Set CABOTAGE_{key} before running with DEBUG=False."
+            )
+
+    totp_secrets = config.get("SECURITY_TOTP_SECRETS") or {}
+    if totp_secrets.get(1) == _INSECURE_DEFAULT_TOTP_SECRET:
+        raise RuntimeError(
+            "SECURITY_TOTP_SECRETS[1] is still set to its insecure default. "
+            "Set CABOTAGE_SECURITY_TOTP_SECRET_1 before running with DEBUG=False."
+        )
+
+
 class Config(metaclass=MetaFlaskEnv):
     ENV_PREFIX = "CABOTAGE_"
     ENV_LOAD_ALL = True
@@ -55,7 +90,7 @@ class Config(metaclass=MetaFlaskEnv):
     EXT_PREFERRED_URL_SCHEME = "http"
 
     FLASK_ADMIN_SWATCH = "cerulean"
-    SECRET_KEY = os.environ.get("CABOTAGE_SECRET_KEY") or secrets.token_hex(32)
+    SECRET_KEY = "my_precious"  # nosec
     DEBUG = False
     MAX_CONTENT_LENGTH = 32 * 1024 * 1024
     BCRYPT_LOG_ROUNDS = 13
@@ -63,14 +98,14 @@ class Config(metaclass=MetaFlaskEnv):
     DEBUG_TB_ENABLED = False
     DEBUG_TB_INTERCEPT_REDIRECTS = False
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SECURITY_PASSWORD_SALT = os.environ.get("CABOTAGE_SECURITY_PASSWORD_SALT") or secrets.token_hex(32)
+    SECURITY_PASSWORD_SALT = "my_precious"  # nosec
     SECURITY_TRACKABLE = True
     SECURITY_CHANGEABLE = True
     SECURITY_CONFIRMABLE = True
     SECURITY_REGISTERABLE = True
     SECURITY_RECOVERABLE = True
     SECURITY_EMAIL_SENDER = "noreply@localhost"
-    SECURITY_TOTP_SECRETS = {1: os.environ.get("CABOTAGE_SECURITY_TOTP_SECRET_1") or secrets.token_hex(32)}
+    SECURITY_TOTP_SECRETS = {1: "my_precious"}
     SECURITY_TOTP_ISSUER = "cabotage"
     REQUIRE_MFA = True
     SECURITY_TWO_FACTOR = True
@@ -122,7 +157,7 @@ class Config(metaclass=MetaFlaskEnv):
     REGISTRY_PULL = "registry:5001"
     REGISTRY_SECURE = False
     REGISTRY_VERIFY = False
-    REGISTRY_AUTH_SECRET = os.environ.get("CABOTAGE_REGISTRY_AUTH_SECRET") or secrets.token_hex(32)
+    REGISTRY_AUTH_SECRET = "v3rys3cur3"  # nosec
     DOCKERHUB_USERNAME = None
     DOCKERHUB_TOKEN = None
     BUILDKITD_URL = "tcp://cabotage-buildkitd:1234"
