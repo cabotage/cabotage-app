@@ -7,15 +7,6 @@ from copy import deepcopy
 
 from flask import current_app
 from kubernetes.client.exceptions import ApiException
-from kubernetes.client import (
-    AppsV1Api,
-    CoreV1Api,
-    CustomObjectsApi,
-    NetworkingV1Api,
-    RbacAuthorizationV1Api,
-    V1Namespace,
-    V1ObjectMeta,
-)
 
 from cabotage.server import (
     db,
@@ -243,6 +234,7 @@ def _precreate_ingresses(environment: Environment) -> None:
     Called before image builds start so that cert-manager can begin issuing
     TLS certificates while builds run in parallel.
     """
+    import kubernetes.client
 
     from cabotage.celery.tasks.deploy import (
         ensure_cabotage_ca_configmap,
@@ -256,8 +248,8 @@ def _precreate_ingresses(environment: Environment) -> None:
     org = environment.project.organization
     ns_name = environment.k8s_namespace
     api_client = kubernetes_ext.kubernetes_client
-    core_api = CoreV1Api(api_client)
-    networking_api = NetworkingV1Api(api_client)
+    core_api = kubernetes.client.CoreV1Api(api_client)
+    networking_api = kubernetes.client.NetworkingV1Api(api_client)
 
     # Ensure namespace exists with resident-namespace label
     try:
@@ -267,8 +259,8 @@ def _precreate_ingresses(environment: Environment) -> None:
         if labels.get("resident-namespace.cabotage.io") != "true":
             core_api.patch_namespace(
                 ns_name,
-                V1Namespace(
-                    metadata=V1ObjectMeta(
+                kubernetes.client.V1Namespace(
+                    metadata=kubernetes.client.V1ObjectMeta(
                         labels={"resident-namespace.cabotage.io": "true"},
                     ),
                 ),
@@ -276,8 +268,8 @@ def _precreate_ingresses(environment: Environment) -> None:
     except ApiException as exc:
         if exc.status == 404:
             core_api.create_namespace(
-                V1Namespace(
-                    metadata=V1ObjectMeta(
+                kubernetes.client.V1Namespace(
+                    metadata=kubernetes.client.V1ObjectMeta(
                         name=ns_name,
                         labels={"resident-namespace.cabotage.io": "true"},
                     ),
@@ -316,6 +308,7 @@ def _precreate_ingresses(environment: Environment) -> None:
 
 def _teardown_environment(environment: Environment) -> None:
     """Delete k8s namespace and all DB records for an ephemeral environment."""
+    import kubernetes.client
 
     from cabotage.celery.tasks.build import (
         _build_namespace,
@@ -332,10 +325,10 @@ def _teardown_environment(environment: Environment) -> None:
     if current_app.config["KUBERNETES_ENABLED"]:
         ns_name = environment.k8s_namespace
         api_client = kubernetes_ext.kubernetes_client
-        core_api = CoreV1Api(api_client)
-        custom_api = CustomObjectsApi(api_client)
-        apps_api = AppsV1Api(api_client)
-        rbac_api = RbacAuthorizationV1Api(api_client)
+        core_api = kubernetes.client.CoreV1Api(api_client)
+        custom_api = kubernetes.client.CustomObjectsApi(api_client)
+        apps_api = kubernetes.client.AppsV1Api(api_client)
+        rbac_api = kubernetes.client.RbacAuthorizationV1Api(api_client)
         resources = list(environment.active_resources)
         if resources:
             reconcile_lock_conn = _acquire_reconcile_lock()

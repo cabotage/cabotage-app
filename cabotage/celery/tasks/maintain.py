@@ -1,7 +1,7 @@
 import datetime
 import logging
 
-from kubernetes.client import CoreV1Api
+import kubernetes.client
 
 from celery import shared_task
 from flask import current_app
@@ -234,7 +234,7 @@ def reap_pods() -> None:
     if not current_app.config["KUBERNETES_ENABLED"]:
         return
     api_client = kubernetes_ext.kubernetes_client
-    core_api_instance = CoreV1Api(api_client)
+    core_api_instance = kubernetes.client.CoreV1Api(api_client)
     pods = core_api_instance.list_pod_for_all_namespaces(
         label_selector="resident-pod.cabotage.io=true",
     )
