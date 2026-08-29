@@ -122,7 +122,7 @@ def _resolve_app_env(labels):
 def _reap_limit():
     try:
         return int(os.environ.get("CABOTAGE_JOBS_REAPED_PER_RUN", DEFAULT_REAP_LIMIT))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return DEFAULT_REAP_LIMIT
 
 
@@ -183,7 +183,7 @@ def reap_finished_jobs():
         release_version = None
         try:
             release_version = int(labels.get("release", ""))
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             pass
 
         resources = _extract_resources(job)

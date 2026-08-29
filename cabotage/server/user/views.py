@@ -983,7 +983,7 @@ def github_install_callback():
         return redirect(url_for("user.organizations"))
     try:
         installation_id = int(installation_id)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         flash("GitHub did not return enough information to connect the app.", "danger")
         return redirect(url_for("user.organizations"))
 
@@ -8211,7 +8211,7 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
                 processes[proc]["crashed"] += 1
             else:
                 processes[proc]["pending"] += 1
-    except (kubernetes.client.ApiException, Exception):
+    except kubernetes.client.ApiException, Exception:
         current_app.logger.debug("Failed to list pods for live stats", exc_info=True)
 
     end = int(time.time())
@@ -8397,7 +8397,7 @@ def _loki_query_response(selectors, process_names, tenant_id=None):
     if end_ns is not None:
         try:
             end_ns = int(end_ns)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             end_ns = None
 
     if end_ns is None:
@@ -8406,7 +8406,7 @@ def _loki_query_response(selectors, process_names, tenant_id=None):
     if start_param is not None:
         try:
             start_ns = int(start_param)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             start_ns = end_ns - (range_seconds * 1_000_000_000)
     else:
         start_ns = end_ns - (range_seconds * 1_000_000_000)
@@ -8467,7 +8467,7 @@ def _loki_query_response(selectors, process_names, tenant_id=None):
                     if isinstance(parsed, dict) and "log" in parsed:
                         message = parsed["log"]
                         log_stream = parsed.get("stream", "")
-                except (json.JSONDecodeError, TypeError):
+                except json.JSONDecodeError, TypeError:
                     pass
             if message.endswith("\n"):
                 message = message[:-1]

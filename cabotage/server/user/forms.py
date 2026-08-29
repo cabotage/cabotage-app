@@ -449,7 +449,7 @@ class EditApplicationSettingsForm(FlaskForm):
             return True
         try:
             installation_id = int(field.data)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             raise ValidationError("Select a valid GitHub installation.")
         if installation_id < BIGINT_MIN or installation_id > BIGINT_MAX:
             raise ValidationError("Select a valid GitHub installation.")
@@ -462,7 +462,7 @@ class EditApplicationSettingsForm(FlaskForm):
         if form.github_app_installation_id.data is not None:
             try:
                 installation_id = int(form.github_app_installation_id.data)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 return True
             if installation_id < BIGINT_MIN or installation_id > BIGINT_MAX:
                 return True
