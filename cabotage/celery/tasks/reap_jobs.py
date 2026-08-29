@@ -23,14 +23,13 @@ from cabotage.server.models.projects import (
     JobLog,
     Project,
 )
-from cabotage._types import assume_not_none, K8S_OBJECT_HAS_METADATA
 
 DEFAULT_REAP_LIMIT = 10
 
 
-def _is_finished(job):
+def _is_finished(job: kubernetes.client.V1Job) -> bool:
     """Return True if the Job has a Complete or Failed condition."""
-    if not job.status.conditions:
+    if job.status is None or not job.status.conditions:
         return False
     for cond in job.status.conditions:
         if cond.type in ("Complete", "Failed") and cond.status == "True":
@@ -38,9 +37,9 @@ def _is_finished(job):
     return False
 
 
-def _is_succeeded(job):
+def _is_succeeded(job: kubernetes.client.V1Job) -> bool:
     """Return True if the Job completed successfully."""
-    if not job.status.conditions:
+    if job.status is None or not job.status.conditions:
         return False
     for cond in job.status.conditions:
         if cond.type == "Complete" and cond.status == "True":
@@ -157,12 +156,21 @@ def reap_finished_jobs():
         if not _is_finished(job):
             continue
 
-        job_metadata = assume_not_none(job.metadata, because=K8S_OBJECT_HAS_METADATA)
+        if (
+            job.metadata is None
+            or job.metadata.name is None
+            or job.metadata.namespace is None
+            or job.status is None
+        ):
+            current_app.logger.warning(
+                "Skipping finished Kubernetes Job without complete metadata or status"
+            )
+            continue
 
-        labels = job_metadata.labels or {}
-        annotations = job_metadata.annotations or {}
-        namespace = job_metadata.namespace
-        job_name = job_metadata.name
+        labels = job.metadata.labels or {}
+        annotations = job.metadata.annotations or {}
+        namespace = job.metadata.namespace
+        job_name = job.metadata.name
 
         application, app_env = _resolve_app_env(labels)
         if application is None or app_env is None:
@@ -174,10 +182,8 @@ def reap_finished_jobs():
             reaped += 1
             continue
 
-        job_status = assume_not_none(job.status, because="A Kubernetes Job has status")
-
-        start_time = _parse_datetime(job_status.start_time)
-        completion_time = _parse_datetime(job_status.completion_time)
+        start_time = _parse_datetime(job.status.start_time)
+        completion_time = _parse_datetime(job.status.completion_time)
         duration = None
         if start_time and completion_time:
             duration = int((completion_time - start_time).total_seconds())
@@ -206,9 +212,9 @@ def reap_finished_jobs():
             completion_time=completion_time,
             duration_seconds=duration,
             succeeded=_is_succeeded(job),
-            pods_active=job_status.active or 0,
-            pods_succeeded=job_status.succeeded or 0,
-            pods_failed=job_status.failed or 0,
+            pods_active=job.status.active or 0,
+            pods_succeeded=job.status.succeeded or 0,
+            pods_failed=job.status.failed or 0,
             release_version=release_version,
             deployment_id=labels.get("deployment"),
             labels=labels,

@@ -1,5 +1,6 @@
 import datetime
 import logging
+from operator import itemgetter
 
 import kubernetes.client
 
@@ -19,14 +20,6 @@ from cabotage.utils.build_log_stream import (
     stream_key,
 )
 from cabotage.utils.github import cabotage_url, post_deployment_status_update
-from cabotage._types import (
-    assume_not_none,
-    K8S_OBJECT_HAS_METADATA,
-    K8S_OBJECT_HAS_NAME,
-    K8S_OBJECT_HAS_NAMESPACE,
-    K8S_OBJECT_HAS_STATUS,
-    K8S_POD_HAS_START_TIME,
-)
 
 log = logging.getLogger(__name__)
 
@@ -240,31 +233,28 @@ def reap_pods() -> None:
     )
     if not pods.items:
         return
-    candidate = sorted(
-        pods.items,
-        # FIXME: remove ignores once resolved
-        # https://github.com/facebook/pyrefly/issues/4368
-        key=lambda pod: assume_not_none(  # pyrefly: ignore[implicit-any-lambda]
-            assume_not_none(pod.status, because=K8S_OBJECT_HAS_STATUS).start_time,  # pyrefly: ignore[unknown-argument-type]
-            because=K8S_POD_HAS_START_TIME,
-        ),
-    )[0]
+    candidates: list[tuple[datetime.datetime, kubernetes.client.V1Pod]] = []
+    for pod in pods.items:
+        if pod.status is None or pod.status.start_time is None:
+            log.warning("Skipping resident pod without a start time")
+            continue
+        candidates.append((pod.status.start_time, pod))
+    if not candidates:
+        return
+
+    candidate_start_time, candidate = min(candidates, key=itemgetter(0))
     lookback = datetime.datetime.now().replace(
         tzinfo=datetime.timezone.utc
     ) - datetime.timedelta(days=7)
-    if (
-        assume_not_none(
-            assume_not_none(candidate.status, because=K8S_OBJECT_HAS_STATUS).start_time,
-            because=K8S_POD_HAS_START_TIME,
-        )
-        < lookback
-    ):
-        candidate_metadata = assume_not_none(
-            candidate.metadata, because=K8S_OBJECT_HAS_METADATA
-        )
+    if candidate_start_time < lookback:
+        if (
+            candidate.metadata is None
+            or candidate.metadata.name is None
+            or candidate.metadata.namespace is None
+        ):
+            log.warning("Skipping resident pod without a name or namespace")
+            return
         core_api_instance.delete_namespaced_pod(
-            assume_not_none(candidate_metadata.name, because=K8S_OBJECT_HAS_NAME),
-            assume_not_none(
-                candidate_metadata.namespace, because=K8S_OBJECT_HAS_NAMESPACE
-            ),
+            candidate.metadata.name,
+            candidate.metadata.namespace,
         )

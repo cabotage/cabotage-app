@@ -48,7 +48,6 @@ from cabotage.utils.release_build_context import (
     configmap_context_for_release,
     RELEASE_DOCKERFILE_TEMPLATE,
 )
-from cabotage._types import assume_not_none
 
 activity_plugin = ActivityPlugin()
 flask_plugin = FlaskPlugin()
@@ -474,10 +473,9 @@ class ApplicationEnvironment(Model, Timestamp):
     def effective_deployment_timeout(self) -> int:
         if self.deployment_timeout is not None:
             return self.deployment_timeout
-        return assume_not_none(
-            self.application.deployment_timeout,
-            because="server_default populates deployment_timeout on insert",
-        )
+        if self.application.deployment_timeout is not None:
+            return self.application.deployment_timeout
+        return 180
 
     @property
     def effective_health_check_path(self):

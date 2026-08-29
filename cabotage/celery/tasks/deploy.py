@@ -58,11 +58,6 @@ from cabotage.celery.tasks.notify import (
     dispatch_autodeploy_notification,
     dispatch_pipeline_notification,
 )
-from cabotage._types import (
-    assume_not_none,
-    K8S_OBJECT_HAS_METADATA,
-    K8S_OBJECT_HAS_NAME,
-)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -141,14 +136,13 @@ def cleanup_app_env_k8s(
             namespace, label_selector=label_selector
         )
         for d in deps.items:
-            d_metadata_name = assume_not_none(
-                assume_not_none(d.metadata, because=K8S_OBJECT_HAS_METADATA).name,
-                because=K8S_OBJECT_HAS_NAME,
-            )
+            if d.metadata is None or d.metadata.name is None:
+                log.warning("k8s cleanup: skipping unnamed deployment")
+                continue
             log.info(
-                "k8s cleanup: deleting deployment %s/%s", namespace, d_metadata_name
+                "k8s cleanup: deleting deployment %s/%s", namespace, d.metadata.name
             )
-            apps_api.delete_namespaced_deployment(d_metadata_name, namespace)
+            apps_api.delete_namespaced_deployment(d.metadata.name, namespace)
     except Exception:
         log.exception("k8s cleanup: failed to delete deployments")
 
@@ -159,12 +153,11 @@ def cleanup_app_env_k8s(
             namespace, label_selector=svc_label_selector
         )
         for s in svcs.items:
-            s_metadata_name = assume_not_none(
-                assume_not_none(s.metadata, because=K8S_OBJECT_HAS_METADATA).name,
-                because=K8S_OBJECT_HAS_NAME,
-            )
-            log.info("k8s cleanup: deleting service %s/%s", namespace, s_metadata_name)
-            core_api.delete_namespaced_service(s_metadata_name, namespace)
+            if s.metadata is None or s.metadata.name is None:
+                log.warning("k8s cleanup: skipping unnamed service")
+                continue
+            log.info("k8s cleanup: deleting service %s/%s", namespace, s.metadata.name)
+            core_api.delete_namespaced_service(s.metadata.name, namespace)
     except Exception:
         log.exception("k8s cleanup: failed to delete services")
 
@@ -174,12 +167,11 @@ def cleanup_app_env_k8s(
             namespace, label_selector=label_selector
         )
         for i in ings.items:
-            i_metadata_name = assume_not_none(
-                assume_not_none(i.metadata, because=K8S_OBJECT_HAS_METADATA).name,
-                because=K8S_OBJECT_HAS_NAME,
-            )
-            log.info("k8s cleanup: deleting ingress %s/%s", namespace, i_metadata_name)
-            networking_api.delete_namespaced_ingress(i_metadata_name, namespace)
+            if i.metadata is None or i.metadata.name is None:
+                log.warning("k8s cleanup: skipping unnamed ingress")
+                continue
+            log.info("k8s cleanup: deleting ingress %s/%s", namespace, i.metadata.name)
+            networking_api.delete_namespaced_ingress(i.metadata.name, namespace)
     except Exception:
         log.exception("k8s cleanup: failed to delete ingresses")
 
@@ -356,9 +348,10 @@ def ensure_namespace(
     try:
         namespace = core_api_instance.read_namespace(namespace_name)
         # Ensure the resident-namespace label is present on existing namespaces
-        labels = (
-            assume_not_none(namespace.metadata, because=K8S_OBJECT_HAS_METADATA).labels
-            or {}
+        labels: dict[str, str] = (
+            namespace.metadata.labels
+            if namespace.metadata is not None and namespace.metadata.labels is not None
+            else {}
         )
         if labels.get("resident-namespace.cabotage.io") != "true":
             namespace = core_api_instance.patch_namespace(
@@ -2792,6 +2785,8 @@ def deploy_release(deployment: Deployment):
         custom_objects_api_instance = kubernetes.client.CustomObjectsApi(api_client)
         log("Fetching Namespace")
         namespace = fetch_namespace(core_api_instance, deployment.release_object)
+        if namespace.metadata is None or namespace.metadata.name is None:
+            raise DeployError("Fetched namespace has no name")
         if (
             current_app.config.get("NETWORK_POLICIES_ENABLED")
             # Legacy: skip network policies for the cabotage namespace — cabotage
@@ -2807,6 +2802,8 @@ def deploy_release(deployment: Deployment):
         service_account = fetch_service_account(
             core_api_instance, deployment.release_object
         )
+        if service_account.metadata is None or service_account.metadata.name is None:
+            raise DeployError("Fetched service account has no name")
         log("Fetching CabotageEnrollment")
         enrollment = fetch_cabotage_enrollment(
             custom_objects_api_instance, deployment.release_object
@@ -2915,30 +2912,19 @@ def deploy_release(deployment: Deployment):
         image_pull_secrets = fetch_image_pull_secrets(
             core_api_instance, deployment.release_object
         )
+        if (
+            image_pull_secrets.metadata is None
+            or image_pull_secrets.metadata.name is None
+        ):
+            raise DeployError("Fetched image pull secret has no name")
         log("Patching ServiceAccount with ImagePullSecrets")
-        service_account_metadata_name = assume_not_none(
-            assume_not_none(
-                service_account.metadata, because=K8S_OBJECT_HAS_METADATA
-            ).name,
-            because=K8S_OBJECT_HAS_NAME,
-        )
-        namespace_metadata_name = assume_not_none(
-            assume_not_none(namespace.metadata, because=K8S_OBJECT_HAS_METADATA).name,
-            because=K8S_OBJECT_HAS_NAME,
-        )
-        image_pull_secrets_metadata_name = assume_not_none(
-            assume_not_none(
-                image_pull_secrets.metadata, because=K8S_OBJECT_HAS_METADATA
-            ).name,
-            because=K8S_OBJECT_HAS_NAME,
-        )
-        service_account = core_api_instance.patch_namespaced_service_account(
-            service_account_metadata_name,
-            namespace_metadata_name,
+        _ = core_api_instance.patch_namespaced_service_account(
+            service_account.metadata.name,
+            namespace.metadata.name,
             kubernetes.client.V1ServiceAccount(
                 image_pull_secrets=[
                     kubernetes.client.V1LocalObjectReference(
-                        name=image_pull_secrets_metadata_name
+                        name=image_pull_secrets.metadata.name
                     )
                 ],
             ),
@@ -2946,16 +2932,16 @@ def deploy_release(deployment: Deployment):
         for release_command in deployment.release_object.release_commands:
             log(f"Running release command {release_command}")
             job_object = render_job(
-                namespace_metadata_name,
+                namespace.metadata.name,
                 deployment.release_object,
-                service_account_metadata_name,
+                service_account.metadata.name,
                 release_command,
                 deployment.job_id,
             )
             job_complete, job_logs = run_job(
                 core_api_instance,
                 batch_api_instance,
-                namespace_metadata_name,
+                namespace.metadata.name,
                 job_object,
                 redis_client=redis_client,
                 log_key=log_key,
@@ -2977,9 +2963,9 @@ def deploy_release(deployment: Deployment):
             )
             create_deployment(
                 apps_api_instance,
-                namespace_metadata_name,
+                namespace.metadata.name,
                 deployment.release_object,
-                service_account_metadata_name,
+                service_account.metadata.name,
                 process_name,
                 deployment_id=deployment.id,
             )
@@ -2989,9 +2975,9 @@ def deploy_release(deployment: Deployment):
             log(f"Creating CronJob for {process_name} ({_suspended})")
             create_cronjob(
                 batch_api_instance,
-                namespace_metadata_name,
+                namespace.metadata.name,
                 deployment.release_object,
-                service_account_metadata_name,
+                service_account.metadata.name,
                 process_name,
                 deployment_id=deployment.id,
             )
@@ -3014,9 +3000,9 @@ def deploy_release(deployment: Deployment):
                     continue
                 dep_obj = fetch_deployment(
                     apps_api_instance,
-                    namespace_metadata_name,
+                    namespace.metadata.name,
                     deployment.release_object,
-                    service_account_metadata_name,
+                    service_account.metadata.name,
                     process_name,
                 )
                 if dep_obj is None:
@@ -3090,16 +3076,16 @@ def deploy_release(deployment: Deployment):
         for postdeploy_command in deployment.release_object.postdeploy_commands:
             log(f"Running postdeploy command {postdeploy_command}")
             job_object = render_job(
-                namespace_metadata_name,
+                namespace.metadata.name,
                 deployment.release_object,
-                service_account_metadata_name,
+                service_account.metadata.name,
                 postdeploy_command,
                 deployment.job_id,
             )
             job_complete, job_logs = run_job(
                 core_api_instance,
                 batch_api_instance,
-                namespace_metadata_name,
+                namespace.metadata.name,
                 job_object,
                 redis_client=redis_client,
                 log_key=log_key,
