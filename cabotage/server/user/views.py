@@ -167,7 +167,6 @@ from cabotage.utils.build_log_stream import (
 )
 
 from cabotage.utils import oidc
-from cabotage._types import assume_not_none
 
 _REGEX_META = re.compile(r"[.*+?{}()|\\^$\[\]]")
 
@@ -6379,9 +6378,10 @@ def organization_add_user(org_slug):
     all_users = User.query.all() if current_user.admin else None
 
     if form.validate_on_submit():
-        value = assume_not_none(
-            form.identity.data, because="InputRequired has already run"
-        ).strip()
+        identity = form.identity.data
+        if identity is None:
+            raise RuntimeError("Validated form has no identity")
+        value = identity.strip()
         user = User.query.filter_by(email=value).first()
         if not user:
             # Resolve GitHub username to user ID via API, then match by ID

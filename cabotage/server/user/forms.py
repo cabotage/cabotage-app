@@ -41,7 +41,6 @@ from cabotage.server.models.resources import (
     redis_size_classes,
 )
 from cabotage.server.models.utils import slugify
-from cabotage._types import assume_not_none
 
 BIGINT_MIN = -(2**63)
 BIGINT_MAX = 2**63 - 1
@@ -345,7 +344,11 @@ class CreateConfigurationForm(FlaskForm):
     )
 
     def validate_name(self, field: StringField) -> bool:
-        if field.data and field.data.upper() == "CABOTAGE_SENTINEL":
+        name = field.data
+        if name is None:
+            raise ValidationError("Name is required.")
+
+        if name.upper() == "CABOTAGE_SENTINEL":
             raise ValidationError("This name is reserved.")
         app_env_id = None
         env_id = self.environment_id.data or None
@@ -359,15 +362,10 @@ class CreateConfigurationForm(FlaskForm):
         configuration = Configuration.query.filter_by(
             application_id=self.application_id.data,
             application_environment_id=app_env_id,
-            name=field.data,
+            name=name,
         ).first()
         if configuration is not None:
-            if (
-                assume_not_none(
-                    self.name.data, because="InputRequired has already run"
-                ).lower()
-                != configuration.name.lower()
-            ):
+            if name.lower() != configuration.name.lower():
                 return True
             raise ValidationError(
                 "Configuration names must be unique (case insensitive) "
