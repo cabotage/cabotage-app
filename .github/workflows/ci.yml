@@ -17,7 +17,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.0.1
-      - run: uv python install 3.13
       - run: uv sync --frozen
       - run: uv run ruff format --check --diff .
       - run: uv run ruff check .
@@ -28,7 +27,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.0.1
-      - run: uv python install 3.13
       - run: uv sync --frozen
       - name: ty
         run: uv run ty check cabotage
@@ -41,7 +39,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.0.1
-      - run: uv python install 3.13
       - run: uv sync --frozen
       - run: uv run bandit -c pyproject.toml -r .
 
@@ -76,7 +73,6 @@ jobs:
         run: |
           docker run --rm --network host postgres:16 psql -h localhost -U postgres -d cabotage_test -c "CREATE EXTENSION IF NOT EXISTS citext; CREATE EXTENSION IF NOT EXISTS pgcrypto;"
       - uses: astral-sh/setup-uv@v10.0.1
-      - run: uv python install 3.13
       - run: uv sync --frozen
       - name: Run migrations
         run: uv run flask db upgrade
