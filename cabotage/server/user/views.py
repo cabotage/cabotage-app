@@ -176,6 +176,7 @@ from cabotage._types import (
 
 if TYPE_CHECKING:
     from kubernetes.stream.ws_client import WSClient
+    from simple_websocket import Server
 
 _REGEX_META = re.compile(r"[.*+?{}()|\\^$\[\]]")
 
@@ -3516,7 +3517,13 @@ def _shell_exec_command() -> list[str]:
     ]
 
 
-def _shell_socket(ws, org_slug, project_slug, app_slug, env_slug=None):
+def _shell_socket(
+    ws: Server,
+    org_slug: str,
+    project_slug: str,
+    app_slug: str,
+    env_slug: str | None = None,
+) -> None:
     if not current_app.config.get("SHELLZ_ENABLED", False):
         abort(404)
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
@@ -3616,8 +3623,8 @@ def _shell_socket(ws, org_slug, project_slug, app_slug, env_slug=None):
 )
 @login_required
 def project_application_shell_socket_env(
-    ws, org_slug, project_slug, app_slug, env_slug
-):
+    ws: Server, org_slug: str, project_slug: str, app_slug: str, env_slug: str
+) -> None:
     return _shell_socket(ws, org_slug, project_slug, app_slug, env_slug=env_slug)
 
 
@@ -3626,7 +3633,9 @@ def project_application_shell_socket_env(
     bp=user_blueprint,
 )
 @login_required
-def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
+def project_application_shell_socket(
+    ws: Server, org_slug: str, project_slug: str, app_slug: str
+) -> None:
     return _shell_socket(ws, org_slug, project_slug, app_slug)
 
 
