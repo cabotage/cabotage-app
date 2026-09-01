@@ -21,9 +21,6 @@ from cabotage.utils.build_log_stream import (
 from cabotage.utils.github import cabotage_url, post_deployment_status_update
 from cabotage._types import (
     assume_not_none,
-    K8S_OBJECT_HAS_METADATA,
-    K8S_OBJECT_HAS_NAME,
-    K8S_OBJECT_HAS_NAMESPACE,
     K8S_OBJECT_HAS_STATUS,
     K8S_POD_HAS_START_TIME,
 )
@@ -252,19 +249,25 @@ def reap_pods() -> None:
     lookback = datetime.datetime.now().replace(
         tzinfo=datetime.timezone.utc
     ) - datetime.timedelta(days=7)
-    if (
-        assume_not_none(
-            assume_not_none(candidate.status, because=K8S_OBJECT_HAS_STATUS).start_time,
-            because=K8S_POD_HAS_START_TIME,
-        )
-        < lookback
-    ):
-        candidate_metadata = assume_not_none(
-            candidate.metadata, because=K8S_OBJECT_HAS_METADATA
-        )
+
+    # https://github.com/kubernetes/community/blob/a27eb0e0dbf559dd5c7be668d18709b5b6110631/contributors/devel/sig-architecture/api-conventions.md?plain=1#L231-L232
+    # > all objects MUST have metadata as per api convention
+    # https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-lifetime
+    # > pods have both a specification and status.
+    # ideally, none of these branches should be executed in runtime
+    # they are here for type narrowing reasons
+
+    if candidate.metadata is None or candidate.metadata.name is None:
+        log.warning("Skipping unnamed pod")
+        return
+    if candidate.metadata.namespace is None:
+        log.warning("Skipping pod with no namespace")
+        return
+    if candidate.status is None or candidate.status.start_time is None:
+        log.warning("Skipping statusless pod in %s", candidate.metadata.namespace)
+        return
+
+    if candidate.status.start_time < lookback:
         core_api_instance.delete_namespaced_pod(
-            assume_not_none(candidate_metadata.name, because=K8S_OBJECT_HAS_NAME),
-            assume_not_none(
-                candidate_metadata.namespace, because=K8S_OBJECT_HAS_NAMESPACE
-            ),
+            candidate.metadata.name, candidate.metadata.namespace
         )

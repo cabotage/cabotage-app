@@ -31,11 +31,6 @@ from cabotage.utils.github import (
     matches_watch_paths,
     post_deployment_status_update,
 )
-from cabotage._types import (
-    assume_not_none,
-    K8S_OBJECT_HAS_METADATA,
-    K8S_OBJECT_HAS_NAME,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -252,8 +247,11 @@ def _precreate_ingresses(environment: Environment) -> None:
     # Ensure namespace exists with resident-namespace label
     try:
         ns = core_api.read_namespace(ns_name)
-        ns_metadata = assume_not_none(ns.metadata, because=K8S_OBJECT_HAS_METADATA)
-        labels = ns_metadata.labels or {}
+        labels: dict[str, str] = (
+            ns.metadata.labels
+            if ns.metadata is not None and ns.metadata.labels is not None
+            else {}
+        )
         if labels.get("resident-namespace.cabotage.io") != "true":
             core_api.patch_namespace(
                 ns_name,
@@ -363,29 +361,26 @@ def _teardown_environment(environment: Environment) -> None:
             try:
                 pvcs = core_api.list_namespaced_persistent_volume_claim(ns_name)
                 for pvc in pvcs.items:
-                    pvc_metadata = assume_not_none(
-                        pvc.metadata, because=K8S_OBJECT_HAS_METADATA
-                    )
-                    pvc_metadata_name = assume_not_none(
-                        pvc_metadata.name, because=K8S_OBJECT_HAS_NAME
-                    )
+                    if pvc.metadata is None or pvc.metadata.name is None:
+                        logger.exception("Skipping unamed PVC in %s", ns_name)
+                        continue
                     try:
                         core_api.delete_namespaced_persistent_volume_claim(
-                            pvc_metadata_name,
+                            pvc.metadata.name,
                             ns_name,
                             propagation_policy="Foreground",
                         )
                         logger.info(
                             "Deleted branch namespace PVC %s/%s",
                             ns_name,
-                            pvc_metadata_name,
+                            pvc.metadata.name,
                         )
                     except ApiException as exc:
                         if exc.status != 404:
                             logger.warning(
                                 "Failed to delete branch namespace PVC %s/%s: %s",
                                 ns_name,
-                                pvc_metadata_name,
+                                pvc.metadata.name,
                                 exc,
                             )
             except ApiException as exc:
@@ -402,7 +397,7 @@ def _teardown_environment(environment: Environment) -> None:
             for app_env in environment.active_application_environments:
                 build_namespace = _build_namespace(app_env)
                 pvc_name = build_cache_pvc_name(app_env)
-                deleted_cache_pvcs = set()
+                deleted_cache_pvcs = set[str]()
                 selector = ",".join(
                     f"{key}={value}"
                     for key, value in sorted(build_cache_pvc_labels(app_env).items())
@@ -413,30 +408,27 @@ def _teardown_environment(environment: Environment) -> None:
                         label_selector=selector,
                     )
                     for pvc in pvcs.items:
-                        pvc_metadata = assume_not_none(
-                            pvc.metadata, because=K8S_OBJECT_HAS_METADATA
-                        )
-                        pvc_metadata_name = assume_not_none(
-                            pvc_metadata.name, because=K8S_OBJECT_HAS_NAME
-                        )
+                        if pvc.metadata is None or pvc.metadata.name is None:
+                            logger.exception("Skipping unamed PVC in %s", ns_name)
+                            continue
                         try:
                             core_api.delete_namespaced_persistent_volume_claim(
-                                pvc_metadata_name,
+                                pvc.metadata.name,
                                 build_namespace,
                                 propagation_policy="Foreground",
                             )
-                            deleted_cache_pvcs.add(pvc_metadata_name)
+                            deleted_cache_pvcs.add(pvc.metadata.name)
                             logger.info(
                                 "Deleted build cache PVC %s/%s",
                                 build_namespace,
-                                pvc_metadata_name,
+                                pvc.metadata.name,
                             )
                         except ApiException as exc:
                             if exc.status != 404:
                                 logger.warning(
                                     "Failed to delete build cache PVC %s/%s: %s",
                                     build_namespace,
-                                    pvc_metadata_name,
+                                    pvc.metadata.name,
                                     exc,
                                 )
                 except ApiException as exc:

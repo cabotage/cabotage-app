@@ -73,7 +73,6 @@ from cabotage.utils.github import (
     post_deployment_status_update,
 )
 from cabotage.utils import procfile
-from cabotage._types import assume_not_none
 
 if TYPE_CHECKING:
     from cabotage.server.models.projects import ApplicationEnvironment
@@ -1121,6 +1120,8 @@ def build_image_buildkit(image: Image):
                 },
             )
             safe_labels = _safe_labels_from_application(image.application)
+            if image.build_job_id is None:
+                raise Exception("Failed due to image missing build_job_id")
             job_object = kubernetes.client.V1Job(
                 metadata=kubernetes.client.V1ObjectMeta(
                     name=f"imagebuild-{image.build_job_id}",
@@ -1129,9 +1130,7 @@ def build_image_buildkit(image: Image):
                         "project": image.application.project.slug,
                         "application": image.application.slug,
                         "process": "build",
-                        "build_id": assume_not_none(
-                            image.build_job_id, because="Image should have a build id"
-                        ),
+                        "build_id": image.build_job_id,
                         "build-job.cabotage.io": "true",
                         **safe_labels,
                     },
@@ -1148,10 +1147,7 @@ def build_image_buildkit(image: Image):
                                 "project": image.application.project.slug,
                                 "application": image.application.slug,
                                 "process": "build",
-                                "build_id": assume_not_none(
-                                    image.build_job_id,
-                                    because="Image should have a build id",
-                                ),
+                                "build_id": image.build_job_id,
                                 "ca-admission.cabotage.io": "true",
                                 "resident-pod.cabotage.io": "true",
                                 **safe_labels,

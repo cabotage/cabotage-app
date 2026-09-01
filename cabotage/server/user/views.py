@@ -209,7 +209,9 @@ def _require_organization_requests_enabled():
         abort(404)
 
 
-def _config_k8s_namespace(organization, app_env):
+def _config_k8s_namespace(
+    organization: Organization, app_env: ApplicationEnvironment
+) -> str:
     if app_env.environment.uses_environment_namespace:
         return safe_k8s_name(
             organization.k8s_identifier, app_env.environment.k8s_identifier
@@ -3568,16 +3570,16 @@ def _shell_socket(ws, org_slug, project_slug, app_slug, env_slug=None):
 
     # =============================================================================== #
 
-    pod_metadata = assume_not_none(pod.metadata, because=K8S_OBJECT_HAS_METADATA)
+    if pod.metadata is None or pod.metadata.name is None:
+        current_app.logger.warning("Skipping unnamed pod in %s", namespace)
+        abort(404)
 
     resp = cast(  # stubs aren't perfect, `_preload_content=False` returns a client not a str
         "WSClient",
         kubernetes.stream.stream(
             core_api_instance.connect_get_namespaced_pod_exec,
-            assume_not_none(pod_metadata.name, because=K8S_OBJECT_HAS_NAME),
-            namespace=assume_not_none(
-                pod_metadata.namespace, because=K8S_OBJECT_HAS_NAMESPACE
-            ),
+            pod.metadata.name,
+            namespace=pod.metadata.namespace,
             command=_shell_exec_command(),
             container=process_name,
             stderr=True,
@@ -6655,7 +6657,9 @@ def _query_mimir_range(query, start, end, step, tenant_id=None):
         return None
 
 
-def _compute_observe_namespace(application, app_env):
+def _compute_observe_namespace(
+    application: Application, app_env: ApplicationEnvironment
+) -> str:
     """Compute the k8s namespace for an application's environment."""
     org_k8s = application.project.organization.k8s_identifier
     if app_env and app_env.environment.uses_environment_namespace:
@@ -6663,7 +6667,7 @@ def _compute_observe_namespace(application, app_env):
     return org_k8s
 
 
-def _compute_observe_prefix(application):
+def _compute_observe_prefix(application: Application):
     """Compute the k8s resource prefix (project-app) for pod matching."""
     return safe_k8s_name(
         application.project.k8s_identifier,
@@ -8190,34 +8194,35 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
             label_selector=label_selector,
         )
         for pod in pod_list.items:
-            pod_metadata = assume_not_none(
-                pod.metadata, because=K8S_OBJECT_HAS_METADATA
-            )
-            pod_status = assume_not_none(pod.status, because=K8S_OBJECT_HAS_STATUS)
-            # Skip terminating pods (deletionTimestamp is set)
-            if pod_metadata.deletion_timestamp is not None:
+            if pod.metadata is None or pod.metadata.name is None:
+                current_app.logger.exception("Skipping unamed pod in %s", namespace)
                 continue
-            phase = pod_status.phase or "Unknown"
+            if pod.status is None:
+                current_app.logger.exception("Skipping statusless pod in %s", namespace)
+                continue
+
+            # Skip terminating pods (deletionTimestamp is set)
+            if pod.metadata.deletion_timestamp is not None:
+                continue
+            phase = pod.status.phase or "Unknown"
             # Skip completed/failed pods (e.g. finished Job runs)
             if phase in ("Succeeded", "Failed", "Completed"):
                 continue
             pods_by_phase[phase] = pods_by_phase.get(phase, 0) + 1
             pods_total += 1
             if phase == "Running":
-                running_pod_names.append(
-                    assume_not_none(pod_metadata.name, because=K8S_OBJECT_HAS_NAME)
-                )
+                running_pod_names.append(pod.metadata.name)
             is_ready = False
             is_crashed = False
-            if pod_status.conditions:
-                for cond in pod_status.conditions:
+            if pod.status.conditions:
+                for cond in pod.status.conditions:
                     if cond.type == "Ready" and cond.status == "True":
                         is_ready = True
                         pods_ready += 1
                         break
             # Detect crash: check container statuses for CrashLoopBackOff/Error
-            if not is_ready and pod_status.container_statuses:
-                for cs in pod_status.container_statuses:
+            if not is_ready and pod.status.container_statuses:
+                for cs in pod.status.container_statuses:
                     if cs.state and cs.state.waiting:
                         reason = cs.state.waiting.reason or ""
                         if reason in ("CrashLoopBackOff", "Error", "ImagePullBackOff"):
@@ -8226,7 +8231,7 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
                     if cs.state and cs.state.terminated:
                         is_crashed = True
                         break
-            proc = (pod_metadata.labels or {}).get("process", "unknown")
+            proc = (pod.metadata.labels or {}).get("process", "unknown")
             if proc not in processes:
                 processes[proc] = {"total": 0, "ready": 0, "pending": 0, "crashed": 0}
             processes[proc]["total"] += 1

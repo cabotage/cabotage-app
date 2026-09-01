@@ -57,14 +57,11 @@ from cabotage.celery.tasks.notify import (
     dispatch_autodeploy_notification,
     dispatch_pipeline_notification,
 )
-from cabotage._types import (
-    assume_not_none,
-    K8S_OBJECT_HAS_METADATA,
-    K8S_OBJECT_HAS_NAME,
-)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+    from redis import Redis
 
     from cabotage.server.models.projects import Release
 
@@ -143,14 +140,13 @@ def cleanup_app_env_k8s(
             namespace, label_selector=label_selector
         )
         for d in deps.items:
-            d_metadata_name = assume_not_none(
-                assume_not_none(d.metadata, because=K8S_OBJECT_HAS_METADATA).name,
-                because=K8S_OBJECT_HAS_NAME,
-            )
+            if d.metadata is None or d.metadata.name is None:
+                log.exception("Skipping unamed deployment in %s", namespace)
+                continue
             log.info(
-                "k8s cleanup: deleting deployment %s/%s", namespace, d_metadata_name
+                "k8s cleanup: deleting deployment %s/%s", namespace, d.metadata.name
             )
-            apps_api.delete_namespaced_deployment(d_metadata_name, namespace)
+            apps_api.delete_namespaced_deployment(d.metadata.name, namespace)
     except Exception:
         log.exception("k8s cleanup: failed to delete deployments")
 
@@ -161,12 +157,11 @@ def cleanup_app_env_k8s(
             namespace, label_selector=svc_label_selector
         )
         for s in svcs.items:
-            s_metadata_name = assume_not_none(
-                assume_not_none(s.metadata, because=K8S_OBJECT_HAS_METADATA).name,
-                because=K8S_OBJECT_HAS_NAME,
-            )
-            log.info("k8s cleanup: deleting service %s/%s", namespace, s_metadata_name)
-            core_api.delete_namespaced_service(s_metadata_name, namespace)
+            if s.metadata is None or s.metadata.name is None:
+                log.exception("Skipping unamed service in %s", namespace)
+                continue
+            log.info("k8s cleanup: deleting service %s/%s", namespace, s.metadata.name)
+            core_api.delete_namespaced_service(s.metadata.name, namespace)
     except Exception:
         log.exception("k8s cleanup: failed to delete services")
 
@@ -176,12 +171,11 @@ def cleanup_app_env_k8s(
             namespace, label_selector=label_selector
         )
         for i in ings.items:
-            i_metadata_name = assume_not_none(
-                assume_not_none(i.metadata, because=K8S_OBJECT_HAS_METADATA).name,
-                because=K8S_OBJECT_HAS_NAME,
-            )
-            log.info("k8s cleanup: deleting ingress %s/%s", namespace, i_metadata_name)
-            networking_api.delete_namespaced_ingress(i_metadata_name, namespace)
+            if i.metadata is None or i.metadata.name is None:
+                log.exception("Skipping unamed PVC in %s", namespace)
+                continue
+            log.info("k8s cleanup: deleting ingress %s/%s", namespace, i.metadata.name)
+            networking_api.delete_namespaced_ingress(i.metadata.name, namespace)
     except Exception:
         log.exception("k8s cleanup: failed to delete ingresses")
 
@@ -223,6 +217,9 @@ def _preview_url_for_app_env(app_env):
     return None
 
 
+# FIXME: ParamSpec cannot express the desired signature
+# find out how to express this with the current type system
+# https://github.com/python/typing/issues/1009
 def _retry_on_404(fn, *args, retries=5, delay=2, **kwargs):
     """Retry a kubernetes API call if it returns a 404, with backoff."""
     for attempt in range(retries):
@@ -233,6 +230,10 @@ def _retry_on_404(fn, *args, retries=5, delay=2, **kwargs):
                 time.sleep(delay * (attempt + 1))
             else:
                 raise
+
+    # statically reachable, but unreachable at runtime
+    # type checkers don't know that an `ApiException` is raised when retries are exhausted
+    raise Exception("unreachable")
 
 
 def _wait_for_tls_certificate(api_client, namespace, cert_name, timeout=120, log=None):
@@ -358,9 +359,10 @@ def ensure_namespace(
     try:
         namespace = core_api_instance.read_namespace(namespace_name)
         # Ensure the resident-namespace label is present on existing namespaces
-        labels = (
-            assume_not_none(namespace.metadata, because=K8S_OBJECT_HAS_METADATA).labels
-            or {}
+        labels: dict[str, str] = (
+            {}
+            if namespace.metadata is None or namespace.metadata.labels is None
+            else namespace.metadata.labels
         )
         if labels.get("resident-namespace.cabotage.io") != "true":
             namespace = core_api_instance.patch_namespace(
@@ -2582,16 +2584,19 @@ def delete_job(batch_api_instance, namespace, job_object):
 
 
 def run_job(
-    core_api_instance,
-    batch_api_instance,
-    namespace,
-    job_object,
-    redis_client=None,
-    log_key=None,
-    heartbeat_type=None,
-    heartbeat_id=None,
-    heartbeat_ttl=None,
+    core_api_instance: kubernetes.client.CoreV1Api,
+    batch_api_instance: kubernetes.client.BatchV1Api,
+    namespace: str,
+    job_object: kubernetes.client.V1Job,
+    redis_client: Redis[bytes] | None = None,
+    log_key: str | None = None,
+    # FIXME: Seems like a Literal
+    heartbeat_type: str | None = None,
+    heartbeat_id: str | None = None,
+    heartbeat_ttl: int | None = None,
 ):
+    if job_object.metadata is None:
+        raise DeployError("Cannot deploy job without metdata")
     try:
         batch_api_instance.create_namespaced_job(namespace, job_object)
     except ApiException as exc:
@@ -2615,11 +2620,17 @@ def run_job(
 
     try:
         while True:
-            job_status = _retry_on_404(
-                batch_api_instance.read_namespaced_job_status,
-                job_object.metadata.name,
-                namespace,
+            # FIXME: remove the cast once `_retry_on_404` is properly typed
+            job_status = cast(
+                "kubernetes.client.V1Job",
+                _retry_on_404(
+                    batch_api_instance.read_namespaced_job_status,
+                    job_object.metadata.name,
+                    namespace,
+                ),
             )
+            if job_status.status is None:
+                raise DeployError("Cannot deploy job without a status")
             if job_status.status.failed and job_status.status.failed > 0:
                 job_logs = fetch_job_logs(core_api_instance, namespace, job_status)
                 delete_job(batch_api_instance, namespace, job_object)
@@ -2939,46 +2950,46 @@ def deploy_release(deployment: Deployment):
             core_api_instance, deployment.release_object
         )
         log("Patching ServiceAccount with ImagePullSecrets")
-        service_account_metadata_name = assume_not_none(
-            assume_not_none(
-                service_account.metadata, because=K8S_OBJECT_HAS_METADATA
-            ).name,
-            because=K8S_OBJECT_HAS_NAME,
-        )
-        namespace_metadata_name = assume_not_none(
-            assume_not_none(namespace.metadata, because=K8S_OBJECT_HAS_METADATA).name,
-            because=K8S_OBJECT_HAS_NAME,
-        )
-        image_pull_secrets_metadata_name = assume_not_none(
-            assume_not_none(
-                image_pull_secrets.metadata, because=K8S_OBJECT_HAS_METADATA
-            ).name,
-            because=K8S_OBJECT_HAS_NAME,
-        )
+        if service_account.metadata is None or service_account.metadata.name is None:
+            raise DeployError("Release failed due to unnamed service_account")
+
+        if namespace.metadata is None or namespace.metadata.name is None:
+            raise DeployError("Release failed due to unnamed namespace")
+
+        if (
+            image_pull_secrets.metadata is None
+            or image_pull_secrets.metadata.name is None
+        ):
+            raise DeployError("Release failed due to unnamed image_pull_secrets")
+
         service_account = core_api_instance.patch_namespaced_service_account(
-            service_account_metadata_name,
-            namespace_metadata_name,
+            service_account.metadata.name,
+            namespace.metadata.name,
             kubernetes.client.V1ServiceAccount(
                 image_pull_secrets=[
                     kubernetes.client.V1LocalObjectReference(
-                        name=image_pull_secrets_metadata_name
+                        name=image_pull_secrets.metadata.name
                     )
                 ],
             ),
         )
+        # check again for the patched `service_account`
+        if service_account.metadata is None or service_account.metadata.name is None:
+            raise DeployError("Release failed due to unnamed service_account")
+
         for release_command in deployment.release_object.release_commands:
             log(f"Running release command {release_command}")
             job_object = render_job(
-                namespace_metadata_name,
+                namespace.metadata.name,
                 deployment.release_object,
-                service_account_metadata_name,
+                service_account.metadata.name,
                 release_command,
                 deployment.job_id,
             )
             job_complete, job_logs = run_job(
                 core_api_instance,
                 batch_api_instance,
-                namespace_metadata_name,
+                namespace.metadata.name,
                 job_object,
                 redis_client=redis_client,
                 log_key=log_key,
@@ -3000,9 +3011,9 @@ def deploy_release(deployment: Deployment):
             )
             create_deployment(
                 apps_api_instance,
-                namespace_metadata_name,
+                namespace.metadata.name,
                 deployment.release_object,
-                service_account_metadata_name,
+                service_account.metadata.name,
                 process_name,
                 deployment_id=deployment.id,
             )
@@ -3012,9 +3023,9 @@ def deploy_release(deployment: Deployment):
             log(f"Creating CronJob for {process_name} ({_suspended})")
             create_cronjob(
                 batch_api_instance,
-                namespace_metadata_name,
+                namespace.metadata.name,
                 deployment.release_object,
-                service_account_metadata_name,
+                service_account.metadata.name,
                 process_name,
                 deployment_id=deployment.id,
             )
@@ -3037,9 +3048,9 @@ def deploy_release(deployment: Deployment):
                     continue
                 dep_obj = fetch_deployment(
                     apps_api_instance,
-                    namespace_metadata_name,
+                    namespace.metadata.name,
                     deployment.release_object,
-                    service_account_metadata_name,
+                    service_account.metadata.name,
                     process_name,
                 )
                 if dep_obj is None:
@@ -3113,16 +3124,16 @@ def deploy_release(deployment: Deployment):
         for postdeploy_command in deployment.release_object.postdeploy_commands:
             log(f"Running postdeploy command {postdeploy_command}")
             job_object = render_job(
-                namespace_metadata_name,
+                namespace.metadata.name,
                 deployment.release_object,
-                service_account_metadata_name,
+                service_account.metadata.name,
                 postdeploy_command,
                 deployment.job_id,
             )
             job_complete, job_logs = run_job(
                 core_api_instance,
                 batch_api_instance,
-                namespace_metadata_name,
+                namespace.metadata.name,
                 job_object,
                 redis_client=redis_client,
                 log_key=log_key,
