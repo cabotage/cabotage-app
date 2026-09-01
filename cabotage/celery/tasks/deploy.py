@@ -1,42 +1,43 @@
 import logging
 import secrets
 import time
-
 from base64 import b64encode
+from datetime import UTC
 
 import kubernetes
 import yaml
-
 from celery import shared_task
+from flask import current_app
 from kubernetes.client.rest import ApiException
 from sqlalchemy.orm.attributes import flag_modified
 
-from flask import current_app
-
+from cabotage.celery.tasks.notify import (
+    dispatch_autodeploy_notification,
+    dispatch_pipeline_notification,
+)
 from cabotage.server import (
     config_writer,
     db,
     github_app,
+)
+from cabotage.server import (
     kubernetes as kubernetes_ext,
 )
-
 from cabotage.server.models.projects import (
+    DEFAULT_POD_CLASS,
     Configuration,
     Deployment,
     EnvironmentConfiguration,
     IngressHost,
     IngressSnapshot,
-    DEFAULT_POD_CLASS,
     _ingress_hostname_pairs,
     pod_classes,
 )
-
 from cabotage.server.models.utils import (
-    safe_k8s_name,
     compact_k8s_name,
     readable_k8s_hostname,
+    safe_k8s_name,
 )
-
 from cabotage.utils.build_log_stream import (
     _HEARTBEAT_TTL,
     get_redis_client,
@@ -49,10 +50,6 @@ from cabotage.utils.github import (
     CheckRun,
     cabotage_url,
     post_deployment_status_update,
-)
-from cabotage.celery.tasks.notify import (
-    dispatch_autodeploy_notification,
-    dispatch_pipeline_notification,
 )
 
 log = logging.getLogger(__name__)
@@ -1926,17 +1923,7 @@ def render_podspec(release, process_name, service_account_name):
             )
         )
         restart_policy = "OnFailure"
-    elif process_name.startswith("release"):
-        init_containers.append(
-            render_cabotage_sidecar_container(release, process_name, with_tls=False)
-        )
-        containers.append(
-            render_process_container(
-                release, process_name, datadog_tags, with_tls=False, unix=False
-            )
-        )
-        restart_policy = "Never"
-    elif process_name.startswith("postdeploy"):
+    elif process_name.startswith("release") or process_name.startswith("postdeploy"):
         init_containers.append(
             render_cabotage_sidecar_container(release, process_name, with_tls=False)
         )
@@ -2287,10 +2274,11 @@ def _get_job_schedule(process_def):
 
 def _history_limit_for_schedule(schedule, hours=12):
     """Estimate how many times a cron schedule fires in the given window."""
-    from croniter import croniter
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    now = datetime.now(timezone.utc)
+    from croniter import croniter
+
+    now = datetime.now(UTC)
     end = now + timedelta(hours=hours)
     it = croniter(schedule, now)
     count = 0

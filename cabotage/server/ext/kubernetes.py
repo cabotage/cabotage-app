@@ -1,9 +1,8 @@
+import kubernetes
 from flask import g
 
-import kubernetes
 
-
-class Kubernetes(object):
+class Kubernetes:
     def __init__(self, app=None):
         self.app = app
         if app is not None:

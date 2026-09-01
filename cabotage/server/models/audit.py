@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Column, String, Boolean, Integer, DateTime
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, Integer, String
 from sqlalchemy.dialects import postgresql
 
 from cabotage.server import Model

@@ -3,12 +3,10 @@ import hashlib
 import json
 import time
 import uuid
-
 from base64 import (
     b32encode,
     urlsafe_b64encode,
 )
-
 
 from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey
 from cryptography.hazmat.primitives.serialization import (

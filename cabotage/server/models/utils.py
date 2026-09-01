@@ -114,7 +114,7 @@ def readable_k8s_hostname(*pairs):
     return truncated + "-" + digest
 
 
-class DictDiffer(object):
+class DictDiffer:
     """
     Calculate the difference between two dictionaries as:
     (1) items added

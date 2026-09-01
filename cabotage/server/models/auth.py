@@ -11,9 +11,9 @@ from flask_security.models.fsqla_v3 import (
     FsWebAuthnMixin,
 )
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
-    BigInteger,
     ForeignKey,
     Integer,
     String,
@@ -21,10 +21,10 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm import Mapped, mapped_column, relationship, backref
+from sqlalchemy.orm import Mapped, backref, mapped_column, relationship
 from sqlalchemy_continuum import make_versioned
 
-from cabotage.server import db, Model
+from cabotage.server import Model, db
 from cabotage.server.models.plugins import ActivityPlugin
 from cabotage.server.models.utils import generate_k8s_identifier, slugify
 
@@ -88,9 +88,7 @@ class User(Model, FsUserMixin):
     admin: Mapped[bool] = mapped_column(Boolean, default=False)
     registered_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
 
     roles: Mapped[list[Role]] = relationship(  # type: ignore[assignment]
@@ -103,7 +101,7 @@ class User(Model, FsUserMixin):
     teams: Mapped[list[TeamMember]] = relationship(back_populates="user")
 
     def __repr__(self):
-        return "<User {0}>".format(self.username)
+        return f"<User {self.username}>"
 
     @property
     def projects(self):
@@ -134,9 +132,7 @@ class GitHubIdentity(Model):
     github_access_token: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
 
     user: Mapped[User] = relationship(backref=backref("github_identity", uselist=False))
@@ -170,18 +166,12 @@ class GitHubAppInstallation(Model):
     )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
-        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
+        onupdate=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
 
     organization: Mapped[Organization] = relationship(
@@ -249,18 +239,12 @@ class TailscaleIntegration(Model):
     operator_version: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
-        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
+        onupdate=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
 
     organization: Mapped[Organization] = relationship(
@@ -298,18 +282,12 @@ class SlackIntegration(Model):
     )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
-        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
+        onupdate=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
 
     version_id: Mapped[int] = mapped_column(Integer)
@@ -352,18 +330,12 @@ class DiscordIntegration(Model):
     )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
-        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
+        onupdate=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
 
     version_id: Mapped[int] = mapped_column(Integer)
@@ -481,19 +453,13 @@ class OrganizationRequest(Model):
     status: Mapped[str] = mapped_column(String(32), default=STATUS_PENDING, index=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
         index=True,
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
-        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
+        onupdate=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
     reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
 

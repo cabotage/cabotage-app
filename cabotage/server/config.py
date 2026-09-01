@@ -1,7 +1,7 @@
 import os
 
 from flask_env import MetaFlaskEnv
-from flask_security import uia_username_mapper, uia_email_mapper
+from flask_security import uia_email_mapper, uia_username_mapper
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 

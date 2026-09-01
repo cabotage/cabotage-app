@@ -1,12 +1,12 @@
 import os
 
 import consul
-
-from cabotage.utils.context import modified_environ
 from flask import g
 
+from cabotage.utils.context import modified_environ
 
-class Consul(object):
+
+class Consul:
     def __init__(self, app=None):
         self.app = app
         if app is not None:

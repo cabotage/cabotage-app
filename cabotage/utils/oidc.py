@@ -8,7 +8,6 @@ federation and can be extended to other OIDC-aware systems.
 import json
 import time
 import uuid
-
 from base64 import urlsafe_b64encode
 
 from flask import current_app

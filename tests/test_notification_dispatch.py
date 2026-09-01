@@ -1,23 +1,8 @@
 import uuid
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
-
-from cabotage.server import db
-from cabotage.server.models.auth import Organization
-from cabotage.server.models.notifications import (
-    NotificationRoute,
-    SentNotification,
-)
-from cabotage.server.models.projects import (
-    Alert,
-    Application,
-    ApplicationEnvironment,
-    Environment,
-    Project,
-)
-from cabotage.server.wsgi import app as _app
 
 from cabotage.celery.tasks.notify import (
     ALERTNAME_TYPE_MAP,
@@ -33,6 +18,20 @@ from cabotage.celery.tasks.notify import (
     resolve_routes,
     send_notification,
 )
+from cabotage.server import db
+from cabotage.server.models.auth import Organization
+from cabotage.server.models.notifications import (
+    NotificationRoute,
+    SentNotification,
+)
+from cabotage.server.models.projects import (
+    Alert,
+    Application,
+    ApplicationEnvironment,
+    Environment,
+    Project,
+)
+from cabotage.server.wsgi import app as _app
 
 
 @pytest.fixture

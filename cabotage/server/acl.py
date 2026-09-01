@@ -1,8 +1,8 @@
 from collections import namedtuple
 from functools import partial
 
+from flask_principal import Permission, RoleNeed, UserNeed
 from flask_security import current_user
-from flask_principal import Permission, UserNeed, RoleNeed
 from sqlalchemy.orm import joinedload
 
 OrganizationNeed = namedtuple("OrganizationNeed", ["method", "value"])

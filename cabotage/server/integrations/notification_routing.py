@@ -159,7 +159,7 @@ def save_route(org_slug):
             "notification_types": ntypes,
             "integration": integration,
             "channel_name": data.get("channel_name"),
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         },
     )
     db.session.add(activity)
@@ -186,7 +186,7 @@ def delete_route(org_slug, route_id):
             "action": "notification_route_delete",
             "notification_types": ntypes,
             "integration": integration_name,
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         },
     )
     db.session.add(activity)

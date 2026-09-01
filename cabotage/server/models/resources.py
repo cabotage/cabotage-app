@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime
 import uuid
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from cabotage.server.models.projects import Environment
@@ -22,12 +22,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy_utils.models import Timestamp
 
 from cabotage.server import Model
-
 from cabotage.server.models.utils import (
     generate_k8s_identifier,
     slugify,
 )
-
 
 # ---------------------------------------------------------------------------
 # Size classes

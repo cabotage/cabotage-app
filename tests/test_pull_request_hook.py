@@ -425,7 +425,7 @@ class TestBranchDeployNamespaces:
     ):
         active_app = _make_app(branch_deploy_project, installation_id, slug="server")
         deleted_app = _make_app(branch_deploy_project, installation_id, slug="redis")
-        deleted_app.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        deleted_app.deleted_at = datetime.datetime.now(datetime.UTC)
         db.session.add(deleted_app)
         db.session.flush()
 
@@ -450,7 +450,7 @@ class TestBranchDeployNamespaces:
             pr_environment,
             k8s_identifier=pr_environment.k8s_identifier,
         )
-        deleted_ae.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        deleted_ae.deleted_at = datetime.datetime.now(datetime.UTC)
         db.session.add(deleted_ae)
         db.session.commit()
 
@@ -885,6 +885,7 @@ class TestBranchDeployNamespaces:
         mock_networking_api_cls.return_value = mock_networking
 
         from kubernetes.client.rest import ApiException
+
         from cabotage.celery.tasks.branch_deploy import _precreate_ingresses
 
         mock_core.read_namespace.side_effect = ApiException(status=404)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime
 import json
 import uuid
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from cabotage.server.models.auth import Organization
@@ -11,8 +11,8 @@ if TYPE_CHECKING:
 
 from flask import current_app
 from sqlalchemy import (
-    Boolean,
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -25,28 +25,27 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.event import listens_for
-from sqlalchemy.orm import DynamicMapped, Mapped, mapped_column, relationship, backref
+from sqlalchemy.orm import DynamicMapped, Mapped, backref, mapped_column, relationship
 from sqlalchemy_continuum import make_versioned
 from sqlalchemy_continuum.plugins import FlaskPlugin
 from sqlalchemy_utils.models import Timestamp
 
-from cabotage.server import db, Model
-
+from cabotage.server import Model, db
 from cabotage.server.models.plugins import ActivityPlugin
 from cabotage.server.models.utils import (
+    DictDiffer,
     generate_k8s_identifier,
     readable_k8s_hostname,
     safe_k8s_name,
     slugify,
-    DictDiffer,
 )
 from cabotage.utils.docker_auth import (
     generate_docker_credentials,
     generate_kubernetes_imagepullsecrets,
 )
 from cabotage.utils.release_build_context import (
-    configmap_context_for_release,
     RELEASE_DOCKERFILE_TEMPLATE,
+    configmap_context_for_release,
 )
 
 activity_plugin = ActivityPlugin()
@@ -237,7 +236,7 @@ class Environment(Model, Timestamp):
         cascade="all, delete-orphan",
         order_by="EnvironmentConfiguration.name",
     )
-    resources: Mapped[list["Resource"]] = relationship(
+    resources: Mapped[list[Resource]] = relationship(
         back_populates="environment",
         cascade="all, delete-orphan",
     )

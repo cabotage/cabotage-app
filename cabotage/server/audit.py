@@ -28,7 +28,7 @@ def _enqueue(user, verb, action=None):
             "user_id": str(user.id),
             "verb": verb,
             "action": action,
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             "remote_addr": remote_addr,
         }
     )

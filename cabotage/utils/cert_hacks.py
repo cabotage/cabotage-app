@@ -1,7 +1,6 @@
 import base64
 import datetime
 
-
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -50,12 +49,8 @@ def issue_dummy_cert(public_key_pem, common_name):
             ]
         )
     )
-    builder = builder.not_valid_before(
-        datetime.datetime.now(datetime.timezone.utc) - one_day
-    )
-    builder = builder.not_valid_after(
-        datetime.datetime.now(datetime.timezone.utc) + one_year
-    )
+    builder = builder.not_valid_before(datetime.datetime.now(datetime.UTC) - one_day)
+    builder = builder.not_valid_after(datetime.datetime.now(datetime.UTC) + one_year)
     builder = builder.serial_number(x509.random_serial_number())
     builder = builder.public_key(public_key)
     certificate = builder.sign(

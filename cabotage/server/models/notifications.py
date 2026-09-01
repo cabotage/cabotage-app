@@ -6,7 +6,7 @@ from typing import Any, TypedDict
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, text
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm import Mapped, mapped_column, relationship, backref
+from sqlalchemy.orm import Mapped, backref, mapped_column, relationship
 
 from cabotage.server import Model
 
@@ -97,18 +97,12 @@ class NotificationRoute(Model):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
-        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
+        onupdate=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
 
     version_id: Mapped[int] = mapped_column(Integer)
@@ -147,18 +141,12 @@ class SentNotification(Model):
     external_message_id: Mapped[str] = mapped_column(String(128))
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
-        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
+        onupdate=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
 
     organization = relationship("Organization")

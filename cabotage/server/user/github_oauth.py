@@ -1,6 +1,7 @@
 import datetime
 import uuid
 
+import requests
 from authlib.integrations.flask_client import OAuth
 from flask import (
     Blueprint,
@@ -16,7 +17,7 @@ from flask_security import current_user, login_user
 from flask_security.tf_plugin import tf_verify_validity_token
 from flask_wtf import FlaskForm
 from itsdangerous import BadData
-import requests
+from sqlalchemy.exc import DataError
 
 from cabotage.server import db
 from cabotage.server.acl import (
@@ -24,8 +25,6 @@ from cabotage.server.acl import (
     AdministerOrganizationPermission,
 )
 from cabotage.server.mfa import get_mfa_status
-from sqlalchemy.exc import DataError
-
 from cabotage.server.models.auth import GitHubIdentity, Organization, User
 from cabotage.server.models.projects import Application, activity_plugin
 from cabotage.server.user import github_installations
@@ -134,7 +133,7 @@ def callback():
                 email=primary_email,
                 password="!",  # nosec B106 - unusable password for OAuth-only users
                 active=True,
-                confirmed_at=datetime.datetime.now(datetime.timezone.utc),
+                confirmed_at=datetime.datetime.now(datetime.UTC),
                 fs_uniquifier=uuid.uuid4().hex,
             )
             db.session.add(user)
@@ -375,7 +374,7 @@ def _complete_verified_installation_connection(
                 "application_id": str(application.id)
                 if application is not None
                 else None,
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
     )

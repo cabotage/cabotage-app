@@ -45,10 +45,10 @@ def compute_app_status_sets(app_ids):
             ApplicationEnvironment.deleted_at.is_(None),
             ApplicationEnvironment.k8s_identifier.is_(None),
             or_(
-                Deployment.complete == True,  # noqa: E712
+                Deployment.complete == True,
                 and_(
-                    Deployment.complete == False,  # noqa: E712
-                    Deployment.error == False,  # noqa: E712
+                    Deployment.complete == False,
+                    Deployment.error == False,
                 ),
             ),
         )
@@ -66,7 +66,7 @@ def compute_app_status_sets(app_ids):
             Image.application_id.in_(app_ids),
             ApplicationEnvironment.deleted_at.is_(None),
             ApplicationEnvironment.k8s_identifier.is_(None),
-            Image.error == True,  # noqa: E712
+            Image.error == True,
         )
         .group_by(Image.application_id)
         .subquery()
@@ -81,7 +81,7 @@ def compute_app_status_sets(app_ids):
             Image.application_id.in_(app_ids),
             ApplicationEnvironment.deleted_at.is_(None),
             ApplicationEnvironment.k8s_identifier.is_(None),
-            Image.built == True,  # noqa: E712
+            Image.built == True,
         )
         .group_by(Image.application_id)
         .subquery()
@@ -105,8 +105,8 @@ def compute_app_status_sets(app_ids):
             Image.application_id.in_(app_ids),
             ApplicationEnvironment.deleted_at.is_(None),
             ApplicationEnvironment.k8s_identifier.is_(None),
-            Image.built == False,  # noqa: E712
-            Image.error == False,  # noqa: E712
+            Image.built == False,
+            Image.error == False,
         )
         .distinct()
     }
@@ -181,7 +181,7 @@ def compute_ae_status_sets(ae_ids):
         )
         .filter(
             Deployment.application_environment_id.in_(ae_ids),
-            Deployment.complete == True,  # noqa: E712
+            Deployment.complete == True,
         )
         .group_by(Deployment.application_environment_id)
         .all()
@@ -194,18 +194,18 @@ def compute_ae_status_sets(ae_ids):
     image_stats = (
         db.session.query(
             Image.application_environment_id,
-            func.max(
-                case((Image.error == True, Image.version), else_=None)  # noqa: E712
-            ).label("max_error_v"),
-            func.max(
-                case((Image.built == True, Image.version), else_=None)  # noqa: E712
-            ).label("max_built_v"),
+            func.max(case((Image.error == True, Image.version), else_=None)).label(
+                "max_error_v"
+            ),
+            func.max(case((Image.built == True, Image.version), else_=None)).label(
+                "max_built_v"
+            ),
             func.count(
                 case(
                     (
                         and_(
-                            Image.built == False,  # noqa: E712
-                            Image.error == False,  # noqa: E712
+                            Image.built == False,
+                            Image.error == False,
                         ),
                         1,
                     )

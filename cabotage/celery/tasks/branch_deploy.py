@@ -9,10 +9,11 @@ from kubernetes.client.rest import ApiException
 from cabotage.server import (
     db,
     github_app,
+)
+from cabotage.server import (
     kubernetes as kubernetes_ext,
 )
 from cabotage.server.models.projects import (
-    activity_plugin,
     ApplicationEnvironment,
     Configuration,
     Environment,
@@ -23,6 +24,7 @@ from cabotage.server.models.projects import (
     Ingress,
     IngressHost,
     IngressPath,
+    activity_plugin,
 )
 from cabotage.server.models.resources import PostgresResource, RedisResource
 from cabotage.server.models.utils import readable_k8s_hostname, safe_k8s_name
@@ -215,7 +217,7 @@ def _create_app_env_for_branch_deploy(
     activity = Activity(
         verb="create",
         object=app_env,
-        data={"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()},
+        data={"timestamp": datetime.datetime.now(datetime.UTC).isoformat()},
     )
     db.session.add(activity)
     return app_env
@@ -328,7 +330,7 @@ def _teardown_environment(environment):
         try:
             for resource in resources:
                 resource.deleted_at = resource.deleted_at or datetime.datetime.now(
-                    datetime.timezone.utc
+                    datetime.UTC
                 )
                 resource.provisioning_status = "deleting"
                 resource.provisioning_error = None
@@ -591,15 +593,14 @@ def _build_images_for_app_envs(app_envs, commit_sha, installation_id):
         activity = Activity(
             verb="submit",
             object=image,
-            data={
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
-            },
+            data={"timestamp": datetime.datetime.now(datetime.UTC).isoformat()},
         )
         db.session.add(activity)
         images.append(image)
     db.session.commit()
 
     from flask import current_app
+
     from cabotage.celery.tasks import run_image_build, run_omnibus_build
 
     for image in images:
@@ -893,7 +894,7 @@ def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref
     activity = Activity(
         verb="create",
         object=environment,
-        data={"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()},
+        data={"timestamp": datetime.datetime.now(datetime.UTC).isoformat()},
     )
     db.session.add(activity)
 
@@ -1008,7 +1009,7 @@ def _deactivate_deployment(environment):
 
     try:
         access_token = github_app.fetch_installation_access_token(installation_id)
-        from cabotage.utils.github import github_session, _github_headers
+        from cabotage.utils.github import _github_headers, github_session
 
         headers = _github_headers(access_token)
         # List all deployments for this environment

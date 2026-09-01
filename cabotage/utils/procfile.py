@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """Parser for Procfiles.
 
 Implements `Smartmob RFC 1 <http://smartmob-rfc.readthedocs.org/en/latest/1-procfile.html>`_.
@@ -114,7 +112,7 @@ def loads(content):
     # Reject commands with duplicate variables (no sane default).
     for i, line in lines:
         process_type, env = line[0], line[2]
-        duplicates = _find_duplicates(((0, var[0]) for var in env))
+        duplicates = _find_duplicates((0, var[0]) for var in env)
         for _, variable, _ in duplicates:
             errors.append(
                 "".join(

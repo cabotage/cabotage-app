@@ -1,4 +1,4 @@
-class ConfigWriter(object):
+class ConfigWriter:
     def __init__(self, app=None, consul=None, vault=None):
         self.app = app
         self.consul = consul

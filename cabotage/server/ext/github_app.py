@@ -6,7 +6,6 @@ import time
 
 import jwt
 import requests
-
 from flask import request
 
 from cabotage.utils.github import github_session
@@ -14,7 +13,7 @@ from cabotage.utils.github import github_session
 logger = logging.getLogger(__name__)
 
 
-class GitHubApp(object):
+class GitHubApp:
     def __init__(self, app=None):
         self.app = app
         if app is not None:

@@ -1,4 +1,4 @@
-from flask import current_app, render_template, Blueprint
+from flask import Blueprint, current_app, render_template
 from flask_login import current_user
 from sqlalchemy import func
 
@@ -53,7 +53,7 @@ def home():
                 Project.organization_id.in_(user_orgs),
                 Project.deleted_at.is_(None),
                 Application.deleted_at.is_(None),
-                Deployment.complete == True,  # noqa: E712
+                Deployment.complete == True,
             )
             .scalar()
         )

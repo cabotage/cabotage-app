@@ -172,7 +172,7 @@ def callback():
             "user_id": str(current_user.id),
             "action": f"slack_{verb}",
             "team_name": team_name,
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         },
     )
     db.session.add(activity)
@@ -225,7 +225,7 @@ def disconnect(org_slug):
                 "user_id": str(current_user.id),
                 "action": "slack_disconnect",
                 "team_name": team_name,
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)

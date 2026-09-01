@@ -6,26 +6,22 @@ import re
 import secrets
 import shlex
 import subprocess  # nosec
-
-from celery import shared_task
-from base64 import b64encode, b64decode
-
-import kubernetes
-import toml
-
-from kubernetes.client.rest import ApiException
-
+from base64 import b64decode, b64encode
 from tempfile import (
     TemporaryDirectory,
 )
 
+import kubernetes
+import toml
+from celery import shared_task
 from dockerfile_parse import DockerfileParser
-from flask import current_app
 from dxf import DXF
+from flask import current_app
 from github import Github
 from github.Auth import AppAuth as GithubAppAuth
 from github.GithubException import GithubException, UnknownObjectException
 from github.GithubIntegration import GithubIntegration
+from kubernetes.client.rest import ApiException
 
 from cabotage.celery.tasks.deploy import (
     _safe_labels_from_application,
@@ -36,28 +32,22 @@ from cabotage.celery.tasks.notify import (
     dispatch_autodeploy_notification,
     dispatch_pipeline_notification,
 )
-
-
 from cabotage.server import (
+    config_writer,
     db,
     github_app,
-    config_writer,
+)
+from cabotage.server import (
     kubernetes as kubernetes_ext,
 )
-
 from cabotage.server.models.projects import (
-    activity_plugin,
+    Deployment,
     Environment,
     Image,
     Release,
-    Deployment,
+    activity_plugin,
 )
-
-from cabotage.utils.docker_auth import (
-    generate_docker_registry_jwt,
-    generate_kubernetes_imagepullsecrets,
-)
-
+from cabotage.utils import procfile
 from cabotage.utils.build_log_stream import (
     get_redis_client,
     publish_end,
@@ -65,13 +55,16 @@ from cabotage.utils.build_log_stream import (
     run_and_stream,
     stream_key,
 )
-from cabotage.utils.release_build_context import RELEASE_DOCKERFILE_TEMPLATE
+from cabotage.utils.docker_auth import (
+    generate_docker_registry_jwt,
+    generate_kubernetes_imagepullsecrets,
+)
 from cabotage.utils.github import (
     CheckRun,
     cabotage_url,
     post_deployment_status_update,
 )
-from cabotage.utils import procfile
+from cabotage.utils.release_build_context import RELEASE_DOCKERFILE_TEMPLATE
 
 log = logging.getLogger(__name__)
 
@@ -146,7 +139,7 @@ def _queue_autodeploy_release_for_image(image):
             "user_id": "automation",
             "deployment_id": image.image_metadata.get("id", None),
             "description": image.image_metadata.get("description", None),
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         },
     )
     db.session.add(activity)
@@ -610,7 +603,7 @@ def build_release_buildkit(release):
                     template=kubernetes.client.V1PodTemplateSpec(
                         metadata=kubernetes.client.V1ObjectMeta(
                             labels={
-                                "organization": release.application.project.organization.slug,  # noqa: E501
+                                "organization": release.application.project.organization.slug,
                                 "project": release.application.project.slug,
                                 "application": release.application.slug,
                                 "process": "build",
@@ -620,7 +613,7 @@ def build_release_buildkit(release):
                                 **safe_labels,
                             },
                             annotations={
-                                "container.apparmor.security.beta.kubernetes.io/build": "unconfined",  # noqa: E501
+                                "container.apparmor.security.beta.kubernetes.io/build": "unconfined",
                             },
                         ),
                         spec=kubernetes.client.V1PodSpec(
@@ -639,7 +632,7 @@ def build_release_buildkit(release):
                                     env=[
                                         kubernetes.client.V1EnvVar(
                                             name="BUILDKITD_FLAGS",
-                                            value="--config /home/user/.config/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",  # noqa: E501
+                                            value="--config /home/user/.config/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",
                                         ),
                                     ],
                                     security_context=kubernetes.client.V1SecurityContext(
@@ -678,7 +671,7 @@ def build_release_buildkit(release):
                                                 sub_path=f"envconsul-{process_name}.hcl",
                                                 name="build-context",
                                             )
-                                            for process_name in release.envconsul_configurations  # noqa: E501
+                                            for process_name in release.envconsul_configurations
                                         ],
                                     ],
                                 ),
@@ -1135,7 +1128,7 @@ def build_image_buildkit(image: Image):
                     template=kubernetes.client.V1PodTemplateSpec(
                         metadata=kubernetes.client.V1ObjectMeta(
                             labels={
-                                "organization": image.application.project.organization.slug,  # noqa: E501
+                                "organization": image.application.project.organization.slug,
                                 "project": image.application.project.slug,
                                 "application": image.application.slug,
                                 "process": "build",
@@ -1145,7 +1138,7 @@ def build_image_buildkit(image: Image):
                                 **safe_labels,
                             },
                             annotations={
-                                "container.apparmor.security.beta.kubernetes.io/build": "unconfined",  # noqa: E501
+                                "container.apparmor.security.beta.kubernetes.io/build": "unconfined",
                             },
                         ),
                         spec=kubernetes.client.V1PodSpec(
@@ -1164,7 +1157,7 @@ def build_image_buildkit(image: Image):
                                     env=[
                                         kubernetes.client.V1EnvVar(
                                             name="BUILDKITD_FLAGS",
-                                            value="--config /home/user/.config/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",  # noqa: E501
+                                            value="--config /home/user/.config/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",
                                         ),
                                     ],
                                     security_context=kubernetes.client.V1SecurityContext(
@@ -1579,7 +1572,7 @@ def build_omnibus_buildkit(image, release):
         shared_env = [
             kubernetes.client.V1EnvVar(
                 name="BUILDKITD_FLAGS",
-                value="--config /home/user/.config/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",  # noqa: E501
+                value="--config /home/user/.config/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",
             ),
         ]
         shared_security_context = kubernetes.client.V1SecurityContext(
@@ -1674,7 +1667,7 @@ def build_omnibus_buildkit(image, release):
                 template=kubernetes.client.V1PodTemplateSpec(
                     metadata=kubernetes.client.V1ObjectMeta(
                         labels={
-                            "organization": image.application.project.organization.slug,  # noqa: E501
+                            "organization": image.application.project.organization.slug,
                             "project": image.application.project.slug,
                             "application": image.application.slug,
                             "process": "build",
@@ -1684,8 +1677,8 @@ def build_omnibus_buildkit(image, release):
                             **safe_labels,
                         },
                         annotations={
-                            "container.apparmor.security.beta.kubernetes.io/image-build": "unconfined",  # noqa: E501
-                            "container.apparmor.security.beta.kubernetes.io/build": "unconfined",  # noqa: E501
+                            "container.apparmor.security.beta.kubernetes.io/image-build": "unconfined",
+                            "container.apparmor.security.beta.kubernetes.io/build": "unconfined",
                         },
                     ),
                     spec=kubernetes.client.V1PodSpec(
@@ -2218,9 +2211,7 @@ def run_release_build(release_id: str):
                     "user_id": "automation",
                     "deployment_id": release.release_metadata.get("id", None),
                     "description": release.release_metadata.get("description", None),
-                    "timestamp": datetime.datetime.now(
-                        datetime.timezone.utc
-                    ).isoformat(),
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -2417,9 +2408,7 @@ def run_omnibus_build(image_id: str):
                     "user_id": "automation",
                     "deployment_id": image.image_metadata.get("id", None),
                     "description": image.image_metadata.get("description", None),
-                    "timestamp": datetime.datetime.now(
-                        datetime.timezone.utc
-                    ).isoformat(),
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -2534,7 +2523,7 @@ def run_omnibus_build(image_id: str):
             "user_id": "automation",
             "deployment_id": image.image_metadata.get("id", None),
             "description": image.image_metadata.get("description", None),
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         },
     )
     db.session.add(activity)

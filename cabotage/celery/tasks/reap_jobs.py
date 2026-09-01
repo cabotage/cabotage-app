@@ -9,13 +9,13 @@ import datetime
 import os
 
 import kubernetes
+from celery import shared_task
+from flask import current_app
 from kubernetes.client.rest import ApiException
 from sqlalchemy.exc import IntegrityError
 
-from celery import shared_task
-from flask import current_app
-
-from cabotage.server import db, kubernetes as kubernetes_ext
+from cabotage.server import db
+from cabotage.server import kubernetes as kubernetes_ext
 from cabotage.server.models.projects import (
     Application,
     ApplicationEnvironment,
