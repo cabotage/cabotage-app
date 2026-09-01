@@ -172,10 +172,6 @@ from cabotage.utils.build_log_stream import (
 from cabotage.utils import oidc
 from cabotage._types import (
     assume_not_none,
-    K8S_OBJECT_HAS_METADATA,
-    K8S_OBJECT_HAS_NAME,
-    K8S_OBJECT_HAS_NAMESPACE,
-    K8S_OBJECT_HAS_STATUS,
 )
 
 if TYPE_CHECKING:
