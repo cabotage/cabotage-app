@@ -26,7 +26,7 @@ def generate_k8s_identifier(slug, hex_bytes=4):
     return f"{prefix}-{hex_suffix}"
 
 
-def safe_k8s_name(*parts, max_len=63):
+def safe_k8s_name(*parts: str, max_len: int = 63) -> str:
     """Join parts with hyphens, truncating with a hash suffix if too long."""
     name = "-".join(parts)
     if len(name) <= max_len:
@@ -85,7 +85,7 @@ def compact_k8s_name(*pairs, max_len=63):
     return truncated + "-" + digest
 
 
-def readable_k8s_hostname(*pairs, suffix):
+def readable_k8s_hostname(*pairs: tuple[str, str], suffix: str) -> str:
     """Build a DNS label including the ingress suffix.
 
     Uses slugs for readability, and always appends a hash derived from all
@@ -98,8 +98,8 @@ def readable_k8s_hostname(*pairs, suffix):
                               ('server', 'server-bf4ba994'), suffix='web')
         => 'astral-prod-registry-server-<hash>-web'
     """
-    slugs = []
-    identifiers = []
+    slugs: list[str] = []
+    identifiers: list[str] = []
     for slug, k8s_id in pairs:
         slugs.append(slug)
         identifiers.append(k8s_id)
@@ -114,7 +114,7 @@ def readable_k8s_hostname(*pairs, suffix):
     return safe_k8s_name(name, suffix)
 
 
-def repair_ingress_hostname(hostname, ingress_name):
+def repair_ingress_hostname(hostname: str, ingress_name: str) -> str:
     """Repair overlong labels produced by the old ingress hostname generator.
 
     Recognize the old hash + ingress suffix even on hosts demoted to manual
