@@ -117,7 +117,7 @@ class GitHubApp(object):
             )
             resp.raise_for_status()
             return resp.json()["token"]
-        except (requests.exceptions.RequestException, KeyError, ValueError):
+        except requests.exceptions.RequestException, KeyError, ValueError:
             logger.exception(
                 "Unable to fetch access token for installation %s",
                 installation_id,
@@ -149,7 +149,7 @@ class GitHubApp(object):
                 url = resp.links.get("next", {}).get("url")
                 params = None
             return repositories
-        except (requests.exceptions.RequestException, ValueError, AttributeError):
+        except requests.exceptions.RequestException, ValueError, AttributeError:
             logger.exception(
                 "Unable to fetch repositories for GitHub installation %s",
                 installation_id,
@@ -168,7 +168,7 @@ class GitHubApp(object):
             )
             resp.raise_for_status()
             return resp.json()
-        except (requests.exceptions.RequestException, ValueError):
+        except requests.exceptions.RequestException, ValueError:
             logger.exception(
                 "Unable to fetch GitHub installation %s",
                 installation_id,

@@ -2603,7 +2603,7 @@ def run_job(
     finally:
         try:
             delete_job(batch_api_instance, namespace, job_object)
-        except (DeployError, ApiException):
+        except DeployError, ApiException:
             pass
 
 
@@ -2707,7 +2707,7 @@ def _run_job_streaming(
     finally:
         try:
             delete_job(batch_api_instance, namespace, job_object)
-        except (DeployError, ApiException):
+        except DeployError, ApiException:
             pass
 
 
