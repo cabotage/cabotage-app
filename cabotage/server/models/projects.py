@@ -1871,9 +1871,7 @@ def create_default_ingresses(app_env, process_names=None):
         )
         db.session.add(ingress_obj)
         db.session.flush()
-        auto_hostname = (
-            f"{readable_k8s_hostname(*hostname_pairs)}-{process_name}.{ingress_domain}"
-        )
+        auto_hostname = f"{readable_k8s_hostname(*hostname_pairs, suffix=process_name)}.{ingress_domain}"
         db.session.add(
             IngressHost(
                 ingress_id=ingress_obj.id,

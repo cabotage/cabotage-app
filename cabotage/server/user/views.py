@@ -4774,8 +4774,8 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                         db.session.flush()
                         if ingress_domain:
                             auto_hostname = (
-                                f"{readable_k8s_hostname(*hostname_pairs)}"
-                                f"-{new_name}.{ingress_domain}"
+                                f"{readable_k8s_hostname(*hostname_pairs, suffix=new_name)}"
+                                f".{ingress_domain}"
                             )
                             host = IngressHost(
                                 ingress_id=ingress.id,
