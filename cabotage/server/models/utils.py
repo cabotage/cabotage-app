@@ -85,8 +85,8 @@ def compact_k8s_name(*pairs, max_len=63):
     return truncated + "-" + digest
 
 
-def readable_k8s_hostname(*pairs):
-    """Build a readable hostname prefix from (slug, k8s_identifier) pairs.
+def readable_k8s_hostname(*pairs, suffix):
+    """Build a DNS label including the ingress suffix.
 
     Uses slugs for readability, and always appends a hash derived from all
     k8s_identifiers for DNS uniqueness.
@@ -95,8 +95,8 @@ def readable_k8s_hostname(*pairs):
         readable_k8s_hostname(('astral', 'astral-c9864437'),
                               ('prod', 'prod-a8b4f3bc'),
                               ('registry', 'registry-07f189ea'),
-                              ('server', 'server-bf4ba994'))
-        => 'astral-prod-registry-server-<hash>'
+                              ('server', 'server-bf4ba994'), suffix='web')
+        => 'astral-prod-registry-server-<hash>-web'
     """
     slugs = []
     identifiers = []
@@ -107,11 +107,25 @@ def readable_k8s_hostname(*pairs):
     digest = hashlib.sha256(combined.encode()).hexdigest()[:8]
     base = "-".join(slugs)
     name = base + "-" + digest
-    # Ensure it fits in a DNS label (63 chars)
-    if len(name) <= 63:
-        return name
-    truncated = base[: 63 - 9].rstrip("-")
-    return truncated + "-" + digest
+    # LEGACY: Preserve the prefix so every already-valid hostname stays stable.
+    if len(name) > 63:
+        name = base[: 63 - 9].rstrip("-") + "-" + digest
+    # Bound the complete label, not just the prefix before "-web".
+    return safe_k8s_name(name, suffix)
+
+
+def repair_ingress_hostname(hostname, ingress_name):
+    """Repair overlong labels produced by the old ingress hostname generator.
+
+    Recognize the old hash + ingress suffix even on hosts demoted to manual
+    aliases. Valid hostnames and unrelated custom hostnames are unchanged.
+    """
+    label, dot, domain = hostname.partition(".")
+    if len(label) <= 63:
+        return hostname
+    if not re.fullmatch(r"[a-z0-9-]+-[0-9a-f]{8}-" + re.escape(ingress_name), label):
+        return hostname
+    return safe_k8s_name(label) + dot + domain
 
 
 class DictDiffer(object):
