@@ -123,7 +123,10 @@ def repair_ingress_hostname(hostname: str, ingress_name: str) -> str:
     label, dot, domain = hostname.partition(".")
     if len(label) <= 63:
         return hostname
-    if not re.fullmatch(r"[a-z0-9-]+-[0-9a-f]{8}-" + re.escape(ingress_name), label):
+    if (
+        re.fullmatch(r"[a-z0-9-]+-[0-9a-f]{8}-" + re.escape(ingress_name), label)
+        is None
+    ):
         return hostname
     return safe_k8s_name(label) + dot + domain
 

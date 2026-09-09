@@ -2835,6 +2835,7 @@ def deploy_release(deployment):
             changed = False
             # Auto-hostname reconciliation only applies to nginx ingresses
             if ingress_domain:
+                ing: Ingress
                 for ing in app_env.ingresses:
                     if ing.ingress_class_name != "nginx":
                         continue
@@ -3295,6 +3296,7 @@ def fake_deploy_release(deployment):
         hostname_pairs = _ingress_hostname_pairs(app_env)
         changed = False
         if ingress_domain:
+            ing: Ingress
             for ing in app_env.ingresses:
                 if ing.ingress_class_name != "nginx":
                     continue
