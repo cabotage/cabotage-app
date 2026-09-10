@@ -85,6 +85,16 @@ def compact_k8s_name(*pairs, max_len=63):
     return truncated + "-" + digest
 
 
+def _shorten_ingress_hostname(label: str, suffix: str) -> str:
+    """Shorten the ingress hostname below 63 chars."""
+    if len(label) <= 63:
+        return label
+
+    # Reserve a prefix character, both hyphens, and the eight-character hash.
+    suffix = safe_k8s_name(suffix, max_len=52)
+    return f"{safe_k8s_name(label, max_len=63 - len(suffix) - 1)}-{suffix}"
+
+
 def readable_k8s_hostname(*pairs: tuple[str, str], suffix: str) -> str:
     """Build a DNS label including the ingress suffix.
 
@@ -111,7 +121,7 @@ def readable_k8s_hostname(*pairs: tuple[str, str], suffix: str) -> str:
     if len(name) > 63:
         name = base[: 63 - 9].rstrip("-") + "-" + digest
     # Bound the complete label, not just the prefix before "-web".
-    return safe_k8s_name(name, suffix)
+    return _shorten_ingress_hostname(f"{name}-{suffix}", suffix)
 
 
 def repair_ingress_hostname(hostname: str, ingress_name: str) -> str:
@@ -128,7 +138,7 @@ def repair_ingress_hostname(hostname: str, ingress_name: str) -> str:
         is None
     ):
         return hostname
-    return safe_k8s_name(label) + dot + domain
+    return _shorten_ingress_hostname(label, ingress_name) + dot + domain
 
 
 class DictDiffer(object):

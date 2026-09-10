@@ -451,7 +451,7 @@ BROKEN_HOST = (
     "pyladies-production-pyladiescon-portal-pyladiescon-por-16e47b77-web." + DOMAIN
 )
 REPAIRED_HOST = (
-    "pyladies-production-pyladiescon-portal-pyladiescon-por-ad1f5ad7." + DOMAIN
+    "pyladies-production-pyladiescon-portal-pyladiescon-ad1f5ad7-web." + DOMAIN
 )
 VALID_HOSTS = [
     "portal.pyladies.com",
@@ -462,7 +462,16 @@ VALID_HOSTS = [
 
 
 class TestIngressHostnameGeneration:
-    def test_new_app_with_long_name_gets_shortened_hostname(self) -> None:
+    @pytest.mark.parametrize(
+        ("suffix", "expected"),
+        [
+            ("web", "python-production-litestar-litestar-is-so-cool-sup-7955f573-web"),
+            ("api", "python-production-litestar-litestar-is-so-cool-sup-d05e77b2-api"),
+        ],
+    )
+    def test_new_app_with_long_name_gets_shortened_hostname(
+        self, suffix: str, expected: str
+    ) -> None:
         pairs = (
             ("python", "python-12345678"),
             ("production", "production-23456789"),
@@ -474,10 +483,8 @@ class TestIngressHostnameGeneration:
         )
         # Previously the first label was 67 bytes:
         # python-production-litestar-litestar-is-so-cool-super-s-6077e272-web
-        hostname = f"{readable_k8s_hostname(*pairs, suffix='web')}.{DOMAIN}"
-        assert hostname == (
-            "python-production-litestar-litestar-is-so-cool-super-s-7955f573.psfhosted.net"
-        )
+        hostname = f"{readable_k8s_hostname(*pairs, suffix=suffix)}.{DOMAIN}"
+        assert hostname == f"{expected}.{DOMAIN}"
         assert all(len(label.encode("ascii")) <= 63 for label in hostname.split("."))
 
     @pytest.mark.parametrize("base_length", [1, 49, 50])
@@ -506,6 +513,8 @@ class TestIngressHostnameGeneration:
         assert len(first.encode()) <= 63
         assert len(second.encode()) <= 63
         assert first != second
+        if len(suffix) <= 52:
+            assert first.endswith(f"-{suffix}")
         assert "." not in first
         # Repairs of old names must converge on the same name as fresh generation.
         digest = hashlib.sha256(b"stable-identity").hexdigest()[:8]
