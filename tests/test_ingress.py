@@ -462,6 +462,24 @@ VALID_HOSTS = [
 
 
 class TestIngressHostnameGeneration:
+    def test_new_app_with_long_name_gets_shortened_hostname(self) -> None:
+        pairs = (
+            ("python", "python-12345678"),
+            ("production", "production-23456789"),
+            ("litestar", "litestar-34567890"),
+            (
+                "litestar-is-so-cool-super-silly-extra-long-application-name",
+                "litestar-45678901",
+            ),
+        )
+        # Previously the first label was 67 bytes:
+        # python-production-litestar-litestar-is-so-cool-super-s-6077e272-web
+        hostname = f"{readable_k8s_hostname(*pairs, suffix='web')}.{DOMAIN}"
+        assert hostname == (
+            "python-production-litestar-litestar-is-so-cool-super-s-7955f573.psfhosted.net"
+        )
+        assert all(len(label.encode("ascii")) <= 63 for label in hostname.split("."))
+
     @pytest.mark.parametrize("base_length", [1, 49, 50])
     def test_preserves_valid_names_through_63_byte_boundary(
         self, base_length: int
