@@ -1,9 +1,19 @@
 """Tests for ingress rendering (nginx + tailscale)."""
 
+import hashlib
+
+import pytest
+
 from cabotage.celery.tasks.deploy import (
     _build_ingress_paths,
+    _repair_ingress_hostnames,
     render_ingress_object,
     render_service,
+)
+from cabotage.server.models.projects import Ingress, IngressHost, IngressSnapshot
+from cabotage.server.models.utils import (
+    readable_k8s_hostname,
+    repair_ingress_hostname,
 )
 
 # ---------------------------------------------------------------------------
@@ -434,3 +444,180 @@ class TestRenderService:
         svc = render_service(FakeRelease(), "web")
         assert "process" in svc.spec.selector
         assert svc.spec.selector["process"] == "web"
+
+
+DOMAIN = "psfhosted.net"
+BROKEN_HOST = (
+    "pyladies-production-pyladiescon-portal-pyladiescon-por-16e47b77-web." + DOMAIN
+)
+REPAIRED_HOST = (
+    "pyladies-production-pyladiescon-portal-pyladiescon-ad1f5ad7-web." + DOMAIN
+)
+VALID_HOSTS = [
+    "portal.pyladies.com",
+    "pyladies-pyladiescon-portal-pyladiescon-portal-d0dfbbdd-web." + DOMAIN,
+    "pyladiescon-portal.ingress.us-east-2.psfhosted.computer",
+    "pyladiescon-portal.us-east-2.psfhosted.computer",
+]
+
+
+class TestIngressHostnameGeneration:
+    @pytest.mark.parametrize(
+        ("suffix", "expected"),
+        [
+            ("web", "python-production-litestar-litestar-is-so-cool-sup-7955f573-web"),
+            ("api", "python-production-litestar-litestar-is-so-cool-sup-d05e77b2-api"),
+        ],
+    )
+    def test_new_app_with_long_name_gets_shortened_hostname(
+        self, suffix: str, expected: str
+    ) -> None:
+        pairs = (
+            ("python", "python-12345678"),
+            ("production", "production-23456789"),
+            ("litestar", "litestar-34567890"),
+            (
+                "litestar-is-so-cool-super-silly-extra-long-application-name",
+                "litestar-45678901",
+            ),
+        )
+        # Previously the first label was 67 bytes:
+        # python-production-litestar-litestar-is-so-cool-super-s-6077e272-web
+        hostname = f"{readable_k8s_hostname(*pairs, suffix=suffix)}.{DOMAIN}"
+        assert hostname == f"{expected}.{DOMAIN}"
+        assert all(len(label.encode("ascii")) <= 63 for label in hostname.split("."))
+
+    @pytest.mark.parametrize("base_length", [1, 49, 50])
+    def test_preserves_valid_names_through_63_byte_boundary(
+        self, base_length: int
+    ) -> None:
+        slug = "a" * base_length
+        digest = hashlib.sha256(b"stable-identity").hexdigest()[:8]
+        expected = f"{slug}-{digest}-web"
+        assert (
+            readable_k8s_hostname((slug, "stable-identity"), suffix="web") == expected
+        )
+        assert len(expected) <= 63
+
+    @pytest.mark.parametrize(
+        ("slug", "suffix"),
+        [("a" * 51, "web"), ("a" * 100, "web"), ("app", "web-" + "x" * 60)],
+    )
+    def test_bounds_complete_label_and_keeps_ingress_names_distinct(
+        self, slug: str, suffix: str
+    ) -> None:
+        first = readable_k8s_hostname((slug, "stable-identity"), suffix=suffix)
+        second = readable_k8s_hostname(
+            (slug, "stable-identity"), suffix=suffix + "-other"
+        )
+        assert len(first.encode()) <= 63
+        assert len(second.encode()) <= 63
+        assert first != second
+        if len(suffix) <= 52:
+            assert first.endswith(f"-{suffix}")
+        assert "." not in first
+        # Repairs of old names must converge on the same name as fresh generation.
+        digest = hashlib.sha256(b"stable-identity").hexdigest()[:8]
+        prefix = f"{slug}-{digest}"
+        if len(prefix) > 63:
+            prefix = f"{slug[:54]}-{digest}"
+        assert repair_ingress_hostname(f"{prefix}-{suffix}.{DOMAIN}", suffix) == (
+            f"{first}.{DOMAIN}"
+        )
+
+    def test_repairs_observed_production_name_without_changing_domain(self) -> None:
+        assert repair_ingress_hostname(BROKEN_HOST, "web") == REPAIRED_HOST
+        assert len(REPAIRED_HOST.split(".")[0]) == 63
+        assert repair_ingress_hostname(REPAIRED_HOST, "web") == REPAIRED_HOST
+
+    def test_preserves_valid_and_unrelated_custom_hostnames(self) -> None:
+        unrelated = "a" * 64 + ".customer.example"
+        for hostname in [*VALID_HOSTS, unrelated]:
+            assert repair_ingress_hostname(hostname, "web") == hostname
+
+
+def _hostname_repair_ingress(hosts: list[IngressHost]) -> Ingress:
+    return Ingress(
+        name="web",
+        enabled=True,
+        ingress_class_name="nginx",
+        backend_protocol="HTTPS",
+        force_ssl_redirect=True,
+        service_upstream=True,
+        hosts=hosts,
+        paths=[],
+    )
+
+
+class TestIngressHostnameRepair:
+    @pytest.mark.parametrize("is_auto_generated", [True, False])
+    def test_repairs_existing_and_demoted_hosts_preserving_working_routes(
+        self, is_auto_generated: bool
+    ) -> None:
+        ingress = _hostname_repair_ingress(
+            [
+                IngressHost(
+                    hostname=BROKEN_HOST,
+                    tls_enabled=True,
+                    is_auto_generated=is_auto_generated,
+                ),
+                *[
+                    IngressHost(hostname=h, tls_enabled=True, is_auto_generated=False)
+                    for h in VALID_HOSTS
+                ],
+            ]
+        )
+        assert _repair_ingress_hostnames(ingress)
+        assert {h.hostname for h in ingress.hosts} == {REPAIRED_HOST, *VALID_HOSTS}
+        rendered = render_ingress_object(
+            ingress, RESOURCE_PREFIX, LABELS, process_names=["web"]
+        )
+        assert set(rendered.spec.tls[0].hosts) == {REPAIRED_HOST, *VALID_HOSTS}
+        assert {r.host for r in rendered.spec.rules} == {REPAIRED_HOST, *VALID_HOSTS}
+        assert all(
+            r.http.paths[0].backend.service.name == f"{RESOURCE_PREFIX}-web"
+            for r in rendered.spec.rules
+        )
+        assert not _repair_ingress_hostnames(ingress)
+
+    def test_drops_invalid_duplicate_when_corrected_name_already_exists(self) -> None:
+        ingress = _hostname_repair_ingress(
+            [
+                IngressHost(
+                    hostname=BROKEN_HOST, tls_enabled=True, is_auto_generated=True
+                ),
+                IngressHost(
+                    hostname=REPAIRED_HOST, tls_enabled=True, is_auto_generated=True
+                ),
+            ]
+        )
+        assert _repair_ingress_hostnames(ingress)
+        assert [h.hostname for h in ingress.hosts] == [REPAIRED_HOST]
+
+    def test_old_release_snapshot_cannot_reintroduce_invalid_certificate_name(
+        self,
+    ) -> None:
+        ingress = _hostname_repair_ingress(
+            [
+                IngressHost(
+                    hostname=BROKEN_HOST, tls_enabled=True, is_auto_generated=True
+                ),
+                IngressHost(
+                    hostname="portal.pyladies.com",
+                    tls_enabled=True,
+                    is_auto_generated=False,
+                ),
+            ]
+        )
+        snapshot = IngressSnapshot(ingress.asdict)
+        rendered = render_ingress_object(
+            snapshot, RESOURCE_PREFIX, LABELS, process_names=["web"]
+        )
+        assert set(rendered.spec.tls[0].hosts) == {REPAIRED_HOST, "portal.pyladies.com"}
+        assert {r.host for r in rendered.spec.rules} == {
+            REPAIRED_HOST,
+            "portal.pyladies.com",
+        }
+        assert rendered.spec.tls[0].secret_name == f"{RESOURCE_PREFIX}-web-tls"
+        # Historical release data remains immutable.
+        assert BROKEN_HOST in [h.hostname for h in snapshot.hosts]

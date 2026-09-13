@@ -149,12 +149,14 @@ def _create_app_env_for_branch_deploy(
             from cabotage.celery.tasks.deploy import _ingress_hostname_pairs
 
             hostname_pairs = _ingress_hostname_pairs(app_env)
-            hostname_prefix = readable_k8s_hostname(*hostname_pairs)
             for base_ing in base_app_env.ingresses:
                 is_tailscale = base_ing.ingress_class_name == "tailscale"
                 # Skip nginx ingresses if no INGRESS_DOMAIN
                 if not is_tailscale and not ingress_domain:
                     continue
+                hostname_label = readable_k8s_hostname(
+                    *hostname_pairs, suffix=base_ing.name
+                )
                 new_ing = Ingress(
                     application_environment_id=app_env.id,
                     name=base_ing.name,
@@ -178,7 +180,7 @@ def _create_app_env_for_branch_deploy(
                 db.session.flush()
                 if is_tailscale:
                     # Tailscale: auto-generated hostname without domain suffix
-                    ts_hostname = f"{hostname_prefix}-{base_ing.name}"
+                    ts_hostname = hostname_label
                     db.session.add(
                         IngressHost(
                             ingress_id=new_ing.id,
@@ -189,9 +191,7 @@ def _create_app_env_for_branch_deploy(
                     )
                 else:
                     # Nginx: auto-generated hostname with INGRESS_DOMAIN
-                    auto_hostname = (
-                        f"{hostname_prefix}-{base_ing.name}.{ingress_domain}"
-                    )
+                    auto_hostname = f"{hostname_label}.{ingress_domain}"
                     db.session.add(
                         IngressHost(
                             ingress_id=new_ing.id,

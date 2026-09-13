@@ -1,6 +1,7 @@
 import logging
 import secrets
 import time
+from typing import TYPE_CHECKING
 
 from base64 import b64encode
 
@@ -35,6 +36,7 @@ from cabotage.server.models.utils import (
     safe_k8s_name,
     compact_k8s_name,
     readable_k8s_hostname,
+    repair_ingress_hostname,
 )
 
 from cabotage.utils.build_log_stream import (
@@ -54,6 +56,9 @@ from cabotage.celery.tasks.notify import (
     dispatch_autodeploy_notification,
     dispatch_pipeline_notification,
 )
+
+if TYPE_CHECKING:
+    from cabotage.server.models.projects import Ingress
 
 log = logging.getLogger(__name__)
 
@@ -1094,6 +1099,23 @@ def _build_ingress_paths(ingress, resource_prefix, process_names=None):
     return k8s_paths
 
 
+def _repair_ingress_hostnames(ingress: Ingress) -> bool:
+    changed = False
+    existing = {host.hostname for host in ingress.hosts}
+    for host in list(ingress.hosts):
+        repaired = repair_ingress_hostname(host.hostname, ingress.name)
+        if repaired == host.hostname:
+            continue
+        existing.discard(host.hostname)
+        if repaired in existing:
+            ingress.hosts.remove(host)
+        else:
+            host.hostname = repaired
+            existing.add(repaired)
+        changed = True
+    return changed
+
+
 def render_ingress_object(
     ingress,
     resource_prefix,
@@ -1165,13 +1187,15 @@ def render_ingress_object(
     tls_hosts = []
     rules = []
     for host in ingress.hosts:
+        # Old release snapshots must not reintroduce an invalid certificate SAN.
+        hostname = repair_ingress_hostname(host.hostname, ingress.name)
         if is_tailscale or host.tls_enabled:
-            tls_hosts.append(host.hostname)
+            tls_hosts.append(hostname)
         rules.append(
             kubernetes.client.V1IngressRule(
                 # Tailscale: don't set host on rules — the operator derives
                 # it from tls.hosts and rejects mismatches with the FQDN
-                host=None if is_tailscale else host.hostname,
+                host=None if is_tailscale else hostname,
                 http=kubernetes.client.V1HTTPIngressRuleValue(paths=k8s_paths),
             )
         )
@@ -1952,7 +1976,7 @@ def render_podspec(release, process_name, service_account_name):
         )
         containers.append(
             render_process_container(
-                release, process_name, datadog_tags, with_tls=False
+                release, process_name, datadog_tags, with_tls=False, unix=False
             )
         )
 
@@ -2579,7 +2603,7 @@ def run_job(
     finally:
         try:
             delete_job(batch_api_instance, namespace, job_object)
-        except (DeployError, ApiException):
+        except DeployError, ApiException:
             pass
 
 
@@ -2683,7 +2707,7 @@ def _run_job_streaming(
     finally:
         try:
             delete_job(batch_api_instance, namespace, job_object)
-        except (DeployError, ApiException):
+        except DeployError, ApiException:
             pass
 
 
@@ -2811,14 +2835,16 @@ def deploy_release(deployment):
             changed = False
             # Auto-hostname reconciliation only applies to nginx ingresses
             if ingress_domain:
+                ing: Ingress
                 for ing in app_env.ingresses:
                     if ing.ingress_class_name != "nginx":
                         continue
+                    changed |= _repair_ingress_hostnames(ing)
                     auto_hosts = [h for h in ing.hosts if h.is_auto_generated]
                     existing_hostnames = {h.hostname for h in ing.hosts}
                     expected = (
-                        f"{readable_k8s_hostname(*hostname_pairs)}"
-                        f"-{ing.name}.{ingress_domain}"
+                        f"{readable_k8s_hostname(*hostname_pairs, suffix=ing.name)}"
+                        f".{ingress_domain}"
                     )
                     has_expected = expected in existing_hostnames
                     if not has_expected:
@@ -3270,14 +3296,16 @@ def fake_deploy_release(deployment):
         hostname_pairs = _ingress_hostname_pairs(app_env)
         changed = False
         if ingress_domain:
+            ing: Ingress
             for ing in app_env.ingresses:
                 if ing.ingress_class_name != "nginx":
                     continue
+                changed |= _repair_ingress_hostnames(ing)
                 auto_hosts = [h for h in ing.hosts if h.is_auto_generated]
                 existing_hostnames = {h.hostname for h in ing.hosts}
                 expected = (
-                    f"{readable_k8s_hostname(*hostname_pairs)}"
-                    f"-{ing.name}.{ingress_domain}"
+                    f"{readable_k8s_hostname(*hostname_pairs, suffix=ing.name)}"
+                    f".{ingress_domain}"
                 )
                 has_expected = expected in existing_hostnames
                 if not has_expected:

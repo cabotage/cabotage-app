@@ -52,7 +52,7 @@ def parse_alertmanager_timestamp(ts):
         ts = ts.replace("Z", "+00:00")
         dt = datetime.fromisoformat(ts)
         return dt.replace(tzinfo=None) if dt.tzinfo else dt
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         log.warning("Failed to parse timestamp: %s", ts)
         return None
 
