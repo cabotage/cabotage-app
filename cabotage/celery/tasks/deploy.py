@@ -1976,7 +1976,7 @@ def render_podspec(release, process_name, service_account_name):
         )
         containers.append(
             render_process_container(
-                release, process_name, datadog_tags, with_tls=False
+                release, process_name, datadog_tags, with_tls=False, unix=False
             )
         )
 
