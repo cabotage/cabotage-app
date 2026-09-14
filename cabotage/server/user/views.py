@@ -170,9 +170,8 @@ from cabotage.utils.build_log_stream import (
 )
 
 from cabotage.utils import oidc
-from cabotage._types import (
-    assume_not_none,
-)
+from cabotage._types import assume_not_none
+from cabotage.server.websocket import close_on_abort
 
 if TYPE_CHECKING:
     from kubernetes.stream.ws_client import WSClient
@@ -3621,6 +3620,7 @@ def _shell_socket(
     "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/shell/socket",
     bp=user_blueprint,
 )
+@close_on_abort
 @login_required
 def project_application_shell_socket_env(
     ws: Server, org_slug: str, project_slug: str, app_slug: str, env_slug: str
@@ -3632,6 +3632,7 @@ def project_application_shell_socket_env(
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/shell/socket",
     bp=user_blueprint,
 )
+@close_on_abort
 @login_required
 def project_application_shell_socket(
     ws: Server, org_slug: str, project_slug: str, app_slug: str
@@ -5250,6 +5251,7 @@ def _stream_image_build_logs(ws, image):
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/images/<image_id>/livelogs",
     bp=user_blueprint,
 )
+@close_on_abort
 @login_required
 def image_build_livelogs(ws, org_slug, project_slug, app_slug, image_id):
     org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
@@ -5260,6 +5262,7 @@ def image_build_livelogs(ws, org_slug, project_slug, app_slug, image_id):
 
 
 @sock.route("/image/<image_id>/livelogs", bp=user_blueprint)
+@close_on_abort
 @login_required
 def image_build_livelogs_legacy(ws, image_id):
     image = Image.query.filter_by(id=image_id).first_or_404()
@@ -5478,6 +5481,7 @@ def _stream_release_build_logs(ws, release):
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/releases/<release_id>/livelogs",
     bp=user_blueprint,
 )
+@close_on_abort
 @login_required
 def release_build_livelogs(ws, org_slug, project_slug, app_slug, release_id):
     org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
@@ -5488,6 +5492,7 @@ def release_build_livelogs(ws, org_slug, project_slug, app_slug, release_id):
 
 
 @sock.route("/release/<release_id>/livelogs", bp=user_blueprint)
+@close_on_abort
 @login_required
 def release_build_livelogs_legacy(ws, release_id):
     release = Release.query.filter_by(id=release_id).first_or_404()
@@ -5547,6 +5552,7 @@ def _stream_deployment_logs(ws, deployment):
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/deployments/<deployment_id>/livelogs",
     bp=user_blueprint,
 )
+@close_on_abort
 @login_required
 def deployment_livelogs(ws, org_slug, project_slug, app_slug, deployment_id):
     org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
@@ -5557,6 +5563,7 @@ def deployment_livelogs(ws, org_slug, project_slug, app_slug, deployment_id):
 
 
 @sock.route("/deployment/<deployment_id>/livelogs", bp=user_blueprint)
+@close_on_abort
 @login_required
 def deployment_livelogs_legacy(ws, deployment_id):
     deployment = Deployment.query.filter_by(id=deployment_id).first_or_404()
