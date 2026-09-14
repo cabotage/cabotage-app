@@ -47,11 +47,11 @@ def validate_tenant_postgres_backup_config(config):
 
 
 _INSECURE_DEFAULT_SECRETS = {
-    "SECRET_KEY": "my_precious",
-    "SECURITY_PASSWORD_SALT": "my_precious",
-    "REGISTRY_AUTH_SECRET": "v3rys3cur3",
+    "SECRET_KEY": "my_precious",  # nosec B105 — intentional insecure default (fail-closed)
+    "SECURITY_PASSWORD_SALT": "my_precious",  # nosec B105 — intentional insecure default (fail-closed)
+    "REGISTRY_AUTH_SECRET": "v3rys3cur3",  # nosec B105 — intentional insecure default (fail-closed)
 }
-_INSECURE_DEFAULT_TOTP_SECRET = "my_precious"
+_INSECURE_DEFAULT_TOTP_SECRET = "my_precious"  # nosec B105 — intentional insecure default (fail-closed)
 
 
 def validate_security_secrets_config(config):
