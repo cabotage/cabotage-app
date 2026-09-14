@@ -8207,7 +8207,7 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
         )
         for pod in pod_list.items:
             if pod.metadata is None or pod.metadata.name is None:
-                current_app.logger.exception("Skipping unamed pod in %s", namespace)
+                current_app.logger.exception("Skipping unnamed pod in %s", namespace)
                 continue
             if pod.status is None:
                 current_app.logger.exception("Skipping statusless pod in %s", namespace)

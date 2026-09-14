@@ -362,7 +362,7 @@ def _teardown_environment(environment: Environment) -> None:
                 pvcs = core_api.list_namespaced_persistent_volume_claim(ns_name)
                 for pvc in pvcs.items:
                     if pvc.metadata is None or pvc.metadata.name is None:
-                        logger.exception("Skipping unamed PVC in %s", ns_name)
+                        logger.exception("Skipping unnamed PVC in %s", ns_name)
                         continue
                     try:
                         core_api.delete_namespaced_persistent_volume_claim(
@@ -409,7 +409,7 @@ def _teardown_environment(environment: Environment) -> None:
                     )
                     for pvc in pvcs.items:
                         if pvc.metadata is None or pvc.metadata.name is None:
-                            logger.exception("Skipping unamed PVC in %s", ns_name)
+                            logger.exception("Skipping unnamed PVC in %s", ns_name)
                             continue
                         try:
                             core_api.delete_namespaced_persistent_volume_claim(

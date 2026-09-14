@@ -157,7 +157,7 @@ def reap_finished_jobs():
             continue
 
         if job.metadata is None or job.metadata.name is None:
-            current_app.logger.exception("Skipping unamed job")
+            current_app.logger.exception("Skipping unnamed job")
             continue
 
         if job.status is None:

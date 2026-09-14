@@ -141,7 +141,7 @@ def cleanup_app_env_k8s(
         )
         for d in deps.items:
             if d.metadata is None or d.metadata.name is None:
-                log.exception("Skipping unamed deployment in %s", namespace)
+                log.exception("Skipping unnamed deployment in %s", namespace)
                 continue
             log.info(
                 "k8s cleanup: deleting deployment %s/%s", namespace, d.metadata.name
@@ -158,7 +158,7 @@ def cleanup_app_env_k8s(
         )
         for s in svcs.items:
             if s.metadata is None or s.metadata.name is None:
-                log.exception("Skipping unamed service in %s", namespace)
+                log.exception("Skipping unnamed service in %s", namespace)
                 continue
             log.info("k8s cleanup: deleting service %s/%s", namespace, s.metadata.name)
             core_api.delete_namespaced_service(s.metadata.name, namespace)
@@ -172,7 +172,7 @@ def cleanup_app_env_k8s(
         )
         for i in ings.items:
             if i.metadata is None or i.metadata.name is None:
-                log.exception("Skipping unamed PVC in %s", namespace)
+                log.exception("Skipping unnamed ingress in %s", namespace)
                 continue
             log.info("k8s cleanup: deleting ingress %s/%s", namespace, i.metadata.name)
             networking_api.delete_namespaced_ingress(i.metadata.name, namespace)
