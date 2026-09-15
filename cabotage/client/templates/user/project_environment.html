@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, service_card, danger_zone_delete, tab_nav %}
+{% from "_macros.html" import icon, resource_path, page_header, application_card, service_card, danger_zone_delete, env_tab_nav %}
 
 {% block title %}
   {{ environment.name }} - {{ project.name }} - Cabotage
@@ -15,18 +15,7 @@
 {% endblock resource_path %}
 
 {% block tab_bar %}
-  <div class="app-content-padded !py-0">
-    <div class="tab-bar">
-      <a href="{{ url_for('user.project_environment', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}"
-         class="tab-item tab-active">{{ icon('activity', 'w-4 h-4') }} <span class="tab-label">Overview</span></a>
-      {% if config.MIMIR_URL %}
-      <a href="{{ url_for('user.environment_observe', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}"
-         class="tab-item">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></a>
-      {% else %}
-      <span class="tab-item tab-disabled">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></span>
-      {% endif %}
-    </div>
-  </div>
+  {{ env_tab_nav(project, environment, 'overview') }}
 {% endblock tab_bar %}
 
 {% block content %}
@@ -55,14 +44,7 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {% for app_env in active_app_envs %}
         {% set app = app_env.application %}
-        {% set cc = app_config_counts.get(app_env.id, 0) %}
-        {% set proc_count = app_env.process_counts.values()|sum if app_env.process_counts else 0 %}
         {% set last_dep = app_env.latest_deployment_completed %}
-        {% set meta = [
-          (proc_count ~ ' instance' ~ ('s' if proc_count != 1 else '')) if proc_count else 'No pods',
-          cc ~ ' config' ~ ('s' if cc != 1 else ''),
-          ('deployed ' ~ last_dep.created|humanize) if last_dep else ''
-        ]|select|list %}
         {% if app_env.latest_deployment %}
           {% if app_env.latest_deployment.complete %}
             {% set status = 'running' %}
@@ -74,23 +56,14 @@
         {% else %}
           {% set status = '' %}
         {% endif %}
-        {% set hosts = [] %}
-        {% for ing in app_env.ingresses if ing.enabled %}
-          {% for host in ing.hosts %}
-            {% if hosts.append({'hostname': host.hostname, 'is_auto': host.is_auto_generated, 'ingress_name': ing.name}) %}{% endif %}
-          {% endfor %}
-        {% endfor %}
-        {% set pr_num = environment.slug[3:] if environment.slug.startswith('pr-') else '' %}
-        {{ service_card(name=app.name,
-                slug=app.slug,
-                url=url_for('user.project_application', org_slug=project.organization.slug, project_slug=project.slug, app_slug=app.slug, env_slug=environment.slug),
-        status=status,
-        meta_items=meta,
-        color='accent',
-        github_repo=app.github_repository or '',
-        github_branch=app_env.effective_auto_deploy_branch or '',
-        github_pr_number=pr_num,
-        app_hosts=hosts
+        {{ application_card(
+          project,
+          app,
+          app_env=app_env,
+          env_slug=environment.slug,
+          status=status,
+          config_count=app_config_counts.get(app_env.id, 0),
+          last_deploy_at=last_dep.created if last_dep else none
         ) }}
       {% endfor %}
     </div>
@@ -130,6 +103,91 @@
           </div>
         </form>
       {% endfor %}
+    </div>
+  {% endif %}
+
+  <hr class="border-base-content/10 my-6" id="services">
+
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider">Backing Services</h2>
+    {% if postgres_enabled or redis_enabled %}
+      <div class="dropdown dropdown-end">
+        <label tabindex="0" class="btn btn-primary btn-sm gap-1.5">
+          {{ icon('plus', 'w-4 h-4') }} Add Service
+        </label>
+        <ul tabindex="0" class="menu menu-md dropdown-content bg-base-100 rounded-box z-50 mt-1 w-48 p-2 shadow-lg border border-base-300">
+          {% if postgres_enabled %}
+            <li><a href="{{ url_for('user.environment_postgres_create', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}">
+              {{ icon('database', 'w-3.5 h-3.5') }} PostgreSQL
+            </a></li>
+          {% endif %}
+          {% if redis_enabled %}
+            <li><a href="{{ url_for('user.environment_redis_create', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug) }}">
+              {{ icon('zap', 'w-3.5 h-3.5') }} Redis
+            </a></li>
+          {% endif %}
+        </ul>
+      </div>
+    {% endif %}
+  </div>
+
+  {% set all_resources = postgres_resources + redis_resources %}
+  {% if all_resources %}
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      {% for resource in all_resources %}
+        {% if resource.type == 'postgres' %}
+          {% set res_url = url_for('user.environment_postgres_detail', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug, resource_slug=resource.slug) %}
+          {% set icon_name = 'database' %}
+          {% set color = 'secondary' %}
+        {% elif resource.type == 'redis' %}
+          {% set res_url = url_for('user.environment_redis_detail', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug, resource_slug=resource.slug) %}
+          {% set icon_name = 'zap' %}
+          {% set color = 'warning' %}
+        {% endif %}
+        {% if resource.provisioning_status == 'ready' %}
+          {% set status = 'running' %}
+        {% elif resource.provisioning_status == 'error' %}
+          {% set status = 'error' %}
+        {% elif resource.provisioning_status == 'provisioning' %}
+          {% set status = 'building' %}
+        {% else %}
+          {% set status = '' %}
+        {% endif %}
+        {% set meta = [
+          resource.size_class,
+          resource.storage_size ~ ' GB',
+          'HA' if resource.ha_enabled else 'Standalone'
+        ] %}
+        {{ service_card(
+             name=resource.name,
+             slug=resource.slug,
+             url=res_url,
+             status=status,
+             meta_items=meta,
+             color=color,
+             icon_name=icon_name,
+        ) }}
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <div class="text-base-content/15 mb-4">{{ icon('database', 'w-12 h-12') }}</div>
+      <h3 class="text-base font-medium text-base-content/60 mb-1">No backing services</h3>
+      {% if postgres_enabled or redis_enabled %}
+        <p class="text-sm text-base-content/40 max-w-sm">
+          Add a
+          {% if postgres_enabled and redis_enabled %}
+            PostgreSQL database or Redis instance
+          {% elif postgres_enabled %}
+            PostgreSQL database
+          {% else %}
+            Redis instance
+          {% endif %}
+          to this environment.
+        </p>
+      {% else %}
+        <p class="text-sm text-base-content/40 max-w-sm">Backing services are disabled for this Cabotage deployment.</p>
+      {% endif %}
     </div>
   {% endif %}
 

@@ -1,8 +1,12 @@
-"""Tests for _resolve_ingress in config_templates (nginx + tailscale URL resolution)."""
+"""Tests for config template resolution."""
 
 import pytest
 
-from cabotage.utils.config_templates import _resolve_ingress, TemplateResolutionError
+from cabotage.utils.config_templates import (
+    _resolve_ingress,
+    _resolve_tcp_service,
+    TemplateResolutionError,
+)
 
 # ---------------------------------------------------------------------------
 # Fake model objects
@@ -32,24 +36,41 @@ class FakeTailscaleIntegration:
 
 
 class FakeOrganization:
-    def __init__(self, tailscale_integration=None):
+    def __init__(self, tailscale_integration=None, k8s_identifier="test-org"):
         self.tailscale_integration = tailscale_integration
+        self.k8s_identifier = k8s_identifier
 
 
 class FakeProject:
-    def __init__(self, organization=None):
+    def __init__(self, organization=None, k8s_identifier="test-project"):
         self.organization = organization or FakeOrganization()
+        self.k8s_identifier = k8s_identifier
 
 
 class FakeApplication:
-    def __init__(self, project=None):
+    def __init__(self, project=None, k8s_identifier="test-app"):
         self.project = project or FakeProject()
+        self.k8s_identifier = k8s_identifier
+
+
+class FakeEnvironment:
+    def __init__(
+        self,
+        slug="production",
+        k8s_identifier="production-abcd1234",
+        k8s_namespace="test-org-production-abcd1234",
+    ):
+        self.slug = slug
+        self.k8s_identifier = k8s_identifier
+        self.k8s_namespace = k8s_namespace
 
 
 class FakeAppEnv:
-    def __init__(self, ingresses=None, application=None):
+    def __init__(self, ingresses=None, application=None, environment=None):
         self.ingresses = ingresses or []
         self.application = application or FakeApplication()
+        self.environment = environment or FakeEnvironment()
+        self.k8s_identifier = self.environment.k8s_identifier
 
 
 # ---------------------------------------------------------------------------
@@ -215,3 +236,42 @@ class TestResolveTailscaleIngress:
             _resolve_ingress(app_env, "ts-web", "myapp")
             == "https://my-app.my-tailnet.ts.net"
         )
+
+
+class TestResolveTCPService:
+    def test_uses_environment_namespace_when_env_mode_enabled_even_if_app_env_is_legacy(
+        self,
+    ):
+        org = FakeOrganization(k8s_identifier="test-org")
+        project = FakeProject(organization=org, k8s_identifier="test-project")
+        app = FakeApplication(project=project, k8s_identifier="test-app")
+        environment = FakeEnvironment(
+            slug="production",
+            k8s_identifier="production-abcd1234",
+            k8s_namespace="test-org-production-abcd1234",
+        )
+        app_env = FakeAppEnv(application=app, environment=environment)
+        app_env.k8s_identifier = None
+
+        fqdn = _resolve_tcp_service(app_env, "worker", "myapp", "hostname")
+
+        assert (
+            fqdn
+            == "test-project-test-app-worker.test-org-production-abcd1234.svc.cluster.local"
+        )
+
+    def test_uses_org_namespace_when_environment_namespace_mode_is_disabled(self):
+        org = FakeOrganization(k8s_identifier="test-org")
+        project = FakeProject(organization=org, k8s_identifier="test-project")
+        app = FakeApplication(project=project, k8s_identifier="test-app")
+        environment = FakeEnvironment(
+            slug="default",
+            k8s_identifier=None,
+            k8s_namespace="test-org",
+        )
+        app_env = FakeAppEnv(application=app, environment=environment)
+        app_env.k8s_identifier = "default-legacy-app-env"
+
+        fqdn = _resolve_tcp_service(app_env, "worker", "myapp", "hostname")
+
+        assert fqdn == "test-project-test-app-worker.test-org.svc.cluster.local"

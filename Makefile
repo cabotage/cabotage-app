@@ -32,7 +32,7 @@ destroy:
 	docker-compose down --volumes
 
 migrations:
-	docker-compose exec cabotage-app python3 -m flask db revision --autogenerate -m "$(filter-out $@,$(MAKECMDGOALS))"
+	docker-compose exec cabotage-app python3 -m flask db revision --autogenerate -m "$(or $(MESSAGE),migration)"
 
 migrate:
 	docker-compose exec cabotage-app python3 -m flask db upgrade

@@ -22,7 +22,7 @@ from wtforms.validators import (
     ValidationError,
 )
 
-from cabotage.server.models.auth import Organization
+from cabotage.server.models.auth import Organization, OrganizationRequest
 from cabotage.server.models.projects import (
     Application,
     ApplicationEnvironment,
@@ -31,6 +31,20 @@ from cabotage.server.models.projects import (
     EnvironmentConfiguration,
     Project,
 )
+from cabotage.server.models.resources import (
+    DEFAULT_REDIS_FOLLOWER_REPLICAS,
+    DEFAULT_REDIS_LEADER_REPLICAS,
+    POSTGRES_VERSIONS,
+    REDIS_VERSIONS,
+    Resource,
+    postgres_size_classes,
+    redis_size_classes,
+)
+from cabotage.server.models.utils import slugify
+from cabotage._types import assume_not_none
+
+BIGINT_MIN = -(2**63)
+BIGINT_MAX = 2**63 - 1
 
 
 class ExtendedLoginForm(LoginForm):
@@ -73,6 +87,45 @@ class CreateOrganizationForm(FlaskForm):
         if organization is not None:
             raise ValidationError("Organization slugs must be globally unique.")
         return True
+
+
+class RequestOrganizationForm(FlaskForm):
+    name = StringField(
+        "Organization Name",
+        [InputRequired()],
+        description="Friendly and descriptive name for the organization.",
+    )
+    slug = StringField(
+        "Organization Slug",
+        [
+            InputRequired(),
+            Regexp("^[-a-z0-9]+$", message="Invalid Slug! Must match ^[-a-z0-9]+$"),
+        ],
+        description="URL-safe short name for the organization.",
+    )
+    note = TextAreaField(
+        "Note",
+        [Optional(), Length(max=2000)],
+        description="Optional context for the administrators reviewing this request.",
+    )
+
+    def validate_slug(form, field):
+        organization = Organization.query.filter_by(slug=field.data).first()
+        if organization is not None:
+            raise ValidationError("That organization slug is already in use.")
+        org_request = OrganizationRequest.query.filter_by(
+            slug=field.data,
+            status=OrganizationRequest.STATUS_PENDING,
+        ).first()
+        if org_request is not None:
+            raise ValidationError(
+                "That organization slug already has a pending request."
+            )
+        return True
+
+
+class ReviewOrganizationRequestForm(FlaskForm):
+    pass
 
 
 class CreateProjectForm(FlaskForm):
@@ -291,25 +344,30 @@ class CreateConfigurationForm(FlaskForm):
         description="Set this Enviornment Variable during Image builds.",
     )
 
-    def validate_name(form, field):
+    def validate_name(self, field: StringField) -> bool:
         if field.data and field.data.upper() == "CABOTAGE_SENTINEL":
             raise ValidationError("This name is reserved.")
         app_env_id = None
-        env_id = form.environment_id.data or None
+        env_id = self.environment_id.data or None
         if env_id:
             app_env = ApplicationEnvironment.query.filter_by(
-                application_id=form.application_id.data,
+                application_id=self.application_id.data,
                 environment_id=env_id,
             ).first()
             if app_env:
                 app_env_id = app_env.id
         configuration = Configuration.query.filter_by(
-            application_id=form.application_id.data,
+            application_id=self.application_id.data,
             application_environment_id=app_env_id,
             name=field.data,
         ).first()
         if configuration is not None:
-            if form.name.data.lower() != configuration.name.lower():
+            if (
+                assume_not_none(
+                    self.name.data, because="InputRequired has already run"
+                ).lower()
+                != configuration.name.lower()
+            ):
                 return True
             raise ValidationError(
                 "Configuration names must be unique (case insensitive) "
@@ -326,8 +384,12 @@ class EditApplicationSettingsForm(FlaskForm):
     )
     github_repository = StringField(
         "GitHub Repository",
+        [Optional()],
         description="GitHub Repository to deploy from",
-        render_kw={"placeholder": "org_name/repo_name"},
+        filters=[
+            (lambda x: x.strip() if (x and isinstance(x, str)) else x),
+            (lambda x: x if x else None),
+        ],
     )
     github_repository_is_private = BooleanField(
         "Private Repository",
@@ -352,17 +414,27 @@ class EditApplicationSettingsForm(FlaskForm):
             (lambda x: x if x else None),
         ],
     )
-    branch_deploy_watch_paths = TextAreaField(
-        "Watch Paths",
-        description="Only deploy this app when files matching these patterns change. One .gitignore-style pattern per line (e.g. src/**, Dockerfile). Leave empty to always deploy.",
-    )
-    github_app_installation_id = StringField(
-        "GitHub Application Installation ID",
-        description="Application Installation ID from GitHub",
+    procfile_path = StringField(
+        "Procfile Path",
+        description="Custom path to Procfile (e.g. deploy/Procfile), falls back to Procfile.cabotage then Procfile",
         filters=[
             (lambda x: x.strip() if (x and isinstance(x, str)) else x),
             (lambda x: x if x else None),
         ],
+    )
+    branch_deploy_watch_paths = TextAreaField(
+        "Watch Paths",
+        description="Only deploy this app when files matching these patterns change. One .gitignore-style pattern per line (e.g. src/**, Dockerfile). Leave empty to always deploy.",
+    )
+    github_app_installation_id = SelectField(
+        "GitHub App Installation",
+        [Optional()],
+        description="GitHub App installation connected to this organization",
+        filters=[
+            (lambda x: x.strip() if (x and isinstance(x, str)) else x),
+            (lambda x: x if x else None),
+        ],
+        validate_choice=False,
     )
     github_environment_name = StringField(
         "GitHub Environment Name",
@@ -372,13 +444,30 @@ class EditApplicationSettingsForm(FlaskForm):
         filters=[(lambda x: x.strip() if x else x), (lambda x: x if x else None)],
     )
 
+    def validate_github_app_installation_id(form, field):
+        if field.data is None:
+            return True
+        try:
+            installation_id = int(field.data)
+        except TypeError, ValueError:
+            raise ValidationError("Select a valid GitHub installation.")
+        if installation_id < BIGINT_MIN or installation_id > BIGINT_MAX:
+            raise ValidationError("Select a valid GitHub installation.")
+        return True
+
     def validate_github_environment_name(form, field):
         if field.data is None:
             return True
+        installation_id = None
+        if form.github_app_installation_id.data is not None:
+            try:
+                installation_id = int(form.github_app_installation_id.data)
+            except TypeError, ValueError:
+                return True
+            if installation_id < BIGINT_MIN or installation_id > BIGINT_MAX:
+                return True
         app = (
-            Application.query.filter_by(
-                github_app_installation_id=form.github_app_installation_id.data
-            )
+            Application.query.filter_by(github_app_installation_id=installation_id)
             .filter_by(github_repository=form.github_repository.data)
             .filter_by(github_environment_name=field.data)
             .first()
@@ -986,4 +1075,339 @@ class AddOrganizationUserForm(FlaskForm):
             Length(min=1, max=255),
         ],
         description="Email address or GitHub username of the user to add",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Backing service resource forms
+# ---------------------------------------------------------------------------
+
+_BACKUP_STRATEGY_CHOICES = [
+    ("daily", "Daily Backups"),
+    ("streaming", "Streaming (WAL Archiving)"),
+    ("none", "None"),
+]
+
+
+def _validate_unique_resource_slug(form, slug):
+    effective_slug = slug or slugify(form.name.data or "")
+    if not effective_slug:
+        raise ValidationError(
+            "Name must contain at least one letter or number, or provide a slug."
+        )
+    existing = (
+        Resource.query.filter_by(
+            environment_id=form.environment_id.data,
+            slug=effective_slug,
+        )
+        .filter(Resource.deleted_at.is_(None))
+        .first()
+    )
+    if existing is not None:
+        raise ValidationError("Resource slugs must be unique within environments.")
+    return True
+
+
+class CreatePostgresResourceForm(FlaskForm):
+    environment_id = HiddenField(
+        "Environment",
+        [DataRequired()],
+        description="Environment this resource belongs to.",
+    )
+    name = StringField(
+        "Database Name",
+        [InputRequired()],
+        description="Friendly name for this PostgreSQL database.",
+    )
+    slug = StringField(
+        "Database Slug",
+        [
+            Optional(),
+            Regexp("^[-a-z0-9]+$", message="Invalid Slug! Must match ^[-a-z0-9]+$"),
+        ],
+        description=("URL-safe identifier. Auto-generated from name if left blank."),
+    )
+    service_version = SelectField(
+        "PostgreSQL Version",
+        [DataRequired()],
+        choices=[(v, f"PostgreSQL {v}") for v in POSTGRES_VERSIONS],
+        description="Major PostgreSQL version.",
+    )
+    size_class = SelectField(
+        "Size Class",
+        [DataRequired()],
+        choices=[(k, k) for k in postgres_size_classes],
+        description="CPU and memory allocation for the database.",
+    )
+    storage_size = IntegerField(
+        "Storage Size (GB)",
+        [InputRequired()],
+        description="Persistent volume size in gigabytes. Maximum 1024 GB (1 TB).",
+    )
+    ha_enabled = BooleanField(
+        "High Availability",
+        [],
+        description="Deploy with streaming replication for automatic failover.",
+    )
+    backup_strategy = SelectField(
+        "Backup Strategy",
+        [DataRequired()],
+        choices=_BACKUP_STRATEGY_CHOICES,
+        description="How often backups are taken.",
+    )
+
+    def validate_slug(form, field):
+        return _validate_unique_resource_slug(form, field.data)
+
+    def validate(form, extra_validators=None):
+        if not super().validate(extra_validators=extra_validators):
+            return False
+        try:
+            _validate_unique_resource_slug(form, form.slug.data)
+        except ValidationError as exc:
+            form.slug.errors = [*form.slug.errors, str(exc)]
+            return False
+        return True
+
+    def validate_storage_size(form, field):
+        if field.data is None:
+            return True
+        if field.data < 1 or field.data > 1024:
+            raise ValidationError("Storage size must be between 1 and 1024 GB.")
+        return True
+
+
+class EditPostgresResourceForm(FlaskForm):
+    resource_id = HiddenField(
+        "Resource ID",
+        [DataRequired()],
+        description="ID of the resource to edit.",
+    )
+    current_storage_size = HiddenField("Current Storage Size")
+    size_class = SelectField(
+        "Size Class",
+        [DataRequired()],
+        choices=[(k, k) for k in postgres_size_classes],
+        description="CPU and memory allocation for the database.",
+    )
+    storage_size = IntegerField(
+        "Storage Size (GB)",
+        [InputRequired()],
+        description="Persistent volume size in gigabytes. Cannot be reduced.",
+    )
+    ha_enabled = BooleanField(
+        "High Availability",
+        [],
+        description="Deploy with streaming replication for automatic failover.",
+    )
+    backup_strategy = SelectField(
+        "Backup Strategy",
+        [DataRequired()],
+        choices=_BACKUP_STRATEGY_CHOICES,
+        description="How often backups are taken.",
+    )
+
+    def validate_storage_size(form, field):
+        if field.data is None:
+            return True
+        if field.data < 1 or field.data > 1024:
+            raise ValidationError("Storage size must be between 1 and 1024 GB.")
+        if form.current_storage_size.data:
+            current = int(form.current_storage_size.data)
+            if field.data < current:
+                raise ValidationError(
+                    f"Storage size cannot be reduced (currently {current} GB)."
+                )
+        return True
+
+
+class DeletePostgresResourceForm(FlaskForm):
+    resource_id = HiddenField(
+        "Resource ID",
+        [DataRequired()],
+        description="ID of the resource to delete.",
+    )
+    name = StringField(
+        "Slug",
+        [InputRequired()],
+        description="Slug of the resource being deleted.",
+    )
+    confirm = StringField(
+        "Type the slug of the database to confirm.",
+        [
+            EqualTo(
+                "name",
+                message="Must confirm the *exact* slug of the database!",
+            )
+        ],
+    )
+
+
+class CreateRedisResourceForm(FlaskForm):
+    environment_id = HiddenField(
+        "Environment",
+        [DataRequired()],
+        description="Environment this resource belongs to.",
+    )
+    name = StringField(
+        "Redis Name",
+        [InputRequired()],
+        description="Friendly name for this Redis instance.",
+    )
+    slug = StringField(
+        "Redis Slug",
+        [
+            Optional(),
+            Regexp("^[-a-z0-9]+$", message="Invalid Slug! Must match ^[-a-z0-9]+$"),
+        ],
+        description=("URL-safe identifier. Auto-generated from name if left blank."),
+    )
+    service_version = SelectField(
+        "Redis Version",
+        [DataRequired()],
+        choices=[(v, f"Redis {v}") for v in REDIS_VERSIONS],
+        description="Major Redis version.",
+    )
+    size_class = SelectField(
+        "Size Class",
+        [DataRequired()],
+        choices=[(k, k) for k in redis_size_classes],
+        description="CPU and memory allocation for the Redis instance.",
+    )
+    storage_size = IntegerField(
+        "Storage Size (GB)",
+        [InputRequired()],
+        description="Persistent volume size in gigabytes. Maximum 1024 GB (1 TB).",
+    )
+    ha_enabled = BooleanField(
+        "High Availability",
+        [],
+        description="Deploy as a Redis cluster with automatic failover.",
+    )
+    leader_replicas = IntegerField(
+        "Leader Replicas",
+        [InputRequired()],
+        default=DEFAULT_REDIS_LEADER_REPLICAS,
+        description="Number of Redis leader nodes when cluster mode is enabled.",
+    )
+    follower_replicas = IntegerField(
+        "Follower Replicas",
+        [InputRequired()],
+        default=DEFAULT_REDIS_FOLLOWER_REPLICAS,
+        description="Number of Redis follower nodes when cluster mode is enabled.",
+    )
+
+    def validate_slug(form, field):
+        return _validate_unique_resource_slug(form, field.data)
+
+    def validate(form, extra_validators=None):
+        if not super().validate(extra_validators=extra_validators):
+            return False
+        try:
+            _validate_unique_resource_slug(form, form.slug.data)
+        except ValidationError as exc:
+            form.slug.errors = [*form.slug.errors, str(exc)]
+            return False
+        return True
+
+    def validate_storage_size(form, field):
+        if field.data is None:
+            return True
+        if field.data < 1 or field.data > 1024:
+            raise ValidationError("Storage size must be between 1 and 1024 GB.")
+        return True
+
+    def validate_leader_replicas(form, field):
+        if field.data is None:
+            return True
+        if field.data < 1 or field.data > 32:
+            raise ValidationError("Leader replicas must be between 1 and 32.")
+        return True
+
+    def validate_follower_replicas(form, field):
+        if field.data is None:
+            return True
+        if field.data < 1 or field.data > 32:
+            raise ValidationError("Follower replicas must be between 1 and 32.")
+        return True
+
+
+class EditRedisResourceForm(FlaskForm):
+    resource_id = HiddenField(
+        "Resource ID",
+        [DataRequired()],
+        description="ID of the resource to edit.",
+    )
+    current_storage_size = HiddenField("Current Storage Size")
+    size_class = SelectField(
+        "Size Class",
+        [DataRequired()],
+        choices=[(k, k) for k in redis_size_classes],
+        description="CPU and memory allocation for the Redis instance.",
+    )
+    storage_size = IntegerField(
+        "Storage Size (GB)",
+        [InputRequired()],
+        description="Persistent volume size in gigabytes. Cannot be reduced.",
+    )
+    leader_replicas = IntegerField(
+        "Leader Replicas",
+        [InputRequired()],
+        default=DEFAULT_REDIS_LEADER_REPLICAS,
+        description="Number of Redis leader nodes when cluster mode is enabled.",
+    )
+    follower_replicas = IntegerField(
+        "Follower Replicas",
+        [InputRequired()],
+        default=DEFAULT_REDIS_FOLLOWER_REPLICAS,
+        description="Number of Redis follower nodes when cluster mode is enabled.",
+    )
+
+    def validate_storage_size(form, field):
+        if field.data is None:
+            return True
+        if field.data < 1 or field.data > 1024:
+            raise ValidationError("Storage size must be between 1 and 1024 GB.")
+        if form.current_storage_size.data:
+            current = int(form.current_storage_size.data)
+            if field.data < current:
+                raise ValidationError(
+                    f"Storage size cannot be reduced (currently {current} GB)."
+                )
+        return True
+
+    def validate_leader_replicas(form, field):
+        if field.data is None:
+            return True
+        if field.data < 1 or field.data > 32:
+            raise ValidationError("Leader replicas must be between 1 and 32.")
+        return True
+
+    def validate_follower_replicas(form, field):
+        if field.data is None:
+            return True
+        if field.data < 1 or field.data > 32:
+            raise ValidationError("Follower replicas must be between 1 and 32.")
+        return True
+
+
+class DeleteRedisResourceForm(FlaskForm):
+    resource_id = HiddenField(
+        "Resource ID",
+        [DataRequired()],
+        description="ID of the resource to delete.",
+    )
+    name = StringField(
+        "Slug",
+        [InputRequired()],
+        description="Slug of the resource being deleted.",
+    )
+    confirm = StringField(
+        "Type the slug of the Redis instance to confirm.",
+        [
+            EqualTo(
+                "name",
+                message="Must confirm the *exact* slug of the Redis instance!",
+            )
+        ],
     )

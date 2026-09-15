@@ -23,6 +23,7 @@ def _make_release(ephemeral=False, has_dd_key=False):
     app_env = MagicMock()
     env_obj = MagicMock()
     env_obj.ephemeral = ephemeral
+    env_obj.uses_environment_namespace = ephemeral
 
     if ephemeral:
         app_env.k8s_identifier = "some-id"
@@ -101,6 +102,18 @@ class TestRenderPodspecNodePoolConfigured:
         assert tol.key == "cabotage.dev/node-pool"
         assert tol.value == "preview"
         assert tol.effect == "NoSchedule"
+
+    def test_preview_pool_uses_environment_ephemeral_even_if_app_env_is_legacy(
+        self, mock_app
+    ):
+        mock_app.config["PREVIEW_POOL"] = "preview"
+
+        release = _make_release(ephemeral=True)
+        release.application_environment.k8s_identifier = None
+        pod_spec = deploy_module.render_podspec(release, "worker", "sa-name")
+
+        assert pod_spec.node_selector == {"cabotage.dev/node-pool": "preview"}
+        assert pod_spec.tolerations[0].value == "preview"
 
     def test_standard_pool_with_k8s_identifier_set(self, mock_app):
         """Non-ephemeral env with k8s_identifier set should still get standard."""

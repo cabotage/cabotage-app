@@ -11,7 +11,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import cabotage.celery.tasks.build as build_module
-from cabotage.celery.tasks.build import _build_namespace
+from cabotage.celery.tasks.build import _build_namespace, build_cache_pvc_name
+from cabotage.server.models.projects import Application
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -20,12 +21,20 @@ from cabotage.celery.tasks.build import _build_namespace
 _BUILD_MODULE = "cabotage.celery.tasks.build"
 
 
-def _make_app_env(org_k8s="test-org", env_k8s="production", env_enabled=True):
+def _make_app_env(
+    org_k8s="test-org",
+    env_k8s="production",
+    env_enabled=True,
+    uses_environment_namespace=None,
+):
     app_env = MagicMock()
     app_env.application.project.organization.k8s_identifier = org_k8s
+    app_env.environment.k8s_identifier = env_k8s
+    if uses_environment_namespace is None:
+        uses_environment_namespace = env_enabled
+    app_env.environment.uses_environment_namespace = uses_environment_namespace
     if env_enabled:
         app_env.k8s_identifier = env_k8s
-        app_env.environment.k8s_identifier = env_k8s
     else:
         app_env.k8s_identifier = None
     return app_env
@@ -36,7 +45,9 @@ def _make_release(org_k8s="test-org", env_k8s="production", env_enabled=True):
     release.application.project.organization.slug = "test-org"
     release.application.project.organization.k8s_identifier = org_k8s
     release.application.project.slug = "test-project"
+    release.application.project.k8s_identifier = "test-project-d4e5f6"
     release.application.slug = "test-app"
+    release.application.k8s_identifier = "test-app-g7h8i9"
     release.version = 1
     release.build_job_id = "abc123"
     release.repository_name = "test-org/test-app"
@@ -54,7 +65,9 @@ def _make_image(org_k8s="test-org", env_k8s="production", env_enabled=True):
     image.application.project.organization.slug = "test-org"
     image.application.project.organization.k8s_identifier = org_k8s
     image.application.project.slug = "test-project"
+    image.application.project.k8s_identifier = "test-project-d4e5f6"
     image.application.slug = "test-app"
+    image.application.k8s_identifier = "test-app-g7h8i9"
     image.application.github_repository = "test-org/test-repo"
     image.application.github_repository_is_private = False
     image.application.github_app_installation_id = 12345
@@ -147,13 +160,85 @@ def _run_image_build(image, mock_core, mock_run_job):
 
 
 class TestBuildNamespace:
-    def test_always_returns_tenant_builds_namespace(self):
+    def test_always_returns_tenant_builds_namespace(self, mock_app):
         app_env = _make_app_env(org_k8s="myorg", env_k8s="staging", env_enabled=True)
         assert _build_namespace(app_env) == "cabotage-tenant-builds"
 
-    def test_env_disabled_still_returns_tenant_builds(self):
+    def test_env_disabled_still_returns_tenant_builds(self, mock_app):
         app_env = _make_app_env(org_k8s="myorg", env_enabled=False)
         assert _build_namespace(app_env) == "cabotage-tenant-builds"
+
+    def test_uses_configured_build_namespace(self):
+        app_env = _make_app_env(org_k8s="myorg", env_k8s="staging", env_enabled=True)
+        mock_app = MagicMock()
+        mock_app.config = {"KUBERNETES_BUILD_NAMESPACE": "tenant-builds-custom"}
+
+        with patch.object(build_module, "current_app", mock_app):
+            assert _build_namespace(app_env) == "tenant-builds-custom"
+
+
+class TestBuildCachePVCName:
+    def test_includes_environment_when_env_mode_enabled_even_if_app_env_is_legacy(self):
+        app_env = _make_app_env(
+            org_k8s="myorg",
+            env_k8s="staging",
+            env_enabled=False,
+            uses_environment_namespace=True,
+        )
+        app_env.application.project.k8s_identifier = "myproject"
+        app_env.application.k8s_identifier = "myapp"
+
+        pvc_name = build_cache_pvc_name(app_env)
+
+        assert pvc_name == "build-image-cache-myorg-myproject-myapp-staging"
+
+    def test_excludes_environment_when_env_mode_disabled_even_if_app_env_has_id(self):
+        app_env = _make_app_env(
+            org_k8s="myorg",
+            env_k8s="staging",
+            env_enabled=True,
+            uses_environment_namespace=False,
+        )
+        app_env.application.project.k8s_identifier = "myproject"
+        app_env.application.k8s_identifier = "myapp"
+
+        pvc_name = build_cache_pvc_name(app_env)
+
+        assert pvc_name == "build-image-cache-myorg-myproject-myapp"
+
+
+class TestRegistryRepositoryName:
+    def test_includes_environment_when_env_mode_enabled_even_if_app_env_is_legacy(self):
+        application = MagicMock(spec=Application)
+        application.project.organization.k8s_identifier = "myorg"
+        application.project.k8s_identifier = "myproject"
+        application.k8s_identifier = "myapp"
+        app_env = _make_app_env(
+            org_k8s="myorg",
+            env_k8s="staging",
+            env_enabled=False,
+            uses_environment_namespace=True,
+        )
+
+        repository_name = Application.registry_repository_name(application, app_env)
+
+        assert repository_name == "cabotage/myorg/staging/myproject/myapp"
+
+    def test_excludes_environment_when_env_mode_disabled_even_if_app_env_has_id(self):
+        application = MagicMock(spec=Application)
+        application.project.organization.k8s_identifier = "myorg"
+        application.project.k8s_identifier = "myproject"
+        application.k8s_identifier = "myapp"
+        app_env = _make_app_env(
+            org_k8s="myorg",
+            env_k8s="staging",
+            env_enabled=True,
+            uses_environment_namespace=False,
+        )
+
+        repository_name = Application.registry_repository_name(application, app_env)
+
+        assert repository_name == "cabotage/myorg/myproject/myapp"
 
 
 # ---------------------------------------------------------------------------
@@ -306,7 +391,7 @@ class TestReaperIgnoresBuildJobs:
 
 
 class TestBuildCachePVC:
-    def test_pvc_created_in_tenant_namespace(self):
+    def test_pvc_created_in_tenant_namespace(self, mock_app):
         from kubernetes.client.rest import ApiException
 
         image = _make_image(org_k8s="myorg", env_k8s="prod")
@@ -321,7 +406,29 @@ class TestBuildCachePVC:
         create_call = mock_core.create_namespaced_persistent_volume_claim.call_args
         assert create_call[0][0] == "cabotage-tenant-builds"
 
-    def test_pvc_read_in_tenant_namespace(self):
+    def test_pvc_created_with_safe_labels(self, mock_app):
+        from kubernetes.client.rest import ApiException
+
+        image = _make_image(org_k8s="myorg", env_k8s="prod")
+        mock_core = MagicMock()
+        mock_core.read_namespaced_persistent_volume_claim.side_effect = ApiException(
+            status=404
+        )
+        mock_core.create_namespaced_persistent_volume_claim.return_value = MagicMock()
+
+        build_module.fetch_image_build_cache_volume_claim(mock_core, image)
+
+        create_call = mock_core.create_namespaced_persistent_volume_claim.call_args
+        pvc_object = create_call[0][1]
+        assert pvc_object.metadata.labels == {
+            "cabotage.io/organization": "myorg",
+            "cabotage.io/project": "test-project-d4e5f6",
+            "cabotage.io/application": "test-app-g7h8i9",
+            "cabotage.io/environment": "prod",
+            "cabotage.io/build-cache": "true",
+        }
+
+    def test_pvc_read_in_tenant_namespace(self, mock_app):
         image = _make_image(org_k8s="myorg", env_k8s="prod")
         mock_core = MagicMock()
 

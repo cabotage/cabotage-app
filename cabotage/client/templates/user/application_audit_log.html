@@ -1,0 +1,240 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, resource_path, app_tab_nav, app_resource_path %}
+
+{% set app = application %}
+{% set org_slug = app.project.organization.slug %}
+{% set project_slug = app.project.slug %}
+{% set app_slug = app.slug %}
+{% set env_slug = environment.slug if environment else none %}
+
+{% block title %}
+  Audit Log - {{ app_slug }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ app_resource_path(application, 'Audit Log', env=environment|default(none)) }}
+{% endblock resource_path %}
+
+{% block tab_bar %}
+  {{ app_tab_nav(application, 'audit', env=environment) }}
+{% endblock tab_bar %}
+
+{% block content %}
+
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-base font-medium text-base-content">Audit Log</h2>
+  </div>
+
+  {# Filters — multi-select with pills, auto-submit on change #}
+  <div class="audit-filters" data-audit-filters>
+    {# Active filter pills #}
+    <div class="audit-filter-pills">
+      {% for t in type_filter %}
+        <span class="badge badge-secondary gap-1" data-filter-type="type" data-filter-value="{{ t }}">
+          {{ t }}
+          <button type="button" class="audit-filter-remove">{{ icon('x', 'w-2.5 h-2.5') }}</button>
+        </span>
+      {% endfor %}
+      {% for v in verb_filter %}
+        <span class="badge badge-primary gap-1" data-filter-type="verb" data-filter-value="{{ v }}">
+          {{ v }}
+          <button type="button" class="audit-filter-remove">{{ icon('x', 'w-2.5 h-2.5') }}</button>
+        </span>
+      {% endfor %}
+
+      {# Add filter dropdowns #}
+      <div class="dropdown">
+        <div tabindex="0" role="button" class="btn btn-ghost btn-xs gap-1">{{ icon('plus', 'w-3 h-3') }} Type</div>
+        <ul tabindex="0" class="menu menu-sm dropdown-content bg-base-100 rounded-box z-50 mt-1 w-48 p-1 shadow-lg border border-base-300">
+          {% for t in all_types %}
+            <li><a class="{% if t in type_filter %}active{% endif %}" data-filter-toggle="type" data-filter-value="{{ t }}">{{ t }}</a></li>
+          {% endfor %}
+        </ul>
+      </div>
+
+      <div class="dropdown">
+        <div tabindex="0" role="button" class="btn btn-ghost btn-xs gap-1">{{ icon('plus', 'w-3 h-3') }} Action</div>
+        <ul tabindex="0" class="menu menu-sm dropdown-content bg-base-100 rounded-box z-50 mt-1 w-40 p-1 shadow-lg border border-base-300">
+          {% for v in all_verbs %}
+            <li><a class="{% if v in verb_filter %}active{% endif %}" data-filter-toggle="verb" data-filter-value="{{ v }}">{{ v }}</a></li>
+          {% endfor %}
+        </ul>
+      </div>
+
+      {% if verb_filter or type_filter %}
+        <a href="{{ url_for('user.application_audit_log', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}{% if env_slug %}?env_slug={{ env_slug }}{% endif %}"
+           class="btn btn-ghost btn-xs text-error gap-1">{{ icon('x', 'w-2.5 h-2.5') }} clear</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <script>
+  (function() {
+    var base = '{{ url_for("user.application_audit_log", org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}';
+    var verbs = {{ verb_filter|tojson }};
+    var types = {{ type_filter|tojson }};
+    var envSlug = {{ (env_slug or '')|tojson }};
+    var before = {{ ((entries[0].id + 1)|tojson) if entries else 'null' }};
+
+    function navigate() {
+      var params = [];
+      if (envSlug) params.push('env_slug=' + encodeURIComponent(envSlug));
+      if (before) params.push('before=' + before);
+      if (verbs.length) params.push('verb=' + verbs.join(','));
+      if (types.length) params.push('type=' + types.join(','));
+      window.location = base + (params.length ? '?' + params.join('&') : '');
+    }
+
+    // Toggle filter from dropdown
+    document.querySelectorAll('[data-filter-toggle]').forEach(function(el) {
+      el.addEventListener('click', function(e) {
+        e.preventDefault();
+        var filterType = el.dataset.filterToggle;
+        var value = el.dataset.filterValue;
+        var arr = filterType === 'verb' ? verbs : types;
+        var idx = arr.indexOf(value);
+        if (idx >= 0) arr.splice(idx, 1);
+        else arr.push(value);
+        navigate();
+      });
+    });
+
+    // Remove pill
+    document.querySelectorAll('.audit-filter-remove').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var pill = btn.closest('[data-filter-type]');
+        var filterType = pill.dataset.filterType;
+        var value = pill.dataset.filterValue;
+        var arr = filterType === 'verb' ? verbs : types;
+        var idx = arr.indexOf(value);
+        if (idx >= 0) arr.splice(idx, 1);
+        navigate();
+      });
+    });
+  })();
+  </script>
+
+  {% if entries|length > 0 %}
+    <div class="audit-list">
+      {% for e in entries %}
+        {% set verb = e.verb %}
+        {% if e.object_type == 'Deployment' and verb == 'create' %}{% set verb = 'deploy' %}
+        {% elif e.object_type == 'Release' and verb == 'edit' %}{% set verb = 'create' %}
+        {% elif e.object_type == 'Image' and verb in ('submit', 'fromsource') %}{% set verb = 'build' %}
+        {% endif %}
+        <div class="audit-row">
+          <div class="audit-row-icon">
+            {% if verb == 'create' and e.object_type == 'Release' %}
+              <span class="audit-verb audit-verb-create">{{ icon('layers', 'w-3 h-3') }}</span>
+            {% elif verb == 'create' and e.object_type == 'Image' %}
+              <span class="audit-verb audit-verb-create">{{ icon('image', 'w-3 h-3') }}</span>
+            {% elif verb == 'create' %}
+              <span class="audit-verb audit-verb-create">{{ icon('plus', 'w-3 h-3') }}</span>
+            {% elif verb == 'edit' %}
+              <span class="audit-verb audit-verb-edit">{{ icon('edit', 'w-3 h-3') }}</span>
+            {% elif verb == 'delete' %}
+              <span class="audit-verb audit-verb-delete">{{ icon('trash', 'w-3 h-3') }}</span>
+            {% elif verb == 'deploy' %}
+              <span class="audit-verb audit-verb-deploy">{{ icon('upload', 'w-3 h-3') }}</span>
+            {% elif verb == 'scale' %}
+              <span class="audit-verb audit-verb-edit">{{ icon('sliders', 'w-3 h-3') }}</span>
+            {% elif verb == 'build' %}
+              <span class="audit-verb audit-verb-create">{{ icon('image', 'w-3 h-3') }}</span>
+            {% elif verb == 'login' %}
+              <span class="audit-verb audit-verb-create">{{ icon('log-in', 'w-3 h-3') }}</span>
+            {% elif verb == 'logout' %}
+              <span class="audit-verb">{{ icon('log-out', 'w-3 h-3') }}</span>
+            {% else %}
+              <span class="audit-verb">{{ icon('activity', 'w-3 h-3') }}</span>
+            {% endif %}
+          </div>
+
+          <div class="audit-row-body">
+            <div class="audit-row-primary">
+              <span class="audit-actor">
+                {% if e.actor_username %}
+                  {{ icon('user', 'w-3 h-3') }}
+                  <strong>{{ e.actor_username }}</strong>
+                {% else %}
+                  {{ icon('zap', 'w-3 h-3') }}
+                  <strong>automation</strong>
+                {% endif %}
+              </span>
+              <span class="audit-action">{{ verb }}</span>
+              <span class="audit-object-type">{{ e.object_type }}</span>
+              {% if e.object_name %}
+                <code class="audit-detail-code">{% if e.object_type == 'Image' and not e.object_name.startswith('#') %}#{% endif %}{% if e.object_type == 'Release' and not e.object_name.startswith('v') %}v{% endif %}{{ e.object_name }}</code>
+              {% endif %}
+              {% if e.detail %}
+                <span class="audit-detail">({{ e.detail|replace('_', ' ') }})</span>
+              {% endif %}
+            </div>
+
+            {# Contextual metadata #}
+            {% set has_meta = e.config_secret is not none or e.image_ref or e.deploy_release_version %}
+            {% if has_meta %}
+              <div class="audit-meta">
+                {% if e.config_secret %}
+                  <span class="change-tag change-tag-secret">SECRET</span>
+                {% endif %}
+                {% if e.config_buildtime %}
+                  <span class="change-tag change-tag-build">BUILD</span>
+                {% endif %}
+                {% if e.config_version %}
+                  <span class="audit-meta-item">v{{ e.config_version }}</span>
+                {% endif %}
+                {% if e.image_ref and e.image_ref|length < 30 %}
+                  <span class="audit-meta-item">{{ icon('git-branch', 'w-2.5 h-2.5') }} {{ e.image_ref }}</span>
+                {% endif %}
+                {% if e.image_sha %}
+                  <span class="audit-meta-item">{{ icon('git-commit', 'w-2.5 h-2.5') }} {{ e.image_sha[:7] }}</span>
+                {% endif %}
+                {% if e.deploy_release_version %}
+                  <span class="audit-meta-item">{{ icon('layers', 'w-2.5 h-2.5') }} v{{ e.deploy_release_version }}</span>
+                {% endif %}
+              </div>
+            {% endif %}
+
+            {% if e.timestamp %}
+              <div class="audit-row-time">
+                <time data-timestamp="{{ e.timestamp|isoformat_utc }}">{{ e.timestamp|humanize }}</time>
+                {% if e.remote_addr %}
+                  <span class="audit-remote-addr">{{ e.remote_addr }}</span>
+                {% endif %}
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    {% if has_newer or has_older %}
+      <div class="flex items-center justify-between mt-4">
+        {% if has_newer %}
+          <a href="?after={{ newer_after }}{% if verb_filter %}&verb={{ verb_filter|join(',') }}{% endif %}{% if type_filter %}&type={{ type_filter|join(',') }}{% endif %}{% if env_slug %}&env_slug={{ env_slug }}{% endif %}"
+             class="btn btn-ghost btn-sm gap-1">{{ icon('arrow-left', 'w-3.5 h-3.5') }} Newer</a>
+        {% else %}
+          <span></span>
+        {% endif %}
+        {% if has_older %}
+          <a href="?before={{ older_before }}{% if verb_filter %}&verb={{ verb_filter|join(',') }}{% endif %}{% if type_filter %}&type={{ type_filter|join(',') }}{% endif %}{% if env_slug %}&env_slug={{ env_slug }}{% endif %}"
+             class="btn btn-ghost btn-sm gap-1">Older {{ icon('chevron-right', 'w-3.5 h-3.5') }}</a>
+        {% else %}
+          <span></span>
+        {% endif %}
+      </div>
+    {% endif %}
+
+  {% else %}
+    <div class="card bg-base-200 border border-base-300">
+      <div class="card-body">
+        <div class="empty-state !py-12">
+          <div class="text-base-content/15 mb-4">{{ icon('activity', 'w-12 h-12') }}</div>
+          <h3 class="text-base font-medium text-base-content/60 mb-1">No activity recorded</h3>
+          <p class="text-sm text-base-content/40 max-w-sm">Activity will appear here as changes are made.</p>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+{% endblock content %}

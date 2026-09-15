@@ -14,6 +14,12 @@
       {{ icon('plus', 'w-4 h-4') }}
       New Organization
     </button>
+    {% elif organization_requests_enabled %}
+    <a href="{{ url_for('user.organization_request_create') }}"
+       class="btn btn-primary btn-sm gap-2">
+      {{ icon('plus', 'w-4 h-4') }}
+      Request Organization
+    </a>
     {% endif %}
   {% endcall %}
 
@@ -49,6 +55,12 @@
         {{ icon('plus', 'w-4 h-4') }}
         Create Organization
       </button>
+      {% elif organization_requests_enabled %}
+      <a href="{{ url_for('user.organization_request_create') }}"
+         class="btn btn-primary btn-sm gap-2 mt-4">
+        {{ icon('plus', 'w-4 h-4') }}
+        Request Organization
+      </a>
       {% endif %}
     </div>
   {% endif %}

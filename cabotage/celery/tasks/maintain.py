@@ -1,4 +1,5 @@
 import datetime
+import logging
 
 import kubernetes
 
@@ -7,13 +8,71 @@ from flask import current_app
 
 from cabotage.server import db, github_app, kubernetes as kubernetes_ext
 from cabotage.server.models.projects import Deployment, Image, Release
+from cabotage.celery.tasks.notify import (
+    dispatch_autodeploy_notification,
+    dispatch_pipeline_notification,
+)
 from cabotage.utils.build_log_stream import (
     get_redis_client,
     heartbeat_key,
     publish_end,
     stream_key,
 )
-from cabotage.utils.github import post_deployment_status_update
+from cabotage.utils.github import cabotage_url, post_deployment_status_update
+
+log = logging.getLogger(__name__)
+
+
+def _dispatch_reap_failure(obj, obj_type, notification_type):
+    """Send a failure notification for a reaped build/deploy."""
+    try:
+        app = obj.application
+        if not app:
+            return
+
+        metadata = (
+            getattr(obj, "image_metadata", None)
+            or getattr(obj, "release_metadata", None)
+            or getattr(obj, "deploy_metadata", None)
+            or {}
+        )
+
+        if metadata.get("auto_deploy"):
+            image_id = metadata.get("source_image_id", str(obj.id))
+            stage_map = {
+                "Image": "image_failed",
+                "Release": "release_failed",
+                "Deployment": "deploy_failed",
+            }
+            stage = stage_map.get(obj_type, "deploy_failed")
+            dispatch_autodeploy_notification(
+                stage,
+                image_id,
+                app,
+                obj.application_environment,
+                error=obj.error_detail,
+                image_url=cabotage_url(app, f"images/{image_id}"),
+                image_metadata=metadata,
+            )
+        else:
+            dispatch_pipeline_notification.delay(
+                notification_type,
+                obj_type,
+                str(obj.id),
+                str(app.project.organization_id),
+                str(app.id),
+                str(obj.application_environment_id)
+                if obj.application_environment_id
+                else None,
+                error=obj.error_detail,
+            )
+    except Exception:
+        log.warning(
+            "Failed to dispatch reap notification for %s %s",
+            obj_type,
+            obj.id,
+            exc_info=True,
+        )
 
 
 @shared_task()
@@ -39,8 +98,12 @@ def reap_stale_builds():
                 try:
                     log_key = stream_key("image", image.build_job_id)
                     publish_end(redis_client, log_key, error=True)
-                except Exception:  # nosec B110
-                    pass
+                except Exception:
+                    log.warning(
+                        "Failed to publish log stream end for reaped image %s",
+                        image.id,
+                        exc_info=True,
+                    )
             if (
                 image.image_metadata
                 and "installation_id" in image.image_metadata
@@ -57,8 +120,13 @@ def reap_stale_builds():
                         "failure",
                         "Image build timed out.",
                     )
-                except Exception:  # nosec B110
-                    pass
+                except Exception:
+                    log.warning(
+                        "Failed to post GitHub status for reaped image %s",
+                        image.id,
+                        exc_info=True,
+                    )
+            _dispatch_reap_failure(image, "Image", "pipeline.image_build")
 
     # Releases: built=False, error=False, updated < cutoff, no heartbeat
     stuck_releases = Release.query.filter(
@@ -75,8 +143,12 @@ def reap_stale_builds():
                 try:
                     log_key = stream_key("release", release.build_job_id)
                     publish_end(redis_client, log_key, error=True)
-                except Exception:  # nosec B110
-                    pass
+                except Exception:
+                    log.warning(
+                        "Failed to publish log stream end for reaped release %s",
+                        release.id,
+                        exc_info=True,
+                    )
             if (
                 release.release_metadata
                 and "installation_id" in release.release_metadata
@@ -93,8 +165,13 @@ def reap_stale_builds():
                         "failure",
                         "Release build timed out.",
                     )
-                except Exception:  # nosec B110
-                    pass
+                except Exception:
+                    log.warning(
+                        "Failed to post GitHub status for reaped release %s",
+                        release.id,
+                        exc_info=True,
+                    )
+            _dispatch_reap_failure(release, "Release", "pipeline.release")
 
     # Deployments: complete=False, error=False, updated < cutoff, no heartbeat
     stuck_deployments = Deployment.query.filter(
@@ -111,8 +188,12 @@ def reap_stale_builds():
                 try:
                     log_key = stream_key("deploy", deployment.job_id)
                     publish_end(redis_client, log_key, error=True)
-                except Exception:  # nosec B110
-                    pass
+                except Exception:
+                    log.warning(
+                        "Failed to publish log stream end for reaped deployment %s",
+                        deployment.id,
+                        exc_info=True,
+                    )
             if (
                 deployment.deploy_metadata
                 and "installation_id" in deployment.deploy_metadata
@@ -129,8 +210,13 @@ def reap_stale_builds():
                         "failure",
                         "Deploy timed out.",
                     )
-                except Exception:  # nosec B110
-                    pass
+                except Exception:
+                    log.warning(
+                        "Failed to post GitHub status for reaped deployment %s",
+                        deployment.id,
+                        exc_info=True,
+                    )
+            _dispatch_reap_failure(deployment, "Deployment", "pipeline.deploy")
 
     db.session.commit()
 

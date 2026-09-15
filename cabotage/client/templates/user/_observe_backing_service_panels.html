@@ -1,0 +1,98 @@
+{% if show_backing_services_panels %}
+  <div class="mt-8">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h2 class="text-sm font-semibold text-base-content">Backing Services</h2>
+        <p class="text-xs text-base-content/40">Database and cache resource usage for this scope.</p>
+      </div>
+      <div class="flex flex-col items-end gap-1">
+        <div class="flex items-center gap-2">
+          <select id="filter-service" class="select select-sm select-bordered text-xs">
+            <option value="">All services</option>
+            {% if observe_level == 'environment' %}
+              {% for svc in backing_service_hierarchy %}
+                <option value="{{ svc.id }}">{{ svc.name }}</option>
+              {% endfor %}
+            {% endif %}
+          </select>
+          <div class="flex gap-1.5" data-range-selector>
+            {% for r in ['1h', '6h', '24h', '7d', '30d'] %}
+              <button data-range="{{ r }}"
+                 class="btn btn-xs {% if current_range == r %}btn-primary{% else %}btn-ghost{% endif %}">{{ r }}</button>
+            {% endfor %}
+          </div>
+        </div>
+        <span data-time-nav class="inline-flex items-center gap-0.5 mt-1">
+          <span class="relative flex flex-col items-center">
+            <button data-nav-left class="btn btn-xs btn-ghost btn-square" title="Back ½ interval">{{ icon('chevron-left', 'w-3.5 h-3.5') }}</button>
+            <span data-nav-left-label class="text-[0.5rem] absolute -bottom-2"></span>
+          </span>
+          <button data-nav-now class="btn btn-xs text-xs {% if has_time_window %}btn-ghost{% else %}btn-primary btn-outline animate-pulse-gentle pointer-events-none{% endif %}" title="Back to live view">Live</button>
+          <span data-nav-right-wrap class="relative flex flex-col items-center {% if not has_time_window %}opacity-30 pointer-events-none{% endif %}">
+            <button data-nav-right class="btn btn-xs btn-ghost btn-square" title="Forward ½ interval">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</button>
+            <span data-nav-right-label class="text-[0.5rem] absolute -bottom-2"></span>
+          </span>
+        </span>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="card bg-base-200/50 border border-base-content/5">
+        <div class="card-body p-4">
+          <div class="flex items-center justify-between">
+            <h3 class="card-title text-sm font-medium text-base-content/70">{{ icon('activity', 'w-4 h-4') }} CPU Usage</h3>
+            <div class="flex gap-0.5" data-group-selector="backing-cpu">
+              {% for g in backing_service_groups %}
+                <button class="btn btn-xs {% if current_backing_service_groups.cpu == g %}btn-primary{% else %}btn-ghost{% endif %}" data-group="{{ g }}">{{ g|capitalize }}</button>
+              {% endfor %}
+            </div>
+          </div>
+          <div id="chart-backing-cpu" class="metric-panel" data-metric-panel>
+            <div class="flex items-center justify-center h-full text-base-content/20">
+              {{ icon('loader', 'w-5 h-5 animate-spin') }}
+            </div>
+          </div>
+          <p class="text-[0.6rem] text-base-content/20 mt-1 break-all leading-tight hidden" data-query-debug="backing-cpu"></p>
+        </div>
+      </div>
+
+      <div class="card bg-base-200/50 border border-base-content/5">
+        <div class="card-body p-4">
+          <div class="flex items-center justify-between">
+            <h3 class="card-title text-sm font-medium text-base-content/70">{{ icon('bar-chart', 'w-4 h-4') }} Memory Usage</h3>
+            <div class="flex gap-0.5" data-group-selector="backing-memory">
+              {% for g in backing_service_groups %}
+                <button class="btn btn-xs {% if current_backing_service_groups.memory == g %}btn-primary{% else %}btn-ghost{% endif %}" data-group="{{ g }}">{{ g|capitalize }}</button>
+              {% endfor %}
+            </div>
+          </div>
+          <div id="chart-backing-memory" class="metric-panel" data-metric-panel>
+            <div class="flex items-center justify-center h-full text-base-content/20">
+              {{ icon('loader', 'w-5 h-5 animate-spin') }}
+            </div>
+          </div>
+          <p class="text-[0.6rem] text-base-content/20 mt-1 break-all leading-tight hidden" data-query-debug="backing-memory"></p>
+        </div>
+      </div>
+
+      <div class="card bg-base-200/50 border border-base-content/5">
+        <div class="card-body p-4">
+          <div class="flex items-center justify-between">
+            <h3 class="card-title text-sm font-medium text-base-content/70">{{ icon('globe', 'w-4 h-4') }} Network I/O</h3>
+            <div class="flex gap-0.5" data-group-selector="backing-network">
+              {% for g in backing_service_groups %}
+                <button class="btn btn-xs {% if current_backing_service_groups.network == g %}btn-primary{% else %}btn-ghost{% endif %}" data-group="{{ g }}">{{ g|capitalize }}</button>
+              {% endfor %}
+            </div>
+          </div>
+          <div id="chart-backing-network" class="metric-panel" data-metric-panel>
+            <div class="flex items-center justify-center h-full text-base-content/20">
+              {{ icon('loader', 'w-5 h-5 animate-spin') }}
+            </div>
+          </div>
+          <p class="text-[0.6rem] text-base-content/20 mt-1 break-all leading-tight hidden" data-query-debug="backing-network"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endif %}

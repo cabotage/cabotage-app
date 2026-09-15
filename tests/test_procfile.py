@@ -10,6 +10,19 @@ class TestBasicParsing:
         result = loads("web: python app.py")
         assert result == {"web": {"cmd": "python app.py", "env": []}}
 
+    def test_ignores_blank_lines(self):
+        result = loads("\nweb: python app.py\n\nworker: celery -A app worker\n")
+        assert result == {
+            "web": {"cmd": "python app.py", "env": []},
+            "worker": {"cmd": "celery -A app worker", "env": []},
+        }
+
+    def test_ignores_comment_lines(self):
+        result = loads(
+            "# top-level comment\n  # indented comment\nweb: python app.py\n# tail comment"
+        )
+        assert result == {"web": {"cmd": "python app.py", "env": []}}
+
     def test_multiple_processes(self):
         result = loads("web: gunicorn app:app\nworker: celery -A app worker")
         assert "web" in result

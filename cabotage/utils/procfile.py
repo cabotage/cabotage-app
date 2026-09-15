@@ -93,7 +93,11 @@ def _parse_procfile_line(line):
 def loads(content):
     """Load a Procfile from a string."""
     lines = _group_lines(line for line in content.split("\n"))
-    lines = [(i, _parse_procfile_line(line)) for i, line in lines if line.strip()]
+    lines = [
+        (i, _parse_procfile_line(line))
+        for i, line in lines
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
     errors = []
     # Reject files with duplicate process types (no sane default).
     duplicates = _find_duplicates(((i, line[0]) for i, line in lines))

@@ -27,13 +27,13 @@ def issuer_url():
     fetches, enabling token forgery.
     """
     scheme = current_app.config.get("EXT_PREFERRED_URL_SCHEME", "https")
-    if scheme != "https":
+    if scheme != "https" and not current_app.debug:
         raise ValueError(
             f"OIDC issuer requires HTTPS but EXT_PREFERRED_URL_SCHEME is {scheme!r}. "
             "Set EXT_PREFERRED_URL_SCHEME=https."
         )
     server = current_app.config["EXT_SERVER_NAME"]
-    return f"https://{server}"
+    return f"{scheme}://{server}"
 
 
 def jwks_json():

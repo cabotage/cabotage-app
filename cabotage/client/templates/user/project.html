@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, empty_state, service_card, stat_card, create_modal, render_field, tab_nav %}
+{% from "_macros.html" import icon, resource_path, page_header, empty_state, application_card, service_card, stat_card, create_modal, render_field, project_tab_nav %}
 
 {% block title %}
   {{ project.name }} - Cabotage
@@ -13,18 +13,7 @@
 {% endblock resource_path %}
 
 {% block tab_bar %}
-  <div class="app-content-padded !py-0">
-    <div class="tab-bar">
-      <a href="{{ url_for('user.project', org_slug=project.organization.slug, project_slug=project.slug) }}"
-         class="tab-item tab-active">{{ icon('activity', 'w-4 h-4') }} <span class="tab-label">Overview</span></a>
-      {% if config.MIMIR_URL %}
-      <a href="{{ url_for('user.project_observe', org_slug=project.organization.slug, project_slug=project.slug) }}"
-         class="tab-item">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></a>
-      {% else %}
-      <span class="tab-item tab-disabled">{{ icon('bar-chart', 'w-4 h-4') }} <span class="tab-label">Observe</span></span>
-      {% endif %}
-    </div>
-  </div>
+  {{ project_tab_nav(project, 'overview') }}
 {% endblock tab_bar %}
 
 {% block content %}
@@ -91,37 +80,53 @@
         {% set status = "running" %}
       {% endif %}
 
-      {% set proc_counts = ae.process_counts %}
     {% endif %}
-    {% set proc_count = proc_counts.values()|sum if proc_counts is defined and proc_counts else 0 %}
+    {{ application_card(
+      project,
+      application,
+      app_env=ae,
+      env_slug=env_slug,
+      status=status,
+      config_count=app_config_counts.get(ae.id, 0) if ae else 0,
+      last_deploy_at=last_deploy_by_ae[ae.id] if ae and ae.id in last_deploy_by_ae else none
+    ) }}
+  {% endmacro %}
+
+  {% macro backing_service_card(resource, env) %}
+    {% if resource.type == 'postgres' %}
+      {% set res_url = url_for('user.environment_postgres_detail', org_slug=project.organization.slug, project_slug=project.slug, env_slug=env.slug, resource_slug=resource.slug) %}
+      {% set icon_name = 'database' %}
+      {% set color = 'secondary' %}
+      {% set type_label = 'PostgreSQL' %}
+    {% elif resource.type == 'redis' %}
+      {% set res_url = url_for('user.environment_redis_detail', org_slug=project.organization.slug, project_slug=project.slug, env_slug=env.slug, resource_slug=resource.slug) %}
+      {% set icon_name = 'zap' %}
+      {% set color = 'warning' %}
+      {% set type_label = 'Redis' %}
+    {% endif %}
+    {% if resource.provisioning_status == 'ready' %}
+      {% set status = 'running' %}
+    {% elif resource.provisioning_status == 'error' %}
+      {% set status = 'error' %}
+    {% elif resource.provisioning_status == 'provisioning' %}
+      {% set status = 'building' %}
+    {% else %}
+      {% set status = '' %}
+    {% endif %}
     {% set meta = [
-              (proc_count ~ ' instance' ~ ('s' if proc_count != 1 else '')) if proc_count else 'No pods',
-              (app_config_counts.get(ae.id, 0) ~ ' config' ~ ('s' if app_config_counts.get(ae.id, 0) != 1 else '')) if ae else ''
-            ]|select|list %}
-    {% if ae and ae.id in last_deploy_by_ae %}
-      {% set _ = meta.append('deployed ' ~ last_deploy_by_ae[ae.id]|humanize) %}
-    {% endif %}
-    {% set branch = ae.effective_auto_deploy_branch if ae else application.auto_deploy_branch %}
-    {% set pr_num = env_slug[3:] if env_slug and env_slug.startswith('pr-') else '' %}
-    {% set hosts = [] %}
-    {% set ts_int = application.project.organization.tailscale_integration %}
-    {% if ae %}
-      {% for ing in ae.ingresses if ing.enabled %}
-        {% for host in ing.hosts %}
-          {% if hosts.append({'hostname': host.hostname, 'is_auto': host.is_auto_generated, 'ingress_name': ing.name, 'ingress_class': ing.ingress_class_name, 'tailnet': ts_int.tailnet if ts_int else ''}) %}{% endif %}
-        {% endfor %}
-      {% endfor %}
-    {% endif %}
-    {{ service_card(name=application.name,
-            slug=application.slug,
-            url=url_for('user.project_application', org_slug=project.organization.slug, project_slug=project.slug, app_slug=application.slug, env_slug=env_slug),
-    status=status,
-    meta_items=meta,
-    color='accent',
-    github_repo=application.github_repository or '',
-    github_branch=branch or '',
-    github_pr_number=pr_num,
-    app_hosts=hosts
+      type_label,
+      resource.size_class,
+      resource.storage_size ~ ' GB',
+      'HA' if resource.ha_enabled else 'Standalone'
+    ] %}
+    {{ service_card(
+         name=resource.name,
+         slug=resource.slug,
+         url=res_url,
+         status=status,
+         meta_items=meta,
+         color=color,
+         icon_name=icon_name,
     ) }}
   {% endmacro %}
 
@@ -148,6 +153,20 @@
             </div>
           {% else %}
             <p class="text-sm text-base-content/30 ml-1">No applications in this environment.</p>
+          {% endif %}
+
+          {% set env_resources = resources_by_env.get(env.id, []) %}
+          {% if env_resources %}
+            <div class="mt-3">
+              <div class="flex items-center gap-3 mb-3">
+                <h3 class="text-xs font-medium text-base-content/35 uppercase tracking-wider">Backing Services</h3>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {% for resource in env_resources %}
+                  {{ backing_service_card(resource, env) }}
+                {% endfor %}
+              </div>
+            </div>
           {% endif %}
         </div>
       {% endfor %}
@@ -234,6 +253,21 @@
           Create Application
         </button>
         {% endif %}
+      </div>
+    {% endif %}
+
+    {% set default_env = project.active_environments[0] if project.active_environments else none %}
+    {% set default_env_resources = resources_by_env.get(default_env.id, []) if default_env else [] %}
+    {% if default_env_resources %}
+      <div class="mt-6">
+        <div class="flex items-center gap-3 mb-3">
+          <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider">Backing Services</h2>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {% for resource in default_env_resources %}
+            {{ backing_service_card(resource, default_env) }}
+          {% endfor %}
+        </div>
       </div>
     {% endif %}
   {% endif %}

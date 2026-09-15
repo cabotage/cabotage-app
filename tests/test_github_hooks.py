@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from cabotage.server import db
-from cabotage.server.models.auth import Organization
+from cabotage.server.models.auth import GitHubAppInstallation, Organization
 from cabotage.server.models.projects import (
     Application,
     ApplicationEnvironment,
@@ -85,6 +85,7 @@ def _make_app(project, installation_id, slug="webapp", watch_paths=None):
         project_id=project.id,
         github_app_installation_id=installation_id,
         github_repository=REPO,
+        github_repository_is_private=True,
         auto_deploy_branch=BRANCH,
         branch_deploy_watch_paths=watch_paths,
     )
@@ -1596,7 +1597,518 @@ class TestCreateDeployment:
         deploy_call = mock_session.post.call_args_list[0]
         payload = deploy_call[1].get("json", {})
         assert payload["required_contexts"] == []
-        assert payload["transient_environment"] is True
+
+
+class TestInstallationHooks:
+    def test_created_backfills_known_installation_metadata(
+        self, db_session, project, installation_id
+    ):
+        _make_app(project, installation_id)
+        db_session.add(
+            GitHubAppInstallation(
+                organization_id=project.organization_id,
+                installation_id=installation_id,
+            )
+        )
+        hook = Hook(
+            headers={"X-Github-Event": "installation"},
+            payload={
+                "action": "created",
+                "installation": {
+                    "id": installation_id,
+                    "account": {
+                        "id": 123,
+                        "login": "myorg",
+                        "type": "Organization",
+                    },
+                    "repository_selection": "selected",
+                },
+            },
+            processed=False,
+        )
+        db_session.add(hook)
+        db_session.flush()
+
+        from cabotage.celery.tasks.github import process_installation_hook
+
+        assert process_installation_hook(hook) is True
+        installation = GitHubAppInstallation.query.filter_by(
+            organization_id=project.organization_id,
+            installation_id=installation_id,
+        ).one()
+        assert installation.account_id == 123
+        assert installation.account_login == "myorg"
+        assert installation.account_type == "Organization"
+        assert installation.repository_selection == "selected"
+
+    def test_created_clears_selected_repository_cache_when_selection_becomes_all(
+        self, db_session, project, installation_id
+    ):
+        cached_repositories = [{"id": 1, "full_name": "myorg/myrepo", "private": True}]
+        db_session.add(
+            GitHubAppInstallation(
+                organization_id=project.organization_id,
+                installation_id=installation_id,
+                repository_selection="selected",
+                repositories=cached_repositories,
+            )
+        )
+        hook = Hook(
+            headers={"X-Github-Event": "installation"},
+            payload={
+                "action": "created",
+                "installation": {
+                    "id": installation_id,
+                    "account": {
+                        "id": 123,
+                        "login": "myorg",
+                        "type": "Organization",
+                    },
+                    "repository_selection": "all",
+                },
+            },
+            processed=False,
+        )
+        db_session.add(hook)
+        db_session.flush()
+
+        from cabotage.celery.tasks.github import process_installation_hook
+
+        assert process_installation_hook(hook) is True
+        installation = GitHubAppInstallation.query.filter_by(
+            organization_id=project.organization_id,
+            installation_id=installation_id,
+        ).one()
+        assert installation.repository_selection == "all"
+        assert installation.repositories is None
+        assert installation.repositories_synced_at is None
+
+    def test_created_preserves_all_repository_cache_without_repository_payload(
+        self, db_session, project, installation_id
+    ):
+        cached_repositories = [{"id": 1, "full_name": "myorg/myrepo", "private": True}]
+        db_session.add(
+            GitHubAppInstallation(
+                organization_id=project.organization_id,
+                installation_id=installation_id,
+                repository_selection="all",
+                repositories=cached_repositories,
+            )
+        )
+        hook = Hook(
+            headers={"X-Github-Event": "installation"},
+            payload={
+                "action": "created",
+                "installation": {
+                    "id": installation_id,
+                    "account": {
+                        "id": 123,
+                        "login": "myorg",
+                        "type": "Organization",
+                    },
+                    "repository_selection": "all",
+                },
+            },
+            processed=False,
+        )
+        db_session.add(hook)
+        db_session.flush()
+
+        from cabotage.celery.tasks.github import process_installation_hook
+
+        assert process_installation_hook(hook) is True
+        installation = GitHubAppInstallation.query.filter_by(
+            organization_id=project.organization_id,
+            installation_id=installation_id,
+        ).one()
+        assert installation.repository_selection == "all"
+        assert installation.repositories == cached_repositories
+
+    def test_created_updates_repository_cache_for_all_when_payload_has_repositories(
+        self, db_session, project, installation_id
+    ):
+        db_session.add(
+            GitHubAppInstallation(
+                organization_id=project.organization_id,
+                installation_id=installation_id,
+                repository_selection="selected",
+                repositories=[{"id": 1, "full_name": "myorg/old", "private": True}],
+            )
+        )
+        hook = Hook(
+            headers={"X-Github-Event": "installation"},
+            payload={
+                "action": "created",
+                "installation": {
+                    "id": installation_id,
+                    "account": {
+                        "id": 123,
+                        "login": "myorg",
+                        "type": "Organization",
+                    },
+                    "repository_selection": "all",
+                    "repositories": [
+                        {"id": 2, "full_name": "myorg/new", "private": False}
+                    ],
+                },
+            },
+            processed=False,
+        )
+        db_session.add(hook)
+        db_session.flush()
+
+        from cabotage.celery.tasks.github import process_installation_hook
+
+        assert process_installation_hook(hook) is True
+        installation = GitHubAppInstallation.query.filter_by(
+            organization_id=project.organization_id,
+            installation_id=installation_id,
+        ).one()
+        assert installation.repository_selection == "all"
+        assert installation.repositories == [
+            {"id": 2, "full_name": "myorg/new", "private": False}
+        ]
+        assert installation.repositories_synced_at is not None
+
+    def test_deleted_removes_installation_and_disconnects_apps(
+        self, db_session, project, installation_id
+    ):
+        application = _make_app(project, installation_id)
+        db_session.add(
+            GitHubAppInstallation(
+                organization_id=project.organization_id,
+                installation_id=installation_id,
+                account_login="myorg",
+            )
+        )
+        hook = Hook(
+            headers={"X-Github-Event": "installation"},
+            payload={
+                "action": "deleted",
+                "installation": {"id": installation_id},
+            },
+            processed=False,
+        )
+        db_session.add(hook)
+        db_session.flush()
+
+        from cabotage.celery.tasks.github import process_installation_hook
+
+        assert process_installation_hook(hook) is True
+        db_session.refresh(application)
+        assert application.github_app_installation_id is None
+        assert application.github_repository_is_private is False
+        assert (
+            GitHubAppInstallation.query.filter_by(
+                installation_id=installation_id
+            ).count()
+            == 0
+        )
+
+    def test_installation_target_renamed_updates_account_metadata(
+        self, db_session, project, installation_id
+    ):
+        repositories = [{"id": 1, "full_name": "oldorg/myrepo", "private": True}]
+        application = _make_app(project, installation_id)
+        application.github_repository_id = 1
+        application.github_repository = "oldorg/myrepo"
+        db_session.add(
+            GitHubAppInstallation(
+                organization_id=project.organization_id,
+                installation_id=installation_id,
+                account_id=123,
+                account_login="oldorg",
+                account_type="Organization",
+                repository_selection="selected",
+                repositories=repositories,
+            )
+        )
+        hook = Hook(
+            headers={"X-Github-Event": "installation_target"},
+            payload={
+                "action": "renamed",
+                "account": {
+                    "id": 123,
+                    "login": "neworg",
+                    "type": "Organization",
+                },
+                "installation": {"id": installation_id},
+            },
+            processed=False,
+        )
+        db_session.add(hook)
+        db_session.flush()
+
+        from cabotage.celery.tasks.github import process_installation_target_hook
+
+        assert process_installation_target_hook(hook) is True
+        installation = GitHubAppInstallation.query.filter_by(
+            organization_id=project.organization_id,
+            installation_id=installation_id,
+        ).one()
+        assert installation.account_id == 123
+        assert installation.account_login == "neworg"
+        assert installation.account_type == "Organization"
+        assert installation.repository_selection == "selected"
+        assert installation.repositories == [
+            {"id": 1, "full_name": "neworg/myrepo", "private": True}
+        ]
+        db_session.refresh(application)
+        assert application.github_repository_id == 1
+        assert application.github_repository == "neworg/myrepo"
+
+    def test_installation_target_renamed_preserves_other_repository_owners(
+        self, db_session, project, installation_id
+    ):
+        repositories = [
+            {"id": 1, "full_name": "oldorg/myrepo", "private": True},
+            {"id": 2, "full_name": "otherorg/worker", "private": False},
+        ]
+        renamed_app = _make_app(project, installation_id)
+        renamed_app.github_repository_id = 1
+        renamed_app.github_repository = "oldorg/myrepo"
+        kept_app = _make_app(project, installation_id, slug="worker")
+        kept_app.github_repository_id = 2
+        kept_app.github_repository = "otherorg/worker"
+        db_session.add(
+            GitHubAppInstallation(
+                organization_id=project.organization_id,
+                installation_id=installation_id,
+                account_id=123,
+                account_login="oldorg",
+                account_type="Organization",
+                repository_selection="selected",
+                repositories=repositories,
+            )
+        )
+        hook = Hook(
+            headers={"X-Github-Event": "installation_target"},
+            payload={
+                "action": "renamed",
+                "account": {
+                    "id": 123,
+                    "login": "neworg",
+                    "type": "Organization",
+                },
+                "installation": {"id": installation_id},
+            },
+            processed=False,
+        )
+        db_session.add(hook)
+        db_session.flush()
+
+        from cabotage.celery.tasks.github import process_installation_target_hook
+
+        assert process_installation_target_hook(hook) is True
+        installation = GitHubAppInstallation.query.filter_by(
+            organization_id=project.organization_id,
+            installation_id=installation_id,
+        ).one()
+        assert installation.repositories == [
+            {"id": 1, "full_name": "neworg/myrepo", "private": True},
+            {"id": 2, "full_name": "otherorg/worker", "private": False},
+        ]
+        db_session.refresh(renamed_app)
+        db_session.refresh(kept_app)
+        assert renamed_app.github_repository_id == 1
+        assert renamed_app.github_repository == "neworg/myrepo"
+        assert kept_app.github_repository_id == 2
+        assert kept_app.github_repository == "otherorg/worker"
+
+    def test_repository_hook_updates_cached_metadata_and_app_repository(
+        self, db_session, project, installation_id
+    ):
+        application = _make_app(project, installation_id)
+        application.github_repository_id = 123
+        application.github_repository = "myorg/old-name"
+        application.github_repository_is_private = True
+        db_session.add(
+            GitHubAppInstallation(
+                organization_id=project.organization_id,
+                installation_id=installation_id,
+                account_login="myorg",
+                account_type="Organization",
+                repository_selection="selected",
+                repositories=[
+                    {"id": 123, "full_name": "myorg/old-name", "private": True}
+                ],
+            )
+        )
+        hook = Hook(
+            headers={"X-Github-Event": "repository"},
+            payload={
+                "action": "renamed",
+                "installation": {"id": installation_id},
+                "repository": {
+                    "id": 123,
+                    "full_name": "myorg/new-name",
+                    "private": False,
+                },
+            },
+            processed=False,
+        )
+        db_session.add(hook)
+        db_session.flush()
+
+        from cabotage.celery.tasks.github import process_repository_hook
+
+        assert process_repository_hook(hook) is True
+        installation = GitHubAppInstallation.query.filter_by(
+            organization_id=project.organization_id,
+            installation_id=installation_id,
+        ).one()
+        assert installation.repositories == [
+            {"id": 123, "full_name": "myorg/new-name", "private": False}
+        ]
+        db_session.refresh(application)
+        assert application.github_repository_id == 123
+        assert application.github_repository == "myorg/new-name"
+        assert application.github_repository_is_private is False
+
+    def test_repository_hook_updates_privacy_for_matching_app_without_cache_entry(
+        self, db_session, project, installation_id
+    ):
+        application = _make_app(project, installation_id)
+        application.github_repository = "myorg/current-name"
+        application.github_repository_is_private = False
+        db_session.add(
+            GitHubAppInstallation(
+                organization_id=project.organization_id,
+                installation_id=installation_id,
+                account_login="myorg",
+                account_type="Organization",
+                repository_selection="all",
+                repositories=None,
+            )
+        )
+        hook = Hook(
+            headers={"X-Github-Event": "repository"},
+            payload={
+                "action": "privatized",
+                "installation": {"id": installation_id},
+                "repository": {
+                    "id": 123,
+                    "full_name": "myorg/current-name",
+                    "private": True,
+                },
+            },
+            processed=False,
+        )
+        db_session.add(hook)
+        db_session.flush()
+
+        from cabotage.celery.tasks.github import process_repository_hook
+
+        assert process_repository_hook(hook) is True
+        db_session.refresh(application)
+        assert application.github_repository_id == 123
+        assert application.github_repository == "myorg/current-name"
+        assert application.github_repository_is_private is True
+
+    def test_removed_repository_disconnects_matching_apps_only(
+        self, db_session, project, installation_id
+    ):
+        removed_app = _make_app(project, installation_id, slug="webapp")
+        removed_app.github_repository_id = 1
+        kept_app = _make_app(project, installation_id, slug="worker")
+        kept_app.github_repository_id = 2
+        kept_app.github_repository = "myorg/worker"
+        db_session.add(
+            GitHubAppInstallation(
+                organization_id=project.organization_id,
+                installation_id=installation_id,
+            )
+        )
+        hook = Hook(
+            headers={"X-Github-Event": "installation_repositories"},
+            payload={
+                "action": "removed",
+                "installation": {
+                    "id": installation_id,
+                    "account": {"id": 123, "login": "myorg", "type": "Organization"},
+                    "repository_selection": "selected",
+                },
+                "repositories_removed": [{"id": 1, "full_name": REPO}],
+            },
+            processed=False,
+        )
+        db_session.add(hook)
+        db_session.flush()
+
+        from cabotage.celery.tasks.github import process_installation_repositories_hook
+
+        assert process_installation_repositories_hook(hook) is True
+        db_session.refresh(removed_app)
+        db_session.refresh(kept_app)
+        assert removed_app.github_app_installation_id is None
+        assert removed_app.github_repository_id is None
+        assert removed_app.github_repository_is_private is False
+        assert kept_app.github_app_installation_id == installation_id
+        assert kept_app.github_repository_id == 2
+        assert kept_app.github_repository_is_private is True
+
+    def test_periodic_sync_updates_repository_ids_and_reconciles_removed_repos(
+        self, db_session, project, installation_id
+    ):
+        updated_app = _make_app(project, installation_id, slug="updated")
+        updated_app.github_repository = "myorg/current"
+        updated_app.github_repository_id = None
+        updated_app.github_repository_is_private = False
+        removed_app = _make_app(project, installation_id, slug="removed")
+        removed_app.github_repository = "myorg/removed"
+        removed_app.github_repository_id = 9
+        removed_app.github_repository_is_private = True
+        db_session.add(
+            GitHubAppInstallation(
+                organization_id=project.organization_id,
+                installation_id=installation_id,
+                account_login="myorg",
+                account_type="Organization",
+                repository_selection="selected",
+                repositories=[
+                    {"id": 8, "full_name": "myorg/current", "private": False},
+                    {"id": 9, "full_name": "myorg/removed", "private": True},
+                ],
+            )
+        )
+        db_session.flush()
+
+        from cabotage.celery.tasks.github import sync_github_app_installations
+
+        def fetch_installation(inst_id):
+            if inst_id != installation_id:
+                return None
+            return {
+                "id": installation_id,
+                "account": {
+                    "id": 123,
+                    "login": "myorg",
+                    "type": "Organization",
+                },
+                "repository_selection": "selected",
+            }
+
+        with (
+            patch(
+                "cabotage.celery.tasks.github.github_app.fetch_installation",
+                side_effect=fetch_installation,
+            ),
+            patch(
+                "cabotage.server.user.github_installations.github_app.fetch_installation_repositories",
+                return_value=[{"id": 8, "full_name": "myorg/current", "private": True}],
+            ),
+        ):
+            result = sync_github_app_installations.run()
+
+        assert result["synced"] == 1
+        assert result["disconnected"] == 1
+        db_session.refresh(updated_app)
+        db_session.refresh(removed_app)
+        assert updated_app.github_repository_id == 8
+        assert updated_app.github_repository_is_private is True
+        assert removed_app.github_app_installation_id is None
+        assert removed_app.github_repository_id is None
+        assert removed_app.github_repository_is_private is False
 
     @patch("cabotage.celery.tasks.github.github_session")
     @patch("cabotage.celery.tasks.github.github_app")

@@ -7,10 +7,12 @@ from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from cabotage.server.models.auth import Organization
+    from cabotage.server.models.resources import Resource
 
 from flask import current_app
 from sqlalchemy import (
     Boolean,
+    BigInteger,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -34,6 +36,7 @@ from cabotage.server.models.plugins import ActivityPlugin
 from cabotage.server.models.utils import (
     generate_k8s_identifier,
     readable_k8s_hostname,
+    safe_k8s_name,
     slugify,
     DictDiffer,
 )
@@ -207,6 +210,9 @@ class Environment(Model, Timestamp):
     ephemeral: Mapped[bool] = mapped_column(Boolean, default=False)
     ttl_hours: Mapped[int | None] = mapped_column(Integer)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    uses_environment_namespace: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     deleted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, index=True)
     forked_from_environment_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True),
@@ -231,6 +237,10 @@ class Environment(Model, Timestamp):
         cascade="all, delete-orphan",
         order_by="EnvironmentConfiguration.name",
     )
+    resources: Mapped[list["Resource"]] = relationship(
+        back_populates="environment",
+        cascade="all, delete-orphan",
+    )
 
     @property
     def active_application_environments(self):
@@ -239,6 +249,31 @@ class Environment(Model, Timestamp):
     @property
     def active_environment_configurations(self):
         return [ec for ec in self.environment_configurations if not ec.deleted]
+
+    @property
+    def k8s_namespace(self):
+        """The K8s namespace where resources for this environment live.
+
+        Uses the combined org+env namespace when environment-scoped
+        namespacing is explicitly enabled for this environment,
+        otherwise falls back to the org namespace.
+        """
+        org_k8s = self.project.organization.k8s_identifier
+        if self.uses_environment_namespace:
+            return safe_k8s_name(org_k8s, self.k8s_identifier)
+        return org_k8s
+
+    @property
+    def active_resources(self):
+        return [r for r in self.resources if r.deleted_at is None]
+
+    @property
+    def active_postgres_resources(self):
+        return [r for r in self.active_resources if r.type == "postgres"]
+
+    @property
+    def active_redis_resources(self):
+        return [r for r in self.active_resources if r.type == "redis"]
 
     __table_args__ = (
         UniqueConstraint(project_id, slug),
@@ -328,6 +363,7 @@ class ApplicationEnvironment(Model, Timestamp):
         foreign_keys="Ingress.application_environment_id",
         cascade="all, delete-orphan",
     )
+    alerts: Mapped[list[Alert]] = relationship(back_populates="application_environment")
 
     __table_args__ = (
         Index(
@@ -500,6 +536,7 @@ class Application(Model, Timestamp):
         back_populates="application",
         cascade="all, delete-orphan",
     )
+    alerts: Mapped[list[Alert]] = relationship(back_populates="application")
 
     @property
     def active_application_environments(self):
@@ -507,7 +544,8 @@ class Application(Model, Timestamp):
 
     version_id: Mapped[int] = mapped_column(Integer)
 
-    github_app_installation_id: Mapped[int | None] = mapped_column(Integer)
+    github_app_installation_id: Mapped[int | None] = mapped_column(BigInteger)
+    github_repository_id: Mapped[int | None] = mapped_column(BigInteger)
     github_repository: Mapped[str | None] = mapped_column(Text())
     github_repository_is_private: Mapped[bool] = mapped_column(
         Boolean,
@@ -518,6 +556,7 @@ class Application(Model, Timestamp):
     subdirectory: Mapped[str | None] = mapped_column(Text())
 
     dockerfile_path: Mapped[str | None] = mapped_column(Text())
+    procfile_path: Mapped[str | None] = mapped_column(Text())
     branch_deploy_watch_paths: Mapped[Any | None] = mapped_column(
         postgresql.JSONB(),
     )
@@ -637,7 +676,11 @@ class Application(Model, Timestamp):
         org_k8s = self.project.organization.k8s_identifier
         project_k8s = self.project.k8s_identifier
         app_k8s = self.k8s_identifier
-        env_k8s = app_env.k8s_identifier
+        env_k8s = (
+            app_env.environment.k8s_identifier
+            if app_env.environment.uses_environment_namespace
+            else None
+        )
         return Image._build_repository_name(org_k8s, project_k8s, app_k8s, env_k8s)
 
     def create_release(self, app_env):
@@ -1222,6 +1265,12 @@ class EnvironmentConfiguration(Model, Timestamp):
     value: Mapped[str] = mapped_column(String(2048))
     key_slug: Mapped[str | None] = mapped_column(Text())
     build_key_slug: Mapped[str | None] = mapped_column(Text())
+    secret_fingerprint: Mapped[str | None] = mapped_column(Text())
+    resource_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("resources.id"),
+        index=True,
+    )
     version_id: Mapped[int] = mapped_column(Integer)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     secret: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -1822,9 +1871,7 @@ def create_default_ingresses(app_env, process_names=None):
         )
         db.session.add(ingress_obj)
         db.session.flush()
-        auto_hostname = (
-            f"{readable_k8s_hostname(*hostname_pairs)}-{process_name}.{ingress_domain}"
-        )
+        auto_hostname = f"{readable_k8s_hostname(*hostname_pairs, suffix=process_name)}.{ingress_domain}"
         db.session.add(
             IngressHost(
                 ingress_id=ingress_obj.id,
@@ -1842,3 +1889,61 @@ def create_default_ingresses(app_env, process_names=None):
             )
         )
     db.session.flush()
+
+
+class Alert(Model, Timestamp):
+    __versioned__: dict = {}
+    __tablename__ = "alerts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        primary_key=True,
+    )
+    fingerprint: Mapped[str] = mapped_column(String(256), index=True)
+    status: Mapped[str] = mapped_column(String(32))
+    alertname: Mapped[str] = mapped_column(String(256), index=True)
+    labels: Mapped[Any] = mapped_column(postgresql.JSONB())
+    annotations: Mapped[Any] = mapped_column(
+        postgresql.JSONB(), server_default=text("'{}'::jsonb")
+    )
+    starts_at: Mapped[datetime.datetime] = mapped_column(DateTime, index=True)
+    ends_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    generator_url: Mapped[str | None] = mapped_column(Text())
+    group_key: Mapped[str | None] = mapped_column(Text())
+    receiver: Mapped[str | None] = mapped_column(String(256))
+    application_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("project_applications.id"),
+        index=True,
+    )
+    application_environment_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("application_environments.id"),
+        index=True,
+    )
+    last_notified_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    version_id: Mapped[int] = mapped_column(Integer)
+
+    application: Mapped[Application | None] = relationship(
+        back_populates="alerts",
+    )
+    application_environment: Mapped[ApplicationEnvironment | None] = relationship(
+        back_populates="alerts",
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_alerts_fingerprint_status",
+            "fingerprint",
+            "status",
+        ),
+        Index(
+            "ix_alerts_fingerprint_starts_at",
+            "fingerprint",
+            "starts_at",
+            unique=True,
+        ),
+    )
+
+    __mapper_args__ = {"version_id_col": version_id}

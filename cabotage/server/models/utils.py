@@ -26,7 +26,7 @@ def generate_k8s_identifier(slug, hex_bytes=4):
     return f"{prefix}-{hex_suffix}"
 
 
-def safe_k8s_name(*parts, max_len=63):
+def safe_k8s_name(*parts: str, max_len: int = 63) -> str:
     """Join parts with hyphens, truncating with a hash suffix if too long."""
     name = "-".join(parts)
     if len(name) <= max_len:
@@ -85,8 +85,18 @@ def compact_k8s_name(*pairs, max_len=63):
     return truncated + "-" + digest
 
 
-def readable_k8s_hostname(*pairs):
-    """Build a readable hostname prefix from (slug, k8s_identifier) pairs.
+def _shorten_ingress_hostname(label: str, suffix: str) -> str:
+    """Shorten the ingress hostname below 63 chars."""
+    if len(label) <= 63:
+        return label
+
+    # Reserve a prefix character, both hyphens, and the eight-character hash.
+    suffix = safe_k8s_name(suffix, max_len=52)
+    return f"{safe_k8s_name(label, max_len=63 - len(suffix) - 1)}-{suffix}"
+
+
+def readable_k8s_hostname(*pairs: tuple[str, str], suffix: str) -> str:
+    """Build a DNS label including the ingress suffix.
 
     Uses slugs for readability, and always appends a hash derived from all
     k8s_identifiers for DNS uniqueness.
@@ -95,11 +105,11 @@ def readable_k8s_hostname(*pairs):
         readable_k8s_hostname(('astral', 'astral-c9864437'),
                               ('prod', 'prod-a8b4f3bc'),
                               ('registry', 'registry-07f189ea'),
-                              ('server', 'server-bf4ba994'))
-        => 'astral-prod-registry-server-<hash>'
+                              ('server', 'server-bf4ba994'), suffix='web')
+        => 'astral-prod-registry-server-<hash>-web'
     """
-    slugs = []
-    identifiers = []
+    slugs: list[str] = []
+    identifiers: list[str] = []
     for slug, k8s_id in pairs:
         slugs.append(slug)
         identifiers.append(k8s_id)
@@ -107,11 +117,28 @@ def readable_k8s_hostname(*pairs):
     digest = hashlib.sha256(combined.encode()).hexdigest()[:8]
     base = "-".join(slugs)
     name = base + "-" + digest
-    # Ensure it fits in a DNS label (63 chars)
-    if len(name) <= 63:
-        return name
-    truncated = base[: 63 - 9].rstrip("-")
-    return truncated + "-" + digest
+    # LEGACY: Preserve the prefix so every already-valid hostname stays stable.
+    if len(name) > 63:
+        name = base[: 63 - 9].rstrip("-") + "-" + digest
+    # Bound the complete label, not just the prefix before "-web".
+    return _shorten_ingress_hostname(f"{name}-{suffix}", suffix)
+
+
+def repair_ingress_hostname(hostname: str, ingress_name: str) -> str:
+    """Repair overlong labels produced by the old ingress hostname generator.
+
+    Recognize the old hash + ingress suffix even on hosts demoted to manual
+    aliases. Valid hostnames and unrelated custom hostnames are unchanged.
+    """
+    label, dot, domain = hostname.partition(".")
+    if len(label) <= 63:
+        return hostname
+    if (
+        re.fullmatch(r"[a-z0-9-]+-[0-9a-f]{8}-" + re.escape(ingress_name), label)
+        is None
+    ):
+        return hostname
+    return _shorten_ingress_hostname(label, ingress_name) + dot + domain
 
 
 class DictDiffer(object):
