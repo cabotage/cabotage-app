@@ -363,26 +363,65 @@ class TestBuildJobNamespace:
 
 
 class TestReaperIgnoresBuildJobs:
-    def test_reaper_label_selector_excludes_build_jobs(self):
-        from cabotage.celery.tasks import reap_jobs
+    @pytest.mark.parametrize("condition", ["Complete", "Failed"])
+    def test_reaper_preserves_build_and_deployment_jobs(self, condition):
+        import kubernetes.client as k8s
+        from cabotage.celery.tasks import deploy, reap_jobs
+
+        with patch.object(deploy, "render_podspec", return_value=None):
+            deployment_job = deploy.render_job(
+                "test-ns", _make_release(env_enabled=False), "sa", "release", "abc123"
+            )
+        build_job = k8s.V1Job(
+            metadata=k8s.V1ObjectMeta(
+                name="build", labels={"build-job.cabotage.io": "true"}
+            )
+        )
+        scheduled_job = k8s.V1Job(
+            metadata=k8s.V1ObjectMeta(
+                name="scheduled", labels={"resident-job.cabotage.io": "true"}
+            )
+        )
+        jobs = [deployment_job, build_job, scheduled_job]
+        for job in jobs:
+            job.metadata.namespace = "test-ns"
+            job.status = k8s.V1JobStatus(
+                conditions=[k8s.V1JobCondition(type=condition, status="True")]
+            )
+
+        def list_jobs(*, label_selector):
+            # Emulate Kubernetes equality and non-existence label requirements.
+            selected = jobs
+            for requirement in label_selector.split(","):
+                if requirement.startswith("!"):
+                    selected = [
+                        job
+                        for job in selected
+                        if requirement[1:] not in job.metadata.labels
+                    ]
+                else:
+                    key, value = requirement.split("=", 1)
+                    selected = [
+                        job for job in selected if job.metadata.labels.get(key) == value
+                    ]
+            return k8s.V1JobList(items=selected)
 
         mock_batch = MagicMock()
-        mock_batch.list_job_for_all_namespaces.return_value = MagicMock(items=[])
-
+        mock_batch.list_job_for_all_namespaces.side_effect = list_jobs
         mock_app = MagicMock()
         mock_app.config = {"KUBERNETES_ENABLED": True}
-
         with (
             patch.object(reap_jobs, "current_app", mock_app),
-            patch.object(reap_jobs, "kubernetes_ext") as mock_kext,
+            patch.object(reap_jobs, "kubernetes_ext"),
             patch("kubernetes.client.BatchV1Api", return_value=mock_batch),
+            patch.object(reap_jobs, "_resolve_app_env", return_value=(None, None)),
+            patch.object(reap_jobs, "_reap_limit", return_value=1),
         ):
-            mock_kext.kubernetes_client = MagicMock()
             reap_jobs.reap_finished_jobs()
 
-        selector = mock_batch.list_job_for_all_namespaces.call_args[1]["label_selector"]
-        assert selector == "resident-job.cabotage.io=true"
-        assert "build-job" not in selector
+        assert [
+            call.args[0] for call in mock_batch.delete_namespaced_job.call_args_list
+        ] == ["scheduled"]
 
 
 # ---------------------------------------------------------------------------
