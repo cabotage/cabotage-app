@@ -46,6 +46,42 @@ def validate_tenant_postgres_backup_config(config):
         )
 
 
+_INSECURE_DEFAULT_SECRETS = {
+    "SECRET_KEY": "my_precious",  # nosec B105 — intentional insecure default (fail-closed)
+    "SECURITY_PASSWORD_SALT": "my_precious",  # nosec B105 — intentional insecure default (fail-closed)
+    "REGISTRY_AUTH_SECRET": "v3rys3cur3",  # nosec B105 — intentional insecure default (fail-closed)
+}
+_INSECURE_DEFAULT_TOTP_SECRET = "my_precious"  # nosec B105 — intentional insecure default (fail-closed)
+
+
+def validate_security_secrets_config(config):
+    """Fail closed: refuse to run with predictable security secrets outside DEBUG.
+
+    In development (``DEBUG=True``) the baked-in defaults are fine — sessions,
+    TOTP codes and password hashes reset across restarts but that is acceptable
+    locally. In any non-DEBUG run the predictable defaults would allow session
+    forgery, deterministic TOTP codes and registry-auth bypass, so the app must
+    not start until each value is overridden via its ``CABOTAGE_*`` environment
+    variable (``MetaFlaskEnv`` applies ``CABOTAGE_*`` overrides automatically).
+    """
+    if config.get("DEBUG"):
+        return
+
+    for key, default in _INSECURE_DEFAULT_SECRETS.items():
+        if config.get(key) == default:
+            raise RuntimeError(
+                f"{key} is still set to its insecure default {default!r}. "
+                f"Set CABOTAGE_{key} before running with DEBUG=False."
+            )
+
+    totp_secrets = config.get("SECURITY_TOTP_SECRETS") or {}
+    if totp_secrets.get(1) == _INSECURE_DEFAULT_TOTP_SECRET:
+        raise RuntimeError(
+            "SECURITY_TOTP_SECRETS[1] is still set to its insecure default. "
+            "Set CABOTAGE_SECURITY_TOTP_SECRET_1 before running with DEBUG=False."
+        )
+
+
 class Config(metaclass=MetaFlaskEnv):
     ENV_PREFIX = "CABOTAGE_"
     ENV_LOAD_ALL = True
