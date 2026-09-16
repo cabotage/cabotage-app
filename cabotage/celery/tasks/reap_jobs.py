@@ -150,13 +150,6 @@ def reap_finished_jobs():
         if reaped >= limit:
             break
 
-        # Deployment jobs are cleaned up by their deployment worker.
-        if not any(
-            owner.kind == "CronJob" and owner.controller
-            for owner in job.metadata.owner_references or []
-        ):
-            continue
-
         if not _is_finished(job):
             continue
 
