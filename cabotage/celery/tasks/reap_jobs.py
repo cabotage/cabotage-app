@@ -1,8 +1,7 @@
 """Celery task to reap completed/failed CronJob-spawned Jobs.
 
-Finds K8s Jobs labelled resident-job.cabotage.io=true that are no longer
-Pending/Running, records metadata into the job_logs table, then deletes
-them from the cluster.
+Finds finished, CronJob-controlled K8s Jobs labelled resident-job.cabotage.io=true,
+records metadata into the job_logs table, then deletes them from the cluster.
 """
 
 import datetime
@@ -150,6 +149,13 @@ def reap_finished_jobs():
     for job in jobs.items:
         if reaped >= limit:
             break
+
+        # Deployment jobs are cleaned up by their deployment worker.
+        if not any(
+            owner.kind == "CronJob" and owner.controller
+            for owner in job.metadata.owner_references or []
+        ):
+            continue
 
         if not _is_finished(job):
             continue
