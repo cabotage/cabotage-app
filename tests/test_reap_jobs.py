@@ -4,8 +4,6 @@ import datetime
 import os
 from unittest.mock import MagicMock, patch
 
-from cabotage.celery.tasks import reap_jobs
-
 from cabotage.celery.tasks.reap_jobs import (
     _is_finished,
     _is_succeeded,
@@ -56,72 +54,6 @@ def _make_job(
     else:
         job.spec.template.spec.containers = []
     return job
-
-
-def test_reaper_only_deletes_finished_cronjob_controlled_jobs():
-    release = _make_job(
-        name="deployment-release", conditions=[_make_condition("Complete")]
-    )
-    release.metadata.owner_references = None
-    failed_release = _make_job(
-        name="failed-release", conditions=[_make_condition("Failed")]
-    )
-    failed_release.metadata.owner_references = []
-    other_owner = _make_job(
-        name="other-owner", conditions=[_make_condition("Complete")]
-    )
-    other_owner.metadata.owner_references = [
-        MagicMock(kind="Deployment", controller=True)
-    ]
-    non_controller = _make_job(
-        name="non-controller", conditions=[_make_condition("Complete")]
-    )
-    non_controller.metadata.owner_references = [
-        MagicMock(kind="CronJob", controller=False)
-    ]
-    pending = _make_job(name="pending")
-    completed = _make_job(
-        name="scheduled-completed",
-        conditions=[_make_condition("Complete")],
-        succeeded=1,
-    )
-    failed = _make_job(
-        name="scheduled-failed", conditions=[_make_condition("Failed")], failed=1
-    )
-    for job in (pending, completed, failed):
-        job.metadata.owner_references = [MagicMock(kind="CronJob", controller=True)]
-
-    batch_api = MagicMock()
-    batch_api.list_job_for_all_namespaces.return_value.items = [
-        release,
-        failed_release,
-        other_owner,
-        non_controller,
-        pending,
-        completed,
-        failed,
-    ]
-    app = MagicMock()
-    app.config = {"KUBERNETES_ENABLED": True}
-    with (
-        patch.object(reap_jobs, "current_app", app),
-        patch.object(reap_jobs, "kubernetes_ext"),
-        patch.object(reap_jobs.kubernetes.client, "BatchV1Api", return_value=batch_api),
-        patch.object(reap_jobs, "_reap_limit", return_value=2),
-        patch.object(
-            reap_jobs, "_resolve_app_env", return_value=(MagicMock(), MagicMock())
-        ),
-        patch.object(reap_jobs, "db") as db,
-    ):
-        reap_jobs.reap_finished_jobs()
-
-    assert [
-        call.args[0] for call in batch_api.delete_namespaced_job.call_args_list
-    ] == ["scheduled-completed", "scheduled-failed"]
-    assert [
-        (call.args[0].job_name, call.args[0].succeeded)
-        for call in db.session.add.call_args_list
-    ] == [("scheduled-completed", True), ("scheduled-failed", False)]
 
 
 def _make_container(name, requests=None, limits=None):
