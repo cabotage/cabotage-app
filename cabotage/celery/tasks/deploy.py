@@ -2308,6 +2308,7 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
                 "release": str(release.version),
                 "deployment": job_id,
                 "resident-job.cabotage.io": "true",
+                "resident-deployment.cabotage.io": "true",
                 **safe_labels,
             },
         ),
