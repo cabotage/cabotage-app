@@ -308,7 +308,7 @@ class TestResizeCronjob:
         assert resources["limits"]["memory"] == expected["memory"]["limits"]
 
     def test_resize_cronjob_noop_on_404(self, mock_app):
-        from kubernetes.client.rest import ApiException
+        from kubernetes.client.exceptions import ApiException
 
         release = _make_release()
         mock_batch_api = MagicMock()

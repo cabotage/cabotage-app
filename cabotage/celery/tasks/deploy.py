@@ -1,15 +1,16 @@
 import logging
 import secrets
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from base64 import b64encode
 
-import kubernetes
+import kubernetes.client
+import kubernetes.watch
 import yaml
 
 from celery import shared_task
-from kubernetes.client.rest import ApiException
+from kubernetes.client.exceptions import ApiException
 from sqlalchemy.orm.attributes import flag_modified
 
 from flask import current_app
@@ -58,6 +59,13 @@ from cabotage.celery.tasks.notify import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from redis import Redis
+
+    from cabotage.server.models.projects import Release
+
+if TYPE_CHECKING:
     from cabotage.server.models.projects import Ingress
 
 log = logging.getLogger(__name__)
@@ -101,7 +109,9 @@ def _dispatch_deploy_failure(deployment, error_detail):
 
 
 @shared_task()
-def cleanup_app_env_k8s(app_env_id, namespace, resource_prefix, label_selector):
+def cleanup_app_env_k8s(
+    app_env_id: str, namespace: str, resource_prefix: str, label_selector: str
+) -> None:
     """Best-effort delete of all k8s resources for one ApplicationEnvironment.
 
     All k8s addressing values are passed explicitly because the originating
@@ -130,6 +140,9 @@ def cleanup_app_env_k8s(app_env_id, namespace, resource_prefix, label_selector):
             namespace, label_selector=label_selector
         )
         for d in deps.items:
+            if d.metadata is None or d.metadata.name is None:
+                log.exception("Skipping unnamed deployment in %s", namespace)
+                continue
             log.info(
                 "k8s cleanup: deleting deployment %s/%s", namespace, d.metadata.name
             )
@@ -144,6 +157,9 @@ def cleanup_app_env_k8s(app_env_id, namespace, resource_prefix, label_selector):
             namespace, label_selector=svc_label_selector
         )
         for s in svcs.items:
+            if s.metadata is None or s.metadata.name is None:
+                log.exception("Skipping unnamed service in %s", namespace)
+                continue
             log.info("k8s cleanup: deleting service %s/%s", namespace, s.metadata.name)
             core_api.delete_namespaced_service(s.metadata.name, namespace)
     except Exception:
@@ -155,6 +171,9 @@ def cleanup_app_env_k8s(app_env_id, namespace, resource_prefix, label_selector):
             namespace, label_selector=label_selector
         )
         for i in ings.items:
+            if i.metadata is None or i.metadata.name is None:
+                log.exception("Skipping unnamed ingress in %s", namespace)
+                continue
             log.info("k8s cleanup: deleting ingress %s/%s", namespace, i.metadata.name)
             networking_api.delete_namespaced_ingress(i.metadata.name, namespace)
     except Exception:
@@ -198,6 +217,9 @@ def _preview_url_for_app_env(app_env):
     return None
 
 
+# FIXME: ParamSpec cannot express the desired signature
+# find out how to express this with the current type system
+# https://github.com/python/typing/issues/1009
 def _retry_on_404(fn, *args, retries=5, delay=2, **kwargs):
     """Retry a kubernetes API call if it returns a 404, with backoff."""
     for attempt in range(retries):
@@ -208,6 +230,10 @@ def _retry_on_404(fn, *args, retries=5, delay=2, **kwargs):
                 time.sleep(delay * (attempt + 1))
             else:
                 raise
+
+    # statically reachable, but unreachable at runtime
+    # type checkers don't know that an `ApiException` is raised when retries are exhausted
+    raise Exception("unreachable")
 
 
 def _wait_for_tls_certificate(api_client, namespace, cert_name, timeout=120, log=None):
@@ -237,7 +263,7 @@ def _wait_for_tls_certificate(api_client, namespace, cert_name, timeout=120, log
     return False
 
 
-def k8s_namespace(release):
+def k8s_namespace(release: Release) -> str:
     return release.application_environment.environment.k8s_namespace
 
 
@@ -326,12 +352,18 @@ def create_namespace(core_api_instance, release):
         )
 
 
-def ensure_namespace(core_api_instance, namespace_name):
+def ensure_namespace(
+    core_api_instance: kubernetes.client.CoreV1Api, namespace_name: str
+) -> kubernetes.client.V1Namespace:
     """Create the namespace if it doesn't exist, ensure resident label is set."""
     try:
         namespace = core_api_instance.read_namespace(namespace_name)
         # Ensure the resident-namespace label is present on existing namespaces
-        labels = namespace.metadata.labels or {}
+        labels: dict[str, str] = (
+            {}
+            if namespace.metadata is None or namespace.metadata.labels is None
+            else namespace.metadata.labels
+        )
         if labels.get("resident-namespace.cabotage.io") != "true":
             namespace = core_api_instance.patch_namespace(
                 namespace_name,
@@ -359,7 +391,7 @@ def ensure_namespace(core_api_instance, namespace_name):
     return namespace
 
 
-def fetch_namespace(core_api_instance, release):
+def fetch_namespace(core_api_instance: kubernetes.client.CoreV1Api, release: Release):
     return ensure_namespace(core_api_instance, k8s_namespace(release))
 
 
@@ -791,7 +823,9 @@ def create_service_account(core_api_instance, release):
         )
 
 
-def fetch_service_account(core_api_instance, release):
+def fetch_service_account(
+    core_api_instance: kubernetes.client.CoreV1Api, release: Release
+) -> kubernetes.client.V1ServiceAccount:
     namespace = k8s_namespace(release)
     service_account_name = k8s_resource_prefix(release)
     try:
@@ -1533,7 +1567,9 @@ def create_image_pull_secret(core_api_instance, release):
         )
 
 
-def fetch_image_pull_secrets(core_api_instance, release):
+def fetch_image_pull_secrets(
+    core_api_instance: kubernetes.client.CoreV1Api, release: Release
+) -> kubernetes.client.V1Secret:
     namespace = k8s_namespace(release)
     secret_name = k8s_resource_prefix(release)
     try:
@@ -2549,16 +2585,19 @@ def delete_job(batch_api_instance, namespace, job_object):
 
 
 def run_job(
-    core_api_instance,
-    batch_api_instance,
-    namespace,
-    job_object,
-    redis_client=None,
-    log_key=None,
-    heartbeat_type=None,
-    heartbeat_id=None,
-    heartbeat_ttl=None,
+    core_api_instance: kubernetes.client.CoreV1Api,
+    batch_api_instance: kubernetes.client.BatchV1Api,
+    namespace: str,
+    job_object: kubernetes.client.V1Job,
+    redis_client: Redis[bytes] | None = None,
+    log_key: str | None = None,
+    # FIXME: Seems like a Literal
+    heartbeat_type: str | None = None,
+    heartbeat_id: str | None = None,
+    heartbeat_ttl: int | None = None,
 ):
+    if job_object.metadata is None:
+        raise DeployError("Cannot deploy job without metdata")
     try:
         batch_api_instance.create_namespaced_job(namespace, job_object)
     except ApiException as exc:
@@ -2582,11 +2621,17 @@ def run_job(
 
     try:
         while True:
-            job_status = _retry_on_404(
-                batch_api_instance.read_namespaced_job_status,
-                job_object.metadata.name,
-                namespace,
+            # FIXME: remove the cast once `_retry_on_404` is properly typed
+            job_status = cast(
+                "kubernetes.client.V1Job",
+                _retry_on_404(
+                    batch_api_instance.read_namespaced_job_status,
+                    job_object.metadata.name,
+                    namespace,
+                ),
             )
+            if job_status.status is None:
+                raise DeployError("Cannot deploy job without a status")
             if job_status.status.failed and job_status.status.failed > 0:
                 job_logs = fetch_job_logs(core_api_instance, namespace, job_status)
                 delete_job(batch_api_instance, namespace, job_object)
@@ -2663,9 +2708,9 @@ def _run_job_streaming(
             )
             if container:
                 kwargs["container"] = container
-            for line in w.stream(
-                core_api_instance.read_namespaced_pod_log,
-                **kwargs,
+            for line in cast(
+                "Iterator[str]",
+                w.stream(core_api_instance.read_namespaced_pod_log, **kwargs),
             ):
                 if isinstance(line, bytes):
                     line = line.decode("utf-8", errors="replace")
@@ -2712,7 +2757,7 @@ def _run_job_streaming(
             pass
 
 
-def deploy_release(deployment):
+def deploy_release(deployment: Deployment):
     job_id = secrets.token_hex(4)
     deployment.job_id = job_id
     db.session.add(deployment)
@@ -2906,6 +2951,18 @@ def deploy_release(deployment):
             core_api_instance, deployment.release_object
         )
         log("Patching ServiceAccount with ImagePullSecrets")
+        if service_account.metadata is None or service_account.metadata.name is None:
+            raise DeployError("Release failed due to unnamed service_account")
+
+        if namespace.metadata is None or namespace.metadata.name is None:
+            raise DeployError("Release failed due to unnamed namespace")
+
+        if (
+            image_pull_secrets.metadata is None
+            or image_pull_secrets.metadata.name is None
+        ):
+            raise DeployError("Release failed due to unnamed image_pull_secrets")
+
         service_account = core_api_instance.patch_namespaced_service_account(
             service_account.metadata.name,
             namespace.metadata.name,
@@ -2917,6 +2974,10 @@ def deploy_release(deployment):
                 ],
             ),
         )
+        # check again for the patched `service_account`
+        if service_account.metadata is None or service_account.metadata.name is None:
+            raise DeployError("Release failed due to unnamed service_account")
+
         for release_command in deployment.release_object.release_commands:
             log(f"Running release command {release_command}")
             job_object = render_job(

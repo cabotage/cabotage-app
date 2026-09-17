@@ -6,14 +6,15 @@ import re
 import secrets
 import shlex
 import subprocess  # nosec
+from typing import TYPE_CHECKING, cast
 
 from celery import shared_task
 from base64 import b64encode, b64decode
 
-import kubernetes
+import kubernetes.client
 import toml
 
-from kubernetes.client.rest import ApiException
+from kubernetes.client.exceptions import ApiException
 
 from tempfile import (
     TemporaryDirectory,
@@ -72,6 +73,9 @@ from cabotage.utils.github import (
     post_deployment_status_update,
 )
 from cabotage.utils import procfile
+
+if TYPE_CHECKING:
+    from cabotage.server.models.projects import ApplicationEnvironment
 
 log = logging.getLogger(__name__)
 
@@ -266,10 +270,12 @@ def _dispatch_release_failure(release, error_detail):
         log.warning("Failed to dispatch release failure notification", exc_info=True)
 
 
-def _build_namespace(app_env):
+def _build_namespace(app_env: ApplicationEnvironment) -> str:
     """Return the namespace where build jobs run."""
-    return current_app.config.get(
-        "KUBERNETES_BUILD_NAMESPACE", "cabotage-tenant-builds"
+    # FIXME: Remove once "typed config" is implemented
+    return cast(
+        str,
+        current_app.config.get("KUBERNETES_BUILD_NAMESPACE", "cabotage-tenant-builds"),
     )
 
 
@@ -958,7 +964,7 @@ def build_cache_pvc_name(app_env):
     return name
 
 
-def build_cache_pvc_labels(app_env):
+def build_cache_pvc_labels(app_env: ApplicationEnvironment) -> dict[str, str]:
     """Build labels for a build-cache PVC."""
     labels = _safe_labels_from_application(app_env.application)
     if app_env.environment.uses_environment_namespace:
@@ -1114,6 +1120,8 @@ def build_image_buildkit(image: Image):
                 },
             )
             safe_labels = _safe_labels_from_application(image.application)
+            if image.build_job_id is None:
+                raise Exception("Failed due to image missing build_job_id")
             job_object = kubernetes.client.V1Job(
                 metadata=kubernetes.client.V1ObjectMeta(
                     name=f"imagebuild-{image.build_job_id}",

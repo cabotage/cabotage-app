@@ -1,7 +1,7 @@
 import datetime
 import logging
 
-import kubernetes
+import kubernetes.client
 
 from celery import shared_task
 from flask import current_app
@@ -19,6 +19,11 @@ from cabotage.utils.build_log_stream import (
     stream_key,
 )
 from cabotage.utils.github import cabotage_url, post_deployment_status_update
+from cabotage._types import (
+    assume_not_none,
+    K8S_OBJECT_HAS_STATUS,
+    K8S_POD_HAS_START_TIME,
+)
 
 log = logging.getLogger(__name__)
 
@@ -222,7 +227,7 @@ def reap_stale_builds():
 
 
 @shared_task()
-def reap_pods():
+def reap_pods() -> None:
     if not current_app.config["KUBERNETES_ENABLED"]:
         return
     api_client = kubernetes_ext.kubernetes_client
@@ -232,10 +237,36 @@ def reap_pods():
     )
     if not pods.items:
         return
-    candidate = sorted(pods.items, key=lambda pod: pod.status.start_time)[0]
+    candidate = sorted(
+        pods.items,
+        # FIXME: remove ignores once resolved
+        # https://github.com/facebook/pyrefly/issues/4368
+        key=lambda pod: assume_not_none(  # pyrefly: ignore[implicit-any-lambda]
+            assume_not_none(pod.status, because=K8S_OBJECT_HAS_STATUS).start_time,  # pyrefly: ignore[unknown-argument-type]
+            because=K8S_POD_HAS_START_TIME,
+        ),
+    )[0]
     lookback = datetime.datetime.now().replace(
         tzinfo=datetime.timezone.utc
     ) - datetime.timedelta(days=7)
+
+    # https://github.com/kubernetes/community/blob/a27eb0e0dbf559dd5c7be668d18709b5b6110631/contributors/devel/sig-architecture/api-conventions.md?plain=1#L231-L232
+    # > all objects MUST have metadata as per api convention
+    # https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-lifetime
+    # > pods have both a specification and status.
+    # ideally, none of these branches should be executed in runtime
+    # they are here for type narrowing reasons
+
+    if candidate.metadata is None or candidate.metadata.name is None:
+        log.warning("Skipping unnamed pod")
+        return
+    if candidate.metadata.namespace is None:
+        log.warning("Skipping pod with no namespace")
+        return
+    if candidate.status is None or candidate.status.start_time is None:
+        log.warning("Skipping statusless pod in %s", candidate.metadata.namespace)
+        return
+
     if candidate.status.start_time < lookback:
         core_api_instance.delete_namespaced_pod(
             candidate.metadata.name, candidate.metadata.namespace

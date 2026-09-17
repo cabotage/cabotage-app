@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from flask_security import hash_password
-from kubernetes.client.rest import ApiException
+from kubernetes.client.exceptions import ApiException
 
 from cabotage.server import db
 from cabotage.server.models.auth import User
@@ -1250,7 +1250,7 @@ class TestCeleryTasks:
     def _mock_k8s_apis(self):
         """Set up mock K8s APIs that return 404 for all GETs (fresh creates)."""
         import base64
-        from kubernetes.client.rest import ApiException
+        from kubernetes.client.exceptions import ApiException
 
         mock_custom_api = MagicMock()
         mock_core_api = MagicMock()

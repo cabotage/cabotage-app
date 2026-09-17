@@ -209,7 +209,7 @@ def _mock_k8s():
     core = MagicMock()
     batch = MagicMock()
     # read PVC raises 404 so fetch_image_build_cache_volume_claim creates it
-    from kubernetes.client.rest import ApiException
+    from kubernetes.client.exceptions import ApiException
 
     core.read_namespaced_persistent_volume_claim.side_effect = ApiException(status=404)
     pvc = MagicMock()
