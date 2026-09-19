@@ -1,0 +1,72 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, page_header, stat_card %}
+{% from "admin_ui/_shared.html" import admin_tab_nav %}
+
+{% block title %}Admin - Cabotage{% endblock %}
+
+{% block tab_bar %}
+  {{ admin_tab_nav('dashboard') }}
+{% endblock tab_bar %}
+
+{% block content %}
+  {% call page_header('Admin', 'Platform administration') %}
+  {% endcall %}
+
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+    <a href="{{ url_for('admin.users') }}" class="stat-card-link" title="All users">
+      {{ stat_card(user_count, 'Users', 'users', 'secondary') }}
+    </a>
+    <a href="{{ url_for('admin.users', filter='admins') }}" class="stat-card-link" title="Users with super-admin access">
+      {{ stat_card(admin_count, 'Super Admins', 'shield', 'primary') }}
+    </a>
+    <a href="{{ url_for('admin.organizations') }}" class="stat-card-link" title="All organizations">
+      {{ stat_card(org_active, 'Organizations', 'building', 'accent') }}
+    </a>
+    <a href="{{ url_for('admin.projects') }}" class="stat-card-link" title="All projects">
+      {{ stat_card(project_active, 'Projects', 'folder', 'accent') }}
+    </a>
+  </div>
+
+  {% if org_deleted or project_deleted %}
+    <p class="text-xs text-base-content/40 mb-6">
+      Soft-deleted: {{ org_deleted }} organization{{ 's' if org_deleted != 1 }},
+      {{ project_deleted }} project{{ 's' if project_deleted != 1 }} —
+      restorable from the
+      <a href="{{ url_for('admin.organizations') }}" class="link">Organizations</a>
+      and <a href="{{ url_for('admin.projects') }}" class="link">Projects</a> tabs.
+    </p>
+  {% endif %}
+
+  <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Tools</h2>
+  <div class="border border-base-300 rounded-lg divide-y divide-base-300">
+    {% if pending_requests is not none %}
+      <a href="{{ url_for('user.organization_requests') }}"
+         class="flex items-center gap-3 px-4 py-3 hover:bg-base-200/50 transition-colors">
+        <span class="text-base-content/40">{{ icon('building', 'w-4 h-4') }}</span>
+        <span class="text-sm font-medium">Organization Requests</span>
+        {% if pending_requests %}
+          <span class="badge badge-warning badge-sm">{{ pending_requests }} pending</span>
+        {% endif %}
+        <span class="ml-auto text-base-content/30">{{ icon('chevron-right', 'w-4 h-4') }}</span>
+      </a>
+    {% endif %}
+    <a href="{{ url_for('user.infra_observe') }}"
+       class="flex items-center gap-3 px-4 py-3 hover:bg-base-200/50 transition-colors">
+      <span class="text-base-content/40">{{ icon('activity', 'w-4 h-4') }}</span>
+      <span class="text-sm font-medium">Infrastructure</span>
+      <span class="text-xs text-base-content/40">cluster metrics and health</span>
+      <span class="ml-auto text-base-content/30">{{ icon('chevron-right', 'w-4 h-4') }}</span>
+    </a>
+    <a href="{{ url_for('dbadmin.index') }}"
+       class="flex items-center gap-3 px-4 py-3 hover:bg-base-200/50 transition-colors">
+      <span class="text-base-content/40">{{ icon('database', 'w-4 h-4') }}</span>
+      <span class="text-sm font-medium">Database</span>
+      <span class="text-xs text-base-content/40">read-only fallback for all models</span>
+      <span class="ml-auto text-base-content/30">{{ icon('chevron-right', 'w-4 h-4') }}</span>
+    </a>
+  </div>
+
+  <p class="text-xs text-base-content/40 mt-2">
+    {{ application_count }} active application{{ 's' if application_count != 1 }} across the platform.
+  </p>
+{% endblock %}

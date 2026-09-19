@@ -285,7 +285,7 @@
     ) }}
   {% endif %}
 
-  {% if app_create_form is defined %}
+  {% if app_create_form %}
     {{ create_modal(modal_id='create-app-modal',
       title='Create Application',
       subtitle='In ' ~ project.organization.slug ~ '/' ~ project.slug,

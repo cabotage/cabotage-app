@@ -1,0 +1,81 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, page_header, empty_state, status_badge %}
+{% from "admin_ui/_shared.html" import admin_tab_nav %}
+
+{% block title %}Users - Admin - Cabotage{% endblock %}
+
+{% block tab_bar %}
+  {{ admin_tab_nav('users') }}
+{% endblock tab_bar %}
+
+{% block content %}
+  {% call page_header('Users', '%d %s'|format(pagination.total, 'super admins' if only_admins else 'total')) %}
+    {% if only_admins %}
+      <a href="{{ url_for('admin.users', q=query or none) }}"
+         class="badge badge-primary gap-1" title="Clear filter">
+        super admins {{ icon('x', 'w-2.5 h-2.5') }}
+      </a>
+    {% endif %}
+    <form method="get" action="{{ url_for('admin.users') }}" class="flex items-center gap-2">
+      {% if only_admins %}<input type="hidden" name="filter" value="admins">{% endif %}
+      <input type="search" name="q" value="{{ query }}"
+             placeholder="username or email"
+             class="input input-bordered input-sm w-56"
+             aria-label="Search users">
+      <button type="submit" class="btn btn-ghost btn-sm gap-1.5">{{ icon('search', 'w-3.5 h-3.5') }} Search</button>
+    </form>
+  {% endcall %}
+
+  {% if pagination.items %}
+    <div class="overflow-x-auto border border-base-300 rounded-lg">
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Status</th>
+            <th>Access</th>
+            <th class="text-right">Registered</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for user in pagination.items %}
+          <tr>
+            <td>
+              <a href="{{ url_for('admin.user_detail', user_id=user.id) }}" class="link link-hover font-medium">{{ user.username | display_username }}</a>
+              <div class="text-xs text-base-content/40">{{ user.email }}</div>
+            </td>
+            <td>{{ status_badge('Active' if user.active else 'Inactive') }}</td>
+            <td>
+              {% if user.admin %}
+                <span class="badge badge-primary badge-sm gap-1">{{ icon('shield', 'w-3 h-3') }} admin</span>
+              {% else %}
+                <span class="text-xs text-base-content/40">member</span>
+              {% endif %}
+            </td>
+            <td class="text-right text-xs text-base-content/60 tabular-nums" title="{{ user.registered_at }}">{{ user.registered_at | timeago }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if pagination.pages > 1 %}
+      <div class="flex items-center justify-between mt-3">
+        <span class="text-xs text-base-content/40 tabular-nums">Page {{ pagination.page }} of {{ pagination.pages }}</span>
+        <div class="flex gap-2">
+          {% set _filter = 'admins' if only_admins else none %}
+          {% if pagination.has_prev %}
+            <a href="{{ url_for('admin.users', page=pagination.prev_num, q=query or none, filter=_filter) }}"
+               class="btn btn-ghost btn-xs gap-1">{{ icon('chevron-left', 'w-3 h-3') }} Newer</a>
+          {% endif %}
+          {% if pagination.has_next %}
+            <a href="{{ url_for('admin.users', page=pagination.next_num, q=query or none, filter=_filter) }}"
+               class="btn btn-ghost btn-xs gap-1">Older {{ icon('chevron-right', 'w-3 h-3') }}</a>
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
+  {% else %}
+    {{ empty_state('No users match', 'Try a different username or email.', icon_name='users') }}
+  {% endif %}
+{% endblock %}
