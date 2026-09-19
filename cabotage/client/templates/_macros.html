@@ -256,7 +256,7 @@
           <span class="tab-label">Settings {{ icon('chevron-down', 'w-3 h-3 opacity-40') }}</span>
         </div>
         <ul tabindex="0" class="menu menu-md dropdown-content bg-base-100 rounded-box z-50 mt-1 w-52 p-2 shadow-lg border border-base-300">
-          <li><a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+          <li><a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
                  class="{% if active == 'settings' %}active{% endif %}">{{ icon('box', 'w-3.5 h-3.5') }} Application</a></li>
           <li><a href="{{ url_for('user.project_application_environment_settings', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug, app_slug=app_slug) }}"
                  class="{% if active == 'env_settings' %}active{% endif %}">{{ icon('layers', 'w-3.5 h-3.5') }} Environment</a></li>
@@ -737,7 +737,8 @@
   </script>
 {% endmacro %}
 
-{% macro danger_zone_delete(modal_id, title, confirm_slug, form, action_url, description='', impact_items=[]) %}
+{# Collapsible Danger Zone shell; caller() supplies the actions. #}
+{% macro danger_zone(description='') %}
   <div class="collapse collapse-arrow bg-error/5 border border-error/20 rounded-lg mt-6">
     <input type="checkbox" />
     <div class="collapse-title text-sm font-medium text-error">
@@ -745,13 +746,19 @@
     </div>
     <div class="collapse-content">
       <p class="text-sm text-base-content/60 mb-3">{{ description or 'This action cannot be undone.' }}</p>
-      <button type="button" class="btn btn-error btn-sm gap-1.5"
-              onclick="document.getElementById('{{ modal_id }}').showModal()">
-        {{ icon('trash-2', 'w-3.5 h-3.5') }}
-        {{ title }}
-      </button>
+      {{ caller() }}
     </div>
   </div>
+{% endmacro %}
+
+{% macro danger_zone_delete(modal_id, title, confirm_slug, form, action_url, description='', impact_items=[]) %}
+  {% call danger_zone(description) %}
+    <button type="button" class="btn btn-error btn-sm gap-1.5"
+            onclick="document.getElementById('{{ modal_id }}').showModal()">
+      {{ icon('trash-2', 'w-3.5 h-3.5') }}
+      {{ title }}
+    </button>
+  {% endcall %}
 
   <dialog id="{{ modal_id }}" class="modal">
     <div class="modal-box">

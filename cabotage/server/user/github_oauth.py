@@ -396,6 +396,7 @@ def _complete_verified_installation_connection(
                 org_slug=organization.slug,
                 project_slug=application.project.slug,
                 app_slug=application.slug,
+                env_slug=payload.get("env_slug"),
             )
         )
 

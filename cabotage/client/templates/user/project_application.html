@@ -28,6 +28,7 @@
 {% set org_slug = application.project.organization.slug %}
 {% set project_slug = application.project.slug %}
 {% set app_slug = application.slug %}
+{% set env_slug = environment.slug if environment else none %}
 
 {% block title %}
   {{ app_slug }} - Cabotage
@@ -173,14 +174,14 @@
             {% if not application.github_repository %}
               <p>{{ icon('alert-circle', 'w-3.5 h-3.5 text-warning') }} No repository connected</p>
               <p>Connect a GitHub repository to enable deployments.</p>
-              <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}">{{ icon('settings', 'w-3 h-3') }} Go to Settings</a>
+              <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}">{{ icon('settings', 'w-3 h-3') }} Go to Settings</a>
             {% elif not app_env %}
               <p>{{ icon('alert-circle', 'w-3.5 h-3.5 text-warning') }} No environment</p>
               <p>Add this application to an environment first.</p>
             {% else %}
               <p>{{ icon('alert-circle', 'w-3.5 h-3.5 text-warning') }} No deploy branch configured</p>
               <p>Set an auto-deploy branch in settings to enable one-click deploys.</p>
-              <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}">{{ icon('settings', 'w-3 h-3') }} Go to Settings</a>
+              <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}">{{ icon('settings', 'w-3 h-3') }} Go to Settings</a>
             {% endif %}
           </div>
         </div>
@@ -295,7 +296,7 @@
                   <div class="deploy-step-content">
                     <p class="text-sm font-medium text-base-content">Configure your repository</p>
                     <p class="text-xs text-base-content/40">Connect a GitHub repository to build from</p>
-                    <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+                    <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
                        class="btn btn-primary btn-sm gap-1.5 mt-2">{{ icon('settings', 'w-3.5 h-3.5') }} Configure Repo</a>
                   </div>
                 </div>
@@ -1188,7 +1189,7 @@
         {% endif %}
       </div>
       {% if not application.github_repository %}
-        <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+        <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
            class="pipeline-stage-body group">
           <span class="text-sm text-base-content/50">No repo configured</span>
         </a>
@@ -1207,7 +1208,7 @@
       {% endif %}
       <div class="pipeline-stage-action flex gap-1">
         {% if not application.github_repository %}
-          <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+          <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
              class="btn btn-ghost btn-xs flex-1 gap-1">{{ icon('settings', 'w-3 h-3') }} Configure repo</a>
         {% else %}
           <a href="{{ url_for('user.application_images', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}"
