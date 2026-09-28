@@ -1,7 +1,8 @@
 import logging
 import secrets
 import time
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, NotRequired, TypedDict, cast
 
 from base64 import b64encode
 
@@ -210,16 +211,46 @@ def _retry_on_404(fn, *args, retries=5, delay=2, **kwargs):
                 raise
 
 
-def _certificate_issuance_failed(cert):
+class _CertificateCondition(TypedDict):
+    type: str
+    status: str
+    reason: NotRequired[str]
+    message: NotRequired[str]
+    lastTransitionTime: NotRequired[str]
+    observedGeneration: NotRequired[int]
+
+
+class _CertificateStatus(TypedDict, total=False):
+    conditions: list[_CertificateCondition]
+    lastFailureTime: str
+
+
+class _CertificateMetadata(TypedDict):
+    name: str
+    namespace: str
+    generation: int
+    resourceVersion: str
+
+
+class _Certificate(TypedDict):
+    """The parts of a cert-manager Certificate we read."""
+
+    metadata: _CertificateMetadata
+    status: NotRequired[_CertificateStatus]
+
+
+def _certificate_issuance_failed(cert: _Certificate) -> bool:
     """True if cert-manager is backing off after a failed issuance."""
-    status = cert.get("status") or {}
+    status = cert.get("status", _CertificateStatus())
     return "lastFailureTime" in status and not any(
-        c.get("type") == "Issuing" and c.get("status") == "True"
+        c["type"] == "Issuing" and c["status"] == "True"
         for c in status.get("conditions", [])
     )
 
 
-def _reissue_certificate(custom_api, cert):
+def _reissue_certificate(
+    custom_api: kubernetes.client.CustomObjectsApi, cert: _Certificate
+) -> None:
     """Skip cert-manager's backoff after a failed issuance, like ``cmctl renew``.
 
     cert-manager waits an hour before retrying a failed issuance, even when the
@@ -228,20 +259,22 @@ def _reissue_certificate(custom_api, cert):
     """
     metadata = cert["metadata"]
     conditions = [
-        c for c in cert["status"].get("conditions", []) if c.get("type") != "Issuing"
+        c
+        for c in cert.get("status", _CertificateStatus()).get("conditions", [])
+        if c["type"] != "Issuing"
     ]
     conditions.append(
-        {
-            "type": "Issuing",
-            "status": "True",
-            "reason": "ManuallyTriggered",
-            "message": "Certificate re-issuance triggered by cabotage",
-            "lastTransitionTime": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "observedGeneration": metadata.get("generation"),
-        }
+        _CertificateCondition(
+            type="Issuing",
+            status="True",
+            reason="ManuallyTriggered",
+            message="Certificate re-issuance triggered by cabotage",
+            lastTransitionTime=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            observedGeneration=metadata["generation"],
+        )
     )
     try:
-        custom_api.patch_namespaced_custom_object_status(
+        _ = custom_api.patch_namespaced_custom_object_status(
             "cert-manager.io",
             "v1",
             metadata["namespace"],
@@ -260,35 +293,44 @@ def _reissue_certificate(custom_api, cert):
         )
 
 
-def _wait_for_tls_certificate(api_client, namespace, cert_name, timeout=120, log=None):
+def _wait_for_tls_certificate(
+    api_client: kubernetes.client.ApiClient,
+    namespace: str,
+    cert_name: str,
+    timeout: int = 120,
+    log: Callable[[str], None] | None = None,
+) -> bool:
     """Poll until a cert-manager Certificate is Ready, or timeout."""
     custom_api = kubernetes.client.CustomObjectsApi(api_client)
     deadline = time.time() + timeout
     retried = False
     while time.time() < deadline:
         try:
-            cert = custom_api.get_namespaced_custom_object(
-                "cert-manager.io",
-                "v1",
-                namespace,
-                "certificates",
-                cert_name,
+            cert = cast(
+                "_Certificate",
+                custom_api.get_namespaced_custom_object(
+                    "cert-manager.io",
+                    "v1",
+                    namespace,
+                    "certificates",
+                    cert_name,
+                ),
             )
-            for cond in (cert.get("status") or {}).get("conditions", []):
-                if cond.get("type") == "Ready" and cond.get("status") == "True":
-                    if log:
+            for cond in cert.get("status", _CertificateStatus()).get("conditions", []):
+                if cond["type"] == "Ready" and cond["status"] == "True":
+                    if log is not None:
                         log(f"Certificate {cert_name} is ready")
                     return True
             if not retried and _certificate_issuance_failed(cert):
                 retried = True
-                if log:
+                if log is not None:
                     log(f"Certificate {cert_name} issuance failed, retrying")
                 _reissue_certificate(custom_api, cert)
         except ApiException as exc:
             if exc.status != 404:
                 raise
         time.sleep(5)
-    if log:
+    if log is not None:
         log(f"Certificate {cert_name} not ready after {timeout}s, proceeding anyway")
     return False
 
