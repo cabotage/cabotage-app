@@ -210,10 +210,61 @@ def _retry_on_404(fn, *args, retries=5, delay=2, **kwargs):
                 raise
 
 
+def _certificate_issuance_failed(cert):
+    """True if cert-manager is backing off after a failed issuance."""
+    status = cert.get("status") or {}
+    return "lastFailureTime" in status and not any(
+        c.get("type") == "Issuing" and c.get("status") == "True"
+        for c in status.get("conditions", [])
+    )
+
+
+def _reissue_certificate(custom_api, cert):
+    """Skip cert-manager's backoff after a failed issuance, like ``cmctl renew``.
+
+    cert-manager waits an hour before retrying a failed issuance, even when the
+    failure was transient (e.g. Let's Encrypt returning 404 "Certificate not
+    found" on order finalize). Setting Issuing=True makes it retry now.
+    """
+    metadata = cert["metadata"]
+    conditions = [
+        c for c in cert["status"].get("conditions", []) if c.get("type") != "Issuing"
+    ]
+    conditions.append(
+        {
+            "type": "Issuing",
+            "status": "True",
+            "reason": "ManuallyTriggered",
+            "message": "Certificate re-issuance triggered by cabotage",
+            "lastTransitionTime": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "observedGeneration": metadata.get("generation"),
+        }
+    )
+    try:
+        custom_api.patch_namespaced_custom_object_status(
+            "cert-manager.io",
+            "v1",
+            metadata["namespace"],
+            "certificates",
+            metadata["name"],
+            {
+                "metadata": {"resourceVersion": metadata["resourceVersion"]},
+                "status": {"conditions": conditions},
+            },
+        )
+    except ApiException as exc:
+        log.warning(
+            "Failed to retry issuance of Certificate %s: %s",
+            metadata["name"],
+            exc.reason,
+        )
+
+
 def _wait_for_tls_certificate(api_client, namespace, cert_name, timeout=120, log=None):
     """Poll until a cert-manager Certificate is Ready, or timeout."""
     custom_api = kubernetes.client.CustomObjectsApi(api_client)
     deadline = time.time() + timeout
+    retried = False
     while time.time() < deadline:
         try:
             cert = custom_api.get_namespaced_custom_object(
@@ -228,6 +279,11 @@ def _wait_for_tls_certificate(api_client, namespace, cert_name, timeout=120, log
                     if log:
                         log(f"Certificate {cert_name} is ready")
                     return True
+            if not retried and _certificate_issuance_failed(cert):
+                retried = True
+                if log:
+                    log(f"Certificate {cert_name} issuance failed, retrying")
+                _reissue_certificate(custom_api, cert)
         except ApiException as exc:
             if exc.status != 404:
                 raise
