@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
-from kubernetes.client.rest import ApiException
+from kubernetes.client.exceptions import ApiException
 
 from cabotage.celery.tasks.deploy import (
     TENANT_NETWORK_POLICIES,

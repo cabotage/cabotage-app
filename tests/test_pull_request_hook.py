@@ -884,7 +884,7 @@ class TestBranchDeployNamespaces:
         mock_core_api_cls.return_value = mock_core
         mock_networking_api_cls.return_value = mock_networking
 
-        from kubernetes.client.rest import ApiException
+        from kubernetes.client.exceptions import ApiException
         from cabotage.celery.tasks.branch_deploy import _precreate_ingresses
 
         mock_core.read_namespace.side_effect = ApiException(status=404)

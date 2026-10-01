@@ -4,6 +4,7 @@ import json
 import re
 import time
 import uuid
+from typing import TYPE_CHECKING, cast
 
 from flask import (
     Blueprint,
@@ -25,8 +26,10 @@ from flask_security import (
 from flask_wtf import FlaskForm
 from itsdangerous import BadData
 
-import kubernetes
-import kubernetes.stream.ws_client
+import kubernetes.client
+import kubernetes.stream
+from kubernetes.client.exceptions import ApiException
+from kubernetes.stream.ws_client import RESIZE_CHANNEL
 
 from dxf import DXF
 import requests as requests_lib
@@ -168,6 +171,11 @@ from cabotage.utils.build_log_stream import (
 
 from cabotage.utils import oidc
 from cabotage._types import assume_not_none
+from cabotage.server.websocket import close_on_abort
+
+if TYPE_CHECKING:
+    from kubernetes.stream.ws_client import WSClient
+    from simple_websocket import Server
 
 _REGEX_META = re.compile(r"[.*+?{}()|\\^$\[\]]")
 
@@ -197,7 +205,9 @@ def _require_organization_requests_enabled():
         abort(404)
 
 
-def _config_k8s_namespace(organization, app_env):
+def _config_k8s_namespace(
+    organization: Organization, app_env: ApplicationEnvironment
+) -> str:
     if app_env.environment.uses_environment_namespace:
         return safe_k8s_name(
             organization.k8s_identifier, app_env.environment.k8s_identifier
@@ -3506,7 +3516,13 @@ def _shell_exec_command() -> list[str]:
     ]
 
 
-def _shell_socket(ws, org_slug, project_slug, app_slug, env_slug=None):
+def _shell_socket(
+    ws: Server,
+    org_slug: str,
+    project_slug: str,
+    app_slug: str,
+    env_slug: str | None = None,
+) -> None:
     if not current_app.config.get("SHELLZ_ENABLED", False):
         abort(404)
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
@@ -3556,17 +3572,24 @@ def _shell_socket(ws, org_slug, project_slug, app_slug, env_slug=None):
 
     # =============================================================================== #
 
-    resp = kubernetes.stream.stream(
-        core_api_instance.connect_get_namespaced_pod_exec,
-        pod.metadata.name,
-        namespace=pod.metadata.namespace,
-        command=_shell_exec_command(),
-        container=process_name,
-        stderr=True,
-        stdin=True,
-        stdout=True,
-        tty=True,
-        _preload_content=False,
+    if pod.metadata is None or pod.metadata.name is None:
+        current_app.logger.warning("Skipping unnamed pod in %s", namespace)
+        abort(404)
+
+    resp = cast(  # stubs aren't perfect, `_preload_content=False` returns a client not a str
+        "WSClient",
+        kubernetes.stream.stream(
+            core_api_instance.connect_get_namespaced_pod_exec,
+            pod.metadata.name,
+            namespace=pod.metadata.namespace,
+            command=_shell_exec_command(),
+            container=process_name,
+            stderr=True,
+            stdin=True,
+            stdout=True,
+            tty=True,
+            _preload_content=False,
+        ),
     )
 
     last_ping = time.monotonic()
@@ -3583,7 +3606,7 @@ def _shell_socket(ws, org_slug, project_slug, app_slug, env_slug=None):
             if data[0] == "\x00":
                 resp.write_stdin(data[1:])
             elif data[0] == "\x01":
-                resp.write_channel(kubernetes.stream.ws_client.RESIZE_CHANNEL, data[1:])
+                resp.write_channel(RESIZE_CHANNEL, data[1:])
         if data := resp.read_stdout(timeout=0.01):
             ws.send("\x00" + data)
         if data := resp.read_stderr(timeout=0.01):
@@ -3597,10 +3620,11 @@ def _shell_socket(ws, org_slug, project_slug, app_slug, env_slug=None):
     "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/shell/socket",
     bp=user_blueprint,
 )
+@close_on_abort
 @login_required
 def project_application_shell_socket_env(
-    ws, org_slug, project_slug, app_slug, env_slug
-):
+    ws: Server, org_slug: str, project_slug: str, app_slug: str, env_slug: str
+) -> None:
     return _shell_socket(ws, org_slug, project_slug, app_slug, env_slug=env_slug)
 
 
@@ -3608,8 +3632,11 @@ def project_application_shell_socket_env(
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/shell/socket",
     bp=user_blueprint,
 )
+@close_on_abort
 @login_required
-def project_application_shell_socket(ws, org_slug, project_slug, app_slug):
+def project_application_shell_socket(
+    ws: Server, org_slug: str, project_slug: str, app_slug: str
+) -> None:
     return _shell_socket(ws, org_slug, project_slug, app_slug)
 
 
@@ -5224,6 +5251,7 @@ def _stream_image_build_logs(ws, image):
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/images/<image_id>/livelogs",
     bp=user_blueprint,
 )
+@close_on_abort
 @login_required
 def image_build_livelogs(ws, org_slug, project_slug, app_slug, image_id):
     org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
@@ -5234,6 +5262,7 @@ def image_build_livelogs(ws, org_slug, project_slug, app_slug, image_id):
 
 
 @sock.route("/image/<image_id>/livelogs", bp=user_blueprint)
+@close_on_abort
 @login_required
 def image_build_livelogs_legacy(ws, image_id):
     image = Image.query.filter_by(id=image_id).first_or_404()
@@ -5452,6 +5481,7 @@ def _stream_release_build_logs(ws, release):
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/releases/<release_id>/livelogs",
     bp=user_blueprint,
 )
+@close_on_abort
 @login_required
 def release_build_livelogs(ws, org_slug, project_slug, app_slug, release_id):
     org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
@@ -5462,6 +5492,7 @@ def release_build_livelogs(ws, org_slug, project_slug, app_slug, release_id):
 
 
 @sock.route("/release/<release_id>/livelogs", bp=user_blueprint)
+@close_on_abort
 @login_required
 def release_build_livelogs_legacy(ws, release_id):
     release = Release.query.filter_by(id=release_id).first_or_404()
@@ -5521,6 +5552,7 @@ def _stream_deployment_logs(ws, deployment):
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/deployments/<deployment_id>/livelogs",
     bp=user_blueprint,
 )
+@close_on_abort
 @login_required
 def deployment_livelogs(ws, org_slug, project_slug, app_slug, deployment_id):
     org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
@@ -5531,6 +5563,7 @@ def deployment_livelogs(ws, org_slug, project_slug, app_slug, deployment_id):
 
 
 @sock.route("/deployment/<deployment_id>/livelogs", bp=user_blueprint)
+@close_on_abort
 @login_required
 def deployment_livelogs_legacy(ws, deployment_id):
     deployment = Deployment.query.filter_by(id=deployment_id).first_or_404()
@@ -6636,7 +6669,9 @@ def _query_mimir_range(query, start, end, step, tenant_id=None):
         return None
 
 
-def _compute_observe_namespace(application, app_env):
+def _compute_observe_namespace(
+    application: Application, app_env: ApplicationEnvironment
+) -> str:
     """Compute the k8s namespace for an application's environment."""
     org_k8s = application.project.organization.k8s_identifier
     if app_env and app_env.environment.uses_environment_namespace:
@@ -6644,7 +6679,7 @@ def _compute_observe_namespace(application, app_env):
     return org_k8s
 
 
-def _compute_observe_prefix(application):
+def _compute_observe_prefix(application: Application):
     """Compute the k8s resource prefix (project-app) for pod matching."""
     return safe_k8s_name(
         application.project.k8s_identifier,
@@ -8171,6 +8206,13 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
             label_selector=label_selector,
         )
         for pod in pod_list.items:
+            if pod.metadata is None or pod.metadata.name is None:
+                current_app.logger.exception("Skipping unnamed pod in %s", namespace)
+                continue
+            if pod.status is None:
+                current_app.logger.exception("Skipping statusless pod in %s", namespace)
+                continue
+
             # Skip terminating pods (deletionTimestamp is set)
             if pod.metadata.deletion_timestamp is not None:
                 continue
@@ -8211,7 +8253,7 @@ def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=No
                 processes[proc]["crashed"] += 1
             else:
                 processes[proc]["pending"] += 1
-    except kubernetes.client.ApiException, Exception:
+    except ApiException, Exception:
         current_app.logger.debug("Failed to list pods for live stats", exc_info=True)
 
     end = int(time.time())

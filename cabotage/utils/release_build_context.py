@@ -1,4 +1,9 @@
-import kubernetes
+from typing import TYPE_CHECKING
+
+import kubernetes.client
+
+if TYPE_CHECKING:
+    from cabotage.server.models.projects import Release
 
 RELEASE_DOCKERFILE_TEMPLATE = """
 FROM {registry}/{image.repository_name}:image-{image.version}
@@ -27,7 +32,9 @@ exec "${@}"
 """
 
 
-def configmap_context_for_release(release, dockerfile):
+def configmap_context_for_release(
+    release: Release, dockerfile: str
+) -> kubernetes.client.V1ConfigMap:
     data = {
         "Dockerfile": dockerfile,
         "entrypoint.sh": ENTRYPOINT,

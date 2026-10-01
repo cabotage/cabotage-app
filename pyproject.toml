@@ -50,6 +50,7 @@ dependencies = [
 dev = [
     "bandit",
     "hupper",
+    "kubernetes-stubs-elephant-fork>=36.0.3.post1",
     "pyrefly>=1.2.0",
     "pytest-cov",
     "pytest",
@@ -63,6 +64,7 @@ dev = [
     "types-toml",
     "types-wtforms>=3.2.1.20260518",
     "typing-extensions",
+    "types-simple-websocket>=1.1.0.20260512",
 ]
 
 [tool.pytest.ini_options]
@@ -89,3 +91,6 @@ exclude-newer = "1 week"
 preset = "all"
 project-includes = ["cabotage"]
 baseline = "baseline.json"
+
+[tool.pyrefly.errors]
+implicit-bool = false

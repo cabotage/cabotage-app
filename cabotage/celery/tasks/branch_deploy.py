@@ -4,7 +4,7 @@ import re
 from copy import deepcopy
 
 from flask import current_app
-from kubernetes.client.rest import ApiException
+from kubernetes.client.exceptions import ApiException
 
 from cabotage.server import (
     db,
@@ -221,13 +221,13 @@ def _create_app_env_for_branch_deploy(
     return app_env
 
 
-def _precreate_ingresses(environment):
+def _precreate_ingresses(environment: Environment) -> None:
     """Create the K8s namespace and Ingress resources for a branch deploy.
 
     Called before image builds start so that cert-manager can begin issuing
     TLS certificates while builds run in parallel.
     """
-    import kubernetes
+    import kubernetes.client
 
     from cabotage.celery.tasks.deploy import (
         ensure_cabotage_ca_configmap,
@@ -247,7 +247,11 @@ def _precreate_ingresses(environment):
     # Ensure namespace exists with resident-namespace label
     try:
         ns = core_api.read_namespace(ns_name)
-        labels = ns.metadata.labels or {}
+        labels: dict[str, str] = (
+            ns.metadata.labels
+            if ns.metadata is not None and ns.metadata.labels is not None
+            else {}
+        )
         if labels.get("resident-namespace.cabotage.io") != "true":
             core_api.patch_namespace(
                 ns_name,
@@ -298,9 +302,9 @@ def _precreate_ingresses(environment):
         )
 
 
-def _teardown_environment(environment):
+def _teardown_environment(environment: Environment) -> None:
     """Delete k8s namespace and all DB records for an ephemeral environment."""
-    import kubernetes
+    import kubernetes.client
 
     from cabotage.celery.tasks.build import (
         _build_namespace,
@@ -335,8 +339,10 @@ def _teardown_environment(environment):
             db.session.flush()
 
             for resource in resources:
-                entry = _RECONCILERS.get(resource.type)
-                if entry is None:
+                if (
+                    resource.type is None
+                    or (entry := _RECONCILERS.get(resource.type)) is None
+                ):
                     continue
                 _, delete_fn = entry
                 try:
@@ -355,6 +361,9 @@ def _teardown_environment(environment):
             try:
                 pvcs = core_api.list_namespaced_persistent_volume_claim(ns_name)
                 for pvc in pvcs.items:
+                    if pvc.metadata is None or pvc.metadata.name is None:
+                        logger.exception("Skipping unnamed PVC in %s", ns_name)
+                        continue
                     try:
                         core_api.delete_namespaced_persistent_volume_claim(
                             pvc.metadata.name,
@@ -388,7 +397,7 @@ def _teardown_environment(environment):
             for app_env in environment.active_application_environments:
                 build_namespace = _build_namespace(app_env)
                 pvc_name = build_cache_pvc_name(app_env)
-                deleted_cache_pvcs = set()
+                deleted_cache_pvcs = set[str]()
                 selector = ",".join(
                     f"{key}={value}"
                     for key, value in sorted(build_cache_pvc_labels(app_env).items())
@@ -399,6 +408,9 @@ def _teardown_environment(environment):
                         label_selector=selector,
                     )
                     for pvc in pvcs.items:
+                        if pvc.metadata is None or pvc.metadata.name is None:
+                            logger.exception("Skipping unnamed PVC in %s", ns_name)
+                            continue
                         try:
                             core_api.delete_namespaced_persistent_volume_claim(
                                 pvc.metadata.name,

@@ -431,7 +431,7 @@ class TestReaperIgnoresBuildJobs:
 
 class TestBuildCachePVC:
     def test_pvc_created_in_tenant_namespace(self, mock_app):
-        from kubernetes.client.rest import ApiException
+        from kubernetes.client.exceptions import ApiException
 
         image = _make_image(org_k8s="myorg", env_k8s="prod")
         mock_core = MagicMock()
@@ -446,7 +446,7 @@ class TestBuildCachePVC:
         assert create_call[0][0] == "cabotage-tenant-builds"
 
     def test_pvc_created_with_safe_labels(self, mock_app):
-        from kubernetes.client.rest import ApiException
+        from kubernetes.client.exceptions import ApiException
 
         image = _make_image(org_k8s="myorg", env_k8s="prod")
         mock_core = MagicMock()
