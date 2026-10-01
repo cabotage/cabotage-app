@@ -31,7 +31,7 @@ jobs:
       - name: ty
         run: uv run ty check cabotage
       - name: pyrefly
-        run: uv run pyrefly check
+        run: uv run pyrefly check --error-stale-baseline
 
   security-check:
     runs-on: ubuntu-24.04-arm
