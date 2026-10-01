@@ -6,10 +6,11 @@ import secrets
 import struct
 from collections.abc import Mapping
 
-import kubernetes
+import kubernetes.client
+from kubernetes.client.api_client import ApiClient
 from celery import shared_task
 from flask import current_app, has_app_context
-from kubernetes.client.rest import ApiException
+from kubernetes.client.exceptions import ApiException
 from sqlalchemy import text
 
 from cabotage.server import (
@@ -108,7 +109,7 @@ def _serialize_k8s_object(obj):
         return [_serialize_k8s_object(item) for item in obj]
     if isinstance(obj, Mapping):
         return {key: _serialize_k8s_object(value) for key, value in obj.items()}
-    return kubernetes.client.ApiClient().sanitize_for_serialization(obj)
+    return ApiClient().sanitize_for_serialization(obj)
 
 
 def _extract_desired_subset(current, desired):
@@ -1302,7 +1303,7 @@ def _reconcile_postgres(resource, core_api, custom_api, apps_api=None, rbac_api=
     name = _resource_k8s_name(resource)
     expected_instances = 2 if resource.ha_enabled else 1
 
-    ensure_namespace(core_api, namespace)
+    _ = ensure_namespace(core_api, namespace)
     _ensure_ca_secret(core_api, namespace)
 
     backup_settings = None
@@ -1415,7 +1416,7 @@ def _reconcile_redis(resource, core_api, custom_api, apps_api=None, rbac_api=Non
     name = _resource_k8s_name(resource)
     labels = _resource_labels(resource)
 
-    ensure_namespace(core_api, namespace)
+    _ = ensure_namespace(core_api, namespace)
 
     cert_body = _render_redis_certificate(resource)
     _ensure_certificate(custom_api, namespace, cert_body)
@@ -1624,7 +1625,7 @@ def reconcile_backing_services():
                     if not _backing_service_type_enabled(resource_type):
                         continue
                     namespace = _resource_namespace(resource)
-                    ensure_namespace(core_api, namespace)
+                    _ = ensure_namespace(core_api, namespace)
                     if (
                         has_app_context()
                         and current_app.config.get("NETWORK_POLICIES_ENABLED")

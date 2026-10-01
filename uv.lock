@@ -3,7 +3,7 @@ revision = 3
 requires-python = ">=3.14"
 
 [options]
-exclude-newer = "2026-08-22T14:31:15.997968011Z"
+exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
 exclude-newer-span = "P1W"
 
 [[package]]
@@ -253,6 +253,7 @@ dependencies = [
 dev = [
     { name = "bandit" },
     { name = "hupper" },
+    { name = "kubernetes-stubs-elephant-fork" },
     { name = "pyrefly" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -263,6 +264,7 @@ dev = [
     { name = "types-pyyaml" },
     { name = "types-redis" },
     { name = "types-requests" },
+    { name = "types-simple-websocket" },
     { name = "types-toml" },
     { name = "types-wtforms" },
     { name = "typing-extensions" },
@@ -317,6 +319,7 @@ requires-dist = [
 dev = [
     { name = "bandit" },
     { name = "hupper" },
+    { name = "kubernetes-stubs-elephant-fork", specifier = ">=36.0.3.post1" },
     { name = "pyrefly", specifier = ">=1.2.0" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -327,6 +330,7 @@ dev = [
     { name = "types-pyyaml" },
     { name = "types-redis" },
     { name = "types-requests" },
+    { name = "types-simple-websocket", specifier = ">=1.1.0.20260512" },
     { name = "types-toml" },
     { name = "types-wtforms", specifier = ">=3.2.1.20260518" },
     { name = "typing-extensions" },
@@ -1005,6 +1009,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/2c/8f/85bf51ad4150f64e8c665daf0d9dfe9787ae92005efb9a4d1cba592bd79d/kubernetes-35.0.0.tar.gz", hash = "sha256:3d00d344944239821458b9efd484d6df9f011da367ecb155dadf9513f05f09ee", size = 1094642, upload-time = "2026-01-16T01:05:27.76Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0c/70/05b685ea2dffcb2adbf3cdcea5d8865b7bc66f67249084cf845012a0ff13/kubernetes-35.0.0-py2.py3-none-any.whl", hash = "sha256:39e2b33b46e5834ef6c3985ebfe2047ab39135d41de51ce7641a7ca5b372a13d", size = 2017602, upload-time = "2026-01-16T01:05:25.991Z" },
+]
+
+[[package]]
+name = "kubernetes-stubs-elephant-fork"
+version = "36.0.3.post1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/66/43/59c28f1f8dbf8887dbc7752db86f8ff095576bcf5efae55e62c7bb2f6e0f/kubernetes_stubs_elephant_fork-36.0.3.post1.tar.gz", hash = "sha256:f3d7d372ac843d106eb99f219d8c04d1cdb18fffff275eb9751e552bf76e2a48", size = 162487, upload-time = "2026-07-20T09:56:28.603Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0f/c0/a001a4e07d82dc1d9559dde6e4c0bf541d66d494190490b554f436ef3dda/kubernetes_stubs_elephant_fork-36.0.3.post1-py2.py3-none-any.whl", hash = "sha256:92e1745957faa9c1d01b2d399618410a8d029c85437060b70300efd48d3b1846", size = 488809, upload-time = "2026-07-20T09:56:27.34Z" },
 ]
 
 [[package]]
@@ -1735,6 +1748,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/c3/12/3464b410c50420dd4674fa5fe9d3880711c1dbe1a06f5fe4960ee9067b9e/types_setuptools-82.0.0.20260408.tar.gz", hash = "sha256:036c68caf7e672a699f5ebbf914708d40644c14e05298bc49f7272be91cf43d3", size = 44861, upload-time = "2026-04-08T04:29:33.292Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3d/e1/46a4fc3ef03aabf5d18bac9df5cf37c6b02c3bddf3e05c3533f4b4588331/types_setuptools-82.0.0.20260408-py3-none-any.whl", hash = "sha256:ece0a215cdfa6463a65fd6f68bd940f39e455729300ddfe61cab1147ed1d2462", size = 68428, upload-time = "2026-04-08T04:29:32.175Z" },
+]
+
+[[package]]
+name = "types-simple-websocket"
+version = "1.1.0.20260512"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "wsproto" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e9/65/b9b171106f1839a02de7ea026724a3a363398b60b0e75f6ef91e2a4e9928/types_simple_websocket-1.1.0.20260512.tar.gz", hash = "sha256:5e035bab602e2824338b5cf9fcd1864d2f5a84efad54a7002e1af6a6aa1e31f3", size = 9581, upload-time = "2026-05-12T05:29:35.479Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bc/25/d31e15021e59159aab302dd47e70f04e25a04c0a78e983451f3ebee72092/types_simple_websocket-1.1.0.20260512-py3-none-any.whl", hash = "sha256:c69cc53652ab90409546ab199544c6d95585756fa5fd6d8d98e51324c808d12b", size = 10991, upload-time = "2026-05-12T05:29:34.355Z" },
 ]
 
 [[package]]
