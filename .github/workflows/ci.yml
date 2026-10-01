@@ -21,15 +21,25 @@ jobs:
       - run: uv run ruff format --check --diff .
       - run: uv run ruff check .
 
-  type-check:
+  ty-type-check:
     runs-on: ubuntu-24.04-arm
-    name: Type-Check
+    name: Ty-Type-Check
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.0.1
       - run: uv sync --frozen
       - name: ty
         run: uv run ty check cabotage
+
+  pyrefly-type-check:
+    runs-on: ubuntu-24.04-arm
+    name: Pyrefly-Type-Check
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.0.1
+      - run: uv sync --frozen
+      - name: Check for stale baseline
+        run: uv run pyrefly check --error-stale-baseline
       - name: pyrefly
         run: uv run pyrefly check
 
