@@ -6,6 +6,7 @@ sqlalchemy-continuum and computes field-level "what changed" diffs.
 
 import json as _json
 from collections import defaultdict
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy_continuum import version_class
 
@@ -19,6 +20,21 @@ from cabotage.server.models.projects import (
     Project,
     Release,
 )
+
+if TYPE_CHECKING:
+    from cabotage.server import Model
+    from cabotage.server.models.audit import AuditLog
+    from cabotage._types.audit_helpers import (
+        Diff,
+        ConfigurationVersion,
+        GenericModelVersion,
+        IngressHostVersion,
+        IngressPathVersion,
+        ScaleChanges,
+        VersionKey,
+        VersionIndex,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Field maps: column name → human-readable label
@@ -75,7 +91,7 @@ _INGRESS_DIFF_FIELDS = {
 # ---------------------------------------------------------------------------
 
 
-def format_value(val):
+def format_value(val: object | None) -> str | None:
     """Format a version field value for display."""
     if val is None:
         return None
@@ -89,7 +105,11 @@ def format_value(val):
     return s
 
 
-def diff_versions(prev, cur, field_map):
+def diff_versions[T](
+    prev: T | None,
+    cur: T | None,
+    field_map: dict[str, str],
+) -> list[Diff]:
     """Compare two version records and return a list of change dicts.
 
     If prev is None (no previous version found), returns empty — we can't
@@ -102,7 +122,7 @@ def diff_versions(prev, cur, field_map):
     """
     if not prev or not cur:
         return []
-    changes = []
+    changes: list[Diff] = []
     for col, label in field_map.items():
         old_val = getattr(prev, col, None)
         new_val = getattr(cur, col, None)
@@ -125,7 +145,9 @@ def diff_versions(prev, cur, field_map):
 # ---------------------------------------------------------------------------
 
 
-def _batch_fetch_version_diffs(entries, model_cls, field_map):
+def _batch_fetch_version_diffs(
+    entries: list[AuditLog], model_cls: type[Model], field_map: dict[str, str]
+) -> dict[int, list[Diff]]:
     """Batch-fetch before/after versions for a list of audit entries.
 
     Returns {entry_id: [change_dicts]}
@@ -133,7 +155,7 @@ def _batch_fetch_version_diffs(entries, model_cls, field_map):
     if not entries:
         return {}
 
-    ver_cls = version_class(model_cls)
+    ver_cls = cast("type[GenericModelVersion]", version_class(model_cls))
     tx_ids = [e.object_tx_id for e in entries if e.object_tx_id]
     obj_ids = [e.object_id for e in entries if e.object_tx_id]
 
@@ -149,7 +171,9 @@ def _batch_fetch_version_diffs(entries, model_cls, field_map):
         )
         .all()
     )
-    cur_by_key = {(v.id, v.transaction_id): v for v in cur_versions}
+    cur_by_key: VersionIndex[GenericModelVersion] = {
+        (v.id, v.transaction_id): v for v in cur_versions
+    }
 
     # Fetch previous versions (the "before" state)
     prev_versions = (
@@ -160,9 +184,11 @@ def _batch_fetch_version_diffs(entries, model_cls, field_map):
         )
         .all()
     )
-    prev_by_key = {(v.id, v.end_transaction_id): v for v in prev_versions}
+    prev_by_key: VersionIndex[GenericModelVersion] = {
+        (v.id, v.end_transaction_id): v for v in prev_versions
+    }
 
-    result = {}
+    result: dict[int, list[Diff]] = {}
     for e in entries:
         if not e.object_tx_id:
             continue
@@ -181,15 +207,15 @@ def _batch_fetch_version_diffs(entries, model_cls, field_map):
 # ---------------------------------------------------------------------------
 
 
-def _compute_scale_changes(entries):
+def _compute_scale_changes(entries: list[AuditLog]) -> dict[int, list[Diff]]:
     """Extract scale changes from raw_data for Application scale events."""
-    result = {}
+    result: dict[int, list[Diff]] = {}
     for e in entries:
         raw = e.raw_data or {}
-        changes_data = raw.get("changes", {})
+        changes_data: ScaleChanges = raw.get("changes", {})
         if not changes_data:
             continue
-        changes = []
+        changes: list[Diff] = []
         for proc_name, proc_changes in sorted(changes_data.items()):
             pc = proc_changes.get("process_count", {})
             old_count = pc.get("old_value")
@@ -209,8 +235,8 @@ def _compute_scale_changes(entries):
                 changes.append(
                     {
                         "field": f"{proc_name} pod class",
-                        "old": str(old_pod),
-                        "new": str(new_pod),
+                        "old": old_pod,
+                        "new": new_pod,
                     }
                 )
         if changes:
@@ -218,12 +244,12 @@ def _compute_scale_changes(entries):
     return result
 
 
-def _compute_config_changes(entries):
+def _compute_config_changes(entries: list[AuditLog]) -> dict[int, list[Diff]]:
     """Compute changes for Configuration create/edit events from version table."""
     if not entries:
         return {}
 
-    ver_cls = version_class(Configuration)
+    ver_cls = cast("type[ConfigurationVersion]", version_class(Configuration))
     tx_ids = [e.object_tx_id for e in entries if e.object_tx_id]
     obj_ids = [e.object_id for e in entries if e.object_tx_id]
 
@@ -235,16 +261,20 @@ def _compute_config_changes(entries):
         .filter(ver_cls.id.in_(obj_ids), ver_cls.transaction_id.in_(tx_ids))
         .all()
     )
-    cur_by_key = {(v.id, v.transaction_id): v for v in cur_versions}
+    cur_by_key: VersionIndex[ConfigurationVersion] = {
+        (v.id, v.transaction_id): v for v in cur_versions
+    }
 
     prev_versions = (
         db.session.query(ver_cls)
         .filter(ver_cls.id.in_(obj_ids), ver_cls.end_transaction_id.in_(tx_ids))
         .all()
     )
-    prev_by_key = {(v.id, v.end_transaction_id): v for v in prev_versions}
+    prev_by_key: VersionIndex[ConfigurationVersion] = {
+        (v.id, v.end_transaction_id): v for v in prev_versions
+    }
 
-    result = {}
+    result: dict[int, list[Diff]] = {}
     for e in entries:
         if not e.object_tx_id:
             continue
@@ -254,7 +284,7 @@ def _compute_config_changes(entries):
         if not cur:
             continue
 
-        changes = []
+        changes: list[Diff] = []
         is_secret = cur.secret
 
         # Secrets don't get diffs — just a verb label handled in the template
@@ -306,13 +336,13 @@ def _compute_config_changes(entries):
     return result
 
 
-def _compute_ingress_changes(entries):
+def _compute_ingress_changes(entries: list[AuditLog]) -> dict[int, list[Diff]]:
     """Compute changes for Ingress edit events from version tables."""
     if not entries:
         return {}
 
-    host_ver_cls = version_class(IngressHost)
-    path_ver_cls = version_class(IngressPath)
+    host_ver_cls = cast("type[IngressHostVersion]", version_class(IngressHost))
+    path_ver_cls = cast("type[IngressPathVersion]", version_class(IngressPath))
 
     tx_ids = [e.object_tx_id for e in entries if e.object_tx_id]
     obj_ids = [e.object_id for e in entries if e.object_tx_id]
@@ -342,10 +372,14 @@ def _compute_ingress_changes(entries):
     )
 
     # Group by (ingress_id, tx_id)
-    hosts_at_by_ing_tx = defaultdict(list)
+    hosts_at_by_ing_tx: defaultdict[VersionKey, list[IngressHostVersion]] = defaultdict(
+        list
+    )
     for h in hosts_at:
         hosts_at_by_ing_tx[(h.ingress_id, h.transaction_id)].append(h)
-    hosts_ended_by_ing_tx = defaultdict(list)
+    hosts_ended_by_ing_tx: defaultdict[VersionKey, list[IngressHostVersion]] = (
+        defaultdict(list)
+    )
     for h in hosts_ended:
         hosts_ended_by_ing_tx[(h.ingress_id, h.end_transaction_id)].append(h)
 
@@ -367,14 +401,18 @@ def _compute_ingress_changes(entries):
         .all()
     )
 
-    paths_at_by_ing_tx = defaultdict(list)
+    paths_at_by_ing_tx: defaultdict[VersionKey, list[IngressPathVersion]] = defaultdict(
+        list
+    )
     for p in paths_at:
         paths_at_by_ing_tx[(p.ingress_id, p.transaction_id)].append(p)
-    paths_ended_by_ing_tx = defaultdict(list)
+    paths_ended_by_ing_tx: defaultdict[VersionKey, list[IngressPathVersion]] = (
+        defaultdict(list)
+    )
     for p in paths_ended:
         paths_ended_by_ing_tx[(p.ingress_id, p.end_transaction_id)].append(p)
 
-    result = {}
+    result: dict[int, list[Diff]] = {}
     for e in entries:
         if not e.object_tx_id:
             continue
@@ -442,7 +480,7 @@ def _compute_ingress_changes(entries):
     return result
 
 
-def _verify_config_changes(rel, cfg_changed):
+def _verify_config_changes(rel: Release, cfg_changed: list[str]) -> list[str]:
     """Filter out false-positive config 'changed' entries.
 
     The Release model sometimes marks all configs as changed (e.g. when
@@ -480,7 +518,7 @@ def _verify_config_changes(rel, cfg_changed):
     return truly_changed
 
 
-def _compute_release_changes(entries):
+def _compute_release_changes(entries: list[AuditLog]) -> dict[int, list[Diff]]:
     """Compute changes for Release create events from the release's own change fields."""
     if not entries:
         return {}
@@ -489,13 +527,13 @@ def _compute_release_changes(entries):
     releases = Release.query.filter(Release.id.in_(release_ids)).all()
     release_by_id = {r.id: r for r in releases}
 
-    result = {}
+    result: dict[int, list[Diff]] = {}
     for e in entries:
         rel = release_by_id.get(e.object_id)
         if not rel:
             continue
 
-        changes = []
+        changes: list[Diff] = []
         img_ch = rel.image_changes or {}
         cfg_ch = rel.configuration_changes or {}
         ing_ch = rel.ingress_changes or {}
@@ -568,7 +606,7 @@ def _compute_release_changes(entries):
 # ---------------------------------------------------------------------------
 
 
-def compute_audit_changes(entries):
+def compute_audit_changes(entries: list[AuditLog]) -> dict[int, list[Diff]]:
     """Compute what-changed details for a page of audit log entries.
 
     Batch-fetches version records grouped by object_type to avoid N+1 queries.
@@ -579,11 +617,13 @@ def compute_audit_changes(entries):
         return {}
 
     # Group entries by (object_type, verb)
-    groups = defaultdict(list)
+    groups: defaultdict[tuple[str | None, str | None], list[AuditLog]] = defaultdict(
+        list
+    )
     for e in entries:
         groups[(e.object_type, e.verb)].append(e)
 
-    result = {}
+    result: dict[int, list[Diff]] = {}
 
     # Application edits → version table diff
     result.update(
