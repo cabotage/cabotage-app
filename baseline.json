@@ -22478,220 +22478,10 @@
       "severity": "error"
     },
     {
-      "column": 5,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unannotated-return",
-      "concise_description": "`format_value` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 18,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`format_value` is missing an annotation for parameter `val`",
-      "severity": "error"
-    },
-    {
-      "column": 13,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unannotated-return",
-      "concise_description": "`diff_versions` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 19,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`diff_versions` is missing an annotation for parameter `prev`",
-      "severity": "error"
-    },
-    {
-      "column": 25,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`diff_versions` is missing an annotation for parameter `cur`",
-      "severity": "error"
-    },
-    {
-      "column": 30,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`diff_versions` is missing an annotation for parameter `field_map`",
-      "severity": "error"
-    },
-    {
-      "column": 16,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 27,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 33,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 27,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 32,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unannotated-return",
-      "concise_description": "`_batch_fetch_version_diffs` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 32,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_batch_fetch_version_diffs` is missing an annotation for parameter `entries`",
-      "severity": "error"
-    },
-    {
-      "column": 41,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_batch_fetch_version_diffs` is missing an annotation for parameter `model_cls`",
-      "severity": "error"
-    },
-    {
-      "column": 52,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_batch_fetch_version_diffs` is missing an annotation for parameter `field_map`",
-      "severity": "error"
-    },
-    {
-      "column": 16,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 29,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 16,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 48,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 24,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unannotated-return",
-      "concise_description": "`_compute_scale_changes` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 28,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_compute_scale_changes` is missing an annotation for parameter `entries`",
-      "severity": "error"
-    },
-    {
       "column": 24,
       "path": "cabotage/server/audit_helpers.py",
       "name": "unknown-variable-type",
       "concise_description": "The type of `changes_data` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 47,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 18,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `pc` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 25,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `old_count` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 25,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `new_count` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 36,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 36,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 19,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `pod` is unknown; it is inferred as an implicit `Any`",
       "severity": "error"
     },
     {
@@ -22706,153 +22496,6 @@
       "path": "cabotage/server/audit_helpers.py",
       "name": "unknown-variable-type",
       "concise_description": "The type of `new_pod` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 36,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 36,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 20,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unannotated-return",
-      "concise_description": "`_compute_config_changes` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 29,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_compute_config_changes` is missing an annotation for parameter `entries`",
-      "severity": "error"
-    },
-    {
-      "column": 16,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 16,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 20,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unannotated-return",
-      "concise_description": "`_compute_ingress_changes` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 30,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_compute_ingress_changes` is missing an annotation for parameter `entries`",
-      "severity": "error"
-    },
-    {
-      "column": 16,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 16,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 50,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 44,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 48,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 44,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 20,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unannotated-return",
-      "concise_description": "`_verify_config_changes` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 28,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_verify_config_changes` is missing an annotation for parameter `rel`",
-      "severity": "error"
-    },
-    {
-      "column": 33,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_verify_config_changes` is missing an annotation for parameter `cfg_changed`",
-      "severity": "error"
-    },
-    {
-      "column": 16,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
       "severity": "error"
     },
     {
@@ -22884,52 +22527,10 @@
       "severity": "error"
     },
     {
-      "column": 27,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 34,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unannotated-return",
-      "concise_description": "`_compute_release_changes` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 30,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_compute_release_changes` is missing an annotation for parameter `entries`",
-      "severity": "error"
-    },
-    {
-      "column": 16,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
       "column": 16,
       "path": "cabotage/server/audit_helpers.py",
       "name": "unknown-variable-type",
       "concise_description": "The type of `releases` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 33,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -23018,41 +22619,6 @@
     },
     {
       "column": 63,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 20,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unannotated-return",
-      "concise_description": "`compute_audit_changes` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 27,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`compute_audit_changes` is missing an annotation for parameter `entries`",
-      "severity": "error"
-    },
-    {
-      "column": 16,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 48,
       "path": "cabotage/server/audit_helpers.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -27420,13 +26986,6 @@
       "severity": "error"
     },
     {
-      "column": 25,
-      "path": "cabotage/server/models/notifications.py",
-      "name": "explicit-any",
-      "concise_description": "Explicit `Any` is not allowed",
-      "severity": "error"
-    },
-    {
       "column": 9,
       "path": "cabotage/server/models/notifications.py",
       "name": "unannotated-return",
@@ -27445,13 +27004,6 @@
       "path": "cabotage/server/models/plugins.py",
       "name": "implicit-reexport",
       "concise_description": "`generic_relationship` is not exported from module `sqlalchemy_utils`",
-      "severity": "error"
-    },
-    {
-      "column": 18,
-      "path": "cabotage/server/models/plugins.py",
-      "name": "explicit-any",
-      "concise_description": "Explicit `Any` is not allowed",
       "severity": "error"
     },
     {
@@ -27896,13 +27448,6 @@
       "severity": "error"
     },
     {
-      "column": 21,
-      "path": "cabotage/server/models/projects.py",
-      "name": "explicit-any",
-      "concise_description": "Explicit `Any` is not allowed",
-      "severity": "error"
-    },
-    {
       "column": 9,
       "path": "cabotage/server/models/projects.py",
       "name": "unannotated-return",
@@ -28061,13 +27606,6 @@
       "path": "cabotage/server/models/projects.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 21,
-      "path": "cabotage/server/models/projects.py",
-      "name": "explicit-any",
-      "concise_description": "Explicit `Any` is not allowed",
       "severity": "error"
     },
     {
@@ -28355,34 +27893,6 @@
       "path": "cabotage/server/models/projects.py",
       "name": "implicit-any-type-argument",
       "concise_description": "Cannot determine the type parameter `_VT` for generic class `dict[_KT, _VT]`",
-      "severity": "error"
-    },
-    {
-      "column": 20,
-      "path": "cabotage/server/models/projects.py",
-      "name": "explicit-any",
-      "concise_description": "Explicit `Any` is not allowed",
-      "severity": "error"
-    },
-    {
-      "column": 20,
-      "path": "cabotage/server/models/projects.py",
-      "name": "explicit-any",
-      "concise_description": "Explicit `Any` is not allowed",
-      "severity": "error"
-    },
-    {
-      "column": 28,
-      "path": "cabotage/server/models/projects.py",
-      "name": "explicit-any",
-      "concise_description": "Explicit `Any` is not allowed",
-      "severity": "error"
-    },
-    {
-      "column": 23,
-      "path": "cabotage/server/models/projects.py",
-      "name": "explicit-any",
-      "concise_description": "Explicit `Any` is not allowed",
       "severity": "error"
     },
     {
@@ -28922,13 +28432,6 @@
       "path": "cabotage/server/models/projects.py",
       "name": "implicit-any-type-argument",
       "concise_description": "Cannot determine the type parameter `_VT` for generic class `dict[_KT, _VT]`",
-      "severity": "error"
-    },
-    {
-      "column": 21,
-      "path": "cabotage/server/models/projects.py",
-      "name": "explicit-any",
-      "concise_description": "Explicit `Any` is not allowed",
       "severity": "error"
     },
     {
@@ -29835,27 +29338,6 @@
       "severity": "error"
     },
     {
-      "column": 23,
-      "path": "cabotage/server/models/utils.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`compact_k8s_name` is missing an annotation for parameter `pairs`",
-      "severity": "error"
-    },
-    {
-      "column": 30,
-      "path": "cabotage/server/models/utils.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`compact_k8s_name` is missing an annotation for parameter `max_len`",
-      "severity": "error"
-    },
-    {
-      "column": 22,
-      "path": "cabotage/server/models/utils.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 28,
       "path": "cabotage/server/models/utils.py",
       "name": "unknown-argument-type",
@@ -30402,13 +29884,6 @@
       "severity": "error"
     },
     {
-      "column": 23,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_diff_config_item` is missing an annotation for parameter `old`",
-      "severity": "error"
-    },
-    {
       "column": 28,
       "path": "cabotage/server/query_helpers.py",
       "name": "implicit-any-parameter",
@@ -30420,13 +29895,6 @@
       "path": "cabotage/server/query_helpers.py",
       "name": "unannotated-return",
       "concise_description": "`_strip_id` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 15,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_strip_id` is missing an annotation for parameter `d`",
       "severity": "error"
     },
     {
@@ -30451,62 +29919,6 @@
       "severity": "error"
     },
     {
-      "column": 24,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 42,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 24,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 42,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 32,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 46,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 73,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 86,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 44,
       "path": "cabotage/server/query_helpers.py",
       "name": "unknown-argument-type",
@@ -30515,62 +29927,6 @@
     },
     {
       "column": 44,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 24,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 42,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 24,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 42,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 32,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 46,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 73,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 86,
       "path": "cabotage/server/query_helpers.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -30584,20 +29940,6 @@
       "severity": "error"
     },
     {
-      "column": 36,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`compute_release_change_details` is missing an annotation for parameter `releases`",
-      "severity": "error"
-    },
-    {
-      "column": 46,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`compute_release_change_details` is missing an annotation for parameter `deployments`",
-      "severity": "error"
-    },
-    {
       "column": 23,
       "path": "cabotage/server/query_helpers.py",
       "name": "unknown-variable-type",
@@ -30606,13 +29948,6 @@
     },
     {
       "column": 48,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 56,
       "path": "cabotage/server/query_helpers.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -30633,52 +29968,10 @@
       "severity": "error"
     },
     {
-      "column": 35,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 25,
       "path": "cabotage/server/query_helpers.py",
       "name": "unknown-variable-type",
       "concise_description": "The type of `candidate` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 20,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 28,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `prev_rel` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 45,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 24,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `prev_rel` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 45,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
       "severity": "error"
     },
     {
@@ -30689,70 +29982,7 @@
       "severity": "error"
     },
     {
-      "column": 36,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
       "column": 41,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 35,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 59,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 64,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 76,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 36,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 20,
       "path": "cabotage/server/query_helpers.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -30770,41 +30000,6 @@
       "path": "cabotage/server/query_helpers.py",
       "name": "implicit-any-parameter",
       "concise_description": "`split_image_processes` is missing an annotation for parameter `image`",
-      "severity": "error"
-    },
-    {
-      "column": 16,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 20,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 24,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 28,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 17,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `all_procs` is unknown; it is inferred as an implicit `Any`",
       "severity": "error"
     },
     {
@@ -48343,20 +47538,6 @@
       "severity": "error"
     },
     {
-      "column": 16,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`stream_key` is missing an annotation for parameter `build_type`",
-      "severity": "error"
-    },
-    {
-      "column": 28,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`stream_key` is missing an annotation for parameter `build_job_id`",
-      "severity": "error"
-    },
-    {
       "column": 5,
       "path": "cabotage/utils/build_log_stream.py",
       "name": "unannotated-return",
@@ -48371,20 +47552,6 @@
       "severity": "error"
     },
     {
-      "column": 36,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`publish_log_line` is missing an annotation for parameter `key`",
-      "severity": "error"
-    },
-    {
-      "column": 41,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`publish_log_line` is missing an annotation for parameter `line`",
-      "severity": "error"
-    },
-    {
       "column": 5,
       "path": "cabotage/utils/build_log_stream.py",
       "name": "unannotated-return",
@@ -48392,73 +47559,10 @@
       "severity": "error"
     },
     {
-      "column": 17,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`publish_end` is missing an annotation for parameter `redis_client`",
-      "severity": "error"
-    },
-    {
-      "column": 31,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`publish_end` is missing an annotation for parameter `key`",
-      "severity": "error"
-    },
-    {
-      "column": 36,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`publish_end` is missing an annotation for parameter `error`",
-      "severity": "error"
-    },
-    {
       "column": 5,
       "path": "cabotage/utils/build_log_stream.py",
       "name": "unannotated-return",
       "concise_description": "`read_log_stream` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 21,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`read_log_stream` is missing an annotation for parameter `redis_client`",
-      "severity": "error"
-    },
-    {
-      "column": 35,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`read_log_stream` is missing an annotation for parameter `key`",
-      "severity": "error"
-    },
-    {
-      "column": 40,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`read_log_stream` is missing an annotation for parameter `timeout_ms`",
-      "severity": "error"
-    },
-    {
-      "column": 19,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `results` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 27,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `last_id` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 24,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `line` is unknown; it is inferred as an implicit `Any`",
       "severity": "error"
     },
     {
@@ -48567,76 +47671,6 @@
       "severity": "error"
     },
     {
-      "column": 5,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`run_and_stream` is missing an annotation for parameter `command`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`run_and_stream` is missing an annotation for parameter `env`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`run_and_stream` is missing an annotation for parameter `cwd`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`run_and_stream` is missing an annotation for parameter `broker_url`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`run_and_stream` is missing an annotation for parameter `build_type`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`run_and_stream` is missing an annotation for parameter `build_job_id`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`run_and_stream` is missing an annotation for parameter `heartbeat_type`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`run_and_stream` is missing an annotation for parameter `heartbeat_id`",
-      "severity": "error"
-    },
-    {
-      "column": 37,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 26,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 38,
       "path": "cabotage/utils/build_log_stream.py",
       "name": "unknown-argument-type",
@@ -48645,27 +47679,6 @@
     },
     {
       "column": 25,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 9,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 9,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 9,
       "path": "cabotage/utils/build_log_stream.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -48693,31 +47706,10 @@
       "severity": "error"
     },
     {
-      "column": 45,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 61,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 5,
       "path": "cabotage/utils/build_log_stream.py",
       "name": "unused-call-result",
       "concise_description": "Result of call expression is of type `int` and is not used; assign to `_` if this is intentional",
-      "severity": "error"
-    },
-    {
-      "column": 30,
-      "path": "cabotage/utils/build_log_stream.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -49302,31 +48294,10 @@
       "severity": "error"
     },
     {
-      "column": 47,
-      "path": "cabotage/utils/config_templates.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 16,
-      "path": "cabotage/utils/config_templates.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
       "column": 10,
       "path": "cabotage/utils/config_templates.py",
       "name": "unknown-variable-type",
       "concise_description": "The type of `ec` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 16,
-      "path": "cabotage/utils/config_templates.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
       "severity": "error"
     },
     {
@@ -49432,20 +48403,6 @@
       "path": "cabotage/utils/docker_auth.py",
       "name": "unannotated-return",
       "concise_description": "`number_to_bytes` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 21,
-      "path": "cabotage/utils/docker_auth.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`number_to_bytes` is missing an annotation for parameter `num`",
-      "severity": "error"
-    },
-    {
-      "column": 26,
-      "path": "cabotage/utils/docker_auth.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`number_to_bytes` is missing an annotation for parameter `num_bytes`",
       "severity": "error"
     },
     {
@@ -50807,90 +49764,6 @@
       "severity": "error"
     },
     {
-      "column": 5,
-      "path": "cabotage/utils/procfile.py",
-      "name": "unannotated-return",
-      "concise_description": "`_find_duplicates` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 22,
-      "path": "cabotage/utils/procfile.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_find_duplicates` is missing an annotation for parameter `items`",
-      "severity": "error"
-    },
-    {
-      "column": 12,
-      "path": "cabotage/utils/procfile.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 46,
-      "path": "cabotage/utils/procfile.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 18,
-      "path": "cabotage/utils/procfile.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 26,
-      "path": "cabotage/utils/procfile.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/utils/procfile.py",
-      "name": "unannotated-return",
-      "concise_description": "`_group_lines` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 18,
-      "path": "cabotage/utils/procfile.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_group_lines` is missing an annotation for parameter `lines`",
-      "severity": "error"
-    },
-    {
-      "column": 24,
-      "path": "cabotage/utils/procfile.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 26,
-      "path": "cabotage/utils/procfile.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 30,
-      "path": "cabotage/utils/procfile.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 30,
-      "path": "cabotage/utils/procfile.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 36,
       "path": "cabotage/utils/procfile.py",
       "name": "implicit-any-empty-container",
@@ -50898,101 +49771,10 @@
       "severity": "error"
     },
     {
-      "column": 5,
-      "path": "cabotage/utils/procfile.py",
-      "name": "unannotated-return",
-      "concise_description": "`_parse_procfile_line` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 26,
-      "path": "cabotage/utils/procfile.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_parse_procfile_line` is missing an annotation for parameter `line`",
-      "severity": "error"
-    },
-    {
-      "column": 12,
-      "path": "cabotage/utils/procfile.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `line` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 34,
-      "path": "cabotage/utils/procfile.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 26,
-      "path": "cabotage/utils/procfile.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 23,
       "path": "cabotage/utils/procfile.py",
       "name": "implicit-any-empty-container",
       "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/utils/procfile.py",
-      "name": "unannotated-return",
-      "concise_description": "`loads` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 11,
-      "path": "cabotage/utils/procfile.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`loads` is missing an annotation for parameter `content`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/utils/procfile.py",
-      "name": "unannotated-return",
-      "concise_description": "`load` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 10,
-      "path": "cabotage/utils/procfile.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`load` is missing an annotation for parameter `stream`",
-      "severity": "error"
-    },
-    {
-      "column": 18,
-      "path": "cabotage/utils/procfile.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/utils/procfile.py",
-      "name": "unannotated-return",
-      "concise_description": "`loadfile` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 14,
-      "path": "cabotage/utils/procfile.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`loadfile` is missing an annotation for parameter `path`",
-      "severity": "error"
-    },
-    {
-      "column": 15,
-      "path": "cabotage/utils/procfile.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     }
   ]
