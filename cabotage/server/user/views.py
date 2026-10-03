@@ -39,6 +39,8 @@ from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import joinedload, subqueryload
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy_continuum import version_class
+from werkzeug.datastructures import MultiDict
+from werkzeug.wrappers import Response
 
 from cabotage.server import (
     config_writer,
@@ -3904,33 +3906,9 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
             secret=form.secure.data,
             buildtime=form.buildtime.data,
         )
-        if not is_template:
-            try:
-                ns = _config_k8s_namespace(organization, app_env)
-                prefix = _config_k8s_resource_prefix(project, application)
-                key_slugs = config_writer.write_configuration(ns, prefix, configuration)
-            except Exception:
-                raise  # No, we should def not do this
-            configuration.key_slug = key_slugs["config_key_slug"]
-            configuration.build_key_slug = key_slugs["build_key_slug"]
-            if configuration.secret:
-                configuration.value = "**secure**"
-        else:
-            flash(
-                "Template config saved — will resolve at deploy time.",
-                "info",
-            )
-        db.session.add(configuration)
-        db.session.flush()
-        activity = Activity(
-            verb="create",
-            object=configuration,
-            data={
-                "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            },
+        _save_app_configuration(
+            organization, project, application, app_env, configuration, "create"
         )
-        db.session.add(activity)
         db.session.commit()
         return redirect(
             url_for(
@@ -3950,6 +3928,135 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
         project_slug=project.slug,
         app_slug=application.slug,
     )
+
+
+def _save_app_configuration(
+    organization: Organization,
+    project: Project,
+    application: Application,
+    app_env: ApplicationEnvironment,
+    configuration: Configuration,
+    verb: str,
+) -> None:
+    """Write a config to the config store (unless templated) and record activity."""
+    from cabotage.utils.config_templates import has_template_variables
+
+    if has_template_variables(configuration.value):
+        configuration.key_slug = None
+        configuration.build_key_slug = None
+        flash("Template config saved — will resolve at deploy time.", "info")
+    else:
+        ns = _config_k8s_namespace(organization, app_env)
+        prefix = _config_k8s_resource_prefix(project, application)
+        key_slugs = config_writer.write_configuration(ns, prefix, configuration)
+        configuration.key_slug = key_slugs["config_key_slug"]
+        configuration.build_key_slug = key_slugs["build_key_slug"]
+        if configuration.secret:
+            configuration.value = "**secure**"
+    db.session.add(configuration)
+    db.session.flush()
+    db.session.add(
+        Activity(
+            verb=verb,
+            object=configuration,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            },
+        )
+    )
+
+
+def _parse_raw_config(raw_text: str, fmt: str) -> dict[str, str]:
+    """Parse Raw Editor input into ``{name: value}``, keeping values verbatim."""
+    if fmt == "json":
+        data = json.loads(raw_text)
+        if not isinstance(data, dict) or not all(
+            isinstance(v, str) for v in data.values()
+        ):
+            raise ValueError('JSON must be an object of "KEY": "VALUE" strings.')
+        return data
+    entries: dict[str, str] = {}
+    for lineno, line in enumerate(raw_text.splitlines(), start=1):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        name, sep, value = line.partition("=")
+        if not sep:
+            raise ValueError(f"Line {lineno}: expected KEY=VALUE.")
+        entries[name.strip()] = value
+    return entries
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/config/bulk",
+    methods=["POST"],
+)
+@login_required
+def project_application_configuration_bulk(
+    org_slug: str, project_slug: str, app_slug: str
+) -> Response:
+    from cabotage.utils.config_templates import has_template_variables
+
+    org, project, application = _lookup_app_context(
+        org_slug, project_slug, app_slug, require_admin=True
+    )
+    environment_id = request.form.get("environment_id", "")
+    app_env = _resolve_app_env(application, environment_id=environment_id)
+    redirect_url = url_for(
+        "user.application_config",
+        org_slug=org.slug,
+        project_slug=project.slug,
+        app_slug=application.slug,
+        env_slug=app_env.environment.slug if project.environments_enabled else None,
+    )
+    try:
+        entries = _parse_raw_config(
+            request.form.get("raw_text", ""), request.form.get("format", "env")
+        )
+        if len({name.upper() for name in entries}) < len(entries):
+            raise ValueError("Variable names must be unique (case insensitive).")
+        pending: list[tuple[Configuration, str, str]] = []
+        for name, value in entries.items():
+            configuration = Configuration.query.filter_by(
+                application_id=application.id,
+                application_environment_id=app_env.id,
+                name=name,
+            ).first()
+            fields = {"application_id": str(application.id), "name": name, "value": value}
+            if configuration is None:
+                form: FlaskForm = CreateConfigurationForm(
+                    MultiDict({**fields, "environment_id": environment_id}),
+                    meta={"csrf": False},
+                )
+                configuration = Configuration(
+                    application_id=application.id,
+                    application_environment_id=app_env.id,
+                    name=name,
+                )
+                verb = "create"
+            elif value == configuration.value:  # unchanged, or a copied **secure**
+                continue
+            else:
+                form = EditConfigurationForm(
+                    MultiDict({**fields, "name": configuration.name}), meta={"csrf": False}
+                )
+                verb = "edit"
+                if configuration.name == "CABOTAGE_SENTINEL":
+                    raise ValueError(f"{name}: This name is reserved.")
+                if configuration.secret and has_template_variables(value):
+                    raise ValueError(f"{name}: Template configs cannot be secrets.")
+            if not form.validate():
+                raise ValueError(f"{name}: {next(iter(form.errors.values()))[0]}")
+            pending.append((configuration, value, verb))
+    except ValueError as exc:
+        flash(str(exc), "error")
+    else:
+        for configuration, value, verb in pending:
+            configuration.value = value
+            _save_app_configuration(org, project, application, app_env, configuration, verb)
+        db.session.commit()
+        flash(f"Saved {len(pending)} variable(s).", "success")
+    return redirect(redirect_url)
 
 
 @user_blueprint.route(
@@ -4019,35 +4126,14 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
                 configuration=configuration,
             )
 
-        if not is_template:
-            try:
-                app_env = configuration.application_environment
-                ns = _config_k8s_namespace(organization, app_env)
-                prefix = _config_k8s_resource_prefix(project, application)
-                key_slugs = config_writer.write_configuration(ns, prefix, configuration)
-            except Exception:
-                raise  # No, we should def not do this
-            configuration.key_slug = key_slugs["config_key_slug"]
-            configuration.build_key_slug = key_slugs["build_key_slug"]
-            if configuration.secret:
-                configuration.value = "**secure**"
-        else:
-            configuration.key_slug = None
-            configuration.build_key_slug = None
-            flash(
-                "Template config saved — will resolve at deploy time.",
-                "info",
-            )
-        db.session.flush()
-        activity = Activity(
-            verb="edit",
-            object=configuration,
-            data={
-                "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            },
+        _save_app_configuration(
+            organization,
+            project,
+            application,
+            configuration.application_environment,
+            configuration,
+            "edit",
         )
-        db.session.add(activity)
         db.session.commit()
         _redirect_env_slug = (
             configuration.application_environment.environment.slug
