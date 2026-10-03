@@ -4017,12 +4017,16 @@ def project_application_configuration_bulk(
             raise ValueError("Variable names must be unique (case insensitive).")
         pending: list[tuple[Configuration, str, str]] = []
         for name, value in entries.items():
-            configuration = Configuration.query.filter_by(
+            configuration: Configuration | None = Configuration.query.filter_by(
                 application_id=application.id,
                 application_environment_id=app_env.id,
                 name=name,
             ).first()
-            fields = {"application_id": str(application.id), "name": name, "value": value}
+            fields = {
+                "application_id": str(application.id),
+                "name": name,
+                "value": value,
+            }
             if configuration is None:
                 form: FlaskForm = CreateConfigurationForm(
                     MultiDict({**fields, "environment_id": environment_id}),
@@ -4038,7 +4042,8 @@ def project_application_configuration_bulk(
                 continue
             else:
                 form = EditConfigurationForm(
-                    MultiDict({**fields, "name": configuration.name}), meta={"csrf": False}
+                    MultiDict({**fields, "name": configuration.name}),
+                    meta={"csrf": False},
                 )
                 verb = "edit"
                 if configuration.name == "CABOTAGE_SENTINEL":
@@ -4046,14 +4051,19 @@ def project_application_configuration_bulk(
                 if configuration.secret and has_template_variables(value):
                     raise ValueError(f"{name}: Template configs cannot be secrets.")
             if not form.validate():
-                raise ValueError(f"{name}: {next(iter(form.errors.values()))[0]}")
+                error = next(
+                    error for errors in form.errors.values() for error in errors
+                )
+                raise ValueError(f"{name}: {error}")
             pending.append((configuration, value, verb))
     except ValueError as exc:
         flash(str(exc), "error")
     else:
         for configuration, value, verb in pending:
             configuration.value = value
-            _save_app_configuration(org, project, application, app_env, configuration, verb)
+            _save_app_configuration(
+                org, project, application, app_env, configuration, verb
+            )
         db.session.commit()
         flash(f"Saved {len(pending)} variable(s).", "success")
     return redirect(redirect_url)
