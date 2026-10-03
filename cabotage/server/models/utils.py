@@ -35,7 +35,7 @@ def safe_k8s_name(*parts: str, max_len: int = 63) -> str:
     return name[: max_len - 9].rstrip("-") + "-" + digest
 
 
-def compact_k8s_name(*pairs, max_len=63):
+def compact_k8s_name(*pairs: tuple[str, str], max_len: int = 63) -> str:
     """Build a compact, unique k8s name from (slug, k8s_identifier) pairs.
 
     Uses slugs for readability.  When any k8s_identifier differs from its
@@ -60,8 +60,8 @@ def compact_k8s_name(*pairs, max_len=63):
                          ('registry', 'registry-07f189ea'), ('server', 'server-bf4ba994'))
         => 'astral-prod-registry-server-<hash>'
     """
-    slugs = []
-    identifiers = []
+    slugs: list[str] = []
+    identifiers: list[str] = []
     has_generated = False
     for slug, k8s_id in pairs:
         slugs.append(slug)

@@ -1,10 +1,20 @@
 import re
+from typing import TYPE_CHECKING
 
-TEMPLATE_PATTERN = re.compile(
+if TYPE_CHECKING:
+    from typing import Final
+
+    from cabotage.server.models.projects import (
+        ApplicationEnvironment,
+        EnvironmentConfiguration,
+    )
+
+
+TEMPLATE_PATTERN: Final = re.compile(
     r"\$\{([a-zA-Z0-9_-]+)(?:\.([a-zA-Z0-9_-]+))?\.(url|host|svc|hostname|port)\}"
 )
 
-SHARED_TEMPLATE_PATTERN = re.compile(r"\$\{shared\.([a-zA-Z_][a-zA-Z0-9_]*)\}")
+SHARED_TEMPLATE_PATTERN: Final = re.compile(r"\$\{shared\.([a-zA-Z_][a-zA-Z0-9_]*)\}")
 
 
 class TemplateResolutionError(Exception):
@@ -174,7 +184,9 @@ def _resolve_tcp_service(app_env, process_name, app_slug, prop="svc"):
     return f"{fqdn}:8000"
 
 
-def resolve_shared_secret_refs(value, application_environment):
+def resolve_shared_secret_refs(
+    value: str, application_environment: ApplicationEnvironment
+) -> list[tuple[str, EnvironmentConfiguration]]:
     """Extract ${shared.VAR} references that point to secret env configs.
 
     Returns a list of (alias_name, EnvironmentConfiguration) tuples for

@@ -5,6 +5,7 @@ into reusable functions.
 """
 
 import uuid as _uuid
+from typing import TYPE_CHECKING
 
 from sqlalchemy import and_, case, func, or_
 
@@ -15,6 +16,18 @@ from cabotage.server.models.projects import (
     Image,
     Release,
 )
+
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from cabotage._types.query_helpers import (
+        IngressItem,
+        ConfigItem,
+        ConfigDiff,
+        ChangeDetails,
+    )
+    from cabotage.utils.procfile import Procfile
 
 
 def compute_app_status_sets(app_ids):
@@ -357,9 +370,9 @@ _INGRESS_SETTING_KEYS = {
 }
 
 
-def _diff_config_item(old, new):
+def _diff_config_item(old: ConfigItem, new: ConfigItem) -> list[ConfigDiff]:
     """Return list of human-readable descriptions for a changed config entry."""
-    changes = []
+    changes: list[ConfigDiff] = []
     if old.get("version_id") != new.get("version_id"):
         changes.append("value changed")
     if old.get("secret") != new.get("secret"):
@@ -371,14 +384,14 @@ def _diff_config_item(old, new):
     return changes
 
 
-def _strip_id(d):
+def _strip_id(d: Mapping[str, object]) -> dict[str, object]:
     """Return a dict copy without the 'id' key (for comparing snapshots)."""
     return {k: v for k, v in d.items() if k != "id"}
 
 
-def _diff_ingress_item(old, new):
+def _diff_ingress_item(old: IngressItem, new: IngressItem) -> list[str]:
     """Return list of human-readable descriptions for a changed ingress entry."""
-    parts = []
+    parts: list[str] = []
 
     # --- Hosts: added, removed, and property changes on existing hosts ---
     old_hosts_by_name = {h["hostname"]: h for h in old.get("hosts", [])}
@@ -390,7 +403,7 @@ def _diff_ingress_item(old, new):
     if h_removed:
         parts.append("hosts removed: " + ", ".join(h_removed))
     # Check property changes on hosts that exist in both
-    h_changed = []
+    h_changed: list[str] = []
     for hostname in sorted(set(old_hosts_by_name) & set(new_hosts_by_name)):
         oh = _strip_id(old_hosts_by_name[hostname])
         nh = _strip_id(new_hosts_by_name[hostname])
@@ -423,7 +436,7 @@ def _diff_ingress_item(old, new):
                 for p in p_removed
             )
         )
-    p_changed = []
+    p_changed: list[str] = []
     for path in sorted(set(old_paths_by_path) & set(new_paths_by_path)):
         op = _strip_id(old_paths_by_path[path])
         np = _strip_id(new_paths_by_path[path])
@@ -444,7 +457,9 @@ def _diff_ingress_item(old, new):
     return parts
 
 
-def compute_release_change_details(releases, deployments=None):
+def compute_release_change_details(
+    releases: list[Release], deployments: list[Deployment] | None = None
+) -> dict[str, ChangeDetails]:
     """Compute granular change descriptions for a list of releases.
 
     For each release that has config or ingress changes, diffs the release's
@@ -471,7 +486,7 @@ def compute_release_change_details(releases, deployments=None):
                 if rid:
                     deployed_release_by_id[str(rid)] = d
 
-    result = {}
+    result: dict[str, ChangeDetails] = {}
     for i, rel in enumerate(releases):
         cfg_ch = rel.configuration_changes or {}
         ing_ch = rel.ingress_changes or {}
@@ -494,11 +509,15 @@ def compute_release_change_details(releases, deployments=None):
         if prev_rel is None and i + 1 < len(releases):
             prev_rel = releases[i + 1]
 
-        prev_cfg = (prev_rel.configuration or {}) if prev_rel else {}
-        prev_ing = (prev_rel.ingresses or {}) if prev_rel else {}
-        cur_cfg = rel.configuration or {}
-        cur_ing = rel.ingresses or {}
-        details = {"config": {}, "ingress": {}}
+        prev_cfg: dict[str, ConfigItem] = (
+            (prev_rel.configuration or {}) if prev_rel else {}
+        )
+        prev_ing: dict[str, IngressItem] = (
+            (prev_rel.ingresses or {}) if prev_rel else {}
+        )
+        cur_cfg: dict[str, ConfigItem] = rel.configuration or {}
+        cur_ing: dict[str, IngressItem] = rel.ingresses or {}
+        details: ChangeDetails = {"config": {}, "ingress": {}}
 
         for name in cfg_changed:
             field_changes = _diff_config_item(
@@ -516,7 +535,9 @@ def compute_release_change_details(releases, deployments=None):
     return result
 
 
-def split_image_processes(image):
+def split_image_processes(
+    image: Image | None,
+) -> tuple[Procfile, Procfile, Procfile, Procfile]:
     """Split image.processes into (service_procs, release_cmds, postdeploy_cmds, job_procs).
 
     Mirrors Release.processes / release_commands / postdeploy_commands / job_processes

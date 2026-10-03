@@ -92,5 +92,13 @@ preset = "all"
 project-includes = ["cabotage"]
 baseline = "baseline.json"
 
+[[tool.pyrefly.sub-config]]
+matches = "cabotage/server/models"
+
+[tool.pyrefly.sub-config.errors]
+# FIXME: properly annotate all JSONB fields in the models
+explicit-any = false
+
+
 [tool.pyrefly.errors]
 implicit-bool = false

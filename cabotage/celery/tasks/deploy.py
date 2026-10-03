@@ -909,7 +909,7 @@ def fetch_cabotage_enrollment(custom_objects_api_instance, release):
     return cabotage_enrollment
 
 
-def _env_config_read_keys_for_release(release):
+def _env_config_read_keys_for_release(release: Release) -> tuple[set[str], set[str]]:
     """Extract env config Consul/Vault paths from a release's configuration.
 
     Includes paths from:
@@ -918,9 +918,9 @@ def _env_config_read_keys_for_release(release):
     """
     from cabotage.utils.config_templates import resolve_shared_secret_refs
 
-    consul_keys = set()
-    vault_keys = set()
-    for name, config_data in release.configuration.items():
+    consul_keys = set[str]()
+    vault_keys = set[str]()
+    for config_data in release.configuration.values():
         obj = Configuration.query.get(config_data["id"])
         if obj is None:
             obj = EnvironmentConfiguration.query.get(config_data["id"])
