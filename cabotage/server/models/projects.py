@@ -1,7 +1,7 @@
 import datetime
 import json
 import uuid
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
     from cabotage.server.models.auth import Organization
@@ -831,6 +831,12 @@ class JobLog(Model, Timestamp):
     )
 
 
+class Change(TypedDict, total=False):
+    added: list[str]
+    changed: list[str]
+    removed: list[str]
+
+
 class Release(Model, Timestamp):
     __versioned__: dict = {}
     __tablename__ = "project_app_releases"
@@ -854,12 +860,12 @@ class Release(Model, Timestamp):
     image: Mapped[Any] = mapped_column(postgresql.JSONB())
     configuration: Mapped[Any] = mapped_column(postgresql.JSONB())
     image_changes: Mapped[Any] = mapped_column(postgresql.JSONB())
-    configuration_changes: Mapped[Any] = mapped_column(postgresql.JSONB())
+    configuration_changes: Mapped[Change] = mapped_column(postgresql.JSONB())
     ingresses: Mapped[Any] = mapped_column(
         postgresql.JSONB(),
         server_default=text("'{}'::jsonb"),
     )
-    ingress_changes: Mapped[Any] = mapped_column(
+    ingress_changes: Mapped[Change] = mapped_column(
         postgresql.JSONB(),
         server_default=text("'{}'::jsonb"),
     )
