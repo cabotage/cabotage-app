@@ -302,8 +302,10 @@
         <button type="button" class="raw-editor-tab" data-editor-tab="json">JSON</button>
       </div>
 
-      <form action="#" method="post" data-requires-backend="configuration_bulk">
+      <form action="{{ url_for('user.project_application_configuration_bulk', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+            method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <input type="hidden" name="environment_id" value="{{ environment.id if environment else '' }}" />
         <input type="hidden" name="format" id="raw-editor-format" value="env" />
 
         <div data-editor-panel="env" class="raw-editor-panel">
