@@ -1,29 +1,45 @@
 # used for local buildkit emulation only
 import subprocess  # nosec
+from typing import TYPE_CHECKING, cast
 
 import redis
+
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+    from typing import Literal
+
+    type BuildType = Literal["deploy", "image", "omnibus", "release"]
+    type LogLine = tuple[bytes, list[tuple[bytes, dict[bytes, bytes]]]]
 
 _LOG_STREAM_TTL = 3600  # 1 hour
 _HEARTBEAT_TTL = 90  # seconds
 
 
-def stream_key(build_type, build_job_id):
+def stream_key(build_type: BuildType, build_job_id: str) -> str:
     return f"buildlog:{build_type}:{build_job_id}"
 
 
-def publish_log_line(redis_client, key, line):
+def publish_log_line(redis_client: redis.Redis[bytes], key: str, line: str) -> None:
     redis_client.xadd(key, {"line": line})
 
 
-def publish_end(redis_client, key, error=False):
+def publish_end(
+    redis_client: redis.Redis[bytes], key: str, error: bool = False
+) -> None:
     redis_client.xadd(key, {"line": "__END__", "error": "1" if error else "0"})
     redis_client.expire(key, _LOG_STREAM_TTL)
 
 
-def read_log_stream(redis_client, key, timeout_ms=5000):
+def read_log_stream(
+    redis_client: redis.Redis[bytes], key: str, timeout_ms: int = 5000
+) -> Generator[str | None]:
     last_id = "0-0"
     while True:
-        results = redis_client.xread({key: last_id}, count=100, block=timeout_ms)
+        results = cast(
+            "list[LogLine]",
+            redis_client.xread({key: last_id}, count=100, block=timeout_ms),
+        )
         if not results:
             yield None  # timeout, caller can check if WS is still open
             continue
@@ -52,15 +68,15 @@ def get_redis_client(broker_url):
 
 
 def run_and_stream(
-    command,
-    env,
-    cwd,
-    broker_url,
-    build_type,
-    build_job_id,
-    heartbeat_type=None,
-    heartbeat_id=None,
-):
+    command: list[str],
+    env: dict[str, str],
+    cwd: str,
+    broker_url: str,
+    build_type: BuildType,
+    build_job_id: str,
+    heartbeat_type: str | None = None,
+    heartbeat_id: str | None = None,
+) -> str:
     """Run a subprocess, stream output to Redis, return accumulated output.
 
     Raises subprocess.CalledProcessError on non-zero exit.

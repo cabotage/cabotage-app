@@ -1358,6 +1358,8 @@ def build_image_buildkit(image: Image):
                 buildctl_command = [wrapper]
 
                 try:
+                    if image.build_job_id is None:
+                        raise Exception("Failed due to image missing build_job_id")
                     output = run_and_stream(
                         buildctl_command + buildctl_args,
                         env={

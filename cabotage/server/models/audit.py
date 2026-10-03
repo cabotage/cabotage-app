@@ -1,4 +1,7 @@
+from uuid import UUID
+
 from sqlalchemy import BigInteger, Column, String, Boolean, Integer, DateTime
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects import postgresql
 
 from cabotage.server import Model
@@ -11,18 +14,18 @@ class AuditLog(Model):
     __table_args__ = {"info": {"is_view": True}}
 
     # Identity
-    id = Column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     timestamp = Column(DateTime)
 
     # Version lookup (for computing diffs from version tables)
-    object_tx_id = Column(BigInteger)
+    object_tx_id: Mapped[int | None] = mapped_column(BigInteger)
     transaction_id = Column(BigInteger)
 
     # Event
-    verb = Column(String)
+    verb: Mapped[str | None]
     detail = Column(String)
-    object_type = Column(String)
-    object_id = Column(postgresql.UUID(as_uuid=True))
+    object_type: Mapped[str | None]
+    object_id: Mapped[UUID | None] = mapped_column(postgresql.UUID(as_uuid=True))
     object_name = Column(String)
 
     # Scoping
