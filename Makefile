@@ -61,6 +61,11 @@ test: .state/docker-build-base ## Run the test suite
 	$(COMPOSE) run --rm \
 		-e CABOTAGE_SQLALCHEMY_DATABASE_URI=postgresql+psycopg://postgres@db/cabotage_test \
 		-e CABOTAGE_TESTING=True \
+		-e CABOTAGE_DEBUG=False \
+		-e CABOTAGE_SECRET_KEY=cabotage-test-session-key \
+		-e CABOTAGE_SECURITY_PASSWORD_SALT=cabotage-test-password-salt \
+		-e CABOTAGE_REGISTRY_AUTH_SECRET=cabotage-test-registry-secret \
+		-e CABOTAGE_SECURITY_TOTP_SECRETS='{"1": "cabotage-test-totp-secret"}' \
 		-e FLASK_APP=cabotage.server.wsgi \
 		base sh -c "python3 -m flask db upgrade && python3 -m pytest tests/ -v $(ARGS)"
 

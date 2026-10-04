@@ -45,6 +45,12 @@ jobs:
   test:
     runs-on: ubuntu-24.04-arm
     name: Tests
+    env:
+      CABOTAGE_DEBUG: "False"
+      CABOTAGE_SECRET_KEY: cabotage-test-session-key
+      CABOTAGE_SECURITY_PASSWORD_SALT: cabotage-test-password-salt
+      CABOTAGE_REGISTRY_AUTH_SECRET: cabotage-test-registry-secret
+      CABOTAGE_SECURITY_TOTP_SECRETS: '{"1": "cabotage-test-totp-secret"}'
     services:
       db:
         image: postgres:16

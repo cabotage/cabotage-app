@@ -85,6 +85,12 @@ Before starting any large pull requests (like adding features or reworking the c
 
 Make sure to add tests for any new features or improvements made to the code. Details on local setup and running tests can be found in the [README.md](./README.md) file.
 
+For local development, use `CABOTAGE_DEBUG=True`; Flask's `FLASK_DEBUG=1` or
+`flask --debug run` alone does not bypass Cabotage's default-secret startup
+validation. `make test` supplies test-only secrets with debug mode disabled.
+See [startup validation](docs/authentication.md#startup-validation) for the
+required configuration when running commands outside debug mode.
+
 
 ### Code formatting
 Run `make` or `make help` to list the targets.
