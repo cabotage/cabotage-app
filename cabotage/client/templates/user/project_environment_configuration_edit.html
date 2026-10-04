@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import render_field, icon, resource_path %}
+{% from "_macros.html" import render_field, icon, resource_path, config_file_control %}
 
 {% block title %}
   Edit {{ configuration.name }} - {{ environment.name }} - Cabotage
@@ -42,6 +42,7 @@
           </div>
 
           {{ render_field(form.value, placeholder='New value') }}
+          {{ config_file_control(form.value.id) }}
           <p class="text-xs text-base-content/40 -mt-2">
             Use <code class="text-base-content/60">${app.url}</code> or
             <code class="text-base-content/60">${app.ingress.url}</code>
