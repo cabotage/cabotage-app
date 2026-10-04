@@ -34,17 +34,15 @@ def downgrade() -> None:
     # Keep writes out between the length check and narrowing all four columns.
     op.execute(sa.text(f"LOCK TABLE {', '.join(_TABLES)} IN ACCESS EXCLUSIVE MODE"))
     for table in _TABLES:
-        # PostgreSQL casts can truncate long values (including trailing spaces).
-        # Refuse the downgrade instead, including when only history is too long.
-        op.execute(
-            sa.text(
-                f"""DO $$
-                BEGIN
-                    IF EXISTS (SELECT 1 FROM {table} WHERE char_length(value) > 2048) THEN
-                        RAISE EXCEPTION 'Cannot downgrade: {table}.value contains values longer than 2048 characters';
-                    END IF;
-                END $$"""
-            )
+        # Refuse oversized live or historical values, including trailing spaces
+        # that PostgreSQL would otherwise silently trim when narrowing.
+        configuration_table = sa.table(table, sa.column("value", sa.Text()))
+        too_long = sa.select(
+            sa.exists().where(sa.func.char_length(configuration_table.c.value) > 2048)
         )
+        if op.get_bind().scalar(too_long):
+            raise ValueError(
+                f"Cannot downgrade: {table}.value contains values longer than 2048 characters"
+            )
     for table in _TABLES:
         op.alter_column(table, "value", existing_type=sa.Text(), type_=sa.String(2048))
