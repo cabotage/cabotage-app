@@ -727,7 +727,7 @@ def _render_pr_comment_body(environment):
 
         if log_path:
             app_url = f"{base_url}/projects/{org_slug}/{project_slug}/applications/{app.slug}/{log_path}"
-            status = f"{emoji} {label} ([View Logs]({app_url}))"
+            status = f"{emoji} {label} ([View Logs \U0001f512]({app_url}))"
         else:
             status = f"{emoji} {label}"
 

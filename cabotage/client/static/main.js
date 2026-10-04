@@ -411,6 +411,33 @@ function initFadeScroll(el) {
   return update;
 }
 
+function bindKeyValuePaste(nameInput, valueInput) {
+  if (!nameInput || !valueInput) return;
+
+  nameInput.addEventListener('paste', function (e) {
+    if (!e.clipboardData) return;
+
+    var text = e.clipboardData.getData('text/plain').replace(/(?:\r\n|\r|\n)$/, '');
+    if (/[\r\n]/.test(text)) return;
+
+    var separator = text.indexOf('=');
+    if (separator < 1 || valueInput.value) return;
+
+    var name = text.slice(0, separator);
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) return;
+
+    e.preventDefault();
+    nameInput.value = name.toUpperCase();
+    valueInput.value = text.slice(separator + 1);
+    nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+    valueInput.dispatchEvent(new Event('input', { bubbles: true }));
+    valueInput.focus();
+    if (valueInput.setSelectionRange) {
+      valueInput.setSelectionRange(valueInput.value.length, valueInput.value.length);
+    }
+  });
+}
+
 /* Add Variable Modal */
 function initAddVarModal() {
   var modal = document.getElementById('add-var-modal');
@@ -461,6 +488,7 @@ function initAddVarModal() {
 
   // Template preview — resolve ${...} references client-side for preview
   var valueInput = modal.querySelector('input[name="value"]');
+  bindKeyValuePaste(nameField, valueInput);
   var previewEl = document.getElementById('add-var-preview');
   var previewFadeUpdate = previewEl ? initFadeScroll(previewEl) : null;
   var siblingDataEl = document.getElementById('sibling-ref-data');
@@ -694,6 +722,7 @@ function initEnvAddVarModal() {
   }
 
   var valueInput = document.getElementById('env-add-var-value');
+  bindKeyValuePaste(nameField, valueInput);
   var refCheck = document.getElementById('env-add-var-ref-check');
   var refPicker = document.getElementById('env-add-var-ref-picker');
   var secureCheckbox = modal.querySelector('input[name="secure"]');

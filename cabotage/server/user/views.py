@@ -39,6 +39,8 @@ from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import joinedload, subqueryload
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy_continuum import version_class
+from werkzeug.datastructures import MultiDict
+from werkzeug.wrappers import Response
 
 from cabotage.server import (
     config_writer,
@@ -176,6 +178,7 @@ from cabotage.server.websocket import close_on_abort
 if TYPE_CHECKING:
     from kubernetes.stream.ws_client import WSClient
     from simple_websocket import Server
+    from werkzeug.wrappers import Response
 
 _REGEX_META = re.compile(r"[.*+?{}()|\\^$\[\]]")
 
@@ -3904,33 +3907,9 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
             secret=form.secure.data,
             buildtime=form.buildtime.data,
         )
-        if not is_template:
-            try:
-                ns = _config_k8s_namespace(organization, app_env)
-                prefix = _config_k8s_resource_prefix(project, application)
-                key_slugs = config_writer.write_configuration(ns, prefix, configuration)
-            except Exception:
-                raise  # No, we should def not do this
-            configuration.key_slug = key_slugs["config_key_slug"]
-            configuration.build_key_slug = key_slugs["build_key_slug"]
-            if configuration.secret:
-                configuration.value = "**secure**"
-        else:
-            flash(
-                "Template config saved — will resolve at deploy time.",
-                "info",
-            )
-        db.session.add(configuration)
-        db.session.flush()
-        activity = Activity(
-            verb="create",
-            object=configuration,
-            data={
-                "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            },
+        _save_app_configuration(
+            organization, project, application, app_env, configuration, "create"
         )
-        db.session.add(activity)
         db.session.commit()
         return redirect(
             url_for(
@@ -3950,6 +3929,183 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
         project_slug=project.slug,
         app_slug=application.slug,
     )
+
+
+def _save_app_configuration(
+    organization: Organization,
+    project: Project,
+    application: Application,
+    app_env: ApplicationEnvironment,
+    configuration: Configuration,
+    verb: str,
+) -> None:
+    """Write a config to the config store (unless templated) and record activity."""
+    from cabotage.utils.config_templates import has_template_variables
+
+    if has_template_variables(configuration.value):
+        configuration.key_slug = None
+        configuration.build_key_slug = None
+        flash("Template config saved — will resolve at deploy time.", "info")
+    else:
+        ns = _config_k8s_namespace(organization, app_env)
+        prefix = _config_k8s_resource_prefix(project, application)
+        key_slugs = config_writer.write_configuration(ns, prefix, configuration)
+        configuration.key_slug = key_slugs["config_key_slug"]
+        configuration.build_key_slug = key_slugs["build_key_slug"]
+        if configuration.secret:
+            configuration.value = "**secure**"
+    db.session.add(configuration)
+    db.session.flush()
+    db.session.add(
+        Activity(
+            verb=verb,
+            object=configuration,
+            data={
+                "user_id": str(current_user.id),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            },
+        )
+    )
+
+
+def _add_raw_config_entry(
+    entries: dict[str, str], seen_names: set[str], name: str, value: str, label: str
+) -> None:
+    normalized_name = name.upper()
+    if normalized_name in seen_names:
+        raise ValueError(f"{label}: duplicate variable name.")
+    seen_names.add(normalized_name)
+    entries[name] = value
+
+
+def _parse_raw_config(raw_text: str, fmt: str) -> dict[str, str]:
+    """Parse Raw Editor input into ``{name: value}``, keeping values verbatim."""
+    entries: dict[str, str] = {}
+    seen_names: set[str] = set()
+    if fmt == "json":
+
+        class JsonObjectPairs(list[tuple[str, object]]):
+            pass
+
+        data = json.loads(raw_text, object_pairs_hook=JsonObjectPairs)
+        if not isinstance(data, JsonObjectPairs):
+            raise ValueError('JSON must be an object of "KEY": "VALUE" strings.')
+        for name, value in data:
+            if not isinstance(name, str) or not isinstance(value, str):
+                raise ValueError('JSON must be an object of "KEY": "VALUE" strings.')
+            _add_raw_config_entry(entries, seen_names, name, value, f"JSON key {name}")
+        return entries
+
+    for lineno, line in enumerate(raw_text.splitlines(), start=1):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        name, sep, value = line.partition("=")
+        if not sep:
+            raise ValueError(f"Line {lineno}: expected KEY=VALUE.")
+        _add_raw_config_entry(
+            entries, seen_names, name.strip(), value, f"Line {lineno}"
+        )
+    return entries
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/config/bulk",
+    methods=["POST"],
+)
+@login_required
+def project_application_configuration_bulk(
+    org_slug: str, project_slug: str, app_slug: str
+) -> Response:
+    from cabotage.utils.config_templates import has_template_variables
+
+    org, project, application = _lookup_app_context(
+        org_slug, project_slug, app_slug, require_admin=True
+    )
+    environment_id = request.form.get("environment_id", "")
+    app_env = _resolve_app_env(application, environment_id=environment_id)
+    redirect_url = url_for(
+        "user.application_config",
+        org_slug=org.slug,
+        project_slug=project.slug,
+        app_slug=application.slug,
+        env_slug=app_env.environment.slug if project.environments_enabled else None,
+    )
+    try:
+        entries = _parse_raw_config(
+            request.form.get("raw_text", ""), request.form.get("format", "env")
+        )
+        existing_configurations = {
+            c.name.upper(): c
+            for c in Configuration.query.filter_by(
+                application_id=application.id,
+                application_environment_id=app_env.id,
+            ).all()
+        }
+        pending: list[tuple[Configuration, str, str]] = []
+        for name, value in entries.items():
+            if len(value) > 2048:
+                raise ValueError(f"{name}: Value must be 2048 characters or fewer.")
+            configuration = existing_configurations.get(name.upper())
+            fields = {
+                "application_id": str(application.id),
+                "name": name,
+                "value": value,
+            }
+            if configuration is None:
+                form: FlaskForm = CreateConfigurationForm(
+                    MultiDict({**fields, "environment_id": environment_id}),
+                    meta={"csrf": False},
+                )
+                configuration = Configuration(
+                    application_id=application.id,
+                    application_environment_id=app_env.id,
+                    name=name,
+                )
+                verb = "create"
+            elif value == configuration.value:  # unchanged, or a copied **secure**
+                continue
+            else:
+                form = EditConfigurationForm(
+                    MultiDict({**fields, "name": configuration.name}),
+                    meta={"csrf": False},
+                )
+                verb = "edit"
+                if configuration.name == "CABOTAGE_SENTINEL":
+                    raise ValueError(f"{name}: This name is reserved.")
+                if configuration.secret and has_template_variables(value):
+                    raise ValueError(f"{name}: Template configs cannot be secrets.")
+            if not form.validate():
+                error = next(
+                    error for errors in form.errors.values() for error in errors
+                )
+                raise ValueError(f"{name}: {error}")
+            pending.append((configuration, value, verb))
+    except ValueError as exc:
+        flash(str(exc), "error")
+    else:
+        saved_names: list[str] = []
+        try:
+            for configuration, value, verb in pending:
+                configuration.value = value
+                _save_app_configuration(
+                    org, project, application, app_env, configuration, verb
+                )
+                saved_names.append(configuration.name)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception("Failed to save raw config batch")
+            if saved_names:
+                flash(
+                    "Failed to save all variables. "
+                    f"Check {', '.join(saved_names)} before retrying.",
+                    "error",
+                )
+            else:
+                flash("Failed to save variables.", "error")
+        else:
+            flash(f"Saved {len(pending)} variable(s).", "success")
+    return redirect(redirect_url)
 
 
 @user_blueprint.route(
@@ -4019,35 +4175,14 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
                 configuration=configuration,
             )
 
-        if not is_template:
-            try:
-                app_env = configuration.application_environment
-                ns = _config_k8s_namespace(organization, app_env)
-                prefix = _config_k8s_resource_prefix(project, application)
-                key_slugs = config_writer.write_configuration(ns, prefix, configuration)
-            except Exception:
-                raise  # No, we should def not do this
-            configuration.key_slug = key_slugs["config_key_slug"]
-            configuration.build_key_slug = key_slugs["build_key_slug"]
-            if configuration.secret:
-                configuration.value = "**secure**"
-        else:
-            configuration.key_slug = None
-            configuration.build_key_slug = None
-            flash(
-                "Template config saved — will resolve at deploy time.",
-                "info",
-            )
-        db.session.flush()
-        activity = Activity(
-            verb="edit",
-            object=configuration,
-            data={
-                "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            },
+        _save_app_configuration(
+            organization,
+            project,
+            application,
+            configuration.application_environment,
+            configuration,
+            "edit",
         )
-        db.session.add(activity)
         db.session.commit()
         _redirect_env_slug = (
             configuration.application_environment.environment.slug
@@ -4407,26 +4542,30 @@ def project_application_environment_settings(
     defaults={"env_slug": None},
 )
 @login_required
-def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None):
-    org, project, application = _lookup_app_context(
-        org_slug, project_slug, app_slug, require_admin=True
+def project_application_ingress(
+    org_slug: str, project_slug: str, app_slug: str, env_slug: str | None = None
+) -> str | Response:
+    org, project, application = cast(
+        tuple[Organization, Project, Application],
+        _lookup_app_context(org_slug, project_slug, app_slug, require_admin=True),
     )
+    user = cast(User, current_user)
 
-    ingress_domain = current_app.config.get("INGRESS_DOMAIN")
+    ingress_domain: str | None = current_app.config.get("INGRESS_DOMAIN")
     org_has_tailscale = org.tailscale_integration is not None
 
     if not ingress_domain and not org_has_tailscale:
         abort(404)
 
-    app_env = _resolve_app_env(
+    app_env: ApplicationEnvironment | None = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=False
     )
     environment = app_env.environment if app_env else None
 
     # Collect available web processes for path target selectors
-    web_processes = []
+    web_processes: list[str] = []
     if app_env:
-        procs = set()
+        procs: set[str] = set()
         pc = app_env.process_counts or {}
         procs.update(p for p in pc if p.startswith("web"))
         latest_release = app_env.latest_release
@@ -4434,7 +4573,7 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
             procs.update(p for p in latest_release.processes if p.startswith("web"))
         web_processes = sorted(procs)
 
-    def _redirect_back():
+    def _redirect_back() -> Response:
         return redirect(
             url_for(
                 "user.project_application_ingress",
@@ -4445,7 +4584,7 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
             )
         )
 
-    def _render_ingress(**extra):
+    def _render_ingress(*, ingress_errors: dict[str, list[str]] | None = None) -> str:
         csrf_form = IngressHostForm()
         return render_template(
             "user/project_application_ingress.html",
@@ -4459,13 +4598,14 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
             ingress_domain=ingress_domain,
             org_has_tailscale=org_has_tailscale,
             ts_integration=org.tailscale_integration,
-            is_admin=current_user.admin,
-            **extra,
+            is_admin=user.admin,
+            ingress_errors=ingress_errors,
         )
 
     # Build per-ingress forms (nginx settings + tailscale settings)
-    ingress_forms = {}
-    ts_ingress_forms = {}
+    ingress_forms: dict[str, IngressSettingsForm] = {}
+    ts_ingress_forms: dict[str, TailscaleIngressSettingsForm] = {}
+    form: IngressSettingsForm | TailscaleIngressSettingsForm
     if app_env:
         for ing in app_env.ingresses:
             if ing.ingress_class_name == "tailscale":
@@ -4487,7 +4627,7 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
         # Save ingress (unified: enabled, hosts, paths, settings, annotations)
         if action == "save_ingress":
             ingress_id = request.form.get("_ingress_id")
-            ingress = _safe_get(Ingress, ingress_id)
+            ingress: Ingress | None = _safe_get(Ingress, ingress_id)
             if not ingress or ingress.application_environment_id != app_env.id:
                 return _redirect_back()
 
@@ -4498,7 +4638,7 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
             else:
                 form = IngressSettingsForm(request.form, prefix=ingress.name)
                 ingress_forms[ingress.name] = form
-            ingress_errors = {}
+            ingress_errors: dict[str, list[str]] = {}
 
             if not form.validate():
                 # render_field_compact shows field.errors inline
@@ -4511,13 +4651,13 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
             # --- Validate everything before touching the session ---
 
             # Validate new hostnames
-            new_host_indices = set()
+            new_host_indices: set[str] = set()
             for key in request.form:
                 m = re.match(r"_new_host_(\d+)_name", key)
                 if m:
                     new_host_indices.add(m.group(1))
 
-            new_hostnames = []
+            new_hostnames: list[tuple[str, bool]] = []
             for idx in sorted(new_host_indices):
                 hostname = request.form.get(f"_new_host_{idx}_name", "").strip()
                 tls_enabled = f"_new_host_{idx}_tls" in request.form
@@ -4536,7 +4676,7 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
             if new_use_regex and not ingress.use_regex:
                 for p in kept_paths:
                     try:
-                        re.compile(p.path)
+                        _ = re.compile(p.path)
                     except re.error as e:
                         ingress_errors.setdefault("paths", []).append(
                             f"Cannot enable regex: path '{p.path}' is not a valid regex ({e})."
@@ -4549,13 +4689,13 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                         )
 
             # Validate new paths
-            new_path_indices = set()
+            new_path_indices: set[str] = set()
             for key in request.form:
                 m = re.match(r"_new_path_(\d+)_path", key)
                 if m:
                     new_path_indices.add(m.group(1))
 
-            new_paths = []
+            new_paths: list[tuple[str, str, str]] = []
             for idx in sorted(new_path_indices):
                 path_value = request.form.get(f"_new_path_{idx}_path", "").strip()
                 path_type = request.form.get(f"_new_path_{idx}_type", "Prefix")
@@ -4570,7 +4710,7 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                     )
                 elif new_use_regex:
                     try:
-                        re.compile(path_value)
+                        _ = re.compile(path_value)
                     except re.error as e:
                         ingress_errors.setdefault("paths", []).append(
                             f"Invalid regex path '{path_value}': {e}"
@@ -4670,11 +4810,11 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                     )
 
                 # Annotations (admin only)
-                if current_user.admin:
+                if user.admin:
                     allow = request.form.get("_allow_annotations") == "on"
                     ingress.allow_annotations = allow
                     if allow:
-                        annotations = {}
+                        annotations: dict[str, str] = {}
                         for form_key in request.form:
                             if form_key.startswith("_annotation_key_"):
                                 idx = form_key[len("_annotation_key_") :]
@@ -4690,7 +4830,7 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                     verb="edit",
                     object=ingress,
                     data={
-                        "user_id": str(current_user.id),
+                        "user_id": str(user.id),
                         "timestamp": datetime.datetime.now(
                             datetime.timezone.utc
                         ).isoformat(),
@@ -4711,7 +4851,7 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
         # Delete ingress
         if action == "delete_ingress":
             ingress_id = request.form.get("_ingress_id")
-            ingress = _safe_get(Ingress, ingress_id)
+            ingress = cast(Ingress | None, _safe_get(Ingress, ingress_id))
             if not ingress or ingress.application_environment_id != app_env.id:
                 return _redirect_back()
             confirm_name = request.form.get("_confirm_name", "").strip()
@@ -4723,7 +4863,7 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                 verb="delete",
                 object=ingress,
                 data={
-                    "user_id": str(current_user.id),
+                    "user_id": str(user.id),
                     "timestamp": datetime.datetime.now(
                         datetime.timezone.utc
                     ).isoformat(),
@@ -4738,6 +4878,9 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
         # Create new ingress
         if action == "create_ingress":
             new_name = request.form.get("_new_ingress_name", "").strip()
+            if not new_name:
+                flash("Enter an ingress name.", "error")
+                return _redirect_back()
             new_class = request.form.get("_new_ingress_class", "nginx")
             if new_class == "tailscale" and not org_has_tailscale:
                 flash(
@@ -4763,7 +4906,7 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                 )
                 return _redirect_back()
             if new_name:
-                existing = Ingress.query.filter_by(
+                existing: Ingress | None = Ingress.query.filter_by(
                     application_environment_id=app_env.id,
                     name=new_name,
                 ).first()
@@ -4823,7 +4966,7 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
                         verb="create",
                         object=ingress,
                         data={
-                            "user_id": str(current_user.id),
+                            "user_id": str(user.id),
                             "timestamp": datetime.datetime.now(
                                 datetime.timezone.utc
                             ).isoformat(),

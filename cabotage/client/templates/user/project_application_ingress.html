@@ -331,8 +331,8 @@
             {{ csrf_form.hidden_tag() }}
             <input type="hidden" name="_action" value="create_ingress">
             <div class="flex-1">
-              <label class="label py-0"><span class="label-text text-xs">New Ingress</span></label>
-              <input type="text" name="_new_ingress_name" placeholder="default"
+              <label for="new-ingress-name" class="label py-0"><span class="label-text text-xs">New Ingress Name</span></label>
+              <input type="text" id="new-ingress-name" name="_new_ingress_name" placeholder="default" required
                      class="input input-bordered input-xs w-full"
                      pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" title="Lowercase alphanumeric and hyphens, no trailing hyphen">
             </div>
