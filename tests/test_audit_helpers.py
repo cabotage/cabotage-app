@@ -4,6 +4,8 @@ import uuid
 
 import pytest
 from types import SimpleNamespace
+from sqlalchemy.orm import Session, scoped_session
+from sqlalchemy_continuum import version_class
 
 from cabotage.server import db
 from cabotage.server.audit_helpers import (
@@ -19,6 +21,7 @@ from cabotage.server.models.projects import (
     ApplicationEnvironment,
     Configuration,
     Environment,
+    EnvironmentConfiguration,
     Project,
     Release,
     activity_plugin,
@@ -89,6 +92,54 @@ def app_env(db_session, application, environment):
     db_session.add(ae)
     db_session.flush()
     return ae
+
+
+@pytest.mark.parametrize("shared", [False, True], ids=["application", "shared"])
+def test_long_configuration_values_survive_create_update_and_history(
+    db_session: scoped_session[Session],
+    application: Application,
+    app_env: ApplicationEnvironment,
+    shared: bool,
+) -> None:
+    original = "synthetic configuration line\n" * 128
+    updated = '{"synthetic": "' + "updated configuration " * 256 + '"}\n'
+    config: Configuration | EnvironmentConfiguration
+    if shared:
+        config = EnvironmentConfiguration(
+            project_id=application.project_id,
+            environment_id=app_env.environment_id,
+            name="LONG_FILE_VALUE",
+            value=original,
+            secret=False,
+        )
+    else:
+        config = Configuration(
+            application_id=application.id,
+            application_environment_id=app_env.id,
+            name="LONG_FILE_VALUE",
+            value=original,
+            secret=False,
+        )
+    db_session.add(config)
+    db_session.commit()
+    db_session.refresh(config)
+    assert config.read_value(None) == original
+
+    config.value = updated
+    db_session.commit()
+    db_session.refresh(config)
+    assert config.read_value(None) == updated
+    assert config.secret is False
+
+    history = version_class(type(config))
+    versions = (
+        db_session.query(history)
+        .filter_by(id=config.id)
+        .order_by(history.transaction_id)
+        .all()
+    )
+    assert [version.value for version in versions] == [original, updated]
+    assert [version.secret for version in versions] == [False, False]
 
 
 def _make_entry(**kwargs):
