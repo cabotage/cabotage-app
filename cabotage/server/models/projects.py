@@ -1176,7 +1176,7 @@ class Configuration(Model, Timestamp):
     )
 
     name: Mapped[str] = mapped_column(postgresql.CITEXT())
-    value: Mapped[str] = mapped_column(String(2048))
+    value: Mapped[str] = mapped_column(Text())
     key_slug: Mapped[str | None] = mapped_column(Text())
     build_key_slug: Mapped[str | None] = mapped_column(Text())
     version_id: Mapped[int] = mapped_column(Integer)
@@ -1273,7 +1273,7 @@ class EnvironmentConfiguration(Model, Timestamp):
         index=True,
     )
     name: Mapped[str] = mapped_column(postgresql.CITEXT())
-    value: Mapped[str] = mapped_column(String(2048))
+    value: Mapped[str] = mapped_column(Text())
     key_slug: Mapped[str | None] = mapped_column(Text())
     build_key_slug: Mapped[str | None] = mapped_column(Text())
     secret_fingerprint: Mapped[str | None] = mapped_column(Text())
