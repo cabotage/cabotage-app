@@ -50,6 +50,12 @@
           <p class="text-sm text-base-content/50 leading-relaxed">
             Configure environment variables that your application needs. These are versioned, allowing for rollback of both configuration and code. They can be marked as secret to ensure that they are not recoverable via the UI.
           </p>
+          <p class="text-sm text-base-content/50 leading-relaxed mt-2">
+            When adding or editing an application or shared environment variable, choose <strong>Load from file</strong>
+            to fill Value from a local text file, such as a PEM key. Line breaks, including a trailing newline,
+            are kept without manual escaping or encoding. Review the value and secret setting, then save as usual.
+            Choosing a file does not upload or save it separately. An empty file clears Value; the usual required-value validation still applies.
+          </p>
         </div>
       </div>
 
