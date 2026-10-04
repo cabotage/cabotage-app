@@ -1,4 +1,6 @@
 import os
+from collections.abc import Mapping
+from typing import Any
 
 from flask_env import MetaFlaskEnv
 from flask_security import uia_username_mapper, uia_email_mapper
@@ -54,7 +56,7 @@ _INSECURE_DEFAULT_SECRETS = {
 _INSECURE_DEFAULT_TOTP_SECRET = "my_precious"  # nosec B105 — intentional insecure default (fail-closed)
 
 
-def validate_security_secrets_config(config):
+def validate_security_secrets_config(config: Mapping[str, Any]) -> None:
     """Fail closed: refuse to run with predictable security secrets outside DEBUG.
 
     Development keeps stable defaults across restarts. Outside DEBUG, replace
