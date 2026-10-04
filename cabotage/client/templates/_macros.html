@@ -612,8 +612,7 @@
   <div data-config-file="{{ value_id }}" class="mt-1">
     <button type="button" class="btn btn-ghost btn-xs" aria-controls="{{ value_id }}" hidden>Load from file</button>
     <input type="file" aria-label="Load Value from a local text file" hidden>
-    <p class="text-xs text-base-content/70 mt-1" role="status" data-config-file-status></p>
-    <p class="text-xs text-error mt-1" role="alert" data-config-file-error></p>
+    <p class="text-xs mt-1 empty:mt-0" role="status" data-config-file-status></p>
   </div>
 {% endmacro %}
 
