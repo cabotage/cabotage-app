@@ -170,3 +170,73 @@ def test_invalid_batch_writes_nothing(raw_editor, raw):
     assert response.status_code == 302
     write.assert_not_called()
     assert _configs(application) == {}
+
+
+@pytest.mark.parametrize(
+    ("fmt", "raw"),
+    [
+        ("env", "DUP=1\nDUP=2"),
+        ("json", '{"DUP": "1", "DUP": "2"}'),
+    ],
+)
+def test_duplicate_names_write_nothing(raw_editor, fmt, raw):
+    client, application, action, fields = raw_editor
+    with patch.object(
+        views.config_writer, "write_configuration", return_value=KEY_SLUGS
+    ) as write:
+        response = client.post(action, data={**fields, "format": fmt, "raw_text": raw})
+
+    assert response.status_code == 302
+    write.assert_not_called()
+    assert _configs(application) == {}
+
+
+def test_value_too_long_writes_nothing(raw_editor):
+    client, application, action, fields = raw_editor
+    with patch.object(
+        views.config_writer, "write_configuration", return_value=KEY_SLUGS
+    ) as write:
+        response = client.post(
+            action, data={**fields, "raw_text": f"TOO_LONG={'x' * 2049}"}
+        )
+
+    assert response.status_code == 302
+    write.assert_not_called()
+    assert _configs(application) == {}
+
+
+def test_existing_name_match_is_case_insensitive(raw_editor):
+    client, application, action, fields = raw_editor
+    db.session.add(
+        Configuration(
+            application_id=application.id,
+            application_environment_id=application.default_app_env.id,
+            name="FOO",
+            value="old",
+        )
+    )
+    db.session.flush()
+    with patch.object(
+        views.config_writer, "write_configuration", return_value=KEY_SLUGS
+    ) as write:
+        response = client.post(action, data={**fields, "raw_text": "foo=new"})
+
+    assert response.status_code == 302
+    write.assert_called_once()
+    configs = _configs(application)
+    assert list(configs) == ["FOO"]
+    assert configs["FOO"].value == "new"
+
+
+def test_write_failure_rolls_back_batch(raw_editor):
+    client, application, action, fields = raw_editor
+    with patch.object(
+        views.config_writer,
+        "write_configuration",
+        side_effect=[KEY_SLUGS, RuntimeError("config store unavailable")],
+    ) as write:
+        response = client.post(action, data={**fields, "raw_text": "ONE=1\nTWO=2"})
+
+    assert response.status_code == 302
+    assert write.call_count == 2
+    assert _configs(application) == {}
