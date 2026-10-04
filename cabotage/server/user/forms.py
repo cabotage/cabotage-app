@@ -327,7 +327,7 @@ class CreateConfigurationForm(FlaskForm):
         ],
         description="Name for the Environment Variable.",
     )
-    value = StringField(
+    value = TextAreaField(
         "Value",
         [InputRequired()],
         description="Value for the Environment Variable.",
@@ -525,7 +525,7 @@ class EditConfigurationForm(FlaskForm):
         ],
         description="Name for the Environment Variable.",
     )
-    value = StringField(
+    value = TextAreaField(
         "Value",
         [InputRequired()],
         description="Value for the Environment Variable.",
@@ -948,7 +948,7 @@ class CreateEnvironmentConfigurationForm(FlaskForm):
         ],
         description="Name for the Environment Variable.",
     )
-    value = StringField(
+    value = TextAreaField(
         "Value",
         [InputRequired()],
         description="Value for the Environment Variable.",
@@ -1000,7 +1000,7 @@ class EditEnvironmentConfigurationForm(FlaskForm):
         ],
         description="Name for the Environment Variable.",
     )
-    value = StringField(
+    value = TextAreaField(
         "Value",
         [InputRequired()],
         description="Value for the Environment Variable.",
