@@ -1,15 +1,22 @@
 import re
 import time
 import uuid
+from collections.abc import Iterator
 from unittest.mock import patch
 
 import pytest
+from flask.testing import FlaskClient
 from flask_security import hash_password
 
 from cabotage.server import db
 from cabotage.server.models.auth import GitHubAppInstallation, Organization, User
 from cabotage.server.models.auth_associations import OrganizationMember
-from cabotage.server.models.projects import Application, Project
+from cabotage.server.models.projects import (
+    Application,
+    ApplicationEnvironment,
+    Environment,
+    Project,
+)
 from cabotage.server.user import github_installations
 from cabotage.server.wsgi import app as _app
 
@@ -1199,3 +1206,95 @@ def test_application_settings_get_does_not_sync_github_repositories(
         )
 
     assert response.status_code == 200
+
+
+@pytest.fixture
+def settings_application(org: Organization) -> Iterator[Application]:
+    project = Project(
+        name=f"Settings {uuid.uuid4().hex[:8]}",
+        organization_id=org.id,
+        environments_enabled=True,
+    )
+    application = Application(name="Web", slug="web", project=project)
+    for name in ("production", "staging"):
+        environment = Environment(
+            name=name, project=project, is_default=name == "production"
+        )
+        db.session.add(
+            ApplicationEnvironment(application=application, environment=environment)
+        )
+    db.session.add(Environment(name="unenrolled", project=project))
+    db.session.commit()
+    yield application
+    db.session.rollback()
+    ApplicationEnvironment.query.filter_by(application_id=application.id).delete()
+    Environment.query.filter_by(project_id=project.id).delete()
+    db.session.commit()
+
+
+@pytest.mark.parametrize("env_slug", ["staging", None])
+def test_application_settings_preserves_environment_on_render_and_save(
+    client: FlaskClient,
+    admin_user: User,
+    settings_application: Application,
+    env_slug: str | None,
+) -> None:
+    application = settings_application
+    project = application.project
+    _login(client, admin_user)
+    base = f"/projects/{project.organization.slug}/{project.slug}"
+    settings_url = f"{base}/applications/web/settings"
+    if env_slug:
+        settings_url += f"?env_slug={env_slug}"
+    overview_url = f"{base}/env/{env_slug or 'production'}/applications/web"
+
+    for response in (
+        client.get(settings_url),
+        client.post(settings_url, data={"deployment_timeout": "invalid"}),
+    ):
+        assert response.status_code == 200
+        assert f'href="{overview_url}"'.encode() in response.data
+
+    response = client.post(
+        settings_url,
+        data={
+            "application_id": str(application.id),
+            "github_app_installation_id": "",
+            "auto_deploy_branch": "main",
+            "deployment_timeout": "300",
+        },
+    )
+    assert response.status_code == 302
+    assert response.location == overview_url
+    db.session.refresh(application)
+    assert application.auto_deploy_branch == "main"
+
+
+@pytest.mark.parametrize("env_slug", ["missing", "unenrolled"])
+def test_application_settings_rejects_invalid_environment_before_saving(
+    client: FlaskClient,
+    admin_user: User,
+    settings_application: Application,
+    env_slug: str,
+) -> None:
+    application = settings_application
+    project = application.project
+    original_branch = application.auto_deploy_branch
+    _login(client, admin_user)
+    settings_url = (
+        f"/projects/{project.organization.slug}/{project.slug}"
+        f"/applications/web/settings?env_slug={env_slug}"
+    )
+    assert client.get(settings_url).status_code == 404
+    response = client.post(
+        settings_url,
+        data={
+            "application_id": str(application.id),
+            "github_app_installation_id": "",
+            "auto_deploy_branch": "must-not-save",
+            "deployment_timeout": "300",
+        },
+    )
+    assert response.status_code == 404
+    db.session.refresh(application)
+    assert application.auto_deploy_branch == original_branch
