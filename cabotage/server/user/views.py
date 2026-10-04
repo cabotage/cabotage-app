@@ -3983,7 +3983,7 @@ def _parse_raw_config(raw_text: str, fmt: str) -> dict[str, str]:
     seen_names: set[str] = set()
     if fmt == "json":
 
-        class JsonObjectPairs(list):
+        class JsonObjectPairs(list[tuple[str, object]]):
             pass
 
         data = json.loads(raw_text, object_pairs_hook=JsonObjectPairs)
