@@ -17,6 +17,7 @@ Following these guidelines helps to communicate that you respect the time of the
   - [Setting up the project in your local machine](#setting-up-the-project-in-your-local-machine)
   - [Local setup and testing](#local-setup-and-testing)
   - [Code formatting](#code-formatting)
+  - [Git hooks with prek](#git-hooks-with-prek)
 - [Pull requests](#pull-requests)
   - [Everyone can contribute](#everyone-can-contribute)
   - [I have submitted my Pull Request, what are the next steps?](#i-have-submitted-my-pull-request-what-are-the-next-steps)
@@ -86,12 +87,71 @@ Make sure to add tests for any new features or improvements made to the code. De
 
 
 ### Code formatting
-Before committing changes, you can lint and reformat your code. Please ensure you have [Docker](https://www.docker.com/) and [Compose](https://docs.docker.com/compose/) installed, and then run:
+Run `make` or `make help` to list the targets.
+Help uses bold headings and cyan targets in a terminal.
+Set `NO_COLOR=1` to disable color. Redirected output uses plain text.
+
+Code checks and tests use [Docker](https://www.docker.com/) and
+[Compose](https://docs.docker.com/compose/):
 
 ```sh
-make lint
-make reformat
+make lint        # Check Ruff lint rules.
+make fmt         # Apply Ruff formatting (replaces make reformat).
+make type-check  # Run ty and pyrefly.
+make security-check
 ```
+
+For the combined workflow, start the development services once, then run:
+
+```sh
+make start
+make ci
+# Forward pytest arguments, for example:
+make ci ARGS="-k ingress --no-cov"
+```
+
+`make ci` runs **lint → fmt → test**, in that order, stopping at the first
+failure even when Make is invoked with `-j`. The formatting step writes changes;
+review and stage them before committing. Type and security checks remain
+separate targets. Tests require the Compose database and Redis services to be
+running; the test target creates the test database and extensions, applies
+migrations, and then runs pytest.
+
+Tool commands can be overridden, for example
+`make lint COMPOSE="docker compose -f docker-compose.yml"`.
+Name a new migration with `make migrations MESSAGE="add health probes"`.
+
+### Git hooks with prek
+
+Use [uv](https://docs.astral.sh/uv/) and
+[prek](https://prek.j178.dev/), not the `pre-commit` Python package:
+
+```sh
+make sync           # Install dependencies from uv.lock, including prek.
+make hooks-install  # Install the Git pre-commit hook using prek.
+make hooks          # Run all hooks against all tracked files.
+# Or run hooks only against staged files:
+uv run --locked prek run
+```
+
+The `.pre-commit-config.yaml` uses local hooks that invoke `uv run --locked`.
+Ruff, ty, pyrefly, Bandit, and prek are declared in the `dev` dependency group in
+`pyproject.toml`, with exact versions resolved in `uv.lock`; there are no separate
+hook revision pins to drift out of sync. Hooks need uv and Python, but not Docker.
+Ruff and Bandit check selected Python files, and Ruff applies formatting.
+Type checks scan the project when application code or dependency files change;
+pytest stays in `make test` and `make ci`, rather than running on every commit.
+
+After editing dependencies, run `make lock`. To upgrade an individual tool:
+
+```sh
+uv lock --upgrade-package ruff
+make sync
+make hooks
+```
+
+Commit `pyproject.toml` and `uv.lock` together when dependency declarations change.
+The project's `tool.uv.exclude-newer` policy also applies to tool upgrades.
 
 
 ## Pull requests
