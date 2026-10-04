@@ -3967,23 +3967,43 @@ def _save_app_configuration(
     )
 
 
+def _add_raw_config_entry(
+    entries: dict[str, str], seen_names: set[str], name: str, value: str, label: str
+) -> None:
+    normalized_name = name.upper()
+    if normalized_name in seen_names:
+        raise ValueError(f"{label}: duplicate variable name.")
+    seen_names.add(normalized_name)
+    entries[name] = value
+
+
 def _parse_raw_config(raw_text: str, fmt: str) -> dict[str, str]:
     """Parse Raw Editor input into ``{name: value}``, keeping values verbatim."""
-    if fmt == "json":
-        data = json.loads(raw_text)
-        if not isinstance(data, dict) or not all(
-            isinstance(v, str) for v in data.values()
-        ):
-            raise ValueError('JSON must be an object of "KEY": "VALUE" strings.')
-        return data
     entries: dict[str, str] = {}
+    seen_names: set[str] = set()
+    if fmt == "json":
+
+        class JsonObjectPairs(list):
+            pass
+
+        data = json.loads(raw_text, object_pairs_hook=JsonObjectPairs)
+        if not isinstance(data, JsonObjectPairs):
+            raise ValueError('JSON must be an object of "KEY": "VALUE" strings.')
+        for name, value in data:
+            if not isinstance(name, str) or not isinstance(value, str):
+                raise ValueError('JSON must be an object of "KEY": "VALUE" strings.')
+            _add_raw_config_entry(entries, seen_names, name, value, f"JSON key {name}")
+        return entries
+
     for lineno, line in enumerate(raw_text.splitlines(), start=1):
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         name, sep, value = line.partition("=")
         if not sep:
             raise ValueError(f"Line {lineno}: expected KEY=VALUE.")
-        entries[name.strip()] = value
+        _add_raw_config_entry(
+            entries, seen_names, name.strip(), value, f"Line {lineno}"
+        )
     return entries
 
 
@@ -4013,15 +4033,18 @@ def project_application_configuration_bulk(
         entries = _parse_raw_config(
             request.form.get("raw_text", ""), request.form.get("format", "env")
         )
-        if len({name.upper() for name in entries}) < len(entries):
-            raise ValueError("Variable names must be unique (case insensitive).")
-        pending: list[tuple[Configuration, str, str]] = []
-        for name, value in entries.items():
-            configuration: Configuration | None = Configuration.query.filter_by(
+        existing_configurations = {
+            c.name.upper(): c
+            for c in Configuration.query.filter_by(
                 application_id=application.id,
                 application_environment_id=app_env.id,
-                name=name,
-            ).first()
+            ).all()
+        }
+        pending: list[tuple[Configuration, str, str]] = []
+        for name, value in entries.items():
+            if len(value) > 2048:
+                raise ValueError(f"{name}: Value must be 2048 characters or fewer.")
+            configuration = existing_configurations.get(name.upper())
             fields = {
                 "application_id": str(application.id),
                 "name": name,
@@ -4059,13 +4082,28 @@ def project_application_configuration_bulk(
     except ValueError as exc:
         flash(str(exc), "error")
     else:
-        for configuration, value, verb in pending:
-            configuration.value = value
-            _save_app_configuration(
-                org, project, application, app_env, configuration, verb
-            )
-        db.session.commit()
-        flash(f"Saved {len(pending)} variable(s).", "success")
+        saved_names: list[str] = []
+        try:
+            for configuration, value, verb in pending:
+                configuration.value = value
+                _save_app_configuration(
+                    org, project, application, app_env, configuration, verb
+                )
+                saved_names.append(configuration.name)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception("Failed to save raw config batch")
+            if saved_names:
+                flash(
+                    "Failed to save all variables. "
+                    f"Check {', '.join(saved_names)} before retrying.",
+                    "error",
+                )
+            else:
+                flash("Failed to save variables.", "error")
+        else:
+            flash(f"Saved {len(pending)} variable(s).", "success")
     return redirect(redirect_url)
 
 
