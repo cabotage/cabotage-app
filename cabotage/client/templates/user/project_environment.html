@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, application_card, service_card, danger_zone_delete, env_tab_nav %}
+{% from "_macros.html" import icon, resource_path, page_header, application_card, service_card, danger_zone_delete, env_tab_nav, config_file_control %}
 
 {% block title %}
   {{ environment.name }} - {{ project.name }} - Cabotage
@@ -341,8 +341,9 @@
         </div>
 
         <div>
-          <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Value</label>
-          {{ env_config_form.value(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono", placeholder="value", id="env-add-var-value", autocomplete="off", **{"data-1p-ignore": ""}) }}
+          <label for="env-add-var-value" class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Value</label>
+          {{ env_config_form.value(class="textarea textarea-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono text-sm", rows=3, placeholder="value", id="env-add-var-value", autocomplete="off", spellcheck="false", **{"data-1p-ignore": ""}) }}
+          {{ config_file_control('env-add-var-value') }}
           <p class="text-xs text-base-content/40 mt-1">Value for the environment variable</p>
         </div>
 
@@ -480,10 +481,11 @@
         </div>
 
         <div>
-          <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">New Value</label>
-          <input type="text" name="value" id="env-edit-value"
-                 class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono"
-                 placeholder="New value" autocomplete="off" data-1p-ignore>
+          <label for="env-edit-value" class="text-xs text-base-content/50 font-medium uppercase tracking-wider">New Value</label>
+          <textarea name="value" id="env-edit-value" rows="3"
+                    class="textarea textarea-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono text-sm"
+                    placeholder="New value" autocomplete="off" spellcheck="false" data-1p-ignore></textarea>
+          {{ config_file_control('env-edit-value') }}
         </div>
 
         <div class="flex flex-col gap-2 p-3 rounded-lg bg-base-300/30">
