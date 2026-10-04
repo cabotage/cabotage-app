@@ -155,6 +155,30 @@ This applies to both password logins and GitHub OAuth logins. Correct IP recordi
 |---|---|---|
 | `CABOTAGE_SECRET_KEY` | **Must change** | Secret key for session cookie signing, CSRF tokens, and trust cookies. Must be a strong random value in production. |
 | `CABOTAGE_SECURITY_PASSWORD_SALT` | **Must change** | Salt for password-related token generation (reset links, confirmation links). Must be a strong random value in production. |
+| `CABOTAGE_REGISTRY_AUTH_SECRET` | **Must change** | Shared secret for registry authentication. Must be a strong random value in production. |
+
+### Startup validation
+
+Outside debug mode, application startup (including Flask CLI commands) raises
+`ValueError` if `SECRET_KEY`, `SECURITY_PASSWORD_SALT`, `REGISTRY_AUTH_SECRET`, or
+any value in `SECURITY_TOTP_SECRETS` still uses its built-in development default.
+The error lists all environment variables that need updating. `TESTING=True`
+does not bypass this check.
+
+Set `CABOTAGE_SECURITY_TOTP_SECRETS` as a JSON object, for example:
+
+```sh
+export CABOTAGE_SECURITY_TOTP_SECRETS='{"1": "your-generated-secret"}'
+```
+
+Generate the encryption secret as described in the TOTP configuration above.
+Every retained key is checked, including older keys kept during rotation.
+
+For local development only, set `CABOTAGE_DEBUG=True` to keep the stable
+development defaults. `FLASK_DEBUG=1` and `flask --debug run` alone do not enable
+Cabotage's debug-mode exemption. Never enable debug mode in production.
+CI and `make test` supply test-only non-default secrets and explicitly disable
+debug mode; do not reuse those secrets in deployments.
 
 ### Freshness
 
