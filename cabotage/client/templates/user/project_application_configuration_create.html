@@ -19,7 +19,7 @@
           {{ render_field(form.name, placeholder='MY_VARIABLE') }}
           {{ render_field(form.value, placeholder='value') }}
           {{ config_file_control(form.value.id) }}
-          <p class="text-xs text-base-content/40 -mt-2">
+          <p class="text-xs text-base-content/40">
             Use <code class="text-base-content/60">${app.url}</code> or
             <code class="text-base-content/60">${app.ingress.url}</code>
             to reference a sibling app's ingress URL, or
