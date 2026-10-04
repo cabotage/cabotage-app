@@ -24,6 +24,13 @@ textarea {
   transition: all 0.15s ease;
 }
 
+/* Configuration values start at the standard input height. */
+.textarea.config-value {
+  box-sizing: border-box;
+  min-height: calc(var(--size-field, 0.25rem) * 10);
+  transition-property: color, background-color, border-color, box-shadow;
+}
+
 /* Reduce Motion */
 .reduce-motion,
 .reduce-motion *,
