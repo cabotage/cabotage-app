@@ -4409,6 +4409,7 @@ def project_application_ingress(
         tuple[Organization, Project, Application],
         _lookup_app_context(org_slug, project_slug, app_slug, require_admin=True),
     )
+    user = cast(User, current_user)
 
     ingress_domain: str | None = current_app.config.get("INGRESS_DOMAIN")
     org_has_tailscale = org.tailscale_integration is not None
@@ -4443,9 +4444,7 @@ def project_application_ingress(
             )
         )
 
-    def _render_ingress(
-        *, ingress_errors: dict[str, list[str]] | None = None
-    ) -> str:
+    def _render_ingress(*, ingress_errors: dict[str, list[str]] | None = None) -> str:
         csrf_form = IngressHostForm()
         return render_template(
             "user/project_application_ingress.html",
@@ -4459,7 +4458,7 @@ def project_application_ingress(
             ingress_domain=ingress_domain,
             org_has_tailscale=org_has_tailscale,
             ts_integration=org.tailscale_integration,
-            is_admin=current_user.admin,
+            is_admin=user.admin,
             ingress_errors=ingress_errors,
         )
 
@@ -4537,7 +4536,7 @@ def project_application_ingress(
             if new_use_regex and not ingress.use_regex:
                 for p in kept_paths:
                     try:
-                        re.compile(p.path)
+                        _ = re.compile(p.path)
                     except re.error as e:
                         ingress_errors.setdefault("paths", []).append(
                             f"Cannot enable regex: path '{p.path}' is not a valid regex ({e})."
@@ -4571,7 +4570,7 @@ def project_application_ingress(
                     )
                 elif new_use_regex:
                     try:
-                        re.compile(path_value)
+                        _ = re.compile(path_value)
                     except re.error as e:
                         ingress_errors.setdefault("paths", []).append(
                             f"Invalid regex path '{path_value}': {e}"
@@ -4671,7 +4670,7 @@ def project_application_ingress(
                     )
 
                 # Annotations (admin only)
-                if current_user.admin:
+                if user.admin:
                     allow = request.form.get("_allow_annotations") == "on"
                     ingress.allow_annotations = allow
                     if allow:
@@ -4691,7 +4690,7 @@ def project_application_ingress(
                     verb="edit",
                     object=ingress,
                     data={
-                        "user_id": str(current_user.id),
+                        "user_id": str(user.id),
                         "timestamp": datetime.datetime.now(
                             datetime.timezone.utc
                         ).isoformat(),
@@ -4712,7 +4711,7 @@ def project_application_ingress(
         # Delete ingress
         if action == "delete_ingress":
             ingress_id = request.form.get("_ingress_id")
-            ingress = _safe_get(Ingress, ingress_id)
+            ingress = cast(Ingress | None, _safe_get(Ingress, ingress_id))
             if not ingress or ingress.application_environment_id != app_env.id:
                 return _redirect_back()
             confirm_name = request.form.get("_confirm_name", "").strip()
@@ -4724,7 +4723,7 @@ def project_application_ingress(
                 verb="delete",
                 object=ingress,
                 data={
-                    "user_id": str(current_user.id),
+                    "user_id": str(user.id),
                     "timestamp": datetime.datetime.now(
                         datetime.timezone.utc
                     ).isoformat(),
@@ -4767,7 +4766,7 @@ def project_application_ingress(
                 )
                 return _redirect_back()
             if new_name:
-                existing = Ingress.query.filter_by(
+                existing: Ingress | None = Ingress.query.filter_by(
                     application_environment_id=app_env.id,
                     name=new_name,
                 ).first()
@@ -4827,7 +4826,7 @@ def project_application_ingress(
                         verb="create",
                         object=ingress,
                         data={
-                            "user_id": str(current_user.id),
+                            "user_id": str(user.id),
                             "timestamp": datetime.datetime.now(
                                 datetime.timezone.utc
                             ).isoformat(),
