@@ -609,16 +609,17 @@
 {% endmacro %}
 
 {% macro config_file_control(value_id) %}
-  <div data-config-file="{{ value_id }}" class="mt-3 flex flex-col items-start gap-2">
+  <div data-config-file="{{ value_id }}" class="mt-3">
     <button type="button" class="btn gap-2 rounded-md border-base-content/20 bg-base-200 text-base-content font-medium shadow-none hover:border-base-content/40 hover:bg-base-300" aria-controls="{{ value_id }}" hidden>
       <span aria-hidden="true">{{ icon('file-text', 'w-4 h-4') }}</span>
       Load from file
     </button>
     <input type="file" aria-label="Load Value from a local text file" hidden>
-    <p class="text-xs break-words max-w-full empty:hidden" role="status" data-config-file-status></p>
+    <p class="text-xs break-words max-w-full mt-2 empty:mt-0" role="status" data-config-file-status></p>
   </div>
 {% endmacro %}
 
+{# Extra widget attributes (kwargs) are supported for textarea fields only. #}
 {% macro render_field(field, placeholder='', extra_class='') %}
   <div class="w-full">
     {% if field.type == 'BooleanField' %}
