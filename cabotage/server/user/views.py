@@ -4048,6 +4048,9 @@ def project_application_configuration_bulk(
                 "application_id": str(application.id),
                 "name": name,
                 "value": value,
+                "secure": "y"
+                if configuration is not None and configuration.secret
+                else "",
             }
             if configuration is None:
                 form: FlaskForm = CreateConfigurationForm(
