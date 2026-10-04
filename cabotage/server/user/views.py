@@ -4083,16 +4083,23 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
 )
 @login_required
 def project_application_settings(org_slug, project_slug, app_slug):
-    org, project, application = _lookup_app_context(
-        org_slug, project_slug, app_slug, require_admin=True
+    org, project, application = cast(
+        tuple[Organization, Project, Application],
+        _lookup_app_context(org_slug, project_slug, app_slug, require_admin=True),
     )
+    env_slug = request.args.get("env_slug")
+    if env_slug:
+        app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
+        environment = app_env.environment if project.environments_enabled else None
+    else:
+        environment = _default_environment(project)
 
     form = _prepare_application_settings_form(application, org)
 
     if form.validate_on_submit():
         _validate_github_source_settings(form, application, org)
         if form.github_app_installation_id.errors or form.github_repository.errors:
-            return _render_application_settings(application, org, project, form)
+            return _render_application_settings(application, org, environment, form)
 
         previous_github_app_installation_id = application.github_app_installation_id
         previous_github_repository = application.github_repository
@@ -4116,7 +4123,6 @@ def project_application_settings(org_slug, project_slug, app_slug):
         )
         db.session.add(activity)
         db.session.commit()
-        environment = _default_environment(project)
         return redirect(
             url_for(
                 "user.project_application",
@@ -4127,7 +4133,7 @@ def project_application_settings(org_slug, project_slug, app_slug):
             )
         )
 
-    return _render_application_settings(application, org, project, form)
+    return _render_application_settings(application, org, environment, form)
 
 
 def _prepare_application_settings_form(application, org):
@@ -4280,7 +4286,7 @@ def _application_delete_context(application):
     return delete_form, delete_impact
 
 
-def _render_application_settings(application, org, project, form):
+def _render_application_settings(application, org, environment, form):
     delete_form, delete_impact = _application_delete_context(application)
     return render_template(
         "user/project_application_settings.html",
@@ -4294,7 +4300,7 @@ def _render_application_settings(application, org, project, form):
         github_repository_options=github_installations.repository_options_by_installation(
             org
         ),
-        environment=_default_environment(project),
+        environment=environment,
         delete_form=delete_form,
         delete_impact=delete_impact,
     )
