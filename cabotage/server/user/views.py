@@ -4732,6 +4732,9 @@ def project_application_ingress(org_slug, project_slug, app_slug, env_slug=None)
         # Create new ingress
         if action == "create_ingress":
             new_name = request.form.get("_new_ingress_name", "").strip()
+            if not new_name:
+                flash("Enter an ingress name.", "error")
+                return _redirect_back()
             new_class = request.form.get("_new_ingress_class", "nginx")
             if new_class == "tailscale" and not org_has_tailscale:
                 flash(
