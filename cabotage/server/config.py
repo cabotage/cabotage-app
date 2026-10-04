@@ -57,28 +57,31 @@ _INSECURE_DEFAULT_TOTP_SECRET = "my_precious"  # nosec B105 — intentional inse
 def validate_security_secrets_config(config):
     """Fail closed: refuse to run with predictable security secrets outside DEBUG.
 
-    In development (``DEBUG=True``) the baked-in defaults are fine — sessions,
-    TOTP codes and password hashes reset across restarts but that is acceptable
-    locally. In any non-DEBUG run the predictable defaults would allow session
-    forgery, deterministic TOTP codes and registry-auth bypass, so the app must
-    not start until each value is overridden via its ``CABOTAGE_*`` environment
-    variable (``MetaFlaskEnv`` applies ``CABOTAGE_*`` overrides automatically).
+    Development keeps stable defaults across restarts. Outside DEBUG, replace
+    the defaults for session signing, password-related tokens, TOTP secret
+    encryption, and registry authentication via the ``CABOTAGE_*`` environment
+    variables. TOTP keys are supplied as a JSON object in
+    ``CABOTAGE_SECURITY_TOTP_SECRETS``.
     """
     if config.get("DEBUG"):
         return
 
-    for key, default in _INSECURE_DEFAULT_SECRETS.items():
-        if config.get(key) == default:
-            raise RuntimeError(
-                f"{key} is still set to its insecure default {default!r}. "
-                f"Set CABOTAGE_{key} before running with DEBUG=False."
-            )
-
+    insecure = [
+        f"CABOTAGE_{key}"
+        for key, default in _INSECURE_DEFAULT_SECRETS.items()
+        if config.get(key) == default
+    ]
     totp_secrets = config.get("SECURITY_TOTP_SECRETS") or {}
-    if totp_secrets.get(1) == _INSECURE_DEFAULT_TOTP_SECRET:
-        raise RuntimeError(
-            "SECURITY_TOTP_SECRETS[1] is still set to its insecure default. "
-            "Set CABOTAGE_SECURITY_TOTP_SECRET_1 before running with DEBUG=False."
+    if _INSECURE_DEFAULT_TOTP_SECRET in totp_secrets.values():
+        insecure.append(
+            'CABOTAGE_SECURITY_TOTP_SECRETS (JSON object, e.g. \'{"1": "<secret>"}\')'
+        )
+
+    if insecure:
+        raise ValueError(
+            "Insecure default security secrets remain. Set "
+            + ", ".join(insecure)
+            + " before running with DEBUG=False."
         )
 
 
