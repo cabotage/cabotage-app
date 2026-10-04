@@ -4404,7 +4404,7 @@ def project_application_environment_settings(
 @login_required
 def project_application_ingress(
     org_slug: str, project_slug: str, app_slug: str, env_slug: str | None = None
-) -> "str | Response":
+) -> str | Response:
     org, project, application = cast(
         tuple[Organization, Project, Application],
         _lookup_app_context(org_slug, project_slug, app_slug, require_admin=True),
@@ -4433,7 +4433,7 @@ def project_application_ingress(
             procs.update(p for p in latest_release.processes if p.startswith("web"))
         web_processes = sorted(procs)
 
-    def _redirect_back() -> "Response":
+    def _redirect_back() -> Response:
         return redirect(
             url_for(
                 "user.project_application_ingress",
