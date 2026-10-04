@@ -49,6 +49,23 @@ def _normalize_branch(value: str | None) -> str | None:
     return (value or "").strip() or None
 
 
+def _validate_non_secret_value_length(
+    form: (
+        CreateConfigurationForm
+        | EditConfigurationForm
+        | CreateEnvironmentConfigurationForm
+        | EditEnvironmentConfigurationForm
+    ),
+    field: TextAreaField,
+) -> None:
+    value = field.data or ""
+    if not form.secure.data and len(value) > 2048:
+        raise ValidationError(
+            f"Non-secret values cannot exceed 2,048 characters "
+            f"(received {len(value):,}). Shorten the value before saving."
+        )
+
+
 class ExtendedLoginForm(LoginForm):
     email = StringField("Username or Email Address", [InputRequired()])
 
@@ -329,7 +346,7 @@ class CreateConfigurationForm(FlaskForm):
     )
     value = TextAreaField(
         "Value",
-        [InputRequired()],
+        [InputRequired(), _validate_non_secret_value_length],
         description="Value for the Environment Variable.",
     )
     secure = BooleanField(
@@ -527,7 +544,7 @@ class EditConfigurationForm(FlaskForm):
     )
     value = TextAreaField(
         "Value",
-        [InputRequired()],
+        [InputRequired(), _validate_non_secret_value_length],
         description="Value for the Environment Variable.",
     )
     secure = BooleanField(
@@ -950,7 +967,7 @@ class CreateEnvironmentConfigurationForm(FlaskForm):
     )
     value = TextAreaField(
         "Value",
-        [InputRequired()],
+        [InputRequired(), _validate_non_secret_value_length],
         description="Value for the Environment Variable.",
     )
     secure = BooleanField(
@@ -1002,7 +1019,7 @@ class EditEnvironmentConfigurationForm(FlaskForm):
     )
     value = TextAreaField(
         "Value",
-        [InputRequired()],
+        [InputRequired(), _validate_non_secret_value_length],
         description="Value for the Environment Variable.",
     )
     secure = BooleanField(
