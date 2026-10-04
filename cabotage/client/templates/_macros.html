@@ -608,6 +608,15 @@
   </fieldset>
 {% endmacro %}
 
+{% macro config_file_control(value_id) %}
+  <div data-config-file="{{ value_id }}" class="mt-1">
+    <button type="button" class="btn btn-ghost btn-xs" aria-controls="{{ value_id }}" hidden>Load from file</button>
+    <input type="file" aria-label="Load Value from a local text file" hidden>
+    <p class="text-xs text-base-content/70 mt-1" role="status" data-config-file-status></p>
+    <p class="text-xs text-error mt-1" role="alert" data-config-file-error></p>
+  </div>
+{% endmacro %}
+
 {% macro render_field(field, placeholder='', extra_class='') %}
   <div class="w-full">
     {% if field.type == 'BooleanField' %}
@@ -619,7 +628,7 @@
       <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">{{ field.label.text }}</label>
       {{ field(class="select select-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary " + extra_class) }}
     {% elif field.type == 'TextAreaField' %}
-      <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">{{ field.label.text }}</label>
+      <label for="{{ field.id }}" class="text-xs text-base-content/50 font-medium uppercase tracking-wider">{{ field.label.text }}</label>
       {{ field(class="textarea textarea-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono text-sm " + extra_class, placeholder=placeholder) }}
     {% elif field.type == 'FileField' %}
       <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">{{ field.label.text }}</label>
