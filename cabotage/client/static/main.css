@@ -841,6 +841,17 @@ a.live-commit-sha:hover {
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+a.stat-card-link {
+  display: block;
+}
+a.stat-card-link .stat-card {
+  transition: all 0.2s ease;
+}
+a.stat-card-link:hover .stat-card {
+  border-color: rgba(124, 58, 237, 0.3);
+  box-shadow: 0 4px 16px var(--shadow-card);
+  transform: translateY(-1px);
+}
 
 /* Process Card (legacy, see Process Grid below) */
 .pod-dot {

@@ -1,0 +1,86 @@
+{% from "_macros.html" import icon %}
+
+{% macro admin_tab_nav(active='') %}
+  <div class="app-content-padded !py-0">
+    <div class="tab-bar" data-tabs>
+      <a href="{{ url_for('admin.index') }}"
+         title="Dashboard"
+         class="tab-item {% if active == 'dashboard' %}tab-active{% endif %}">{{ icon('shield', 'w-4 h-4') }} <span class="tab-label">Dashboard</span></a>
+      <a href="{{ url_for('admin.users') }}"
+         title="Users"
+         class="tab-item {% if active == 'users' %}tab-active{% endif %}">{{ icon('users', 'w-4 h-4') }} <span class="tab-label">Users</span></a>
+      <a href="{{ url_for('admin.organizations') }}"
+         title="Organizations"
+         class="tab-item {% if active == 'organizations' %}tab-active{% endif %}">{{ icon('building', 'w-4 h-4') }} <span class="tab-label">Organizations</span></a>
+      <a href="{{ url_for('admin.projects') }}"
+         title="Projects"
+         class="tab-item {% if active == 'projects' %}tab-active{% endif %}">{{ icon('folder', 'w-4 h-4') }} <span class="tab-label">Projects</span></a>
+      <a href="{{ url_for('admin.audit_log') }}"
+         title="Audit Log"
+         class="tab-item {% if active == 'audit' %}tab-active{% endif %}">{{ icon('clock', 'w-4 h-4') }} <span class="tab-label">Audit Log</span></a>
+    </div>
+  </div>
+{% endmacro %}
+
+{% macro state_badge(obj) %}
+  {% if obj.deleted_at %}
+    <span class="badge badge-error badge-sm" title="{{ obj.deleted_at }}">deleted</span>
+  {% else %}
+    <span class="text-xs text-base-content/40">active</span>
+  {% endif %}
+{% endmacro %}
+
+{% macro org_role(is_admin) %}
+  {% if is_admin %}
+    <span class="badge badge-sm badge-neutral">org admin</span>
+  {% else %}
+    <span class="text-xs text-base-content/40">member</span>
+  {% endif %}
+{% endmacro %}
+
+{# Confirmation dialog for an `_action` POST. Renders the <dialog> only; the
+   trigger button lives at the call site and calls showModal(). Pass
+   confirm_text to require typed confirmation for destructive actions. #}
+{% macro confirm_action_modal(modal_id, title, action, form, action_url, description='', confirm_text='', submit_label='Confirm', submit_class='btn-error', hidden_fields={}) %}
+  <dialog id="{{ modal_id }}" class="modal">
+    <div class="modal-box">
+      <h3 class="text-lg font-bold {% if submit_class == 'btn-error' %}text-error{% endif %}">{{ title }}</h3>
+      {% if description %}
+        <p class="py-2 text-sm text-base-content/60">{{ description }}</p>
+      {% endif %}
+      <form action="{{ action_url }}" method="post">
+        {{ form.hidden_tag() }}
+        <input type="hidden" name="_action" value="{{ action }}">
+        {% for name, value in hidden_fields.items() %}
+          <input type="hidden" name="{{ name }}" value="{{ value }}">
+        {% endfor %}
+        {% if confirm_text %}
+          <p class="py-1 text-sm">Type <code class="font-semibold">{{ confirm_text }}</code> to confirm.</p>
+          <input type="text" name="confirm" placeholder="{{ confirm_text }}"
+                 class="input input-bordered input-sm w-full mb-4"
+                 autocomplete="off"
+                 data-confirm-expected="{{ confirm_text }}"
+                 oninput="this.closest('.modal-box').querySelector('.btn-modal-confirm').disabled = (this.value !== this.dataset.confirmExpected)">
+        {% endif %}
+        <div class="modal-action">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('dialog').close()">Cancel</button>
+          <button type="submit" class="btn {{ submit_class }} btn-sm btn-modal-confirm" {% if confirm_text %}disabled{% endif %}>{{ submit_label }}</button>
+        </div>
+      </form>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
+  {% if confirm_text %}
+    <script>
+      (function () {
+        var d = document.getElementById('{{ modal_id }}');
+        d.addEventListener('close', function () {
+          var i = d.querySelector('input[name="confirm"]');
+          if (i) i.value = '';
+          var b = d.querySelector('.btn-modal-confirm');
+          if (b) b.disabled = true;
+        });
+      })();
+    </script>
+  {% endif %}
+{% endmacro %}

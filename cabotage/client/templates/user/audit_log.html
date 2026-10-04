@@ -1,5 +1,6 @@
 {% extends "_base.html" %}
 {% from "_macros.html" import icon, resource_path, app_tab_nav, app_resource_path, org_tab_nav, project_tab_nav, env_tab_nav %}
+{% from "admin_ui/_shared.html" import admin_tab_nav %}
 
 {% if scope_type == 'application' %}
   {% set org_slug = application.project.organization.slug %}
@@ -18,7 +19,7 @@
 {% endif %}
 
 {% block title %}
-  Audit Log - {% if scope_type == 'application' %}{{ app_slug }}{% elif scope_type == 'environment' %}{{ env_slug }}{% elif scope_type == 'project' %}{{ project_slug }}{% else %}{{ org_slug }}{% endif %} - Cabotage
+  Audit Log - {% if scope_type == 'application' %}{{ app_slug }}{% elif scope_type == 'environment' %}{{ env_slug }}{% elif scope_type == 'project' %}{{ project_slug }}{% elif scope_type == 'global' %}Admin{% else %}{{ org_slug }}{% endif %} - Cabotage
 {% endblock title %}
 
 {% block resource_path %}
@@ -54,6 +55,8 @@
     {{ project_tab_nav(project, 'audit') }}
   {% elif scope_type == 'organization' %}
     {{ org_tab_nav(organization, 'audit') }}
+  {% elif scope_type == 'global' %}
+    {{ admin_tab_nav('audit') }}
   {% endif %}
 {% endblock tab_bar %}
 
@@ -211,6 +214,8 @@
                 <span class="audit-context">{% if e.project_name %}{{ e.project_name }}{% endif %}{% if e.app_name %} / {{ e.app_name }}{% endif %}</span>
               {% elif scope_type in ('project', 'environment') and e.app_name %}
                 <span class="audit-context">{{ e.app_name }}</span>
+              {% elif scope_type == 'global' and (org_names.get(e.organization_id) or e.project_name or e.app_name) %}
+                <span class="audit-context">{% if org_names.get(e.organization_id) %}{{ org_names.get(e.organization_id) }}{% endif %}{% if e.project_name %} / {{ e.project_name }}{% endif %}{% if e.app_name %} / {{ e.app_name }}{% endif %}</span>
               {% endif %}
             </div>
 

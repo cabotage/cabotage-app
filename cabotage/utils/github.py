@@ -11,6 +11,20 @@ logger = logging.getLogger(__name__)
 
 COMMENT_MARKER = "<!-- cabotage-branch-deploy -->"
 
+
+def display_username(value):
+    """Strip the github:<id>: prefix from OAuth-created usernames.
+
+    Registered as the display_username Jinja filter; server-side checks that
+    must match rendered names (e.g. typed confirmations) use it directly.
+    """
+    if value and value.startswith("github:"):
+        parts = value.split(":", 2)
+        if len(parts) == 3:
+            return parts[2]
+    return value
+
+
 _GITHUB_HEADERS = {
     "Accept": "application/vnd.github+json",
     "Content-Type": "application/json",
