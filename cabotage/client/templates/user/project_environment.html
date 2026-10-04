@@ -342,7 +342,7 @@
 
         <div>
           <label for="env-add-var-value" class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Value</label>
-          {{ env_config_form.value(class="textarea textarea-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono text-sm", rows=3, placeholder="value", id="env-add-var-value", autocomplete="off", spellcheck="false", **{"data-1p-ignore": ""}) }}
+          {{ env_config_form.value(class="textarea textarea-bordered auto-grow config-value w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono text-sm", rows=1, placeholder="value", id="env-add-var-value", autocomplete="off", spellcheck="false", **{"data-1p-ignore": ""}) }}
           {{ config_file_control('env-add-var-value') }}
           <p class="text-xs text-base-content/40 mt-1">Value for the environment variable</p>
         </div>
@@ -482,8 +482,8 @@
 
         <div>
           <label for="env-edit-value" class="text-xs text-base-content/50 font-medium uppercase tracking-wider">New Value</label>
-          <textarea name="value" id="env-edit-value" rows="3"
-                    class="textarea textarea-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono text-sm"
+          <textarea name="value" id="env-edit-value" rows="1"
+                    class="textarea textarea-bordered auto-grow config-value w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono text-sm"
                     placeholder="New value" autocomplete="off" spellcheck="false" data-1p-ignore></textarea>
           {{ config_file_control('env-edit-value') }}
         </div>
