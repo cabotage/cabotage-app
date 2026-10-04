@@ -47,6 +47,10 @@ BIGINT_MIN = -(2**63)
 BIGINT_MAX = 2**63 - 1
 
 
+def _normalize_branch(value: str | None) -> str | None:
+    return (value or "").strip() or None
+
+
 class ExtendedLoginForm(LoginForm):
     email = StringField("Username or Email Address", [InputRequired()])
 
@@ -401,7 +405,7 @@ class EditApplicationSettingsForm(FlaskForm):
     auto_deploy_branch = StringField(
         "Branch",
         description="GitHub Repository branch to auto-deploy from",
-        filters=[lambda value: (value or "").strip() or None],
+        filters=[_normalize_branch],
     )
     subdirectory = StringField(
         "Subdirectory",
@@ -764,7 +768,7 @@ class EditApplicationEnvironmentSettingsForm(FlaskForm):
         "Branch",
         [Optional()],
         description="Branch to auto-deploy for this environment (blank = inherit from app)",
-        filters=[lambda value: (value or "").strip() or None],
+        filters=[_normalize_branch],
     )
     auto_deploy_wait_for_ci = BooleanField(
         "Wait for CI",
