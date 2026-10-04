@@ -95,7 +95,7 @@ Code checks and tests use [Docker](https://www.docker.com/) and
 [Compose](https://docs.docker.com/compose/):
 
 ```sh
-make lint        # Check Ruff lint rules.
+make lint        # Check Python formatting and lint rules.
 make fmt         # Apply Ruff formatting (replaces make reformat).
 make type-check  # Run ty and pyrefly.
 make security-check
@@ -116,6 +116,7 @@ review and stage them before committing. Type and security checks remain
 separate targets. Tests require the Compose database and Redis services to be
 running; the test target creates the test database and extensions, applies
 migrations, and then runs pytest.
+Lint also checks formatting. If it fails, run `make fmt` before `make ci`.
 
 Tool commands can be overridden, for example
 `make lint COMPOSE="docker compose -f docker-compose.yml"`.
