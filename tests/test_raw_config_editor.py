@@ -6,6 +6,7 @@ import uuid
 from unittest.mock import patch
 
 import pytest
+from flask.testing import FlaskClient
 from flask_security import hash_password
 
 from cabotage.server import db
@@ -105,7 +106,10 @@ def _configs(application):
     }
 
 
-def test_env_paste_creates_variables(raw_editor):
+@pytest.mark.parametrize("value", ["/pyper", "synthetic-config-data" * 256])
+def test_env_paste_creates_variables(
+    raw_editor: tuple[FlaskClient, Application, str, dict[str, str]], value: str
+) -> None:
     client, application, action, fields = raw_editor
     with patch.object(
         views.config_writer, "write_configuration", return_value=KEY_SLUGS
@@ -114,13 +118,13 @@ def test_env_paste_creates_variables(raw_editor):
             action,
             data={
                 **fields,
-                "raw_text": '# comment\n\nJUNIOR_SLASH_COMMAND=/pyper\nQUOTED="keep=quotes" ',
+                "raw_text": f'# comment\n\nJUNIOR_SLASH_COMMAND={value}\nQUOTED="keep=quotes" ',
             },
         )
 
     assert response.status_code == 302
     assert {name: config.value for name, config in _configs(application).items()} == {
-        "JUNIOR_SLASH_COMMAND": "/pyper",
+        "JUNIOR_SLASH_COMMAND": value,
         "QUOTED": '"keep=quotes" ',
     }
 
@@ -185,20 +189,6 @@ def test_duplicate_names_write_nothing(raw_editor, fmt, raw):
         views.config_writer, "write_configuration", return_value=KEY_SLUGS
     ) as write:
         response = client.post(action, data={**fields, "format": fmt, "raw_text": raw})
-
-    assert response.status_code == 302
-    write.assert_not_called()
-    assert _configs(application) == {}
-
-
-def test_value_too_long_writes_nothing(raw_editor):
-    client, application, action, fields = raw_editor
-    with patch.object(
-        views.config_writer, "write_configuration", return_value=KEY_SLUGS
-    ) as write:
-        response = client.post(
-            action, data={**fields, "raw_text": f"TOO_LONG={'x' * 2049}"}
-        )
 
     assert response.status_code == 302
     write.assert_not_called()

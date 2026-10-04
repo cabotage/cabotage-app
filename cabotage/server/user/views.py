@@ -4043,8 +4043,6 @@ def project_application_configuration_bulk(
         }
         pending: list[tuple[Configuration, str, str]] = []
         for name, value in entries.items():
-            if len(value) > 2048:
-                raise ValueError(f"{name}: Value must be 2048 characters or fewer.")
             configuration = existing_configurations.get(name.upper())
             fields = {
                 "application_id": str(application.id),
