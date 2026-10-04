@@ -40328,13 +40328,6 @@
       "severity": "error"
     },
     {
-      "column": 24,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
       "column": 56,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
@@ -40426,13 +40419,6 @@
       "severity": "error"
     },
     {
-      "column": 25,
-      "path": "cabotage/server/user/views.py",
-      "name": "unused-call-result",
-      "concise_description": "Result of call expression is of type `Pattern[Unknown]` and is not used; assign to `_` if this is intentional",
-      "severity": "error"
-    },
-    {
       "column": 36,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
@@ -40444,13 +40430,6 @@
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 25,
-      "path": "cabotage/server/user/views.py",
-      "name": "unused-call-result",
-      "concise_description": "Result of call expression is of type `Pattern[str]` and is not used; assign to `_` if this is intentional",
       "severity": "error"
     },
     {
@@ -40521,13 +40500,6 @@
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
       "severity": "error"
     },
     {
