@@ -857,9 +857,9 @@ function initEnvEditVarModal() {
     }
 
     valueInput.value = isSecret ? '' : value;
-    valueInput.dispatchEvent(new Event('input', { bubbles: true }));
     buildtimeCheckbox.checked = isBuildtime;
     modal.style.display = 'flex';
+    valueInput.dispatchEvent(new Event('input', { bubbles: true }));
     valueInput.focus();
   }
 
@@ -919,9 +919,9 @@ function initAppEditVarModal() {
     }
 
     valueInput.value = isSecret ? '' : value;
-    valueInput.dispatchEvent(new Event('input', { bubbles: true }));
     buildtimeCheckbox.checked = isBuildtime;
     modal.style.display = 'flex';
+    valueInput.dispatchEvent(new Event('input', { bubbles: true }));
     valueInput.focus();
   }
 
@@ -1024,16 +1024,29 @@ function initDeleteModal(btnClass, modalId, formId, nameDisplayId, configIdField
 
 /* Auto-growing textareas */
 function initAutoGrowTextareas() {
+  var adjustments = [];
   document.querySelectorAll('textarea.auto-grow').forEach(function (ta) {
     ta.style.overflow = 'hidden';
     ta.style.resize = 'none';
     function adjust() {
+      if (!ta.getClientRects().length) return;
       ta.style.height = 'auto';
-      ta.style.height = (ta.scrollHeight + parseInt(getComputedStyle(ta).lineHeight)) + 'px';
+      var style = getComputedStyle(ta);
+      // Values fit their content; watch paths retain an extra line for editing.
+      var extra = ta.classList.contains('config-value')
+        ? parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth)
+        : parseInt(style.lineHeight);
+      ta.style.height = (ta.scrollHeight + extra) + 'px';
     }
     ta.addEventListener('input', adjust);
+    adjustments.push(adjust);
     adjust();
   });
+  if (adjustments.length) {
+    window.addEventListener('resize', function () {
+      adjustments.forEach(function (adjust) { adjust(); });
+    });
+  }
 }
 
 /* Flash Messages — dismiss + auto-fade */
