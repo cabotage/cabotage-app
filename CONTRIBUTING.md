@@ -18,6 +18,7 @@ Following these guidelines helps to communicate that you respect the time of the
   - [Local setup and testing](#local-setup-and-testing)
   - [Code formatting](#code-formatting)
   - [Git hooks with prek](#git-hooks-with-prek)
+  - [Dependency updates](#dependency-updates)
 - [Pull requests](#pull-requests)
   - [Everyone can contribute](#everyone-can-contribute)
   - [I have submitted my Pull Request, what are the next steps?](#i-have-submitted-my-pull-request-what-are-the-next-steps)
@@ -90,6 +91,17 @@ For local development, use `CABOTAGE_DEBUG=True`; Flask's `FLASK_DEBUG=1` or
 validation. `make test` supplies test-only secrets with debug mode disabled.
 See [startup validation](docs/authentication.md#startup-validation) for the
 required configuration when running commands outside debug mode.
+
+
+### Dependency updates
+
+[Dependabot configuration](.github/dependabot.yml) groups routine updates into
+Python (`uv`), GitHub Actions, frontend tooling (`bun`), and Docker pull requests.
+Each ecosystem is checked weekly, waits until releases are at least 14 days old,
+and allows one open routine update pull request at a time.
+
+Security updates use separate groups per ecosystem and are not delayed by the
+version-update cooldown or limited by the routine pull request cap.
 
 
 ### Code formatting
