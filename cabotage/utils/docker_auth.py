@@ -24,7 +24,7 @@ from itsdangerous import (
 from cabotage.server import vault
 
 
-def number_to_bytes(num, num_bytes):
+def number_to_bytes(num: int, num_bytes: int) -> bytes:
     padded_hex = "%0*x" % (2 * num_bytes, num)
     big_endian = binascii.a2b_hex(padded_hex.encode("ascii"))
     return big_endian
@@ -114,7 +114,7 @@ def generate_docker_claim_set(
 
 def _docker_credential_serializer(secret=None):
     if secret is None:
-        return ValueError("secret must be supplied!")
+        raise ValueError("secret must be supplied!")
     serializer = URLSafeTimedSerializer(secret)
     return serializer
 

@@ -230,7 +230,7 @@ def _connect_installation_callback(state):
     if requested_installation_id:
         try:
             requested_installation_id = int(requested_installation_id)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             flash("The GitHub connect link expired or could not be verified.", "danger")
             return redirect(
                 url_for("user.organization_settings", org_slug=organization.slug)
@@ -423,7 +423,7 @@ def _fetch_github_user_access_token(code):
         )
         resp.raise_for_status()
         return resp.json().get("access_token")
-    except (requests.RequestException, ValueError, KeyError):
+    except requests.RequestException, ValueError, KeyError:
         current_app.logger.exception("Unable to fetch GitHub user access token")
         return None
 
@@ -449,7 +449,7 @@ def _fetch_github_user_installations(access_token):
             url = resp.links.get("next", {}).get("url")
             params = None
         return installations
-    except (requests.RequestException, ValueError, AttributeError):
+    except requests.RequestException, ValueError, AttributeError:
         current_app.logger.exception("Unable to fetch GitHub user installations")
         return None
 
@@ -481,7 +481,7 @@ def _fetch_github_user_installation_repository_ids(access_token, installation_id
             url = resp.links.get("next", {}).get("url")
             params = None
         return repository_ids
-    except (requests.RequestException, ValueError, AttributeError, KeyError):
+    except requests.RequestException, ValueError, AttributeError, KeyError:
         current_app.logger.exception(
             "Unable to fetch GitHub user repositories for installation %s",
             installation_id,

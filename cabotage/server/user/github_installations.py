@@ -101,7 +101,7 @@ def install_url(state):
     if not configured:
         try:
             configured = github_app.install_url
-        except (RuntimeError, requests.RequestException, KeyError, ValueError):
+        except RuntimeError, requests.RequestException, KeyError, ValueError:
             return None
 
     parts = urlsplit(configured)
@@ -136,7 +136,7 @@ def installation_for_org(organization, installation_id):
         return None
     try:
         installation_id = int(installation_id)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     for installation in organization.github_app_installations:
         if installation.installation_id == installation_id:
@@ -161,7 +161,7 @@ def repository_id(repository):
         return None
     try:
         return int(repo_id)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -170,7 +170,7 @@ def repository_by_id(app_installation, repo_id):
         return None
     try:
         repo_id = int(repo_id)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     for repository in app_installation.repositories or []:
         if repository_id(repository) == repo_id:

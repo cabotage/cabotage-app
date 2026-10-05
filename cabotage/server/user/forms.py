@@ -41,9 +41,14 @@ from cabotage.server.models.resources import (
     redis_size_classes,
 )
 from cabotage.server.models.utils import slugify
+from cabotage._types import assume_not_none
 
 BIGINT_MIN = -(2**63)
 BIGINT_MAX = 2**63 - 1
+
+
+def _normalize_branch(value: str | None) -> str | None:
+    return (value or "").strip() or None
 
 
 class ExtendedLoginForm(LoginForm):
@@ -343,25 +348,30 @@ class CreateConfigurationForm(FlaskForm):
         description="Set this Enviornment Variable during Image builds.",
     )
 
-    def validate_name(form, field):
+    def validate_name(self, field: StringField) -> bool:
         if field.data and field.data.upper() == "CABOTAGE_SENTINEL":
             raise ValidationError("This name is reserved.")
         app_env_id = None
-        env_id = form.environment_id.data or None
+        env_id = self.environment_id.data or None
         if env_id:
             app_env = ApplicationEnvironment.query.filter_by(
-                application_id=form.application_id.data,
+                application_id=self.application_id.data,
                 environment_id=env_id,
             ).first()
             if app_env:
                 app_env_id = app_env.id
         configuration = Configuration.query.filter_by(
-            application_id=form.application_id.data,
+            application_id=self.application_id.data,
             application_environment_id=app_env_id,
             name=field.data,
         ).first()
         if configuration is not None:
-            if form.name.data.lower() != configuration.name.lower():
+            if (
+                assume_not_none(
+                    self.name.data, because="InputRequired has already run"
+                ).lower()
+                != configuration.name.lower()
+            ):
                 return True
             raise ValidationError(
                 "Configuration names must be unique (case insensitive) "
@@ -395,6 +405,7 @@ class EditApplicationSettingsForm(FlaskForm):
     auto_deploy_branch = StringField(
         "Branch",
         description="GitHub Repository branch to auto-deploy from",
+        filters=[_normalize_branch],
     )
     subdirectory = StringField(
         "Subdirectory",
@@ -443,7 +454,7 @@ class EditApplicationSettingsForm(FlaskForm):
             return True
         try:
             installation_id = int(field.data)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             raise ValidationError("Select a valid GitHub installation.")
         if installation_id < BIGINT_MIN or installation_id > BIGINT_MAX:
             raise ValidationError("Select a valid GitHub installation.")
@@ -456,7 +467,7 @@ class EditApplicationSettingsForm(FlaskForm):
         if form.github_app_installation_id.data is not None:
             try:
                 installation_id = int(form.github_app_installation_id.data)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 return True
             if installation_id < BIGINT_MIN or installation_id > BIGINT_MAX:
                 return True
@@ -757,6 +768,7 @@ class EditApplicationEnvironmentSettingsForm(FlaskForm):
         "Branch",
         [Optional()],
         description="Branch to auto-deploy for this environment (blank = inherit from app)",
+        filters=[_normalize_branch],
     )
     auto_deploy_wait_for_ci = BooleanField(
         "Wait for CI",

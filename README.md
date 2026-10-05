@@ -37,8 +37,14 @@ $ make create-admin
 After running these you should be able to visit `http://localhost:8000/` and use
 the email address `ad@min.com` and password `admin` to log in.
 
+Run `make help` (or just `make`) for sectioned target descriptions. Use
+`make ci` to run lint, apply formatting, and run tests in sequence after the
+development services are started. See the [contributor guide](CONTRIBUTING.md#git-hooks-with-prek)
+for uv-managed dependencies and Git hooks using prek.
+
 The following commands are available for working with the application stack
 during development:
+
 
 
 ### `make start`
@@ -58,7 +64,7 @@ base application image. For example, changing the dependencies in the
 command after making such changes to rebuild images and restart containers.
 
 
-## `make lock`
+### `make lock`
 
 Regenerates `uv.lock` from `pyproject.toml`. To upgrade a single package:
 

@@ -1,9 +1,7 @@
-from __future__ import annotations
-
 import datetime
 import json
 import uuid
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
     from cabotage.server.models.auth import Organization
@@ -48,6 +46,7 @@ from cabotage.utils.release_build_context import (
     configmap_context_for_release,
     RELEASE_DOCKERFILE_TEMPLATE,
 )
+from cabotage._types import assume_not_none
 
 activity_plugin = ActivityPlugin()
 flask_plugin = FlaskPlugin()
@@ -364,6 +363,9 @@ class ApplicationEnvironment(Model, Timestamp):
         cascade="all, delete-orphan",
     )
     alerts: Mapped[list[Alert]] = relationship(back_populates="application_environment")
+    job_logs: DynamicMapped[list[JobLog]] = relationship(
+        back_populates="application_environment"
+    )
 
     __table_args__ = (
         Index(
@@ -467,10 +469,13 @@ class ApplicationEnvironment(Model, Timestamp):
         return f"{self.application.project.organization.slug}/{self.application.project.slug}/{self.environment.slug}/{self.application.slug}"
 
     @property
-    def effective_deployment_timeout(self):
+    def effective_deployment_timeout(self) -> int:
         if self.deployment_timeout is not None:
             return self.deployment_timeout
-        return self.application.deployment_timeout
+        return assume_not_none(
+            self.application.deployment_timeout,
+            because="server_default populates deployment_timeout on insert",
+        )
 
     @property
     def effective_health_check_path(self):
@@ -822,8 +827,14 @@ class JobLog(Model, Timestamp):
         backref=backref("job_logs", lazy="dynamic"),
     )
     application_environment: Mapped[ApplicationEnvironment] = relationship(
-        backref=backref("job_logs", lazy="dynamic"),
+        back_populates="job_logs"
     )
+
+
+class Change(TypedDict, total=False):
+    added: list[str]
+    changed: list[str]
+    removed: list[str]
 
 
 class Release(Model, Timestamp):
@@ -849,12 +860,12 @@ class Release(Model, Timestamp):
     image: Mapped[Any] = mapped_column(postgresql.JSONB())
     configuration: Mapped[Any] = mapped_column(postgresql.JSONB())
     image_changes: Mapped[Any] = mapped_column(postgresql.JSONB())
-    configuration_changes: Mapped[Any] = mapped_column(postgresql.JSONB())
+    configuration_changes: Mapped[Change] = mapped_column(postgresql.JSONB())
     ingresses: Mapped[Any] = mapped_column(
         postgresql.JSONB(),
         server_default=text("'{}'::jsonb"),
     )
-    ingress_changes: Mapped[Any] = mapped_column(
+    ingress_changes: Mapped[Change] = mapped_column(
         postgresql.JSONB(),
         server_default=text("'{}'::jsonb"),
     )
@@ -1871,9 +1882,7 @@ def create_default_ingresses(app_env, process_names=None):
         )
         db.session.add(ingress_obj)
         db.session.flush()
-        auto_hostname = (
-            f"{readable_k8s_hostname(*hostname_pairs)}-{process_name}.{ingress_domain}"
-        )
+        auto_hostname = f"{readable_k8s_hostname(*hostname_pairs, suffix=process_name)}.{ingress_domain}"
         db.session.add(
             IngressHost(
                 ingress_id=ingress_obj.id,

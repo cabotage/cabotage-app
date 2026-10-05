@@ -1,7 +1,7 @@
 [project]
 name = "cabotage"
 version = "0.0.1"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "argon2-cffi",
     "authlib",
@@ -50,17 +50,22 @@ dependencies = [
 dev = [
     "bandit",
     "hupper",
-    "pytest",
+    "kubernetes-stubs-elephant-fork>=36.0.3.post1",
+    "pyrefly>=1.2.0",
     "pytest-cov",
+    "pytest",
     "ruff",
     "ty",
     "types-croniter",
-    "types-pyyaml",
     "types-pygments",
+    "types-pyyaml",
     "types-redis",
     "types-requests",
     "types-toml",
+    "types-wtforms>=3.2.1.20260518",
     "typing-extensions",
+    "types-simple-websocket>=1.1.0.20260512",
+    "prek>=0.5.3",
 ]
 
 [tool.pytest.ini_options]
@@ -82,3 +87,19 @@ exclude_dirs = ["bin", "lib", "tests"]
 
 [tool.uv]
 exclude-newer = "1 week"
+
+[tool.pyrefly]
+preset = "all"
+project-includes = ["cabotage"]
+baseline = "baseline.json"
+
+[[tool.pyrefly.sub-config]]
+matches = "cabotage/server/models"
+
+[tool.pyrefly.sub-config.errors]
+# FIXME: properly annotate all JSONB fields in the models
+explicit-any = false
+
+
+[tool.pyrefly.errors]
+implicit-bool = false

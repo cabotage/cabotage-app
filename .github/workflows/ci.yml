@@ -15,9 +15,8 @@ jobs:
     runs-on: ubuntu-24.04-arm
     name: Lint
     steps:
-      - uses: actions/checkout@v3
-      - uses: astral-sh/setup-uv@v5
-      - run: uv python install 3.13
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.0.1
       - run: uv sync --frozen
       - run: uv run ruff format --check --diff .
       - run: uv run ruff check .
@@ -26,25 +25,32 @@ jobs:
     runs-on: ubuntu-24.04-arm
     name: Type-Check
     steps:
-      - uses: actions/checkout@v3
-      - uses: astral-sh/setup-uv@v5
-      - run: uv python install 3.13
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.0.1
       - run: uv sync --frozen
-      - run: uv run ty check cabotage
+      - name: ty
+        run: uv run ty check cabotage
+      - name: pyrefly
+        run: uv run pyrefly check --error-stale-baseline
 
   security-check:
     runs-on: ubuntu-24.04-arm
     name: Security-Check
     steps:
-      - uses: actions/checkout@v3
-      - uses: astral-sh/setup-uv@v5
-      - run: uv python install 3.13
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.0.1
       - run: uv sync --frozen
       - run: uv run bandit -c pyproject.toml -r .
 
   test:
     runs-on: ubuntu-24.04-arm
     name: Tests
+    env:
+      CABOTAGE_DEBUG: "False"
+      CABOTAGE_SECRET_KEY: cabotage-test-session-key
+      CABOTAGE_SECURITY_PASSWORD_SALT: cabotage-test-password-salt
+      CABOTAGE_REGISTRY_AUTH_SECRET: cabotage-test-registry-secret
+      CABOTAGE_SECURITY_TOTP_SECRETS: '{"1": "cabotage-test-totp-secret"}'
     services:
       db:
         image: postgres:16
@@ -68,12 +74,11 @@ jobs:
           --health-timeout 3s
           --health-retries 15
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
       - name: Set up database extensions
         run: |
           docker run --rm --network host postgres:16 psql -h localhost -U postgres -d cabotage_test -c "CREATE EXTENSION IF NOT EXISTS citext; CREATE EXTENSION IF NOT EXISTS pgcrypto;"
-      - uses: astral-sh/setup-uv@v5
-      - run: uv python install 3.13
+      - uses: astral-sh/setup-uv@v10.0.1
       - run: uv sync --frozen
       - name: Run migrations
         run: uv run flask db upgrade

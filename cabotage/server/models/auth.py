@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import datetime
 import uuid
 from typing import TYPE_CHECKING
@@ -39,7 +37,7 @@ if TYPE_CHECKING:
 
 # Must be set before model classes are defined — FsUserMixin uses
 # FsModels.db to create the webauthn relationship.
-FsModels.db = db  # type: ignore[assignment]
+FsModels.db = db
 
 activity_plugin = ActivityPlugin()
 make_versioned(plugins=[activity_plugin])

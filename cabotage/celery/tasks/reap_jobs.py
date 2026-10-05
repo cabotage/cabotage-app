@@ -1,15 +1,14 @@
 """Celery task to reap completed/failed CronJob-spawned Jobs.
 
-Finds K8s Jobs labelled resident-job.cabotage.io=true that are no longer
-Pending/Running, records metadata into the job_logs table, then deletes
-them from the cluster.
+Finds finished K8s Jobs labelled resident-job.cabotage.io=true, excluding
+resident-deployment.cabotage.io jobs, records metadata, then deletes them.
 """
 
 import datetime
 import os
 
-import kubernetes
-from kubernetes.client.rest import ApiException
+import kubernetes.client
+from kubernetes.client.exceptions import ApiException
 from sqlalchemy.exc import IntegrityError
 
 from celery import shared_task
@@ -78,7 +77,9 @@ def _extract_resources(job):
     return None
 
 
-def _resolve_app_env(labels):
+def _resolve_app_env(
+    labels: dict[str, str],
+) -> tuple[Application, ApplicationEnvironment] | tuple[None, None]:
     """Look up Application and ApplicationEnvironment from job labels."""
     org_slug = labels.get("organization")
     project_slug = labels.get("project")
@@ -122,7 +123,7 @@ def _resolve_app_env(labels):
 def _reap_limit():
     try:
         return int(os.environ.get("CABOTAGE_JOBS_REAPED_PER_RUN", DEFAULT_REAP_LIMIT))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return DEFAULT_REAP_LIMIT
 
 
@@ -135,7 +136,7 @@ def reap_finished_jobs():
     api_client = kubernetes_ext.kubernetes_client
     batch_api = kubernetes.client.BatchV1Api(api_client)
 
-    label_selector = "resident-job.cabotage.io=true"
+    label_selector = "resident-job.cabotage.io=true,!resident-deployment.cabotage.io"
     limit = _reap_limit()
 
     try:
@@ -152,6 +153,16 @@ def reap_finished_jobs():
             break
 
         if not _is_finished(job):
+            continue
+
+        if job.metadata is None or job.metadata.name is None:
+            current_app.logger.exception("Skipping unnamed job")
+            continue
+
+        if job.status is None:
+            current_app.logger.exception(
+                "Skipping statusless job in %s", job.metadata.namespace
+            )
             continue
 
         labels = job.metadata.labels or {}
@@ -183,7 +194,7 @@ def reap_finished_jobs():
         release_version = None
         try:
             release_version = int(labels.get("release", ""))
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             pass
 
         resources = _extract_resources(job)
