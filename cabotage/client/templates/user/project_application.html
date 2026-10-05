@@ -1041,12 +1041,12 @@
                 </svg>
               </div>
             </div>
-            <div class="ls-row ls-row-last">
+            <div class="ls-row ls-row-last ls-row-pods">
               <div class="ls-left">
                 <span class="ls-label">Pods</span>
                 <span class="ls-val" data-ls-pod-count>—</span>
               </div>
-              <div class="flex-1 flex flex-col gap-1 justify-center min-w-0" data-ls-pod-procs></div>
+              <div class="min-w-0" data-ls-pod-procs></div>
             </div>
           </div>
         {% endif %}
@@ -1054,7 +1054,7 @@
         <div class="ls-bento-activity" data-live-activity>
           {% if has_any_activity %}
             <div class="card bg-base-200 border border-base-300">
-              <div class="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-base-content/5">
+              <div class="activity-columns">
                 <div class="p-4">
                   <div class="flex items-center gap-1.5 mb-2">
                     {{ icon('image', 'w-3 h-3 text-base-content/30') }}
@@ -1080,7 +1080,7 @@
                       {% if img.image_metadata and img.image_metadata.get('trigger', '').startswith('manual') %}
                         <span class="dpl-badge dpl-badge-manual" title="by {{ img.image_metadata.get('triggered_by', '?') }}">{{ icon('user', 'w-2 h-2') }} manual</span>
                       {% endif %}
-                    <span class="text-xs text-base-content/25 ml-auto"><time data-timestamp="{{ img.updated|isoformat_utc }}">{{ img.updated|humanize }}</time>
+                    <span class="activity-time text-xs text-base-content/25"><time data-timestamp="{{ img.updated|isoformat_utc }}">{{ img.updated|humanize }}</time>
                     {% if img.built %}<span class="text-base-content/15">({{ img|duration }})</span>{% endif %}
                   </span>
                 </a>
@@ -1113,7 +1113,7 @@
                   {% if rel.release_metadata and rel.release_metadata.get('trigger', '').startswith('manual') %}
                     <span class="dpl-badge dpl-badge-manual" title="by {{ rel.release_metadata.get('triggered_by', '?') }}">{{ icon('user', 'w-2 h-2') }} manual</span>
                   {% endif %}
-                <span class="text-xs text-base-content/25 ml-auto"><time data-timestamp="{{ rel.updated|isoformat_utc }}">{{ rel.updated|humanize }}</time>
+                <span class="activity-time text-xs text-base-content/25"><time data-timestamp="{{ rel.updated|isoformat_utc }}">{{ rel.updated|humanize }}</time>
                 {% if rel.built %}<span class="text-base-content/15">({{ rel|duration }})</span>{% endif %}
               </span>
             </a>
@@ -1146,7 +1146,7 @@
               {% if dep.deploy_metadata and dep.deploy_metadata.get('trigger', '').startswith('manual') %}
                 <span class="dpl-badge dpl-badge-manual" title="by {{ dep.deploy_metadata.get('triggered_by', '?') }}">{{ icon('user', 'w-2 h-2') }} manual</span>
               {% endif %}
-            <span class="text-xs text-base-content/25 ml-auto"><time data-timestamp="{{ dep.updated|isoformat_utc }}">{{ dep.updated|humanize }}</time>
+            <span class="activity-time text-xs text-base-content/25"><time data-timestamp="{{ dep.updated|isoformat_utc }}">{{ dep.updated|humanize }}</time>
             {% if dep.complete %}<span class="text-base-content/15">({{ dep|duration }})</span>{% endif %}
           </span>
         </a>
@@ -1487,7 +1487,7 @@
           cpuSpark.parentElement.classList.add('ls-loaded');
           memSpark.parentElement.classList.add('ls-loaded');
 
-          // Pod process vertical bars
+          // Ready counts and status distribution for each process
           if (data.pods != null) {
             podEl.textContent = data.pods_ready + '/' + data.pods;
             function escHtml(s) {
@@ -1505,19 +1505,26 @@
               var crashedPct = p.total > 0 ? (p.crashed / p.total) * 100 : 0;
               var pendingPct = p.total > 0 ? (p.pending / p.total) * 100 : 0;
               html += '<div class="proc-bar">' +
-                '<div class="flex flex-col">' +
-                '<span class="proc-bar-label text-base-content/50">' + escHtml(names[i]) + '</span>' +
+                '<span class="proc-bar-label">' + escHtml(names[i]) + '</span>' +
                 '<span class="proc-bar-count">' + p.ready + '/' + p.total + '</span>' +
-                '</div>' +
                 '<div class="proc-bar-track">' +
-                '<div class="proc-bar-seg proc-bar-seg--ready" style="height:' + readyPct + '%"></div>' +
-                '<div class="proc-bar-seg proc-bar-seg--pending" style="height:' + pendingPct + '%"></div>' +
-                '<div class="proc-bar-seg proc-bar-seg--crashed" style="height:' + crashedPct + '%"></div>' +
+                '<div class="proc-bar-seg proc-bar-seg--ready" style="width:' + readyPct + '%"></div>' +
+                '<div class="proc-bar-seg proc-bar-seg--pending" style="width:' + pendingPct + '%"></div>' +
+                '<div class="proc-bar-seg proc-bar-seg--crashed" style="width:' + crashedPct + '%"></div>' +
                 '</div>' +
                 '</div>';
             }
             html += '</div>';
             podProcs.innerHTML = html;
+            podProcs.querySelectorAll('.proc-bar').forEach(function(row, index) {
+              var p = procs[names[index]];
+              row.querySelector('.proc-bar-label').title = names[index];
+              var track = row.querySelector('.proc-bar-track');
+              var status = p.ready + ' ready, ' + p.pending + ' pending, ' + p.crashed + ' crashed';
+              track.title = status;
+              track.setAttribute('role', 'img');
+              track.setAttribute('aria-label', status);
+            });
           }
         })
         .catch(function() {});
