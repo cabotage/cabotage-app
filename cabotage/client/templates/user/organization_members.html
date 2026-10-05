@@ -35,10 +35,16 @@
       {% endif %}
     </div>
 
+    <div class="text-sm text-base-content/70 space-y-1 mb-4 max-w-prose">
+      <p id="member-role-help"><strong class="text-base-content">Member:</strong> Can view this organization and all its projects and applications, and create projects and application releases.</p>
+      <p id="admin-role-help"><strong class="text-base-content">Admin:</strong> Also manages members, organization settings, and all projects and applications, including configuration and deployments.</p>
+      <p>These roles apply across this organization, not just one project.</p>
+    </div>
+
     {% if organization.members %}
       <div class="flex flex-col gap-2">
         {% for membership in organization.members %}
-          <div class="flex items-center justify-between p-3 rounded-lg bg-base-200/50 border border-base-content/5">
+          <div class="flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg bg-base-200/50 border border-base-content/5">
             <div class="flex items-center gap-3 min-w-0">
               {% if membership.admin %}
                 <div class="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
@@ -65,6 +71,7 @@
                   <button type="button"
                           class="btn btn-ghost btn-xs gap-1 text-warning"
                           title="Demote from admin"
+                          aria-describedby="member-role-help"
                           onclick="document.getElementById('demote-{{ membership.user.id }}').showModal()">
                     {{ icon('shield', 'w-3.5 h-3.5') }}
                     Demote
@@ -73,6 +80,7 @@
                   <button type="button"
                           class="btn btn-ghost btn-xs gap-1"
                           title="Promote to admin"
+                          aria-describedby="admin-role-help"
                           onclick="document.getElementById('promote-{{ membership.user.id }}').showModal()">
                     {{ icon('shield', 'w-3.5 h-3.5') }}
                     Promote
@@ -87,15 +95,15 @@
               </div>
 
               {% if membership.admin %}
-              <dialog id="demote-{{ membership.user.id }}" class="modal confirm-modal" data-confirm-value="{{ membership.user.username }}">
+              <dialog id="demote-{{ membership.user.id }}" class="modal confirm-modal" data-confirm-value="{{ membership.user.username }}" aria-labelledby="demote-title-{{ membership.user.id }}" aria-describedby="demote-help-{{ membership.user.id }}">
                 <div class="modal-box max-w-sm">
                   <form action="{{ url_for('user.organization_demote_user', org_slug=organization.slug) }}" method="post">
                     {{ remove_member_form.hidden_tag() }}
                     <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
-                    <h3 class="text-base font-semibold text-base-content mb-2">Demote from Admin</h3>
-                    <p class="text-sm text-base-content/60 mb-3">Remove admin privileges from <strong>{{ membership.user.username }}</strong>?</p>
-                    <p class="text-xs text-base-content/40 mb-1">Type <strong>{{ membership.user.username }}</strong> to confirm</p>
-                    <input type="text" class="input input-bordered input-sm w-full confirm-input" autocomplete="off" />
+                    <h3 id="demote-title-{{ membership.user.id }}" class="text-base font-semibold text-base-content mb-2">Demote from Admin</h3>
+                    <p id="demote-help-{{ membership.user.id }}" class="text-sm text-base-content/70 mb-3"><strong>{{ membership.user.username }}</strong> will lose management access to members, organization settings, and all projects and applications. They can still view them and create projects and application releases.</p>
+                    <label for="demote-confirm-{{ membership.user.id }}" class="block text-xs text-base-content/70 mb-1">Type <strong>{{ membership.user.username }}</strong> to confirm</label>
+                    <input id="demote-confirm-{{ membership.user.id }}" type="text" class="input input-bordered input-sm w-full confirm-input" autocomplete="off" aria-describedby="demote-help-{{ membership.user.id }}" />
                     <div class="modal-action">
                       <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('dialog').close()">Cancel</button>
                       <button type="submit" class="btn btn-warning btn-sm confirm-btn" disabled>Demote</button>
@@ -105,15 +113,15 @@
                 <form method="dialog" class="modal-backdrop"><button>close</button></form>
               </dialog>
               {% else %}
-              <dialog id="promote-{{ membership.user.id }}" class="modal confirm-modal" data-confirm-value="{{ membership.user.username }}">
+              <dialog id="promote-{{ membership.user.id }}" class="modal confirm-modal" data-confirm-value="{{ membership.user.username }}" aria-labelledby="promote-title-{{ membership.user.id }}" aria-describedby="promote-help-{{ membership.user.id }}">
                 <div class="modal-box max-w-sm">
                   <form action="{{ url_for('user.organization_promote_user', org_slug=organization.slug) }}" method="post">
                     {{ remove_member_form.hidden_tag() }}
                     <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
-                    <h3 class="text-base font-semibold text-base-content mb-2">Promote to Admin</h3>
-                    <p class="text-sm text-base-content/60 mb-3">Grant admin privileges to <strong>{{ membership.user.username }}</strong>?</p>
-                    <p class="text-xs text-base-content/40 mb-1">Type <strong>{{ membership.user.username }}</strong> to confirm</p>
-                    <input type="text" class="input input-bordered input-sm w-full confirm-input" autocomplete="off" />
+                    <h3 id="promote-title-{{ membership.user.id }}" class="text-base font-semibold text-base-content mb-2">Promote to Admin</h3>
+                    <p id="promote-help-{{ membership.user.id }}" class="text-sm text-base-content/70 mb-3"><strong>{{ membership.user.username }}</strong> will be able to manage members, organization settings, and all projects and applications, including configuration and deployments.</p>
+                    <label for="promote-confirm-{{ membership.user.id }}" class="block text-xs text-base-content/70 mb-1">Type <strong>{{ membership.user.username }}</strong> to confirm</label>
+                    <input id="promote-confirm-{{ membership.user.id }}" type="text" class="input input-bordered input-sm w-full confirm-input" autocomplete="off" aria-describedby="promote-help-{{ membership.user.id }}" />
                     <div class="modal-action">
                       <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('dialog').close()">Cancel</button>
                       <button type="submit" class="btn btn-primary btn-sm confirm-btn" disabled>Promote</button>
@@ -172,8 +180,9 @@
               class="flex flex-col gap-4">
           {{ add_member_form.hidden_tag() }}
           {{ render_field(add_member_form.identity, placeholder='user@example.com or github-username') }}
+          <p id="add-member-role-help" class="text-sm text-base-content/70">New users join as Members. They can view all projects and applications in this organization and create projects and application releases. You can promote them to Admin afterward.</p>
           <div class="pt-2">
-            <button type="submit" class="btn btn-primary w-full">Add Member</button>
+            <button type="submit" class="btn btn-primary w-full" aria-describedby="add-member-role-help">Add Member</button>
           </div>
         </form>
       </div>

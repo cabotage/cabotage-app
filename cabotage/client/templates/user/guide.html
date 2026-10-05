@@ -14,6 +14,19 @@
 
   <div class="mb-10">
     <div class="flex items-center gap-2 mb-4">
+      {{ icon('users', 'w-4 h-4 text-primary') }}
+      <h2 class="text-base font-semibold text-base-content">Organization roles</h2>
+    </div>
+    <div class="text-sm text-base-content/70 leading-relaxed space-y-2 max-w-prose">
+      <p><strong class="text-base-content">Members</strong> can view the organization and all its projects and applications. They can also create projects from the organization's project creation page and create application releases, but cannot deploy them.</p>
+      <p><strong class="text-base-content">Admins</strong> can also manage members, organization settings, and all projects and applications, including configuration and deployments.</p>
+      <p>Access to projects comes from organization membership; these roles are not assigned separately per project. Creating a project does not grant a Member admin access to it.</p>
+      <p>New users are added as Members. An organization Admin can promote or demote other users on the organization's Members tab.</p>
+    </div>
+  </div>
+
+  <div class="mb-10">
+    <div class="flex items-center gap-2 mb-4">
       {{ icon('zap', 'w-4 h-4 text-primary') }}
       <h2 class="text-base font-semibold text-base-content">Deploying your code</h2>
     </div>
