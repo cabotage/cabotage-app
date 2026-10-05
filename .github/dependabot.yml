@@ -1,10 +1,65 @@
 version: 2
 updates:
-  - package-ecosystem: "pip"
-    directory: "/requirements"
+  - package-ecosystem: "uv"
+    directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 14
+    open-pull-requests-limit: 1
     groups:
-      all-dependencies:
+      python:
+        patterns:
+          - "*"
+      python-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 14
+    open-pull-requests-limit: 1
+    groups:
+      gha:
+        patterns:
+          - "*"
+      gha-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: "bun"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 14
+    open-pull-requests-limit: 1
+    groups:
+      frontend:
+        patterns:
+          - "*"
+      frontend-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 14
+    open-pull-requests-limit: 1
+    groups:
+      docker:
+        patterns:
+          - "*"
+      docker-security:
+        applies-to: security-updates
         patterns:
           - "*"
