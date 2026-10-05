@@ -39474,13 +39474,6 @@
       "severity": "error"
     },
     {
-      "column": 47,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `previous_github_app_installation_id` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
       "column": 38,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-variable-type",
