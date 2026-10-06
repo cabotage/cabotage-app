@@ -68,7 +68,10 @@ def read_logging_value(
     configuration: Configuration | EnvironmentConfiguration | None,
     reader: ConfigWriter,
 ) -> object:
-    """Read only for server-side validation/testing, never for template context."""
+    """Read for server-side validation/testing, never for template context.
+
+    Secret-backend values remain untrusted until the caller validates them.
+    """
     if configuration is None:
         return None
     if configuration.secret:
