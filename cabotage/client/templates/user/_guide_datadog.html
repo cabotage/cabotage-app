@@ -1,0 +1,74 @@
+<div class="guide-prose">
+  <p class="guide-lead">Send application stdout and stderr to your own Datadog account. Export stays off until you enable it for an application environment.</p>
+
+  <div class="guide-note">
+    <strong>Already using Datadog?</strong>
+    <p>Keep your existing <code>DD_API_KEY</code> value and flags unchanged. Log export adds a separate collector; it does not replace your metrics/APM Agent or change its destination.</p>
+  </div>
+
+  <h2 id="enable-export">Enable log export</h2>
+  <p>An organization Admin can make these changes. Select your application and environment, then open <strong>Config → Logging</strong>.</p>
+  <ol class="guide-instructions">
+    <li>
+      <strong>Choose your destination and enable export.</strong>
+      <dl class="guide-config-list">
+        <div>
+          <dt><code>DD_API_KEY</code></dt>
+          <dd>Leave the API key field blank to keep the existing key. A replacement is stored as a runtime secret and also changes the key used by the metrics/APM Agent.</dd>
+        </div>
+        <div>
+          <dt><code>DD_SITE</code></dt>
+          <dd>Select your account's Datadog site. This sets the log destination only.</dd>
+        </div>
+        <div>
+          <dt><code>DD_LOGS_ENABLED</code></dt>
+          <dd>Choose <strong>Enabled</strong>, then save. An API key alone never enables export.</dd>
+        </div>
+      </dl>
+      <p>Logging and <strong>Config → Variables</strong> edit the same settings; changes in either appear in the other. Shared values stay inherited unless you explicitly choose an application override.</p>
+      <p><strong>Test saved destination</strong> sends one synthetic message using saved settings, even while export is disabled. Intake acceptance does not verify the application collector or enable export.</p>
+    </li>
+    <li>
+      <strong>Create a release, then deploy it.</strong>
+      <p>Use the application's <strong>Overview</strong> tab. Logging shows whether saved settings are included in the last completed deployment or require deployment; it does not report delivery health. No image rebuild is needed for a configuration-only change.</p>
+    </li>
+    <li>
+      <strong>Check Datadog Live Tail.</strong>
+      <p>Emit a non-sensitive log message and search for <code>service:&lt;application-slug&gt;</code>. Confirm it reaches the intended account.</p>
+    </li>
+  </ol>
+
+  <h2 id="scope">What gets exported</h2>
+  <p>Only application process logs, including workers and release, postdeploy, and scheduled jobs. Cabotage's log viewer and existing Alloy/Loki collection keep working.</p>
+  <p>Project/environment variables can be shared through explicit application subscriptions. Subscribe the enable flag only in applications you want to export; there is no organization-wide switch.</p>
+  <p><strong>Delivery is best-effort, not an audit archive.</strong> Collector crashes, pod removal, prolonged outages, and short-job shutdown can lose logs.</p>
+
+  <h2 id="disable-export">Turn off export</h2>
+  <p>Choose <strong>Disabled</strong> in Logging, or set <code>DD_LOGS_ENABLED=false</code> in Variables, then create a release and deploy it. Keep the API key if your metrics/APM Agent uses it. Already-running jobs retain their original settings.</p>
+
+  <h2 id="troubleshooting">Troubleshooting</h2>
+  <details class="guide-disclosure">
+    <summary>Deployment rejects the key or site <span aria-hidden="true">{{ icon('chevron-right', 'guide-disclosure-icon') }}</span></summary>
+    <p>Check that the application has a readable <code>DD_API_KEY</code> and an explicit <code>DD_SITE</code>; platform credentials are never used as a fallback.</p>
+    <p>Supported sites: <code>datadoghq.com</code>, <code>datadoghq.eu</code>, <code>us3.datadoghq.com</code>, <code>us5.datadoghq.com</code>, <code>ap1.datadoghq.com</code>, <code>ap2.datadoghq.com</code>, <code>uk1.datadoghq.com</code>, <code>ddog-gov.com</code>, and <code>us2.ddog-gov.com</code>.</p>
+  </details>
+  <details class="guide-disclosure">
+    <summary>Pods are running, but logs are missing <span aria-hidden="true">{{ icon('chevron-right', 'guide-disclosure-icon') }}</span></summary>
+    <p>Confirm the new release was deployed and the key belongs to the selected site. Ask your platform operator to inspect the <code>datadog-logs</code> container for mounting, authentication, or network errors; do not paste API keys into support messages.</p>
+  </details>
+  <details class="guide-disclosure">
+    <summary>Logs arrive as JSON text <span aria-hidden="true">{{ icon('chevron-right', 'guide-disclosure-icon') }}</span></summary>
+    <p>Application JSON is preserved in the message. Configure a Datadog parsing pipeline and field remappers for your application's message, severity, timestamp, and trace IDs.</p>
+  </details>
+
+  <details class="guide-disclosure guide-operator-notes">
+    <summary>For platform operators <span aria-hidden="true">{{ icon('chevron-right', 'guide-disclosure-icon') }}</span></summary>
+    <ul>
+      <li>The collector is Fluent Bit <code>4.2.2</code>; override its image with <code>CABOTAGE_DATADOG_LOGS_IMAGE</code>. The existing Agent image is unchanged.</li>
+      <li>Requires Linux CRI <code>/var/log/pods</code>, native sidecars, the lifecycle sleep hook, and read-only hostPath/subPathExpr mounts. Only the collector mounts its own pod directory.</li>
+      <li>Per collector: requests <code>32Mi / 10m</code>, limits <code>128Mi / 100m</code>, a <code>5M</code> input buffer, and <code>16Mi</code> of offset storage, not a durable output queue.</li>
+      <li>The key is in the container environment; restrict access to workload specifications. Verify mounting, short-job shutdown, and delivery on your cluster before rollout.</li>
+      <li>Opted-in pods exclude shared Datadog log collection, not metrics/APM. Deployments retain this exclusion after opt-out; remove it only if shared-account logging is intended. CronJob replacement uses the new annotations.</li>
+    </ul>
+  </details>
+</div>
