@@ -40,6 +40,8 @@ from cabotage.server.models.utils import (
     repair_ingress_hostname,
 )
 
+from cabotage.utils.datadog import DATADOG_SITES
+
 from cabotage.utils.build_log_stream import (
     _HEARTBEAT_TTL,
     get_redis_client,
@@ -1914,6 +1916,121 @@ def render_datadog_container(
     )
 
 
+def _read_datadog_config(configuration, name, default=None):
+    config = configuration.get(name)
+    if config is None:
+        return default
+    if config.secret is True:
+        if not config.key_slug:
+            raise DeployError(f"Datadog configuration {name} has no secret path")
+        # read_value() intentionally masks runtime-only secrets for the UI.
+        payload = config_writer.read(config.key_slug.split(":", 1)[1], secret=True)
+        return payload["data"][name]
+    return config.read_value(config_writer)
+
+
+def _render_datadog_logs_container(process_name, dd_api_key, dd_site, datadog_tags):
+    if dd_site not in DATADOG_SITES:
+        raise DeployError("DD_LOGS_ENABLED requires a supported DD_SITE")
+    return kubernetes.client.V1Container(
+        name="datadog-logs",
+        restart_policy="Always",
+        image=current_app.config["DATADOG_LOGS_IMAGE"],
+        image_pull_policy="IfNotPresent",
+        args=[
+            "-f",
+            "1",
+            "-R",
+            "/fluent-bit/etc/parsers.conf",
+            "-i",
+            "tail",
+            "-p",
+            f"path=/var/log/cabotage-pod/{process_name}/*.log",
+            "-p",
+            "multiline.parser=cri",
+            "-p",
+            "read_from_head=true",
+            "-p",
+            "refresh_interval=1",
+            "-p",
+            "db=/var/lib/cabotage-log-state/tail.db",
+            "-p",
+            "mem_buf_limit=5M",
+            "-t",
+            "cabotage.app",
+            "-o",
+            "datadog",
+            "-m",
+            "cabotage.app",
+            "-p",
+            f"host=http-intake.logs.{dd_site}",
+            "-p",
+            "tls=on",
+            "-p",
+            "tls.verify=on",
+            "-p",
+            "compress=gzip",
+            "-p",
+            "apikey=${DD_API_KEY}",
+            "-p",
+            "dd_message_key=log",
+            "-p",
+            f"dd_service={datadog_tags['application']}",
+            "-p",
+            f"dd_source={datadog_tags['application']}",
+            "-p",
+            "dd_tags=" + ",".join(f"{k}:{v}" for k, v in datadog_tags.items()),
+            "-p",
+            "retry_limit=no_limits",
+        ],
+        env=[
+            kubernetes.client.V1EnvVar(name="DD_API_KEY", value=dd_api_key),
+            *[
+                kubernetes.client.V1EnvVar(
+                    name=name,
+                    value_from=kubernetes.client.V1EnvVarSource(
+                        field_ref=kubernetes.client.V1ObjectFieldSelector(
+                            field_path=field
+                        )
+                    ),
+                )
+                for name, field in (
+                    ("POD_NAMESPACE", "metadata.namespace"),
+                    ("POD_NAME", "metadata.name"),
+                    ("POD_UID", "metadata.uid"),
+                )
+            ],
+        ],
+        volume_mounts=[
+            kubernetes.client.V1VolumeMount(
+                name="datadog-pod-logs",
+                mount_path="/var/log/cabotage-pod",
+                sub_path_expr="$(POD_NAMESPACE)_$(POD_NAME)_$(POD_UID)",
+                read_only=True,
+            ),
+            kubernetes.client.V1VolumeMount(
+                name="datadog-log-state",
+                mount_path="/var/lib/cabotage-log-state",
+            ),
+        ],
+        # Allow discovery of a short job's new log file before terminating.
+        lifecycle=kubernetes.client.V1Lifecycle(
+            pre_stop=kubernetes.client.V1LifecycleHandler(
+                sleep=kubernetes.client.V1SleepAction(seconds=2)
+            )
+        ),
+        security_context=kubernetes.client.V1SecurityContext(
+            allow_privilege_escalation=False,
+            read_only_root_filesystem=True,
+            capabilities=kubernetes.client.V1Capabilities(drop=["ALL"]),
+        ),
+        resources=kubernetes.client.V1ResourceRequirements(
+            requests={"memory": "32Mi", "cpu": "10m"},
+            limits={"memory": "128Mi", "cpu": "100m"},
+        ),
+    )
+
+
 def render_podspec(release, process_name, service_account_name):
     datadog_tags = {
         "organization": release.application.project.organization.slug,
@@ -2016,6 +2133,39 @@ def render_podspec(release, process_name, service_account_name):
             )
         )
 
+    configuration = release.configuration_objects
+    logs_enabled = (
+        str(_read_datadog_config(configuration, "DD_LOGS_ENABLED", "false"))
+        .strip()
+        .lower()
+        == "true"
+    )
+    if logs_enabled:
+        log_api_key = _read_datadog_config(configuration, "DD_API_KEY")
+        log_site = _read_datadog_config(configuration, "DD_SITE")
+        if not log_api_key or log_api_key == "**secret**":
+            raise DeployError("DD_LOGS_ENABLED requires the application's DD_API_KEY")
+        init_containers.append(
+            _render_datadog_logs_container(
+                process_name, log_api_key, log_site, datadog_tags
+            )
+        )
+        volumes.extend(
+            [
+                kubernetes.client.V1Volume(
+                    name="datadog-pod-logs",
+                    host_path=kubernetes.client.V1HostPathVolumeSource(
+                        path="/var/log/pods", type="Directory"
+                    ),
+                ),
+                kubernetes.client.V1Volume(
+                    name="datadog-log-state",
+                    empty_dir=kubernetes.client.V1EmptyDirVolumeSource(
+                        size_limit="16Mi"
+                    ),
+                ),
+            ]
+        )
     if (
         not (
             process_name.startswith("release") or process_name.startswith("postdeploy")
@@ -2071,6 +2221,13 @@ def render_podspec(release, process_name, service_account_name):
     )
 
 
+def _datadog_logs_annotations(pod_spec):
+    if any(c.name == "datadog-logs" for c in pod_spec.init_containers):
+        # A shared node agent must not duplicate tenant logs into its own account.
+        return {"ad.datadoghq.com/logs_exclude": "true"}
+    return None
+
+
 def render_deployment(
     namespace, release, service_account_name, process_name, deployment_id
 ):
@@ -2093,6 +2250,7 @@ def render_deployment(
         "resident-pod.cabotage.io": "true",
         **safe_labels,
     }
+    pod_spec = render_podspec(release, process_name, service_account_name)
     deployment_object = kubernetes.client.V1Deployment(
         metadata=kubernetes.client.V1ObjectMeta(
             name=f"{resource_prefix}-{process_name}",
@@ -2115,8 +2273,11 @@ def render_deployment(
                 },
             ),
             template=kubernetes.client.V1PodTemplateSpec(
-                metadata=kubernetes.client.V1ObjectMeta(labels=pod_labels),
-                spec=render_podspec(release, process_name, service_account_name),
+                metadata=kubernetes.client.V1ObjectMeta(
+                    labels=pod_labels,
+                    annotations=_datadog_logs_annotations(pod_spec),
+                ),
+                spec=pod_spec,
             ),
         ),
     )
@@ -2296,6 +2457,7 @@ def resize_deployment(namespace, release, process_name, pod_class_name):
 def render_job(namespace, release, service_account_name, process_name, job_id):
     label_value = k8s_label_value(release)
     safe_labels = _safe_labels_from_release(release)
+    pod_spec = render_podspec(release, process_name, service_account_name)
     job_object = kubernetes.client.V1Job(
         metadata=kubernetes.client.V1ObjectMeta(
             name=f"deployment-{job_id}",
@@ -2329,9 +2491,10 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
                         "ca-admission.cabotage.io": "true",
                         "resident-pod.cabotage.io": "true",
                         **safe_labels,
-                    }
+                    },
+                    annotations=_datadog_logs_annotations(pod_spec),
                 ),
-                spec=render_podspec(release, process_name, service_account_name),
+                spec=pod_spec,
             ),
         ),
     )
@@ -2397,6 +2560,7 @@ def render_cronjob(
         "ca-admission.cabotage.io": "true",
         "resident-pod.cabotage.io": "true",
     }
+    pod_spec = render_podspec(release, process_name, service_account_name)
     cronjob_object = kubernetes.client.V1CronJob(
         metadata=kubernetes.client.V1ObjectMeta(
             name=f"{resource_prefix}-{process_name}",
@@ -2422,10 +2586,11 @@ def render_cronjob(
                     active_deadline_seconds=3600,
                     backoff_limit=0,
                     template=kubernetes.client.V1PodTemplateSpec(
-                        metadata=kubernetes.client.V1ObjectMeta(labels=pod_labels),
-                        spec=render_podspec(
-                            release, process_name, service_account_name
+                        metadata=kubernetes.client.V1ObjectMeta(
+                            labels=pod_labels,
+                            annotations=_datadog_logs_annotations(pod_spec),
                         ),
+                        spec=pod_spec,
                     ),
                 ),
             ),
