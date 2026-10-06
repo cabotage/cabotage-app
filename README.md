@@ -17,12 +17,18 @@ See [the PyPI infrastructure pull
 request](https://github.com/python/pypi-infra/pull/3) for more on design goals.
 
 
+## Datadog logs
+
+Log export is opt-in and leaves existing metrics/APM unchanged. Open
+**Guide → Datadog logs** (`/guide/datadog-logs`) in Cabotage for setup,
+troubleshooting, and operator requirements.
+
+
 ## Pipeline
 
 Open **Observe → Pipeline** to review build and deployment times. Redeploys
 count only deployment time. Builds that run at the same time count once in the
 run total. The summary and tables still load when charts are unavailable.
-
 
 ## Development workflow
 
