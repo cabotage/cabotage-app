@@ -1,19 +1,22 @@
 # used for local buildkit emulation only
 import subprocess  # nosec
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, cast, Final
+from collections.abc import Sequence
 
 import redis
 
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Generator, Iterable
+    from datetime import timedelta
     from typing import Literal
 
     type BuildType = Literal["deploy", "image", "omnibus", "release"]
+    type EntityType = Literal["image_build", "release_build", "omnibus_build", "deploy"]
     type LogLine = tuple[bytes, list[tuple[bytes, dict[bytes, bytes]]]]
 
-_LOG_STREAM_TTL = 3600  # 1 hour
-_HEARTBEAT_TTL = 90  # seconds
+_LOG_STREAM_TTL: Final = 3600  # 1 hour
+_HEARTBEAT_TTL: Final = 90  # seconds
 
 
 def stream_key(build_type: BuildType, build_job_id: str) -> str:
@@ -28,7 +31,7 @@ def publish_end(
     redis_client: redis.Redis[bytes], key: str, error: bool = False
 ) -> None:
     redis_client.xadd(key, {"line": "__END__", "error": "1" if error else "0"})
-    redis_client.expire(key, _LOG_STREAM_TTL)
+    _ = redis_client.expire(key, _LOG_STREAM_TTL)
 
 
 def read_log_stream(
@@ -52,18 +55,22 @@ def read_log_stream(
                 yield line
 
 
-def heartbeat_key(entity_type, entity_id):
+def heartbeat_key(entity_type: EntityType, entity_id: str) -> str:
     return f"heartbeat:{entity_type}:{entity_id}"
 
 
-def refresh_heartbeat(redis_client, entity_type, entity_id, ttl=None):
+def refresh_heartbeat(
+    redis_client: redis.Redis[bytes],
+    entity_type: EntityType,
+    entity_id: str,
+    ttl: float | timedelta | None = None,
+) -> None:
     key = heartbeat_key(entity_type, entity_id)
-    redis_client.set(key, "1", ex=ttl or _HEARTBEAT_TTL)
+    _ = redis_client.set(key, "1", ex=ttl or _HEARTBEAT_TTL)
 
 
-def get_redis_client(broker_url):
-    if isinstance(broker_url, (tuple, list)):
-        broker_url = broker_url[0]
+def get_redis_client(broker_url: str | Sequence[str]) -> redis.Redis[bytes]:
+    broker_url = broker_url if isinstance(broker_url, str) else broker_url[0]
     return redis.Redis.from_url(broker_url)
 
 
@@ -74,7 +81,7 @@ def run_and_stream(
     broker_url: str,
     build_type: BuildType,
     build_job_id: str,
-    heartbeat_type: str | None = None,
+    heartbeat_type: EntityType | None = None,
     heartbeat_id: str | None = None,
 ) -> str:
     """Run a subprocess, stream output to Redis, return accumulated output.
@@ -96,13 +103,13 @@ def run_and_stream(
         stderr=subprocess.STDOUT,
         text=True,
     )
-    for line in proc.stdout or []:
+    for line in cast("Iterable[str]", proc.stdout) or []:
         line = line.rstrip("\n")
         publish_log_line(redis_client, log_key, line)
         output_lines.append(line)
         if heartbeat_type and heartbeat_id:
             refresh_heartbeat(redis_client, heartbeat_type, heartbeat_id)
-    proc.wait()
+    _ = proc.wait()
 
     if proc.returncode != 0:
         publish_end(redis_client, log_key, error=True)
