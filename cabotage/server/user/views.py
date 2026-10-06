@@ -3895,6 +3895,7 @@ def _logging_changes(
         try:
             enabled = read_logging_value(enabled_config, config_writer)
         except Exception:
+            # WTForms initializes mutable error lists during form validation.
             cast("list[str]", form.enabled.errors).append(
                 "The saved export setting could not be read. "
                 "Choose Disabled or Enabled explicitly."
