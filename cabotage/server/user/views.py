@@ -5915,7 +5915,6 @@ def guide(topic: str) -> str:
         "processes": "Processes and jobs",
         "pod-sizes": "Pod sizes",
         "roles": "Organization roles",
-        "datadog-logs": "Datadog logs",
     }
     if topic not in topics:
         abort(404)
