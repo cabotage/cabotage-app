@@ -7428,21 +7428,7 @@
       "severity": "error"
     },
     {
-      "column": 66,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`fetch_deployment` is missing an annotation for parameter `process_name`",
-      "severity": "error"
-    },
-    {
       "column": 9,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 20,
       "path": "cabotage/celery/tasks/deploy.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -7533,13 +7519,6 @@
       "severity": "error"
     },
     {
-      "column": 66,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`deployment_is_complete` is missing an annotation for parameter `process_name`",
-      "severity": "error"
-    },
-    {
       "column": 9,
       "path": "cabotage/celery/tasks/deploy.py",
       "name": "unknown-argument-type",
@@ -7568,27 +7547,6 @@
       "severity": "error"
     },
     {
-      "column": 70,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 23,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "missing-attribute",
-      "concise_description": "Object of class `NoneType` has no attribute `status`",
-      "severity": "error"
-    },
-    {
-      "column": 26,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "missing-attribute",
-      "concise_description": "Object of class `NoneType` has no attribute `spec`",
-      "severity": "error"
-    },
-    {
       "column": 27,
       "path": "cabotage/celery/tasks/deploy.py",
       "name": "missing-attribute",
@@ -7596,24 +7554,10 @@
       "severity": "error"
     },
     {
-      "column": 26,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "missing-attribute",
-      "concise_description": "Object of class `NoneType` has no attribute `spec`",
-      "severity": "error"
-    },
-    {
       "column": 27,
       "path": "cabotage/celery/tasks/deploy.py",
       "name": "missing-attribute",
       "concise_description": "Object of class `NoneType` has no attribute `status`",
-      "severity": "error"
-    },
-    {
-      "column": 26,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "missing-attribute",
-      "concise_description": "Object of class `NoneType` has no attribute `spec`",
       "severity": "error"
     },
     {
@@ -7621,13 +7565,6 @@
       "path": "cabotage/celery/tasks/deploy.py",
       "name": "missing-attribute",
       "concise_description": "Object of class `NoneType` has no attribute `status`",
-      "severity": "error"
-    },
-    {
-      "column": 54,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "missing-attribute",
-      "concise_description": "Object of class `NoneType` has no attribute `metadata`",
       "severity": "error"
     },
     {
@@ -7687,13 +7624,6 @@
       "severity": "error"
     },
     {
-      "column": 20,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 29,
       "path": "cabotage/celery/tasks/deploy.py",
       "name": "unknown-argument-type",
@@ -7702,13 +7632,6 @@
     },
     {
       "column": 51,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 65,
       "path": "cabotage/celery/tasks/deploy.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -7918,31 +7841,10 @@
       "severity": "error"
     },
     {
-      "column": 27,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`render_job` is missing an annotation for parameter `release`",
-      "severity": "error"
-    },
-    {
       "column": 36,
       "path": "cabotage/celery/tasks/deploy.py",
       "name": "implicit-any-parameter",
       "concise_description": "`render_job` is missing an annotation for parameter `service_account_name`",
-      "severity": "error"
-    },
-    {
-      "column": 58,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`render_job` is missing an annotation for parameter `process_name`",
-      "severity": "error"
-    },
-    {
-      "column": 72,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`render_job` is missing an annotation for parameter `job_id`",
       "severity": "error"
     },
     {
@@ -8254,13 +8156,6 @@
       "severity": "error"
     },
     {
-      "column": 20,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 29,
       "path": "cabotage/celery/tasks/deploy.py",
       "name": "unknown-argument-type",
@@ -8269,13 +8164,6 @@
     },
     {
       "column": 51,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 65,
       "path": "cabotage/celery/tasks/deploy.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -9549,13 +9437,6 @@
       "severity": "error"
     },
     {
-      "column": 28,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "missing-attribute",
-      "concise_description": "Object of class `NoneType` has no attribute `name`",
-      "severity": "error"
-    },
-    {
       "column": 29,
       "path": "cabotage/celery/tasks/deploy.py",
       "name": "missing-attribute",
@@ -9658,13 +9539,6 @@
       "path": "cabotage/celery/tasks/deploy.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 33,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "missing-attribute",
-      "concise_description": "Object of class `NoneType` has no attribute `name`",
       "severity": "error"
     },
     {
