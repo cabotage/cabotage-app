@@ -5884,11 +5884,24 @@ def application_release_create_legacy(application_id):
     )
 
 
-@user_blueprint.route("/guide")
+@user_blueprint.route("/guide", defaults={"topic": "deployments"})
+@user_blueprint.route("/guide/<topic>")
 @login_required
-def guide():
+def guide(topic: str) -> str:
+    topics = {
+        "deployments": "Deploying applications",
+        "configuration": "Environment variables",
+        "processes": "Processes and jobs",
+        "pod-sizes": "Pod sizes",
+        "roles": "Organization roles",
+        "datadog-logs": "Datadog logs",
+    }
+    if topic not in topics:
+        abort(404)
     return render_template(
         "user/guide.html",
+        guide_topic=topic,
+        guide_topics=topics,
         github_app_url=current_app.config.get("GITHUB_APP_URL", "https://github.com"),
     )
 
