@@ -751,7 +751,9 @@ def organization_settings(org_slug):
         and action == "save_tailscale"
         and ts_form.validate_on_submit()
     ):
-        client_id = ts_form.client_id.data
+        client_id = assume_not_none(
+            ts_form.client_id.data, because="InputRequired has already run"
+        )
         # Validate the OIDC trust by attempting a token exchange
         import requests as http_requests
 
@@ -2172,7 +2174,11 @@ def project_environment_configuration_create(org_slug, project_slug, env_slug):
     if form.validate_on_submit():
         from cabotage.utils.config_templates import has_template_variables
 
-        is_template = has_template_variables(form.value.data)
+        value = assume_not_none(
+            form.value.data, because="InputRequired has already run"
+        )
+
+        is_template = has_template_variables(value)
         if is_template and form.secure.data:
             flash("Template configs cannot be secrets.", "error")
             return redirect(
@@ -2189,7 +2195,7 @@ def project_environment_configuration_create(org_slug, project_slug, env_slug):
             project_id=project.id,
             environment_id=environment.id,
             name=form.name.data,
-            value=form.value.data,
+            value=value,
             secret=form.secure.data,
             buildtime=form.buildtime.data,
         )
@@ -3880,7 +3886,11 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
     if form.validate_on_submit():
         from cabotage.utils.config_templates import has_template_variables
 
-        is_template = has_template_variables(form.value.data)
+        value = assume_not_none(
+            form.value.data, because="InputRequired has already run"
+        )
+
+        is_template = has_template_variables(value)
         if is_template and form.secure.data:
             flash("Template configs cannot be secrets.", "error")
             return render_template(
@@ -3903,7 +3913,7 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
             application_id=form.application_id.data,
             application_environment_id=app_env.id,
             name=form.name.data,
-            value=form.value.data,
+            value=value,
             secret=form.secure.data,
             buildtime=form.buildtime.data,
         )
