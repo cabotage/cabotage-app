@@ -1,0 +1,118 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import app_resource_path, app_tab_nav, icon %}
+
+{% set org_slug = application.project.organization.slug %}
+{% set project_slug = application.project.slug %}
+{% set app_slug = application.slug %}
+{% set env_slug = environment.slug if environment else none %}
+{% set logging_url = url_for('user.application_logging', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) %}
+{% set variables_url = url_for('user.application_config', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) %}
+
+{% block title %}Logging - {{ app_slug }} - Cabotage{% endblock title %}
+{% block resource_path %}{{ app_resource_path(application, 'Logging', env=environment) }}{% endblock resource_path %}
+{% block tab_bar %}{{ app_tab_nav(application, 'logging', env=environment) }}{% endblock tab_bar %}
+
+{% block content %}
+  <div class="settings-page logging-settings">
+    <header class="logging-header">
+      <div>
+        <h1 class="text-xl font-semibold">Logging</h1>
+        <p class="logging-help">Datadog log export{% if environment %} for <strong>{{ environment.name }}</strong> <code>{{ environment.slug }}</code>{% endif %}.</p>
+      </div>
+      <nav class="logging-links" aria-label="Logging resources">
+        <a class="icon-link" href="{{ variables_url }}"><span aria-hidden="true">{{ icon('key') }}</span>Variables</a>
+        <a href="{{ url_for('user.guide', topic='datadog-logs') }}">Datadog logs guide</a>
+      </nav>
+    </header>
+
+    <section class="logging-status" aria-labelledby="logging-status-heading">
+      <h2 id="logging-status-heading" class="text-sm font-semibold">{{ logging_status.label }}</h2>
+      <p class="logging-help">{{ logging_status.description }}</p>
+      <p class="logging-help">Saving changes configuration only. Deploy this environment to apply changes to running processes. This page does not report log delivery health.</p>
+    </section>
+
+    <p class="logging-intro">These are the same variables shown in <a class="icon-link" href="{{ variables_url }}"><span aria-hidden="true">{{ icon('key') }}</span>Variables</a>, not a separate destination. Subscribed project and environment values are inherited; application values take precedence.</p>
+    {% if not can_edit %}
+      <p class="logging-notice">You have view-only access. Editing settings and testing the destination require permission to edit this application.</p>
+    {% endif %}
+
+    <form method="post" action="{{ logging_url }}" id="logging-settings-form" data-logging-settings>
+      {{ form.hidden_tag() }}
+      {% if form.errors %}
+        <div class="logging-errors" role="alert" tabindex="-1" id="logging-form-errors">
+          <h2 class="text-sm font-semibold">Logging settings were not saved</h2>
+          <ul>
+            {% for name, errors in form.errors.items() %}
+              {% for error in errors %}<li>{{ form[name].label.text }}: {{ error }}</li>{% endfor %}
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+
+      {% for name, title, variable, description in [
+        ('enabled', 'Log export', 'DD_LOGS_ENABLED', 'Off by default. Choose On to opt in; adding credentials never enables export.'),
+        ('site', 'Datadog site', 'DD_SITE', 'Choose the Datadog site that owns your account.'),
+        ('api_key', 'API key', 'DD_API_KEY', 'Leave blank to preserve the saved key. A replacement is stored as a runtime secret; the saved value is never displayed.')
+      ] %}
+        {% set field = form[name] %}
+        {% set override = form['override_' ~ name] %}
+        {% set meta = logging_fields[name] %}
+        {% set inherited = meta.source == 'shared' %}
+        {% set locked = not can_edit or (inherited and not override.data) %}
+        <div class="settings-row logging-field" data-logging-field>
+          <div class="settings-row-label">
+            <div>
+              <label for="{{ field.id }}" class="text-sm font-semibold">{{ title }}</label>
+              <code class="logging-variable">{{ variable }}</code>
+              <p class="logging-help" id="logging-{{ name }}-source">{{ meta.source_label }}{% if not meta.configured %} · Not configured{% endif %}</p>
+            </div>
+          </div>
+          <div class="settings-row-fields">
+            {% if name == 'api_key' %}
+              <p class="logging-key-state">{{ 'Key configured' if meta.configured else 'No key configured' }}</p>
+              <input type="password" name="{{ field.name }}" id="{{ field.id }}" value="" autocomplete="new-password"
+                     class="input input-sm w-full" placeholder="Enter a replacement API key"
+                     aria-describedby="logging-{{ name }}-source logging-{{ name }}-help logging-{{ name }}-issues"
+                     aria-invalid="{{ 'true' if field.errors else 'false' }}" data-logging-input {% if locked %}disabled{% endif %}>
+            {% else %}
+              {{ field(class_='select select-sm w-full', disabled=locked, aria_describedby='logging-' ~ name ~ '-source logging-' ~ name ~ '-help logging-' ~ name ~ '-issues', aria_invalid='true' if field.errors else 'false', data_logging_input='') }}
+            {% endif %}
+            <p class="logging-help" id="logging-{{ name }}-help">{{ description }}</p>
+            {% if inherited %}
+              <label class="logging-override" for="{{ override.id }}">
+                {{ override(class_='checkbox checkbox-sm', disabled=not can_edit, data_logging_override='', aria_controls=field.id) }}
+                <span>Override inherited {{ title|lower }} for this application environment</span>
+              </label>
+              <p class="logging-help">Without an override, the shared value remains unchanged.{% if name == 'api_key' %} To override the key, enter a replacement; the inherited secret is never copied.{% endif %}</p>
+            {% endif %}
+            <div id="logging-{{ name }}-issues" class="logging-issues">
+              {% for issue in meta.issues %}<p>{{ issue }}</p>{% endfor %}
+              {% if meta.buildtime %}<p>Also exposed to image builds. Review Build-time in <a class="icon-link" href="{{ variables_url }}"><span aria-hidden="true">{{ icon('key') }}</span>Variables</a> if this should be runtime-only.</p>{% endif %}
+              {% if name == 'api_key' and meta.configured and not meta.secret %}<p>This API key is not stored as a secret. Replace it here to store a runtime secret, or correct its settings in <a class="icon-link" href="{{ variables_url }}"><span aria-hidden="true">{{ icon('key') }}</span>Variables</a>.</p>{% endif %}
+              {% for error in field.errors %}<p class="logging-error">{{ error }}</p>{% endfor %}
+              {% for error in override.errors %}<p class="logging-error">{{ error }}</p>{% endfor %}
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+
+      <p class="logging-notice">The Datadog Agent also uses <code>DD_API_KEY</code>. Replacing it affects existing metrics and APM for this application environment, not just logs. An application override does not modify the shared key for other applications.</p>
+      <div class="settings-row-actions">
+        <span class="logging-help">Save first, then deploy to apply.</span>
+        <button type="submit" name="action" value="save" class="btn btn-primary btn-sm" {% if not can_edit %}disabled{% endif %}>Save logging settings</button>
+      </div>
+      <noscript><p class="logging-notice">JavaScript is required to edit inherited values here. You can manage application overrides in <a class="icon-link" href="{{ variables_url }}"><span aria-hidden="true">{{ icon('key') }}</span>Variables</a>.</p></noscript>
+    </form>
+
+    <section class="logging-test" aria-labelledby="logging-test-heading">
+      <div>
+        <h2 id="logging-test-heading" class="text-sm font-semibold">Test destination</h2>
+        <p class="logging-help" id="logging-test-help">Send one synthetic log to Datadog using the <strong>saved</strong> site and API key, even when export is Off. Unsaved edits above are not used. This tests the destination from Cabotage, not delivery from running application processes.</p>
+      </div>
+      <form method="post" action="{{ logging_url }}" id="logging-test-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" name="action" value="test" class="btn btn-outline btn-sm" aria-describedby="logging-test-help" {% if not can_edit %}disabled{% endif %}>Test saved destination</button>
+      </form>
+    </section>
+  </div>
+{% endblock content %}
