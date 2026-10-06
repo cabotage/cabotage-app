@@ -183,9 +183,13 @@ from cabotage.utils.docker_auth import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from kubernetes.stream.ws_client import WSClient
     from simple_websocket import Server
     from werkzeug.wrappers import Response
+
+    from cabotage.utils.datadog import LoggingConfigurations, LoggingFieldDetails
 
 _REGEX_META = re.compile(r"[.*+?{}()|\\^$\[\]]")
 
@@ -3851,9 +3855,13 @@ def application_config(org_slug: str, project_slug: str, app_slug: str):
     )
 
 
-def _logging_changes(form, configurations, logging_fields):
+def _logging_changes(
+    form: ApplicationLoggingForm,
+    configurations: LoggingConfigurations,
+    logging_fields: Mapping[str, LoggingFieldDetails],
+) -> dict[str, str]:
     """Validate the complete intended change before writing any configuration."""
-    changes = {}
+    changes: dict[str, str] = {}
     for field, config in configurations.items():
         widget = getattr(form, field)
         value = widget.data
@@ -3899,7 +3907,7 @@ def _logging_changes(form, configurations, logging_fields):
         try:
             enabled = read_logging_value(enabled_config, config_writer)
         except Exception:
-            form.enabled.errors.append(
+            cast("list[str]", form.enabled.errors).append(
                 "The saved export setting could not be read. "
                 "Choose Disabled or Enabled explicitly."
             )
@@ -3928,7 +3936,7 @@ def _logging_changes(form, configurations, logging_fields):
     return changes
 
 
-def _test_logging_destination(configurations):
+def _test_logging_destination(configurations: LoggingConfigurations) -> None:
     """Test saved tenant credentials, not the submitted form or the collector."""
     try:
         site = read_logging_value(configurations["site"], config_writer)
@@ -3993,7 +4001,9 @@ def _test_logging_destination(configurations):
     methods=["GET", "POST"],
 )
 @login_required
-def application_logging(org_slug, project_slug, app_slug):
+def application_logging(
+    org_slug: str, project_slug: str, app_slug: str
+) -> str | Response:
     org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     app_env = _resolve_app_env(
         application, env_slug=request.args.get("env_slug"), project=project
@@ -4035,7 +4045,7 @@ def application_logging(org_slug, project_slug, app_slug):
                             existing = configurations[field]
                             local = logging_fields[field]["source"] == "application"
                             configuration = (
-                                existing
+                                cast("Configuration", existing)
                                 if local
                                 else Configuration(
                                     application_id=application.id,

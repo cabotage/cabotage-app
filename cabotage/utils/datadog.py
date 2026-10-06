@@ -1,5 +1,38 @@
 """Datadog log destination settings shared by deployment and configuration UI."""
 
+from typing import TYPE_CHECKING, Literal, TypeGuard, TypedDict, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from cabotage.server.ext.config_writer import ConfigWriter
+    from cabotage.server.models.projects import (
+        Application,
+        ApplicationEnvironment,
+        Configuration,
+        EnvironmentConfiguration,
+    )
+
+type LoggingConfigurations = Mapping[
+    str, Configuration | EnvironmentConfiguration | None
+]
+
+
+class LoggingFieldDetails(TypedDict):
+    configured: bool
+    source: Literal["unset", "application", "shared"]
+    source_label: str
+    issues: list[str]
+    secret: bool
+    buildtime: bool
+
+
+class LoggingDeploymentStatus(TypedDict):
+    state: Literal["not_deployed", "pending", "deployed"]
+    label: str
+    description: str
+
+
 DATADOG_SITES = (
     "datadoghq.com",
     "datadoghq.eu",
@@ -19,7 +52,7 @@ LOGGING_CONFIG_NAMES = {
 }
 
 
-def valid_api_key(value):
+def valid_api_key(value: object) -> TypeGuard[str]:
     return (
         isinstance(value, str)
         and bool(value)
@@ -31,36 +64,49 @@ def valid_api_key(value):
     )
 
 
-def read_logging_value(configuration, reader):
+def read_logging_value(
+    configuration: Configuration | EnvironmentConfiguration | None,
+    reader: ConfigWriter,
+) -> object:
     """Read only for server-side validation/testing, never for template context."""
     if configuration is None:
         return None
     if configuration.secret:
         if not configuration.key_slug or ":" not in configuration.key_slug:
             raise ValueError("The saved secret has no readable storage path.")
-        payload = reader.read(configuration.key_slug.split(":", 1)[1], secret=True)
+        payload = cast(
+            "Mapping[str, Mapping[str, object]]",
+            reader.read(configuration.key_slug.split(":", 1)[1], secret=True),
+        )
         return payload["data"][configuration.name]
     return configuration.value
 
 
-def logging_configuration(application, app_env):
+def logging_configuration(
+    application: Application, app_env: ApplicationEnvironment
+) -> LoggingConfigurations:
     """Select the same effective objects used when taking a release snapshot."""
-    objects = {
+    objects: dict[str, Configuration | EnvironmentConfiguration] = {
         str(sub.environment_configuration.id): sub.environment_configuration
         for sub in app_env.environment_config_subscriptions
     }
     objects.update({str(config.id): config for config in app_env.configurations})
-    resolved = application._resolved_configuration(app_env)
+    resolved = cast(
+        "Mapping[str, Mapping[str, object]]",
+        application._resolved_configuration(app_env),
+    )
     return {
-        field: objects[resolved[name]["id"]] if name in resolved else None
+        field: objects[cast("str", resolved[name]["id"])] if name in resolved else None
         for field, name in LOGGING_CONFIG_NAMES.items()
     }
 
 
-def logging_field_details(configurations):
-    fields = {}
+def logging_field_details(
+    configurations: LoggingConfigurations,
+) -> dict[str, LoggingFieldDetails]:
+    fields: dict[str, LoggingFieldDetails] = {}
     for field, config in configurations.items():
-        source = (
+        source: Literal["unset", "application", "shared"] = (
             "unset"
             if config is None
             else "application"
@@ -122,7 +168,9 @@ def logging_field_details(configurations):
     return fields
 
 
-def logging_deployment_status(app_env, configurations):
+def logging_deployment_status(
+    app_env: ApplicationEnvironment, configurations: LoggingConfigurations
+) -> LoggingDeploymentStatus:
     deployment = app_env.latest_deployment_completed
     if deployment is None:
         return {
@@ -138,9 +186,12 @@ def logging_deployment_status(app_env, configurations):
         for field, config in configurations.items()
         if config is not None
     }
+    deployed_configuration = cast(
+        "Mapping[str, object]", deployment.release.get("configuration") or {}
+    )
     deployed = {
         name: snapshot
-        for name, snapshot in (deployment.release.get("configuration") or {}).items()
+        for name, snapshot in deployed_configuration.items()
         if name in LOGGING_CONFIG_NAMES.values()
     }
     if saved != deployed:
