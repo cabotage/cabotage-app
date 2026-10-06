@@ -4897,3 +4897,154 @@ a.obs-pod-link:hover {
 .log-row-stderr .log-msg { color: oklch(var(--er) / 0.85); }
 @keyframes log-new-fade { from { background: oklch(var(--p) / 0.08); } to { background: transparent; } }
 .log-row-new { animation: log-new-fade 2s ease-out; }
+
+.icon-link {
+  white-space: nowrap;
+}
+.icon-link svg {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-inline-end: 0.25em;
+  vertical-align: -0.125em;
+}
+
+/* Application logging configuration */
+.logging-settings {
+  color: var(--color-base-content);
+}
+.logging-header,
+.logging-test {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.25rem;
+}
+.logging-header {
+  margin-bottom: 1.25rem;
+}
+.logging-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  font-size: 0.75rem;
+}
+.logging-settings a:not(.btn) {
+  color: var(--color-base-content);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.logging-settings a:not(.btn):hover {
+  color: var(--accent-text);
+}
+.logging-settings :is(a, button, input, select):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+}
+.logging-help,
+.logging-intro,
+.logging-notice {
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.logging-help {
+  margin-top: 0.375rem;
+  color: color-mix(in srgb, var(--color-base-content) 78%, var(--color-base-100));
+  max-width: 75ch;
+}
+.logging-status {
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  background: var(--surface-card);
+  margin-bottom: 1rem;
+}
+.logging-intro,
+.logging-notice {
+  margin: 1rem 0;
+  max-width: 85ch;
+}
+.logging-variable {
+  display: block;
+  margin-top: 0.375rem;
+  font-size: 0.75rem;
+}
+.logging-field .settings-row-fields {
+  min-width: 0;
+}
+.logging-field :is(input[type='password'], select) {
+  max-width: 30rem;
+  background: var(--surface-inset);
+  border: 1px solid var(--border-color);
+  color: var(--color-base-content);
+}
+.logging-field :is(input[type='password'], select):disabled {
+  opacity: 1;
+  cursor: not-allowed;
+  color: color-mix(in srgb, var(--color-base-content) 78%, var(--color-base-100));
+}
+.logging-key-state {
+  font-size: 0.8125rem;
+  margin-bottom: 0.5rem;
+}
+.logging-override {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  margin-top: 0.75rem;
+  min-height: 2rem;
+}
+.logging-override input {
+  flex-shrink: 0;
+}
+.logging-issues {
+  color: color-mix(in srgb, var(--color-warning) 60%, var(--color-base-content));
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.logging-issues p {
+  margin-top: 0.5rem;
+}
+.logging-error,
+.logging-errors {
+  color: var(--color-error);
+}
+.logging-errors {
+  border: 1px solid var(--color-error);
+  border-radius: 0.5rem;
+  padding: 0.875rem 1rem;
+  font-size: 0.8125rem;
+  margin-bottom: 1rem;
+}
+.logging-errors ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+  margin-top: 0.5rem;
+}
+.logging-test {
+  border-top: 1px solid var(--border-color);
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+}
+.logging-test form {
+  flex-shrink: 0;
+}
+@media (max-width: 640px) {
+  .logging-header,
+  .logging-test {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .logging-settings .settings-row-actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 0.75rem;
+  }
+  .logging-settings .settings-row-actions .logging-help {
+    width: 100%;
+  }
+}
