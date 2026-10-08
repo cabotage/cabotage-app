@@ -2,21 +2,41 @@
 {% from "_macros.html" import icon %}
 
 {% block title %}
-  Guide - Cabotage
+  {{ guide_topics[guide_topic] }} - Guide - Cabotage
 {% endblock title %}
+
+{% macro topic_links() %}
+  <nav aria-label="Guide topics" class="guide-topic-links">
+    {% for topic, title in guide_topics.items() %}
+      <a href="{{ url_for('user.guide', topic=topic) }}"
+         {% if topic == guide_topic %}aria-current="page"{% endif %}>{{ title }}</a>
+    {% endfor %}
+  </nav>
+{% endmacro %}
 
 {% block content %}
 
-  <div class="mb-8">
-    <h1 class="text-xl font-semibold text-base-content">Guide</h1>
-    <p class="text-sm text-base-content/50 mt-1">How to deploy and manage your applications on Cabotage.</p>
-  </div>
+  <div class="guide-layout">
+    <aside class="guide-navigation">
+      <a class="guide-skip-link" href="#guide-content">Skip to topic</a>
+      <div class="guide-navigation-desktop">
+        <h2 class="guide-navigation-title">User guide</h2>
+        {{ topic_links() }}
+      </div>
+      <details class="guide-navigation-mobile">
+        <summary>Guide topics <span aria-hidden="true">{{ icon('chevron-right', 'guide-disclosure-icon') }}</span></summary>
+        {{ topic_links() }}
+      </details>
+    </aside>
+
+    <article id="guide-content" class="guide-article" aria-labelledby="guide-title" tabindex="-1">
+      <header class="guide-topic-header">
+        <h1 id="guide-title">{{ guide_topics[guide_topic] }}</h1>
+      </header>
+
+  {% if guide_topic == 'roles' %}
 
   <div class="mb-10">
-    <div class="flex items-center gap-2 mb-4">
-      {{ icon('users', 'w-4 h-4 text-primary') }}
-      <h2 class="text-base font-semibold text-base-content">Organization roles</h2>
-    </div>
     <div class="text-sm text-base-content/70 leading-relaxed space-y-2 max-w-prose">
       <p><strong class="text-base-content">Members</strong> can view the organization and all its projects and applications. They can also create projects from the organization's project creation page and create application releases, but cannot deploy them.</p>
       <p><strong class="text-base-content">Admins</strong> can also manage members, organization settings, and all projects and applications, including configuration and deployments.</p>
@@ -24,14 +44,11 @@
       <p>New users are added as Members. An organization Admin can promote or demote other users on the organization's Members tab.</p>
     </div>
   </div>
+  {% elif guide_topic == 'deployments' %}
 
   <div class="mb-10">
-    <div class="flex items-center gap-2 mb-4">
-      {{ icon('zap', 'w-4 h-4 text-primary') }}
-      <h2 class="text-base font-semibold text-base-content">Deploying your code</h2>
-    </div>
     <p class="text-sm text-base-content/50 mb-5">
-      Every deploy follows a three-step pipeline. You trigger each step from the application's Overview tab.
+      Every deploy follows four steps. You trigger each step from the application's Overview tab.
     </p>
     <p class="text-sm text-base-content/50 mb-5">
       Recent Activity links to your latest builds, releases, and deployments. The lists stack on narrow screens. Live pod status shows one row per process; hover over a shortened name to see it in full.
@@ -98,30 +115,6 @@
     </div>
   </div>
 
-  <div class="mb-10">
-    <div class="flex items-center gap-2 mb-4">
-      {{ icon('key', 'w-4 h-4 text-primary') }}
-      <h2 class="text-base font-semibold text-base-content">Config-only changes</h2>
-    </div>
-
-    <div class="card bg-base-200 border border-base-300">
-      <div class="card-body !p-5">
-        <p class="text-sm text-base-content/50 leading-relaxed mb-4">
-          If you only changed environment variables and your code hasn't changed, you can skip the build entirely:
-        </p>
-        <div class="guide-shortcut">
-          <span class="guide-shortcut-step guide-shortcut-skip">Build</span>
-          <span class="guide-shortcut-arrow text-base-content/15">→</span>
-          <span class="guide-shortcut-step guide-shortcut-active">Create Release</span>
-          <span class="guide-shortcut-arrow text-base-content/15">→</span>
-          <span class="guide-shortcut-step guide-shortcut-active">Deploy</span>
-        </div>
-        <p class="text-xs text-base-content/40 mt-4">
-          The release automatically picks up the most recent built image. This is the fastest way to roll out a config change — no rebuild required.
-        </p>
-      </div>
-    </div>
-  </div>
 
   <div class="mb-10">
     <div class="flex items-center gap-2 mb-4">
@@ -202,6 +195,7 @@
       </div>
     </div>
   </div>
+  {% elif guide_topic == 'processes' %}
 
   <div class="mb-10" id="processes">
     <div class="flex items-center gap-2 mb-4">
@@ -452,18 +446,16 @@
       </div>
     </div>
   </div>
+  {% elif guide_topic == 'pod-sizes' %}
 
   <div class="mb-10">
-    <div class="flex items-center gap-2 mb-4">
-      {{ icon('box', 'w-4 h-4 text-primary') }}
-      <h2 class="text-base font-semibold text-base-content">Pod Sizes</h2>
-    </div>
     <p class="text-sm text-base-content/50 mb-5">
       Each process runs in a pod with dedicated CPU and memory. Choose a size based on your workload. The naming convention indicates the optimization: <strong class="text-base-content/70">m1</strong> is balanced, <strong class="text-base-content/70">c1</strong> is CPU-optimized, and <strong class="text-base-content/70">r1</strong> is memory-optimized.
     </p>
 
     <div class="card bg-base-200 border border-base-300">
       <div class="card-body !p-5">
+        <div class="guide-table-scroll" role="region" aria-label="Pod size comparison" tabindex="0">
         <table class="w-full text-sm">
           <thead>
             <tr class="text-base-content/40 text-xs uppercase tracking-wider">
@@ -566,6 +558,7 @@
             </tr>
           </tbody>
         </table>
+        </div>
         <div class="flex items-start gap-2 p-3 mt-3 rounded-lg bg-base-300/50 border border-base-content/5">
           {{ icon('info', 'w-3.5 h-3.5 text-info/50 mt-0.5 flex-shrink-0') }}
           <p class="text-xs text-base-content/40 leading-relaxed">
@@ -575,12 +568,9 @@
       </div>
     </div>
   </div>
+  {% elif guide_topic == 'configuration' %}
 
   <div class="mb-6">
-    <div class="flex items-center gap-2 mb-4">
-      {{ icon('settings', 'w-4 h-4 text-primary') }}
-      <h2 class="text-base font-semibold text-base-content">Environment variables</h2>
-    </div>
 
     <div class="card bg-base-200 border border-base-300">
       <div class="card-body !p-5">
@@ -623,6 +613,33 @@
         </div>
       </div>
     </div>
+  </div>
+  <div class="mb-10">
+    <div class="flex items-center gap-2 mb-4">
+      {{ icon('key', 'w-4 h-4 text-primary') }}
+      <h2 class="text-base font-semibold text-base-content">Config-only changes</h2>
+    </div>
+
+    <div class="card bg-base-200 border border-base-300">
+      <div class="card-body !p-5">
+        <p class="text-sm text-base-content/50 leading-relaxed mb-4">
+          If you only changed environment variables and your code hasn't changed, you can skip the build entirely:
+        </p>
+        <div class="guide-shortcut">
+          <span class="guide-shortcut-step guide-shortcut-skip">Build</span>
+          <span class="guide-shortcut-arrow text-base-content/15">→</span>
+          <span class="guide-shortcut-step guide-shortcut-active">Create Release</span>
+          <span class="guide-shortcut-arrow text-base-content/15">→</span>
+          <span class="guide-shortcut-step guide-shortcut-active">Deploy</span>
+        </div>
+        <p class="text-xs text-base-content/40 mt-4">
+          The release automatically picks up the most recent built image. This is the fastest way to roll out a config change — no rebuild required.
+        </p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+    </article>
   </div>
 
 {% endblock content %}
