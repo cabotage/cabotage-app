@@ -12,4 +12,4 @@ if TYPE_CHECKING:
         CreateIndex: int
         ModifyIndex: int
 
-    type ConsulResponse = tuple[str, ConsulEntry]
+    type ConsulResponse = tuple[str, ConsulEntry | None]
