@@ -601,17 +601,20 @@ def register_admin_guards(app: Flask) -> None:
 
     @app.after_request
     def private_admin_response(response: FlaskResponse) -> FlaskResponse:
-        if (
+        converted = (
             request.headers.get("X-Admin-Navigate") == "1"
-            and getattr(g, "admin_action_digest", None)
             and response.status_code in {301, 302, 303, 307, 308}
             and response.headers.get("Location")
-        ):
-            # Fetch cannot follow the external GitHub OAuth redirect. Let the
-            # browser perform the original navigation, also preserving flashes.
+        )
+        if converted:
+            # Any form the band intercepts, approved or membership-authorized:
+            # fetch cannot follow external redirects (GitHub), and following
+            # same-origin ones would load the page twice and consume flashes.
             response = jsonify(admin_redirect=response.headers["Location"])
-        if request.blueprint == "admin_passkey" or getattr(
-            g, "admin_action_digest", None
+        if (
+            converted
+            or request.blueprint == "admin_passkey"
+            or getattr(g, "admin_action_digest", None)
         ):
             response.headers["Cache-Control"] = "no-store"
         return response

@@ -240,9 +240,16 @@ codes, and session identifiers from both list and detail views.
 The exact-request approval mechanism binds a separate assertion to an action,
 target, submitted body, method, URL, and uploaded file bytes and metadata.
 Action challenges expire after two minutes and approvals are single-use.
-Verification alone does not execute an action: browser confirmation is separate,
-and Cancel or Escape discards the pending approval. This layer does not grant
-cross-tenant permissions or change native organization membership authorization.
+Verification alone does not execute an action: browser confirmation is separate.
+Cancel or Escape discards the approval in the browser; the server keeps the unused
+approval until it expires. No route requires action approval yet: this layer does
+not grant cross-tenant permissions or change native organization membership
+authorization, and the database viewer is read-only.
+
+While the band is visible, the browser submits forms itself so an approval request
+can keep unsaved input on the page. Redirects from those submissions return to the
+browser as `admin_redirect` JSON, so external destinations such as GitHub open
+normally and same-site pages load once.
 
 A thin, theme-accented band remains above navigation while admin access is active.
 It shows server-derived expiry and **End access**. Expiry or ending access leaves
