@@ -34,7 +34,9 @@
         <h1 id="guide-title">{{ guide_topics[guide_topic] }}</h1>
       </header>
 
-  {% if guide_topic == 'roles' %}
+  {% if guide_topic == 'datadog-logs' %}
+    {% include "user/_guide_datadog.html" %}
+  {% elif guide_topic == 'roles' %}
 
   <div class="mb-10">
     <div class="text-sm text-base-content/70 leading-relaxed space-y-2 max-w-prose">

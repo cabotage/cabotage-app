@@ -8,6 +8,7 @@ from wtforms import (
     BooleanField,
     HiddenField,
     IntegerField,
+    PasswordField,
     SelectField,
     StringField,
     TextAreaField,
@@ -42,6 +43,7 @@ from cabotage.server.models.resources import (
 )
 from cabotage.server.models.utils import slugify
 from cabotage._types import assume_not_none
+from cabotage.utils.datadog import DATADOG_SITES
 
 BIGINT_MIN = -(2**63)
 BIGINT_MAX = 2**63 - 1
@@ -303,6 +305,21 @@ class DeleteApplicationForm(FlaskForm):
         "Type the slug of the Application.",
         [EqualTo("name", message="Must confirm the *exact* slug of the Application!")],
     )
+
+
+class ApplicationLoggingForm(FlaskForm):
+    enabled = SelectField(
+        "Datadog log export",
+        choices=[("false", "Disabled"), ("true", "Enabled")],
+    )
+    site = SelectField(
+        "Datadog site",
+        choices=[("", "Choose a site")] + [(site, site) for site in DATADOG_SITES],
+    )
+    api_key = PasswordField("API key", [Optional(), Length(max=2048)])
+    override_enabled = BooleanField("Override shared export setting")
+    override_site = BooleanField("Override shared site")
+    override_api_key = BooleanField("Override shared API key")
 
 
 class CreateConfigurationForm(FlaskForm):

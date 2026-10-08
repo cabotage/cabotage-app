@@ -17,6 +17,13 @@ See [the PyPI infrastructure pull
 request](https://github.com/python/pypi-infra/pull/3) for more on design goals.
 
 
+## Datadog logs
+
+Log export is opt-in and leaves existing metrics/APM unchanged. Open
+**Guide → Datadog logs** (`/guide/datadog-logs`) in Cabotage for setup,
+troubleshooting, and operator requirements.
+
+
 ## Development workflow
 
 The development environment is managed using [Docker](https://www.docker.com/)

@@ -110,6 +110,7 @@ from cabotage.server.models.utils import safe_k8s_name, readable_k8s_hostname, s
 
 from cabotage.server.user.forms import (
     AddApplicationToEnvironmentForm,
+    ApplicationLoggingForm,
     ApplicationScaleForm,
     CreateApplicationForm,
     CreateConfigurationForm,
@@ -173,12 +174,25 @@ from cabotage.utils.build_log_stream import (
 
 from cabotage.utils import oidc
 from cabotage._types import assume_not_none
+from cabotage.utils.datadog import (
+    DATADOG_SITES,
+    LOGGING_CONFIG_NAMES,
+    logging_configuration,
+    logging_deployment_status,
+    logging_field_details,
+    read_logging_value,
+    valid_api_key,
+)
 from cabotage.server.websocket import close_on_abort
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from kubernetes.stream.ws_client import WSClient
     from simple_websocket import Server
     from werkzeug.wrappers import Response
+
+    from cabotage.utils.datadog import LoggingConfigurations, LoggingFieldDetails
 
 _REGEX_META = re.compile(r"[.*+?{}()|\\^$\[\]]")
 
@@ -3858,6 +3872,259 @@ def application_config(org_slug, project_slug, app_slug):
     )
 
 
+def _logging_changes(
+    form: ApplicationLoggingForm,
+    configurations: LoggingConfigurations,
+    logging_fields: Mapping[str, LoggingFieldDetails],
+) -> dict[str, str]:
+    """Validate the complete intended change before writing any configuration."""
+    changes: dict[str, str] = {}
+    for field, config in configurations.items():
+        widget = getattr(form, field)
+        value = widget.data
+        override = getattr(form, f"override_{field}").data
+        shared = logging_fields[field]["source"] == "shared"
+        current = (
+            ("**secure**" if config.secret else config.value)
+            if config is not None
+            else ("false" if field == "enabled" else "")
+        )
+        if field == "api_key" and not value:
+            if shared and override:
+                widget.errors.append(
+                    "Enter a replacement API key to create an override."
+                )
+            continue
+        changed = field == "api_key" or value != current or (shared and override)
+        if not changed:
+            continue
+        if shared and not override:
+            widget.errors.append(
+                "Select the override checkbox to replace this shared value."
+            )
+            continue
+        if field == "enabled" and value not in {"true", "false"}:
+            widget.errors.append("Choose Enabled or Disabled.")
+        elif field == "site" and value not in DATADOG_SITES:
+            widget.errors.append("Choose a supported Datadog site.")
+        elif field == "api_key" and not valid_api_key(value):
+            widget.errors.append(
+                "Enter a real API key, not a masked value or template."
+            )
+        else:
+            changes[field] = value
+
+    # Turning export off must remain possible even with a broken saved destination.
+    enabled_config = configurations["enabled"]
+    if "enabled" in changes:
+        enabled = changes["enabled"]
+    elif enabled_config is not None and not enabled_config.secret:
+        enabled = enabled_config.value
+    elif enabled_config is not None:
+        try:
+            enabled = read_logging_value(enabled_config, config_writer)
+        except Exception:
+            # WTForms initializes mutable error lists during form validation.
+            cast("list[str]", form.enabled.errors).append(
+                "The saved export setting could not be read. "
+                "Choose Disabled or Enabled explicitly."
+            )
+            enabled = "false"
+    else:
+        enabled = "false"
+    if str(enabled).strip().lower() == "true":
+        for field in ("site", "api_key"):
+            try:
+                value = (
+                    changes[field]
+                    if field in changes
+                    else read_logging_value(configurations[field], config_writer)
+                )
+            except Exception:
+                getattr(form, field).errors.append(
+                    "The saved value could not be read. "
+                    "Replace it before enabling export."
+                )
+                continue
+            valid = value in DATADOG_SITES if field == "site" else valid_api_key(value)
+            if not valid:
+                getattr(form, field).errors.append(
+                    "A valid saved destination is required before enabling export."
+                )
+    return changes
+
+
+def _test_logging_destination(configurations: LoggingConfigurations) -> None:
+    """Test saved tenant credentials, not the submitted form or the collector."""
+    try:
+        site = read_logging_value(configurations["site"], config_writer)
+        api_key = read_logging_value(configurations["api_key"], config_writer)
+    except Exception:
+        flash(
+            "The saved destination could not be read. "
+            "Check the configuration or replace its API key.",
+            "error",
+        )
+        return
+    if site not in DATADOG_SITES or not valid_api_key(api_key):
+        flash(
+            "Save a supported Datadog site and a valid API key before testing.", "error"
+        )
+        return
+    try:
+        response = requests_lib.post(
+            f"https://http-intake.logs.{site}/api/v2/logs",
+            headers={"DD-API-KEY": api_key},
+            json=[
+                {
+                    "message": (
+                        "Cabotage synthetic destination test. "
+                        "No application logs are included."
+                    ),
+                    "service": "cabotage-destination-test",
+                    "ddsource": "cabotage",
+                }
+            ],
+            timeout=(3.05, 5),
+            allow_redirects=False,
+            stream=True,
+        )
+    except requests_lib.RequestException:
+        flash(
+            "The saved destination could not be reached. "
+            "Check the site, credentials, and network, then retry.",
+            "error",
+        )
+        return
+    try:
+        accepted = 200 <= response.status_code < 300
+    finally:
+        response.close()
+    if accepted:
+        flash(
+            "Datadog intake accepted the synthetic message using saved settings. "
+            "This does not verify the deployed collector or application log delivery.",
+            "success",
+        )
+    else:
+        flash(
+            "Datadog intake did not accept the synthetic message. "
+            "Check the saved site and API key, then retry.",
+            "error",
+        )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/logging",
+    methods=["GET", "POST"],
+)
+@login_required
+def application_logging(
+    org_slug: str, project_slug: str, app_slug: str
+) -> str | Response:
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=request.args.get("env_slug"), project=project
+    )
+    can_edit = AdministerApplicationPermission(application.id).can()
+    if request.method == "POST" and not can_edit:
+        abort(403)
+    configurations = logging_configuration(application, app_env)
+    logging_fields = logging_field_details(configurations)
+    form = ApplicationLoggingForm()
+    for field in ("enabled", "site"):
+        config = configurations[field]
+        current = (
+            ("**secure**" if config.secret else config.value)
+            if config is not None
+            else ("false" if field == "enabled" else "")
+        )
+        widget = getattr(form, field)
+        if current not in {value for value, label in widget.choices}:
+            widget.choices = list(widget.choices) + [
+                (current, f"Current value: {current}")
+            ]
+        if request.method == "GET" or field not in request.form:
+            widget.data = current
+
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "test":
+            # A separate CSRF-only form deliberately ignores all unsaved inputs.
+            if FlaskForm().validate_on_submit():
+                _test_logging_destination(configurations)
+                return redirect(request.url)
+        elif action == "save":
+            if form.validate_on_submit():
+                changes = _logging_changes(form, configurations, logging_fields)
+                if not form.errors:
+                    try:
+                        for field, value in changes.items():
+                            existing = configurations[field]
+                            local = logging_fields[field]["source"] == "application"
+                            configuration = (
+                                cast("Configuration", existing)
+                                if local
+                                else Configuration(
+                                    application_id=application.id,
+                                    application_environment_id=app_env.id,
+                                    name=LOGGING_CONFIG_NAMES[field],
+                                )
+                            )
+                            configuration.value = value
+                            if field == "api_key":
+                                configuration.secret = True
+                                configuration.buildtime = False
+                            elif existing is not None:
+                                configuration.secret = existing.secret
+                                configuration.buildtime = existing.buildtime
+                            _save_app_configuration(
+                                org,
+                                project,
+                                application,
+                                app_env,
+                                configuration,
+                                "edit" if local else "create",
+                            )
+                        db.session.commit()
+                    except Exception:
+                        db.session.rollback()
+                        flash(
+                            "Logging settings could not be saved. "
+                            "No database changes were committed. Please retry.",
+                            "error",
+                        )
+                        return redirect(request.url)
+                    if "api_key" in changes:
+                        flash(
+                            "DD_API_KEY was replaced. This key is also used by "
+                            "the Datadog Agent for metrics and APM.",
+                            "warning",
+                        )
+                    flash(
+                        "Logging settings saved. Deploy a new release to apply any changes."
+                        if changes
+                        else "Logging settings are unchanged.",
+                        "success",
+                    )
+                    return redirect(request.url)
+        else:
+            abort(400)
+    # Never include either a saved or a submitted credential in template data.
+    form.api_key.data = None
+    form.api_key.raw_data = None
+    return render_template(
+        "user/application_logging.html",
+        application=application,
+        app_env=app_env,
+        environment=app_env.environment,
+        can_edit=can_edit,
+        form=form,
+        logging_fields=logging_fields,
+        logging_status=logging_deployment_status(app_env, configurations),
+    )
+
+
 @user_blueprint.route(
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/config/<config_id>"
 )
@@ -5932,6 +6199,7 @@ def guide(topic: str) -> str:
         "processes": "Processes and jobs",
         "pod-sizes": "Pod sizes",
         "roles": "Organization roles",
+        "datadog-logs": "Datadog logs",
     }
     if topic not in topics:
         abort(404)

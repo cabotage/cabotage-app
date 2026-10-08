@@ -225,13 +225,15 @@
                 {% if active == 'images' %}tab-active{% endif %}">{{ icon('image', 'w-4 h-4') }} <span class="tab-label">Images</span></a>
       <div class="dropdown dropdown-hover">
         <div tabindex="0" role="button" title="Config"
-             class="tab-item {% if active in ('config', 'ingress') %}tab-active{% endif %}">
+             class="tab-item {% if active in ('config', 'ingress', 'logging') %}tab-active{% endif %}">
           {{ icon('tool', 'w-4 h-4') }}
           <span class="tab-label">Config {{ icon('chevron-down', 'w-3 h-3 opacity-40') }}</span>
         </div>
         <ul tabindex="0" class="menu menu-md dropdown-content bg-base-100 rounded-box z-50 mt-1 w-48 p-2 shadow-lg border border-base-300">
           <li><a href="{{ url_for('user.application_config', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
                  class="{% if active == 'config' %}active{% endif %}">{{ icon('key', 'w-3.5 h-3.5') }} Variables</a></li>
+          <li><a href="{{ url_for('user.application_logging', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
+                 class="{% if active == 'logging' %}active{% endif %}">{{ icon('file-text', 'w-3.5 h-3.5') }} Logging</a></li>
           {% if config.INGRESS_DOMAIN or (application and application.project.organization.tailscale_integration) %}
           <li><a href="{{ url_for('user.project_application_ingress', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
                  class="{% if active == 'ingress' %}active{% endif %}">{{ icon('globe', 'w-3.5 h-3.5') }} Ingress</a></li>
