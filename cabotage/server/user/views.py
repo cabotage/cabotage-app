@@ -5667,7 +5667,7 @@ def release_build_livelogs_legacy(ws, release_id):
     _stream_release_build_logs(ws, release)
 
 
-def _stream_deployment_logs(ws, deployment):
+def _stream_deployment_logs(ws: Server, deployment: Deployment) -> None:
     """Stream deploy logs for a deployment over a websocket."""
     deployment_id = deployment.id
     job_id = deployment.job_id
@@ -5684,7 +5684,8 @@ def _stream_deployment_logs(ws, deployment):
 
     if current_app.config["KUBERNETES_ENABLED"]:
         if job_id is None:
-            for _ in range(60):
+            waits = 0
+            while waits < 60 and ws.connected:
                 time.sleep(0.5)
                 dep = Deployment.query.filter_by(id=deployment_id).first()
                 if dep is None:
@@ -5699,6 +5700,8 @@ def _stream_deployment_logs(ws, deployment):
                         ws.send(f"  {line}")
                     ws.send("=================END OF LOGS=================")
                     return
+                if not dep.queued:
+                    waits += 1
                 db.session.remove()
             else:
                 ws.send("=================END OF LOGS=================")
