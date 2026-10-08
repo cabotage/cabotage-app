@@ -1137,6 +1137,10 @@
                 <span class="status-dot status-dot-error flex-shrink-0"
                       style="width:5px;
                              height:5px"></span>
+              {% elif dep.queued %}
+                <span class="status-dot status-dot-neutral flex-shrink-0"
+                      style="width:5px;
+                             height:5px"></span>
               {% else %}
                 <span class="status-dot status-dot-info status-dot-pulse flex-shrink-0"
                       style="width:5px;
@@ -1146,6 +1150,7 @@
               {% if dep.deploy_metadata and dep.deploy_metadata.get('trigger', '').startswith('manual') %}
                 <span class="dpl-badge dpl-badge-manual" title="by {{ dep.deploy_metadata.get('triggered_by', '?') }}">{{ icon('user', 'w-2 h-2') }} manual</span>
               {% endif %}
+              {% if dep.queued %}<span class="text-xs text-base-content/40">queued</span>{% endif %}
             <span class="activity-time text-xs text-base-content/25"><time data-timestamp="{{ dep.updated|isoformat_utc }}">{{ dep.updated|humanize }}</time>
             {% if dep.complete %}<span class="text-base-content/15">({{ dep|duration }})</span>{% endif %}
           </span>
