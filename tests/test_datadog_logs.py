@@ -64,6 +64,7 @@ def app():
         REGISTRY_PULL="registry.example.test",
         SIDECAR_IMAGE="ghcr.io/cabotage/containers/sidecar-rs:1.0",
         DATADOG_IMAGE="datadog/agent:7.55.2",
+        LOG_EXPORT_ENABLED=True,
         LOG_EXPORT_NAMESPACE="cabotage",
         LOG_EXPORT_SECRET="tenant-log-export",
     )
@@ -135,6 +136,24 @@ def test_key_alone_never_enables_log_export(app, workload, flag):
     pod = _render(workload, _make_release(configuration))
     assert pod["metadata"]["labels"][deploy_module.LOG_EXPORT_LABEL] == "false"
     assert pod["metadata"]["annotations"] == {"ad.datadoghq.com/logs_exclude": "false"}
+
+
+def test_platform_without_exporter_ignores_tenant_opt_in(app, workload):
+    app.config["LOG_EXPORT_ENABLED"] = False
+    release = _make_release(_enabled_config())
+    secrets = _Secrets(exists=False)
+
+    pod = _render(workload, release)
+    assert deploy_module.sync_log_export(secrets.api, release) is False
+    deploy_module.remove_log_export_outputs(secrets.api, "tenant.")
+    with patch.object(deploy_module, "ApplicationEnvironment") as model:
+        model.query.filter.return_value = [_live_app_env("tenant", _enabled_config())]
+        deploy_module._reconcile_log_export(secrets.api)
+
+    assert pod["metadata"]["labels"][deploy_module.LOG_EXPORT_LABEL] == "false"
+    assert pod["metadata"]["annotations"] == {"ad.datadoghq.com/logs_exclude": "false"}
+    secrets.api.read_namespaced_secret.assert_not_called()
+    secrets.api.patch_namespaced_secret.assert_not_called()
 
 
 def test_opt_in_only_labels_pods_and_never_grants_host_access(app, workload):

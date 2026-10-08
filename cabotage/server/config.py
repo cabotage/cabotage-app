@@ -209,6 +209,8 @@ class Config(metaclass=MetaFlaskEnv):
     SIDECAR_IMAGE = "ghcr.io/cabotage/containers/sidecar-rs:1.0"
     DATADOG_IMAGE = "datadog/agent:7.55.2"
     # Tenant log export outputs, read by the platform Fluent Bit exporter.
+    # Enable only where the platform runs it; see docs/log-export.md.
+    LOG_EXPORT_ENABLED = False
     LOG_EXPORT_NAMESPACE = "cabotage"
     LOG_EXPORT_SECRET = "tenant-log-export"  # nosec B105
     INGRESS_DOMAIN = None

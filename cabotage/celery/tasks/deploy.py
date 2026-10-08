@@ -1942,7 +1942,14 @@ def _read_datadog_config(
 LOG_EXPORT_LABEL = "log-export.cabotage.io"
 
 
+def _log_export_installed() -> bool:
+    """Whether the platform runs the tenant log exporter (resident-alloy + Fluent Bit)."""
+    return bool(current_app.config.get("LOG_EXPORT_ENABLED"))
+
+
 def _log_export_enabled(release: Release) -> bool:
+    if not _log_export_installed():
+        return False
     flag = _read_datadog_config(
         release.configuration_objects, "DD_LOGS_ENABLED", "false"
     )
@@ -2013,6 +2020,8 @@ def sync_log_export(
     core_api_instance: kubernetes.client.CoreV1Api, release: Release
 ) -> bool:
     """Write or drop this application environment's exporter output."""
+    if not _log_export_installed():
+        return False
     key = log_export_secret_key(k8s_namespace(release), k8s_label_value(release))
     if not _log_export_enabled(release):
         remove_log_export_outputs(core_api_instance, key)
@@ -2037,6 +2046,8 @@ def remove_log_export_outputs(
     core_api_instance: kubernetes.client.CoreV1Api, prefix: str
 ) -> None:
     """Drop every exporter output whose Secret key starts with ``prefix``."""
+    if not _log_export_installed():
+        return
     name, namespace = _log_export_secret()
     try:
         secret = core_api_instance.read_namespaced_secret(name, namespace)
@@ -2066,6 +2077,8 @@ def _reconcile_log_export(core_api_instance: kubernetes.client.CoreV1Api) -> Non
     Deploys keep the Secret current; this repairs drift such as a recreated
     Secret or a missed teardown.
     """
+    if not _log_export_installed():
+        return
     name, namespace = _log_export_secret()
     try:
         secret = core_api_instance.read_namespaced_secret(name, namespace)
@@ -3660,18 +3673,21 @@ def fake_deploy_release(deployment: Deployment) -> None:
         f"with ImagePullSecrets/{image_pull_secrets.metadata.name} "
         f"in Namespace/{namespace.metadata.name}"
     )
-    release: Release = deployment.release_object
-    export_key = log_export_secret_key(k8s_namespace(release), k8s_label_value(release))
-    if _log_export_enabled(release):
-        render_log_export_output(release)  # Validate; the output holds the API key.
-        export_action = "Setting"
-    else:
-        export_action = "Removing"
-    export_secret, export_namespace = _log_export_secret()
-    deploy_log.append(
-        f"{export_action} {export_key} in Secret/{export_secret} "
-        f"in Namespace/{export_namespace}"
-    )
+    if _log_export_installed():
+        release: Release = deployment.release_object
+        export_key = log_export_secret_key(
+            k8s_namespace(release), k8s_label_value(release)
+        )
+        if _log_export_enabled(release):
+            render_log_export_output(release)  # Validate; it holds the API key.
+            export_action = "Setting"
+        else:
+            export_action = "Removing"
+        export_secret, export_namespace = _log_export_secret()
+        deploy_log.append(
+            f"{export_action} {export_key} in Secret/{export_secret} "
+            f"in Namespace/{export_namespace}"
+        )
     for release_command in deployment.release_object.release_commands:
         job_object = render_job(
             namespace.metadata.name,

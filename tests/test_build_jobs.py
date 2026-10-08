@@ -373,7 +373,10 @@ class TestReaperIgnoresBuildJobs:
             containers=[k8s.V1Container(name="release", image="test-app:release")],
             restart_policy="Never",
         )
-        with patch.object(deploy, "render_podspec", return_value=pod_spec):
+        with (
+            patch.object(deploy, "render_podspec", return_value=pod_spec),
+            patch.object(deploy, "current_app", MagicMock(config={})),
+        ):
             deployment_job = deploy.render_job(
                 "test-ns", _make_release(env_enabled=False), "sa", "release", "abc123"
             )
