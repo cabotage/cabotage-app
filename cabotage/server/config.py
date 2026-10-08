@@ -208,6 +208,7 @@ class Config(metaclass=MetaFlaskEnv):
     SOCK_SERVER_OPTIONS = {"ping_interval": 25}
     SIDECAR_IMAGE = "ghcr.io/cabotage/containers/sidecar-rs:1.0"
     DATADOG_IMAGE = "datadog/agent:7.55.2"
+    DATADOG_LOGS_IMAGE = "cr.fluentbit.io/fluent/fluent-bit:4.2.2"
     INGRESS_DOMAIN = None
     TAILSCALE_OPERATOR_ENABLED = False
     TAILSCALE_TAG_PREFIX = "cabotage"

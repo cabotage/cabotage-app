@@ -364,11 +364,15 @@ class TestBuildJobNamespace:
 
 class TestReaperIgnoresBuildJobs:
     @pytest.mark.parametrize("condition", ["Complete", "Failed"])
-    def test_reaper_preserves_build_and_deployment_jobs(self, condition):
+    def test_reaper_preserves_build_and_deployment_jobs(self, condition: str) -> None:
         import kubernetes.client as k8s
         from cabotage.celery.tasks import deploy, reap_jobs
 
-        with patch.object(deploy, "render_podspec", return_value=None):
+        pod_spec = k8s.V1PodSpec(
+            containers=[k8s.V1Container(name="release", image="test-app:release")],
+            restart_policy="Never",
+        )
+        with patch.object(deploy, "render_podspec", return_value=pod_spec):
             deployment_job = deploy.render_job(
                 "test-ns", _make_release(env_enabled=False), "sa", "release", "abc123"
             )
@@ -389,7 +393,7 @@ class TestReaperIgnoresBuildJobs:
                 conditions=[k8s.V1JobCondition(type=condition, status="True")]
             )
 
-        def list_jobs(*, label_selector):
+        def list_jobs(*, label_selector: str) -> k8s.V1JobList:
             # Emulate Kubernetes equality and non-existence label requirements.
             selected = jobs
             for requirement in label_selector.split(","):
