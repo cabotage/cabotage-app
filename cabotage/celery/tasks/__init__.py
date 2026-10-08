@@ -43,3 +43,5 @@ from .notify import (
     reconcile_notifications,  # noqa: F401
     send_notification,  # noqa: F401
 )
+
+from .feedback import dispatch_feedback_notification  # noqa: F401
