@@ -26,6 +26,8 @@
 
 /* @source "**" globs don't recurse — https://github.com/tailwindlabs/tailwindcss/issues/17601 */
 @source "../templates/*.html";
+@source "../templates/admin_console/verify.html";
+@source "../static/admin-passkey.js";
 @source "../templates/errors/*.html";
 @source "../templates/main/*.html";
 @source "../templates/security/*.html";
