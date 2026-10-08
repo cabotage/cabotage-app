@@ -174,6 +174,11 @@ def celery_init_app(app):
             "schedule": 10.0,
             "args": None,
         },
+        "log-export-reconciler": {
+            "task": "cabotage.celery.tasks.deploy.reconcile_log_export",
+            "schedule": crontab(minute="*/10"),
+            "args": None,
+        },
     }
     app.extensions["celery"] = celery_app
     return celery_app
