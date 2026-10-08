@@ -3252,6 +3252,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     releases = []
     images = []
     deployments = []
+    queued_deployments: list[Deployment] = []
 
     # Pre-resolved related objects (avoid cascading queries for
     # deployment.release_object → release.image_object → image.processes)
@@ -3287,7 +3288,15 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         latest_release = variants["latest_release"]
         latest_release_built = variants["latest_release_built"]
         latest_release_building = variants["latest_release_building"]
-        latest_deployment = variants["latest_deployment"]
+        latest_deployment = next(
+            (
+                d
+                for d in all_deployments
+                if d.started_at is not None and not d.complete and not d.error
+            ),
+            variants["latest_deployment"],
+        )
+        queued_deployments = [d for d in reversed(all_deployments) if d.queued]
         latest_deployment_completed = variants["latest_deployment_completed"]
         has_releases = variants["has_releases"]
 
@@ -3436,6 +3445,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         latest_release_built=latest_release_built,
         latest_release_building=latest_release_building,
         latest_deployment=latest_deployment,
+        queued_deployments=queued_deployments,
         latest_deployment_completed=latest_deployment_completed,
         has_releases=has_releases,
         image_diff=image_diff,
