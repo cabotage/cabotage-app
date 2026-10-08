@@ -1,6 +1,9 @@
 from collections import namedtuple
 from functools import partial
+from typing import override
+from uuid import UUID
 
+from flask import abort, g, has_request_context, request, session
 from flask_security import current_user
 from flask_principal import Permission, UserNeed, RoleNeed
 from sqlalchemy.orm import joinedload
@@ -60,37 +63,93 @@ def cabotage_on_identity_loaded(sender, identity):
                         identity.provides.add(AdministerApplicationNeed(application.id))
 
 
-class ViewOrganizationPermission(Permission):
-    def __init__(self, organization_id):
+class ElevatedPermission(Permission):
+    """Membership first; cross-tenant authority exists only in an elevated request."""
+
+    @override
+    def can(self) -> bool:
+        if super().can():
+            return True
+        if not has_request_context():
+            return False
+        from cabotage.server.admin_passkey import (
+            ELEVATED_POST_ENDPOINTS,
+            confirm_elevated_get,
+            consume_shell_ticket,
+            has_admin_session,
+            require_admin_session,
+            require_elevated_request,
+        )
+
+        if not has_admin_session():
+            if (
+                request.method not in {"GET", "HEAD", "OPTIONS"}
+                and current_user.is_authenticated
+                and current_user.admin
+                and session.get("admin_grant")
+            ):
+                response = require_admin_session()
+                if response is not None:
+                    abort(response)
+            return False
+        g.admin_elevated = True
+        # These handlers only redirect; the destination performs authorization and
+        # consumes the proof bound to its own URL before doing any work.
+        if request.endpoint in {
+            "user.project_application_settings_legacy",
+            "user.application_release_create_legacy",
+            "user.application_images_build_fromsource_legacy",
+            "user.application_clear_cache_legacy",
+            "user.application_scale_legacy",
+            "user.release_deploy_legacy",
+        }:
+            return True
+        if request.endpoint in {
+            "user.project_application_shell_socket",
+            "user.project_application_shell_socket_env",
+        }:
+            return consume_shell_ticket()
+        if request.method in {"GET", "HEAD"}:
+            if request.endpoint in ELEVATED_POST_ENDPOINTS:
+                abort(confirm_elevated_get())
+        elif request.method != "OPTIONS":
+            response = require_elevated_request()
+            if response is not None:
+                abort(response)
+        return True
+
+
+class ViewOrganizationPermission(ElevatedPermission):
+    def __init__(self, organization_id: UUID) -> None:
         need = ViewOrganizationNeed(organization_id)
         super().__init__(need)
 
 
-class ViewProjectPermission(Permission):
-    def __init__(self, project_id):
+class ViewProjectPermission(ElevatedPermission):
+    def __init__(self, project_id: UUID) -> None:
         need = ViewProjectNeed(project_id)
         super().__init__(need)
 
 
-class ViewApplicationPermission(Permission):
-    def __init__(self, application_id):
+class ViewApplicationPermission(ElevatedPermission):
+    def __init__(self, application_id: UUID) -> None:
         need = ViewApplicationNeed(application_id)
         super().__init__(need)
 
 
-class AdministerOrganizationPermission(Permission):
-    def __init__(self, organization_id):
+class AdministerOrganizationPermission(ElevatedPermission):
+    def __init__(self, organization_id: UUID) -> None:
         need = AdministerOrganizationNeed(organization_id)
         super().__init__(need)
 
 
-class AdministerProjectPermission(Permission):
-    def __init__(self, project_id):
+class AdministerProjectPermission(ElevatedPermission):
+    def __init__(self, project_id: UUID) -> None:
         need = AdministerProjectNeed(project_id)
         super().__init__(need)
 
 
-class AdministerApplicationPermission(Permission):
-    def __init__(self, application_id):
+class AdministerApplicationPermission(ElevatedPermission):
+    def __init__(self, application_id: UUID) -> None:
         need = AdministerApplicationNeed(application_id)
         super().__init__(need)

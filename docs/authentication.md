@@ -242,9 +242,16 @@ target, submitted body, method, URL, and uploaded file bytes and metadata.
 Action challenges expire after two minutes and approvals are single-use.
 Verification alone does not execute an action: browser confirmation is separate.
 Cancel or Escape discards the approval in the browser; the server keeps the unused
-approval until it expires. No route requires action approval yet: this layer does
-not grant cross-tenant permissions or change native organization membership
-authorization, and the database viewer is read-only.
+approval until it expires.
+
+Verified admin access permits cross-tenant native drilldowns and writes. Ordinary
+organization membership permissions remain unchanged. Platform-admin routes,
+including organization-request review and infrastructure observation, require
+passkey entry; writes require a separate exact-request approval. Elevated OAuth
+callbacks and shell entry stage a confirmed POST before their side effects.
+Shell sockets require a one-use, entry-bound capability. Elevated shell and log
+streams check absolute grant expiry on every loop tick; database-backed revocation
+checks are cached for at most one second per request.
 
 While the band is visible, the browser submits forms itself so an approval request
 can keep unsaved input on the page. Redirects from those submissions return to the
@@ -256,6 +263,8 @@ It shows server-derived expiry and **End access**. Expiry or ending access leave
 the current page and unsaved form content in memory; **Verify again** renews access
 without reloading. Drafts and selected files are not copied into browser storage
 and do not survive a reload.
+Submitting an expired elevated form renews entry and still requires a separate
+action assertion and final confirmation.
 The read-only database viewer shows the same band in its own styling; there,
 **Verify again** opens the full-page passkey check and returns to the record.
 
