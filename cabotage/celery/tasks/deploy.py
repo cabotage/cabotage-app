@@ -1,4 +1,5 @@
 import logging
+import re
 import secrets
 import time
 from base64 import b64encode
@@ -27,6 +28,7 @@ from cabotage.server import (
     kubernetes as kubernetes_ext,
 )
 from cabotage.server.models.projects import (
+    ApplicationEnvironment,
     DEFAULT_POD_CLASS,
     Configuration,
     Deployment,
@@ -2045,6 +2047,70 @@ def remove_log_export_outputs(
     stale = {key: None for key in secret.data or {} if key.startswith(prefix)}
     if stale:
         core_api_instance.patch_namespaced_secret(name, namespace, {"data": stale})
+
+
+# Keys written by cabotage; anything else in the Secret belongs to the platform.
+_LOG_EXPORT_KEY = re.compile(r"[^.]+\.[^.]+\.yaml")
+
+
+@shared_task()
+def reconcile_log_export() -> None:
+    if not current_app.config["KUBERNETES_ENABLED"]:
+        return
+    _reconcile_log_export(kubernetes.client.CoreV1Api(kubernetes_ext.kubernetes_client))
+
+
+def _reconcile_log_export(core_api_instance: kubernetes.client.CoreV1Api) -> None:
+    """Rebuild exporter outputs from each live application environment.
+
+    Deploys keep the Secret current; this repairs drift such as a recreated
+    Secret or a missed teardown.
+    """
+    name, namespace = _log_export_secret()
+    try:
+        secret = core_api_instance.read_namespaced_secret(name, namespace)
+    except ApiException as exc:
+        if exc.status == 404:
+            return
+        raise
+    current = {
+        key: value
+        for key, value in (secret.data or {}).items()
+        if _LOG_EXPORT_KEY.fullmatch(key)
+    }
+    desired: dict[str, str] = {}
+    untouched: set[str] = set()
+    for app_env in ApplicationEnvironment.query.filter(
+        ApplicationEnvironment.deleted_at.is_(None)
+    ):
+        if app_env.environment is None:
+            continue
+        key = log_export_secret_key(
+            app_env.environment.k8s_namespace,
+            app_env_label_value(app_env.application, app_env),
+        )
+        if app_env.latest_deployment_running is not None:
+            # The in-flight deploy writes or removes this output itself.
+            untouched.add(key)
+            continue
+        deployment = app_env.latest_deployment_completed
+        release = deployment.release_object if deployment else None
+        if release is None:
+            continue
+        try:
+            if _log_export_enabled(release):
+                output = render_log_export_output(release)
+                desired[key] = b64encode(output.encode()).decode()
+        except Exception:
+            log.exception("Log export: cannot render %s; leaving it unchanged", key)
+            untouched.add(key)
+    changes: dict[str, str | None] = {
+        key: output for key, output in desired.items() if current.get(key) != output
+    }
+    for key in current.keys() - desired.keys() - untouched:
+        changes[key] = None
+    if changes:
+        core_api_instance.patch_namespaced_secret(name, namespace, {"data": changes})
 
 
 def render_podspec(

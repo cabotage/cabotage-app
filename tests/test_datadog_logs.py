@@ -297,3 +297,55 @@ def test_namespace_teardown_removes_only_that_namespace(app):
     )
     deploy_module.remove_log_export_outputs(secrets.api, "pr-12.")
     assert secrets.data == {"00-placeholder.yaml": "", "pr-123.a.yaml": "YQ=="}
+
+
+def _live_app_env(organization, configuration, *, running=False):
+    release = _make_release(configuration, organization)
+    app_env = release.application_environment
+    app_env.application = release.application
+    app_env.latest_deployment_running = object() if running else None
+    app_env.latest_deployment_completed = SimpleNamespace(release_object=release)
+    return app_env
+
+
+def test_reconcile_rebuilds_outputs_from_live_releases(app):
+    disabled = _enabled_config()
+    disabled["DD_LOGS_ENABLED"] = _config("false")
+    app_envs = [
+        _live_app_env("tenant-a", _enabled_config()),
+        _live_app_env("tenant-b", disabled),
+        _live_app_env("tenant-c", disabled, running=True),
+        _live_app_env("tenant-d", _enabled_config(site="customer.example")),
+    ]
+    secrets = _Secrets(
+        {
+            "00-placeholder.yaml": "",
+            "tenant-b.tenant-b-project-app.yaml": "b2xk",
+            "tenant-c.tenant-c-project-app.yaml": "aW5mbGlnaHQ=",
+            "tenant-d.tenant-d-project-app.yaml": "bGFzdC1nb29k",
+            "deleted.deleted-project-app.yaml": "b3JwaGFu",
+        }
+    )
+    with patch.object(deploy_module, "ApplicationEnvironment") as model:
+        model.query.filter.return_value = app_envs
+        deploy_module._reconcile_log_export(secrets.api)
+
+    restored = secrets.data.pop("tenant-a.tenant-a-project-app.yaml")
+    assert yaml.safe_load(b64decode(restored)) == yaml.safe_load(
+        deploy_module.render_log_export_output(
+            app_envs[0].latest_deployment_completed.release_object
+        )
+    )
+    assert secrets.data == {
+        "00-placeholder.yaml": "",
+        "tenant-c.tenant-c-project-app.yaml": "aW5mbGlnaHQ=",
+        "tenant-d.tenant-d-project-app.yaml": "bGFzdC1nb29k",
+    }
+
+
+def test_reconcile_without_exporter_changes_nothing(app):
+    secrets = _Secrets(exists=False)
+    with patch.object(deploy_module, "ApplicationEnvironment") as model:
+        model.query.filter.return_value = [_live_app_env("tenant", _enabled_config())]
+        deploy_module._reconcile_log_export(secrets.api)
+    secrets.api.patch_namespaced_secret.assert_not_called()
