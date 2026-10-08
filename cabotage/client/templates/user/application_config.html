@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, status_badge, app_tab_nav, app_resource_path %}
+{% from "_macros.html" import icon, resource_path, status_badge, app_tab_nav, app_resource_path, config_file_control %}
 
 {% set app = application %}
 {% set org_slug = app.project.organization.slug %}
@@ -378,8 +378,9 @@
         </div>
 
         <div>
-          <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Value</label>
-          {{ config_create_form.value(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono", placeholder="value", id="add-var-value", autocomplete="off", **{"data-1p-ignore": ""}) }}
+          <label for="add-var-value" class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Value</label>
+          {{ config_create_form.value(class="textarea textarea-bordered auto-grow config-value w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono text-sm", rows=1, placeholder="value", id="add-var-value", autocomplete="off", spellcheck="false", **{"data-1p-ignore": ""}) }}
+          {{ config_file_control('add-var-value') }}
           <p class="text-xs text-base-content/40 mt-1">Value for the environment variable</p>
           <p id="add-var-preview" class="text-xs font-mono text-primary/70 mt-1 fade-scroll" style="display:none;"></p>
         </div>
@@ -569,10 +570,11 @@
         </div>
 
         <div>
-          <label class="text-xs text-base-content/50 font-medium uppercase tracking-wider">New Value</label>
-          <input type="text" name="value" id="app-edit-value"
-                 class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono"
-                 placeholder="New value" autocomplete="off" data-1p-ignore>
+          <label for="app-edit-value" class="text-xs text-base-content/50 font-medium uppercase tracking-wider">New Value</label>
+          <textarea name="value" id="app-edit-value" rows="1"
+                    class="textarea textarea-bordered auto-grow config-value w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary font-mono text-sm"
+                    placeholder="New value" autocomplete="off" spellcheck="false" data-1p-ignore></textarea>
+          {{ config_file_control('app-edit-value') }}
         </div>
 
         <div class="flex flex-col gap-2 p-3 rounded-lg bg-base-300/30">

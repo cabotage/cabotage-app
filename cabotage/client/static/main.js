@@ -438,6 +438,53 @@ function bindKeyValuePaste(nameInput, valueInput) {
   });
 }
 
+/* Local files only fill Value; saving still uses the existing form. */
+function initConfigFileInputs() {
+  document.querySelectorAll('[data-config-file]').forEach(function (control) {
+    var valueInput = document.getElementById(control.getAttribute('data-config-file'));
+    var button = control.querySelector('button');
+    var fileInput = control.querySelector('input[type="file"]');
+    var status = control.querySelector('[data-config-file-status]');
+    var modal = control.closest('.raw-editor-modal');
+    var revision = 0;
+
+    function reset() {
+      revision++;
+      fileInput.value = '';
+      status.textContent = '';
+      status.classList.remove('text-error');
+    }
+
+    button.hidden = false;
+    button.addEventListener('click', function () {
+      reset();
+      fileInput.click();
+    });
+    valueInput.addEventListener('input', reset);
+    valueInput.form.addEventListener('submit', reset);
+
+    fileInput.addEventListener('change', function () {
+      var file = fileInput.files[0];
+      reset();
+      if (!file) return;
+      var currentRevision = revision;
+      status.textContent = 'Reading file…';
+      file.text().then(function (text) {
+        // Ignore reads superseded by typing, another file, or modal reuse.
+        if (currentRevision !== revision || (modal && modal.style.display === 'none')) return;
+        valueInput.value = text;
+        valueInput.dispatchEvent(new Event('input', { bubbles: true }));
+        status.textContent = 'File loaded. Review Value, then save.';
+        valueInput.focus();
+      }, function () {
+        if (currentRevision !== revision || (modal && modal.style.display === 'none')) return;
+        status.classList.add('text-error');
+        status.textContent = 'Could not read the file. Choose it again or paste its text into Value.';
+      });
+    });
+  });
+}
+
 /* Add Variable Modal */
 function initAddVarModal() {
   var modal = document.getElementById('add-var-modal');
@@ -451,8 +498,11 @@ function initAddVarModal() {
       nameInput.value = '';
       nameInput.focus();
     }
-    var valueInput = modal.querySelector('input[name="value"]');
-    if (valueInput) valueInput.value = '';
+    var valueInput = modal.querySelector('textarea[name="value"]');
+    if (valueInput) {
+      valueInput.value = '';
+      valueInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
     _addVarResetHooks.forEach(function (fn) { fn(); });
   }
   function closeModal() {
@@ -487,7 +537,7 @@ function initAddVarModal() {
   fadeScrollEls.forEach(function (el) { initFadeScroll(el); });
 
   // Template preview — resolve ${...} references client-side for preview
-  var valueInput = modal.querySelector('input[name="value"]');
+  var valueInput = modal.querySelector('textarea[name="value"]');
   bindKeyValuePaste(nameField, valueInput);
   var previewEl = document.getElementById('add-var-preview');
   var previewFadeUpdate = previewEl ? initFadeScroll(previewEl) : null;
@@ -608,14 +658,14 @@ function initAddVarModal() {
   modal.querySelectorAll('.add-var-ref-insert').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var ref = btn.getAttribute('data-ref');
-      var pos = valueInput.selectionStart || valueInput.value.length;
+      var pos = valueInput.selectionStart;
       var before = valueInput.value.slice(0, pos);
       var after = valueInput.value.slice(pos);
       valueInput.value = before + ref + after;
       valueInput.focus();
       var newPos = pos + ref.length;
       valueInput.selectionStart = valueInput.selectionEnd = newPos;
-      updatePreview();
+      valueInput.dispatchEvent(new Event('input', { bubbles: true }));
     });
   });
 
@@ -691,8 +741,11 @@ function initEnvAddVarModal() {
       nameInput.value = '';
       nameInput.focus();
     }
-    var valueInput = modal.querySelector('input[name="value"]');
-    if (valueInput) valueInput.value = '';
+    var valueInput = modal.querySelector('textarea[name="value"]');
+    if (valueInput) {
+      valueInput.value = '';
+      valueInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
     var refCheck = document.getElementById('env-add-var-ref-check');
     var refPicker = document.getElementById('env-add-var-ref-picker');
     if (refCheck) refCheck.checked = false;
@@ -739,13 +792,14 @@ function initEnvAddVarModal() {
       btn.addEventListener('click', function () {
         if (!valueInput) return;
         var ref = btn.getAttribute('data-ref');
-        var pos = valueInput.selectionStart || valueInput.value.length;
+        var pos = valueInput.selectionStart;
         var before = valueInput.value.slice(0, pos);
         var after = valueInput.value.slice(pos);
         valueInput.value = before + ref + after;
         valueInput.focus();
         var newPos = pos + ref.length;
         valueInput.selectionStart = valueInput.selectionEnd = newPos;
+        valueInput.dispatchEvent(new Event('input', { bubbles: true }));
       });
     });
   }
@@ -805,6 +859,7 @@ function initEnvEditVarModal() {
     valueInput.value = isSecret ? '' : value;
     buildtimeCheckbox.checked = isBuildtime;
     modal.style.display = 'flex';
+    valueInput.dispatchEvent(new Event('input', { bubbles: true }));
     valueInput.focus();
   }
 
@@ -866,6 +921,7 @@ function initAppEditVarModal() {
     valueInput.value = isSecret ? '' : value;
     buildtimeCheckbox.checked = isBuildtime;
     modal.style.display = 'flex';
+    valueInput.dispatchEvent(new Event('input', { bubbles: true }));
     valueInput.focus();
   }
 
@@ -968,16 +1024,29 @@ function initDeleteModal(btnClass, modalId, formId, nameDisplayId, configIdField
 
 /* Auto-growing textareas */
 function initAutoGrowTextareas() {
+  var adjustments = [];
   document.querySelectorAll('textarea.auto-grow').forEach(function (ta) {
     ta.style.overflow = 'hidden';
     ta.style.resize = 'none';
     function adjust() {
+      if (!ta.getClientRects().length) return;
       ta.style.height = 'auto';
-      ta.style.height = (ta.scrollHeight + parseInt(getComputedStyle(ta).lineHeight)) + 'px';
+      var style = getComputedStyle(ta);
+      // Values fit their content; watch paths retain an extra line for editing.
+      var extra = ta.classList.contains('config-value')
+        ? parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth)
+        : parseInt(style.lineHeight);
+      ta.style.height = (ta.scrollHeight + extra) + 'px';
     }
     ta.addEventListener('input', adjust);
+    adjustments.push(adjust);
     adjust();
   });
+  if (adjustments.length) {
+    window.addEventListener('resize', function () {
+      adjustments.forEach(function (adjust) { adjust(); });
+    });
+  }
 }
 
 /* Flash Messages — dismiss + auto-fade */
@@ -1001,19 +1070,20 @@ function initFlashMessages() {
 function initEnvConfigRefInsert() {
   var buttons = document.querySelectorAll('.env-config-ref-insert');
   if (!buttons.length) return;
-  var valueInput = document.querySelector('input[name="value"]');
+  var valueInput = document.querySelector('textarea[name="value"]');
   if (!valueInput) return;
 
   buttons.forEach(function (btn) {
     btn.addEventListener('click', function () {
       var ref = btn.getAttribute('data-ref');
-      var pos = valueInput.selectionStart || valueInput.value.length;
+      var pos = valueInput.selectionStart;
       var before = valueInput.value.slice(0, pos);
       var after = valueInput.value.slice(pos);
       valueInput.value = before + ref + after;
       valueInput.focus();
       var newPos = pos + ref.length;
       valueInput.selectionStart = valueInput.selectionEnd = newPos;
+      valueInput.dispatchEvent(new Event('input', { bubbles: true }));
     });
   });
 }
@@ -2530,6 +2600,7 @@ document.addEventListener('DOMContentLoaded', function () {
   initMobileNav();
   initThemeToggle();
   initRawEditor();
+  initConfigFileInputs();
   initAddVarModal();
   initEnvAddVarModal();
   initEnvEditVarModal();
