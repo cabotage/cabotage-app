@@ -94,7 +94,7 @@
               {% elif deployment.error %}
                 <span class="dpl-row-status-text dpl-row-status-err">Error</span>
               {% else %}
-                <span class="dpl-row-status-text dpl-row-status-run">Deploying</span>
+                <span class="dpl-row-status-text dpl-row-status-run">{{ 'Queued' if deployment.queued else 'Deploying' }}</span>
               {% endif %}
               {% if deployment.complete or deployment.error %}<span class="dpl-row-dur">{{ deployment|duration }}</span>{% endif %}
               {% if is_active %}<span class="dpl-badge dpl-badge-active">Active</span>{% endif %}
