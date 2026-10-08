@@ -171,6 +171,18 @@ class TestRunDeployPromotes:
         db_session.refresh(queued)
         assert queued.started_at is not None
 
+    def test_deployment_reaped_before_lock_is_not_executed(
+        self, db_session, app_env, run_deploy_task
+    ):
+        reaped = _trigger(db_session, app_env)
+        reaped.error = True
+        db_session.commit()
+
+        with patch("cabotage.celery.tasks.deploy.deploy_release") as deploy_release:
+            run_deploy(deployment_id=reaped.id)
+
+        deploy_release.assert_not_called()
+
 
 class TestReaper:
     def _age(self, db_session, deployment):
@@ -224,3 +236,23 @@ class TestReaper:
         assert stuck.error
         assert queued.started_at is not None
         run_deploy_task.assert_called_once_with(deployment_id=queued.id)
+
+    def test_live_task_without_heartbeat_is_not_reaped(
+        self, db_session, app_env, run_deploy_task
+    ):
+        running = _trigger(db_session, app_env)
+        queued_id = _trigger(db_session, app_env).id
+        run_deploy_task.reset_mock()
+
+        def reap_mid_deploy(deployment):
+            self._age(db_session, deployment)
+            self._reap([deployment.id])
+            db_session.refresh(deployment)
+            assert not deployment.error
+            assert db_session.get(Deployment, queued_id).queued
+            run_deploy_task.assert_not_called()
+
+        with patch(
+            "cabotage.celery.tasks.deploy.deploy_release", side_effect=reap_mid_deploy
+        ):
+            run_deploy(deployment_id=running.id)

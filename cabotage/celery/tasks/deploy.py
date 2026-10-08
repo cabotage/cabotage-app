@@ -2,7 +2,6 @@ import datetime
 import hashlib
 import logging
 import secrets
-import struct
 import time
 import uuid
 from typing import TYPE_CHECKING, cast
@@ -3493,10 +3492,24 @@ def remove_none(obj):
         return obj
 
 
+def _advisory_lock_key(scope: str, application_environment_id: uuid.UUID) -> int:
+    digest = hashlib.sha256(f"{scope}:{application_environment_id}".encode()).digest()
+    return int.from_bytes(digest[:8], "big", signed=True)
+
+
+def try_deploy_execution_lock(application_environment_id: uuid.UUID) -> bool:
+    """False if a run_deploy task is still running for this environment."""
+    key = _advisory_lock_key("deploy-exec", application_environment_id)
+    return bool(
+        db.session.execute(
+            sa.text("SELECT pg_try_advisory_xact_lock(:key)"), {"key": key}
+        ).scalar()
+    )
+
+
 def start_next_deployment(application_environment_id: uuid.UUID) -> None:
     """Start the oldest queued deployment if none is running."""
-    lock_hash = hashlib.sha256(f"deploy-queue:{application_environment_id}".encode())
-    lock_key = struct.unpack(">q", lock_hash.digest()[:8])[0]
+    lock_key = _advisory_lock_key("deploy-queue", application_environment_id)
     db.session.execute(sa.text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
     pending = Deployment.query.filter(
         Deployment.application_environment_id == application_environment_id,
@@ -3527,7 +3540,16 @@ def run_deploy(deployment_id: uuid.UUID | str | None = None) -> None:
     application_environment_id = deployment.application_environment_id
     error_detail = ""
     try:
-        deploy_release(deployment)
+        # Locked while this task runs. Postgres drops the lock if the worker dies.
+        with db.engine.connect() as conn:
+            _ = conn.execute(
+                sa.text("SELECT pg_advisory_xact_lock(:key)"),
+                {"key": _advisory_lock_key("deploy-exec", application_environment_id)},
+            )
+            db.session.refresh(deployment)
+            # Skip if the reaper already gave up on this deployment.
+            if not (deployment.complete or deployment.error):
+                _ = deploy_release(deployment)
     except DeployError as exc:
         error_detail = str(exc)
         print(error_detail)
