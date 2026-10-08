@@ -289,6 +289,7 @@ def _connect_installation_callback(state):
                     organization,
                     current_user.id,
                     installation,
+                    application_id=payload.get("application_id"),
                 ),
             }
         )

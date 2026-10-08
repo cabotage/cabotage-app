@@ -927,6 +927,20 @@ def organization_settings(org_slug):
     )
 
 
+def _organization_application_or_404(organization, application_id):
+    if not application_id:
+        return None
+    application = _safe_get(Application, application_id)
+    if (
+        application is None
+        or application.deleted_at is not None
+        or application.project.organization_id != organization.id
+        or not AdministerApplicationPermission(application.id).can()
+    ):
+        abort(404)
+    return application
+
+
 @user_blueprint.route("/github/install/<org_slug>")
 @login_required
 def github_install_start(org_slug):
@@ -1060,8 +1074,13 @@ def github_connect_start(org_slug):
     if not AdministerOrganizationPermission(organization.id).can():
         abort(403)
 
+    application = _organization_application_or_404(
+        organization, request.args.get("application_id")
+    )
     authorize_url = github_installations.user_authorize_url(
-        github_installations.connect_state(organization, current_user.id)
+        github_installations.connect_state(
+            organization, current_user.id, application=application
+        )
     )
     if authorize_url is None:
         flash("GitHub user authorization is not configured.", "danger")
@@ -1134,11 +1153,15 @@ def github_connect_complete(org_slug):
         )
         return redirect(url_for("user.organization_settings", org_slug=org_slug))
 
+    application = _organization_application_or_404(
+        organization, payload.get("application_id")
+    )
     authorize_url = github_installations.user_authorize_url(
         github_installations.connect_state(
             organization,
             current_user.id,
             installation_id=payload.get("installation_id"),
+            application=application,
         )
     )
     if authorize_url is None:
@@ -4439,6 +4462,11 @@ def _render_application_settings(application, org, environment, form):
         form=form,
         app_url=url_for(
             "user.github_install_start",
+            org_slug=org.slug,
+            application_id=application.id,
+        ),
+        connect_url=url_for(
+            "user.github_connect_start",
             org_slug=org.slug,
             application_id=application.id,
         ),

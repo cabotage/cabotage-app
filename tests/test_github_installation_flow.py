@@ -378,6 +378,85 @@ def test_connect_complete_reauthorizes_selected_installation(
     )
 
 
+def test_connect_existing_from_application_settings_connects_application(
+    app, client, admin_user, org
+):
+    _login(client, admin_user)
+    project = Project(name=f"Project {uuid.uuid4().hex[:8]}", organization_id=org.id)
+    db.session.add(project)
+    db.session.flush()
+    application = Application(
+        name=f"App {uuid.uuid4().hex[:8]}",
+        slug=f"app-{uuid.uuid4().hex[:8]}",
+        project_id=project.id,
+    )
+    db.session.add(application)
+    db.session.commit()
+
+    installation_id = 666666
+    installation = _installation(installation_id, "existing-org")
+
+    def _state(location):
+        return re.search(r"[?&]state=([^&]+)", location).group(1)
+
+    response = client.get(
+        f"/github/connect/{org.slug}",
+        query_string={"application_id": str(application.id)},
+    )
+    assert response.status_code == 302
+
+    with (
+        patch(
+            "cabotage.server.user.github_oauth._fetch_github_user_access_token",
+            return_value="user-token",
+        ),
+        patch(
+            "cabotage.server.user.github_oauth._fetch_github_user_installations",
+            return_value=[installation],
+        ),
+        patch(
+            "cabotage.server.user.github_oauth._fetch_github_user_installation_repository_ids",
+            return_value=[1],
+        ),
+        patch(
+            "cabotage.server.user.github_installations.github_app.fetch_installation",
+            return_value=installation,
+        ),
+        patch(
+            "cabotage.server.user.github_installations.github_app.fetch_installation_repositories",
+            return_value=[
+                {"id": 1, "full_name": "existing-org/repo", "private": False}
+            ],
+        ),
+    ):
+        response = client.get(
+            "/auth/github/callback",
+            query_string={"state": _state(response.location), "code": "oauth-code"},
+        )
+        assert response.status_code == 200
+        token = re.search(rb'name="installation" value="([^"]+)"', response.data).group(
+            1
+        )
+
+        response = client.post(
+            f"/github/connect/{org.slug}/complete",
+            data={"installation": token.decode()},
+        )
+        assert response.status_code == 302
+
+        response = client.get(
+            "/auth/github/callback",
+            query_string={"state": _state(response.location), "code": "oauth-code"},
+        )
+
+    assert response.status_code == 302
+    assert response.location.endswith(
+        f"/projects/{org.slug}/{project.slug}/applications/{application.slug}/settings"
+    )
+    db.session.refresh(application)
+    assert application.github_app_installation_id == installation_id
+
+
 def test_application_settings_rejects_unconnected_installation_id(
     app, client, admin_user, org
 ):
