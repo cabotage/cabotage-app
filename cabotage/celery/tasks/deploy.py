@@ -112,7 +112,11 @@ def _dispatch_deploy_failure(deployment, error_detail):
 
 @shared_task()
 def cleanup_app_env_k8s(
-    app_env_id: str, namespace: str, resource_prefix: str, label_selector: str
+    app_env_id: str,
+    namespace: str,
+    resource_prefix: str,
+    label_selector: str,
+    log_export_key: str | None = None,
 ) -> None:
     """Best-effort delete of all k8s resources for one ApplicationEnvironment.
 
@@ -206,6 +210,11 @@ def cleanup_app_env_k8s(
         core_api.delete_namespaced_secret(resource_prefix, namespace)
     except Exception:
         log.exception("k8s cleanup: failed to delete secret %s", resource_prefix)
+    if log_export_key:
+        try:
+            remove_log_export_outputs(core_api, log_export_key)
+        except Exception:
+            log.exception("k8s cleanup: failed to remove log export %s", log_export_key)
 
 
 def _preview_url_for_app_env(app_env):

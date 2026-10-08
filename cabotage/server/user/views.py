@@ -51,7 +51,12 @@ from cabotage.celery.tasks import (
     run_release_build,
     teardown_tailscale_operator,
 )
-from cabotage.celery.tasks.deploy import resize_deployment, scale_deployment
+from cabotage.celery.tasks.deploy import (
+    app_env_label_value,
+    log_export_secret_key,
+    resize_deployment,
+    scale_deployment,
+)
 from cabotage.celery.tasks.notify import dispatch_autodeploy_notification
 from cabotage.server import (
     config_writer,
@@ -316,6 +321,9 @@ def _enqueue_app_env_cleanup(app_env, organization):
         namespace=namespace,
         resource_prefix=resource_prefix,
         label_selector=label_selector,
+        log_export_key=log_export_secret_key(
+            namespace, app_env_label_value(app, app_env)
+        ),
     )
 
 
