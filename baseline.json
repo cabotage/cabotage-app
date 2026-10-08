@@ -4489,7 +4489,7 @@
     },
     {
       "column": 9,
-      "path": "cabotage/celery/tasks/build.py",
+      "path": "cabotage/celery/tasks/deploy.py",
       "name": "not-callable",
       "concise_description": "Expected a callable, got `list[str]`",
       "severity": "error"
@@ -9696,27 +9696,6 @@
       "severity": "error"
     },
     {
-      "column": 5,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "unannotated-return",
-      "concise_description": "`run_deploy` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 16,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`run_deploy` is missing an annotation for parameter `deployment_id`",
-      "severity": "error"
-    },
-    {
-      "column": 18,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `deployment` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
       "column": 9,
       "path": "cabotage/celery/tasks/deploy.py",
       "name": "unused-call-result",
@@ -12178,13 +12157,6 @@
       "path": "cabotage/celery/tasks/maintain.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/celery/tasks/maintain.py",
-      "name": "unannotated-return",
-      "concise_description": "`reap_stale_builds` is missing a return annotation",
       "severity": "error"
     },
     {
@@ -32149,13 +32121,6 @@
       "path": "cabotage/server/user/views.py",
       "name": "implicit-reexport",
       "concise_description": "`process_github_hook` is not exported from module `cabotage.celery.tasks`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-reexport",
-      "concise_description": "`run_deploy` is not exported from module `cabotage.celery.tasks`",
       "severity": "error"
     },
     {

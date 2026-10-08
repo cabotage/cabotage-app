@@ -1,6 +1,10 @@
+import datetime
+import hashlib
 import logging
 import secrets
+import struct
 import time
+import uuid
 from typing import TYPE_CHECKING, cast
 
 from base64 import b64encode
@@ -11,6 +15,7 @@ import yaml
 
 from celery import shared_task
 from kubernetes.client.exceptions import ApiException
+import sqlalchemy as sa
 from sqlalchemy.orm.attributes import flag_modified
 
 from flask import current_app
@@ -3488,11 +3493,38 @@ def remove_none(obj):
         return obj
 
 
+def start_next_deployment(application_environment_id: uuid.UUID) -> None:
+    """Start the oldest queued deployment if none is running."""
+    lock_hash = hashlib.sha256(f"deploy-queue:{application_environment_id}".encode())
+    lock_key = struct.unpack(">q", lock_hash.digest()[:8])[0]
+    db.session.execute(sa.text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
+    pending = Deployment.query.filter(
+        Deployment.application_environment_id == application_environment_id,
+        Deployment.complete == False,  # noqa: E712
+        Deployment.error == False,  # noqa: E712
+    )
+    deployment: Deployment | None = None
+    if pending.filter(Deployment.started_at.isnot(None)).first() is None:
+        deployment = (
+            pending.filter(Deployment.started_at.is_(None))
+            .order_by(Deployment.created)
+            .first()
+        )
+        if deployment is not None:
+            deployment.started_at = datetime.datetime.now(
+                datetime.timezone.utc
+            ).replace(tzinfo=None)
+    db.session.commit()
+    if deployment is not None:
+        run_deploy.delay(deployment_id=deployment.id)
+
+
 @shared_task(acks_late=True)
-def run_deploy(deployment_id=None):
-    deployment = Deployment.query.filter_by(id=deployment_id).first()
+def run_deploy(deployment_id: uuid.UUID | str | None = None) -> None:
+    deployment: Deployment | None = Deployment.query.filter_by(id=deployment_id).first()
     if deployment is None:
         raise KeyError(f"Deployment with ID {deployment_id} not found!")
+    application_environment_id = deployment.application_environment_id
     error_detail = ""
     try:
         deploy_release(deployment)
@@ -3501,4 +3533,7 @@ def run_deploy(deployment_id=None):
         print(error_detail)
         print(exc)
     except Exception:
+        db.session.rollback()
         raise
+    finally:
+        start_next_deployment(application_environment_id)

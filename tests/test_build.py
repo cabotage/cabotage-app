@@ -903,7 +903,7 @@ class TestRunImageBuild:
 class TestRunReleaseBuild:
     """Tests for the run_release_build Celery task."""
 
-    @patch("cabotage.celery.tasks.build.run_deploy")
+    @patch("cabotage.celery.tasks.deploy.run_deploy")
     @patch("cabotage.celery.tasks.build.build_release_buildkit")
     @patch("cabotage.celery.tasks.build.github_app")
     def test_auto_deploy_creates_deployment_and_chains(
@@ -1224,7 +1224,7 @@ class TestBuildOmnibusBuildkit:
 class TestRunOmnibusBuild:
     """Tests for the run_omnibus_build Celery task."""
 
-    @patch("cabotage.celery.tasks.build.run_deploy")
+    @patch("cabotage.celery.tasks.deploy.run_deploy")
     @patch("cabotage.celery.tasks.build.build_omnibus_buildkit")
     @patch("cabotage.celery.tasks.build.github_app")
     def test_creates_release_and_deployment(
@@ -1443,7 +1443,7 @@ class TestRunOmnibusBuild:
                 with patch(
                     "cabotage.celery.tasks.build.run_release_build"
                 ) as mock_release:
-                    with patch("cabotage.celery.tasks.build.run_deploy"):
+                    with patch("cabotage.celery.tasks.deploy.run_deploy"):
                         run_omnibus_build(image_id=image.id)
 
         mock_release.delay.assert_not_called()

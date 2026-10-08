@@ -157,14 +157,17 @@ from cabotage.celery.tasks import (
     deploy_tailscale_operator,
     dispatch_pipeline_notification,
     process_github_hook,
-    run_deploy,
     run_image_build,
     run_release_build,
     teardown_tailscale_operator,
 )
 from cabotage.celery.tasks.notify import dispatch_autodeploy_notification
 
-from cabotage.celery.tasks.deploy import resize_deployment, scale_deployment
+from cabotage.celery.tasks.deploy import (
+    resize_deployment,
+    scale_deployment,
+    start_next_deployment,
+)
 from cabotage.utils.build_log_stream import (
     get_redis_client,
     read_log_stream,
@@ -6500,7 +6503,7 @@ def release_deploy(org_slug, project_slug, app_slug, release_id):
             detail=f"Triggered by: {current_user.username}",
         )
         deployment_id = deployment.id
-        run_deploy.delay(deployment_id=deployment.id)
+        start_next_deployment(deployment.application_environment_id)
         deployment = Deployment.query.filter_by(id=deployment_id).first_or_404()
     else:
         from cabotage.celery.tasks.deploy import fake_deploy_release
