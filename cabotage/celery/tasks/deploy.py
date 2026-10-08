@@ -281,6 +281,10 @@ def k8s_role_name(release):
 
 
 def k8s_label_value(release):
+    return app_env_label_value(release.application, release.application_environment)
+
+
+def app_env_label_value(application, app_env):
     """Build a k8s label value (max 63 chars) for the 'app' label.
 
     Uses compact_k8s_name with (slug, k8s_identifier) pairs to produce
@@ -288,15 +292,13 @@ def k8s_label_value(release):
     pass through unchanged; generated ones get their slugs joined with
     a combined hash suffix.
     """
-    org = release.application.project.organization
-    project = release.application.project
-    app = release.application
-    app_env = release.application_environment
+    org = application.project.organization
+    project = application.project
     pairs = [(org.slug, org.k8s_identifier)]
     if app_env.environment.uses_environment_namespace:
         pairs.append((app_env.environment.slug, app_env.environment.k8s_identifier))
     pairs.append((project.slug, project.k8s_identifier))
-    pairs.append((app.slug, app.k8s_identifier))
+    pairs.append((application.slug, application.k8s_identifier))
     return compact_k8s_name(*pairs)
 
 
