@@ -26118,24 +26118,10 @@
       "severity": "error"
     },
     {
-      "column": 28,
-      "path": "cabotage/server/models/admin.py",
-      "name": "implicit-reexport",
-      "concise_description": "`current_user` is not exported from module `flask_security`",
-      "severity": "error"
-    },
-    {
       "column": 9,
       "path": "cabotage/server/models/admin.py",
       "name": "missing-override-decorator",
       "concise_description": "Class member `AdminIndexView.is_accessible` overrides a member in a parent class but is missing an `@override` decorator",
-      "severity": "error"
-    },
-    {
-      "column": 9,
-      "path": "cabotage/server/models/admin.py",
-      "name": "unannotated-return",
-      "concise_description": "`is_accessible` is missing a return annotation",
       "severity": "error"
     },
     {
@@ -26148,36 +26134,8 @@
     {
       "column": 9,
       "path": "cabotage/server/models/admin.py",
-      "name": "unannotated-return",
-      "concise_description": "`_handle_view` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 28,
-      "path": "cabotage/server/models/admin.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_handle_view` is missing an annotation for parameter `name`",
-      "severity": "error"
-    },
-    {
-      "column": 36,
-      "path": "cabotage/server/models/admin.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_handle_view` is missing an annotation for parameter `kwargs`",
-      "severity": "error"
-    },
-    {
-      "column": 9,
-      "path": "cabotage/server/models/admin.py",
       "name": "missing-override-decorator",
       "concise_description": "Class member `AdminModelView.is_accessible` overrides a member in a parent class but is missing an `@override` decorator",
-      "severity": "error"
-    },
-    {
-      "column": 9,
-      "path": "cabotage/server/models/admin.py",
-      "name": "unannotated-return",
-      "concise_description": "`is_accessible` is missing a return annotation",
       "severity": "error"
     },
     {
@@ -26190,50 +26148,8 @@
     {
       "column": 9,
       "path": "cabotage/server/models/admin.py",
-      "name": "unannotated-return",
-      "concise_description": "`_handle_view` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 28,
-      "path": "cabotage/server/models/admin.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_handle_view` is missing an annotation for parameter `name`",
-      "severity": "error"
-    },
-    {
-      "column": 36,
-      "path": "cabotage/server/models/admin.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_handle_view` is missing an annotation for parameter `kwargs`",
-      "severity": "error"
-    },
-    {
-      "column": 9,
-      "path": "cabotage/server/models/admin.py",
       "name": "missing-override-decorator",
       "concise_description": "Class member `AdminModelView._get_endpoint` overrides a member in a parent class but is missing an `@override` decorator",
-      "severity": "error"
-    },
-    {
-      "column": 9,
-      "path": "cabotage/server/models/admin.py",
-      "name": "unannotated-return",
-      "concise_description": "`_get_endpoint` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 29,
-      "path": "cabotage/server/models/admin.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_get_endpoint` is missing an annotation for parameter `endpoint`",
-      "severity": "error"
-    },
-    {
-      "column": 42,
-      "path": "cabotage/server/models/admin.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
