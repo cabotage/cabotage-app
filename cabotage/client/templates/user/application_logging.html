@@ -21,7 +21,9 @@
       </div>
       <nav class="logging-links" aria-label="Logging resources">
         <a class="icon-link" href="{{ variables_url }}"><span aria-hidden="true">{{ icon('key') }}</span>Variables</a>
-        <a href="{{ url_for('user.guide', topic='datadog-logs') }}">Datadog logs guide</a>
+        {% if export_available %}
+          <a href="{{ url_for('user.guide', topic='datadog-logs') }}">Datadog logs guide</a>
+        {% endif %}
       </nav>
     </header>
 

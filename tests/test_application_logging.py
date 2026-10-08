@@ -266,6 +266,18 @@ def test_installation_without_exporter_blocks_enabling_but_allows_disabling(
     assert _local(editor, "DD_LOGS_ENABLED").value == "false"
 
 
+@pytest.mark.parametrize("available", [True, False])
+def test_datadog_guide_is_listed_only_when_export_is_available(
+    logging_editor, monkeypatch, available
+):
+    editor = logging_editor
+    monkeypatch.setitem(_app.config, "LOG_EXPORT_ENABLED", available)
+    response, _ = _request(editor, url="/guide/datadog-logs")
+    assert response.status_code == (200 if available else 404)
+    _, context = _request(editor, url="/guide")
+    assert ("datadog-logs" in context["guide_topics"]) is available
+
+
 def test_secret_never_read_or_rendered_on_get(logging_editor):
     editor = logging_editor
     for name in ("DD_LOGS_ENABLED", "DD_SITE", "DD_API_KEY"):
