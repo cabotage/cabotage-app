@@ -618,3 +618,26 @@ def test_native_membership_does_not_require_passkey_entry(client, regular_user, 
     db.session.refresh(tenant)
     assert tenant.name == "Changed tenant"
     assert AdminChallenge.query.filter_by(user_id=regular_user.id).count() == 0
+
+
+def test_elevated_member_form_redirect_is_returned_not_followed(
+    client, admin_user, passkey, tenant
+):
+    from cabotage.server.models.auth_associations import OrganizationMember
+
+    db.session.add(
+        OrganizationMember(organization_id=tenant.id, user_id=admin_user.id, admin=True)
+    )
+    db.session.commit()
+    _login(client, admin_user)
+    passkey.enter(client)
+    url = f"/organizations/{tenant.slug}/settings"
+    # The access band submits forms with fetch; a followed redirect would fail
+    # for GitHub and load same-site pages twice.
+    response = client.post(url, data=_data(tenant), headers={"X-Admin-Navigate": "1"})
+    assert response.status_code == 200
+    assert response.get_json() == {"admin_redirect": url}
+    assert response.headers["Cache-Control"] == "no-store"
+    db.session.refresh(tenant)
+    assert tenant.name == "Changed tenant"
+    assert AdminChallenge.query.filter_by(user_id=admin_user.id).count() == 0
