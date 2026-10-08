@@ -1928,111 +1928,114 @@ def _read_datadog_config(
     return cast("str", config.read_value(config_writer))
 
 
-def _render_datadog_logs_container(
-    process_name: str,
-    dd_api_key: str,
-    dd_site: str | None,
-    datadog_tags: Mapping[str, str],
-) -> kubernetes.client.V1Container:
-    if dd_site not in DATADOG_SITES:
-        raise DeployError("DD_LOGS_ENABLED requires a supported DD_SITE")
-    return kubernetes.client.V1Container(
-        name="datadog-logs",
-        restart_policy="Always",
-        image=current_app.config["DATADOG_LOGS_IMAGE"],
-        image_pull_policy="IfNotPresent",
-        args=[
-            "-f",
-            "1",
-            "-R",
-            "/fluent-bit/etc/parsers.conf",
-            "-i",
-            "tail",
-            "-p",
-            f"path=/var/log/cabotage-pod/{process_name}/*.log",
-            "-p",
-            "multiline.parser=cri",
-            "-p",
-            "read_from_head=true",
-            "-p",
-            "refresh_interval=1",
-            "-p",
-            "db=/var/lib/cabotage-log-state/tail.db",
-            "-p",
-            "mem_buf_limit=5M",
-            "-t",
-            "cabotage.app",
-            "-o",
-            "datadog",
-            "-m",
-            "cabotage.app",
-            "-p",
-            f"host=http-intake.logs.{dd_site}",
-            "-p",
-            "tls=on",
-            "-p",
-            "tls.verify=on",
-            "-p",
-            "compress=gzip",
-            "-p",
-            "apikey=${DD_API_KEY}",
-            "-p",
-            "dd_message_key=log",
-            "-p",
-            f"dd_service={datadog_tags['application']}",
-            "-p",
-            f"dd_source={datadog_tags['application']}",
-            "-p",
-            "dd_tags=" + ",".join(f"{k}:{v}" for k, v in datadog_tags.items()),
-            "-p",
-            "retry_limit=no_limits",
-        ],
-        env=[
-            kubernetes.client.V1EnvVar(name="DD_API_KEY", value=dd_api_key),
-            *[
-                kubernetes.client.V1EnvVar(
-                    name=name,
-                    value_from=kubernetes.client.V1EnvVarSource(
-                        field_ref=kubernetes.client.V1ObjectFieldSelector(
-                            field_path=field
-                        )
-                    ),
-                )
-                for name, field in (
-                    ("POD_NAMESPACE", "metadata.namespace"),
-                    ("POD_NAME", "metadata.name"),
-                    ("POD_UID", "metadata.uid"),
-                )
-            ],
-        ],
-        volume_mounts=[
-            kubernetes.client.V1VolumeMount(
-                name="datadog-pod-logs",
-                mount_path="/var/log/cabotage-pod",
-                sub_path_expr="$(POD_NAMESPACE)_$(POD_NAME)_$(POD_UID)",
-                read_only=True,
-            ),
-            kubernetes.client.V1VolumeMount(
-                name="datadog-log-state",
-                mount_path="/var/lib/cabotage-log-state",
-            ),
-        ],
-        # Allow discovery of a short job's new log file before terminating.
-        lifecycle=kubernetes.client.V1Lifecycle(
-            pre_stop=kubernetes.client.V1LifecycleHandler(
-                sleep=kubernetes.client.V1SleepAction(seconds=2)
-            )
-        ),
-        security_context=kubernetes.client.V1SecurityContext(
-            allow_privilege_escalation=False,
-            read_only_root_filesystem=True,
-            capabilities=kubernetes.client.V1Capabilities(drop=["ALL"]),
-        ),
-        resources=kubernetes.client.V1ResourceRequirements(
-            requests={"memory": "32Mi", "cpu": "10m"},
-            limits={"memory": "128Mi", "cpu": "100m"},
-        ),
+LOG_EXPORT_LABEL = "log-export.cabotage.io"
+
+
+def _log_export_enabled(release: Release) -> bool:
+    flag = _read_datadog_config(
+        release.configuration_objects, "DD_LOGS_ENABLED", "false"
     )
+    return str(flag).strip().lower() == "true"
+
+
+def log_export_secret_key(namespace: str, app_label: str) -> str:
+    """Key of one application environment's output in the log export Secret."""
+    return f"{namespace}.{app_label}.yaml"
+
+
+def render_log_export_output(release: Release) -> str:
+    """Render the tenant's Fluent Bit output, included by the platform exporter.
+
+    resident-alloy tags opted-in records ``tenant.<namespace>.<app label>`` and
+    packs the original line into ``_entry``; see kubernetes-infra.
+    """
+    configuration = release.configuration_objects
+    api_key = _read_datadog_config(configuration, "DD_API_KEY")
+    site = _read_datadog_config(configuration, "DD_SITE")
+    if not api_key or api_key == "**secret**":
+        raise DeployError("DD_LOGS_ENABLED requires the application's DD_API_KEY")
+    if "${" in api_key:
+        # Fluent Bit would expand this as one of its own environment variables.
+        raise DeployError("DD_API_KEY must not contain '${'")
+    if site not in DATADOG_SITES:
+        raise DeployError("DD_LOGS_ENABLED requires a supported DD_SITE")
+    namespace = k8s_namespace(release)
+    app_label = k8s_label_value(release)
+    application = release.application
+    tags = {
+        "organization": application.project.organization.slug,
+        "project": application.project.slug,
+        "application": application.slug,
+        "app": app_label,
+        "environment": release.application_environment.environment.slug,
+    }
+    output = {
+        "name": "datadog",
+        "alias": f"{namespace}.{app_label}",
+        "match": f"tenant.{namespace}.{app_label}",
+        "host": f"http-intake.logs.{site}",
+        "port": 443,
+        "tls": "on",
+        "tls.verify": "on",
+        "compress": "gzip",
+        "apikey": api_key,
+        "dd_message_key": "_entry",
+        "dd_service": application.slug,
+        "dd_source": application.slug,
+        "dd_tags": ",".join(f"{k}:{v}" for k, v in tags.items()),
+        # Hot reloads wait for pending chunks, so a dead sink must give up.
+        "retry_limit": 5,
+        "storage.total_limit_size": "64M",
+    }
+    return yaml.safe_dump({"pipeline": {"outputs": [output]}}, sort_keys=False)
+
+
+def _log_export_secret() -> tuple[str, str]:
+    """Name and namespace of the Secret the platform exporter includes."""
+    return (
+        cast("str", current_app.config["LOG_EXPORT_SECRET"]),
+        cast("str", current_app.config["LOG_EXPORT_NAMESPACE"]),
+    )
+
+
+def sync_log_export(
+    core_api_instance: kubernetes.client.CoreV1Api, release: Release
+) -> bool:
+    """Write or drop this application environment's exporter output."""
+    key = log_export_secret_key(k8s_namespace(release), k8s_label_value(release))
+    if not _log_export_enabled(release):
+        remove_log_export_outputs(core_api_instance, key)
+        return False
+    output = b64encode(render_log_export_output(release).encode()).decode()
+    name, namespace = _log_export_secret()
+    try:
+        core_api_instance.patch_namespaced_secret(
+            name, namespace, {"data": {key: output}}
+        )
+    except ApiException as exc:
+        if exc.status == 404:
+            raise DeployError(
+                f"Log export is not installed: Secret/{name} "
+                f"is missing in Namespace/{namespace}"
+            )
+        raise
+    return True
+
+
+def remove_log_export_outputs(
+    core_api_instance: kubernetes.client.CoreV1Api, prefix: str
+) -> None:
+    """Drop every exporter output whose Secret key starts with ``prefix``."""
+    name, namespace = _log_export_secret()
+    try:
+        secret = core_api_instance.read_namespaced_secret(name, namespace)
+    except ApiException as exc:
+        if exc.status == 404:
+            return
+        raise
+    stale = {key: None for key in secret.data or {} if key.startswith(prefix)}
+    if stale:
+        core_api_instance.patch_namespaced_secret(name, namespace, {"data": stale})
 
 
 def render_podspec(
@@ -2129,39 +2132,6 @@ def render_podspec(
             )
         )
 
-    configuration = release.configuration_objects
-    logs_enabled = (
-        str(_read_datadog_config(configuration, "DD_LOGS_ENABLED", "false"))
-        .strip()
-        .lower()
-        == "true"
-    )
-    if logs_enabled:
-        log_api_key = _read_datadog_config(configuration, "DD_API_KEY")
-        log_site = _read_datadog_config(configuration, "DD_SITE")
-        if not log_api_key or log_api_key == "**secret**":
-            raise DeployError("DD_LOGS_ENABLED requires the application's DD_API_KEY")
-        init_containers.append(
-            _render_datadog_logs_container(
-                process_name, log_api_key, log_site, datadog_tags
-            )
-        )
-        volumes.extend(
-            [
-                kubernetes.client.V1Volume(
-                    name="datadog-pod-logs",
-                    host_path=kubernetes.client.V1HostPathVolumeSource(
-                        path="/var/log/pods", type="Directory"
-                    ),
-                ),
-                kubernetes.client.V1Volume(
-                    name="datadog-log-state",
-                    empty_dir=kubernetes.client.V1EmptyDirVolumeSource(
-                        size_limit="16Mi"
-                    ),
-                ),
-            ]
-        )
     if (
         not (process_name.startswith(("release", "postdeploy")))
         and "DD_API_KEY" in release.configuration_objects
@@ -2215,13 +2185,14 @@ def render_podspec(
     )
 
 
-def _datadog_logs_annotations(
-    pod_spec: kubernetes.client.V1PodSpec,
-) -> dict[str, str] | None:
-    if any(c.name == "datadog-logs" for c in (pod_spec.init_containers or ())):
-        # A shared node agent must not duplicate tenant logs into its own account.
-        return {"ad.datadoghq.com/logs_exclude": "true"}
-    return None
+def _log_export_pod_metadata(
+    release: Release,
+) -> tuple[dict[str, str], dict[str, str]]:
+    # Explicit "false" clears an earlier opt-in from merge-patched Deployments.
+    enabled = "true" if _log_export_enabled(release) else "false"
+    # resident-alloy forwards "true" pods to the exporter; a shared Datadog
+    # node agent must not duplicate them into its own account.
+    return {LOG_EXPORT_LABEL: enabled}, {"ad.datadoghq.com/logs_exclude": enabled}
 
 
 def render_deployment(
@@ -2237,6 +2208,7 @@ def render_deployment(
     env_slug = app_env.environment.slug if app_env.environment else ""
     process_counts = app_env.process_counts or {}
     safe_labels = _safe_labels_from_release(release)
+    export_labels, export_annotations = _log_export_pod_metadata(release)
     pod_labels = {
         "organization": release.application.project.organization.slug,
         "project": release.application.project.slug,
@@ -2249,6 +2221,7 @@ def render_deployment(
         "ca-admission.cabotage.io": "true",
         "resident-pod.cabotage.io": "true",
         **safe_labels,
+        **export_labels,
     }
     pod_spec = render_podspec(release, process_name, service_account_name)
     deployment_object = kubernetes.client.V1Deployment(
@@ -2275,7 +2248,7 @@ def render_deployment(
             template=kubernetes.client.V1PodTemplateSpec(
                 metadata=kubernetes.client.V1ObjectMeta(
                     labels=pod_labels,
-                    annotations=_datadog_logs_annotations(pod_spec),
+                    annotations=export_annotations,
                 ),
                 spec=pod_spec,
             ),
@@ -2478,6 +2451,7 @@ def render_job(
     # Dry runs can leave job_id unset; retain their None labels for serialization.
     label_value = k8s_label_value(release)
     safe_labels = _safe_labels_from_release(release)
+    export_labels, export_annotations = _log_export_pod_metadata(release)
     pod_spec = render_podspec(release, process_name, service_account_name)
     job_object = kubernetes.client.V1Job(
         metadata=kubernetes.client.V1ObjectMeta(
@@ -2512,8 +2486,9 @@ def render_job(
                         "ca-admission.cabotage.io": "true",
                         "resident-pod.cabotage.io": "true",
                         **safe_labels,
+                        **export_labels,
                     },
-                    annotations=_datadog_logs_annotations(pod_spec),
+                    annotations=export_annotations,
                 ),
                 spec=pod_spec,
             ),
@@ -2565,6 +2540,7 @@ def render_cronjob(
     process_counts = app_env.process_counts or {}
     suspended = process_counts.get(process_name, 0) == 0
     safe_labels = _safe_labels_from_release(release)
+    export_labels, export_annotations = _log_export_pod_metadata(release)
     common_labels = {
         "organization": release.application.project.organization.slug,
         "project": release.application.project.slug,
@@ -2585,6 +2561,7 @@ def render_cronjob(
         **common_labels,
         "ca-admission.cabotage.io": "true",
         "resident-pod.cabotage.io": "true",
+        **export_labels,
     }
     pod_spec = render_podspec(release, process_name, service_account_name)
     cronjob_object = kubernetes.client.V1CronJob(
@@ -2614,7 +2591,7 @@ def render_cronjob(
                     template=kubernetes.client.V1PodTemplateSpec(
                         metadata=kubernetes.client.V1ObjectMeta(
                             labels=pod_labels,
-                            annotations=_datadog_logs_annotations(pod_spec),
+                            annotations=export_annotations,
                         ),
                         spec=pod_spec,
                     ),
@@ -3163,6 +3140,9 @@ def deploy_release(deployment: Deployment) -> bool | None:
         if service_account.metadata is None or service_account.metadata.name is None:
             raise DeployError("Release failed due to unnamed service_account")
 
+        if sync_log_export(core_api_instance, deployment.release_object):
+            log("Enabled tenant log export")
+
         for release_command in deployment.release_object.release_commands:
             log(f"Running release command {release_command}")
             job_object = render_job(
@@ -3604,6 +3584,18 @@ def fake_deploy_release(deployment: Deployment) -> None:
         f"Patching ServiceAccount/{service_account.metadata.name} "
         f"with ImagePullSecrets/{image_pull_secrets.metadata.name} "
         f"in Namespace/{namespace.metadata.name}"
+    )
+    release: Release = deployment.release_object
+    export_key = log_export_secret_key(k8s_namespace(release), k8s_label_value(release))
+    if _log_export_enabled(release):
+        render_log_export_output(release)  # Validate; the output holds the API key.
+        export_action = "Setting"
+    else:
+        export_action = "Removing"
+    export_secret, export_namespace = _log_export_secret()
+    deploy_log.append(
+        f"{export_action} {export_key} in Secret/{export_secret} "
+        f"in Namespace/{export_namespace}"
     )
     for release_command in deployment.release_object.release_commands:
         job_object = render_job(

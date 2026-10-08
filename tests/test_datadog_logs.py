@@ -1,11 +1,14 @@
-"""Tenant log export is explicit, credential-isolated, and pod-scoped."""
+"""Tenant log export is explicit, credential-isolated, and needs no pod access."""
 
+from base64 import b64decode
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import kubernetes.client
 import pytest
+import yaml
 from flask import Flask
+from kubernetes.client.exceptions import ApiException
 
 import cabotage.celery.tasks.deploy as deploy_module
 from cabotage.server.models.projects import Configuration, EnvironmentConfiguration
@@ -61,7 +64,8 @@ def app():
         REGISTRY_PULL="registry.example.test",
         SIDECAR_IMAGE="ghcr.io/cabotage/containers/sidecar-rs:1.0",
         DATADOG_IMAGE="datadog/agent:7.55.2",
-        DATADOG_LOGS_IMAGE="cr.fluentbit.io/fluent/fluent-bit:4.2.2",
+        LOG_EXPORT_NAMESPACE="cabotage",
+        LOG_EXPORT_SECRET="tenant-log-export",
     )
     with app.app_context():
         yield app
@@ -88,12 +92,37 @@ def _render(workload, release):
     return payload["spec"]["template"]
 
 
-def _collector(pod):
-    return next(c for c in pod["spec"]["initContainers"] if c["name"] == "datadog-logs")
+def _output(release):
+    document = yaml.safe_load(deploy_module.render_log_export_output(release))
+    (output,) = document["pipeline"]["outputs"]
+    return output
 
 
-def _env(container):
-    return {e["name"]: e.get("value") for e in container["env"]}
+class _Secrets:
+    """In-memory stand-in for the exporter Secret's strategic-merge patches."""
+
+    def __init__(self, data=None, exists=True):
+        self.data = dict(data or {})
+        self.exists = exists
+        self.api = MagicMock()
+        self.api.read_namespaced_secret.side_effect = self._read
+        self.api.patch_namespaced_secret.side_effect = self._patch
+
+    def _read(self, name, namespace):
+        assert (name, namespace) == ("tenant-log-export", "cabotage")
+        if not self.exists:
+            raise ApiException(status=404)
+        return SimpleNamespace(data=dict(self.data))
+
+    def _patch(self, name, namespace, body):
+        assert (name, namespace) == ("tenant-log-export", "cabotage")
+        if not self.exists:
+            raise ApiException(status=404)
+        for key, value in body["data"].items():
+            if value is None:
+                self.data.pop(key, None)
+            else:
+                self.data[key] = value
 
 
 @pytest.mark.parametrize("flag", [None, "false", "", "0"])
@@ -104,25 +133,21 @@ def test_key_alone_never_enables_log_export(app, workload, flag):
     else:
         configuration["DD_LOGS_ENABLED"] = _config(flag)
     pod = _render(workload, _make_release(configuration))
-    assert "datadog-logs" not in {c["name"] for c in pod["spec"]["initContainers"]}
-    assert not any("hostPath" in v for v in pod["spec"]["volumes"])
-    assert "annotations" not in pod["metadata"]
+    assert pod["metadata"]["labels"][deploy_module.LOG_EXPORT_LABEL] == "false"
+    assert pod["metadata"]["annotations"] == {"ad.datadoghq.com/logs_exclude": "false"}
 
 
-def test_log_opt_in_preserves_existing_containers(app, workload):
-    configuration = _enabled_config()
-    configuration["DD_IMAGE"] = _config("datadog/agent:existing-override")
-    configuration["DD_LOGS_ENABLED"] = _config("false")
-    release = _make_release(configuration)
-    before = _render(workload, release)["spec"]
+def test_opt_in_only_labels_pods_and_never_grants_host_access(app, workload):
+    release = _make_release(_enabled_config())
+    release.configuration_objects["DD_LOGS_ENABLED"] = _config("false")
+    before = _render(workload, release)
+    release.configuration_objects["DD_LOGS_ENABLED"] = _config("true")
+    after = _render(workload, release)
 
-    configuration["DD_LOGS_ENABLED"] = _config("true")
-    after = _render(workload, release)["spec"]
-
-    assert after["containers"] == before["containers"]
-    assert [
-        c for c in after["initContainers"] if c["name"] != "datadog-logs"
-    ] == before["initContainers"]
+    assert after["spec"] == before["spec"]
+    assert not any("hostPath" in v for v in after["spec"]["volumes"])
+    assert after["metadata"]["labels"][deploy_module.LOG_EXPORT_LABEL] == "true"
+    assert after["metadata"]["annotations"] == {"ad.datadoghq.com/logs_exclude": "true"}
 
 
 def test_disabled_export_does_not_read_new_destination_secrets(app):
@@ -133,67 +158,52 @@ def test_disabled_export_does_not_read_new_destination_secrets(app):
         buildtime=False,
         key_slug="vault:tenant/project/app/configuration/DD_SITE/1",
     )
+    secrets = _Secrets()
     with patch.object(
         deploy_module.config_writer, "read", side_effect=KeyError("unavailable")
     ):
         spec = deploy_module.render_podspec(
             _make_release(configuration), "worker", "sa"
         )
+        assert (
+            deploy_module.sync_log_export(secrets.api, _make_release(configuration))
+            is False
+        )
     agent = next(c for c in spec.init_containers if c.name == "dogstatsd-sidecar")
     assert {e.name: e.value for e in agent.env}["DD_API_KEY"] == "existing-key"
 
 
-def test_collector_can_read_only_its_own_application_logs(app, workload):
-    pod = _render(workload, _make_release(_enabled_config()))
-    collector = _collector(pod)
-    assert pod["metadata"]["annotations"] == {"ad.datadoghq.com/logs_exclude": "true"}
-    assert collector["restartPolicy"] == "Always"
-    assert collector["volumeMounts"][0] == {
-        "name": "datadog-pod-logs",
-        "mountPath": "/var/log/cabotage-pod",
-        "subPathExpr": "$(POD_NAMESPACE)_$(POD_NAME)_$(POD_UID)",
-        "readOnly": True,
-    }
-    identity = {
-        e["name"]: e["valueFrom"]["fieldRef"]["fieldPath"]
-        for e in collector["env"]
-        if "valueFrom" in e
-    }
-    assert identity == {
-        "POD_NAMESPACE": "metadata.namespace",
-        "POD_NAME": "metadata.name",
-        "POD_UID": "metadata.uid",
-    }
-    assert f"path=/var/log/cabotage-pod/{workload[1]}/*.log" in collector["args"]
-    assert "multiline.parser=cri" in collector["args"]
-    assert "read_from_head=true" in collector["args"]
-    assert "tls=on" in collector["args"]
-    assert "tls.verify=on" in collector["args"]
-    assert "tenant-key" not in " ".join(collector["args"])
-    assert collector["securityContext"]["allowPrivilegeEscalation"] is False
-    assert collector["securityContext"]["readOnlyRootFilesystem"] is True
-    for container in pod["spec"]["containers"] + pod["spec"]["initContainers"]:
-        if container["name"] != "datadog-logs":
-            assert "datadog-pod-logs" not in {
-                v["name"] for v in container.get("volumeMounts", [])
-            }
-
-
-def test_tenant_destinations_and_credentials_never_cross(app, workload):
+def test_tenant_destinations_and_credentials_never_cross(app):
     app.config["DD_API_KEY"] = "operator-key"
+    outputs = {}
     for tenant, key, site in [
         ("tenant-a", "key-a", "datadoghq.eu"),
         ("tenant-b", "key-b", "us3.datadoghq.com"),
     ]:
-        pod = _render(workload, _make_release(_enabled_config(key, site), tenant))
-        collector = _collector(pod)
-        assert _env(collector)["DD_API_KEY"] == key
-        assert f"host=http-intake.logs.{site}" in collector["args"]
-        for container in pod["spec"]["initContainers"]:
-            if container["name"] == "dogstatsd-sidecar":
-                env = _env(container)
-                assert env["DD_API_KEY"] == key
-                assert env["DD_LOGS_ENABLED"] == "false"
+        outputs[tenant] = _output(_make_release(_enabled_config(key, site), tenant))
+
+    assert outputs["tenant-a"]["match"] == "tenant.tenant-a.tenant-a-project-app"
+    assert outputs["tenant-a"]["apikey"] == "key-a"
+    assert outputs["tenant-a"]["host"] == "http-intake.logs.datadoghq.eu"
+    assert outputs["tenant-b"]["match"] == "tenant.tenant-b.tenant-b-project-app"
+    assert outputs["tenant-b"]["apikey"] == "key-b"
+    assert outputs["tenant-b"]["host"] == "http-intake.logs.us3.datadoghq.com"
+    for output in outputs.values():
+        assert output["tls.verify"] == "on"
+        assert output["dd_message_key"] == "_entry"
+        assert output["retry_limit"] != "no_limits"
+
+
+@pytest.mark.parametrize("key", ["a: b", "x\n  - name: stdout", 'it\'s #"q"'])
+def test_api_key_cannot_inject_fluent_bit_configuration(app, key):
+    output = _output(_make_release(_enabled_config(key)))
+    assert output["apikey"] == key
+    assert output["name"] == "datadog"
+
+
+def test_api_key_cannot_expand_exporter_environment(app):
+    with pytest.raises(deploy_module.DeployError, match=r"\$\{"):
+        _output(_make_release(_enabled_config("${HOSTNAME}")))
 
 
 @pytest.mark.parametrize("key", [None, "", "**secret**"])
@@ -205,7 +215,7 @@ def test_opt_in_without_tenant_key_fails_without_operator_fallback(app, key):
     else:
         configuration["DD_API_KEY"] = _config(key)
     with pytest.raises(deploy_module.DeployError, match="application's DD_API_KEY"):
-        deploy_module.render_podspec(_make_release(configuration), "worker", "sa")
+        deploy_module.render_log_export_output(_make_release(configuration))
 
 
 @pytest.mark.parametrize("site", [None, "", "https://datadoghq.eu", "customer.example"])
@@ -216,7 +226,7 @@ def test_opt_in_requires_an_explicit_datadog_site(app, site):
     else:
         configuration["DD_SITE"] = _config(site)
     with pytest.raises(deploy_module.DeployError, match="supported DD_SITE"):
-        deploy_module.render_podspec(_make_release(configuration), "worker", "sa")
+        deploy_module.render_log_export_output(_make_release(configuration))
 
 
 @pytest.mark.parametrize("model", [Configuration, EnvironmentConfiguration])
@@ -230,13 +240,8 @@ def test_runtime_only_api_keys_are_resolved_from_the_tenant_secret(app, model):
     )
     with patch.object(deploy_module.config_writer, "read") as reader:
         reader.return_value = {"data": {"DD_API_KEY": "runtime-only-tenant-key"}}
-        spec = deploy_module.render_podspec(
-            _make_release(configuration), "worker", "sa"
-        )
-    collector = next(c for c in spec.init_containers if c.name == "datadog-logs")
-    assert {e.name: e.value for e in collector.env}[
-        "DD_API_KEY"
-    ] == "runtime-only-tenant-key"
+        output = _output(_make_release(configuration))
+    assert output["apikey"] == "runtime-only-tenant-key"
     reader.assert_called_once_with(
         "tenant/project/app/configuration/DD_API_KEY/2",
         secret=True,
@@ -255,13 +260,40 @@ def test_unreadable_tenant_secret_aborts_export(app):
         deploy_module.config_writer, "read", side_effect=KeyError("unavailable")
     ):
         with pytest.raises(KeyError):
-            deploy_module.render_podspec(_make_release(configuration), "worker", "sa")
+            deploy_module.sync_log_export(_Secrets().api, _make_release(configuration))
 
 
-def test_disabling_logs_removes_collector_and_host_mounts(app, workload):
+def test_sync_writes_and_then_removes_only_its_own_output(app):
+    neighbour = "tenant.tenant-other-app.yaml"
+    secrets = _Secrets({"00-placeholder.yaml": "", neighbour: "bmVpZ2hib3Vy"})
     release = _make_release(_enabled_config())
-    assert _collector(_render(workload, release))["name"] == "datadog-logs"
+    key = "tenant.tenant-project-app.yaml"
+
+    assert deploy_module.sync_log_export(secrets.api, release) is True
+    assert yaml.safe_load(b64decode(secrets.data[key])) == yaml.safe_load(
+        deploy_module.render_log_export_output(release)
+    )
+
     release.configuration_objects["DD_LOGS_ENABLED"] = _config("false")
-    pod = _render(workload, release)
-    assert "datadog-logs" not in {c["name"] for c in pod["spec"]["initContainers"]}
-    assert not any("hostPath" in v for v in pod["spec"]["volumes"])
+    assert deploy_module.sync_log_export(secrets.api, release) is False
+    assert secrets.data == {"00-placeholder.yaml": "", neighbour: "bmVpZ2hib3Vy"}
+
+
+def test_opt_in_fails_when_exporter_is_not_installed(app):
+    secrets = _Secrets(exists=False)
+    with pytest.raises(deploy_module.DeployError, match="not installed"):
+        deploy_module.sync_log_export(secrets.api, _make_release(_enabled_config()))
+    assert deploy_module.sync_log_export(secrets.api, _make_release()) is False
+
+
+def test_namespace_teardown_removes_only_that_namespace(app):
+    secrets = _Secrets(
+        {
+            "00-placeholder.yaml": "",
+            "pr-12.a.yaml": "YQ==",
+            "pr-12.b.yaml": "Yg==",
+            "pr-123.a.yaml": "YQ==",
+        }
+    )
+    deploy_module.remove_log_export_outputs(secrets.api, "pr-12.")
+    assert secrets.data == {"00-placeholder.yaml": "", "pr-123.a.yaml": "YQ=="}
