@@ -1316,7 +1316,7 @@
             {% elif latest_deployment.error %}
               Failed
             {% else %}
-              In progress
+              {{ 'Queued' if latest_deployment.queued else 'In progress' }}
             {% endif %}
             {% if _deploy_release %}
               <code class="text-accent ml-1">v{{ _deploy_release.version }}</code>
