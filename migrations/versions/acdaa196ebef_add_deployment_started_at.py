@@ -25,8 +25,6 @@ def upgrade():
         "deployments_version",
         sa.Column("started_at", sa.DateTime(), autoincrement=False, nullable=True),
     )
-    # Every deployment before queuing existed started as soon as it was created;
-    # without this, in-flight deploys would look queued.
     op.execute("UPDATE deployments SET started_at = created")
     op.execute("UPDATE deployments_version SET started_at = created")
 
