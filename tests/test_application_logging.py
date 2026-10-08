@@ -35,6 +35,7 @@ def logging_editor(monkeypatch):
         "TESTING": True,
         "WTF_CSRF_ENABLED": False,
         "REQUIRE_MFA": False,
+        "LOG_EXPORT_ENABLED": True,
     }.items():
         monkeypatch.setitem(_app.config, key, value)
     with _app.app_context(), patch.object(db.session, "commit", db.session.flush):
@@ -240,6 +241,29 @@ def test_enabling_preserves_untouched_secret_and_flags(logging_editor):
     assert key.secret and key.buildtime
     assert _local(editor, "DD_SITE").buildtime
     editor.read.assert_called_once_with("tenant/key", secret=True)
+
+
+def test_installation_without_exporter_blocks_enabling_but_allows_disabling(
+    logging_editor, monkeypatch
+):
+    editor = logging_editor
+    monkeypatch.setitem(_app.config, "LOG_EXPORT_ENABLED", False)
+    _config(editor, "DD_SITE", "datadoghq.com")
+    _, context = _request(editor)
+    assert context["export_available"] is False
+
+    response, context = _save(
+        editor, enabled="true", site="datadoghq.com", api_key="new-test-key"
+    )
+    assert response.status_code == 200
+    assert context["form"].enabled.errors
+    editor.write.assert_not_called()
+    assert _local(editor, "DD_LOGS_ENABLED") is None
+
+    _config(editor, "DD_LOGS_ENABLED", "true")
+    response, _ = _save(editor, enabled="false", site="datadoghq.com")
+    assert response.status_code == 302
+    assert _local(editor, "DD_LOGS_ENABLED").value == "false"
 
 
 def test_secret_never_read_or_rendered_on_get(logging_editor):

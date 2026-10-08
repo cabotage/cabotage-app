@@ -3855,6 +3855,11 @@ def application_config(org_slug: str, project_slug: str, app_slug: str):
     )
 
 
+def _log_export_available() -> bool:
+    """Whether this installation runs the platform log exporter."""
+    return bool(current_app.config.get("LOG_EXPORT_ENABLED", False))
+
+
 def _logging_changes(
     form: ApplicationLoggingForm,
     configurations: LoggingConfigurations,
@@ -3896,6 +3901,11 @@ def _logging_changes(
             )
         else:
             changes[field] = value
+
+    if changes.get("enabled") == "true" and not _log_export_available():
+        cast("list[str]", form.enabled.errors).append(
+            "Log export is not available on this Cabotage installation."
+        )
 
     # Turning export off must remain possible even with a broken saved destination.
     enabled_config = configurations["enabled"]
@@ -4105,6 +4115,7 @@ def application_logging(
         form=form,
         logging_fields=logging_fields,
         logging_status=logging_deployment_status(app_env, configurations),
+        export_available=_log_export_available(),
     )
 
 

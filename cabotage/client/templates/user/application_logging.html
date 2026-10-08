@@ -26,9 +26,14 @@
     </header>
 
     <section class="logging-status" aria-labelledby="logging-status-heading">
-      <h2 id="logging-status-heading" class="text-sm font-semibold">{{ logging_status.label }}</h2>
-      <p class="logging-help">{{ logging_status.description }}</p>
-      <p class="logging-help">Saving changes configuration only. Deploy this environment to apply changes to running processes. This page does not report log delivery health.</p>
+      {% if export_available %}
+        <h2 id="logging-status-heading" class="text-sm font-semibold">{{ logging_status.label }}</h2>
+        <p class="logging-help">{{ logging_status.description }}</p>
+        <p class="logging-help">Saving changes configuration only. Deploy this environment to apply changes to running processes. This page does not report log delivery health.</p>
+      {% else %}
+        <h2 id="logging-status-heading" class="text-sm font-semibold">Not available on this installation</h2>
+        <p class="logging-help">This Cabotage installation does not run the log exporter, so export cannot be enabled and saved settings have no effect. Ask your platform operator to enable it.</p>
+      {% endif %}
     </section>
 
     <p class="logging-intro">These are the same variables shown in <a class="icon-link" href="{{ variables_url }}"><span aria-hidden="true">{{ icon('key') }}</span>Variables</a>, not a separate destination. Subscribed project and environment values are inherited; application values take precedence.</p>
