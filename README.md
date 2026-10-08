@@ -19,9 +19,11 @@ request](https://github.com/python/pypi-infra/pull/3) for more on design goals.
 
 ## Datadog logs
 
-Log export is opt-in and leaves existing metrics/APM unchanged. Open
-**Guide → Datadog logs** (`/guide/datadog-logs`) in Cabotage for setup,
-troubleshooting, and operator requirements.
+Tenants can send their application logs to their own Datadog account. It is
+off unless the platform runs the log exporter and sets
+`LOG_EXPORT_ENABLED`; see [docs/log-export.md](docs/log-export.md). When it is
+on, **Guide → Datadog logs** (`/guide/datadog-logs`) covers setup and
+troubleshooting for tenants.
 
 
 ## Pipeline
