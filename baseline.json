@@ -42127,27 +42127,6 @@
       "severity": "error"
     },
     {
-      "column": 5,
-      "path": "cabotage/server/user/views.py",
-      "name": "unannotated-return",
-      "concise_description": "`_stream_deployment_logs` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 29,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_stream_deployment_logs` is missing an annotation for parameter `ws`",
-      "severity": "error"
-    },
-    {
-      "column": 33,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_stream_deployment_logs` is missing an annotation for parameter `deployment`",
-      "severity": "error"
-    },
-    {
       "column": 21,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-variable-type",
