@@ -573,7 +573,7 @@
                   <div class="action-banner-spinner"></div>
                   <div>
                     <p class="text-sm font-medium text-base-content">
-                      Deploying release
+                      {{ 'Queued' if latest_deployment.queued else 'Deploying' }} release
                       {% if latest_deploy_release %}
                         <span class="font-mono text-accent">v{{ latest_deploy_release.version }}</span>
                       {% endif %}
