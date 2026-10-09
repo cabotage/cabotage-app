@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from cabotage.server import db
 from cabotage.server.admin_console import queries
+from cabotage.server.models.audit import AuditLog
 from cabotage.server.models.auth import Organization, User
 from cabotage.server.models.projects import (
     Application,
@@ -555,3 +556,96 @@ def test_activity_identifies_affected_member(
     db.session.flush()
     rows = queries.resource_activity(organization_id=org.id)
     assert [row.summary for row in rows] == [f"{summary}: member@example.com"]
+
+
+@pytest.mark.parametrize("verb", ["create", "edit", "delete"])
+def test_shared_configuration_activity_scope_and_redaction(
+    client: FlaskClient,
+    admin_user: User,
+    inventory: dict[str, tuple[InventoryRow, InventoryRow]],
+    verb: str,
+) -> None:
+    key = SigningPasskey.register(admin_user)
+    _login(client, admin_user)
+    key.enter(client)
+    org = cast(Organization, inventory["organizations"][0])
+    project = cast(Project, inventory["projects"][0])
+    app_env = _live_app_env(inventory)
+    environment = app_env.environment
+    other_environment = Environment(
+        name="Other shared scope", slug="other-shared", project_id=project.id
+    )
+    config = EnvironmentConfiguration(
+        project_id=project.id,
+        environment_id=environment.id,
+        name="SHARED_PRIVATE_TOKEN",
+        value="never-display-shared-value",
+        secret=True,
+        buildtime=True,
+    )
+    db.session.add_all([config, other_environment])
+    db.session.commit()
+    config_id = config.id
+    try:
+        if verb == "edit":
+            config.value = "never-display-edited-shared-value"
+        elif verb == "delete":
+            db.session.delete(config)
+        db.session.flush()
+        Activity = activity_plugin.activity_cls
+        event = Activity(verb=verb, object=config, data={"user_id": str(admin_user.id)})
+        db.session.add(event)
+        db.session.flush()
+        entry = db.session.get(AuditLog, event.id)
+        assert entry is not None
+        assert entry.object_type == "EnvironmentConfiguration"
+        assert entry.object_name == "SHARED_PRIVATE_TOKEN"
+        assert entry.project_id == project.id
+        assert entry.organization_id == org.id
+        assert entry.application_id is None
+        assert entry.application_environment_id is None
+        assert entry.config_secret is True
+        assert entry.config_buildtime is True
+        assert "never-display" not in str(entry.raw_data)
+        organization_rows = queries.resource_activity(organization_id=org.id)
+        project_rows = queries.resource_activity(
+            organization_id=org.id, project_id=project.id
+        )
+        assert event.id in {row.id for row in organization_rows}
+        assert event.id in {row.id for row in project_rows}
+        assert any(
+            row.summary.startswith("Shared configuration SHARED_PRIVATE_TOKEN ")
+            for row in project_rows
+        )
+        assert (
+            queries.resource_activity(
+                organization_id=org.id,
+                project_id=project.id,
+                application_id=app_env.application_id,
+            )
+            == []
+        )
+        assert (
+            queries.resource_activity(organization_id=inventory["organizations"][1].id)
+            == []
+        )
+        db.session.commit()
+        response = client.get(f"/admin/projects/{project.id}")
+        assert response.status_code == 200
+        assert b"Shared configuration SHARED_PRIVATE_TOKEN" in response.data
+        assert b"never-display" not in response.data
+        native_base = f"/projects/{org.slug}/{project.slug}/env"
+        response = client.get(f"{native_base}/{environment.slug}/audit")
+        assert response.status_code == 200
+        assert b"Shared configuration" in response.data
+        assert b"SHARED_PRIVATE_TOKEN" in response.data
+        assert b"never-display" not in response.data
+        response = client.get(f"{native_base}/{other_environment.slug}/audit")
+        assert response.status_code == 200
+        assert b"SHARED_PRIVATE_TOKEN" not in response.data
+    finally:
+        db.session.rollback()
+        EnvironmentConfiguration.query.filter(
+            EnvironmentConfiguration.id == config_id
+        ).delete(synchronize_session=False)
+        db.session.commit()

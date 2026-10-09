@@ -268,8 +268,11 @@ Account controls manage active status, global-admin roles, and MFA resets.
 The console also adds migration `c62e19d85f40`, indexing deployment ordering by
 `created` and `id`. Its normal transactional index build can block deployment
 writes while it runs; schedule migration application accordingly.
-Activity summaries show the actor, resource, action, and time, not configuration
-values or raw metadata.
+Migration `d73f20e96a51` then replaces the audit view to include shared environment
+configuration events. It changes no underlying table data; downgrade restores the
+previous view. Organization/project activity includes these shared changes, while
+application activity remains scoped to that application. Activity summaries show
+the actor, resource, action, and time, not configuration values or raw metadata.
 
 **Needs attention** links pending organization requests, recent latest-deployment
 failures, and active global admins without registered passkeys to their next
