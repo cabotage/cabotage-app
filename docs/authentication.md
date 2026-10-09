@@ -273,3 +273,15 @@ credential removal, and session-identifier rotation invalidate the corresponding
 admin access. Normal account-security rules still permit removing a last passkey
 when another MFA method remains; that account then needs a new user-verifying
 passkey to enter the database viewer.
+
+### Infrastructure charts
+
+`/infra/observe` uses the shared CPU, memory, and network chart renderer and its
+configured Mimir source. Infrastructure metrics require `kube_pod_labels` with
+`label_cabotage_io_infra="true"`; collecting only application labels does not supply
+this metadata. Charts distinguish loading, successful empty results, monitoring
+failures, and stale data. A failed refresh retains the last valid plot and its
+successful-refresh timestamp, with **Retry**; a partial metric query failure is
+not plotted as a complete result. Fixed historical windows are not marked stale
+merely because their samples are old. Empty charts are not evidence of a healthy
+or idle cluster.
