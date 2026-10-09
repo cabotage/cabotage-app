@@ -39,7 +39,7 @@
     band.querySelector('[data-admin-access-label]').textContent = active ? 'Admin access' : 'Admin access ended';
     band.querySelector('[data-admin-access-countdown]').textContent = active
       ? `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')} remaining`
-      : 'Your unsaved changes are still here.';
+      : band.dataset.endedText || 'Your unsaved changes are still here.';
     band.querySelector('[data-admin-access-renew]').hidden = active;
     band.querySelector('[data-admin-access-end]').hidden = !active;
   }
@@ -384,8 +384,9 @@
     };
     window.addEventListener('focus', onFocus);
     cleanup.push(() => clearInterval(countdown), () => window.removeEventListener('focus', onFocus));
-    band.querySelector('[data-admin-access-renew]').addEventListener('click', async () => {
-      if (busy) return;
+    band.querySelector('[data-admin-access-renew]').addEventListener('click', async event => {
+      // Pages without the review dialog (Flask-Admin) renew through the full-page gate.
+      if (busy || event.currentTarget.matches('a[href]')) return;
       busy = true;
       const gate = openGate();
       gate.authenticating(true);
