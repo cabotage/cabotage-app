@@ -226,7 +226,7 @@ def _action_summary(action: str, target: str) -> dict[str, str]:
     title = endpoint.replace("_", " ").capitalize()
     consequence = (
         "Submit this exact request using admin access. "
-        "The submitted values are not shown here to protect secrets."
+        "The submitted values are not displayed here."
     )
     return {
         "title": title,
