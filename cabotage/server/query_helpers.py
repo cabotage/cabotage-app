@@ -206,12 +206,12 @@ def compute_ae_status_sets(ae_ids):
     image_stats = (
         db.session.query(
             Image.application_environment_id,
-            func.max(
-                case((Image.error == True, Image.version), else_=None)
-            ).label("max_error_v"),
-            func.max(
-                case((Image.built == True, Image.version), else_=None)
-            ).label("max_built_v"),
+            func.max(case((Image.error == True, Image.version), else_=None)).label(
+                "max_error_v"
+            ),
+            func.max(case((Image.built == True, Image.version), else_=None)).label(
+                "max_built_v"
+            ),
             func.count(
                 case(
                     (
@@ -548,9 +548,7 @@ def split_image_processes(
     service_procs = {
         k: v
         for k, v in all_procs.items()
-        if not (
-            k.startswith(("release", "postdeploy", "job"))
-        )
+        if not (k.startswith(("release", "postdeploy", "job")))
     }
     release_cmds = {k: v for k, v in all_procs.items() if k.startswith("release")}
     postdeploy_cmds = {k: v for k, v in all_procs.items() if k.startswith("postdeploy")}

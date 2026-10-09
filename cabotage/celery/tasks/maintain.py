@@ -84,9 +84,7 @@ def _dispatch_reap_failure(obj, obj_type, notification_type):
 def reap_stale_builds():
     """Find stuck image builds, release builds, and deploys with no heartbeat."""
     redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
-    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
-        seconds=90
-    )
+    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=90)
 
     # Images: built=False, error=False, updated < cutoff, no heartbeat
     stuck_images = Image.query.filter(
@@ -237,10 +235,13 @@ def reap_pods() -> None:
     )
     if not pods.items:
         return
-    candidate = min(pods.items, key=lambda pod: assume_not_none(
+    candidate = min(
+        pods.items,
+        key=lambda pod: assume_not_none(
             assume_not_none(pod.status, because=K8S_OBJECT_HAS_STATUS).start_time,
             because=K8S_POD_HAS_START_TIME,
-        ))
+        ),
+    )
     lookback = datetime.datetime.now().replace(
         tzinfo=datetime.UTC
     ) - datetime.timedelta(days=7)

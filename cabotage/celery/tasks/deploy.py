@@ -1401,8 +1401,7 @@ def _cleanup_orphaned_ingresses(
             except ApiException as exc:
                 if exc.status != 404 and log:
                     log(
-                        f"Failed to delete orphaned Ingress/"
-                        f"{item.metadata.name}: {exc}"
+                        f"Failed to delete orphaned Ingress/{item.metadata.name}: {exc}"
                     )
 
 
@@ -1637,8 +1636,10 @@ def render_cabotage_sidecar_container(release, process_name, with_tls=True):
                 command=[
                     "sh",
                     "-c",
-                    ("test -f /var/run/secrets/vault/vault-token && "
-                    "test -f /var/run/secrets/vault/consul-token"),
+                    (
+                        "test -f /var/run/secrets/vault/vault-token && "
+                        "test -f /var/run/secrets/vault/consul-token"
+                    ),
                 ],
             ),
             period_seconds=1,
@@ -2003,9 +2004,7 @@ def render_podspec(release, process_name, service_account_name):
         )
 
     if (
-        not (
-            process_name.startswith(("release", "postdeploy"))
-        )
+        not (process_name.startswith(("release", "postdeploy")))
         and "DD_API_KEY" in release.configuration_objects
     ):
         try:
@@ -2835,7 +2834,7 @@ def deploy_release(deployment: Deployment):
         )
         if any(
             process_name.startswith("web")
-                for process_name in deployment.release_object.processes
+            for process_name in deployment.release_object.processes
         ):
             log("Fetching web Service(s)")
             for process_name in deployment.release_object.processes:
@@ -2846,7 +2845,7 @@ def deploy_release(deployment: Deployment):
                     )
         if any(
             process_name.startswith("tcp")
-                for process_name in deployment.release_object.processes
+            for process_name in deployment.release_object.processes
         ):
             log("Fetching tcp Service(s)")
             for process_name in deployment.release_object.processes:
@@ -3311,7 +3310,7 @@ def fake_deploy_release(deployment):
     deploy_log.append(yaml.dump(remove_none(cabotage_enrollment)))
     if any(
         process_name.startswith("web")
-            for process_name in deployment.release_object.processes
+        for process_name in deployment.release_object.processes
     ):
         deploy_log.append("Fetching web Service(s)")
         for process_name in deployment.release_object.processes:
@@ -3321,7 +3320,7 @@ def fake_deploy_release(deployment):
                 deploy_log.append(yaml.dump(remove_none(service.to_dict())))
     if any(
         process_name.startswith("tcp")
-            for process_name in deployment.release_object.processes
+        for process_name in deployment.release_object.processes
     ):
         deploy_log.append("Fetching tcp Service(s)")
         for process_name in deployment.release_object.processes:

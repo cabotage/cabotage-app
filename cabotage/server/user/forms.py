@@ -555,10 +555,8 @@ class EditConfigurationForm(FlaskForm):
                 "Configuration names cannot be changed! Delete and re-create"
             )
         raise ValidationError(
-            
-                "Configurations must be created from the "
-                "Create Application Configuration form"
-            
+            "Configurations must be created from the "
+            "Create Application Configuration form"
         )
 
 
@@ -923,7 +921,6 @@ class TailscaleIntegrationForm(FlaskForm):
 
 class TailscaleIngressSettingsForm(FlaskForm):
     """Placeholder — tags are now derived from the platform config."""
-
 
 
 class CreateEnvironmentConfigurationForm(FlaskForm):

@@ -24,7 +24,6 @@ class TemplateResolutionError(Exception):
     """Raised when a template variable cannot be resolved."""
 
 
-
 def has_template_variables(value: str) -> bool:
     """Return True if the value contains any template variable references."""
     if "${" not in value:
