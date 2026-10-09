@@ -763,6 +763,8 @@ class Deployment(Model, Timestamp):
         back_populates="deployments", foreign_keys=[application_environment_id]
     )
 
+    __table_args__ = (Index("ix_deployments_created_id", "created", "id"),)
+
     __mapper_args__ = {"version_id_col": version_id}
 
     @property
