@@ -366,7 +366,7 @@ class TestResourceModels:
 
         assert len(environment.active_resources) == 1
 
-        r.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        r.deleted_at = datetime.datetime.now(datetime.UTC)
         db.session.flush()
 
         assert len(environment.active_resources) == 0
@@ -2485,7 +2485,7 @@ class TestCeleryTasks:
             storage_size=5,
             backup_strategy="daily",
         )
-        r.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        r.deleted_at = datetime.datetime.now(datetime.UTC)
         db.session.add(r)
         db.session.commit()
 
@@ -2510,7 +2510,7 @@ class TestCeleryTasks:
             size_class="cache.small",
             storage_size=1,
         )
-        r.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        r.deleted_at = datetime.datetime.now(datetime.UTC)
         db.session.add(r)
         db.session.commit()
 
@@ -2537,7 +2537,7 @@ class TestCeleryTasks:
             storage_size=1,
             provisioning_status="deleted",
         )
-        r.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        r.deleted_at = datetime.datetime.now(datetime.UTC)
         db.session.add(r)
         db.session.commit()
 
@@ -2816,7 +2816,7 @@ class TestCeleryTasks:
             storage_size=1,
             backup_strategy="none",
         )
-        r.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        r.deleted_at = datetime.datetime.now(datetime.UTC)
         db.session.add(r)
         db.session.commit()
 

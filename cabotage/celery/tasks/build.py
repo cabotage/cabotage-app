@@ -143,7 +143,7 @@ def _queue_autodeploy_release_for_image(image):
             "user_id": "automation",
             "deployment_id": image.image_metadata.get("id", None),
             "description": image.image_metadata.get("description", None),
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         },
     )
     db.session.add(activity)
@@ -2231,7 +2231,7 @@ def run_release_build(release_id: str):
                     "deployment_id": release.release_metadata.get("id", None),
                     "description": release.release_metadata.get("description", None),
                     "timestamp": datetime.datetime.now(
-                        datetime.timezone.utc
+                        datetime.UTC
                     ).isoformat(),
                 },
             )
@@ -2430,7 +2430,7 @@ def run_omnibus_build(image_id: str):
                     "deployment_id": image.image_metadata.get("id", None),
                     "description": image.image_metadata.get("description", None),
                     "timestamp": datetime.datetime.now(
-                        datetime.timezone.utc
+                        datetime.UTC
                     ).isoformat(),
                 },
             )
@@ -2546,7 +2546,7 @@ def run_omnibus_build(image_id: str):
             "user_id": "automation",
             "deployment_id": image.image_metadata.get("id", None),
             "description": image.image_metadata.get("description", None),
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         },
     )
     db.session.add(activity)

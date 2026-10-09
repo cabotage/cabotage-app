@@ -217,7 +217,7 @@ def _create_app_env_for_branch_deploy(
     activity = Activity(
         verb="create",
         object=app_env,
-        data={"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()},
+        data={"timestamp": datetime.datetime.now(datetime.UTC).isoformat()},
     )
     db.session.add(activity)
     return app_env
@@ -334,7 +334,7 @@ def _teardown_environment(environment: Environment) -> None:
         try:
             for resource in resources:
                 resource.deleted_at = resource.deleted_at or datetime.datetime.now(
-                    datetime.timezone.utc
+                    datetime.UTC
                 )
                 resource.provisioning_status = "deleting"
                 resource.provisioning_error = None
@@ -606,7 +606,7 @@ def _build_images_for_app_envs(app_envs, commit_sha, installation_id):
             verb="submit",
             object=image,
             data={
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat()
             },
         )
         db.session.add(activity)
@@ -908,7 +908,7 @@ def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref
     activity = Activity(
         verb="create",
         object=environment,
-        data={"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()},
+        data={"timestamp": datetime.datetime.now(datetime.UTC).isoformat()},
     )
     db.session.add(activity)
 

@@ -95,16 +95,16 @@ class NotificationRoute(Model):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(
             tzinfo=None
         ),
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(
             tzinfo=None
         ),
-        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+        onupdate=lambda: datetime.datetime.now(datetime.UTC).replace(
             tzinfo=None
         ),
     )
@@ -145,16 +145,16 @@ class SentNotification(Model):
     external_message_id: Mapped[str] = mapped_column(String(128))
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(
             tzinfo=None
         ),
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(
             tzinfo=None
         ),
-        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
+        onupdate=lambda: datetime.datetime.now(datetime.UTC).replace(
             tzinfo=None
         ),
     )

@@ -425,7 +425,7 @@ class TestBranchDeployNamespaces:
     ):
         active_app = _make_app(branch_deploy_project, installation_id, slug="server")
         deleted_app = _make_app(branch_deploy_project, installation_id, slug="redis")
-        deleted_app.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        deleted_app.deleted_at = datetime.datetime.now(datetime.UTC)
         db.session.add(deleted_app)
         db.session.flush()
 
@@ -450,7 +450,7 @@ class TestBranchDeployNamespaces:
             pr_environment,
             k8s_identifier=pr_environment.k8s_identifier,
         )
-        deleted_ae.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        deleted_ae.deleted_at = datetime.datetime.now(datetime.UTC)
         db.session.add(deleted_ae)
         db.session.commit()
 

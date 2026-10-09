@@ -13,6 +13,7 @@ from cabotage.server.models.projects import (
     Project,
 )
 from cabotage.server.wsgi import app as _app
+from datetime import UTC
 
 REPO = "myorg/myrepo"
 
@@ -135,7 +136,7 @@ class TestResolveAppEnvByGithubEnvironmentName:
         from datetime import datetime, timezone
 
         application = _make_app(project, installation_id)
-        application.deleted_at = datetime.now(timezone.utc)
+        application.deleted_at = datetime.now(UTC)
         db.session.flush()
         _make_app_env(application, environment, github_environment_name="production")
 

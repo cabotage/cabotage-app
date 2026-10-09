@@ -84,7 +84,7 @@ def _dispatch_reap_failure(obj, obj_type, notification_type):
 def reap_stale_builds():
     """Find stuck image builds, release builds, and deploys with no heartbeat."""
     redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
-    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
+    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
         seconds=90
     )
 
@@ -245,7 +245,7 @@ def reap_pods() -> None:
         ),
     )[0]
     lookback = datetime.datetime.now().replace(
-        tzinfo=datetime.timezone.utc
+        tzinfo=datetime.UTC
     ) - datetime.timedelta(days=7)
 
     # https://github.com/kubernetes/community/blob/a27eb0e0dbf559dd5c7be668d18709b5b6110631/contributors/devel/sig-architecture/api-conventions.md?plain=1#L231-L232

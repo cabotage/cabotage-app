@@ -47,6 +47,7 @@ from cabotage.server.ext.kubernetes import Kubernetes
 from cabotage.server.ext.vault import Vault
 from cabotage.server.ext.vault_db_creds import VaultDBCreds
 from cabotage.server.mfa import CabotageWebauthnUtil
+from datetime import UTC
 
 # instantiate the extensions
 bcrypt = Bcrypt()
@@ -315,9 +316,9 @@ def create_app():
             return ""
         from datetime import datetime, timezone
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
+            value = value.replace(tzinfo=UTC)
         diff = max(0, int((now - value).total_seconds()))
         if diff < 2:
             return "just now"

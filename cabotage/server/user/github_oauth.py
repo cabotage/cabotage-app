@@ -133,7 +133,7 @@ def callback():
                 email=primary_email,
                 password="!",  # nosec B106 - unusable password for OAuth-only users
                 active=True,
-                confirmed_at=datetime.datetime.now(datetime.timezone.utc),
+                confirmed_at=datetime.datetime.now(datetime.UTC),
                 fs_uniquifier=uuid.uuid4().hex,
             )
             db.session.add(user)
@@ -375,7 +375,7 @@ def _complete_verified_installation_connection(
                 "application_id": str(application.id)
                 if application is not None
                 else None,
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
     )

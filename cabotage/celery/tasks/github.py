@@ -236,7 +236,7 @@ def process_deployment_hook(hook):
             object=image,
             data={
                 "sender": sender,
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -461,7 +461,7 @@ def _update_cached_repository_metadata(app_installation, repository_metadata):
             key=lambda repo: repo.get("full_name") if isinstance(repo, dict) else "",
         )
         app_installation.repositories_synced_at = datetime.datetime.now(
-            datetime.timezone.utc
+            datetime.UTC
         ).replace(tzinfo=None)
     return previous_names
 
@@ -579,7 +579,7 @@ def _sync_known_installation_repository_delta(
                 repositories_added,
             )
             app_installation.repositories_synced_at = datetime.datetime.now(
-                datetime.timezone.utc
+                datetime.UTC
             ).replace(tzinfo=None)
             sync_application_repository_metadata(app_installation)
         elif action == "removed":
@@ -590,7 +590,7 @@ def _sync_known_installation_repository_delta(
                 and repo.get("full_name") not in removed_names
             ]
             app_installation.repositories_synced_at = datetime.datetime.now(
-                datetime.timezone.utc
+                datetime.UTC
             ).replace(tzinfo=None)
             reconcile_selected_repository_applications(app_installation)
 
@@ -618,7 +618,7 @@ def _sync_known_installation_metadata(installation):
                 [], installation.get("repositories", [])
             )
             app_installation.repositories_synced_at = datetime.datetime.now(
-                datetime.timezone.utc
+                datetime.UTC
             ).replace(tzinfo=None)
             sync_application_repository_metadata(app_installation)
         elif (

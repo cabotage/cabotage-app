@@ -53,6 +53,7 @@ from cabotage.utils.github import (
     cabotage_url,
     post_deployment_status_update,
 )
+from datetime import UTC
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -2349,7 +2350,7 @@ def _history_limit_for_schedule(schedule, hours=12):
 
     from croniter import croniter
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     end = now + timedelta(hours=hours)
     it = croniter(schedule, now)
     count = 0
