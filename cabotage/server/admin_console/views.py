@@ -124,6 +124,16 @@ def _page() -> int:
     return min(max(page, 1), queries.MAX_PAGE)
 
 
+def _scope_id(name: str) -> uuid.UUID | None:
+    value = request.args.get(name)
+    if not value:
+        return None
+    try:
+        return uuid.UUID(value)
+    except ValueError:
+        abort(400, description=f"Invalid {name}.")
+
+
 # ── Overview and search ─────────────────────────────────────────────────────
 
 
@@ -234,6 +244,75 @@ def application(application_id: uuid.UUID) -> str:
         app=app,
         project=app.project,
         org=app.project.organization,
+    )
+
+
+@admin_console_blueprint.get("/deployments")
+def deployments() -> str:
+    mode = _choice(
+        "mode",
+        ("triage", "history"),
+        "history" if request.args.get("status") in ("all", "complete") else "triage",
+    )
+    status = _choice(
+        "status",
+        ("all", "failed", "running", "complete")
+        if mode == "history"
+        else ("attention", "failed", "running"),
+        "attention" if mode == "triage" else "all",
+    )
+    days = _choice(
+        "days",
+        ("1", "7", "30", "all") if mode == "history" else ("1", "7", "30"),
+        "7",
+    )
+    term = _term()
+    environment = (request.args.get("env") or "").strip()[: queries.MAX_QUERY_LENGTH]
+    organization_id = _scope_id("organization_id")
+    project_id = _scope_id("project_id")
+    application_id = _scope_id("application_id")
+    page = _page()
+    rows, has_next = queries.deployments_page(
+        status,
+        page,
+        mode=mode,
+        days=days,
+        term=term,
+        environment=environment,
+        organization_id=organization_id,
+        project_id=project_id,
+        application_id=application_id,
+    )
+    return render_template(
+        "admin_console/deployments.html",
+        active_nav="deployments",
+        status=status,
+        mode=mode,
+        days=days,
+        q=term,
+        env=environment,
+        organization_id=organization_id,
+        project_id=project_id,
+        application_id=application_id,
+        rows=rows,
+        page_number=page,
+        has_next=has_next,
+    )
+
+
+@admin_console_blueprint.get("/activity")
+def activity() -> str:
+    before = request.args.get("before", type=int)
+    entries, next_before = queries.activity_page(before)
+    return render_template(
+        "admin_console/activity.html",
+        active_nav="activity",
+        entries=entries,
+        before=before,
+        next_before=next_before,
+        organizations=queries.organizations_by_id(
+            cast(uuid.UUID | None, e.organization_id) for e in entries
+        ),
     )
 
 

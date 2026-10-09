@@ -265,9 +265,19 @@ inventories, including deleted resources. Resource details link to existing
 native management pages and show basic deployment state where applicable.
 Account controls manage active status, global-admin roles, and MFA resets.
 
-**Needs attention** links pending organization requests and active global admins
-without registered passkeys to their next action. Organization requests can be
-reviewed from the console.
+The console also adds migration `c62e19d85f40`, indexing deployment ordering by
+`created` and `id`. Its normal transactional index build can block deployment
+writes while it runs; schedule migration application accordingly.
+Activity summaries show the actor, resource, action, and time, not configuration
+values or raw metadata.
+
+**Needs attention** links pending organization requests, recent latest-deployment
+failures, and active global admins without registered passkeys to their next
+action. **Deployments** defaults to failed or in-progress latest attempts per live
+application/environment within the last seven days. A newer successful attempt
+removes an older failure from this view; an attempt is not proof of what is
+currently serving. Search and organization/project/application/environment filters
+run before pagination. **History** exposes earlier attempts separately.
 
 Ending admin access, signing out, losing global-admin status, account deactivation,
 credential removal, and security resets revoke the corresponding elevated access.
