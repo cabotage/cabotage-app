@@ -42,13 +42,7 @@ if TYPE_CHECKING:
     type Procfile = dict[str, Entry]
 
 _PROCFILE_LINE: Final = re.compile(
-    "".join(
-        [
-            r"^(?P<process_type>.+?):\s*",
-            r"(?:env(?P<environment>(?:\s+\S+=\"[^\"]*\"|\s+\S+=\S+)+)\s+)?",
-            r"(?P<command>.+)$",
-        ]
-    )
+    r"^(?P<process_type>.+?):\s*(?:env(?P<environment>(?:\s+\S+=\"[^\"]*\"|\s+\S+=\S+)+)\s+)?(?P<command>.+)$"
 )
 
 _ENV_VAR: Final = re.compile(r"""(\S+)=(?:"([^"]*)"|(\S+))""")
@@ -113,12 +107,7 @@ def loads(content: str) -> Procfile:
     duplicates = _find_duplicates(((i, line[0]) for i, line in lines))
     for i, process_type, j in duplicates:
         errors.append(
-            "".join(
-                [
-                    'Line %d: duplicate process type "%s": ',
-                    "already appears on line %d.",
-                ]
-            )
+            'Line %d: duplicate process type "%s": already appears on line %d.'
             % (i + 1, process_type, j + 1)
         )
     # Reject commands with duplicate variables (no sane default).
@@ -127,12 +116,7 @@ def loads(content: str) -> Procfile:
         duplicates = _find_duplicates((0, var[0]) for var in env)
         for _, variable, _ in duplicates:
             errors.append(
-                "".join(
-                    [
-                        'Line %d: duplicate variable "%s" ',
-                        'for process type "%s".',
-                    ]
-                )
+                'Line %d: duplicate variable "%s" for process type "%s".'
                 % (i + 1, variable, process_type)
             )
     # Done!
