@@ -2686,12 +2686,12 @@ def _run_job_streaming(
         container = job_object.metadata.labels.get("process", None)
         try:
             w = kubernetes.watch.Watch()
-            kwargs = dict(
-                name=pod.metadata.name,
-                namespace=namespace,
-                follow=True,
-                _preload_content=False,
-            )
+            kwargs = {
+                "name": pod.metadata.name,
+                "namespace": namespace,
+                "follow": True,
+                "_preload_content": False,
+            }
             if container:
                 kwargs["container"] = container
             for line in cast(
