@@ -9383,7 +9383,7 @@ def project_application_pipeline_runs(org_slug, project_slug, app_slug, env_slug
                 ),
                 "trigger_type": d.trigger_type,
                 "sha": d.release_snapshot.commit_sha if d.release_snapshot else None,
-                "created": _iso_utc(d.created),
+                "started": _iso_utc(img.created if img else d.created),
             }
         )
 

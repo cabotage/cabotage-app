@@ -61,8 +61,8 @@
 .pipe-stage-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
 @media (max-width: 860px) { .pipe-stage-grid { grid-template-columns: 1fr; } }
 .pipe-chart-card { padding: 0.875rem 1rem 0.5rem; min-width: 0; }
-.pipe-chart-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.5rem; }
-.pipe-stage-name { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; font-weight: 600; color: var(--text-bright); }
+.pipe-chart-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.25rem 0.75rem; margin-bottom: 0.5rem; }
+.pipe-stage-name { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; font-weight: 600; color: var(--text-bright); white-space: nowrap; }
 .pipe-stage-figs { font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; }
 .pipe-stage-figs b { font-weight: 600; color: var(--text-bright); }
 .pipe-swatch { width: 0.625rem; height: 0.625rem; border-radius: 0.25rem; flex-shrink: 0; display: inline-block; }
@@ -81,8 +81,8 @@
 
 /* ── Runs ── */
 .pipe-table { overflow-x: auto; }
-.pipe-row { display: grid; align-items: center; gap: 0 0.75rem; padding: 0 1rem; min-width: 760px;
-  grid-template-columns: 6.5rem 5rem 4.5rem 4.5rem minmax(7rem, 1fr) 3.75rem 3.75rem 3.75rem 4.5rem; }
+.pipe-row { display: grid; align-items: center; gap: 0 0.75rem; padding: 0 1rem; min-width: 800px;
+  grid-template-columns: 8rem 5rem 4.5rem 4.5rem minmax(7rem, 1fr) 3.75rem 3.75rem 3.75rem 4.5rem; }
 .pipe-row-head { height: 2rem; border-bottom: 1px solid var(--border-color); }
 .pipe-row-head > span:nth-child(n+6) { text-align: right; }
 a.pipe-row { height: 2.5rem; font-size: 0.875rem; color: var(--text-muted); text-decoration: none;
@@ -221,10 +221,10 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
       {% endfor %}
     </div>
 
-    {# Deploys per day #}
-    <section class="pipe-card pipe-chart-card mb-5" aria-label="Deploys per day">
+    {# Runs per day #}
+    <section class="pipe-card pipe-chart-card mb-5" aria-label="Runs per day">
       <div class="pipe-chart-head">
-        <span class="pipe-section-title">Deploys per day</span>
+        <span class="pipe-section-title">Runs per day</span>
         <span class="pipe-legend">
           <span><span class="pipe-swatch" style="background:var(--pipe-ok)"></span>Succeeded</span>
           <span><span class="pipe-swatch" style="background:var(--pipe-fail)"></span>Failed</span>
@@ -293,6 +293,17 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
   function rangeWords() { return parseInt(state.range, 10) + ' days'; }
   var state = { range: {{ current_range|tojson }}, offset: 0, stage: 'image', stats: null };
   var charts = [];
+  var lastPayload = {};
+
+  // Skip re-rendering identical data so the refresh doesn't drop focus or hover.
+  function whenChanged(key, render) {
+    return function(d) {
+      var json = [state.range, state.offset, state.stage, JSON.stringify(d)].join('|');
+      if (lastPayload[key] === json) return;
+      lastPayload[key] = json;
+      render(d);
+    };
+  }
 
   // ── Formatting ──
   function esc(s) {
@@ -401,7 +412,9 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
         Object.assign({}, axis, { size: 22, gap: 4, space: 44, values: function(u, vals) {
           return vals.map(function(ts) { return new Date(ts * 1000).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' }); });
         } }),
-        Object.assign({}, axis, { size: 44, gap: 4, values: function(u, vals) { return vals.map(opts.axisFmt || fmtAxisDur); } })
+        Object.assign({}, axis, { size: 44, gap: 4, values: function(u, vals) {
+          return vals.map(function(v) { return v === 0 ? '' : (opts.axisFmt || fmtAxisDur)(v); });
+        } })
       ],
       scales: {
         x: { time: true, range: function(u, min, max) { return [min - pad, max + pad]; } },
@@ -417,8 +430,8 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
       fill: dashed ? undefined : palette.css(color, 0.08), points: { show: false, size: 5 }, spanGaps: true };
   }
   function bar(label, color, align) {
-    return { label: label, _swatch: palette.css(color), stroke: palette.css(color), fill: palette.css(color, 0.75),
-      width: 0, points: { show: false }, paths: uPlot.paths.bars({ size: [0.32, 14], align: align, gap: 1 }) };
+    return { label: label, _swatch: palette.css(color), stroke: palette.css(color), fill: palette.css(color, 0.6),
+      width: 0, points: { show: false }, paths: uPlot.paths.bars({ size: [0.3, 10], align: align, gap: 1 }) };
   }
 
   function renderCharts() {
@@ -504,9 +517,9 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
         return '<span class="' + segClass(stage, r[stage + '_status']) + '" style="flex:0 0 ' + (dur / maxTotal * 100).toFixed(2) + '%"></span>';
       }).join('');
       return '<a class="pipe-row" href="' + detailUrls.deploy.replace('__ID__', r.id) + '" aria-label="' +
-          esc(st[1] + ', ' + relTime(r.created) + ', total ' + fmtDur(r.total_duration)) + '">' +
+          esc(st[1] + ', started ' + relTime(r.started) + ', total ' + fmtDur(r.total_duration)) + '">' +
         '<span class="pipe-status"><span class="pipe-dot pipe-dot-' + st[0] + '"></span>' + st[1] + '</span>' +
-        '<span title="' + esc(absTime(r.created)) + '">' + relTime(r.created) + '</span>' +
+        '<span title="' + esc(absTime(r.started)) + '">' + relTime(r.started) + '</span>' +
         '<span class="num sha">' + shortSha(r.sha) + '</span>' +
         '<span><span class="dpl-badge dpl-badge-' + r.trigger_type + '">' + triggerIcons[r.trigger_type] + ' ' +
           (r.trigger_type === 'auto' ? 'Auto' : 'Manual') + '</span></span>' +
@@ -549,21 +562,22 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
       return r.json();
     });
   }
-  function fail(containerId) {
+  function fail(key) {
     return function() {
       document.getElementById('pipe-error').hidden = false;
-      if (containerId) document.getElementById(containerId).innerHTML = '<div class="pipe-note">Couldn\u2019t load this section.</div>';
+      delete lastPayload[key];
+      if (key !== 'stats') document.getElementById(key).innerHTML = '<div class="pipe-note">Couldn\u2019t load this section.</div>';
     };
   }
 
   function loadStats() {
-    return getJSON('/stats?range=' + state.range).then(function(d) { state.stats = d; renderStats(); }, fail());
+    return getJSON('/stats?range=' + state.range).then(whenChanged('stats', function(d) { state.stats = d; renderStats(); }), fail('stats'));
   }
   function loadRuns() {
-    return getJSON('/runs?range=' + state.range + '&limit=' + PER_PAGE + '&offset=' + state.offset).then(renderRuns, fail('runs'));
+    return getJSON('/runs?range=' + state.range + '&limit=' + PER_PAGE + '&offset=' + state.offset).then(whenChanged('runs', renderRuns), fail('runs'));
   }
   function loadSlowest() {
-    return getJSON('/slowest?range=' + state.range + '&stage=' + state.stage).then(renderSlowest, fail('slowest'));
+    return getJSON('/slowest?range=' + state.range + '&stage=' + state.stage).then(whenChanged('slowest', renderSlowest), fail('slowest'));
   }
   function loadAll() {
     document.getElementById('pipe-error').hidden = true;
