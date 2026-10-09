@@ -1984,17 +1984,7 @@ def render_podspec(release, process_name, service_account_name):
             )
         )
         restart_policy = "OnFailure"
-    elif process_name.startswith("release"):
-        init_containers.append(
-            render_cabotage_sidecar_container(release, process_name, with_tls=False)
-        )
-        containers.append(
-            render_process_container(
-                release, process_name, datadog_tags, with_tls=False, unix=False
-            )
-        )
-        restart_policy = "Never"
-    elif process_name.startswith("postdeploy"):
+    elif process_name.startswith("release") or process_name.startswith("postdeploy"):
         init_containers.append(
             render_cabotage_sidecar_container(release, process_name, with_tls=False)
         )

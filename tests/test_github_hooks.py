@@ -271,9 +271,7 @@ class TestRequiredContextsForBranch:
             resp = MagicMock()
             resp.raise_for_status = MagicMock()
             resp.text = "Not Found"
-            if "/protection/required_status_checks" in url:
-                resp.status_code = 404
-            elif "/rules/branches/" in url:
+            if "/protection/required_status_checks" in url or "/rules/branches/" in url:
                 resp.status_code = 404
             return resp
 
