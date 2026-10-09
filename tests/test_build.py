@@ -1520,7 +1520,7 @@ class TestGitRefFallback:
         job_object = run_job_call[0][3]
         containers = job_object.spec.template.spec.containers
         args = containers[0].args
-        context_arg = [a for a in args if "context=" in a][0]
+        context_arg = next(a for a in args if "context=" in a)
 
         # Should use branch ref "develop", NOT "#null"
         assert "#null" not in context_arg, (

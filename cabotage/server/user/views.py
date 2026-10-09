@@ -3502,12 +3502,12 @@ def project_application_shell(org_slug, project_slug, app_slug, env_slug=None):
     #  this should be removed when we start a shell pod instead of attaching          #
     # =============================================================================== #
     try:
-        [
+        next(
             k
             for k, v in app_env.process_counts.items()
             if (k.startswith(("web", "worker"))) and v > 0
-        ][0]
-    except IndexError:
+        )
+    except StopIteration:
         abort(404)
 
     return render_template(
@@ -3570,12 +3570,12 @@ def _shell_socket(
     #  everything below should be replaced with the creation/monitoring of a new pod  #
     # =============================================================================== #
     try:
-        process_name = [
+        process_name = next(
             k
             for k, v in process_counts.items()
             if (k.startswith(("web", "worker"))) and v > 0
-        ][0]
-    except IndexError:
+        )
+    except StopIteration:
         abort(404)
     labels = {
         "organization": org_slug,
