@@ -4167,6 +4167,55 @@ a.obs-pod-link:hover {
   min-height: 160px;
 }
 
+/* Chart loading / empty / error states (templates/user/_infra_charts.html) */
+.chart-state {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: inherit;
+  padding: 1rem;
+  text-align: center;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.chart-state-error {
+  color: var(--color-error);
+}
+.chart-skeleton {
+  align-self: stretch;
+  width: 100%;
+  min-height: 8rem;
+  border-radius: 0.5rem;
+  background: var(--hover-overlay-strong);
+  animation: pulse-gentle 2s ease-in-out infinite;
+}
+.chart-plot { min-height: inherit; width: 100%; }
+.chart-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.375rem 0.75rem;
+  padding-top: 0.625rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.chart-status-copy { display: flex; flex-wrap: wrap; gap: 0.25rem 0.625rem; min-width: 0; }
+.chart-status time { font-variant-numeric: tabular-nums; }
+[data-chart-state="stale"] [data-chart-message],
+[data-chart-state="unavailable"] [data-chart-message] {
+  color: var(--text-bright);
+  font-weight: 500;
+}
+[data-chart-state="stale"] .chart-status { border-top: 1px solid var(--color-warning); }
+[data-chart-state="unavailable"] .chart-status { border-top: 1px solid var(--color-error); }
+@media (prefers-reduced-motion: reduce) {
+  .chart-skeleton { animation: none; }
+}
+
 /* Observe chart tooltip */
 .chart-tip {
   display: none;
