@@ -34,7 +34,7 @@ from kubernetes.stream.ws_client import RESIZE_CHANNEL
 from dxf import DXF
 import requests as requests_lib
 from requests.exceptions import HTTPError
-from sqlalchemy import and_, case, desc, func, or_
+from sqlalchemy import Uuid, and_, case, desc, func, or_
 from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import joinedload, subqueryload
 from sqlalchemy.orm.attributes import flag_modified
@@ -9193,11 +9193,14 @@ def _pipeline_finished(stage: str, app_env_id: uuid.UUID, start: datetime.dateti
     )
 
 
-def _duration_stats(model):
-    """avg/p50/p95 aggregates over `updated - created` in seconds."""
-    duration = func.extract("epoch", model.updated - model.created)
+def _duration(model):
+    """Seconds between a row's creation and its last update."""
+    return func.extract("epoch", model.updated - model.created)
+
+
+def _percentiles(duration):
+    """p50/p95 aggregates over a duration expression."""
     return (
-        func.avg(duration),
         func.percentile_cont(0.5).within_group(duration),
         func.percentile_cont(0.95).within_group(duration),
     )
@@ -9250,16 +9253,17 @@ def project_application_pipeline_stats(org_slug, project_slug, app_slug, env_slu
     start = _pipeline_start()
 
     trend = collections.defaultdict(dict)
-    stage_avg = {}
+    stages = {}
     for stage in _PIPELINE_STAGES:
         model, filters = _pipeline_finished(stage, app_env.id, start)
-        avg, p50, p95 = _duration_stats(model)
+        p50, p95 = _percentiles(_duration(model))
         day = func.date_trunc("day", model.updated)
         for row in db.session.query(day, p50, p95).filter(*filters).group_by(day):
             trend[row[0].isoformat()].update(
                 {f"p50_{stage}": _seconds(row[1]), f"p95_{stage}": _seconds(row[2])}
             )
-        stage_avg[stage] = _seconds(db.session.query(avg).filter(*filters).scalar())
+        overall = db.session.query(p50, p95).filter(*filters).one()
+        stages[stage] = {"p50": _seconds(overall[0]), "p95": _seconds(overall[1])}
 
     _, deploy_filters = _pipeline_finished("deploy", app_env.id, start)
     day = func.date_trunc("day", Deployment.updated)
@@ -9275,12 +9279,24 @@ def project_application_pipeline_stats(org_slug, project_slug, app_slug, env_slu
         .order_by(day)
     ]
 
-    total, succeeded, avg, p50, p95 = (
+    total, succeeded, failed = (
         db.session.query(
             func.count(),
             func.count().filter(Deployment.complete),
-            *_duration_stats(Deployment),
+            func.count().filter(Deployment.error),
         )
+        .filter(*deploy_filters)
+        .one()
+    )
+
+    # Run time: image build + release build + deploy, matching each run's total
+    run_p50, run_p95 = (
+        db.session.query(
+            *_percentiles(_duration(Image) + _duration(Release) + _duration(Deployment))
+        )
+        .select_from(Deployment)
+        .join(Release, Release.id == Deployment.release["id"].astext.cast(Uuid))
+        .join(Image, Image.id == Release.image["id"].astext.cast(Uuid))
         .filter(*deploy_filters)
         .one()
     )
@@ -9288,13 +9304,13 @@ def project_application_pipeline_stats(org_slug, project_slug, app_slug, env_slu
     return jsonify(
         {
             "summary": {
-                "total": total,
+                "runs": total,
+                "failed": failed,
                 "success_rate": round(succeeded / total * 100, 1) if total else None,
-                "avg_duration": _seconds(avg),
-                "p50": _seconds(p50),
-                "p95": _seconds(p95),
+                "run_p50": _seconds(run_p50),
+                "run_p95": _seconds(run_p95),
             },
-            "stage_avg": stage_avg,
+            "stages": stages,
             "throughput": throughput,
             "duration_trend": [{"date": k, **v} for k, v in sorted(trend.items())],
         }
@@ -9355,6 +9371,7 @@ def project_application_pipeline_runs(org_slug, project_slug, app_slug, env_slug
         ]
         runs.append(
             {
+                "id": str(d.id),
                 "image_duration": image_duration,
                 "image_status": image_status,
                 "release_duration": release_duration,

@@ -20,256 +20,257 @@
 
 {% block content %}
 <style>
-/* ── Pipeline page tokens ── */
-.pipe-page { --c-image: #06b6d4; --c-release: #a78bfa; --c-deploy: #f472b6;
-  --c-ok: #34d399; --c-fail: #f87171; --c-warn: #fbbf24; }
-
-/* ── Summary strip ── */
-.pipe-summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.5rem; }
-@media (max-width: 640px) { .pipe-summary { grid-template-columns: repeat(2, 1fr); } }
-.pipe-kpi { padding: 0.75rem 1rem; border-radius: 0.75rem; background: var(--surface-card);
-  border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 0.15rem; }
-.pipe-kpi-label { font-size: 0.625rem; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.06em; color: var(--text-faint); }
-.pipe-kpi-val { font-size: 1.375rem; font-weight: 700; color: var(--text-bright);
-  font-family: 'JetBrains Mono', ui-monospace, monospace; line-height: 1.1; }
-
-/* ── Chart cards ── */
-.pipe-chart-card { background: var(--surface-card); border: 1px solid var(--border-color);
-  border-radius: 0.75rem; padding: 1rem; position: relative; overflow: hidden; }
-.pipe-chart-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
-.pipe-chart-title { font-size: 0.75rem; font-weight: 600; color: var(--text-faint);
-  text-transform: uppercase; letter-spacing: 0.04em; }
-.pipe-chart-legend { display: flex; gap: 0.75rem; flex-wrap: wrap; }
-.pipe-legend-item { display: flex; align-items: center; gap: 4px; font-size: 0.625rem;
-  color: var(--text-faintest); }
-.pipe-legend-dot { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
-
-/* ── Tooltip (follows cursor) ── */
-.pipe-tip { display: none; position: absolute; pointer-events: none; z-index: 20;
-  background: var(--surface-card); border: 1px solid var(--border-color);
-  border-radius: 0.5rem; padding: 8px 10px; font-size: 0.6875rem;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 120px; }
-.pipe-tip-time { font-weight: 600; color: var(--text-faint); margin-bottom: 4px;
-  font-size: 0.625rem; }
-.pipe-tip-row { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
-.pipe-tip-dot { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
-.pipe-tip-label { color: var(--text-faint); min-width: 50px; }
-.pipe-tip-val { margin-left: auto; font-weight: 700; color: var(--text-bright);
-  font-family: 'JetBrains Mono', ui-monospace, monospace; }
-
-/* ── Stage breakdown row (3 mini-charts) ── */
-.pipe-stage-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
-@media (max-width: 768px) { .pipe-stage-grid { grid-template-columns: 1fr; } }
-.pipe-stage-card { background: var(--surface-card); border: 1px solid var(--border-color);
-  border-radius: 0.75rem; padding: 0.875rem; }
-.pipe-stage-header { display: flex; align-items: center; gap: 6px; margin-bottom: 0.375rem; }
-.pipe-stage-dot { width: 8px; height: 8px; border-radius: 3px; }
-.pipe-stage-name { font-size: 0.6875rem; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.04em; color: var(--text-faint); }
-.pipe-stage-val { font-size: 1rem; font-weight: 700; color: var(--text-bright);
-  font-family: 'JetBrains Mono', ui-monospace, monospace; margin-left: auto; }
-
-/* ── Runs timeline ── */
-.pipe-run { display: grid; grid-template-columns: 140px 70px 56px 1fr 64px;
-  align-items: center; gap: 0; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border-color);
-  font-size: 0.75rem; transition: background 0.1s; }
-.pipe-run:hover { background: var(--hover-overlay); }
-.pipe-run-head { display: grid; grid-template-columns: 140px 70px 56px 1fr 64px;
-  padding: 0.5rem 0.75rem; font-size: 0.625rem; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.05em; color: var(--text-faintest); border-bottom: 1px solid var(--border-color); }
-
-/* Pipeline stage cells */
-.pipe-stages { display: flex; gap: 2px; align-items: center; }
-.pipe-stage-seg { display: flex; align-items: center; gap: 4px; padding: 3px 0; flex: 1; }
-.pipe-seg-bar { height: 20px; border-radius: 3px; min-width: 3px; opacity: 0.85; }
-.pipe-seg-dur { font-size: 0.6875rem; color: var(--text-faint);
-  font-family: 'JetBrains Mono', ui-monospace, monospace; white-space: nowrap; }
-.pipe-seg-arrow { color: var(--text-faintest); font-size: 0.5rem; flex-shrink: 0; padding: 0 1px; }
-
-/* Status dots */
-.pipe-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-.pipe-dot-ok { background: var(--c-ok); }
-.pipe-dot-err { background: var(--c-fail); }
-.pipe-dot-pend { background: var(--c-warn); }
-
-.pipe-total { font-weight: 700; font-family: 'JetBrains Mono', ui-monospace, monospace;
-  text-align: right; color: var(--text-bright); }
-.pipe-sha { font-family: 'JetBrains Mono', ui-monospace, monospace; color: var(--text-faint); }
-.pipe-trigger { font-size: 0.625rem; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.04em; padding: 2px 6px; border-radius: 3px; text-align: center; }
-.pipe-trigger-auto { background: rgba(6,182,212,0.12); color: var(--c-image); }
-.pipe-trigger-manual { background: var(--surface-inset); color: var(--text-faint); }
-.pipe-time { color: var(--text-faintest); font-size: 0.6875rem; }
-
-/* ── Slowest table ── */
-.pipe-slowest-row { display: grid; grid-template-columns: 28px 72px 1fr 90px 80px;
-  align-items: center; gap: 0.5rem; padding: 0.375rem 0.75rem; border-bottom: 1px solid var(--border-color);
-  font-size: 0.75rem; }
-.pipe-slowest-row:hover { background: var(--hover-overlay); }
-.pipe-slowest-rank { font-weight: 700; color: var(--text-faintest); font-size: 0.6875rem; }
-.pipe-slowest-bar { height: 16px; border-radius: 3px; opacity: 0.7; }
-
-/* ── Section ── */
-.pipe-section { background: var(--surface-card); border: 1px solid var(--border-color);
-  border-radius: 0.75rem; overflow-x: auto; }
-@media (max-width: 640px) {
-  .pipe-run, .pipe-run-head { min-width: 640px; }
-  .pipe-slowest-row { min-width: 480px; }
+/* Stages are one hue stepping toward the foreground: build → release → deploy.
+   Status colors stay reserved for outcomes. */
+.pipe {
+  --pipe-image: var(--color-info);
+  --pipe-release: color-mix(in oklab, var(--color-info) 62%, var(--text-bright));
+  --pipe-deploy: color-mix(in oklab, var(--color-info) 30%, var(--text-bright));
+  --pipe-ok: var(--color-success);
+  --pipe-fail: var(--color-error);
+  --pipe-run: var(--color-warning);
+  --pipe-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
-.pipe-section-head { display: flex; align-items: center; justify-content: space-between;
-  padding: 0.75rem 0.75rem 0; }
-.pipe-section-title { font-size: 0.75rem; font-weight: 600; color: var(--text-faint);
-  text-transform: uppercase; letter-spacing: 0.04em; }
+.pipe .num { font-family: var(--pipe-mono); font-variant-numeric: tabular-nums; }
 
-/* ── Pagination ── */
-.pipe-pager { display: flex; align-items: center; justify-content: space-between;
-  padding: 0.625rem 0.75rem; border-top: 1px solid var(--border-color); }
-.pipe-pager-info { font-size: 0.6875rem; color: var(--text-faintest);
-  font-family: 'JetBrains Mono', ui-monospace, monospace; }
-.pipe-pager-btns { display: flex; gap: 0.25rem; }
-.pipe-pager-btn { padding: 0.25rem 0.625rem; border-radius: 0.375rem; font-size: 0.6875rem;
-  font-weight: 600; cursor: pointer; border: 1px solid var(--border-color);
-  background: var(--surface-card); color: var(--text-faint); transition: all 0.15s; }
-.pipe-pager-btn:hover:not(:disabled) { background: var(--hover-overlay); color: var(--text-bright); }
-.pipe-pager-btn:disabled { opacity: 0.3; cursor: default; }
+.pipe-card { background: var(--surface-card); border: 1px solid var(--border-color); border-radius: 0.75rem; }
+.pipe-label { font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--text-faint); }
+.pipe-section-title { font-size: 0.75rem; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--text-faint); }
 
+/* ── Summary ── */
+.pipe-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.pipe-stat { display: flex; flex-direction: column; gap: 0.375rem; padding: 1rem 1.25rem; min-width: 0; }
+.pipe-stat + .pipe-stat { border-left: 1px solid var(--border-color); }
+.pipe-stat-value { font-size: 1.5rem; font-weight: 600; line-height: 1; color: var(--text-bright); }
+.pipe-stat-sub { font-size: 0.75rem; color: var(--text-muted); min-height: 1rem; }
+.pipe-split { border-top: 1px solid var(--border-color); padding: 0.875rem 1.25rem 1rem; }
+.pipe-split-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 0.625rem; }
+.pipe-split-bar { display: flex; height: 0.5rem; border-radius: 0.25rem; overflow: hidden; background: var(--surface-inset); gap: 2px; }
+.pipe-split-bar > span { min-width: 2px; transition: flex-grow 250ms cubic-bezier(0.16, 1, 0.3, 1); }
+.pipe-split-legend { display: flex; flex-wrap: wrap; gap: 0.375rem 1.25rem; margin-top: 0.625rem; font-size: 0.75rem; color: var(--text-muted); }
+.pipe-split-legend .num { color: var(--text-bright); margin-left: 0.25rem; }
+@media (max-width: 720px) {
+  .pipe-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pipe-stat:nth-child(3) { border-left: 0; }
+  .pipe-stat:nth-child(n+3) { border-top: 1px solid var(--border-color); }
+}
+
+/* ── Charts ── */
+.pipe-stage-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
+@media (max-width: 860px) { .pipe-stage-grid { grid-template-columns: 1fr; } }
+.pipe-chart-card { padding: 0.875rem 1rem 0.5rem; min-width: 0; }
+.pipe-chart-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.5rem; }
+.pipe-stage-name { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; font-weight: 600; color: var(--text-bright); }
+.pipe-stage-figs { font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; }
+.pipe-stage-figs b { font-weight: 600; color: var(--text-bright); }
+.pipe-swatch { width: 0.625rem; height: 0.625rem; border-radius: 0.25rem; flex-shrink: 0; display: inline-block; }
+.pipe-legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.25rem 0.875rem; font-size: 0.75rem; color: var(--text-muted); }
+@media (max-width: 640px) { .pipe-legend-optional { display: none; } }
+.pipe-legend > span { display: inline-flex; align-items: center; gap: 0.375rem; }
+.pipe-plot { position: relative; }
+.pipe-plot .u-over { cursor: crosshair; }
+
+.pipe-tip { display: none; position: absolute; pointer-events: none; z-index: 20; min-width: 9rem;
+  background: var(--surface-card); border: 1px solid var(--border-color); border-radius: 0.5rem;
+  padding: 0.5rem 0.625rem; font-size: 0.75rem; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25); }
+.pipe-tip-time { color: var(--text-faint); margin-bottom: 0.25rem; }
+.pipe-tip-row { display: flex; align-items: center; gap: 0.5rem; padding: 1px 0; color: var(--text-muted); }
+.pipe-tip-row .num { margin-left: auto; color: var(--text-bright); font-weight: 600; }
+
+/* ── Runs ── */
+.pipe-table { overflow-x: auto; }
+.pipe-row { display: grid; align-items: center; gap: 0 0.75rem; padding: 0 1rem; min-width: 760px;
+  grid-template-columns: 6.5rem 5rem 4.5rem 4.5rem minmax(7rem, 1fr) 3.75rem 3.75rem 3.75rem 4.5rem; }
+.pipe-row-head { height: 2rem; border-bottom: 1px solid var(--border-color); }
+.pipe-row-head > span:nth-child(n+6) { text-align: right; }
+a.pipe-row { height: 2.5rem; font-size: 0.875rem; color: var(--text-muted); text-decoration: none;
+  border-bottom: 1px solid var(--border-color-subtle); transition: background-color 150ms ease-out; }
+a.pipe-row:last-child { border-bottom: 0; }
+a.pipe-row:hover { background: var(--hover-overlay); color: var(--text-bright); }
+a.pipe-row:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+.pipe-row .dur { text-align: right; }
+.pipe-row .total { text-align: right; color: var(--text-bright); font-weight: 600; }
+.pipe-row .sha { color: var(--text-bright); }
+.pipe-status { display: inline-flex; align-items: center; gap: 0.5rem; white-space: nowrap; color: var(--text-bright); }
+.pipe-dot { width: 0.5rem; height: 0.5rem; border-radius: 9999px; flex-shrink: 0; }
+.pipe-dot-ok { background: var(--pipe-ok); box-shadow: 0 0 8px color-mix(in srgb, var(--pipe-ok) 40%, transparent); }
+.pipe-dot-fail { background: var(--pipe-fail); box-shadow: 0 0 8px color-mix(in srgb, var(--pipe-fail) 40%, transparent); }
+.pipe-dot-run { background: var(--pipe-run); animation: pulse-dot 2s ease-in-out infinite; }
+.pipe-fall { display: flex; gap: 2px; height: 0.5rem; }
+.pipe-fall > span { border-radius: 0.25rem; min-width: 2px; }
+.seg-image { background: var(--pipe-image); }
+.seg-release { background: var(--pipe-release); }
+.seg-deploy { background: var(--pipe-deploy); }
+.seg-fail { background: var(--pipe-fail); }
+.seg-run { background: var(--pipe-run); opacity: 0.7; }
+.pipe-foot { display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 0.5rem 1rem; border-top: 1px solid var(--border-color); font-size: 0.75rem; color: var(--text-muted); }
+
+/* ── Slowest ── */
+.pipe-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 0.5rem; background: var(--surface-inset);
+  border: 1px solid var(--border-color); }
+.pipe-seg button { padding: 0.25rem 0.625rem; border-radius: 0.375rem; font-size: 0.75rem; font-weight: 500;
+  color: var(--text-muted); transition: background-color 150ms ease-out, color 150ms ease-out; }
+.pipe-seg button:hover { color: var(--text-bright); }
+.pipe-seg button[aria-pressed="true"] { background: var(--surface-card); color: var(--text-bright);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2); }
+.pipe-seg button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+a.pipe-slow { display: grid; align-items: center; gap: 0 0.75rem; height: 2.25rem; padding: 0 1rem;
+  grid-template-columns: 1.5rem 4.5rem minmax(4rem, 1fr) 4.5rem 5rem; min-width: 480px;
+  font-size: 0.875rem; color: var(--text-muted); text-decoration: none; border-bottom: 1px solid var(--border-color-subtle);
+  transition: background-color 150ms ease-out; }
+a.pipe-slow:last-child { border-bottom: 0; }
+a.pipe-slow:hover { background: var(--hover-overlay); color: var(--text-bright); }
+a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+.pipe-slow-bar { height: 0.375rem; border-radius: 0.25rem; opacity: 0.6; }
+.pipe-slow .total { text-align: right; color: var(--text-bright); font-weight: 600; }
+.pipe-slow .when { text-align: right; }
+
+.pipe-note { padding: 1.5rem 1rem; text-align: center; font-size: 0.875rem; color: var(--text-muted); }
+
+/* ── Loading ── */
+.pipe-skel { border-radius: 0.375rem; background: linear-gradient(90deg, var(--surface-inset) 0%,
+  color-mix(in srgb, var(--surface-inset) 60%, var(--surface-card)) 50%, var(--surface-inset) 100%);
+  background-size: 200% 100%; animation: pipe-shimmer 1.4s ease-in-out infinite; }
+@keyframes pipe-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .pipe-skel, .pipe-dot-run { animation: none; }
+  .pipe-split-bar > span { transition: none; }
+}
 </style>
 
-<div class="settings-page pipe-page">
-  {# Header #}
-  <div class="flex items-center justify-between mb-5">
+<div class="settings-page pipe" id="pipeline">
+  <div class="flex items-end justify-between gap-4 mb-4">
     <div>
       <h1 class="text-lg font-semibold text-base-content">Pipeline</h1>
-      <p class="text-xs" style="color:var(--text-faintest)">Build &middot; Release &middot; Deploy</p>
+      <p class="text-xs text-base-content/50">Build, release, and deploy times for each run</p>
     </div>
-    <div class="flex gap-1" id="range-selector">
+    <div class="flex gap-1.5" id="range-selector" role="group" aria-label="Time range">
       {% for r in ['7d', '30d', '90d'] %}
-        <button data-range="{{ r }}"
+        <button type="button" data-range="{{ r }}" aria-pressed="{{ 'true' if current_range == r else 'false' }}"
            class="btn btn-xs {% if current_range == r %}btn-primary{% else %}btn-ghost{% endif %}">{{ r }}</button>
       {% endfor %}
     </div>
   </div>
 
-  {# KPI strip #}
-  <div class="pipe-summary mb-5">
-    <div class="pipe-kpi">
-      <span class="pipe-kpi-label">Deploys</span>
-      <span class="pipe-kpi-val" id="pm-total">--</span>
-    </div>
-    <div class="pipe-kpi">
-      <span class="pipe-kpi-label">Success</span>
-      <span class="pipe-kpi-val" id="pm-success-rate">--</span>
-    </div>
-    <div class="pipe-kpi">
-      <span class="pipe-kpi-label">Avg</span>
-      <span class="pipe-kpi-val" id="pm-avg-dur">--</span>
-    </div>
-    <div class="pipe-kpi">
-      <span class="pipe-kpi-label">P50</span>
-      <span class="pipe-kpi-val" id="pm-p50">--</span>
-    </div>
-    <div class="pipe-kpi">
-      <span class="pipe-kpi-label">P95</span>
-      <span class="pipe-kpi-val" id="pm-p95">--</span>
-    </div>
+  <div id="pipe-error" class="pipe-card pipe-note mb-3" hidden>
+    Couldn't load pipeline data. <button type="button" class="btn btn-xs btn-ghost ml-1" data-retry>Retry</button>
   </div>
 
-  {# Charts: row 1 — throughput + success rate #}
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
-    <div class="pipe-chart-card">
-      <div class="pipe-chart-head">
-        <span class="pipe-chart-title">Throughput</span>
-        <div class="pipe-chart-legend">
-          <span class="pipe-legend-item"><span class="pipe-legend-dot" style="background:var(--c-ok)"></span>Success</span>
-          <span class="pipe-legend-item"><span class="pipe-legend-dot" style="background:var(--c-fail)"></span>Failure</span>
+  <div id="pipe-empty" class="pipe-card pipe-note" hidden>
+    No runs in the last <span data-range-label>{{ current_range[:-1] }} days</span>. Each image build, release, and deploy of
+    <span class="text-base-content">{{ app_slug }}</span> shows up here once it finishes.
+    <a class="link link-hover text-base-content ml-1"
+       href="{{ url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}">Go to overview</a>
+  </div>
+
+  <div id="pipe-body">
+    {# Summary #}
+    <section class="pipe-card mb-3" aria-label="Summary">
+      <div class="pipe-stats">
+        <div class="pipe-stat">
+          <span class="pipe-label">Runs</span>
+          <span class="pipe-stat-value num" data-stat="runs"><span class="pipe-skel inline-block w-10 h-5"></span></span>
+          <span class="pipe-stat-sub" data-stat="failed"></span>
+        </div>
+        <div class="pipe-stat">
+          <span class="pipe-label">Success rate</span>
+          <span class="pipe-stat-value num" data-stat="success"><span class="pipe-skel inline-block w-16 h-5"></span></span>
+          <span class="pipe-stat-sub">Deploys that went live</span>
+        </div>
+        <div class="pipe-stat">
+          <span class="pipe-label">Median run</span>
+          <span class="pipe-stat-value num" data-stat="p50"><span class="pipe-skel inline-block w-16 h-5"></span></span>
+          <span class="pipe-stat-sub">Build + release + deploy</span>
+        </div>
+        <div class="pipe-stat">
+          <span class="pipe-label">p95 run</span>
+          <span class="pipe-stat-value num" data-stat="p95"><span class="pipe-skel inline-block w-16 h-5"></span></span>
+          <span class="pipe-stat-sub">1 in 20 runs is slower</span>
         </div>
       </div>
-      <div id="chart-throughput" style="min-height:180px"></div>
+      <div class="pipe-split">
+        <div class="pipe-split-head">
+          <span class="pipe-section-title">Where a median run spends its time</span>
+        </div>
+        <div class="pipe-split-bar" id="pm-split" role="img" aria-label="Share of median run time by stage">
+          <span class="seg-image" style="flex-grow:1"></span>
+          <span class="seg-release" style="flex-grow:1"></span>
+          <span class="seg-deploy" style="flex-grow:1"></span>
+        </div>
+        <div class="pipe-split-legend" id="pm-split-legend">
+          <span><span class="pipe-swatch seg-image"></span> Image build<span class="num" data-share="image">—</span></span>
+          <span><span class="pipe-swatch seg-release"></span> Release build<span class="num" data-share="release">—</span></span>
+          <span><span class="pipe-swatch seg-deploy"></span> Deploy<span class="num" data-share="deploy">—</span></span>
+        </div>
+      </div>
+    </section>
+
+    {# Stage trends #}
+    <div class="pipe-stage-grid mb-3">
+      {% for stage, name in [('image', 'Image build'), ('release', 'Release build'), ('deploy', 'Deploy')] %}
+        <section class="pipe-card pipe-chart-card" aria-label="{{ name }} duration">
+          <div class="pipe-chart-head">
+            <span class="pipe-stage-name"><span class="pipe-swatch seg-{{ stage }}"></span>{{ name }}</span>
+            <span class="pipe-stage-figs num" data-stage-figs="{{ stage }}">p50 <b>—</b> · p95 <b>—</b></span>
+          </div>
+          <div class="pipe-plot" data-chart="stage-{{ stage }}" style="height:120px"><div class="pipe-skel h-full"></div></div>
+        </section>
+      {% endfor %}
     </div>
-    <div class="pipe-chart-card">
+
+    {# Deploys per day #}
+    <section class="pipe-card pipe-chart-card mb-5" aria-label="Deploys per day">
       <div class="pipe-chart-head">
-        <span class="pipe-chart-title">Success Rate</span>
+        <span class="pipe-section-title">Deploys per day</span>
+        <span class="pipe-legend">
+          <span><span class="pipe-swatch" style="background:var(--pipe-ok)"></span>Succeeded</span>
+          <span><span class="pipe-swatch" style="background:var(--pipe-fail)"></span>Failed</span>
+        </span>
       </div>
-      <div id="chart-success" style="min-height:180px"></div>
-    </div>
-  </div>
+      <div class="pipe-plot" data-chart="throughput" style="height:140px"><div class="pipe-skel h-full"></div></div>
+    </section>
 
-  {# Stage breakdown — 3 individual mini-charts with own Y axis #}
-  <div class="pipe-stage-grid mb-3">
-    <div class="pipe-stage-card">
-      <div class="pipe-stage-header">
-        <span class="pipe-stage-dot" style="background:var(--c-image)"></span>
-        <span class="pipe-stage-name">Image Build</span>
-        <span class="pipe-stage-val" id="stage-image-avg">--</span>
-      </div>
-      <div id="chart-stage-image" style="min-height:120px"></div>
+    {# Recent runs #}
+    <div class="flex items-center justify-between mb-2">
+      <h2 class="pipe-section-title">Recent runs</h2>
+      <span class="pipe-legend pipe-legend-optional">
+        <span><span class="pipe-swatch seg-image"></span>Image</span>
+        <span><span class="pipe-swatch seg-release"></span>Release</span>
+        <span><span class="pipe-swatch seg-deploy"></span>Deploy</span>
+      </span>
     </div>
-    <div class="pipe-stage-card">
-      <div class="pipe-stage-header">
-        <span class="pipe-stage-dot" style="background:var(--c-release)"></span>
-        <span class="pipe-stage-name">Release Build</span>
-        <span class="pipe-stage-val" id="stage-release-avg">--</span>
+    <section class="pipe-card mb-5" aria-label="Recent runs">
+      <div class="pipe-table">
+        <div class="pipe-row pipe-row-head pipe-label" aria-hidden="true">
+          <span>Status</span><span>Started</span><span>Commit</span><span>Trigger</span><span>Timeline</span>
+          <span>Image</span><span>Release</span><span>Deploy</span><span>Total</span>
+        </div>
+        <div id="runs"><div class="p-4 flex flex-col gap-3">{% for _ in range(4) %}<div class="pipe-skel h-4"></div>{% endfor %}</div></div>
       </div>
-      <div id="chart-stage-release" style="min-height:120px"></div>
-    </div>
-    <div class="pipe-stage-card">
-      <div class="pipe-stage-header">
-        <span class="pipe-stage-dot" style="background:var(--c-deploy)"></span>
-        <span class="pipe-stage-name">Deploy</span>
-        <span class="pipe-stage-val" id="stage-deploy-avg">--</span>
+      <div class="pipe-foot" id="runs-pager" hidden>
+        <span class="num" id="runs-range"></span>
+        <span class="flex gap-1">
+          <button type="button" class="btn btn-xs btn-ghost" id="runs-newer">{{ icon('chevron-left', 'w-3.5 h-3.5') }} Newer</button>
+          <button type="button" class="btn btn-xs btn-ghost" id="runs-older">Older {{ icon('chevron-right', 'w-3.5 h-3.5') }}</button>
+        </span>
       </div>
-      <div id="chart-stage-deploy" style="min-height:120px"></div>
-    </div>
-  </div>
+    </section>
 
-  {# Duration trend — all stages overlaid #}
-  <div class="pipe-chart-card mb-5">
-    <div class="pipe-chart-head">
-      <span class="pipe-chart-title">Duration Trend (P50 / P95)</span>
-      <div class="pipe-chart-legend">
-        <span class="pipe-legend-item"><span class="pipe-legend-dot" style="background:var(--c-image)"></span>Image</span>
-        <span class="pipe-legend-item"><span class="pipe-legend-dot" style="background:var(--c-release)"></span>Release</span>
-        <span class="pipe-legend-item"><span class="pipe-legend-dot" style="background:var(--c-deploy)"></span>Deploy</span>
-        <span class="pipe-legend-item" style="opacity:0.5">── P50 &ensp; ┈┈ P95</span>
+    {# Slowest #}
+    <div class="flex items-center justify-between mb-2">
+      <h2 class="pipe-section-title">Slowest in range</h2>
+      <div class="pipe-seg" id="slowest-selector" role="group" aria-label="Stage">
+        <button type="button" data-stage="image" aria-pressed="true">Image</button>
+        <button type="button" data-stage="release" aria-pressed="false">Release</button>
+        <button type="button" data-stage="deploy" aria-pressed="false">Deploy</button>
       </div>
     </div>
-    <div id="chart-duration" style="min-height:200px"></div>
-  </div>
-
-  {# Recent runs #}
-  <div class="pipe-section mb-5">
-    <div class="pipe-section-head">
-      <span class="pipe-section-title">Recent Runs</span>
-    </div>
-    <div class="pipe-run-head">
-      <span>Time</span><span>SHA</span><span>Trigger</span><span>Stages</span><span style="text-align:right">Total</span>
-    </div>
-    <div id="runs-container">
-      <div class="pipe-run"><span class="pipe-time" style="grid-column:1/-1;text-align:center;color:var(--text-faintest)">Loading...</span></div>
-    </div>
-    <div class="pipe-pager" id="runs-pager" style="display:none">
-      <span class="pipe-pager-info" id="runs-pager-info"></span>
-      <div class="pipe-pager-btns">
-        <button class="pipe-pager-btn" id="runs-prev" disabled>&larr; Prev</button>
-        <button class="pipe-pager-btn" id="runs-next" disabled>Next &rarr;</button>
-      </div>
-    </div>
-  </div>
-
-  {# Slowest #}
-  <div class="pipe-section">
-    <div class="pipe-section-head mb-0" style="padding-bottom:0.5rem">
-      <span class="pipe-section-title">Slowest</span>
-      <div class="flex gap-1" id="slowest-selector">
-        <button data-stage="image" class="btn btn-xs btn-primary">Image</button>
-        <button data-stage="release" class="btn btn-xs btn-ghost">Release</button>
-        <button data-stage="deploy" class="btn btn-xs btn-ghost">Deploy</button>
-      </div>
-    </div>
-    <div id="slowest-container">
-      <div class="pipe-slowest-row"><span style="grid-column:1/-1;text-align:center;color:var(--text-faintest)">Loading...</span></div>
-    </div>
+    <section class="pipe-card pipe-table" aria-label="Slowest runs">
+      <div id="slowest"><div class="p-4 flex flex-col gap-3">{% for _ in range(3) %}<div class="pipe-skel h-4"></div>{% endfor %}</div></div>
+    </section>
   </div>
 </div>
 {% endblock content %}
@@ -279,365 +280,345 @@
 <script src="https://unpkg.com/uplot@1.6.31/dist/uPlot.iife.min.js"></script>
 <script>
 (function() {
+  var root = document.getElementById('pipeline');
   var baseUrl = {{ url_for('user.project_application_pipeline', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug)|tojson }};
-  var currentRange = {{ current_range|tojson }};
-
-  // ── Colors ──
-  var C = {
-    image: '#06b6d4', release: '#a78bfa', deploy: '#f472b6',
-    ok: '#34d399', fail: '#f87171', warn: '#fbbf24'
+  var detailUrls = {
+    image: {{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id='__ID__')|tojson }},
+    release: {{ url_for('user.release_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id='__ID__')|tojson }},
+    deploy: {{ url_for('user.deployment_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id='__ID__')|tojson }}
   };
-  var cs = getComputedStyle(document.documentElement);
-  var AXIS_STROKE = cs.getPropertyValue('--text-faintest').trim() || 'rgba(255,255,255,0.12)';
-  var GRID_STROKE = cs.getPropertyValue('--border-color').trim() || 'rgba(255,255,255,0.05)';
+  var triggerIcons = { auto: {{ icon('zap', 'w-2.5 h-2.5')|tojson }}, manual: {{ icon('user', 'w-2.5 h-2.5')|tojson }} };
+  var STAGES = ['image', 'release', 'deploy'];
+  var PER_PAGE = 15;
+  function rangeWords() { return parseInt(state.range, 10) + ' days'; }
+  var state = { range: {{ current_range|tojson }}, offset: 0, stage: 'image', stats: null };
+  var charts = [];
 
   // ── Formatting ──
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function(c) { return '&#' + c.charCodeAt(0) + ';'; });
+  }
   function fmtDur(v) {
-    if (v == null || isNaN(v)) return '--';
+    if (v == null || isNaN(v)) return '—';
     v = +v;
     if (v < 60) return v.toFixed(1) + 's';
-    if (v < 3600) return (v / 60).toFixed(1) + 'm';
-    return (v / 3600).toFixed(1) + 'h';
+    if (v < 3600) {
+      var s = Math.round(v % 60);
+      return Math.floor(v / 60) + 'm ' + (s < 10 ? '0' : '') + s + 's';
+    }
+    return Math.floor(v / 3600) + 'h ' + Math.round((v % 3600) / 60) + 'm';
   }
-  function fmtPct(v) {
-    if (v == null || isNaN(v)) return '--';
-    return (+v).toFixed(1) + '%';
+  function fmtAxisDur(v) {
+    if (v < 60) return Math.round(v) + 's';
+    if (v < 3600) return +(v / 60).toFixed(1) + 'm';
+    return +(v / 3600).toFixed(1) + 'h';
   }
+  function fmtCount(v) { return v % 1 ? '' : String(v); }
   function fmtDay(ts) {
-    return new Date(ts * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  }
-  function shortSha(sha) {
-    return sha && sha !== 'null' ? sha.substring(0, 7) : '--';
-  }
-  function parseDate(s) {
-    if (!s) return null;
-    var t = new Date(s).getTime();
-    return isNaN(t) ? null : Math.floor(t / 1000);
+    return new Date(ts * 1000).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   }
   function relTime(iso) {
-    if (!iso) return '--';
-    var d = new Date(iso);
-    var now = Date.now();
-    var diff = (now - d.getTime()) / 1000;
+    if (!iso) return '—';
+    var d = new Date(iso), diff = (Date.now() - d.getTime()) / 1000;
     if (diff < 60) return 'just now';
     if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
     if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    if (diff < 7 * 86400) return Math.floor(diff / 86400) + 'd ago';
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
+  function absTime(iso) { return iso ? new Date(iso).toLocaleString() : ''; }
+  function shortSha(sha) { return sha && sha !== 'null' ? esc(sha.substring(0, 7)) : '—'; }
+  function dayTs(s) { return Math.floor(new Date(s).getTime() / 1000); }
 
-  // ── Range selector ──
-  document.getElementById('range-selector').addEventListener('click', function(e) {
-    var btn = e.target.closest('[data-range]');
-    if (!btn) return;
-    currentRange = btn.dataset.range;
-    document.querySelectorAll('#range-selector button').forEach(function(b) {
-      b.className = b.dataset.range === currentRange ? 'btn btn-xs btn-primary' : 'btn btn-xs btn-ghost';
-    });
-    loadAll(true);
-  });
+  // ── Theme palette (canvas needs concrete colors) ──
+  var palette;
+  function resolvePalette() {
+    var probe = document.createElement('span');
+    var ctx = document.createElement('canvas').getContext('2d');
+    root.appendChild(probe);
+    function rgb(cssValue) {
+      probe.style.color = cssValue;
+      ctx.clearRect(0, 0, 1, 1);
+      ctx.fillStyle = getComputedStyle(probe).color;
+      ctx.fillRect(0, 0, 1, 1);
+      var p = ctx.getImageData(0, 0, 1, 1).data;
+      return [p[0], p[1], p[2]];
+    }
+    function css(c, a) { return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + (a == null ? 1 : a) + ')'; }
+    var c = {
+      image: rgb('var(--pipe-image)'), release: rgb('var(--pipe-release)'), deploy: rgb('var(--pipe-deploy)'),
+      ok: rgb('var(--pipe-ok)'), fail: rgb('var(--pipe-fail)'), text: rgb('var(--text-bright)')
+    };
+    root.removeChild(probe);
+    palette = { css: css, c: c, axis: css(c.text, 0.45), grid: css(c.text, 0.06) };
+  }
 
-  // ── Tooltip plugin (cursor-following) ──
-  function tooltipPlugin(valueFmt) {
+  // ── Charts ──
+  function tooltipPlugin(fmt) {
     var tip = document.createElement('div');
     tip.className = 'pipe-tip';
-    return {
-      hooks: {
-        init: function(u) { u.over.appendChild(tip); },
-        setCursor: function(u) {
-          var idx = u.cursor.idx;
-          if (idx == null) { tip.style.display = 'none'; return; }
-          var ts = u.data[0][idx];
-          var html = '<div class="pipe-tip-time">' + fmtDay(ts) + '</div>';
-          var hasAny = false;
-          for (var i = 1; i < u.series.length; i++) {
-            var s = u.series[i];
-            if (!s.show) continue;
-            var v = u.data[i] ? u.data[i][idx] : null;
-            if (v == null) continue;
-            hasAny = true;
-            var color = s._stroke || s.stroke;
-            if (typeof color === 'function') color = color(u, i);
-            html += '<div class="pipe-tip-row">' +
-              '<span class="pipe-tip-dot" style="background:' + color + '"></span>' +
-              '<span class="pipe-tip-label">' + (s.label || '') + '</span>' +
-              '<span class="pipe-tip-val">' + (valueFmt || fmtDur)(v) + '</span></div>';
-          }
-          if (!hasAny) { tip.style.display = 'none'; return; }
-          tip.innerHTML = html;
-          tip.style.display = 'block';
-          var left = u.cursor.left, ow = u.over.clientWidth, tw = tip.offsetWidth;
-          var x = left + 14; if (x + tw > ow) x = left - tw - 14;
-          var y = u.cursor.top - tip.offsetHeight - 10; if (y < 0) y = u.cursor.top + 14;
-          tip.style.left = x + 'px'; tip.style.top = y + 'px';
+    return { hooks: {
+      init: function(u) { u.over.appendChild(tip); },
+      setCursor: function(u) {
+        var idx = u.cursor.idx;
+        if (idx == null) { tip.style.display = 'none'; return; }
+        var rows = '';
+        for (var i = 1; i < u.series.length; i++) {
+          var v = u.data[i][idx];
+          if (v == null) continue;
+          rows += '<div class="pipe-tip-row"><span class="pipe-swatch" style="background:' + u.series[i]._swatch + '"></span>' +
+            esc(u.series[i].label) + '<span class="num">' + fmt(v) + '</span></div>';
         }
+        if (!rows) { tip.style.display = 'none'; return; }
+        tip.innerHTML = '<div class="pipe-tip-time">' + fmtDay(u.data[0][idx]) + '</div>' + rows;
+        tip.style.display = 'block';
+        var x = u.cursor.left + 14, y = u.cursor.top - tip.offsetHeight - 10;
+        if (x + tip.offsetWidth > u.over.clientWidth) x = u.cursor.left - tip.offsetWidth - 14;
+        if (y < 0) y = u.cursor.top + 14;
+        tip.style.left = x + 'px'; tip.style.top = y + 'px';
       }
-    };
+    } };
   }
 
-  // ── Chart builder ──
-  function showEmpty(el) {
-    el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-faintest);font-size:0.75rem">No data</div>';
-  }
-
-  function buildChart(el, timestamps, seriesData, seriesDefs, opts) {
-    opts = opts || {};
-    // filter valid
-    var valid = [];
-    for (var i = 0; i < timestamps.length; i++) {
-      if (timestamps[i] != null && !isNaN(timestamps[i])) valid.push(i);
-    }
-    if (!valid.length) { showEmpty(el); return; }
-    var ts = valid.map(function(i) { return timestamps[i]; });
-    var sd = seriesData.map(function(s) { return valid.map(function(i) { return s[i]; }); });
-    // single-point: show as centered dot
-    if (ts.length === 1) {
-      ts = [ts[0] - 43200, ts[0], ts[0] + 43200];
-      sd = sd.map(function(s) { return [null, s[0], null]; });
-      // override to show points for single data
-      seriesDefs = seriesDefs.map(function(d) {
-        return Object.assign({}, d, { points: { show: true, size: 6, fill: d.stroke } });
-      });
-    }
+  function plot(el, xs, cols, series, opts) {
     el.innerHTML = '';
-    var w = el.clientWidth || 400;
-    var h = parseInt(getComputedStyle(el).minHeight) || 180;
-    var data = [ts].concat(sd);
-    var series = [{}].concat(seriesDefs);
-    var valueFmt = opts.valueFmt || fmtDur;
-    var chartOpts = {
-      width: w, height: h, series: series,
-      axes: [
-        { stroke: AXIS_STROKE, grid: { stroke: GRID_STROKE }, ticks: { stroke: GRID_STROKE } },
-        { stroke: AXIS_STROKE, grid: { stroke: GRID_STROKE }, ticks: { stroke: GRID_STROKE },
-          size: 62, values: function(u, vals) { return vals.map(valueFmt); } }
-      ],
-      plugins: [tooltipPlugin(valueFmt)],
-      cursor: { points: { size: 6, fill: function(u, i) { return u.series[i].stroke; }, stroke: 'transparent' } },
-      legend: { show: false },
-      scales: { x: { time: true }, y: { range: function(u, dmin, dmax) {
-        var pad = (dmax - dmin) * 0.15 || 1;
-        return [Math.max(0, dmin - pad * 0.5), dmax + pad];
-      } } }
-    };
-    if (opts.bars) {
-      chartOpts.scales.y.range = function(u, dmin, dmax) { return [0, (dmax || 1) * 1.2]; };
-      // half-day padding so edge bars aren't clipped
-      chartOpts.scales.x.range = function(u, min, max) { return [min - 43200, max + 43200]; };
+    if (!xs.length) {
+      el.innerHTML = '<div class="h-full flex items-center justify-center text-xs" style="color:var(--text-faint)">No runs in range</div>';
+      return;
     }
-    new uPlot(chartOpts, data, el);
+    var fmt = opts.fmt || fmtDur;
+    var font = '10px ' + getComputedStyle(root).getPropertyValue('--pipe-mono');
+    var axis = { stroke: palette.axis, font: font, grid: { stroke: palette.grid, width: 1 }, ticks: { show: false } };
+    // A lone day still needs an x span to draw on.
+    var pad = xs.length === 1 || opts.bars ? 43200 : 0;
+    var u = new uPlot({
+      width: el.clientWidth, height: el.clientHeight,
+      series: [{}].concat(series),
+      legend: { show: false },
+      cursor: { drag: { x: false, y: false }, points: { size: 6, fill: function(u, i) { return u.series[i]._swatch; } } },
+      plugins: [tooltipPlugin(fmt)],
+      axes: [
+        Object.assign({}, axis, { size: 22, gap: 4, space: 44, values: function(u, vals) {
+          return vals.map(function(ts) { return new Date(ts * 1000).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' }); });
+        } }),
+        Object.assign({}, axis, { size: 44, gap: 4, values: function(u, vals) { return vals.map(opts.axisFmt || fmtAxisDur); } })
+      ],
+      scales: {
+        x: { time: true, range: function(u, min, max) { return [min - pad, max + pad]; } },
+        y: { range: function(u, min, max) { return [0, (max || 1) * 1.15]; } }
+      }
+    }, [xs].concat(cols), el);
+    charts.push(u);
   }
 
-  // ── Load stats ──
-  function loadStats() {
-    fetch(baseUrl + '/stats?range=' + currentRange)
-      .then(function(r) { return r.json(); })
-      .then(function(d) {
-        var s = d.summary;
-        document.getElementById('pm-total').textContent = s.total || 0;
-        document.getElementById('pm-success-rate').textContent = fmtPct(s.success_rate);
-        document.getElementById('pm-avg-dur').textContent = fmtDur(s.avg_duration);
-        document.getElementById('pm-p50').textContent = fmtDur(s.p50);
-        document.getElementById('pm-p95').textContent = fmtDur(s.p95);
-
-        // Throughput
-        if (d.throughput.length) {
-          var ts = d.throughput.map(function(r) { return parseDate(r.date); });
-          buildChart(document.getElementById('chart-throughput'), ts,
-            [d.throughput.map(function(r) { return r.success; }),
-             d.throughput.map(function(r) { return r.failure; })],
-            [
-              { label: 'Success', stroke: C.ok, fill: C.ok + '50', width: 0,
-                paths: uPlot.paths.bars({ size: [0.3, 40], align: -1 }),
-                points: { show: false } },
-              { label: 'Failure', stroke: C.fail, fill: C.fail + '50', width: 0,
-                paths: uPlot.paths.bars({ size: [0.3, 40], align: 1 }),
-                points: { show: false } }
-            ], { bars: true, valueFmt: function(v) { return v % 1 ? '' : String(v); } });
-        } else { showEmpty(document.getElementById('chart-throughput')); }
-
-        // Success rate
-        if (d.throughput.length) {
-          var ts3 = d.throughput.map(function(r) { return parseDate(r.date); });
-          buildChart(document.getElementById('chart-success'), ts3,
-            [d.throughput.map(function(r) { return r.success / (r.success + r.failure) * 100; })],
-            [{ label: 'Success %', stroke: C.ok, fill: C.ok + '15', width: 2, points: { show: false } }],
-            { valueFmt: function(v) { return fmtPct(v); } });
-        } else { showEmpty(document.getElementById('chart-success')); }
-
-        // Duration trend (all stages overlaid)
-        if (d.duration_trend.length) {
-          var ts2 = d.duration_trend.map(function(r) { return parseDate(r.date); });
-          var keys = ['p50_image','p95_image','p50_release','p95_release','p50_deploy','p95_deploy'];
-          var labels = ['Image P50','Image P95','Release P50','Release P95','Deploy P50','Deploy P95'];
-          var cols = [C.image, C.image, C.release, C.release, C.deploy, C.deploy];
-          var dashes = [[], [5,3], [], [5,3], [], [5,3]];
-          var sData = keys.map(function(k) { return d.duration_trend.map(function(r) { return r[k] != null ? +r[k] : null; }); });
-          var sDefs = keys.map(function(k, i) {
-            return { label: labels[i], stroke: cols[i], width: i % 2 === 0 ? 2 : 1.5, dash: dashes[i], points: { show: false } };
-          });
-          buildChart(document.getElementById('chart-duration'), ts2, sData, sDefs);
-        } else { showEmpty(document.getElementById('chart-duration')); }
-
-        // Stage breakdown — 3 independent mini-charts
-        var stageMap = { image: { el: 'chart-stage-image', avg: 'stage-image-avg', color: C.image, p50: 'p50_image', p95: 'p95_image' },
-          release: { el: 'chart-stage-release', avg: 'stage-release-avg', color: C.release, p50: 'p50_release', p95: 'p95_release' },
-          deploy: { el: 'chart-stage-deploy', avg: 'stage-deploy-avg', color: C.deploy, p50: 'p50_deploy', p95: 'p95_deploy' } };
-        Object.keys(stageMap).forEach(function(stage) {
-          var cfg = stageMap[stage];
-          document.getElementById(cfg.avg).textContent = fmtDur(d.stage_avg[stage]);
-
-          if (d.duration_trend.length) {
-            var ts = d.duration_trend.map(function(r) { return parseDate(r.date); });
-            var p50 = d.duration_trend.map(function(r) { return r[cfg.p50] != null ? +r[cfg.p50] : null; });
-            var p95 = d.duration_trend.map(function(r) { return r[cfg.p95] != null ? +r[cfg.p95] : null; });
-            buildChart(document.getElementById(cfg.el), ts, [p50, p95],
-              [{ label: 'P50', stroke: cfg.color, fill: cfg.color + '18', width: 2, points: { show: false } },
-               { label: 'P95', stroke: cfg.color, width: 1.5, dash: [4,3], points: { show: false } }]);
-          } else {
-            showEmpty(document.getElementById(cfg.el));
-          }
-        });
-      })
-      .catch(function() {
-        ['chart-throughput','chart-success','chart-duration','chart-stage-image','chart-stage-release','chart-stage-deploy'].forEach(function(id) {
-          showEmpty(document.getElementById(id));
-        });
-      });
+  function line(label, color, dashed) {
+    return { label: label, _swatch: palette.css(color), stroke: palette.css(color, dashed ? 0.55 : 1),
+      width: dashed ? 1.25 : 1.75, dash: dashed ? [4, 3] : undefined,
+      fill: dashed ? undefined : palette.css(color, 0.08), points: { show: false, size: 5 }, spanGaps: true };
+  }
+  function bar(label, color, align) {
+    return { label: label, _swatch: palette.css(color), stroke: palette.css(color), fill: palette.css(color, 0.75),
+      width: 0, points: { show: false }, paths: uPlot.paths.bars({ size: [0.32, 14], align: align, gap: 1 }) };
   }
 
-  // ── Load runs (paginated) ──
-  var RUNS_PER_PAGE = 15;
-  var runsOffset = 0;
-
-  function loadRuns() {
-    fetch(baseUrl + '/runs?range=' + currentRange + '&limit=' + RUNS_PER_PAGE + '&offset=' + runsOffset)
-      .then(function(r) { return r.json(); })
-      .then(function(d) {
-        var container = document.getElementById('runs-container');
-        var pager = document.getElementById('runs-pager');
-        var total = d.total || 0;
-
-        if (!d.runs.length) {
-          container.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-faintest);font-size:0.75rem">No pipeline runs</div>';
-          pager.style.display = 'none';
-          return;
-        }
-        // Find max duration for bar scaling
-        var maxDur = 1;
-        d.runs.forEach(function(r) {
-          var t = (r.image_duration || 0) + (r.release_duration || 0) + (r.deploy_duration || 0);
-          if (t > maxDur) maxDur = t;
-        });
-
-        container.innerHTML = d.runs.map(function(r) {
-          var sha = shortSha(r.sha);
-          var trigger = r.trigger_type === 'auto'
-            ? '<span class="pipe-trigger pipe-trigger-auto">auto</span>'
-            : '<span class="pipe-trigger pipe-trigger-manual">manual</span>';
-
-          function dot(status) {
-            return '<span class="pipe-dot pipe-dot-' + (status === 'success' ? 'ok' : status === 'error' ? 'err' : 'pend') + '"></span>';
-          }
-          function segColor(status, stageColor) {
-            return status === 'error' ? C.fail : status === 'pending' ? C.warn : stageColor;
-          }
-          function barW(dur) {
-            if (!dur || !maxDur) return 3;
-            return Math.max(3, Math.round(dur / maxDur * 120));
-          }
-
-          var stages =
-            '<div class="pipe-stages">' +
-              '<div class="pipe-stage-seg">' + dot(r.image_status) +
-                '<div class="pipe-seg-bar" style="width:' + barW(r.image_duration) + 'px;background:' + segColor(r.image_status, C.image) + '"></div>' +
-                '<span class="pipe-seg-dur">' + fmtDur(r.image_duration) + '</span></div>' +
-              '<span class="pipe-seg-arrow">\u25B8</span>' +
-              '<div class="pipe-stage-seg">' + dot(r.release_status) +
-                '<div class="pipe-seg-bar" style="width:' + barW(r.release_duration) + 'px;background:' + segColor(r.release_status, C.release) + '"></div>' +
-                '<span class="pipe-seg-dur">' + fmtDur(r.release_duration) + '</span></div>' +
-              '<span class="pipe-seg-arrow">\u25B8</span>' +
-              '<div class="pipe-stage-seg">' + dot(r.deploy_status) +
-                '<div class="pipe-seg-bar" style="width:' + barW(r.deploy_duration) + 'px;background:' + segColor(r.deploy_status, C.deploy) + '"></div>' +
-                '<span class="pipe-seg-dur">' + fmtDur(r.deploy_duration) + '</span></div>' +
-            '</div>';
-
-          return '<div class="pipe-run">' +
-            '<span class="pipe-time">' + relTime(r.created) + '</span>' +
-            '<span class="pipe-sha">' + sha + '</span>' +
-            trigger + stages +
-            '<span class="pipe-total">' + fmtDur(r.total_duration) + '</span></div>';
-        }).join('');
-
-        // Pagination controls
-        var from = runsOffset + 1;
-        var to = Math.min(runsOffset + d.runs.length, total);
-        document.getElementById('runs-pager-info').textContent = from + '–' + to + ' of ' + total;
-        document.getElementById('runs-prev').disabled = runsOffset === 0;
-        document.getElementById('runs-next').disabled = runsOffset + RUNS_PER_PAGE >= total;
-        pager.style.display = total > RUNS_PER_PAGE ? 'flex' : 'none';
-      });
-  }
-
-  document.getElementById('runs-prev').addEventListener('click', function() {
-    runsOffset = Math.max(0, runsOffset - RUNS_PER_PAGE);
-    loadRuns();
-  });
-  document.getElementById('runs-next').addEventListener('click', function() {
-    runsOffset += RUNS_PER_PAGE;
-    loadRuns();
-  });
-
-  // ── Load slowest ──
-  var currentStage = 'image';
-  function stageColor(s) { return s === 'image' ? C.image : s === 'release' ? C.release : C.deploy; }
-
-  document.getElementById('slowest-selector').addEventListener('click', function(e) {
-    var btn = e.target.closest('[data-stage]');
-    if (!btn) return;
-    currentStage = btn.dataset.stage;
-    document.querySelectorAll('#slowest-selector button').forEach(function(b) {
-      b.className = b.dataset.stage === currentStage ? 'btn btn-xs btn-primary' : 'btn btn-xs btn-ghost';
+  function renderCharts() {
+    charts.forEach(function(u) { u.destroy(); });
+    charts = [];
+    var d = state.stats;
+    if (!d) return;
+    var trendXs = d.duration_trend.map(function(r) { return dayTs(r.date); });
+    STAGES.forEach(function(stage) {
+      var color = palette.c[stage];
+      var pick = function(k) { return d.duration_trend.map(function(r) { return r[k + '_' + stage]; }); };
+      var single = trendXs.length === 1;
+      var p50 = line('p50', color), p95 = line('p95', color, true);
+      if (single) { p50.points.show = true; p95.points.show = true; }
+      plot(root.querySelector('[data-chart="stage-' + stage + '"]'), trendXs, [pick('p50'), pick('p95')], [p50, p95], {});
     });
+    plot(root.querySelector('[data-chart="throughput"]'),
+      d.throughput.map(function(r) { return dayTs(r.date); }),
+      [d.throughput.map(function(r) { return r.success; }), d.throughput.map(function(r) { return r.failure; })],
+      [bar('Succeeded', palette.c.ok, -1), bar('Failed', palette.c.fail, 1)],
+      { bars: true, fmt: String, axisFmt: fmtCount });
+  }
+
+  // ── Stats ──
+  function setStat(name, html) { root.querySelector('[data-stat="' + name + '"]').innerHTML = html; }
+
+  function renderStats() {
+    var d = state.stats, s = d.summary;
+    var empty = !s.runs && !d.duration_trend.length;
+    document.getElementById('pipe-empty').hidden = !empty;
+    document.getElementById('pipe-body').hidden = empty;
+    root.querySelectorAll('[data-range-label]').forEach(function(el) { el.textContent = rangeWords(); });
+    if (empty) return;
+
+    setStat('runs', String(s.runs));
+    setStat('failed', s.failed
+      ? '<span class="inline-flex items-center gap-1.5"><span class="pipe-dot pipe-dot-fail"></span>' + s.failed + ' failed</span>'
+      : 'None failed');
+    setStat('success', s.success_rate == null ? '—' : s.success_rate.toFixed(1) + '%');
+    setStat('p50', fmtDur(s.run_p50));
+    setStat('p95', fmtDur(s.run_p95));
+
+    var total = STAGES.reduce(function(sum, st) { return sum + (d.stages[st].p50 || 0); }, 0);
+    var segs = document.getElementById('pm-split').children;
+    STAGES.forEach(function(stage, i) {
+      var p50 = d.stages[stage].p50;
+      segs[i].style.flexGrow = total ? (p50 || 0) / total : 1;
+      root.querySelector('[data-share="' + stage + '"]').textContent = total && p50 != null ? Math.round(p50 / total * 100) + '%' : '—';
+      root.querySelector('[data-stage-figs="' + stage + '"]').innerHTML =
+        'p50 <b>' + fmtDur(p50) + '</b> · p95 <b>' + fmtDur(d.stages[stage].p95) + '</b>';
+    });
+    renderCharts();
+  }
+
+  // ── Runs ──
+  function statusOf(r) {
+    if (r.image_status === 'error') return ['fail', 'Build failed'];
+    if (r.release_status === 'error') return ['fail', 'Release failed'];
+    if (r.deploy_status === 'error') return ['fail', 'Deploy failed'];
+    if (r.deploy_status === 'success') return ['ok', 'Deployed'];
+    return ['run', 'Running'];
+  }
+  function segClass(stage, status) {
+    return status === 'error' ? 'seg-fail' : status === 'pending' ? 'seg-run' : 'seg-' + stage;
+  }
+
+  function renderRuns(d) {
+    var el = document.getElementById('runs');
+    var pager = document.getElementById('runs-pager');
+    if (!d.runs.length) {
+      el.innerHTML = '<div class="pipe-note">No runs in the last ' + rangeWords() + '.</div>';
+      pager.hidden = true;
+      return;
+    }
+    var maxTotal = Math.max.apply(null, d.runs.map(function(r) {
+      return (r.image_duration || 0) + (r.release_duration || 0) + (r.deploy_duration || 0);
+    })) || 1;
+    el.innerHTML = d.runs.map(function(r) {
+      var st = statusOf(r);
+      var fall = STAGES.map(function(stage) {
+        var dur = r[stage + '_duration'];
+        if (dur == null) return '';
+        return '<span class="' + segClass(stage, r[stage + '_status']) + '" style="flex:0 0 ' + (dur / maxTotal * 100).toFixed(2) + '%"></span>';
+      }).join('');
+      return '<a class="pipe-row" href="' + detailUrls.deploy.replace('__ID__', r.id) + '" aria-label="' +
+          esc(st[1] + ', ' + relTime(r.created) + ', total ' + fmtDur(r.total_duration)) + '">' +
+        '<span class="pipe-status"><span class="pipe-dot pipe-dot-' + st[0] + '"></span>' + st[1] + '</span>' +
+        '<span title="' + esc(absTime(r.created)) + '">' + relTime(r.created) + '</span>' +
+        '<span class="num sha">' + shortSha(r.sha) + '</span>' +
+        '<span><span class="dpl-badge dpl-badge-' + r.trigger_type + '">' + triggerIcons[r.trigger_type] + ' ' +
+          (r.trigger_type === 'auto' ? 'Auto' : 'Manual') + '</span></span>' +
+        '<span class="pipe-fall">' + fall + '</span>' +
+        '<span class="num dur">' + fmtDur(r.image_duration) + '</span>' +
+        '<span class="num dur">' + fmtDur(r.release_duration) + '</span>' +
+        '<span class="num dur">' + fmtDur(r.deploy_duration) + '</span>' +
+        '<span class="num total">' + fmtDur(r.total_duration) + '</span></a>';
+    }).join('');
+    document.getElementById('runs-range').textContent =
+      (state.offset + 1) + '–' + (state.offset + d.runs.length) + ' of ' + d.total;
+    document.getElementById('runs-newer').disabled = state.offset === 0;
+    document.getElementById('runs-older').disabled = state.offset + PER_PAGE >= d.total;
+    pager.hidden = d.total <= PER_PAGE;
+  }
+
+  // ── Slowest ──
+  function renderSlowest(d) {
+    var el = document.getElementById('slowest');
+    if (!d.items.length) {
+      el.innerHTML = '<div class="pipe-note">No finished ' + esc(d.stage) + ' steps in the last ' + rangeWords() + '.</div>';
+      return;
+    }
+    var max = d.items[0].duration || 1;
+    var color = 'var(--pipe-' + d.stage + ')';
+    el.innerHTML = d.items.map(function(item, i) {
+      return '<a class="pipe-slow" href="' + detailUrls[d.stage].replace('__ID__', item.id) + '">' +
+        '<span class="num" style="color:var(--text-faint)">' + (i + 1) + '</span>' +
+        '<span class="num sha">' + shortSha(item.sha) + '</span>' +
+        '<span><span class="pipe-slow-bar block" style="width:' + Math.max(2, item.duration / max * 100).toFixed(1) + '%;background:' + color + '"></span></span>' +
+        '<span class="num total">' + fmtDur(item.duration) + '</span>' +
+        '<span class="when" title="' + esc(absTime(item.created)) + '">' + relTime(item.created) + '</span></a>';
+    }).join('');
+  }
+
+  // ── Data ──
+  function getJSON(path) {
+    return fetch(baseUrl + path).then(function(r) {
+      if (!r.ok) throw new Error(r.status);
+      return r.json();
+    });
+  }
+  function fail(containerId) {
+    return function() {
+      document.getElementById('pipe-error').hidden = false;
+      if (containerId) document.getElementById(containerId).innerHTML = '<div class="pipe-note">Couldn\u2019t load this section.</div>';
+    };
+  }
+
+  function loadStats() {
+    return getJSON('/stats?range=' + state.range).then(function(d) { state.stats = d; renderStats(); }, fail());
+  }
+  function loadRuns() {
+    return getJSON('/runs?range=' + state.range + '&limit=' + PER_PAGE + '&offset=' + state.offset).then(renderRuns, fail('runs'));
+  }
+  function loadSlowest() {
+    return getJSON('/slowest?range=' + state.range + '&stage=' + state.stage).then(renderSlowest, fail('slowest'));
+  }
+  function loadAll() {
+    document.getElementById('pipe-error').hidden = true;
+    return Promise.all([loadStats(), loadRuns(), loadSlowest()]);
+  }
+
+  // ── Controls ──
+  function press(group, attr, value) {
+    group.querySelectorAll('button').forEach(function(b) {
+      var on = b.dataset[attr] === value;
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      if (attr === 'range') b.className = 'btn btn-xs ' + (on ? 'btn-primary' : 'btn-ghost');
+    });
+  }
+  var rangeGroup = document.getElementById('range-selector');
+  rangeGroup.addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-range]');
+    if (!btn || btn.dataset.range === state.range) return;
+    state.range = btn.dataset.range;
+    state.offset = 0;
+    press(rangeGroup, 'range', state.range);
+    var url = new URL(location.href);
+    url.searchParams.set('range', state.range);
+    history.replaceState(null, '', url);
+    loadAll();
+  });
+  var stageGroup = document.getElementById('slowest-selector');
+  stageGroup.addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-stage]');
+    if (!btn || btn.dataset.stage === state.stage) return;
+    state.stage = btn.dataset.stage;
+    press(stageGroup, 'stage', state.stage);
     loadSlowest();
   });
+  document.getElementById('runs-newer').addEventListener('click', function() {
+    state.offset = Math.max(0, state.offset - PER_PAGE);
+    loadRuns();
+  });
+  document.getElementById('runs-older').addEventListener('click', function() {
+    state.offset += PER_PAGE;
+    loadRuns();
+  });
+  root.querySelector('[data-retry]').addEventListener('click', loadAll);
 
-  function loadSlowest() {
-    fetch(baseUrl + '/slowest?range=' + currentRange + '&stage=' + currentStage)
-      .then(function(r) { return r.json(); })
-      .then(function(d) {
-        var container = document.getElementById('slowest-container');
-        if (!d.items.length) {
-          container.innerHTML = '<div style="padding:1.5rem;text-align:center;color:var(--text-faintest);font-size:0.75rem">No data</div>';
-          return;
-        }
-        var maxDur = d.items[0].duration || 1;
-        var color = stageColor(currentStage);
-        container.innerHTML = d.items.map(function(item, i) {
-          var sha = shortSha(item.sha);
-          var barW = Math.max(8, Math.round((item.duration / maxDur) * 100));
-          return '<div class="pipe-slowest-row">' +
-            '<span class="pipe-slowest-rank">#' + (i + 1) + '</span>' +
-            '<span style="font-family:JetBrains Mono,monospace;font-size:0.6875rem;color:var(--text-faint)">' + item.id.substring(0, 8) + '</span>' +
-            '<div style="display:flex;align-items:center;gap:6px">' +
-              '<div class="pipe-slowest-bar" style="width:' + barW + '%;background:' + color + '"></div>' +
-              '<span style="font-weight:700;font-family:JetBrains Mono,monospace;font-size:0.75rem;color:var(--text-bright);white-space:nowrap">' + fmtDur(item.duration) + '</span>' +
-            '</div>' +
-            '<span style="font-family:JetBrains Mono,monospace;font-size:0.6875rem;color:var(--text-faint);text-align:right">' + sha + '</span>' +
-            '<span style="font-size:0.6875rem;color:var(--text-faintest);text-align:right">' + relTime(item.created) + '</span></div>';
-        }).join('');
-      });
-  }
-
-  function loadAll(resetPaging) { if (resetPaging) runsOffset = 0; loadStats(); loadRuns(); loadSlowest(); }
+  resolvePalette();
   loadAll();
-  setInterval(loadAll, 60000);
+  setInterval(function() { if (!document.hidden) loadAll(); }, 60000);
 
-  // Resize charts on window resize
   var resizeTimer;
   window.addEventListener('resize', function() {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(loadStats, 200);
+    resizeTimer = setTimeout(renderCharts, 150);
   });
+  new MutationObserver(function() { resolvePalette(); renderCharts(); })
+    .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 })();
 </script>
 {% endblock js %}
