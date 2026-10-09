@@ -79,7 +79,7 @@ def _parse_procfile_line(line: str) -> tuple[str, str, list[tuple[str, str]]]:
     line = line.strip()
     match = _PROCFILE_LINE.match(line)
     if match is None:
-        raise ValueError('Invalid profile line "%s".' % line)
+        raise ValueError('Invalid profile line "{}".'.format(line))
     parts = match.groupdict()
     environment = parts["environment"]
     return (
