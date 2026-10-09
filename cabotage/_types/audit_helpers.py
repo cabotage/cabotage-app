@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from typing import TypedDict, Protocol
+    from typing import TypedDict
     from uuid import UUID
 
     from sqlalchemy.orm import Mapped
@@ -23,11 +23,6 @@ if TYPE_CHECKING:
         field: str
         old: str | None
         new: str | None
-
-    class EntryLike(Protocol):
-        id: int
-        object_id: UUID | None
-        object_tx_id: int | None
 
     class Versioned:
         transaction_id: Mapped[int]

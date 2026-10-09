@@ -2,8 +2,11 @@ import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from typing import Final
+    from typing import Final, Literal
 
+    type Prop = Literal["svc", "hostname", "port"]
+
+    from cabotage.server.ext.config_writer import ConfigWriter
     from cabotage.server.models.projects import (
         ApplicationEnvironment,
         EnvironmentConfiguration,
@@ -23,7 +26,7 @@ class TemplateResolutionError(Exception):
     pass
 
 
-def has_template_variables(value):
+def has_template_variables(value: str) -> bool:
     """Return True if the value contains any template variable references."""
     if "${" not in value:
         return False
@@ -33,7 +36,11 @@ def has_template_variables(value):
     )
 
 
-def resolve_template_variables(value, application_environment, reader=None):
+def resolve_template_variables(
+    value: str,
+    application_environment: ApplicationEnvironment,
+    reader: ConfigWriter | None = None,
+) -> str:
     """Replace all template variable references in value.
 
     Supported forms:
@@ -60,7 +67,7 @@ def resolve_template_variables(value, application_environment, reader=None):
     if TEMPLATE_PATTERN.search(value):
         siblings = _get_sibling_app_envs(application_environment)
 
-        def _replace(match):
+        def _replace(match: re.Match[str]) -> str:
             app_slug = match.group(1)
             name = match.group(2)
             prop = match.group(3)
@@ -82,7 +89,9 @@ def resolve_template_variables(value, application_environment, reader=None):
     return value
 
 
-def _get_sibling_app_envs(app_env):
+def _get_sibling_app_envs(
+    app_env: ApplicationEnvironment,
+) -> dict[str, ApplicationEnvironment]:
     """Return dict of {app_slug: ApplicationEnvironment} for all apps
     in the same project + environment, including the current app."""
     from cabotage.server.models.projects import ApplicationEnvironment
@@ -90,7 +99,7 @@ def _get_sibling_app_envs(app_env):
     project_id = app_env.application.project_id
     environment_id = app_env.environment_id
 
-    sibling_app_envs = (
+    sibling_app_envs: list[ApplicationEnvironment] = (
         ApplicationEnvironment.query.join(ApplicationEnvironment.application)
         .filter(
             ApplicationEnvironment.environment_id == environment_id,
@@ -101,7 +110,12 @@ def _get_sibling_app_envs(app_env):
     return {ae.application.slug: ae for ae in sibling_app_envs}
 
 
-def _resolve_ingress(app_env, ingress_name, app_slug, prop="url"):
+def _resolve_ingress(
+    app_env: ApplicationEnvironment,
+    ingress_name: str | None,
+    app_slug: str,
+    prop: str = "url",
+) -> str:
     """Resolve a single ingress reference to a URL or hostname string."""
     ingresses = [i for i in app_env.ingresses if i.enabled]
 
@@ -147,7 +161,12 @@ def _resolve_ingress(app_env, ingress_name, app_slug, prop="url"):
     return f"{scheme}://{hostname}"
 
 
-def _resolve_tcp_service(app_env, process_name, app_slug, prop="svc"):
+def _resolve_tcp_service(
+    app_env: ApplicationEnvironment,
+    process_name: str | None,
+    app_slug: str,
+    prop: Prop = "svc",
+) -> str:
     """Resolve a TCP service reference to its cluster-internal address.
 
     Returns:
@@ -203,7 +222,7 @@ def resolve_shared_secret_refs(
         return []
 
     var_name = match.group(1)
-    ec = EnvironmentConfiguration.query.filter_by(
+    ec: EnvironmentConfiguration | None = EnvironmentConfiguration.query.filter_by(
         project_id=application_environment.application.project_id,
         environment_id=application_environment.environment_id,
         name=var_name,
@@ -216,7 +235,11 @@ def resolve_shared_secret_refs(
     return [(var_name, ec)]
 
 
-def _resolve_shared_references(value, application_environment, reader=None):
+def _resolve_shared_references(
+    value: str,
+    application_environment: ApplicationEnvironment,
+    reader: ConfigWriter | None = None,
+) -> str:
     """Replace ${shared.VAR_NAME} references with the value from
     environment-level configurations.
 
@@ -227,7 +250,7 @@ def _resolve_shared_references(value, application_environment, reader=None):
     """
     from cabotage.server.models.projects import EnvironmentConfiguration
 
-    env_configs = {
+    env_configs: dict[str, EnvironmentConfiguration] = {
         ec.name: ec
         for ec in EnvironmentConfiguration.query.filter_by(
             project_id=application_environment.application.project_id,
@@ -236,7 +259,7 @@ def _resolve_shared_references(value, application_environment, reader=None):
         ).all()
     }
 
-    def _replace(match):
+    def _replace(match: re.Match[str]) -> str:
         var_name = match.group(1)
         ec = env_configs.get(var_name)
         if ec is None:
