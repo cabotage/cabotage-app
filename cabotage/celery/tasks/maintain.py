@@ -90,8 +90,8 @@ def reap_stale_builds():
 
     # Images: built=False, error=False, updated < cutoff, no heartbeat
     stuck_images = Image.query.filter(
-        Image.built == False,  # noqa: E712
-        Image.error == False,  # noqa: E712
+        Image.built == False,
+        Image.error == False,
         Image.updated < cutoff,
     ).all()
     for image in stuck_images:
@@ -135,8 +135,8 @@ def reap_stale_builds():
 
     # Releases: built=False, error=False, updated < cutoff, no heartbeat
     stuck_releases = Release.query.filter(
-        Release.built == False,  # noqa: E712
-        Release.error == False,  # noqa: E712
+        Release.built == False,
+        Release.error == False,
         Release.updated < cutoff,
     ).all()
     for release in stuck_releases:
@@ -180,8 +180,8 @@ def reap_stale_builds():
 
     # Deployments: complete=False, error=False, updated < cutoff, no heartbeat
     stuck_deployments = Deployment.query.filter(
-        Deployment.complete == False,  # noqa: E712
-        Deployment.error == False,  # noqa: E712
+        Deployment.complete == False,
+        Deployment.error == False,
         Deployment.updated < cutoff,
     ).all()
     for deployment in stuck_deployments:

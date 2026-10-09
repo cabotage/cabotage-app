@@ -585,7 +585,7 @@ def organizations():
                 Application.deleted_at.is_(None),
                 ApplicationEnvironment.deleted_at.is_(None),
                 ApplicationEnvironment.k8s_identifier.is_(None),
-                Deployment.complete == True,  # noqa: E712
+                Deployment.complete == True,
             )
             .group_by(Project.organization_id)
             .all()
@@ -646,7 +646,7 @@ def organization(org_slug):
                 Deployment.application_id.in_(app_ids),
                 ApplicationEnvironment.deleted_at.is_(None),
                 ApplicationEnvironment.k8s_identifier.is_(None),
-                Deployment.complete == True,  # noqa: E712
+                Deployment.complete == True,
             )
             .one()
         )
@@ -6201,7 +6201,7 @@ def application_clear_cache(org_slug, project_slug, app_slug):
                 template=kubernetes.client.V1PodTemplateSpec(
                     metadata=kubernetes.client.V1ObjectMeta(
                         labels={
-                            "organization": image.application.project.organization.slug,  # noqa: E501
+                            "organization": image.application.project.organization.slug,
                             "project": image.application.project.slug,
                             "application": image.application.slug,
                             "process": "clear-cache",
@@ -6210,7 +6210,7 @@ def application_clear_cache(org_slug, project_slug, app_slug):
                             **safe_labels,
                         },
                         annotations={
-                            "container.apparmor.security.beta.kubernetes.io/clear-cache": "unconfined",  # noqa: E501
+                            "container.apparmor.security.beta.kubernetes.io/clear-cache": "unconfined",
                         },
                     ),
                     spec=kubernetes.client.V1PodSpec(
@@ -6228,7 +6228,7 @@ def application_clear_cache(org_slug, project_slug, app_slug):
                                 env=[
                                     kubernetes.client.V1EnvVar(
                                         name="BUILDKITD_FLAGS",
-                                        value="--oci-worker-no-process-sandbox",  # noqa: E501
+                                        value="--oci-worker-no-process-sandbox",
                                     ),
                                 ],
                                 security_context=kubernetes.client.V1SecurityContext(

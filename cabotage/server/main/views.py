@@ -53,7 +53,7 @@ def home():
                 Project.organization_id.in_(user_orgs),
                 Project.deleted_at.is_(None),
                 Application.deleted_at.is_(None),
-                Deployment.complete == True,  # noqa: E712
+                Deployment.complete == True,
             )
             .scalar()
         )

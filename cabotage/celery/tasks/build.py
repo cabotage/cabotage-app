@@ -612,7 +612,7 @@ def build_release_buildkit(release: Release):
                     template=kubernetes.client.V1PodTemplateSpec(
                         metadata=kubernetes.client.V1ObjectMeta(
                             labels={
-                                "organization": release.application.project.organization.slug,  # noqa: E501
+                                "organization": release.application.project.organization.slug,
                                 "project": release.application.project.slug,
                                 "application": release.application.slug,
                                 "process": "build",
@@ -622,7 +622,7 @@ def build_release_buildkit(release: Release):
                                 **safe_labels,
                             },
                             annotations={
-                                "container.apparmor.security.beta.kubernetes.io/build": "unconfined",  # noqa: E501
+                                "container.apparmor.security.beta.kubernetes.io/build": "unconfined",
                             },
                         ),
                         spec=kubernetes.client.V1PodSpec(
@@ -641,7 +641,7 @@ def build_release_buildkit(release: Release):
                                     env=[
                                         kubernetes.client.V1EnvVar(
                                             name="BUILDKITD_FLAGS",
-                                            value="--config /home/user/.config/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",  # noqa: E501
+                                            value="--config /home/user/.config/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",
                                         ),
                                     ],
                                     security_context=kubernetes.client.V1SecurityContext(
@@ -680,7 +680,7 @@ def build_release_buildkit(release: Release):
                                                 sub_path=f"envconsul-{process_name}.hcl",
                                                 name="build-context",
                                             )
-                                            for process_name in release.envconsul_configurations  # noqa: E501
+                                            for process_name in release.envconsul_configurations
                                         ],
                                     ],
                                 ),
@@ -1145,7 +1145,7 @@ def build_image_buildkit(image: Image):
                     template=kubernetes.client.V1PodTemplateSpec(
                         metadata=kubernetes.client.V1ObjectMeta(
                             labels={
-                                "organization": image.application.project.organization.slug,  # noqa: E501
+                                "organization": image.application.project.organization.slug,
                                 "project": image.application.project.slug,
                                 "application": image.application.slug,
                                 "process": "build",
@@ -1155,7 +1155,7 @@ def build_image_buildkit(image: Image):
                                 **safe_labels,
                             },
                             annotations={
-                                "container.apparmor.security.beta.kubernetes.io/build": "unconfined",  # noqa: E501
+                                "container.apparmor.security.beta.kubernetes.io/build": "unconfined",
                             },
                         ),
                         spec=kubernetes.client.V1PodSpec(
@@ -1174,7 +1174,7 @@ def build_image_buildkit(image: Image):
                                     env=[
                                         kubernetes.client.V1EnvVar(
                                             name="BUILDKITD_FLAGS",
-                                            value="--config /home/user/.config/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",  # noqa: E501
+                                            value="--config /home/user/.config/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",
                                         ),
                                     ],
                                     security_context=kubernetes.client.V1SecurityContext(
@@ -1591,7 +1591,7 @@ def build_omnibus_buildkit(image, release):
         shared_env = [
             kubernetes.client.V1EnvVar(
                 name="BUILDKITD_FLAGS",
-                value="--config /home/user/.config/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",  # noqa: E501
+                value="--config /home/user/.config/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",
             ),
         ]
         shared_security_context = kubernetes.client.V1SecurityContext(
@@ -1686,7 +1686,7 @@ def build_omnibus_buildkit(image, release):
                 template=kubernetes.client.V1PodTemplateSpec(
                     metadata=kubernetes.client.V1ObjectMeta(
                         labels={
-                            "organization": image.application.project.organization.slug,  # noqa: E501
+                            "organization": image.application.project.organization.slug,
                             "project": image.application.project.slug,
                             "application": image.application.slug,
                             "process": "build",
@@ -1696,8 +1696,8 @@ def build_omnibus_buildkit(image, release):
                             **safe_labels,
                         },
                         annotations={
-                            "container.apparmor.security.beta.kubernetes.io/image-build": "unconfined",  # noqa: E501
-                            "container.apparmor.security.beta.kubernetes.io/build": "unconfined",  # noqa: E501
+                            "container.apparmor.security.beta.kubernetes.io/image-build": "unconfined",
+                            "container.apparmor.security.beta.kubernetes.io/build": "unconfined",
                         },
                     ),
                     spec=kubernetes.client.V1PodSpec(

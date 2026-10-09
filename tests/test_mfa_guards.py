@@ -3,7 +3,7 @@
 import time
 import uuid
 
-import pytest  # noqa: F401 (used by fixtures)
+import pytest
 from flask_security import hash_password
 
 from cabotage.server import db
