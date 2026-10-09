@@ -20,6 +20,7 @@ from sqlalchemy import (
     Row,
     Select,
     SQLColumnExpression,
+    case,
     cast,
     exists,
     func,
@@ -55,8 +56,13 @@ MAX_QUERY_LENGTH = 100
 SEARCH_GROUP_LIMIT = 8
 STATES = ("active", "deleted", "all")
 USER_FILTERS = ("all", "admins", "inactive", "no-mfa")
+ACTIVITY_LIMIT = 30
 
 _DELETED_SUFFIX = re.compile(r"--deleted-[0-9a-f]{12}$")
+
+
+def _utcnow() -> datetime.datetime:
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 
 
 def display_slug(slug: str | None) -> str:
@@ -140,6 +146,19 @@ class DeploymentRow:
     version: int | None
     environment_name: str | None
     environment_slug: str | None
+    trigger: str | None = None
+    triggered_by: str | None = None
+    # Populated for platform-wide lists.
+    application_name: str | None = None
+    application_slug: str | None = None
+    application_deleted: bool = False
+    project_id: uuid.UUID | None = None
+    project_slug: str | None = None
+    project_deleted: bool = False
+    environments_enabled: bool = False
+    organization_id: uuid.UUID | None = None
+    organization_slug: str | None = None
+    organization_deleted: bool = False
 
     @property
     def status(self) -> str:
@@ -148,6 +167,15 @@ class DeploymentRow:
         if self.complete:
             return "deployed"
         return "deploying"
+
+    @property
+    def is_live(self) -> bool:
+        """True when the native deployment page is still reachable."""
+        return not (
+            self.application_deleted
+            or self.project_deleted
+            or self.organization_deleted
+        )
 
 
 def _deployment_columns() -> list[SQLColumnExpression[object]]:
@@ -161,6 +189,8 @@ def _deployment_columns() -> list[SQLColumnExpression[object]]:
         Release.version,
         Environment.name.label("environment_name"),
         Environment.slug.label("environment_slug"),
+        Deployment.deploy_metadata["trigger"].astext.label("trigger"),
+        Deployment.deploy_metadata["triggered_by"].astext.label("triggered_by"),
     ]
 
 
@@ -197,6 +227,18 @@ def _deployment_row(row: Row[tuple[object, ...]]) -> DeploymentRow:
         version=type_cast(int | None, data["version"]),
         environment_name=type_cast(str | None, data["environment_name"]),
         environment_slug=type_cast(str | None, data["environment_slug"]),
+        trigger=type_cast(str | None, data["trigger"]),
+        triggered_by=type_cast(str | None, data["triggered_by"]),
+        application_name=type_cast(str | None, data.get("application_name")),
+        application_slug=type_cast(str | None, data.get("application_slug")),
+        application_deleted=type_cast(bool, data.get("application_deleted", False)),
+        project_id=type_cast(uuid.UUID | None, data.get("project_id")),
+        project_slug=type_cast(str | None, data.get("project_slug")),
+        project_deleted=type_cast(bool, data.get("project_deleted", False)),
+        environments_enabled=type_cast(bool, data.get("environments_enabled", False)),
+        organization_id=type_cast(uuid.UUID | None, data.get("organization_id")),
+        organization_slug=type_cast(str | None, data.get("organization_slug")),
+        organization_deleted=type_cast(bool, data.get("organization_deleted", False)),
     )
 
 
@@ -248,6 +290,157 @@ def latest_deployment_by_app_env(
     }
 
 
+def _platform_deployments_statement() -> Select[tuple[object, ...]]:
+    columns = _deployment_columns() + [
+        Application.name.label("application_name"),
+        Application.slug.label("application_slug"),
+        Application.deleted_at.is_not(None).label("application_deleted"),
+        Project.id.label("project_id"),
+        Project.slug.label("project_slug"),
+        Project.deleted_at.is_not(None).label("project_deleted"),
+        Project.environments_enabled.label("environments_enabled"),
+        Organization.id.label("organization_id"),
+        Organization.slug.label("organization_slug"),
+        Organization.deleted_at.is_not(None).label("organization_deleted"),
+    ]
+    return (
+        _deployment_base(columns)
+        .join(Application, Application.id == Deployment.application_id)
+        .join(Project, Project.id == Application.project_id)
+        .join(Organization, Organization.id == Project.organization_id)
+    )
+
+
+def _deployment_status_filter(
+    statement: Select[tuple[object, ...]], status: str
+) -> Select[tuple[object, ...]]:
+    if status == "attention":
+        return statement.where(
+            or_(Deployment.error.is_(True), Deployment.complete.is_(False))
+        )
+    if status == "failed":
+        return statement.where(Deployment.error.is_(True))
+    if status == "running":
+        return statement.where(
+            Deployment.complete.is_(False), Deployment.error.is_(False)
+        )
+    if status == "complete":
+        return statement.where(
+            Deployment.complete.is_(True), Deployment.error.is_(False)
+        )
+    return statement
+
+
+def recent_deployments(
+    *,
+    limit: int,
+    status: str = "all",
+    since: datetime.datetime | None = None,
+    organization_id: uuid.UUID | None = None,
+    project_id: uuid.UUID | None = None,
+    application_id: uuid.UUID | None = None,
+    offset: int = 0,
+    latest_only: bool = False,
+    term: str = "",
+    environment: str = "",
+) -> list[DeploymentRow]:
+    statement = _deployment_status_filter(_platform_deployments_statement(), status)
+    if latest_only:
+        # Select latest before status: a successful retry must hide an old failure.
+        # The lower time bound is safe here: any replacement for an outer row
+        # inside the window must also fall inside that window.
+        latest = (
+            select(Deployment.id)
+            .distinct(Deployment.application_environment_id)
+            .order_by(
+                Deployment.application_environment_id,
+                Deployment.created.desc(),
+                Deployment.id.desc(),
+            )
+        )
+        if since is not None:
+            latest = latest.where(Deployment.created >= since)
+        if application_id is not None:
+            latest = latest.where(Deployment.application_id == application_id)
+        statement = statement.where(
+            Deployment.id.in_(latest),
+            Application.deleted_at.is_(None),
+            ApplicationEnvironment.deleted_at.is_(None),
+            Environment.deleted_at.is_(None),
+            Project.deleted_at.is_(None),
+            Organization.deleted_at.is_(None),
+        )
+    if term:
+        pattern = _contains(term)
+        clauses: list[ColumnElement[bool]] = [
+            column.ilike(pattern, escape="\\")
+            for column in (
+                Organization.name,
+                Organization.slug,
+                Project.name,
+                Project.slug,
+                Application.name,
+                Application.slug,
+            )
+        ]
+        if (uid := _as_uuid(term)) is not None:
+            clauses.extend(
+                column == uid
+                for column in (
+                    Organization.id,
+                    Project.id,
+                    Application.id,
+                    Deployment.id,
+                )
+            )
+        statement = statement.where(or_(*clauses))
+    if environment:
+        statement = statement.where(Environment.slug == environment)
+    if since is not None:
+        statement = statement.where(Deployment.created >= since)
+    if organization_id is not None:
+        statement = statement.where(Organization.id == organization_id)
+    if project_id is not None:
+        statement = statement.where(Project.id == project_id)
+    if application_id is not None:
+        statement = statement.where(Deployment.application_id == application_id)
+    statement = (
+        statement.order_by(Deployment.created.desc(), Deployment.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    return [_deployment_row(row) for row in db.session.execute(statement)]
+
+
+def deployments_page(
+    status: str,
+    page: int,
+    *,
+    mode: str = "triage",
+    days: str = "7",
+    term: str = "",
+    environment: str = "",
+    organization_id: uuid.UUID | None = None,
+    project_id: uuid.UUID | None = None,
+    application_id: uuid.UUID | None = None,
+) -> tuple[list[DeploymentRow], bool]:
+    """Filter in SQL, then fetch one bounded page and a next-page sentinel."""
+    since = None if days == "all" else _utcnow() - datetime.timedelta(days=int(days))
+    rows = recent_deployments(
+        limit=PAGE_SIZE + 1,
+        status=status,
+        offset=(page - 1) * PAGE_SIZE,
+        latest_only=mode == "triage",
+        since=since,
+        term=term,
+        environment=environment,
+        organization_id=organization_id,
+        project_id=project_id,
+        application_id=application_id,
+    )
+    return rows[:PAGE_SIZE], len(rows) > PAGE_SIZE
+
+
 # ── Overview ────────────────────────────────────────────────────────────────
 
 
@@ -259,12 +452,15 @@ class Overview:
     users: int
     pending_requests: list[OrganizationRequest]
     pending_request_total: int
+    failed: list[DeploymentRow]
+    running: list[DeploymentRow]
     usable_admins: int
     admins_without_passkeys: list[User] = field(default_factory=list)
     admins_without_passkeys_total: int = 0
 
 
 def overview() -> Overview:
+    now = _utcnow()
     missing_passkeys = type_cast(Query[User], User.query).filter(
         User.admin.is_(True),
         User.__table__.c.active.is_(True),
@@ -304,6 +500,18 @@ def overview() -> Overview:
         users=counts[3],
         pending_requests=pending,
         pending_request_total=counts[4],
+        failed=recent_deployments(
+            limit=8,
+            status="failed",
+            since=now - datetime.timedelta(hours=24),
+            latest_only=True,
+        ),
+        running=recent_deployments(
+            limit=8,
+            status="running",
+            since=now - datetime.timedelta(hours=24),
+            latest_only=True,
+        ),
         usable_admins=db.session.scalar(
             select(func.count(User.id)).where(
                 User.admin.is_(True),
@@ -424,7 +632,9 @@ class OrganizationDetail:
     projects: list[Project]
     project_stats: dict[uuid.UUID, ProjectStats]
     members: list[OrganizationMember]
+    deployments: list[DeploymentRow]
     requests: list[OrganizationRequest]
+    activity: list[ActivityRow] = field(default_factory=list)
 
 
 def organization_detail(organization_id: uuid.UUID) -> OrganizationDetail | None:
@@ -463,7 +673,9 @@ def organization_detail(organization_id: uuid.UUID) -> OrganizationDetail | None
         projects=projects,
         project_stats=project_stats([p.id for p in projects]),
         members=members,
+        deployments=recent_deployments(limit=10, organization_id=organization.id),
         requests=requests,
+        activity=resource_activity(organization_id=organization.id),
     )
 
 
@@ -560,6 +772,8 @@ class ProjectDetail:
     applications: list[Application]
     latest: dict[uuid.UUID, DeploymentRow]
     environments: list[Environment]
+    deployments: list[DeploymentRow]
+    activity: list[ActivityRow] = field(default_factory=list)
 
 
 def project_detail(project_id: uuid.UUID) -> ProjectDetail | None:
@@ -601,6 +815,10 @@ def project_detail(project_id: uuid.UUID) -> ProjectDetail | None:
             [app.id for app in applications if app.deleted_at is None]
         ),
         environments=environments,
+        deployments=recent_deployments(limit=10, project_id=project.id),
+        activity=resource_activity(
+            organization_id=project.organization.id, project_id=project.id
+        ),
     )
 
 
@@ -668,6 +886,8 @@ class AppEnvRow:
 class ApplicationDetail:
     application: Application
     environments: list[AppEnvRow]
+    deployments: list[DeploymentRow]
+    activity: list[ActivityRow] = field(default_factory=list)
 
 
 def application_detail(application_id: uuid.UUID) -> ApplicationDetail | None:
@@ -700,6 +920,12 @@ def application_detail(application_id: uuid.UUID) -> ApplicationDetail | None:
             AppEnvRow(app_env=ae, environment=ae.environment, latest=latest.get(ae.id))
             for ae in app_envs
         ],
+        deployments=recent_deployments(limit=15, application_id=application.id),
+        activity=resource_activity(
+            organization_id=application.project.organization.id,
+            project_id=application.project_id,
+            application_id=application.id,
+        ),
     )
 
 
@@ -883,7 +1109,7 @@ def user_detail(user_id: uuid.UUID) -> UserDetail | None:
     )
 
 
-# ── Requests ────────────────────────────────────────────────────────────────
+# ── Requests and activity ───────────────────────────────────────────────────
 
 
 def organization_requests(status: str) -> list[OrganizationRequest]:
@@ -900,6 +1126,173 @@ def organization_requests(status: str) -> list[OrganizationRequest]:
     else:
         query = query.order_by(OrganizationRequest.created_at.desc())
     return query.limit(200).all()
+
+
+@dataclass(frozen=True)
+class ActivityRow:
+    """Allowlisted audit presentation; never carry raw payloads or config values."""
+
+    id: int
+    timestamp: datetime.datetime | None
+    summary: str
+    actor: str
+    resource_name: str
+    application_id: uuid.UUID | None
+    project_id: uuid.UUID | None
+    organization_id: uuid.UUID | None
+
+
+_ACTIVITY_TYPES = {
+    "Configuration": "Configuration",
+    "EnvironmentConfiguration": "Shared configuration",
+    "Deployment": "Deployment",
+    "Application": "Application settings",
+    "ApplicationEnvironment": "Environment settings",
+    "Environment": "Environment",
+    "Project": "Project settings",
+    "Organization": "Organization settings",
+    "Ingress": "Ingress",
+    "Image": "Image",
+    "Release": "Release",
+    "Alert": "Alert",
+}
+_ACTIVITY_ACTIONS = {
+    "add_member": "Member added",
+    "remove_member": "Member removed",
+    "promote_member": "Member promoted to admin",
+    "demote_member": "Member admin access removed",
+}
+_ACTIVITY_VERBS = {
+    "create": "created",
+    "edit": "updated",
+    "update": "updated",
+    "delete": "deleted",
+    "fromsource": "build started",
+    "deploy": "started",
+    "restart": "restarted",
+    "rollback": "rolled back",
+    "firing": "firing",
+    "resolved": "resolved",
+}
+
+
+def resource_activity(
+    *,
+    organization_id: uuid.UUID,
+    project_id: uuid.UUID | None = None,
+    application_id: uuid.UUID | None = None,
+) -> list[ActivityRow]:
+    """Newest 30 recorded changes scoped by IDs, never names or payload metadata."""
+    # Environment audit rows have project_id but no organization_id in the view.
+    # Resolve that ancestry from the project, including soft-deleted records.
+    organization = func.coalesce(AuditLog.organization_id, Project.organization_id)
+    statement = (
+        select(
+            AuditLog.id,
+            AuditLog.timestamp,
+            AuditLog.object_type,
+            AuditLog.verb,
+            AuditLog.detail,
+            AuditLog.actor_username,
+            AuditLog.actor_email,
+            AuditLog.app_name,
+            AuditLog.project_name,
+            AuditLog.object_name,
+            AuditLog.application_id,
+            AuditLog.project_id,
+            organization.label("organization_id"),
+            case(
+                (
+                    (AuditLog.object_type == "Organization")
+                    & AuditLog.detail.in_(tuple(_ACTIVITY_ACTIONS)),
+                    AuditLog.raw_data["member_email"].astext,
+                ),
+                else_=None,
+            ).label("member_email"),
+        )
+        .select_from(AuditLog)
+        .outerjoin(Project, Project.id == AuditLog.project_id)
+        .where(
+            organization == organization_id,
+            AuditLog.object_type.in_(tuple(_ACTIVITY_TYPES)),
+        )
+    )
+    if project_id is not None:
+        statement = statement.where(AuditLog.project_id == project_id)
+    if application_id is not None:
+        statement = statement.where(AuditLog.application_id == application_id)
+    statement = statement.order_by(
+        AuditLog.timestamp.desc().nulls_last(), AuditLog.id.desc()
+    ).limit(ACTIVITY_LIMIT)
+    result: list[ActivityRow] = []
+    for row in db.session.execute(statement):
+        data = row._mapping
+        object_type = type_cast(str, data["object_type"])
+        detail = type_cast(str | None, data["detail"])
+        summary = (
+            _ACTIVITY_ACTIONS.get(detail or "")
+            if object_type == "Organization"
+            else None
+        )
+        if summary is not None and data["member_email"]:
+            summary = f"{summary}: {data['member_email']}"
+        if summary is None:
+            verb = _ACTIVITY_VERBS.get(type_cast(str, data["verb"]), "changed")
+            summary = f"{_ACTIVITY_TYPES[object_type]} {verb}"
+            if (
+                object_type in ("Configuration", "EnvironmentConfiguration")
+                and data["object_name"]
+            ):
+                summary = f"{_ACTIVITY_TYPES[object_type]} {data['object_name']} {verb}"
+        actor = type_cast(
+            str, data["actor_username"] or data["actor_email"] or "System"
+        )
+        if actor.startswith("github:") and len(parts := actor.split(":", 2)) == 3:
+            actor = parts[2]
+        result.append(
+            ActivityRow(
+                id=type_cast(int, data["id"]),
+                timestamp=type_cast(datetime.datetime | None, data["timestamp"]),
+                summary=summary,
+                actor=actor,
+                resource_name=type_cast(
+                    str,
+                    data["app_name"]
+                    or data["project_name"]
+                    or data["object_name"]
+                    or _ACTIVITY_TYPES[object_type],
+                ),
+                application_id=type_cast(uuid.UUID | None, data["application_id"]),
+                project_id=type_cast(uuid.UUID | None, data["project_id"]),
+                organization_id=type_cast(uuid.UUID, data["organization_id"]),
+            )
+        )
+    return result
+
+
+def activity_page(before: int | None) -> tuple[list[AuditLog], int | None]:
+    """Newest-first platform audit entries; returns (entries, next_before)."""
+    query = type_cast(Query[AuditLog], AuditLog.query)
+    if before:
+        query = query.filter(AuditLog.id < before)
+    entries = query.order_by(AuditLog.id.desc()).limit(PAGE_SIZE + 1).all()
+    next_before = (
+        type_cast(int, type_cast(object, entries[PAGE_SIZE - 1].id))
+        if len(entries) > PAGE_SIZE
+        else None
+    )
+    return entries[:PAGE_SIZE], next_before
+
+
+def organizations_by_id(
+    organization_ids: Iterable[uuid.UUID | None],
+) -> dict[uuid.UUID, Organization]:
+    ids = {org_id for org_id in organization_ids if org_id}
+    if not ids:
+        return {}
+    return {
+        org.id: org for org in Organization.query.filter(Organization.id.in_(ids)).all()
+    }
 
 
 # ── Search ──────────────────────────────────────────────────────────────────
