@@ -78,3 +78,23 @@ def test_user_records_require_signed_admin_access(
     assert client.get(url).status_code == 403
     _login(client, admin_user)
     assert client.get(url).status_code == 302
+
+
+@pytest.mark.parametrize("surface", ["list", "details"])
+def test_user_records_show_admin_access_controls(
+    client: FlaskClient, admin_user: User, regular_user: User, surface: str
+) -> None:
+    passkey = SigningPasskey.register(admin_user)
+    _login(client, admin_user)
+    passkey.enter(client)
+    url = _record_url(client, surface, regular_user)
+
+    page = client.get(url).get_data(as_text=True)
+
+    assert "data-admin-access-band" in page
+    assert 'action="/admin/passkey/end"' in page
+    assert "admin-passkey.js" in page
+    with client.application.test_request_context():
+        # Mirrors request.full_path, which ends in "?" when there is no query.
+        renew = url_for("admin_passkey.entry", next=url if "?" in url else f"{url}?")
+    assert f'href="{renew}"' in page

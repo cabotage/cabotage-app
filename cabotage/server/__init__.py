@@ -189,9 +189,14 @@ def create_app() -> Flask:
         static_folder="../client/static",
     )
 
+    from flask_admin.theme import Bootstrap4Theme
     from cabotage.server.models.admin import AdminIndexView
 
-    admin = Admin(name="cabotage_admin", index_view=AdminIndexView())
+    admin = Admin(
+        name="cabotage_admin",
+        index_view=AdminIndexView(),
+        theme=Bootstrap4Theme(base_template="admin/cabotage_base.html"),
+    )
 
     from cabotage.server.models.auth import User, Role, WebAuthn
 

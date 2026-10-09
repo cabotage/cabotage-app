@@ -256,6 +256,8 @@ It shows server-derived expiry and **End access**. Expiry or ending access leave
 the current page and unsaved form content in memory; **Verify again** renews access
 without reloading. Drafts and selected files are not copied into browser storage
 and do not survive a reload.
+The read-only database viewer shows the same band in its own styling; there,
+**Verify again** opens the full-page passkey check and returns to the record.
 
 Ending admin access, signing out, losing global-admin status, account deactivation,
 credential removal, and session-identifier rotation invalidate the corresponding
