@@ -234,5 +234,25 @@ LEFT JOIN transaction t ON t.id = a.transaction_id
 LEFT JOIN users u ON u.id::text = a.data->>'user_id'
 LEFT JOIN users tx_u ON tx_u.id = t.user_id
 WHERE a.object_type IN ('ApplicationEnvironment', 'Organization', 'Environment', 'User', 'Project')
+
+UNION ALL
+
+-- Shared environment configuration (versions retain deleted variables)
+SELECT a.id, t.issued_at, a.object_tx_id, a.transaction_id,
+  a.verb, a.data->>'action', a.object_type, a.object_id, ecfgv.name,
+  NULL::uuid, NULL::uuid, ecfgv.project_id, COALESCE(ecfg_proj.organization_id, ecfg_projv.organization_id),
+  NULL::text, COALESCE(ecfg_proj.name, ecfg_projv.name),
+  COALESCE(u.username, tx_u.username), COALESCE(u.email, tx_u.email), t.remote_addr,
+  ecfgv.secret, ecfgv.buildtime, ecfgv.version_id,
+  NULL::text, NULL::text,
+  NULL::integer,
+  a.data
+FROM activity a
+JOIN project_environment_configurations_version ecfgv ON a.object_type = 'EnvironmentConfiguration' AND ecfgv.id = a.object_id AND ecfgv.transaction_id = a.object_tx_id
+LEFT JOIN projects ecfg_proj ON ecfg_proj.id = ecfgv.project_id
+LEFT JOIN projects_version ecfg_projv ON ecfg_projv.id = ecfgv.project_id AND ecfg_projv.transaction_id = (SELECT max(transaction_id) FROM projects_version WHERE id = ecfgv.project_id)
+LEFT JOIN transaction t ON t.id = a.transaction_id
+LEFT JOIN users u ON u.id::text = a.data->>'user_id'
+LEFT JOIN users tx_u ON tx_u.id = t.user_id
 """
 # fmt: on
