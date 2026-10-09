@@ -237,13 +237,10 @@ def reap_pods() -> None:
     )
     if not pods.items:
         return
-    candidate = sorted(
-        pods.items,
-        key=lambda pod: assume_not_none(
+    candidate = min(pods.items, key=lambda pod: assume_not_none(
             assume_not_none(pod.status, because=K8S_OBJECT_HAS_STATUS).start_time,
             because=K8S_POD_HAS_START_TIME,
-        ),
-    )[0]
+        ))
     lookback = datetime.datetime.now().replace(
         tzinfo=datetime.UTC
     ) - datetime.timedelta(days=7)
