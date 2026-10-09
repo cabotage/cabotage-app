@@ -35,8 +35,10 @@ def publish_end(
 
 
 def read_log_stream(
-    redis_client: redis.Redis[bytes], key: str, timeout_ms: int = 5000
+    redis_client: redis.Redis[bytes], key: str, timeout_ms: int = 2000
 ) -> Generator[str | None]:
+    # Keep timeout_ms under redis-py's 5 second read limit, or the wait for
+    # new log lines fails instead of returning nothing.
     last_id = "0-0"
     while True:
         results = cast(
@@ -71,9 +73,7 @@ def refresh_heartbeat(
 
 def get_redis_client(broker_url: str | Sequence[str]) -> redis.Redis[bytes]:
     broker_url = broker_url if isinstance(broker_url, str) else broker_url[0]
-    # redis-py 8 gives up on any read after 5 seconds by default, which breaks
-    # read_log_stream while it waits for new log lines. Turn that limit off.
-    return redis.Redis.from_url(broker_url, socket_timeout=None)
+    return redis.Redis.from_url(broker_url)
 
 
 def run_and_stream(
