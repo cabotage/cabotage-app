@@ -2,16 +2,21 @@ import datetime
 import logging
 
 import kubernetes.client
-
 from celery import shared_task
 from flask import current_app
 
-from cabotage.server import db, github_app, kubernetes as kubernetes_ext
-from cabotage.server.models.projects import Deployment, Image, Release
+from cabotage._types import (
+    K8S_OBJECT_HAS_STATUS,
+    K8S_POD_HAS_START_TIME,
+    assume_not_none,
+)
 from cabotage.celery.tasks.notify import (
     dispatch_autodeploy_notification,
     dispatch_pipeline_notification,
 )
+from cabotage.server import db, github_app
+from cabotage.server import kubernetes as kubernetes_ext
+from cabotage.server.models.projects import Deployment, Image, Release
 from cabotage.utils.build_log_stream import (
     get_redis_client,
     heartbeat_key,
@@ -19,11 +24,6 @@ from cabotage.utils.build_log_stream import (
     stream_key,
 )
 from cabotage.utils.github import cabotage_url, post_deployment_status_update
-from cabotage._types import (
-    assume_not_none,
-    K8S_OBJECT_HAS_STATUS,
-    K8S_POD_HAS_START_TIME,
-)
 
 log = logging.getLogger(__name__)
 

@@ -6,10 +6,15 @@ import time
 import uuid
 from typing import TYPE_CHECKING, cast
 
+import kubernetes.client
+import kubernetes.stream
+import requests as requests_lib
+from dxf import DXF
 from flask import (
     Blueprint,
     abort,
     current_app,
+    flash,
     jsonify,
     make_response,
     redirect,
@@ -17,7 +22,6 @@ from flask import (
     request,
     session,
     url_for,
-    flash,
 )
 from flask_security import (
     current_user,
@@ -25,14 +29,8 @@ from flask_security import (
 )
 from flask_wtf import FlaskForm
 from itsdangerous import BadData
-
-import kubernetes.client
-import kubernetes.stream
 from kubernetes.client.exceptions import ApiException
 from kubernetes.stream.ws_client import RESIZE_CHANNEL
-
-from dxf import DXF
-import requests as requests_lib
 from requests.exceptions import HTTPError
 from sqlalchemy import and_, case, desc, func, or_
 from sqlalchemy.exc import DataError, IntegrityError
@@ -42,23 +40,36 @@ from sqlalchemy_continuum import version_class
 from werkzeug.datastructures import MultiDict
 from werkzeug.wrappers import Response
 
+from cabotage._types import assume_not_none
+from cabotage.celery.tasks import (
+    cleanup_app_env_k8s,
+    deploy_tailscale_operator,
+    dispatch_pipeline_notification,
+    process_github_hook,
+    run_deploy,
+    run_image_build,
+    run_release_build,
+    teardown_tailscale_operator,
+)
+from cabotage.celery.tasks.deploy import resize_deployment, scale_deployment
+from cabotage.celery.tasks.notify import dispatch_autodeploy_notification
 from cabotage.server import (
     config_writer,
     db,
     github_app,
-    kubernetes as kubernetes_ext,
     sock,
 )
-
+from cabotage.server import (
+    kubernetes as kubernetes_ext,
+)
 from cabotage.server.acl import (
-    ViewOrganizationPermission,
-    ViewProjectPermission,
-    ViewApplicationPermission,
+    AdministerApplicationPermission,
     AdministerOrganizationPermission,
     AdministerProjectPermission,
-    AdministerApplicationPermission,
+    ViewApplicationPermission,
+    ViewOrganizationPermission,
+    ViewProjectPermission,
 )
-
 from cabotage.server.models.auth import (
     GitHubAppInstallation,
     GitHubIdentity,
@@ -80,15 +91,15 @@ from cabotage.server.models.projects import (
     Hook,
     Image,
     Ingress,
-    JobLog,
     IngressHost,
     IngressPath,
+    JobLog,
     Project,
     Release,
+    activity_plugin,
     create_default_ingresses,
     pod_classes,
 )
-from cabotage.server.models.projects import activity_plugin
 from cabotage.server.models.resources import (
     PostgresResource,
     RedisResource,
@@ -96,84 +107,65 @@ from cabotage.server.models.resources import (
     postgres_size_classes,
     redis_size_classes,
 )
-
+from cabotage.server.models.utils import readable_k8s_hostname, safe_k8s_name, slugify
 from cabotage.server.query_helpers import (
-    compute_app_status_sets,
+    RelatedObjectResolver,
     compute_ae_status_sets,
+    compute_app_status_sets,
     compute_process_counts,
     compute_release_change_details,
     extract_latest_variants,
-    RelatedObjectResolver,
     split_image_processes,
 )
-from cabotage.server.models.utils import safe_k8s_name, readable_k8s_hostname, slugify
-
+from cabotage.server.user import github_installations
 from cabotage.server.user.forms import (
     AddApplicationToEnvironmentForm,
+    AddOrganizationUserForm,
     ApplicationScaleForm,
     CreateApplicationForm,
     CreateConfigurationForm,
     CreateEnvironmentConfigurationForm,
     CreateEnvironmentForm,
     CreateOrganizationForm,
+    CreatePostgresResourceForm,
     CreateProjectForm,
-    DeleteApplicationForm,
+    CreateRedisResourceForm,
     DeleteApplicationEnvironmentForm,
+    DeleteApplicationForm,
     DeleteConfigurationForm,
     DeleteEnvironmentConfigurationForm,
     DeleteEnvironmentForm,
     DeleteOrganizationForm,
+    DeletePostgresResourceForm,
     DeleteProjectForm,
+    DeleteRedisResourceForm,
     EditApplicationEnvironmentSettingsForm,
     EditApplicationSettingsForm,
     EditConfigurationForm,
     EditEnvironmentConfigurationForm,
     EditEnvironmentForm,
     EditOrganizationForm,
+    EditPostgresResourceForm,
     EditProjectSettingsForm,
-    IngressSettingsForm,
+    EditRedisResourceForm,
     IngressHostForm,
+    IngressSettingsForm,
+    ReleaseDeployForm,
     RequestOrganizationForm,
     ReviewOrganizationRequestForm,
-    TailscaleIntegrationForm,
     TailscaleIngressSettingsForm,
-    ReleaseDeployForm,
-    AddOrganizationUserForm,
-    CreatePostgresResourceForm,
-    EditPostgresResourceForm,
-    DeletePostgresResourceForm,
-    CreateRedisResourceForm,
-    EditRedisResourceForm,
-    DeleteRedisResourceForm,
+    TailscaleIntegrationForm,
 )
-from cabotage.server.user import github_installations
-
-from cabotage.utils.docker_auth import (
-    generate_docker_registry_jwt,
-)
-
-from cabotage.celery.tasks import (
-    cleanup_app_env_k8s,
-    deploy_tailscale_operator,
-    dispatch_pipeline_notification,
-    process_github_hook,
-    run_deploy,
-    run_image_build,
-    run_release_build,
-    teardown_tailscale_operator,
-)
-from cabotage.celery.tasks.notify import dispatch_autodeploy_notification
-
-from cabotage.celery.tasks.deploy import resize_deployment, scale_deployment
+from cabotage.server.websocket import close_on_abort
+from cabotage.utils import oidc
 from cabotage.utils.build_log_stream import (
     get_redis_client,
     read_log_stream,
     stream_key,
 )
-
-from cabotage.utils import oidc
-from cabotage._types import assume_not_none
-from cabotage.server.websocket import close_on_abort
+from cabotage.utils.docker_auth import (
+    generate_docker_registry_jwt,
+)
 
 if TYPE_CHECKING:
     from kubernetes.stream.ws_client import WSClient
@@ -5934,8 +5926,9 @@ def guide():
 @user_blueprint.route("/account/security")
 @login_required
 def account_security():
-    from cabotage.server.models.auth import WebAuthn
     from flask import session as _session
+
+    from cabotage.server.models.auth import WebAuthn
 
     initial_setup = _session.pop("mfa_initial_setup", False)
 
@@ -6023,6 +6016,7 @@ def account_security_verify_recovery_code():
 @login_required
 def account_security_qr():
     import io
+
     import qrcode
     import qrcode.image.svg
 
@@ -6174,11 +6168,11 @@ def application_clear_cache(org_slug, project_slug, app_slug):
     batch_api_instance = kubernetes.client.BatchV1Api(api_client)
     image = application.images.first()
     if image is not None and current_app.config["KUBERNETES_ENABLED"]:
-        from cabotage.celery.tasks.deploy import run_job
         from cabotage.celery.tasks.build import (
             _build_namespace,
             fetch_image_build_cache_volume_claim,
         )
+        from cabotage.celery.tasks.deploy import run_job
 
         buildkit_image = current_app.config["BUILDKIT_IMAGE"]
         build_namespace = _build_namespace(app_env)
@@ -6415,8 +6409,7 @@ def application_scale(org_slug, project_slug, app_slug):
 
             if current_app.config["KUBERNETES_ENABLED"]:
                 from cabotage.celery.tasks.deploy import k8s_namespace as _k8s_ns
-                from cabotage.celery.tasks.deploy import resize_cronjob
-                from cabotage.celery.tasks.deploy import suspend_cronjob
+                from cabotage.celery.tasks.deploy import resize_cronjob, suspend_cronjob
 
                 latest = app_env.latest_release_built
                 if latest:

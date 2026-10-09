@@ -1,9 +1,7 @@
 import uuid
 
 from flask_security.forms import LoginForm, RegisterFormV2
-
 from flask_wtf import FlaskForm
-
 from wtforms import (
     BooleanField,
     HiddenField,
@@ -14,14 +12,15 @@ from wtforms import (
 )
 from wtforms.validators import (
     DataRequired,
-    InputRequired,
     EqualTo,
+    InputRequired,
     Length,
     Optional,
     Regexp,
     ValidationError,
 )
 
+from cabotage._types import assume_not_none
 from cabotage.server.models.auth import Organization, OrganizationRequest
 from cabotage.server.models.projects import (
     Application,
@@ -41,7 +40,6 @@ from cabotage.server.models.resources import (
     redis_size_classes,
 )
 from cabotage.server.models.utils import slugify
-from cabotage._types import assume_not_none
 
 BIGINT_MIN = -(2**63)
 BIGINT_MAX = 2**63 - 1

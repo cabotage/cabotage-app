@@ -1,45 +1,45 @@
 import logging
 import secrets
 import time
-from typing import TYPE_CHECKING, cast
-
 from base64 import b64encode
+from typing import TYPE_CHECKING, cast
 
 import kubernetes.client
 import kubernetes.watch
 import yaml
-
 from celery import shared_task
+from flask import current_app
 from kubernetes.client.exceptions import ApiException
 from sqlalchemy.orm.attributes import flag_modified
 
-from flask import current_app
-
+from cabotage.celery.tasks.notify import (
+    dispatch_autodeploy_notification,
+    dispatch_pipeline_notification,
+)
 from cabotage.server import (
     config_writer,
     db,
     github_app,
+)
+from cabotage.server import (
     kubernetes as kubernetes_ext,
 )
-
 from cabotage.server.models.projects import (
+    DEFAULT_POD_CLASS,
     Configuration,
     Deployment,
     EnvironmentConfiguration,
     IngressHost,
     IngressSnapshot,
-    DEFAULT_POD_CLASS,
     _ingress_hostname_pairs,
     pod_classes,
 )
-
 from cabotage.server.models.utils import (
-    safe_k8s_name,
     compact_k8s_name,
     readable_k8s_hostname,
     repair_ingress_hostname,
+    safe_k8s_name,
 )
-
 from cabotage.utils.build_log_stream import (
     _HEARTBEAT_TTL,
     get_redis_client,
@@ -52,10 +52,6 @@ from cabotage.utils.github import (
     CheckRun,
     cabotage_url,
     post_deployment_status_update,
-)
-from cabotage.celery.tasks.notify import (
-    dispatch_autodeploy_notification,
-    dispatch_pipeline_notification,
 )
 
 if TYPE_CHECKING:
@@ -2349,8 +2345,9 @@ def _get_job_schedule(process_def):
 
 def _history_limit_for_schedule(schedule, hours=12):
     """Estimate how many times a cron schedule fires in the given window."""
-    from croniter import croniter
     from datetime import datetime, timedelta, timezone
+
+    from croniter import croniter
 
     now = datetime.now(timezone.utc)
     end = now + timedelta(hours=hours)

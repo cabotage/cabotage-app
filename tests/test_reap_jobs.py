@@ -5,12 +5,12 @@ import os
 from unittest.mock import MagicMock, patch
 
 from cabotage.celery.tasks.reap_jobs import (
+    DEFAULT_REAP_LIMIT,
+    _extract_resources,
     _is_finished,
     _is_succeeded,
     _parse_datetime,
-    _extract_resources,
     _reap_limit,
-    DEFAULT_REAP_LIMIT,
 )
 
 # ---------------------------------------------------------------------------

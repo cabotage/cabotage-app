@@ -12,14 +12,14 @@ import requests
 from celery import shared_task
 from flask import current_app
 
+from cabotage.celery.tasks.notify import dispatch_alert_notification
 from cabotage.server import db
-from cabotage.server.models.projects import Alert
 from cabotage.server.alerting.ingest import (
     _record_activity,
     parse_alertmanager_timestamp,
     upsert_alert,
 )
-from cabotage.celery.tasks.notify import dispatch_alert_notification
+from cabotage.server.models.projects import Alert
 
 log = logging.getLogger(__name__)
 

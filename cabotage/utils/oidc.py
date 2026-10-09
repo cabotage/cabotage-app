@@ -13,7 +13,6 @@ if TYPE_CHECKING:
     from cabotage._types.docker_auth import JWK
     from cabotage._types.vault import VaultTransitKeyResponse
 import uuid
-
 from base64 import urlsafe_b64encode
 
 from flask import current_app

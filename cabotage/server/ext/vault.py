@@ -1,10 +1,9 @@
 import os
-
 from base64 import (
     b64decode,
     b64encode,
 )
-from typing import TYPE_CHECKING, overload, cast
+from typing import TYPE_CHECKING, cast, overload
 
 if TYPE_CHECKING:
     from typing import Literal
@@ -18,7 +17,6 @@ if TYPE_CHECKING:
 
 
 import hvac
-
 from flask import g
 
 from cabotage.utils.cert_hacks import construct_cert_from_public_key

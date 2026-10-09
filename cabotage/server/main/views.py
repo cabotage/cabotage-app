@@ -1,4 +1,4 @@
-from flask import current_app, render_template, Blueprint
+from flask import Blueprint, current_app, render_template
 from flask_login import current_user
 from sqlalchemy import func
 

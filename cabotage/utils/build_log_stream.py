@@ -1,10 +1,9 @@
 # used for local buildkit emulation only
 import subprocess  # nosec
-from typing import TYPE_CHECKING, cast, Final
 from collections.abc import Sequence
+from typing import TYPE_CHECKING, Final, cast
 
 import redis
-
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterable

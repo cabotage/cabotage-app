@@ -9,9 +9,9 @@ from flask_security.models.fsqla_v3 import (
     FsWebAuthnMixin,
 )
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
-    BigInteger,
     ForeignKey,
     Integer,
     String,
@@ -19,10 +19,10 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm import Mapped, mapped_column, relationship, backref
+from sqlalchemy.orm import Mapped, backref, mapped_column, relationship
 from sqlalchemy_continuum import make_versioned
 
-from cabotage.server import db, Model
+from cabotage.server import Model, db
 from cabotage.server.models.plugins import ActivityPlugin
 from cabotage.server.models.utils import generate_k8s_identifier, slugify
 

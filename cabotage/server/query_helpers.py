@@ -17,15 +17,14 @@ from cabotage.server.models.projects import (
     Release,
 )
 
-
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from cabotage._types.query_helpers import (
-        IngressItem,
-        ConfigItem,
-        ConfigDiff,
         ChangeDetails,
+        ConfigDiff,
+        ConfigItem,
+        IngressItem,
     )
     from cabotage.utils.procfile import Procfile
 

@@ -6,15 +6,14 @@ from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from typing import Literal
-    from cabotage._types.docker_auth import Access, JWK
+
+    from cabotage._types.docker_auth import JWK, Access
 
 import uuid
-
 from base64 import (
     b32encode,
     urlsafe_b64encode,
 )
-
 
 from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey
 from cryptography.hazmat.primitives.serialization import (

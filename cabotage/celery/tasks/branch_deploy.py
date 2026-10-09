@@ -9,10 +9,11 @@ from kubernetes.client.exceptions import ApiException
 from cabotage.server import (
     db,
     github_app,
+)
+from cabotage.server import (
     kubernetes as kubernetes_ext,
 )
 from cabotage.server.models.projects import (
-    activity_plugin,
     ApplicationEnvironment,
     Configuration,
     Environment,
@@ -23,6 +24,7 @@ from cabotage.server.models.projects import (
     Ingress,
     IngressHost,
     IngressPath,
+    activity_plugin,
 )
 from cabotage.server.models.resources import PostgresResource, RedisResource
 from cabotage.server.models.utils import readable_k8s_hostname, safe_k8s_name
@@ -612,6 +614,7 @@ def _build_images_for_app_envs(app_envs, commit_sha, installation_id):
     db.session.commit()
 
     from flask import current_app
+
     from cabotage.celery.tasks import run_image_build, run_omnibus_build
 
     for image in images:
@@ -1020,7 +1023,7 @@ def _deactivate_deployment(environment):
 
     try:
         access_token = github_app.fetch_installation_access_token(installation_id)
-        from cabotage.utils.github import github_session, _github_headers
+        from cabotage.utils.github import _github_headers, github_session
 
         headers = _github_headers(access_token)
         # List all deployments for this environment

@@ -10,9 +10,8 @@ from flask_security import hash_password
 from kubernetes.client.exceptions import ApiException
 
 from cabotage.server import db
-from cabotage.server.models.auth import User
+from cabotage.server.models.auth import Organization, User
 from cabotage.server.models.auth_associations import OrganizationMember
-from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import (
     Application,
     ApplicationEnvironment,
@@ -29,7 +28,6 @@ from cabotage.server.models.resources import (
 )
 from cabotage.server.models.utils import safe_k8s_name
 from cabotage.server.wsgi import app as _app
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -1250,6 +1248,7 @@ class TestCeleryTasks:
     def _mock_k8s_apis(self):
         """Set up mock K8s APIs that return 404 for all GETs (fresh creates)."""
         import base64
+
         from kubernetes.client.exceptions import ApiException
 
         mock_custom_api = MagicMock()

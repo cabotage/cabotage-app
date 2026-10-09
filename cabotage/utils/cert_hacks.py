@@ -2,13 +2,11 @@ import base64
 import datetime
 from typing import TYPE_CHECKING
 
-
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey
 from cryptography.x509.oid import NameOID
-
 
 if TYPE_CHECKING:
     from collections.abc import Callable

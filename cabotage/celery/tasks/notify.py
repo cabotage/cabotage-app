@@ -11,8 +11,8 @@ import struct
 import uuid as _uuid
 from datetime import UTC, datetime, timedelta
 
-from celery import shared_task
 import sqlalchemy as sa
+from celery import shared_task
 from sqlalchemy.exc import IntegrityError
 
 from cabotage.server import db

@@ -1,8 +1,7 @@
 from typing import TYPE_CHECKING, cast
 
-from flask import g
-
 import kubernetes.config
+from flask import g
 from kubernetes.client.api_client import ApiClient
 
 if TYPE_CHECKING:

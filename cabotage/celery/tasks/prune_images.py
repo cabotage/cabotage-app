@@ -1,7 +1,6 @@
 import re
 
 import requests
-
 from celery import shared_task
 from dxf import DXF
 from flask import current_app

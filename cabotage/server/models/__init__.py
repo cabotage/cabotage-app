@@ -1,14 +1,12 @@
+from cabotage.server import db
+
 from .auth import (
     Organization,
     Team,
     User,
 )
-
 from .projects import Project
-from .resources import Resource, PostgresResource, RedisResource
-
-
-from cabotage.server import db
+from .resources import PostgresResource, RedisResource, Resource
 
 db.configure_mappers()
 

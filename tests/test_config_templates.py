@@ -3,9 +3,9 @@
 import pytest
 
 from cabotage.utils.config_templates import (
+    TemplateResolutionError,
     _resolve_ingress,
     _resolve_tcp_service,
-    TemplateResolutionError,
 )
 
 # ---------------------------------------------------------------------------

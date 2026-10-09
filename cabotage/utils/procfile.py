@@ -28,14 +28,13 @@ THE SOFTWARE.
 """
 
 import re
-
-
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Generator, Iterable
+    from typing import Final, TypedDict
+
     from _typeshed import StrOrBytesPath, SupportsRead
-    from collections.abc import Iterable, Generator
-    from typing import TypedDict, Final
 
     class Entry(TypedDict):
         cmd: str

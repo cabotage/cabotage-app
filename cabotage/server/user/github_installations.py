@@ -1,9 +1,9 @@
 import datetime
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+import requests
 from flask import current_app, url_for
 from itsdangerous import BadSignature, URLSafeTimedSerializer
-import requests
 from sqlalchemy import or_
 
 from cabotage.server import db, github_app

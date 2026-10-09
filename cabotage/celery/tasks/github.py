@@ -6,29 +6,6 @@ from flask import current_app
 from sqlalchemy import and_, or_
 from sqlalchemy.orm.exc import MultipleResultsFound, NoResultFound
 
-from cabotage.server import (
-    db,
-    github_app,
-)
-from cabotage.server.models.projects import (
-    activity_plugin,
-    Environment,
-    Hook,
-    Image,
-    Application,
-    ApplicationEnvironment,
-    Project,
-)
-from cabotage.server.models.auth import (
-    GitHubAppInstallation,
-    Organization,
-)
-from cabotage.server.user.github_installations import (
-    merge_repository_metadata,
-    reconcile_selected_repository_applications,
-    sync_application_repository_metadata,
-    sync_installation_repositories,
-)
 from cabotage.celery.tasks import (
     run_image_build,
     run_omnibus_build,
@@ -38,13 +15,36 @@ from cabotage.celery.tasks.branch_deploy import (
     sync_branch_deploy,
     teardown_branch_deploy,
 )
+from cabotage.celery.tasks.notify import dispatch_autodeploy_notification
+from cabotage.server import (
+    db,
+    github_app,
+)
+from cabotage.server.models.auth import (
+    GitHubAppInstallation,
+    Organization,
+)
+from cabotage.server.models.projects import (
+    Application,
+    ApplicationEnvironment,
+    Environment,
+    Hook,
+    Image,
+    Project,
+    activity_plugin,
+)
+from cabotage.server.user.github_installations import (
+    merge_repository_metadata,
+    reconcile_selected_repository_applications,
+    sync_application_repository_metadata,
+    sync_installation_repositories,
+)
 from cabotage.utils.github import (
     cabotage_url,
     github_session,
     matches_watch_paths,
     post_deployment_status_update,
 )
-from cabotage.celery.tasks.notify import dispatch_autodeploy_notification
 
 Activity = activity_plugin.activity_cls
 logger = logging.getLogger(__name__)

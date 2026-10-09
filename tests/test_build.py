@@ -1,7 +1,7 @@
 """Tests for image and release build tasks."""
 
-from datetime import UTC, datetime
 import uuid
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -313,7 +313,7 @@ class TestBuildImageBuildkit:
         image,
     ):
         """BuildError raised when no Dockerfile found."""
-        from cabotage.celery.tasks.build import build_image_buildkit, BuildError
+        from cabotage.celery.tasks.build import BuildError, build_image_buildkit
 
         mock_gi = MagicMock()
         mock_gi.get_access_token.return_value.token = "gh-token"
@@ -339,7 +339,7 @@ class TestBuildImageBuildkit:
         image,
     ):
         """BuildError raised when no Procfile found."""
-        from cabotage.celery.tasks.build import build_image_buildkit, BuildError
+        from cabotage.celery.tasks.build import BuildError, build_image_buildkit
 
         mock_gi = MagicMock()
         mock_gi.get_access_token.return_value.token = "gh-token"
@@ -393,7 +393,7 @@ class TestBuildImageBuildkit:
         image,
     ):
         """A configured procfile_path mirrors dockerfile_path and disables fallback."""
-        from cabotage.celery.tasks.build import _fetch_image_source, BuildError
+        from cabotage.celery.tasks.build import BuildError, _fetch_image_source
 
         image.application.procfile_path = "deploy/Procfile.web"
         mock_fetch_file.side_effect = [
@@ -426,7 +426,7 @@ class TestBuildImageBuildkit:
         image,
     ):
         """BuildError raised for process names with whitespace."""
-        from cabotage.celery.tasks.build import build_image_buildkit, BuildError
+        from cabotage.celery.tasks.build import BuildError, build_image_buildkit
 
         mock_gi = MagicMock()
         mock_gi.get_access_token.return_value.token = "gh-token"
@@ -463,7 +463,7 @@ class TestBuildImageBuildkit:
         image,
     ):
         """BuildError raised when the K8s Job fails."""
-        from cabotage.celery.tasks.build import build_image_buildkit, BuildError
+        from cabotage.celery.tasks.build import BuildError, build_image_buildkit
 
         mock_gi = MagicMock()
         mock_gi.get_access_token.return_value.token = "gh-token"
@@ -579,7 +579,7 @@ class TestBuildReleaseBuildkit:
         release,
     ):
         """BuildError raised when the release K8s Job fails."""
-        from cabotage.celery.tasks.build import build_release_buildkit, BuildError
+        from cabotage.celery.tasks.build import BuildError, build_release_buildkit
 
         mock_k8s_ext.kubernetes_client = MagicMock()
         pvc = MagicMock()
@@ -874,7 +874,7 @@ class TestRunImageBuild:
         image,
     ):
         """BuildError is recorded on the image record."""
-        from cabotage.celery.tasks.build import run_image_build, BuildError
+        from cabotage.celery.tasks.build import BuildError, run_image_build
 
         db_session.commit()
         mock_github_app.fetch_installation_access_token.return_value = "token"
@@ -995,7 +995,7 @@ class TestRunReleaseBuild:
         release,
     ):
         """BuildError is recorded on the release record."""
-        from cabotage.celery.tasks.build import run_release_build, BuildError
+        from cabotage.celery.tasks.build import BuildError, run_release_build
 
         release.release_metadata = {"sha": COMMIT_SHA[:40]}
         db_session.add(release)
@@ -1111,7 +1111,7 @@ class TestBuildOmnibusBuildkit:
         release,
     ):
         """BuildError raised when the K8s Job fails."""
-        from cabotage.celery.tasks.build import build_omnibus_buildkit, BuildError
+        from cabotage.celery.tasks.build import BuildError, build_omnibus_buildkit
 
         mock_fetch_token.return_value = "gh-token"
         mock_fetch_source.return_value = {
@@ -1148,7 +1148,7 @@ class TestBuildOmnibusBuildkit:
         release,
     ):
         """BuildError raised when KUBERNETES_ENABLED is False."""
-        from cabotage.celery.tasks.build import build_omnibus_buildkit, BuildError
+        from cabotage.celery.tasks.build import BuildError, build_omnibus_buildkit
 
         app.config["KUBERNETES_ENABLED"] = False
         mock_fetch_token.return_value = "gh-token"
@@ -1381,7 +1381,7 @@ class TestRunOmnibusBuild:
         image,
     ):
         """BuildError marks both image and release as errored."""
-        from cabotage.celery.tasks.build import run_omnibus_build, BuildError
+        from cabotage.celery.tasks.build import BuildError, run_omnibus_build
 
         db_session.commit()
         mock_github_app.fetch_installation_access_token.return_value = "token"

@@ -1,14 +1,14 @@
-from typing import TYPE_CHECKING, overload, cast
+from typing import TYPE_CHECKING, cast, overload
 
 if TYPE_CHECKING:
     from typing import Literal
 
     from flask import Flask
 
+    from cabotage._types.consul import ConsulResponse
+    from cabotage._types.vault import VaultSecretResponse
     from cabotage.server.ext.consul import Consul
     from cabotage.server.ext.vault import Vault
-    from cabotage._types.vault import VaultSecretResponse
-    from cabotage._types.consul import ConsulResponse
 
 
 class ConfigWriter(object):

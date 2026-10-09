@@ -4,7 +4,7 @@ from typing import Any, TypedDict
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, text
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm import Mapped, mapped_column, relationship, backref
+from sqlalchemy.orm import Mapped, backref, mapped_column, relationship
 
 from cabotage.server import Model
 

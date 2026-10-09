@@ -4,11 +4,10 @@ import sqlalchemy as sa
 import sqlalchemy.orm
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy_utils import generic_relationship
-
-from sqlalchemy_continuum.plugins.base import Plugin
 from sqlalchemy_continuum.factory import ModelFactory
+from sqlalchemy_continuum.plugins.base import Plugin
 from sqlalchemy_continuum.utils import version_class, version_obj
+from sqlalchemy_utils import generic_relationship
 
 
 class ActivityBase(object):

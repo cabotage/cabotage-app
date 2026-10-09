@@ -1,9 +1,9 @@
 import os
 
 import consul
+from flask import g
 
 from cabotage.utils.context import modified_environ
-from flask import g
 
 
 class Consul(object):

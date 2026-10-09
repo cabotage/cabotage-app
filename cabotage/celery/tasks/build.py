@@ -6,27 +6,23 @@ import re
 import secrets
 import shlex
 import subprocess  # nosec
-from typing import TYPE_CHECKING, cast
-
-from celery import shared_task
-from base64 import b64encode, b64decode
-
-import kubernetes.client
-import toml
-
-from kubernetes.client.exceptions import ApiException
-
+from base64 import b64decode, b64encode
 from tempfile import (
     TemporaryDirectory,
 )
+from typing import TYPE_CHECKING, cast
 
+import kubernetes.client
+import toml
+from celery import shared_task
 from dockerfile_parse import DockerfileParser
-from flask import current_app
 from dxf import DXF
+from flask import current_app
 from github import Github
 from github.Auth import AppAuth as GithubAppAuth
 from github.GithubException import GithubException, UnknownObjectException
 from github.GithubIntegration import GithubIntegration
+from kubernetes.client.exceptions import ApiException
 
 from cabotage.celery.tasks.deploy import (
     _safe_labels_from_application,
@@ -37,28 +33,22 @@ from cabotage.celery.tasks.notify import (
     dispatch_autodeploy_notification,
     dispatch_pipeline_notification,
 )
-
-
 from cabotage.server import (
+    config_writer,
     db,
     github_app,
-    config_writer,
+)
+from cabotage.server import (
     kubernetes as kubernetes_ext,
 )
-
 from cabotage.server.models.projects import (
-    activity_plugin,
+    Deployment,
     Environment,
     Image,
     Release,
-    Deployment,
+    activity_plugin,
 )
-
-from cabotage.utils.docker_auth import (
-    generate_docker_registry_jwt,
-    generate_kubernetes_imagepullsecrets,
-)
-
+from cabotage.utils import procfile
 from cabotage.utils.build_log_stream import (
     get_redis_client,
     publish_end,
@@ -66,13 +56,16 @@ from cabotage.utils.build_log_stream import (
     run_and_stream,
     stream_key,
 )
-from cabotage.utils.release_build_context import RELEASE_DOCKERFILE_TEMPLATE
+from cabotage.utils.docker_auth import (
+    generate_docker_registry_jwt,
+    generate_kubernetes_imagepullsecrets,
+)
 from cabotage.utils.github import (
     CheckRun,
     cabotage_url,
     post_deployment_status_update,
 )
-from cabotage.utils import procfile
+from cabotage.utils.release_build_context import RELEASE_DOCKERFILE_TEMPLATE
 
 if TYPE_CHECKING:
     from cabotage.server.models.projects import ApplicationEnvironment

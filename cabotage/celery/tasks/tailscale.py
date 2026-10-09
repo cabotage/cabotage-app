@@ -3,18 +3,20 @@ from typing import TYPE_CHECKING
 
 import kubernetes.client
 from celery import shared_task
-from kubernetes.client.exceptions import ApiException
-
 from flask import current_app
+from kubernetes.client.exceptions import ApiException
 
 from cabotage.server import (
     db,
+)
+from cabotage.server import (
     kubernetes as kubernetes_ext,
 )
 from cabotage.server.models.auth import TailscaleIntegration
 
 if TYPE_CHECKING:
     from kubernetes.client import CoreV1Api
+
     from cabotage.server.models.auth import Organization
 
 log = logging.getLogger(__name__)

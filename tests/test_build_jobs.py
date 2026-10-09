@@ -366,6 +366,7 @@ class TestReaperIgnoresBuildJobs:
     @pytest.mark.parametrize("condition", ["Complete", "Failed"])
     def test_reaper_preserves_build_and_deployment_jobs(self, condition):
         import kubernetes.client as k8s
+
         from cabotage.celery.tasks import deploy, reap_jobs
 
         with patch.object(deploy, "render_podspec", return_value=None):

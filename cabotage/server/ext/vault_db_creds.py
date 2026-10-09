@@ -1,13 +1,10 @@
 import atexit
 import hashlib
 import os
-
 from urllib.parse import urlsplit, urlunsplit
 
 import hvac
-
-from flask import current_app
-from flask import g
+from flask import current_app, g
 
 
 class VaultDBCreds(object):

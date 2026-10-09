@@ -274,8 +274,9 @@ class CheckRun:
 def _pr_advisory_lock(repo, pr_number):
     """Acquire a transaction-level advisory lock for a PR to serialize
     concurrent comment/status updates."""
-    from cabotage.server import db
     import sqlalchemy as sa
+
+    from cabotage.server import db
 
     lock_hash = hashlib.sha256(f"pr:{repo}:{pr_number}".encode()).digest()
     lock_key = struct.unpack(">q", lock_hash[:8])[0]

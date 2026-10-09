@@ -6,7 +6,6 @@ import time
 
 import jwt
 import requests
-
 from flask import request
 
 from cabotage.utils.github import github_session
