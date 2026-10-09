@@ -3040,7 +3040,7 @@ def project_application_env_config_unsubscribe(
     methods=["POST"],
 )
 @login_required
-def project_application_delete(org_slug, project_slug, app_slug):
+def project_application_delete(org_slug: str, project_slug: str, app_slug: str):
     organization = (
         Organization.query.filter_by(slug=org_slug)
         .filter(Organization.deleted_at.is_(None))
@@ -3162,7 +3162,9 @@ def organization_delete(org_slug):
     "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>"
 )
 @login_required
-def project_application(org_slug, project_slug, app_slug, env_slug=None):
+def project_application(
+    org_slug: str, project_slug: str, app_slug: str, env_slug: str | None = None
+):
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     project = Project.query.filter_by(
         organization_id=organization.id, slug=project_slug
@@ -3478,7 +3480,9 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/shell"
 )
 @login_required
-def project_application_shell(org_slug, project_slug, app_slug, env_slug=None):
+def project_application_shell(
+    org_slug: str, project_slug: str, app_slug: str, env_slug: str | None = None
+):
     if not current_app.config.get("SHELLZ_ENABLED", False):
         abort(404)
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
@@ -3784,7 +3788,7 @@ def project_applications(org_slug, project_slug):
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/config"
 )
 @login_required
-def application_config(org_slug, project_slug, app_slug):
+def application_config(org_slug: str, project_slug: str, app_slug: str):
     _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     env_slug = request.args.get("env_slug")
     app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
@@ -3875,7 +3879,9 @@ def project_application_configuration(org_slug, project_slug, app_slug, config_i
     methods=["GET", "POST"],
 )
 @login_required
-def project_application_configuration_create(org_slug, project_slug, app_slug):
+def project_application_configuration_create(
+    org_slug: str, project_slug: str, app_slug: str
+):
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     project = Project.query.filter_by(
         organization_id=organization.id, slug=project_slug
@@ -4237,7 +4243,7 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
     methods=["GET", "POST"],
 )
 @login_required
-def project_application_settings(org_slug, project_slug, app_slug):
+def project_application_settings(org_slug: str, project_slug: str, app_slug: str):
     org, project, application = cast(
         tuple[Organization, Project, Application],
         _lookup_app_context(org_slug, project_slug, app_slug, require_admin=True),
@@ -5163,7 +5169,7 @@ def _render_audit_log(scope_filter, template_context):
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/audit"
 )
 @login_required
-def application_audit_log(org_slug, project_slug, app_slug):
+def application_audit_log(org_slug: str, project_slug: str, app_slug: str):
     from cabotage.server.models.audit import AuditLog
 
     _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
@@ -5301,7 +5307,7 @@ def organization_audit_log(org_slug):
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/images"
 )
 @login_required
-def application_images(org_slug, project_slug, app_slug):
+def application_images(org_slug: str, project_slug: str, app_slug: str):
     _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     page = request.args.get("page", 1, type=int)
     env_slug = request.args.get("env_slug")
@@ -5340,7 +5346,7 @@ def application_images_legacy(application_id):
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/images/<image_id>"
 )
 @login_required
-def image_detail(org_slug, project_slug, app_slug, image_id):
+def image_detail(org_slug: str, project_slug: str, app_slug: str, image_id: str):
     _org, _project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     image = Image.query.filter_by(
         id=image_id, application_id=application.id
@@ -5423,7 +5429,9 @@ def _stream_image_build_logs(ws, image):
 )
 @close_on_abort
 @login_required
-def image_build_livelogs(ws, org_slug, project_slug, app_slug, image_id):
+def image_build_livelogs(
+    ws: Server, org_slug: str, project_slug: str, app_slug: str, image_id: str
+):
     _org, _project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     image = Image.query.filter_by(
         id=image_id, application_id=application.id
@@ -5445,7 +5453,7 @@ def image_build_livelogs_legacy(ws, image_id):
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/releases"
 )
 @login_required
-def application_releases(org_slug, project_slug, app_slug):
+def application_releases(org_slug: str, project_slug: str, app_slug: str):
     _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     page = request.args.get("page", 1, type=int)
     env_slug = request.args.get("env_slug")
@@ -5513,7 +5521,7 @@ def application_releases_legacy(application_id):
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/deployments"
 )
 @login_required
-def application_deployments(org_slug, project_slug, app_slug):
+def application_deployments(org_slug: str, project_slug: str, app_slug: str):
     _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     page = request.args.get("page", 1, type=int)
     env_slug = request.args.get("env_slug")
@@ -5575,7 +5583,7 @@ def application_deployments(org_slug, project_slug, app_slug):
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/releases/<release_id>"
 )
 @login_required
-def release_detail(org_slug, project_slug, app_slug, release_id):
+def release_detail(org_slug: str, project_slug: str, app_slug: str, release_id: str):
     _org, _project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     release = Release.query.filter_by(
         id=release_id, application_id=application.id
@@ -5653,7 +5661,9 @@ def _stream_release_build_logs(ws, release):
 )
 @close_on_abort
 @login_required
-def release_build_livelogs(ws, org_slug, project_slug, app_slug, release_id):
+def release_build_livelogs(
+    ws: Server, org_slug: str, project_slug: str, app_slug: str, release_id: str
+):
     _org, _project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     release = Release.query.filter_by(
         id=release_id, application_id=application.id
@@ -5724,7 +5734,9 @@ def _stream_deployment_logs(ws, deployment):
 )
 @close_on_abort
 @login_required
-def deployment_livelogs(ws, org_slug, project_slug, app_slug, deployment_id):
+def deployment_livelogs(
+    ws: Server, org_slug: str, project_slug: str, app_slug: str, deployment_id: str
+):
     _org, _project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     deployment = Deployment.query.filter_by(
         id=deployment_id, application_id=application.id
@@ -5746,7 +5758,9 @@ def deployment_livelogs_legacy(ws, deployment_id):
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/deployments/<deployment_id>"
 )
 @login_required
-def deployment_detail(org_slug, project_slug, app_slug, deployment_id):
+def deployment_detail(
+    org_slug: str, project_slug: str, app_slug: str, deployment_id: str
+):
     _org, _project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     deployment = Deployment.query.filter_by(
         id=deployment_id, application_id=application.id
@@ -5758,7 +5772,9 @@ def deployment_detail(org_slug, project_slug, app_slug, deployment_id):
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/deployments/<deployment_id>/logs"
 )
 @login_required
-def deployment_logs_view(org_slug, project_slug, app_slug, deployment_id):
+def deployment_logs_view(
+    org_slug: str, project_slug: str, app_slug: str, deployment_id: str
+):
     _org, _project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     deployment = Deployment.query.filter_by(
         id=deployment_id, application_id=application.id
@@ -5797,7 +5813,9 @@ def deployment_logs_view(org_slug, project_slug, app_slug, deployment_id):
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/deployments/<deployment_id>/logs/query"
 )
 @login_required
-def deployment_logs_query(org_slug, project_slug, app_slug, deployment_id):
+def deployment_logs_query(
+    org_slug: str, project_slug: str, app_slug: str, deployment_id: str
+):
     org, _project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     deployment = Deployment.query.filter_by(
         id=deployment_id, application_id=application.id
@@ -5842,7 +5860,7 @@ def deployment_detail_legacy(deployment_id):
     methods=["POST"],
 )
 @login_required
-def application_release_create(org_slug, project_slug, app_slug):
+def application_release_create(org_slug: str, project_slug: str, app_slug: str):
     org, _project, application = _lookup_app_context(org_slug, project_slug, app_slug)
 
     environment_id = request.form.get("environment_id")
@@ -6032,7 +6050,9 @@ def account_security_qr():
     methods=["POST"],
 )
 @login_required
-def application_images_build_fromsource(org_slug, project_slug, app_slug):
+def application_images_build_fromsource(
+    org_slug: str, project_slug: str, app_slug: str
+):
     org, project, application = _lookup_app_context(
         org_slug, project_slug, app_slug, require_admin=True
     )
@@ -6146,7 +6166,7 @@ def application_images_build_fromsource_legacy(application_id):
     methods=["POST"],
 )
 @login_required
-def application_clear_cache(org_slug, project_slug, app_slug):
+def application_clear_cache(org_slug: str, project_slug: str, app_slug: str):
     _org, project, application = _lookup_app_context(
         org_slug, project_slug, app_slug, require_admin=True
     )
@@ -6349,7 +6369,7 @@ def application_clear_cache_legacy(application_id):
     methods=["POST"],
 )
 @login_required
-def application_scale(org_slug, project_slug, app_slug):
+def application_scale(org_slug: str, project_slug: str, app_slug: str):
     _org, project, application = _lookup_app_context(
         org_slug, project_slug, app_slug, require_admin=True
     )
@@ -6912,7 +6932,9 @@ def _observe_backing_service_pod_join(selector, resource_id=None):
     defaults={"env_slug": None},
 )
 @login_required
-def project_application_observe(org_slug, project_slug, app_slug, env_slug=None):
+def project_application_observe(
+    org_slug: str, project_slug: str, app_slug: str, env_slug: str | None = None
+):
     org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=False
@@ -7267,7 +7289,9 @@ _BACKING_SERVICE_OBSERVE_GROUPS = {"total", "service", "type", "role", "pod"}
     defaults={"env_slug": None},
 )
 @login_required
-def project_application_observe_metric(org_slug, project_slug, app_slug, env_slug=None):
+def project_application_observe_metric(
+    org_slug: str, project_slug: str, app_slug: str, env_slug: str | None = None
+):
     workload = request.args.get("workload", "applications")
     if workload != "applications":
         return jsonify({"error": "invalid workload"}), 400
@@ -8334,7 +8358,9 @@ def _query_mimir_instant(query, tenant_id=None):
     defaults={"env_slug": None},
 )
 @login_required
-def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=None):
+def project_application_live_stats(
+    org_slug: str, project_slug: str, app_slug: str, env_slug: str | None = None
+):
     _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=False
@@ -8700,7 +8726,13 @@ def _loki_query_response(selectors, process_names, tenant_id=None):
     defaults={"env_slug": None},
 )
 @login_required
-def job_history(org_slug, project_slug, app_slug, process_name, env_slug=None):
+def job_history(
+    org_slug: str,
+    project_slug: str,
+    app_slug: str,
+    process_name: str,
+    env_slug: str | None = None,
+):
     _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=False
@@ -8739,7 +8771,9 @@ def job_history(org_slug, project_slug, app_slug, process_name, env_slug=None):
     defaults={"env_slug": None},
 )
 @login_required
-def project_application_logs_view(org_slug, project_slug, app_slug, env_slug=None):
+def project_application_logs_view(
+    org_slug: str, project_slug: str, app_slug: str, env_slug: str | None = None
+):
     _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=False
@@ -8768,7 +8802,9 @@ def project_application_logs_view(org_slug, project_slug, app_slug, env_slug=Non
     defaults={"env_slug": None},
 )
 @login_required
-def project_application_logs_query(org_slug, project_slug, app_slug, env_slug=None):
+def project_application_logs_query(
+    org_slug: str, project_slug: str, app_slug: str, env_slug: str | None = None
+):
     org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=False
