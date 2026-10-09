@@ -533,7 +533,7 @@ def _sync_statefulset_pod_annotations(apps_api, namespace, statefulset_name):
         raise
 
     metadata = statefulset.spec.template.metadata
-    current_annotations = dict((metadata.annotations or {}))
+    current_annotations = dict(metadata.annotations or {})
     annotations = {
         key: value
         for key, value in current_annotations.items()

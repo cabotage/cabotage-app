@@ -555,10 +555,10 @@ class EditConfigurationForm(FlaskForm):
                 "Configuration names cannot be changed! Delete and re-create"
             )
         raise ValidationError(
-            (
+            
                 "Configurations must be created from the "
                 "Create Application Configuration form"
-            )
+            
         )
 
 
