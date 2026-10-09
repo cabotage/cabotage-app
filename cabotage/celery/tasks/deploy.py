@@ -2334,7 +2334,7 @@ def _get_job_schedule(process_def):
 
 def _history_limit_for_schedule(schedule, hours=12):
     """Estimate how many times a cron schedule fires in the given window."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     from croniter import croniter
 
