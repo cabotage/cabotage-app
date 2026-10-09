@@ -30,8 +30,8 @@ from github.GithubIntegration import GithubIntegration
 
 from cabotage.celery.tasks.deploy import (
     _safe_labels_from_application,
-    run_deploy,
     run_job,
+    start_next_deployment,
 )
 from cabotage.celery.tasks.notify import (
     dispatch_autodeploy_notification,
@@ -2269,7 +2269,7 @@ def run_release_build(release_id: str):
                 )
             if current_app.config["KUBERNETES_ENABLED"]:
                 deployment_id = deployment.id
-                run_deploy.delay(deployment_id=deployment.id)
+                start_next_deployment(deployment.application_environment_id)
                 deployment = Deployment.query.filter_by(id=deployment_id).first()
             else:
                 from cabotage.celery.tasks.deploy import fake_deploy_release
@@ -2559,7 +2559,7 @@ def run_omnibus_build(image_id: str):
     db.session.add(activity)
     db.session.commit()
     if current_app.config["KUBERNETES_ENABLED"]:
-        run_deploy.delay(deployment_id=deployment.id)
+        start_next_deployment(deployment.application_environment_id)
     else:
         from cabotage.celery.tasks.deploy import fake_deploy_release
 

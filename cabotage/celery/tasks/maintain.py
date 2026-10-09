@@ -1,5 +1,6 @@
 import datetime
 import logging
+import uuid
 
 import kubernetes.client
 
@@ -8,6 +9,10 @@ from flask import current_app
 
 from cabotage.server import db, github_app, kubernetes as kubernetes_ext
 from cabotage.server.models.projects import Deployment, Image, Release
+from cabotage.celery.tasks.deploy import (
+    start_next_deployment,
+    try_deploy_execution_lock,
+)
 from cabotage.celery.tasks.notify import (
     dispatch_autodeploy_notification,
     dispatch_pipeline_notification,
@@ -81,7 +86,7 @@ def _dispatch_reap_failure(obj, obj_type, notification_type):
 
 
 @shared_task()
-def reap_stale_builds():
+def reap_stale_builds() -> None:
     """Find stuck image builds, release builds, and deploys with no heartbeat."""
     redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
     cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
@@ -178,17 +183,23 @@ def reap_stale_builds():
                     )
             _dispatch_reap_failure(release, "Release", "pipeline.release")
 
-    # Deployments: complete=False, error=False, updated < cutoff, no heartbeat
+    # Deployments: started, complete=False, error=False, updated < cutoff, no
+    # heartbeat, and no run_deploy task still running for the environment
     stuck_deployments = Deployment.query.filter(
+        Deployment.started_at.isnot(None),
         Deployment.complete == False,  # noqa: E712
         Deployment.error == False,  # noqa: E712
         Deployment.updated < cutoff,
     ).all()
+    reaped_app_env_ids: set[uuid.UUID] = set()
     for deployment in stuck_deployments:
         key = heartbeat_key("deploy", str(deployment.id))
-        if not redis_client.exists(key):
+        if not redis_client.exists(key) and try_deploy_execution_lock(
+            deployment.application_environment_id
+        ):
             deployment.error = True
             deployment.error_detail = "Reaped: deploy timed out with no progress"
+            reaped_app_env_ids.add(deployment.application_environment_id)
             if deployment.job_id:
                 try:
                     log_key = stream_key("deploy", deployment.job_id)
@@ -224,6 +235,9 @@ def reap_stale_builds():
             _dispatch_reap_failure(deployment, "Deployment", "pipeline.deploy")
 
     db.session.commit()
+
+    for application_environment_id in reaped_app_env_ids:
+        start_next_deployment(application_environment_id)
 
 
 @shared_task()

@@ -757,6 +757,7 @@ class Deployment(Model, Timestamp):
     deploy_metadata: Mapped[Any | None] = mapped_column(postgresql.JSONB())
     deploy_log: Mapped[str | None] = mapped_column(Text())
     job_id: Mapped[str | None] = mapped_column(String(64))
+    started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
 
     application: Mapped[Application] = relationship(back_populates="deployments")
     application_environment: Mapped[ApplicationEnvironment] = relationship(
@@ -774,6 +775,10 @@ class Deployment(Model, Timestamp):
         if self.release:
             return ReleaseSnapshot(self.release)
         return None
+
+    @property
+    def queued(self) -> bool:
+        return self.started_at is None and not self.complete and not self.error
 
 
 class JobLog(Model, Timestamp):
