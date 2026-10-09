@@ -878,9 +878,8 @@ def organization_settings(org_slug):
     if not form.name.data or request.method == "GET":
         form.name.data = organization.name
 
-    if request.method == "GET":
-        if ts_integration:
-            ts_form.client_id.data = ts_integration.client_id
+    if request.method == "GET" and ts_integration:
+        ts_form.client_id.data = ts_integration.client_id
 
     delete_form = DeleteOrganizationForm()
     delete_form.organization_id.data = str(organization.id)

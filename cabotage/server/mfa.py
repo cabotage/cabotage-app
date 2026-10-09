@@ -101,13 +101,11 @@ def register_mfa_guards(app):
         """Block password endpoints for GitHub OAuth users and intercept
         password reset requests to send a reminder email instead."""
         # Authenticated GitHub users can't change password
-        if current_user.is_authenticated:
-            if (
-                hasattr(current_user, "github_identity")
-                and current_user.github_identity
-            ):
-                if request.endpoint == "security.change_password":
-                    abort(403)
+        if current_user.is_authenticated and (
+            hasattr(current_user, "github_identity")
+            and current_user.github_identity
+        ) and request.endpoint == "security.change_password":
+            abort(403)
 
         # Intercept forgot_password POST for GitHub users
         if request.endpoint == "security.forgot_password" and request.method == "POST":

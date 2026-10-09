@@ -41,10 +41,9 @@ class Vault:
         self.vault_signing_mount = app.config.get("VAULT_SIGNING_MOUNT", "transit")
         self.vault_signing_key = app.config.get("VAULT_SIGNING_KEY", "cabotage-app")
 
-        if self.vault_token is None:
-            if os.path.exists(self.vault_token_file):
-                with open(self.vault_token_file, "r") as vault_token_file:
-                    self.vault_token = vault_token_file.read().lstrip().rstrip()
+        if self.vault_token is None and os.path.exists(self.vault_token_file):
+            with open(self.vault_token_file, "r") as vault_token_file:
+                self.vault_token = vault_token_file.read().lstrip().rstrip()
 
         # Unwrap!
         # if self.vault_token_unwrap:

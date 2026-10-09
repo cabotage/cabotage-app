@@ -24,10 +24,9 @@ class Consul:
         )
         self.consul_token = app.config.get("CONSUL_TOKEN", None)
 
-        if self.consul_token is None:
-            if os.path.exists(self.consul_token_file):
-                with open(self.consul_token_file, "r") as consul_token_file:
-                    self.consul_token = consul_token_file.read().lstrip().rstrip()
+        if self.consul_token is None and os.path.exists(self.consul_token_file):
+            with open(self.consul_token_file, "r") as consul_token_file:
+                self.consul_token = consul_token_file.read().lstrip().rstrip()
 
         app.teardown_appcontext(self.teardown)
 
