@@ -1,0 +1,50 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon %}
+
+{# Entry opens admin access only. Action verification is followed by a separate
+   in-page impact review; only its explicit Confirm click replays the request. #}
+{% set v = admin_verification %}
+{% set is_entry = v.kind == 'entry' %}
+
+{% block title %}{{ 'Admin access' if is_entry else 'Confirm action' }} · Cabotage{% endblock title %}
+
+{% block resource_path %}
+  <div class="resource-path flex">
+    <span class="resource-path-sep">/</span>
+    <span class="resource-path-current resource-path-item">admin</span>
+  </div>
+{% endblock resource_path %}
+
+{% block content %}
+  <div class="adm-gate" data-csrf-token="{{ csrf_token() }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="flex items-center gap-2 mb-2">
+      {{ icon('key', 'w-4 h-4 text-base-content/60') }}
+      <h1 class="text-lg font-semibold">{{ 'Admin access' if is_entry else 'Verify before review' }}</h1>
+    </div>
+
+    {% if is_entry %}
+      <p class="text-sm text-base-content/60">Verify a passkey on this device to open admin access. Access ends after 15 minutes, on sign-out, or when you end it.</p>
+    {% else %}
+      <p class="text-sm text-base-content/70">Verify your passkey, then review the target and impact. Nothing changes until you explicitly confirm on the next step.</p>
+      <p class="adm-sub mt-2">Cancelling leaves the action unapplied.</p>
+      {% if v.replay and v.replay.body %}
+        <p class="adm-sub mt-2">Your submitted values stay in this page, not displayed, so it can resend the form after you confirm.</p>
+      {% endif %}
+    {% endif %}
+
+    <div class="flex flex-wrap items-center gap-2 mt-4">
+      <button type="button" class="btn btn-primary btn-sm gap-1.5" data-admin-passkey-verify>
+        {{ icon('key', 'w-3.5 h-3.5') }} Verify with passkey
+      </button>
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('main.home') if is_entry else v.return_url }}">Cancel</a>
+    </div>
+    <p class="adm-error" role="alert" data-admin-passkey-error hidden></p>
+    <noscript><p class="adm-error">Passkey verification needs JavaScript.</p></noscript>
+  </div>
+  <script id="admin-passkey-data" type="application/json">{{ admin_verification | tojson }}</script>
+{% endblock content %}
+
+{% block js %}
+  <script src="{{ url_for('static', filename='admin-passkey.js') }}"></script>
+{% endblock js %}

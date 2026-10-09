@@ -1,0 +1,27 @@
+{% extends 'admin/base.html' %}
+{#- Flask-Admin renders Bootstrap pages, not _base.html; same band hooks, Bootstrap styling. -#}
+
+{% block page_body %}
+  {% set admin_access = admin_access_state() if current_user.is_authenticated and current_user.admin else none %}
+  {% if admin_access and admin_access.active %}
+    <div class="sticky-top d-flex flex-wrap align-items-center justify-content-between px-3 py-1 small bg-warning text-dark"
+         data-admin-access-band data-ended-text="Verify again to keep browsing records."
+         data-expires-at="{{ admin_access.expires_at }}" data-server-time="{{ admin_access.server_time }}">
+      <div>
+        <strong data-admin-access-label role="status">Admin access</strong>
+        <span class="ml-1" data-admin-access-countdown>Passkey verified</span>
+      </div>
+      <div class="d-flex align-items-center">
+        {#- Read-only records have no drafts to keep, so renewal uses the full-page gate. -#}
+        <a class="btn btn-sm btn-outline-dark py-0" data-admin-access-renew hidden
+           href="{{ url_for('admin_passkey.entry', next=request.full_path) }}">Verify again</a>
+        <form class="m-0" method="post" action="{{ url_for('admin_passkey.end') }}" data-admin-access-end>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-sm btn-outline-dark py-0">End access</button>
+        </form>
+      </div>
+    </div>
+    <script src="{{ url_for('static', filename='admin-passkey.js') }}" defer></script>
+  {% endif %}
+  {{ super() }}
+{% endblock %}
