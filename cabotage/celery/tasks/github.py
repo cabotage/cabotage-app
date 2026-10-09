@@ -346,9 +346,7 @@ def process_installation_repositories_hook(hook):
                 )
             )
         return True
-    if action == "added":
-        return True
-    return False
+    return action == "added"
 
 
 def process_installation_target_hook(hook):
