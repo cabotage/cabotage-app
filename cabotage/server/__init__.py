@@ -99,7 +99,7 @@ def _sentry_before_send(event, hint):
     gunicorn that a WebSocket connection has closed (not an error)."""
     exc_info = hint.get("exc_info")
     if exc_info:
-        exc_type, exc_value, tb = exc_info
+        exc_type, _exc_value, tb = exc_info
         if exc_type is StopIteration and tb is not None:
             # Walk to the innermost frame
             while tb.tb_next:
