@@ -6,11 +6,19 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 14
-    open-pull-requests-limit: 1
+    open-pull-requests-limit: 2
     groups:
+      # Client majors track Kubernetes minors (36 -> 1.36); review them alone.
+      kubernetes:
+        patterns:
+          - "kubernetes"
+          - "kubernetes-stubs-*"
       python:
         patterns:
           - "*"
+        exclude-patterns:
+          - "kubernetes"
+          - "kubernetes-stubs-*"
       python-security:
         applies-to: security-updates
         patterns:

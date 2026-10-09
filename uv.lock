@@ -385,7 +385,7 @@ requires-dist = [
     { name = "gunicorn" },
     { name = "humanize" },
     { name = "hvac" },
-    { name = "kubernetes" },
+    { name = "kubernetes", specifier = ">=36" },
     { name = "pathspec" },
     { name = "psycopg", extras = ["binary"] },
     { name = "py-consul" },
