@@ -10,7 +10,7 @@ from sqlalchemy_continuum.utils import version_class, version_obj
 from sqlalchemy_utils import generic_relationship
 
 
-class ActivityBase(object):
+class ActivityBase:
     id = sa.Column(
         sa.BigInteger,
         sa.schema.Sequence("activity_id_seq"),

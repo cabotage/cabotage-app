@@ -22,7 +22,7 @@ from flask import g
 from cabotage.utils.cert_hacks import construct_cert_from_public_key
 
 
-class Vault(object):
+class Vault:
     def __init__(self, app=None):
         self.app = app
         if app is not None:

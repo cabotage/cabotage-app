@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from cabotage.server.ext.vault import Vault
 
 
-class ConfigWriter(object):
+class ConfigWriter:
     def __init__(
         self,
         app: Flask | None = None,

@@ -7,7 +7,7 @@ import hvac
 from flask import current_app, g
 
 
-class VaultDBCreds(object):
+class VaultDBCreds:
     def __init__(self, app=None):
         self.app = app
         if app is not None:
