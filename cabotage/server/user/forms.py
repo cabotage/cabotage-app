@@ -924,7 +924,6 @@ class TailscaleIntegrationForm(FlaskForm):
 class TailscaleIngressSettingsForm(FlaskForm):
     """Placeholder — tags are now derived from the platform config."""
 
-    pass
 
 
 class CreateEnvironmentConfigurationForm(FlaskForm):

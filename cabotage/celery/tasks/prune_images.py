@@ -61,7 +61,6 @@ def _prune_repository(repository_name, dry_run=False):
                         client.del_alias(a)
                 except requests.exceptions.HTTPError as e:
                     print(e)
-                    pass
             else:
                 print(f"retaining {repository_name}:{a}")
         for a in release_aliases:
@@ -72,12 +71,10 @@ def _prune_repository(repository_name, dry_run=False):
                         client.del_alias(a)
                 except requests.exceptions.HTTPError as e:
                     print(e)
-                    pass
             else:
                 print(f"retaining {repository_name}:{a}")
     except requests.exceptions.HTTPError as e:
         print(e)
-        pass
 
 
 @shared_task()
