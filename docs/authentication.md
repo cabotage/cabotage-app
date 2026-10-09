@@ -278,7 +278,10 @@ database-backed revocation checks are cached for at most one second per request.
 The console refuses self-lockout and removal of the last active global admin with
 a registered passkey. Normal account-security rules still permit removing a last
 passkey when another MFA method remains; that account then needs a new
-user-verifying passkey to enter the console.
+user-verifying passkey to enter the console. This applies to the last active global
+admin with a passkey too, including while another admin is being demoted: the
+platform can then have no admin able to enter the console until that admin signs
+in with their remaining MFA method and enrolls a new passkey.
 
 The overview reuses `/infra/observe` for CPU, memory, and network totals, including
 its configured Mimir source and authorization. Infrastructure metrics require
