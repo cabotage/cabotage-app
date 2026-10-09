@@ -590,9 +590,8 @@ class TestBuildReleaseBuildkit:
 
         with patch(
             "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
-        ):
-            with pytest.raises(BuildError):
-                build_release_buildkit(release)
+        ), pytest.raises(BuildError):
+            build_release_buildkit(release)
 
 
 # ---------------------------------------------------------------------------
@@ -631,11 +630,10 @@ class TestRunImageBuild:
 
         with patch(
             "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
-        ):
-            with patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
-                mock_check_cls.return_value = MagicMock()
-                mock_check_cls.create.return_value = MagicMock(check_run_id=None)
-                run_image_build(image_id=image.id)
+        ), patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
+            mock_check_cls.return_value = MagicMock()
+            mock_check_cls.create.return_value = MagicMock(check_run_id=None)
+            run_image_build(image_id=image.id)
 
         # Image should be marked as built
         db_session.refresh(image)
@@ -684,11 +682,10 @@ class TestRunImageBuild:
 
         with patch(
             "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
-        ):
-            with patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
-                mock_check_cls.return_value = MagicMock()
-                mock_check_cls.create.return_value = MagicMock(check_run_id=None)
-                run_image_build(image_id=image.id)
+        ), patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
+            mock_check_cls.return_value = MagicMock()
+            mock_check_cls.create.return_value = MagicMock(check_run_id=None)
+            run_image_build(image_id=image.id)
 
         releases = Release.query.filter_by(
             application_id=image.application_id,
@@ -737,12 +734,11 @@ class TestRunImageBuild:
 
         with patch(
             "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
-        ):
-            with patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
-                mock_check = MagicMock()
-                mock_check_cls.return_value = mock_check
-                mock_check_cls.create.return_value = MagicMock(check_run_id=None)
-                run_image_build(image_id=branch_deploy_image.id)
+        ), patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
+            mock_check = MagicMock()
+            mock_check_cls.return_value = mock_check
+            mock_check_cls.create.return_value = MagicMock(check_run_id=None)
+            run_image_build(image_id=branch_deploy_image.id)
 
         db_session.refresh(branch_deploy_image)
         assert branch_deploy_image.built is True
@@ -883,12 +879,11 @@ class TestRunImageBuild:
 
         with patch(
             "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
-        ):
-            with patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
-                mock_check_cls.return_value = MagicMock()
-                mock_check_cls.create.return_value = MagicMock(check_run_id=None)
-                with pytest.raises(BuildError):
-                    run_image_build(image_id=image.id)
+        ), patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
+            mock_check_cls.return_value = MagicMock()
+            mock_check_cls.create.return_value = MagicMock(check_run_id=None)
+            with pytest.raises(BuildError):
+                run_image_build(image_id=image.id)
 
         db_session.refresh(image)
         assert image.error is True
@@ -931,11 +926,10 @@ class TestRunReleaseBuild:
 
         with patch(
             "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
-        ):
-            with patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
-                mock_check = MagicMock()
-                mock_check_cls.from_metadata.return_value = mock_check
-                run_release_build(release_id=release.id)
+        ), patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
+            mock_check = MagicMock()
+            mock_check_cls.from_metadata.return_value = mock_check
+            run_release_build(release_id=release.id)
 
         db_session.refresh(release)
         assert release.built is True
@@ -972,10 +966,9 @@ class TestRunReleaseBuild:
 
         with patch(
             "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
-        ):
-            with patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
-                mock_check_cls.from_metadata.return_value = MagicMock()
-                run_release_build(release_id=release.id)
+        ), patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
+            mock_check_cls.from_metadata.return_value = MagicMock()
+            run_release_build(release_id=release.id)
 
         from cabotage.server.models.projects import Deployment
 
@@ -1006,12 +999,11 @@ class TestRunReleaseBuild:
 
         with patch(
             "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
-        ):
-            with patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
-                mock_check_cls.from_metadata.return_value = MagicMock()
-                # BuildError is caught internally by run_release_build
-                # (it records the error but doesn't re-raise)
-                run_release_build(release_id=release.id)
+        ), patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
+            mock_check_cls.from_metadata.return_value = MagicMock()
+            # BuildError is caught internally by run_release_build
+            # (it records the error but doesn't re-raise)
+            run_release_build(release_id=release.id)
 
         db_session.refresh(release)
         assert release.error is True
@@ -1253,11 +1245,10 @@ class TestRunOmnibusBuild:
 
         with patch(
             "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
-        ):
-            with patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
-                mock_check_cls.return_value = MagicMock()
-                mock_check_cls.create.return_value = MagicMock(check_run_id=None)
-                run_omnibus_build(image_id=image.id)
+        ), patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
+            mock_check_cls.return_value = MagicMock()
+            mock_check_cls.create.return_value = MagicMock(check_run_id=None)
+            run_omnibus_build(image_id=image.id)
 
         # Image updated
         db_session.refresh(image)
@@ -1314,11 +1305,10 @@ class TestRunOmnibusBuild:
 
         with patch(
             "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
-        ):
-            with patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
-                mock_check_cls.return_value = MagicMock()
-                mock_check_cls.create.return_value = MagicMock(check_run_id=None)
-                run_omnibus_build(image_id=branch_deploy_image.id)
+        ), patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
+            mock_check_cls.return_value = MagicMock()
+            mock_check_cls.create.return_value = MagicMock(check_run_id=None)
+            run_omnibus_build(image_id=branch_deploy_image.id)
 
         db_session.refresh(branch_deploy_image)
         assert branch_deploy_image.built is False
@@ -1390,12 +1380,11 @@ class TestRunOmnibusBuild:
 
         with patch(
             "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
-        ):
-            with patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
-                mock_check_cls.return_value = MagicMock()
-                mock_check_cls.create.return_value = MagicMock(check_run_id=None)
-                with pytest.raises(BuildError):
-                    run_omnibus_build(image_id=image.id)
+        ), patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
+            mock_check_cls.return_value = MagicMock()
+            mock_check_cls.create.return_value = MagicMock(check_run_id=None)
+            with pytest.raises(BuildError):
+                run_omnibus_build(image_id=image.id)
 
         db_session.refresh(image)
         assert image.error is True
@@ -1436,15 +1425,13 @@ class TestRunOmnibusBuild:
 
         with patch(
             "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
-        ):
-            with patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
-                mock_check_cls.return_value = MagicMock()
-                mock_check_cls.create.return_value = MagicMock(check_run_id=None)
-                with patch(
-                    "cabotage.celery.tasks.build.run_release_build"
-                ) as mock_release:
-                    with patch("cabotage.celery.tasks.build.run_deploy"):
-                        run_omnibus_build(image_id=image.id)
+        ), patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls:
+            mock_check_cls.return_value = MagicMock()
+            mock_check_cls.create.return_value = MagicMock(check_run_id=None)
+            with patch(
+                "cabotage.celery.tasks.build.run_release_build"
+            ) as mock_release, patch("cabotage.celery.tasks.build.run_deploy"):
+                run_omnibus_build(image_id=image.id)
 
         mock_release.delay.assert_not_called()
 
