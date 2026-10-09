@@ -5290,6 +5290,16 @@ def environment_audit_log(org_slug, project_slug, env_slug):
 
     # Get all app_env IDs for this environment
     env_ae_ids = [ae.id for ae in environment.active_application_environments]
+    shared_config_version = version_class(EnvironmentConfiguration)
+    shared_config_in_environment = (
+        db.session.query(shared_config_version.id)
+        .filter(
+            shared_config_version.id == AuditLog.object_id,
+            shared_config_version.transaction_id == AuditLog.object_tx_id,
+            shared_config_version.environment_id == environment.id,
+        )
+        .exists()
+    )
 
     scope = and_(
         AuditLog.project_id == project.id,
@@ -5299,7 +5309,14 @@ def environment_audit_log(org_slug, project_slug, env_slug):
                 if env_ae_ids
                 else False
             ),
-            AuditLog.application_environment_id.is_(None),
+            and_(
+                AuditLog.application_environment_id.is_(None),
+                AuditLog.object_type != "EnvironmentConfiguration",
+            ),
+            and_(
+                AuditLog.object_type == "EnvironmentConfiguration",
+                shared_config_in_environment,
+            ),
         ),
     )
 

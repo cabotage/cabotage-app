@@ -203,7 +203,7 @@
               {% else %}
                 <span class="audit-action">{{ verb }}</span>
               {% endif %}
-              <span class="audit-object-type">{{ e.object_type }}</span>
+              <span class="audit-object-type">{{ 'Shared configuration' if e.object_type == 'EnvironmentConfiguration' else e.object_type }}</span>
               {% if e.object_name %}
                 <code class="audit-detail-code">{% if e.object_type == 'Image' and not e.object_name.startswith('#') %}#{% endif %}{% if e.object_type == 'Release' and not e.object_name.startswith('v') %}v{% endif %}{{ e.object_name }}</code>
               {% endif %}

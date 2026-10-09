@@ -1,0 +1,59 @@
+{% extends "admin_console/_layout.html" %}
+{% from "_macros.html" import page_header, icon %}
+{% from "admin_console/_macros.html" import crumbs, when %}
+
+{% block page_title %}Activity{% endblock page_title %}
+{% block console_crumbs %}{{ crumbs([{'label': 'activity'}]) }}{% endblock console_crumbs %}
+
+{% block console %}
+  {% call page_header('Activity') %}{% endcall %}
+
+  <div class="adm-panel">
+    {% if entries %}
+      <table class="adm-table">
+        <thead>
+          <tr>
+            <th>Event</th>
+            <th>Scope</th>
+            <th class="adm-hide-sm">Actor</th>
+            <th class="end">When</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in entries %}
+            {% set org = organizations.get(e.organization_id) %}
+            <tr>
+              <td>
+                <span class="adm-primary">{{ e.verb | capitalize }}</span>
+                <span class="adm-sub">{{ e.object_type }}</span>
+                {% if e.object_name %}<span class="adm-mono">{{ e.object_name }}</span>{% endif %}
+                {% if e.detail %}<div class="adm-sub">{{ e.detail | replace('_', ' ') }}</div>{% endif %}
+              </td>
+              <td class="adm-sub">
+                {% if org %}<a class="adm-link" href="{{ url_for('admin_console.organization', organization_id=org.id) }}">{{ org.slug | admin_slug }}</a>{% endif %}
+                {% if e.project_id %}/ <a class="adm-link" href="{{ url_for('admin_console.project', project_id=e.project_id) }}">{{ e.project_name or 'project' }}</a>{% endif %}
+                {% if e.application_id %}/ <a class="adm-link" href="{{ url_for('admin_console.application', application_id=e.application_id) }}">{{ e.app_name or 'app' }}</a>{% endif %}
+                {% if e.object_type == 'User' and e.object_id %}<a class="adm-link" href="{{ url_for('admin_console.user', user_id=e.object_id) }}">account</a>{% endif %}
+                {% if not org and not e.project_id and not e.application_id and e.object_type != 'User' %}—{% endif %}
+              </td>
+              <td class="adm-hide-sm">
+                {% if e.actor_username %}{{ e.actor_username | display_username }}{% else %}<span class="adm-sub">system</span>{% endif %}
+                {% if e.remote_addr %}<div class="adm-sub adm-mono">{{ e.remote_addr }}</div>{% endif %}
+              </td>
+              <td class="end adm-sub">{{ when(e.timestamp) }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="adm-empty">{% if before %}No older activity.{% else %}No activity recorded yet.{% endif %}</div>
+    {% endif %}
+  </div>
+
+  {% if before or next_before %}
+    <nav class="adm-pager" aria-label="Pagination">
+      {% if before %}<a class="btn btn-ghost btn-xs" href="{{ url_for('admin_console.activity') }}">{{ icon('chevron-left', 'w-3.5 h-3.5') }} Newest</a>{% else %}<span></span>{% endif %}
+      {% if next_before %}<a class="btn btn-ghost btn-xs" href="{{ url_for('admin_console.activity', before=next_before) }}">Older {{ icon('chevron-right', 'w-3.5 h-3.5') }}</a>{% endif %}
+    </nav>
+  {% endif %}
+{% endblock console %}

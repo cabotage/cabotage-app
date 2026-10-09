@@ -1,6 +1,6 @@
 {% extends "admin_console/_layout.html" %}
-{% from "_macros.html" import page_header %}
-{% from "admin_console/_macros.html" import crumbs, native, deleted_badge, deploy_state, when %}
+{% from "_macros.html" import page_header, icon %}
+{% from "admin_console/_macros.html" import crumbs, native, deleted_badge, deploy_state, state_dot, deployment_table, activity_feed, when %}
 
 {% block page_title %}{{ app.name }}{% endblock page_title %}
 {% block console_crumbs %}{{ crumbs([
@@ -29,6 +29,16 @@
     <p class="adm-note adm-note-warn">Deleted {{ when(gone) }}. Kubernetes cleanup was queued at deletion; shown read-only.</p>
   {% endif %}
 
+  {% set live_envs = [] %}
+  {% for row in detail.environments %}
+    {% if live and not row.app_env.deleted_at and not row.environment.deleted_at %}{% set _ = live_envs.append(row) %}{% endif %}
+  {% endfor %}
+  {% set attention = live_envs | selectattr('latest') | selectattr('latest.status', 'in', ['failed', 'deploying']) | list %}
+  {% set deployed = live_envs | selectattr('latest') | selectattr('latest.status', 'equalto', 'deployed') | list %}
+  {% set never = live_envs | rejectattr('latest') | list %}
+
+  <div class="adm-detail-layout">
+    <div class="adm-detail-main">
       <div class="adm-panel">
         <dl class="adm-facts">
           <div><dt>ID</dt><dd class="adm-mono">{{ app.id }}</dd></div>
@@ -81,4 +91,76 @@
         </div>
       </section>
 
+      <section class="adm-section">
+        <div class="adm-section-head">
+          <h2 class="adm-label">Recent deployments</h2>
+          <a class="adm-link adm-sub" href="{{ url_for('admin_console.deployments', mode='history', status='all', days='all', application_id=app.id) }}">Full history</a>
+        </div>
+        {{ deployment_table(detail.deployments, show_scope=false) }}
+      </section>
+    </div>
+
+    <aside class="adm-detail-rail" aria-labelledby="ops-label">
+      <div class="adm-section-head">
+        <h2 id="ops-label" class="adm-label">Operations</h2>
+      </div>
+      <div class="adm-panel adm-att adm-activity-scroll" role="region" aria-label="Application operations and recent changes" tabindex="0">
+
+        <section class="adm-att-group" aria-labelledby="rail-latest">
+          <div class="adm-att-head">
+            <h3 id="rail-latest" class="adm-att-title">{{ icon('activity', 'w-3.5 h-3.5') }} Latest deployments</h3>
+            {% if live_envs %}<span class="adm-sub"><span class="adm-num">{{ live_envs | length }}</span> environment{{ 's' if live_envs | length != 1 }} shown</span>{% endif %}
+          </div>
+          {% if not live_envs %}
+            <p class="adm-att-empty">{% if live %}Not enrolled in any environment.{% else %}Read-only; native pages are unavailable.{% endif %}</p>
+          {% else %}
+            {% if attention %}
+              <ul class="adm-att-list">
+                {% for row in attention %}
+                  {% set failed = row.latest.status == 'failed' %}
+                  <li>
+                    <div class="adm-att-main">
+                      <span class="adm-state {% if failed %}adm-state-failed{% else %}adm-state-deploying{% endif %}">{{ state_dot(row.latest) }}<span class="adm-primary">{{ row.environment.name if project.environments_enabled else 'Default' }}</span></span>
+                      <div class="adm-sub">{% if failed %}Failed{% else %}Deploying since{% endif %} {{ when(row.latest.created) }}{% if row.latest.version %} · <span class="adm-num">v{{ row.latest.version }}</span>{% endif %}</div>
+                    </div>
+                    <div class="adm-att-actions">
+                      <a class="btn btn-ghost btn-xs" href="{{ url_for('user.deployment_detail', deployment_id=row.latest.id, **slugs) }}">Details</a>
+                      <a class="btn btn-ghost btn-xs" href="{{ url_for('user.deployment_logs_view', deployment_id=row.latest.id, **slugs) }}">Logs</a>
+                    </div>
+                  </li>
+                {% endfor %}
+              </ul>
+            {% endif %}
+            <p class="adm-att-more">
+              {%- if deployed %}<span class="adm-state">{{ state_dot(deployed[0].latest) }}<span><span class="adm-num">{{ deployed | length }}</span> completed</span></span>{% endif -%}
+              {%- if deployed and never %} · {% endif -%}
+              {%- if never %}<span class="adm-state">{{ state_dot(none) }}<span><span class="adm-num">{{ never | length }}</span> never deployed</span></span>{% endif -%}
+              {%- if not deployed and not never and attention %}No listed environment has a completed latest deployment.{% endif -%}
+            </p>
+          {% endif %}
+        </section>
+
+        {% if live %}
+          <section class="adm-att-group" aria-labelledby="rail-links">
+            <div class="adm-att-head">
+              <h3 id="rail-links" class="adm-att-title">{{ icon('arrow-up-right', 'w-3.5 h-3.5') }} Native pages</h3>
+            </div>
+            <p class="adm-att-more adm-native">
+              <a class="btn btn-ghost btn-xs" href="{{ url_for('user.application_releases', **slugs) }}">Releases</a>
+              <a class="btn btn-ghost btn-xs" href="{{ url_for('user.application_images', **slugs) }}">Images</a>
+              <a class="btn btn-ghost btn-xs" href="{{ url_for('user.application_audit_log', **slugs) }}">Audit log</a>
+            </p>
+          </section>
+        {% endif %}
+
+        <section class="adm-att-group" aria-labelledby="rail-changes">
+          <div class="adm-att-head">
+            <h3 id="rail-changes" class="adm-att-title">{{ icon('clock', 'w-3.5 h-3.5') }} Recent changes</h3>
+          </div>
+          {{ activity_feed(detail.activity, empty='No recorded changes to this application.', show_resource=false) }}
+        </section>
+
+      </div>
+    </aside>
+  </div>
 {% endblock console %}

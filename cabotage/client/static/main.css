@@ -4862,6 +4862,8 @@ a.obs-pod-link:hover {
 .adm-att-list > li + li { border-top: 1px solid var(--border-color-subtle); }
 .adm-att-main { flex: 1 1 12rem; min-width: 0; }
 .adm-att-main > * + * { margin-top: 0.125rem; }
+.adm-att-detail { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.adm-att-actions { display: flex; gap: 0.25rem; flex-shrink: 0; }
 .adm-att-row { padding: 0.25rem 1rem 0.875rem; font-size: 0.8125rem; }
 .adm-att-row > * + * { margin-top: 0.25rem; }
 .adm-att-row .adm-state { white-space: normal; align-items: flex-start; }
@@ -4882,5 +4884,22 @@ a.obs-pod-link:hover {
   .adm-gate { margin: 1.5rem auto; }
 }
 
+/* Detail pages keep the record primary and its scoped activity alongside it. */
+.adm-detail-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2rem; align-items: start; }
+.adm-detail-main, .adm-detail-rail { min-width: 0; }
+.adm-detail-rail .adm-section:first-child { margin-top: 0; }
+.adm-activity-scroll { overflow-wrap: anywhere; }
+.adm-activity-scroll:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; border-radius: 0.75rem; }
+@media (min-width: 1280px) {
+  .adm-detail-layout { grid-template-columns: minmax(0, 1fr) 20rem; }
+  .adm-detail-rail { position: sticky; top: 9rem; }
+  .adm-activity-scroll { max-height: max(14rem, calc(100dvh - 13rem)); overflow-y: auto; overscroll-behavior-y: contain; }
+}
 .adm-request-target { scroll-margin-top: 9rem; }
 .adm-request-target:target td { background: var(--hover-overlay-strong); }
+.adm-search .adm-search-env { flex: 0 1 11rem; }
+@media (max-width: 767px) {
+  .adm-search:has(.adm-search-env) { flex-wrap: wrap; max-width: none; }
+  .adm-search:has(.adm-search-env) input[type="search"] { flex-basis: 100%; }
+  .adm-search .adm-search-env { flex: 1 1 9rem; }
+}

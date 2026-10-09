@@ -102,6 +102,42 @@
           {% endif %}
         </section>
 
+        <section class="adm-att-group" aria-labelledby="att-failed">
+          <div class="adm-att-head">
+            <h3 id="att-failed" class="adm-att-title">{{ icon('x-circle', 'w-3.5 h-3.5') }} Latest deploy failed</h3>
+            <a class="adm-link adm-sub" href="{{ url_for('admin_console.deployments', mode='triage', status='failed', days='1') }}" title="Latest deployment per live application environment, started in the last 24 hours">Last 24 hours</a>
+          </div>
+          {% if overview.failed %}
+            <ul class="adm-att-list">
+              {% for row in overview.failed[:4] %}
+                <li>
+                  <div class="adm-att-main">
+                    <span class="adm-state adm-state-failed"><span class="status-dot status-dot-error" aria-hidden="true"></span><a class="adm-link adm-primary" href="{{ url_for('admin_console.application', application_id=row.application_id) }}">{{ row.application_name }}</a></span>
+                    <div class="adm-sub adm-mono">{{ row.organization_slug | admin_slug }}/{{ row.project_slug | admin_slug }}{% if row.environments_enabled and row.environment_name %} · {{ row.environment_name }}{% endif %}{% if row.version %} · v{{ row.version }}{% endif %}</div>
+                    <div class="adm-sub">Failed {{ when(row.created) }}{% if not row.is_live %} · deleted since{% endif %}</div>
+                  </div>
+                  {% if row.is_live %}
+                    <div class="adm-att-actions">
+                      <a class="btn btn-ghost btn-xs" href="{{ url_for('user.deployment_detail', org_slug=row.organization_slug, project_slug=row.project_slug, app_slug=row.application_slug, deployment_id=row.id) }}">Details</a>
+                      <a class="btn btn-ghost btn-xs" href="{{ url_for('user.deployment_logs_view', org_slug=row.organization_slug, project_slug=row.project_slug, app_slug=row.application_slug, deployment_id=row.id) }}">Logs</a>
+                    </div>
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+            {% if overview.failed | length > 4 %}
+              <p class="adm-att-more"><a class="adm-link" href="{{ url_for('admin_console.deployments', mode='triage', status='failed', days='1') }}">All failing environments</a></p>
+            {% endif %}
+          {% else %}
+            <p class="adm-att-empty">No live environment's latest deployment failed in the last 24 hours.</p>
+          {% endif %}
+          {% if overview.running %}
+            <p class="adm-att-more">
+              <a class="adm-link adm-state" href="{{ url_for('admin_console.deployments', mode='triage', status='running', days='1') }}"><span class="status-dot status-dot-warning" aria-hidden="true"></span><span class="adm-num">{{ overview.running | length }}{% if overview.running | length >= 8 %}+{% endif %}</span> in progress</a>
+            </p>
+          {% endif %}
+        </section>
+
         <section class="adm-att-group" aria-labelledby="att-passkeys">
           <div class="adm-att-head">
             <h3 id="att-passkeys" class="adm-att-title">{{ icon('shield', 'w-3.5 h-3.5') }} Admin passkeys</h3>
