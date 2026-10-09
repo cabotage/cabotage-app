@@ -1,0 +1,65 @@
+{% extends "admin_console/_layout.html" %}
+{% from "_macros.html" import page_header, icon %}
+{% from "admin_console/_macros.html" import crumbs, search_form, segments, pager, no_results, when %}
+
+{% block page_title %}Users{% endblock page_title %}
+{% block console_crumbs %}{{ crumbs([{'label': 'users'}]) }}{% endblock console_crumbs %}
+
+{% block console %}
+  {% call page_header('Users') %}{% endcall %}
+
+  <div class="adm-toolbar">
+    {{ search_form('admin_console.users', term, 'Email, username, GitHub login or ID', {'filter': user_filter}) }}
+    {{ segments('admin_console.users', 'filter', user_filter, [('all', 'All'), ('admins', 'Global admins'), ('inactive', 'Inactive'), ('no-mfa', 'No MFA')], {'q': term} if term else {}) }}
+  </div>
+
+  <div class="adm-panel">
+    {% if page.items %}
+      <table class="adm-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Access</th>
+            <th>MFA</th>
+            <th class="num adm-hide-sm">Orgs</th>
+            <th class="end">Last sign-in</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u, stats in page.items %}
+            <tr class="{% if not u.active %}adm-deleted{% endif %}">
+              <td>
+                <a class="adm-link adm-primary" href="{{ url_for('admin_console.user', user_id=u.id) }}">{{ u.username | display_username }}</a>
+                {% if u.github_identity %}<span class="adm-sub" title="Signs in with GitHub">{{ icon('github', 'w-3 h-3 inline') }}</span>{% endif %}
+                {% if u.id == current_user.id %}<span class="adm-sub">(you)</span>{% endif %}
+                <div class="adm-sub">{{ u.email }}</div>
+              </td>
+              <td>
+                {% if not u.active %}<span class="badge badge-sm badge-ghost">Inactive</span>
+                {% elif u.admin %}<span class="badge badge-sm badge-ghost">{{ icon('shield', 'w-3 h-3') }} Global admin</span>
+                {% else %}<span class="adm-sub">User</span>{% endif %}
+              </td>
+              <td>
+                {% set totp = u.tf_primary_method == 'authenticator' %}
+                {% if stats.passkeys or totp %}
+                  <span class="adm-sub">
+                    {%- if stats.passkeys %}{{ stats.passkeys }} passkey{{ 's' if stats.passkeys != 1 }}{% endif -%}
+                    {%- if stats.passkeys and totp %} · {% endif -%}
+                    {%- if totp %}TOTP{% endif -%}
+                  </span>
+                {% else %}
+                  <span class="adm-state adm-state-deploying"><span class="status-dot status-dot-warning"></span>None</span>
+                {% endif %}
+              </td>
+              <td class="num adm-hide-sm">{{ stats.organizations }}</td>
+              <td class="end adm-sub">{{ when(u.current_login_at or u.last_login_at) }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      {{ no_results(term, 'admin_console.users', 'users', {'filter': user_filter}) }}
+    {% endif %}
+  </div>
+  {{ pager(page, 'admin_console.users', {'q': term, 'filter': user_filter}, 'users') }}
+{% endblock console %}

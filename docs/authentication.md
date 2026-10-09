@@ -223,65 +223,77 @@ The page provides:
 
 After initial MFA setup, users are redirected to the home page. When managing MFA from settings, they stay on the settings page.
 
-## Passkey-Protected Administration
+## Platform Admin Console
 
-Global admins enter the read-only legacy database viewer at `/admin/` with a
-separate **user-verifying passkey** assertion (PIN or biometric). Passwords, TOTP,
-recovery codes, and remembered login freshness do not unlock the viewer. A
-registered passkey alone does not prove that its authenticator supports user
-verification. Enroll and verify suitable passkeys for at least two active global
-admins before rollout.
+Global admins enter `/admin/` with a separate **user-verifying passkey** assertion
+(PIN or biometric). Passwords, TOTP, recovery codes, and remembered login freshness
+do not unlock platform administration. A registered passkey alone does not prove
+that its authenticator supports user verification. Enroll and verify suitable
+passkeys for at least two active global admins before rollout.
 
-Apply migration `b41d928e63af` before serving passkey-protected administration; it
-adds server-side grant and challenge tables. Entry grants expire after 15 minutes
-without extension. User records exclude password hashes, MFA secrets, recovery
-codes, and session identifiers from both list and detail views.
+Apply migration `b41d928e63af` before serving the console; it adds the server-side
+grant and challenge tables. Entry grants expire after 15 minutes without extension.
+Account changes and cross-tenant writes require another passkey assertion, bound
+to that exact action, target, and submitted request. Action challenges expire
+after two minutes and approvals are single-use. The action sequence is **click the
+action → verify with a passkey → review the target and impact → confirm**.
+Verification alone does not execute the action; Cancel or Escape leaves it
+unapplied, and the server keeps the unused approval until it expires. MFA resets
+also require typing the target account in the review dialog.
+Ordinary organization membership permissions remain unchanged; elevated access
+also covers native drilldowns and the read-only legacy database viewer at
+`/admin/db/`.
+User records exclude password hashes, MFA secrets, recovery codes, and session
+identifiers from both list and detail views.
 
-The exact-request approval mechanism binds a separate assertion to an action,
-target, submitted body, method, URL, and uploaded file bytes and metadata.
-Action challenges expire after two minutes and approvals are single-use.
-Verification alone does not execute an action: browser confirmation is separate.
-Cancel or Escape discards the approval in the browser; the server keeps the unused
-approval until it expires.
-
-Verified admin access permits cross-tenant native drilldowns and writes. Ordinary
-organization membership permissions remain unchanged. Platform-admin routes,
-including organization-request review and infrastructure observation, require
-passkey entry; writes require a separate exact-request approval. Elevated OAuth
-callbacks and shell entry stage a confirmed POST before their side effects.
-Shell sockets require a one-use, entry-bound capability. Elevated shell and log
-streams check absolute grant expiry on every loop tick; database-backed revocation
-checks are cached for at most one second per request.
+A thin, theme-accented band remains pinned above navigation while admin access is
+active. It shows the server-derived expiry and **End access**. Expiry or ending
+access leaves the current page and unsaved form content in memory; **Verify again**
+renews access without reloading. Submitting an expired elevated form renews entry
+and still requires a separate action assertion and final confirmation. Drafts and
+selected files are not copied into browser storage and do not survive a reload.
+The database viewer shows the same band in its own styling; there, **Verify again**
+opens the full-page passkey check and returns to the record.
 
 While the band is visible, the browser submits forms itself so an approval request
 can keep unsaved input on the page. Redirects from those submissions return to the
 browser as `admin_redirect` JSON, so external destinations such as GitHub open
 normally and same-site pages load once.
 
-A thin, theme-accented band remains above navigation while admin access is active.
-It shows server-derived expiry and **End access**. Expiry or ending access leaves
-the current page and unsaved form content in memory; **Verify again** renews access
-without reloading. Drafts and selected files are not copied into browser storage
-and do not survive a reload.
-Submitting an expired elevated form renews entry and still requires a separate
-action assertion and final confirmation.
-The read-only database viewer shows the same band in its own styling; there,
-**Verify again** opens the full-page passkey check and returns to the record.
+The console provides searchable organization, project, application, and user
+inventories, including deleted resources. Resource details link to existing
+native management pages and show basic deployment state where applicable.
+Account controls manage active status, global-admin roles, and MFA resets.
+
+**Needs attention** links pending organization requests and active global admins
+without registered passkeys to their next action. Organization requests can be
+reviewed from the console.
 
 Ending admin access, signing out, losing global-admin status, account deactivation,
-credential removal, and session-identifier rotation invalidate the corresponding
-admin access. Normal account-security rules still permit removing a last passkey
-when another MFA method remains; that account then needs a new user-verifying
-passkey to enter the database viewer.
+credential removal, and security resets revoke the corresponding elevated access.
+Elevated OAuth callbacks and shell entry stage a confirmed POST before their side
+effects, and shell sockets require a one-use, entry-bound capability.
+Elevated shell and log streams check absolute grant expiry on every loop tick;
+database-backed revocation checks are cached for at most one second per request.
+The console refuses self-lockout and removal of the last active global admin with
+a registered passkey. Normal account-security rules still permit removing a last
+passkey when another MFA method remains; that account then needs a new
+user-verifying passkey to enter the console.
 
-### Infrastructure charts
+The overview reuses `/infra/observe` for CPU, memory, and network totals, including
+its configured Mimir source and authorization. Infrastructure metrics require
+`kube_pod_labels` with `label_cabotage_io_infra="true"`; collecting only application
+labels does not supply this metadata. Charts distinguish loading, successful empty
+results, monitoring failures, and stale data. A failed refresh retains the last
+valid plot and its successful-refresh timestamp, with **Retry**; a partial metric
+query failure is not plotted as a complete result. Fixed historical windows are
+not marked stale merely because their samples are old. Empty charts are not
+evidence of a healthy or idle cluster.
 
-`/infra/observe` uses the shared CPU, memory, and network chart renderer and its
-configured Mimir source. Infrastructure metrics require `kube_pod_labels` with
-`label_cabotage_io_infra="true"`; collecting only application labels does not supply
-this metadata. Charts distinguish loading, successful empty results, monitoring
-failures, and stale data. A failed refresh retains the last valid plot and its
-successful-refresh timestamp, with **Retry**; a partial metric query failure is
-not plotted as a complete result. Fixed historical windows are not marked stale
-merely because their samples are old. Empty charts are not evidence of a healthy
-or idle cluster.
+Set `CABOTAGE_INSTANCE_APPLICATION_ENVIRONMENT_ID` to the hosting
+`ApplicationEnvironment.id` UUID to enable **Open application** for Cabotage itself.
+This is the application/environment enrollment ID, not the application ID.
+The native link follows current names and preserves the configured environment.
+Missing, invalid, deleted, or mismatched identities show **Not linked** instead of
+guessing from the hostname or application name. No live Kubernetes lookup is made
+to render the shortcut.

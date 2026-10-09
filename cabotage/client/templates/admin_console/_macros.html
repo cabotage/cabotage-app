@@ -1,0 +1,80 @@
+{% from "_macros.html" import icon, resource_path %}
+
+{% macro crumbs(items=[]) %}
+  {{ resource_path([{'label': 'admin', 'url': url_for('admin_console.index')}] + items) }}
+{% endmacro %}
+
+{% macro when(ts) %}
+  {%- if ts -%}
+    <time class="whitespace-nowrap" datetime="{{ ts | isoformat_utc }}" title="{{ ts.strftime('%Y-%m-%d %H:%M UTC') }}">{{ ts | timeago }}</time>
+  {%- else -%}
+    <span class="adm-sub">—</span>
+  {%- endif -%}
+{% endmacro %}
+
+{% macro deleted_badge(ts) %}
+  <span class="badge badge-sm badge-ghost" title="Deleted {{ ts.strftime('%Y-%m-%d %H:%M UTC') }}">Deleted</span>
+{% endmacro %}
+
+{% macro deploy_state(row) %}
+  {%- if row -%}
+    {%- set s = row.status -%}
+    <span class="adm-state adm-state-{{ s }}">
+      <span class="status-dot {% if s == 'failed' %}status-dot-error{% elif s == 'deploying' %}status-dot-warning status-dot-pulse{% else %}status-dot-success{% endif %}"></span>
+      {%- if s == 'failed' %}Failed{% elif s == 'deploying' %}Deploying{% else %}Deployed{% endif -%}
+    </span>
+  {%- else -%}
+    <span class="adm-state adm-sub"><span class="status-dot status-dot-neutral"></span>Never deployed</span>
+  {%- endif -%}
+{% endmacro %}
+
+{% macro search_form(endpoint, term, placeholder, keep={}) %}
+  <form class="adm-search" method="get" action="{{ url_for(endpoint) }}" role="search">
+    {% for name, value in keep.items() %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+    <input class="input input-bordered input-sm" type="search" name="q" value="{{ term }}" placeholder="{{ placeholder }}" aria-label="{{ placeholder }}" autocomplete="off" spellcheck="false" maxlength="100">
+    <button class="btn btn-ghost btn-sm" type="submit">Search</button>
+  </form>
+{% endmacro %}
+
+{# options: list of (value, label); args: query args to keep #}
+{% macro segments(endpoint, param, current, options, args={}) %}
+  <nav class="adm-seg" aria-label="Filter">
+    {% for value, label in options %}
+      {% set query = dict(args) %}{% set _ = query.update({param: value}) %}
+      <a href="{{ url_for(endpoint, **query) }}" {% if value == current %}aria-current="true"{% endif %}>{{ label }}</a>
+    {% endfor %}
+  </nav>
+{% endmacro %}
+
+{% macro state_segments(endpoint, state, term) %}
+  {{ segments(endpoint, 'state', state, [('active', 'Active'), ('deleted', 'Deleted'), ('all', 'All')], {'q': term} if term else {}) }}
+{% endmacro %}
+
+{% macro pager(page, endpoint, args={}, noun='') %}
+  {% if page.total > page.per_page %}
+    <nav class="adm-pager" aria-label="Pagination">
+      <span class="adm-num">{{ page.first_index }}–{{ page.last_index }} of {{ page.total }}{% if noun %} {{ noun }}{% endif %}</span>
+      <span class="flex gap-1">
+        {% if page.has_prev %}<a class="btn btn-ghost btn-xs" href="{{ url_for(endpoint, page=page.page - 1, **args) }}">{{ icon('chevron-left', 'w-3.5 h-3.5') }} Previous</a>{% endif %}
+        {% if page.has_next %}<a class="btn btn-ghost btn-xs" href="{{ url_for(endpoint, page=page.page + 1, **args) }}">Next {{ icon('chevron-right', 'w-3.5 h-3.5') }}</a>{% endif %}
+      </span>
+    </nav>
+  {% elif page.total %}
+    <p class="adm-pager"><span class="adm-num">{{ page.total }}{% if noun %} {{ noun }}{% endif %}</span></p>
+  {% endif %}
+{% endmacro %}
+
+{% macro native(url, label, icon_name='arrow-up-right') %}
+  <a class="btn btn-ghost btn-sm gap-1.5" href="{{ url }}">{{ label }} {{ icon(icon_name, 'w-3.5 h-3.5 opacity-60') }}</a>
+{% endmacro %}
+
+{% macro no_results(term, endpoint, noun, args={}) %}
+  <div class="adm-empty">
+    {% if term %}
+      No {{ noun }} match <span class="adm-mono">{{ term }}</span>. <a class="adm-link underline" href="{{ url_for(endpoint, **args) }}">Clear search</a>
+    {% else %}
+      No {{ noun }} in this view.
+    {% endif %}
+  </div>
+{% endmacro %}
+

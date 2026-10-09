@@ -1,0 +1,145 @@
+{% extends "admin_console/_layout.html" %}
+{% from "_macros.html" import icon, page_header %}
+{% from "admin_console/_macros.html" import search_form, when %}
+{% from "user/_infra_charts.html" import chart_canvas, chart_script %}
+
+{% block page_title %}Overview{% endblock page_title %}
+
+{% block console %}
+  {% call page_header('Platform') %}
+    {{ search_form('admin_console.search', '', 'Search orgs, projects, apps, users, IDs') }}
+  {% endcall %}
+
+  <p class="adm-strip">
+    <a href="{{ url_for('admin_console.organizations') }}"><strong>{{ overview.organizations }}</strong>organizations</a>
+    <a href="{{ url_for('admin_console.projects') }}"><strong>{{ overview.projects }}</strong>projects</a>
+    <a href="{{ url_for('admin_console.applications') }}"><strong>{{ overview.applications }}</strong>applications</a>
+    <a href="{{ url_for('admin_console.users') }}"><strong>{{ overview.users }}</strong>active users</a>
+  </p>
+
+  <section class="adm-instance" aria-labelledby="instance-label">
+    <div class="adm-instance-body">
+      <h2 id="instance-label" class="adm-instance-title">{{ icon('box', 'w-4 h-4') }} Cabotage itself</h2>
+      {% if instance_application %}
+        <p class="adm-sub"><span class="adm-primary">{{ instance_application.name }}</span> · <span class="adm-mono">{{ instance_application.path }}</span></p>
+      {% else %}
+        <p class="adm-sub">Not linked to a live application environment. Set <span class="adm-mono">CABOTAGE_INSTANCE_APPLICATION_ENVIRONMENT_ID</span> to the one running this console.</p>
+      {% endif %}
+    </div>
+    {% if instance_application %}
+      <a class="btn btn-ghost btn-sm gap-1.5" href="{{ instance_application.url }}">Open application {{ icon('arrow-up-right', 'w-3.5 h-3.5 opacity-60') }}</a>
+    {% endif %}
+  </section>
+
+  <div class="adm-overview">
+    <section class="adm-overview-main" aria-labelledby="infra-label">
+      <div class="adm-section-head adm-section-head-tools">
+        <h2 id="infra-label" class="adm-label">Infrastructure</h2>
+        <div class="adm-head-tools">
+          {% if mimir_configured %}
+            {% if has_time_window %}
+              <span class="adm-sub">Fixed window · <a class="adm-link underline" href="{{ url_for('admin_console.index', range=current_range) }}">Back to live</a></span>
+            {% endif %}
+            <nav class="adm-seg" aria-label="Time range">
+              {% for r in ['1h', '6h', '24h', '7d', '30d'] %}
+                <a href="{{ url_for('admin_console.index', range=r) }}" {% if r == current_range and not has_time_window %}aria-current="true"{% endif %}>{{ r }}</a>
+              {% endfor %}
+            </nav>
+          {% endif %}
+          <a class="btn btn-ghost btn-xs gap-1" href="{{ url_for('user.infra_observe', range=current_range) }}">Workloads and pods {{ icon('arrow-up-right', 'w-3.5 h-3.5 opacity-60') }}</a>
+        </div>
+      </div>
+
+      {% if not mimir_configured %}
+        <div class="adm-panel">
+          <div class="adm-empty">Metrics are not configured. Set <span class="adm-mono">CABOTAGE_MIMIR_URL</span> to chart infrastructure CPU, memory and network here.</div>
+        </div>
+      {% else %}
+        <div class="adm-charts">
+          {% for metric, title, label, icon_name in [('cpu', 'CPU', 'CPU usage', 'activity'), ('memory', 'Memory', 'memory usage', 'bar-chart'), ('network', 'Network I/O', 'network I/O', 'globe')] %}
+            <figure class="adm-chart{% if metric == 'network' %} adm-chart-wide{% endif %}">
+              <figcaption class="adm-chart-head">{{ icon(icon_name, 'w-3.5 h-3.5') }} {{ title }}</figcaption>
+              {{ chart_canvas(metric, label) }}
+            </figure>
+          {% endfor %}
+        </div>
+        <p class="adm-chart-note">Totals across pods labelled <span class="adm-mono">cabotage.io/infra</span>, sidecars excluded. Dashed lines are requests and limits.</p>
+      {% endif %}
+    </section>
+
+    <section class="adm-overview-side" aria-labelledby="attention-label">
+      <div class="adm-section-head">
+        <h2 id="attention-label" class="adm-label">Needs attention</h2>
+      </div>
+      <div class="adm-panel adm-att">
+
+        <section class="adm-att-group" aria-labelledby="att-requests">
+          <div class="adm-att-head">
+            <h3 id="att-requests" class="adm-att-title">{{ icon('building', 'w-3.5 h-3.5') }} Organization requests</h3>
+            {% if overview.pending_request_total %}
+              <a class="adm-link adm-sub" href="{{ url_for('admin_console.requests') }}"><span class="adm-num">{{ overview.pending_request_total }}</span> pending</a>
+            {% endif %}
+          </div>
+          {% if overview.pending_requests %}
+            <ul class="adm-att-list">
+              {% for req in overview.pending_requests[:3] %}
+                <li>
+                  <div class="adm-att-main">
+                    <span class="adm-primary">{{ req.name }}</span> <span class="adm-sub adm-mono">{{ req.slug }}</span>
+                    <div class="adm-sub">From <a class="adm-link" href="{{ url_for('admin_console.user', user_id=req.requester_user_id) }}">{{ req.requester.username | display_username }}</a> · {{ when(req.created_at) }}</div>
+                  </div>
+                  <a class="btn btn-ghost btn-xs" href="{{ url_for('admin_console.requests', _anchor='request-' ~ req.id) }}" aria-label="Review request for {{ req.slug }}">Review</a>
+                </li>
+              {% endfor %}
+            </ul>
+            {% if overview.pending_request_total > 3 %}
+              <p class="adm-att-more"><a class="adm-link" href="{{ url_for('admin_console.requests') }}">{{ overview.pending_request_total - 3 }} more pending</a></p>
+            {% endif %}
+          {% elif not admin_requests_enabled %}
+            <p class="adm-att-empty">Requests are turned off.</p>
+          {% else %}
+            <p class="adm-att-empty">No pending requests.</p>
+          {% endif %}
+        </section>
+
+        <section class="adm-att-group" aria-labelledby="att-passkeys">
+          <div class="adm-att-head">
+            <h3 id="att-passkeys" class="adm-att-title">{{ icon('shield', 'w-3.5 h-3.5') }} Admin passkeys</h3>
+            <a class="adm-link adm-sub" href="{{ url_for('admin_console.users', filter='admins') }}">Admins</a>
+          </div>
+          {% if overview.usable_admins is defined and overview.usable_admins < 2 %}
+            <div class="adm-att-row">
+              <span class="adm-state adm-state-deploying"><span class="status-dot status-dot-warning" aria-hidden="true"></span>{% if overview.usable_admins == 0 %}No active global admin has a registered passkey{% else %}Only one active global admin has a registered passkey{% endif %}</span>
+              <div class="adm-sub">Enroll a passkey for a second active admin so access survives a lost device.</div>
+            </div>
+          {% endif %}
+          {% if overview.admins_without_passkeys_total %}
+            <p class="adm-att-row"><span class="adm-state adm-state-deploying"><span class="status-dot status-dot-warning" aria-hidden="true"></span><span><span class="adm-num">{{ overview.admins_without_passkeys_total }}</span> active global admin{{ 's have' if overview.admins_without_passkeys_total != 1 else ' has' }} no registered passkey</span></span></p>
+            <ul class="adm-att-list">
+              {% for u in overview.admins_without_passkeys %}
+                <li>
+                  <div class="adm-att-main">
+                    <span class="adm-primary">{{ u.username | display_username }}</span>
+                    <div class="adm-sub">{{ u.email }}</div>
+                  </div>
+                  <a class="btn btn-ghost btn-xs" href="{{ url_for('admin_console.user', user_id=u.id) }}" aria-label="Account for {{ u.username | display_username }}">Account</a>
+                </li>
+              {% endfor %}
+            </ul>
+            {% if overview.admins_without_passkeys_total > overview.admins_without_passkeys | length %}
+              <p class="adm-att-more"><a class="adm-link" href="{{ url_for('admin_console.users', filter='admins') }}">{{ overview.admins_without_passkeys_total - overview.admins_without_passkeys | length }} more without a passkey</a></p>
+            {% endif %}
+          {% elif not (overview.usable_admins is defined and overview.usable_admins < 2) %}
+            <p class="adm-att-empty">Every active global admin has a registered passkey.</p>
+          {% endif %}
+          <p class="adm-att-more">Counts show enrollment only, not user-verification capability. Admin access requires a successful user-verifying passkey assertion.</p>
+        </section>
+
+      </div>
+    </section>
+  </div>
+{% endblock console %}
+
+{% block js %}
+  {{ chart_script(metric_url, current_range, current_groups, enabled=mimir_configured) }}
+{% endblock js %}

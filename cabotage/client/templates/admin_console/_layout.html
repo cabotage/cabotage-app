@@ -1,0 +1,43 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon %}
+{% from "admin_console/_macros.html" import crumbs %}
+
+{% block title %}{% block page_title %}Overview{% endblock page_title %} · Admin · Cabotage{% endblock title %}
+
+{% block resource_path %}
+  {% block console_crumbs %}{{ crumbs() }}{% endblock console_crumbs %}
+{% endblock resource_path %}
+
+{% block tab_bar %}
+  {% set nav = [
+    ('overview', 'Overview', url_for('admin_console.index')),
+    ('organizations', 'Organizations', url_for('admin_console.organizations')),
+    ('projects', 'Projects', url_for('admin_console.projects')),
+    ('applications', 'Applications', url_for('admin_console.applications')),
+    ('users', 'Users', url_for('admin_console.users')),
+    ('requests', 'Requests', url_for('admin_console.requests')),
+  ] %}
+  <div class="app-content-padded !py-0 w-full min-w-0">
+    <div class="adm-bar">
+      {#- The base header only shows a wrapper holding a .tab-bar, and its compact
+          mode moves the [data-tabs] element into the topbar and back to its parent,
+          so the nav sits alone in its own wrapper. -#}
+      <div class="adm-nav-wrap">
+        <nav class="adm-nav tab-bar" data-tabs aria-label="Admin">
+          {% for key, label, href in nav %}
+            <a class="adm-tab" href="{{ href }}" {% if active_nav == key %}aria-current="page"{% endif %}>
+              {{ label }}
+              {% if key == 'requests' and admin_pending_requests %}<span class="adm-count" title="{{ admin_pending_requests }} pending">{{ admin_pending_requests }}</span>{% endif %}
+            </a>
+          {% endfor %}
+          <a class="adm-tab" href="{{ url_for('user.infra_observe') }}" title="Full infrastructure metrics">Infrastructure {{ icon('arrow-up-right', 'w-3 h-3 opacity-60') }}</a>
+          <a class="adm-tab" href="{{ url_for('admin.index') }}" title="Read-only record browser">Records {{ icon('arrow-up-right', 'w-3 h-3 opacity-60') }}</a>
+        </nav>
+      </div>
+    </div>
+  </div>
+{% endblock tab_bar %}
+
+{% block content %}
+  {% block console %}{% endblock console %}
+{% endblock content %}

@@ -1,0 +1,118 @@
+{% extends "admin_console/_layout.html" %}
+{% from "_macros.html" import page_header %}
+{% from "admin_console/_macros.html" import crumbs, native, deleted_badge, when %}
+
+{% block page_title %}{{ org.name }}{% endblock page_title %}
+{% block console_crumbs %}{{ crumbs([{'label': 'organizations', 'url': url_for('admin_console.organizations')}, {'label': org.slug | admin_slug}]) }}{% endblock console_crumbs %}
+
+{% block console %}
+  {% set live = not org.deleted_at %}
+  {% call page_header(org.name, org.slug | admin_slug) %}
+    {% if live %}
+      <div class="adm-native">
+        {{ native(url_for('user.organization', org_slug=org.slug), 'Open') }}
+        {{ native(url_for('user.organization_members', org_slug=org.slug), 'Members') }}
+        {{ native(url_for('user.organization_settings', org_slug=org.slug), 'Settings') }}
+        {{ native(url_for('user.organization_audit_log', org_slug=org.slug), 'Audit log') }}
+      </div>
+    {% endif %}
+  {% endcall %}
+
+  {% if not live %}
+    <p class="adm-note adm-note-warn">Deleted {{ when(org.deleted_at) }} with its projects and applications. Shown read-only.</p>
+  {% endif %}
+
+      <div class="adm-panel">
+        <dl class="adm-facts">
+          <div><dt>ID</dt><dd class="adm-mono">{{ org.id }}</dd></div>
+          <div><dt>Namespace</dt><dd class="adm-mono">{{ org.k8s_identifier }}</dd></div>
+          <div><dt>Active projects shown</dt><dd class="adm-num">{{ detail.projects | selectattr('deleted_at', 'none') | list | length }}</dd></div>
+          <div><dt>Members shown</dt><dd class="adm-num">{{ detail.members | length }}</dd></div>
+          <div><dt>GitHub installs</dt><dd>{% if org.github_app_installations %}{{ org.github_app_installations | map(attribute='display_name') | join(', ') }}{% else %}<span class="adm-sub">None</span>{% endif %}</dd></div>
+          <div><dt>Integrations</dt><dd>
+            {%- set integrations = [] -%}
+            {%- if org.tailscale_integration %}{% set _ = integrations.append('Tailscale (' ~ org.tailscale_integration.operator_state ~ ')') %}{% endif -%}
+            {%- if org.slack_integration %}{% set _ = integrations.append('Slack') %}{% endif -%}
+            {%- if org.discord_integration %}{% set _ = integrations.append('Discord') %}{% endif -%}
+            {%- if integrations %}{{ integrations | join(', ') }}{% else %}<span class="adm-sub">None</span>{% endif -%}
+          </dd></div>
+        </dl>
+      </div>
+
+      <section class="adm-section">
+        <div class="adm-section-head"><h2 class="adm-label">Projects</h2></div>
+        <div class="adm-panel">
+          {% if detail.projects %}
+            <table class="adm-table">
+              <thead><tr><th>Project</th><th class="num">Apps</th><th class="num adm-hide-sm">Environments</th><th class="end">Last deploy</th></tr></thead>
+              <tbody>
+                {% for project in detail.projects %}
+                  {% set stats = detail.project_stats[project.id] %}
+                  <tr class="{% if project.deleted_at %}adm-deleted{% endif %}">
+                    <td>
+                      <a class="adm-link adm-primary" href="{{ url_for('admin_console.project', project_id=project.id) }}">{{ project.name }}</a>
+                      {% if project.deleted_at %}{{ deleted_badge(project.deleted_at) }}{% endif %}
+                      <div class="adm-sub adm-mono">{{ project.slug | admin_slug }}</div>
+                    </td>
+                    <td class="num">{{ stats.applications }}</td>
+                    <td class="num adm-hide-sm">{% if project.environments_enabled %}{{ stats.environments }}{% else %}<span class="adm-sub">off</span>{% endif %}</td>
+                    <td class="end adm-sub">{{ when(stats.last_deploy) }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <div class="adm-empty">No projects yet.</div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="adm-section">
+        <div class="adm-section-head">
+          <h2 class="adm-label">Members</h2>
+          {% if live %}<a class="adm-link adm-sub" href="{{ url_for('user.organization_members', org_slug=org.slug) }}">Add, promote or remove</a>{% endif %}
+        </div>
+        <div class="adm-panel">
+          {% if detail.members %}
+            <table class="adm-table">
+              <thead><tr><th>User</th><th>Role</th><th class="adm-hide-sm">Account</th></tr></thead>
+              <tbody>
+                {% for m in detail.members %}
+                  <tr class="{% if not m.user.active %}adm-deleted{% endif %}">
+                    <td>
+                      <a class="adm-link adm-primary" href="{{ url_for('admin_console.user', user_id=m.user_id) }}">{{ m.user.username | display_username }}</a>
+                      <div class="adm-sub">{{ m.user.email }}</div>
+                    </td>
+                    <td>{% if m.admin %}Admin{% else %}<span class="adm-sub">Member</span>{% endif %}</td>
+                    <td class="adm-hide-sm">
+                      {% if not m.user.active %}<span class="badge badge-sm badge-ghost">Inactive</span>{% endif %}
+                      {% if m.user.admin %}<span class="badge badge-sm badge-ghost">Global admin</span>{% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <div class="adm-empty">No members. Someone with access must be added before this organization can be managed natively.</div>
+          {% endif %}
+        </div>
+      </section>
+
+      {% if detail.requests %}
+        <section class="adm-section">
+          <div class="adm-section-head"><h2 class="adm-label">Origin request</h2></div>
+          <div class="adm-panel">
+            <table class="adm-table"><tbody>
+              {% for req in detail.requests %}
+                <tr>
+                  <td>Requested by <a class="adm-link" href="{{ url_for('admin_console.user', user_id=req.requester_user_id) }}">{{ req.requester.username | display_username }}</a>{% if req.note %}<div class="adm-sub">{{ req.note }}</div>{% endif %}</td>
+                  <td>{{ req.status | capitalize }}{% if req.reviewer %} <span class="adm-sub">by {{ req.reviewer.username | display_username }}</span>{% endif %}</td>
+                  <td class="end adm-sub">{{ when(req.reviewed_at or req.created_at) }}</td>
+                </tr>
+              {% endfor %}
+            </tbody></table>
+          </div>
+        </section>
+      {% endif %}
+
+{% endblock console %}

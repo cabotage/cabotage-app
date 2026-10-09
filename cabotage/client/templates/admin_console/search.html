@@ -1,0 +1,96 @@
+{% extends "admin_console/_layout.html" %}
+{% from "_macros.html" import page_header %}
+{% from "admin_console/_macros.html" import crumbs, search_form, deleted_badge %}
+
+{% block page_title %}Search{% endblock page_title %}
+{% block console_crumbs %}{{ crumbs([{'label': 'search'}]) }}{% endblock console_crumbs %}
+
+{% block console %}
+  {% call page_header('Search') %}
+    {{ search_form('admin_console.search', term, 'Search orgs, projects, apps, users, IDs') }}
+  {% endcall %}
+
+  {% if results.empty %}
+    <div class="adm-panel"><div class="adm-empty">Nothing matches <span class="adm-mono">{{ term }}</span>. Search covers names, slugs, repositories, emails, GitHub usernames and IDs.</div></div>
+  {% else %}
+    {% if results.organizations %}
+      <section class="adm-section">
+        <div class="adm-section-head">
+          <h2 class="adm-label">Organizations</h2>
+          <a class="adm-link adm-sub" href="{{ url_for('admin_console.organizations', q=term, state='all') }}">All matches</a>
+        </div>
+        <div class="adm-panel">
+          <table class="adm-table"><tbody>
+            {% for org in results.organizations %}
+              <tr class="{% if org.deleted_at %}adm-deleted{% endif %}">
+                <td><a class="adm-link adm-primary" href="{{ url_for('admin_console.organization', organization_id=org.id) }}">{{ org.name }}</a> {% if org.deleted_at %}{{ deleted_badge(org.deleted_at) }}{% endif %}</td>
+                <td class="adm-mono adm-sub">{{ org.slug | admin_slug }}</td>
+              </tr>
+            {% endfor %}
+          </tbody></table>
+        </div>
+      </section>
+    {% endif %}
+
+    {% if results.projects %}
+      <section class="adm-section">
+        <div class="adm-section-head">
+          <h2 class="adm-label">Projects</h2>
+          <a class="adm-link adm-sub" href="{{ url_for('admin_console.projects', q=term, state='all') }}">All matches</a>
+        </div>
+        <div class="adm-panel">
+          <table class="adm-table"><tbody>
+            {% for project in results.projects %}
+              <tr class="{% if project.deleted_at %}adm-deleted{% endif %}">
+                <td><a class="adm-link adm-primary" href="{{ url_for('admin_console.project', project_id=project.id) }}">{{ project.name }}</a> {% if project.deleted_at %}{{ deleted_badge(project.deleted_at) }}{% endif %}</td>
+                <td class="adm-mono adm-sub">{{ project.organization.slug | admin_slug }}/{{ project.slug | admin_slug }}</td>
+              </tr>
+            {% endfor %}
+          </tbody></table>
+        </div>
+      </section>
+    {% endif %}
+
+    {% if results.applications %}
+      <section class="adm-section">
+        <div class="adm-section-head">
+          <h2 class="adm-label">Applications</h2>
+          <a class="adm-link adm-sub" href="{{ url_for('admin_console.applications', q=term, state='all') }}">All matches</a>
+        </div>
+        <div class="adm-panel">
+          <table class="adm-table"><tbody>
+            {% for app in results.applications %}
+              <tr class="{% if app.deleted_at %}adm-deleted{% endif %}">
+                <td><a class="adm-link adm-primary" href="{{ url_for('admin_console.application', application_id=app.id) }}">{{ app.name }}</a> {% if app.deleted_at %}{{ deleted_badge(app.deleted_at) }}{% endif %}</td>
+                <td class="adm-mono adm-sub">{{ app.project.organization.slug | admin_slug }}/{{ app.project.slug | admin_slug }}/{{ app.slug | admin_slug }}</td>
+                <td class="adm-sub adm-hide-sm">{{ app.github_repository or '' }}</td>
+              </tr>
+            {% endfor %}
+          </tbody></table>
+        </div>
+      </section>
+    {% endif %}
+
+    {% if results.users %}
+      <section class="adm-section">
+        <div class="adm-section-head">
+          <h2 class="adm-label">Users</h2>
+          <a class="adm-link adm-sub" href="{{ url_for('admin_console.users', q=term) }}">All matches</a>
+        </div>
+        <div class="adm-panel">
+          <table class="adm-table"><tbody>
+            {% for u in results.users %}
+              <tr class="{% if not u.active %}adm-deleted{% endif %}">
+                <td><a class="adm-link adm-primary" href="{{ url_for('admin_console.user', user_id=u.id) }}">{{ u.username | display_username }}</a>
+                  {% if u.admin %}<span class="badge badge-sm badge-ghost">Global admin</span>{% endif %}
+                  {% if not u.active %}<span class="badge badge-sm badge-ghost">Inactive</span>{% endif %}
+                </td>
+                <td class="adm-sub">{{ u.email }}</td>
+              </tr>
+            {% endfor %}
+          </tbody></table>
+        </div>
+      </section>
+    {% endif %}
+  {% endif %}
+{% endblock console %}

@@ -8946,7 +8946,7 @@ _INFRA_TENANT = "cabotage-infra"
 
 
 def _require_admin() -> None:
-    """Direct platform-admin routes require passkey entry and exact-request proof."""
+    """Direct platform-admin routes use the console's entry and write boundaries."""
     verification = require_admin_session()
     if verification is not None:
         abort(verification)
