@@ -129,6 +129,20 @@ function initCountInputs() {
   });
 }
 
+/* Job Toggle (CronJob suspend/resume) */
+function initJobToggles() {
+  document.querySelectorAll('.job-toggle').forEach(function (toggle) {
+    toggle.addEventListener('change', function () {
+      var fieldName = toggle.getAttribute('data-count-field');
+      var hidden = document.querySelector('input[type="hidden"][name="' + fieldName + '"]');
+      if (hidden) hidden.value = toggle.checked ? '1' : '0';
+      document.querySelectorAll('.update_process_settings').forEach(function (el) {
+        el.classList.remove('hidden');
+      });
+    });
+  });
+}
+
 /* Env Var Reveal */
 function initEnvReveal() {
   document.querySelectorAll('[data-reveal]').forEach(function (btn) {
@@ -226,20 +240,8 @@ function initThemeToggle() {
   var cycleThemes = ['light', 'dark', 'system'];
 
   document.querySelectorAll('.theme-toggle-wrap').forEach(function (wrap) {
-    var btn = wrap.querySelector('button');
+    var btn = wrap.querySelector('[role="button"]');
     var dropdown = wrap.querySelector('.theme-dropdown');
-    var hideTimer = null;
-
-    function show() {
-      clearTimeout(hideTimer);
-      dropdown.classList.remove('hidden');
-    }
-    function hide() {
-      dropdown.classList.add('hidden');
-    }
-    function hideDelayed() {
-      hideTimer = setTimeout(hide, 200);
-    }
 
     function cycleTheme() {
       var current = localStorage.getItem('theme-pref') || 'system';
@@ -250,24 +252,15 @@ function initThemeToggle() {
 
     btn.addEventListener('click', function (e) {
       e.stopPropagation();
-      hide();
+      btn.blur();
       cycleTheme();
-    });
-
-    wrap.addEventListener('mouseenter', show);
-    wrap.addEventListener('mouseleave', hideDelayed);
-
-    document.addEventListener('click', function (e) {
-      if (!wrap.contains(e.target)) {
-        hide();
-      }
     });
 
     dropdown.querySelectorAll('.theme-opt').forEach(function (opt) {
       opt.addEventListener('click', function (e) {
         e.stopPropagation();
         applyPref(opt.getAttribute('data-theme-val'));
-        hide();
+        btn.blur();
       });
     });
   });
@@ -418,6 +411,33 @@ function initFadeScroll(el) {
   return update;
 }
 
+function bindKeyValuePaste(nameInput, valueInput) {
+  if (!nameInput || !valueInput) return;
+
+  nameInput.addEventListener('paste', function (e) {
+    if (!e.clipboardData) return;
+
+    var text = e.clipboardData.getData('text/plain').replace(/(?:\r\n|\r|\n)$/, '');
+    if (/[\r\n]/.test(text)) return;
+
+    var separator = text.indexOf('=');
+    if (separator < 1 || valueInput.value) return;
+
+    var name = text.slice(0, separator);
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) return;
+
+    e.preventDefault();
+    nameInput.value = name.toUpperCase();
+    valueInput.value = text.slice(separator + 1);
+    nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+    valueInput.dispatchEvent(new Event('input', { bubbles: true }));
+    valueInput.focus();
+    if (valueInput.setSelectionRange) {
+      valueInput.setSelectionRange(valueInput.value.length, valueInput.value.length);
+    }
+  });
+}
+
 /* Add Variable Modal */
 function initAddVarModal() {
   var modal = document.getElementById('add-var-modal');
@@ -468,6 +488,7 @@ function initAddVarModal() {
 
   // Template preview — resolve ${...} references client-side for preview
   var valueInput = modal.querySelector('input[name="value"]');
+  bindKeyValuePaste(nameField, valueInput);
   var previewEl = document.getElementById('add-var-preview');
   var previewFadeUpdate = previewEl ? initFadeScroll(previewEl) : null;
   var siblingDataEl = document.getElementById('sibling-ref-data');
@@ -701,6 +722,7 @@ function initEnvAddVarModal() {
   }
 
   var valueInput = document.getElementById('env-add-var-value');
+  bindKeyValuePaste(nameField, valueInput);
   var refCheck = document.getElementById('env-add-var-ref-check');
   var refPicker = document.getElementById('env-add-var-ref-picker');
   var secureCheckbox = modal.querySelector('input[name="secure"]');
@@ -2282,6 +2304,8 @@ function initLokiLogViewer() {
       if (searchInput.value.trim()) params.set('search', searchInput.value.trim());
       if (processFilter.value) params.set('process', processFilter.value);
       if (!showProbes.checked) params.set('hide_probes', '1');
+      var pageParams = new URLSearchParams(window.location.search);
+      if (pageParams.get('job_name')) params.set('job_name', pageParams.get('job_name'));
 
       if (mode === 'newer' && newestTs) {
         params.set('start', tsIncrement(newestTs));
@@ -2394,70 +2418,16 @@ function initCompactTopbar() {
 
   if (!topbar || !tabBarWrapper || !inlineTabs || !tabBar) return;
 
-  var sourceTabs = tabBar.querySelectorAll('[data-tab]');
-  sourceTabs.forEach(function (tab) {
-    var isDisabled = tab.classList.contains('tab-disabled');
-    var href = tab.tagName === 'A' ? tab.getAttribute('href') : null;
-    var clone = document.createElement(href && !isDisabled ? 'a' : 'button');
-    clone.className = 'topbar-inline-tab';
-    if (href && !isDisabled) clone.setAttribute('href', href);
-    if (isDisabled) clone.classList.add('tab-disabled');
-    clone.setAttribute('data-inline-tab', tab.getAttribute('data-tab'));
-    if (tab.classList.contains('tab-active')) {
-      clone.classList.add('tab-active');
-    }
-    var svg = tab.querySelector('svg');
-    if (svg) clone.appendChild(svg.cloneNode(true));
-    var label = tab.childNodes;
-    for (var i = 0; i < label.length; i++) {
-      if (label[i].nodeType === 3 && label[i].textContent.trim()) {
-        var text = label[i].textContent.trim();
-        clone.setAttribute('title', text);
-        var soonMatch = text.match(/^(.+?)\s*\(([^)]+)\)$/);
-        if (soonMatch) {
-          var labelWrap = document.createElement('span');
-          labelWrap.className = 'topbar-inline-tab-label';
-          labelWrap.appendChild(document.createTextNode(soonMatch[1]));
-          var sub = document.createElement('span');
-          sub.className = 'topbar-inline-tab-sub';
-          sub.textContent = soonMatch[2];
-          labelWrap.appendChild(sub);
-          clone.appendChild(labelWrap);
-        } else {
-          clone.appendChild(document.createTextNode(text));
-        }
-        break;
-      }
-    }
-    var badge = tab.querySelector('.badge');
-    if (badge) clone.appendChild(badge.cloneNode(true));
-    inlineTabs.appendChild(clone);
-  });
+  // The tab bar's parent inside the wrapper (e.g. .app-content-padded)
+  var tabBarParent = tabBar.parentNode;
 
-  inlineTabs.addEventListener('click', function (e) {
-    var btn = e.target.closest('[data-inline-tab]');
-    if (!btn) return;
-    if (btn.classList.contains('tab-disabled')) {
-      e.preventDefault();
-      return;
+  function moveTabBar(compact) {
+    if (compact) {
+      inlineTabs.appendChild(tabBar);
+    } else if (tabBar.parentNode !== tabBarParent) {
+      tabBarParent.appendChild(tabBar);
     }
-    var tabId = btn.getAttribute('data-inline-tab');
-    var realTab = tabBar.querySelector('[data-tab="' + tabId + '"]');
-    if (realTab) realTab.click();
-  });
-
-  var observer = new MutationObserver(function () {
-    sourceTabs.forEach(function (tab) {
-      var id = tab.getAttribute('data-tab');
-      var inline = inlineTabs.querySelector('[data-inline-tab="' + id + '"]');
-      if (inline) {
-        inline.classList.toggle('tab-active', tab.classList.contains('tab-active'));
-      }
-    });
-  });
-  sourceTabs.forEach(function (tab) {
-    observer.observe(tab, { attributes: true, attributeFilter: ['class'] });
-  });
+  }
 
   var THRESHOLD = 20;
   var isCompact = false;
@@ -2471,6 +2441,7 @@ function initCompactTopbar() {
     if (compact !== isCompact) {
       isCompact = compact;
       topbar.classList.toggle('topbar-compact', isCompact);
+      moveTabBar(isCompact);
     }
   }
 
@@ -2553,6 +2524,7 @@ document.addEventListener('DOMContentLoaded', function () {
   initTabs();
   initCompactTopbar();
   initCountInputs();
+  initJobToggles();
   initEnvReveal();
   initDropdowns();
   initMobileNav();

@@ -1,26 +1,92 @@
 import datetime
+import logging
 
-import kubernetes
+import kubernetes.client
 
 from celery import shared_task
 from flask import current_app
 
 from cabotage.server import db, github_app, kubernetes as kubernetes_ext
 from cabotage.server.models.projects import Deployment, Image, Release
+from cabotage.celery.tasks.notify import (
+    dispatch_autodeploy_notification,
+    dispatch_pipeline_notification,
+)
 from cabotage.utils.build_log_stream import (
     get_redis_client,
     heartbeat_key,
     publish_end,
     stream_key,
 )
-from cabotage.utils.github import post_deployment_status_update
+from cabotage.utils.github import cabotage_url, post_deployment_status_update
+from cabotage._types import (
+    assume_not_none,
+    K8S_OBJECT_HAS_STATUS,
+    K8S_POD_HAS_START_TIME,
+)
+
+log = logging.getLogger(__name__)
+
+
+def _dispatch_reap_failure(obj, obj_type, notification_type):
+    """Send a failure notification for a reaped build/deploy."""
+    try:
+        app = obj.application
+        if not app:
+            return
+
+        metadata = (
+            getattr(obj, "image_metadata", None)
+            or getattr(obj, "release_metadata", None)
+            or getattr(obj, "deploy_metadata", None)
+            or {}
+        )
+
+        if metadata.get("auto_deploy"):
+            image_id = metadata.get("source_image_id", str(obj.id))
+            stage_map = {
+                "Image": "image_failed",
+                "Release": "release_failed",
+                "Deployment": "deploy_failed",
+            }
+            stage = stage_map.get(obj_type, "deploy_failed")
+            dispatch_autodeploy_notification(
+                stage,
+                image_id,
+                app,
+                obj.application_environment,
+                error=obj.error_detail,
+                image_url=cabotage_url(app, f"images/{image_id}"),
+                image_metadata=metadata,
+            )
+        else:
+            dispatch_pipeline_notification.delay(
+                notification_type,
+                obj_type,
+                str(obj.id),
+                str(app.project.organization_id),
+                str(app.id),
+                str(obj.application_environment_id)
+                if obj.application_environment_id
+                else None,
+                error=obj.error_detail,
+            )
+    except Exception:
+        log.warning(
+            "Failed to dispatch reap notification for %s %s",
+            obj_type,
+            obj.id,
+            exc_info=True,
+        )
 
 
 @shared_task()
 def reap_stale_builds():
     """Find stuck image builds, release builds, and deploys with no heartbeat."""
     redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
-    cutoff = datetime.datetime.utcnow() - datetime.timedelta(seconds=90)
+    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
+        seconds=90
+    )
 
     # Images: built=False, error=False, updated < cutoff, no heartbeat
     stuck_images = Image.query.filter(
@@ -37,8 +103,12 @@ def reap_stale_builds():
                 try:
                     log_key = stream_key("image", image.build_job_id)
                     publish_end(redis_client, log_key, error=True)
-                except Exception:  # nosec B110
-                    pass
+                except Exception:
+                    log.warning(
+                        "Failed to publish log stream end for reaped image %s",
+                        image.id,
+                        exc_info=True,
+                    )
             if (
                 image.image_metadata
                 and "installation_id" in image.image_metadata
@@ -55,8 +125,13 @@ def reap_stale_builds():
                         "failure",
                         "Image build timed out.",
                     )
-                except Exception:  # nosec B110
-                    pass
+                except Exception:
+                    log.warning(
+                        "Failed to post GitHub status for reaped image %s",
+                        image.id,
+                        exc_info=True,
+                    )
+            _dispatch_reap_failure(image, "Image", "pipeline.image_build")
 
     # Releases: built=False, error=False, updated < cutoff, no heartbeat
     stuck_releases = Release.query.filter(
@@ -73,8 +148,12 @@ def reap_stale_builds():
                 try:
                     log_key = stream_key("release", release.build_job_id)
                     publish_end(redis_client, log_key, error=True)
-                except Exception:  # nosec B110
-                    pass
+                except Exception:
+                    log.warning(
+                        "Failed to publish log stream end for reaped release %s",
+                        release.id,
+                        exc_info=True,
+                    )
             if (
                 release.release_metadata
                 and "installation_id" in release.release_metadata
@@ -91,8 +170,13 @@ def reap_stale_builds():
                         "failure",
                         "Release build timed out.",
                     )
-                except Exception:  # nosec B110
-                    pass
+                except Exception:
+                    log.warning(
+                        "Failed to post GitHub status for reaped release %s",
+                        release.id,
+                        exc_info=True,
+                    )
+            _dispatch_reap_failure(release, "Release", "pipeline.release")
 
     # Deployments: complete=False, error=False, updated < cutoff, no heartbeat
     stuck_deployments = Deployment.query.filter(
@@ -109,8 +193,12 @@ def reap_stale_builds():
                 try:
                     log_key = stream_key("deploy", deployment.job_id)
                     publish_end(redis_client, log_key, error=True)
-                except Exception:  # nosec B110
-                    pass
+                except Exception:
+                    log.warning(
+                        "Failed to publish log stream end for reaped deployment %s",
+                        deployment.id,
+                        exc_info=True,
+                    )
             if (
                 deployment.deploy_metadata
                 and "installation_id" in deployment.deploy_metadata
@@ -127,14 +215,19 @@ def reap_stale_builds():
                         "failure",
                         "Deploy timed out.",
                     )
-                except Exception:  # nosec B110
-                    pass
+                except Exception:
+                    log.warning(
+                        "Failed to post GitHub status for reaped deployment %s",
+                        deployment.id,
+                        exc_info=True,
+                    )
+            _dispatch_reap_failure(deployment, "Deployment", "pipeline.deploy")
 
     db.session.commit()
 
 
 @shared_task()
-def reap_pods():
+def reap_pods() -> None:
     if not current_app.config["KUBERNETES_ENABLED"]:
         return
     api_client = kubernetes_ext.kubernetes_client
@@ -142,10 +235,36 @@ def reap_pods():
     pods = core_api_instance.list_pod_for_all_namespaces(
         label_selector="resident-pod.cabotage.io=true",
     )
-    candidate = sorted(pods.items, key=lambda pod: pod.status.start_time)[0]
+    if not pods.items:
+        return
+    candidate = sorted(
+        pods.items,
+        key=lambda pod: assume_not_none(
+            assume_not_none(pod.status, because=K8S_OBJECT_HAS_STATUS).start_time,
+            because=K8S_POD_HAS_START_TIME,
+        ),
+    )[0]
     lookback = datetime.datetime.now().replace(
         tzinfo=datetime.timezone.utc
     ) - datetime.timedelta(days=7)
+
+    # https://github.com/kubernetes/community/blob/a27eb0e0dbf559dd5c7be668d18709b5b6110631/contributors/devel/sig-architecture/api-conventions.md?plain=1#L231-L232
+    # > all objects MUST have metadata as per api convention
+    # https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-lifetime
+    # > pods have both a specification and status.
+    # ideally, none of these branches should be executed in runtime
+    # they are here for type narrowing reasons
+
+    if candidate.metadata is None or candidate.metadata.name is None:
+        log.warning("Skipping unnamed pod")
+        return
+    if candidate.metadata.namespace is None:
+        log.warning("Skipping pod with no namespace")
+        return
+    if candidate.status is None or candidate.status.start_time is None:
+        log.warning("Skipping statusless pod in %s", candidate.metadata.namespace)
+        return
+
     if candidate.status.start_time < lookback:
         core_api_instance.delete_namespaced_pod(
             candidate.metadata.name, candidate.metadata.namespace

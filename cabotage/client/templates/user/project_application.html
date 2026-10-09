@@ -62,7 +62,7 @@
       <h1 class="text-xl font-semibold text-base-content">{{ app_slug }}</h1>
     </div>
     <div class="flex items-center gap-2">
-      <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+      <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}"
          class="btn btn-ghost btn-sm gap-1.5">{{ icon('settings', 'w-3.5 h-3.5') }} Settings</a>
     </div>
   </div>
@@ -173,14 +173,14 @@
             {% if not application.github_repository %}
               <p>{{ icon('alert-circle', 'w-3.5 h-3.5 text-warning') }} No repository connected</p>
               <p>Connect a GitHub repository to enable deployments.</p>
-              <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}">{{ icon('settings', 'w-3 h-3') }} Go to Settings</a>
+              <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}">{{ icon('settings', 'w-3 h-3') }} Go to Settings</a>
             {% elif not app_env %}
               <p>{{ icon('alert-circle', 'w-3.5 h-3.5 text-warning') }} No environment</p>
               <p>Add this application to an environment first.</p>
             {% else %}
               <p>{{ icon('alert-circle', 'w-3.5 h-3.5 text-warning') }} No deploy branch configured</p>
               <p>Set an auto-deploy branch in settings to enable one-click deploys.</p>
-              <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}">{{ icon('settings', 'w-3 h-3') }} Go to Settings</a>
+              <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}">{{ icon('settings', 'w-3 h-3') }} Go to Settings</a>
             {% endif %}
           </div>
         </div>
@@ -295,7 +295,7 @@
                   <div class="deploy-step-content">
                     <p class="text-sm font-medium text-base-content">Configure your repository</p>
                     <p class="text-xs text-base-content/40">Connect a GitHub repository to build from</p>
-                    <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+                    <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}"
                        class="btn btn-primary btn-sm gap-1.5 mt-2">{{ icon('settings', 'w-3.5 h-3.5') }} Configure Repo</a>
                   </div>
                 </div>
@@ -828,6 +828,100 @@
             {% endfor %}
           </div>
 
+          {% if latest_release_job_processes %}
+          <div class="flex items-center gap-1.5 mt-4 mb-2">
+            <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Jobs</h2>
+            <div class="info-popup-anchor">
+              {{ icon('info', 'w-3 h-3 text-base-content/25 cursor-help') }}
+              <div class="info-popup">
+                <div class="info-popup-header">
+                  {{ icon('clock', 'w-3 h-3 info-popup-header-icon') }}
+                  <span class="info-popup-header-text">Scheduled Jobs</span>
+                </div>
+                <div class="info-popup-body">
+                  <div class="info-popup-row">
+                    <code class="info-popup-type">job-*</code>
+                    <span class="info-popup-desc">Runs on a cron schedule as a Kubernetes CronJob. Define with a <code>job-</code> prefix in your Procfile.</span>
+                  </div>
+                  <div class="info-popup-row">
+                    <code class="info-popup-type">SCHEDULE</code>
+                    <span class="info-popup-desc">Required per-process env var, set inline in the Procfile (e.g. <code>env SCHEDULE="0 */6 * * *"</code>).</span>
+                  </div>
+                  <div class="info-popup-row">
+                    <code class="info-popup-type">Controls</code>
+                    <span class="info-popup-desc">Use the toggle to suspend/resume and the dropdown to change pod size. Overlapping runs are forbidden; no retries on failure; 1-hour timeout.</span>
+                  </div>
+                </div>
+                <div class="info-popup-footer">
+                  <a href="{{ url_for('user.guide') }}#jobs" class="info-popup-link">Learn more in the Guide →</a>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="process-grid">
+            {% for process_name, proc in latest_release_job_processes.items() %}
+              {% set count = app_env.process_counts.get(process_name, 0) %}
+              {% set pod_class = app_env.process_pod_classes.get(process_name, DEFAULT_POD_CLASS) %}
+              {% set schedule = '' %}
+              {% for key, value in proc.get('env', []) %}
+                {% if key == 'SCHEDULE' %}{% set schedule = value %}{% endif %}
+              {% endfor %}
+              {% set last_log = last_job_logs.get(process_name) %}
+              <div class="job-card {{ 'process-card-active' if count > 0 else 'process-card-idle' }}">
+                <div class="process-name">
+                  {% if count > 0 %}
+                    <span class="status-dot status-dot-success flex-shrink-0"
+                          style="width:4px;
+                                 height:4px"></span>
+                  {% else %}
+                    <span class="status-dot status-dot-neutral flex-shrink-0"
+                          style="width:4px;
+                                 height:4px;
+                                 opacity:0.25"></span>
+                  {% endif %}
+                  <code class="text-xs text-accent font-semibold">{{ process_name }}</code>
+                </div>
+                <div class="process-controls">
+                  <label class="label cursor-pointer gap-2">
+                    <input type="hidden" name="process-count-{{ process_name }}" value="{{ count }}" />
+                    <input type="checkbox"
+                           class="toggle toggle-xs toggle-primary job-toggle"
+                           data-count-field="process-count-{{ process_name }}"
+                           {{ 'checked' if count > 0 }} />
+                  </label>
+                  <select class="select select-bordered select-xs bg-base-300 text-base-content border-base-content/10 pod-size text-xs"
+                          name="process-pod-class-{{ process_name }}"
+                          style="width: 6.5rem;
+                                 min-height: 1.5rem;
+                                 height: 1.5rem;
+                                 padding-top: 0;
+                                 padding-bottom: 0">
+                    <option value="{{ pod_class }}" selected hidden>{{ pod_class }}</option>
+                    {% for class in pod_classes.keys() %}<option value="{{ class }}">{{ class }}</option>{% endfor %}
+                  </select>
+                  <div class="job-links">
+                    <a href="{{ url_for('user.project_application_logs_view', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug, env_slug=environment.slug if environment else none) }}?process={{ process_name }}"
+                       class="btn btn-ghost btn-xs process-log-btn gap-1"
+                       title="View {{ process_name }} logs">{{ icon('terminal', 'w-3 h-3') }} Logs</a>
+                    <a href="{{ url_for('user.job_history', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug, env_slug=environment.slug if environment else none, process_name=process_name) }}"
+                       class="btn btn-ghost btn-xs process-log-btn gap-1"
+                       title="View {{ process_name }} history">{{ icon('clock', 'w-3 h-3') }} History</a>
+                  </div>
+                </div>
+                <div class="job-status-left">
+                  {% if last_log %}
+                    <span class="job-status-icon {% if last_log.succeeded %}text-success{% else %}text-error{% endif %}">{% if last_log.succeeded %}&#10003;{% else %}&#10007;{% endif %}</span>
+                    <span>last ran {{ last_log.completion_time|humanize }}{% if last_log.duration_seconds is not none %} ({{ last_log.duration_seconds }}s){% endif %}</span>
+                  {% else %}
+                    <span class="job-status-icon"></span>
+                    <span class="opacity-40">no runs yet</span>
+                  {% endif %}
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+
           <div class="mt-3">
             <button type="submit"
                     class="btn btn-primary btn-sm update_process_settings hidden">Update Process Settings</button>
@@ -947,12 +1041,12 @@
                 </svg>
               </div>
             </div>
-            <div class="ls-row ls-row-last">
+            <div class="ls-row ls-row-last ls-row-pods">
               <div class="ls-left">
                 <span class="ls-label">Pods</span>
                 <span class="ls-val" data-ls-pod-count>—</span>
               </div>
-              <div class="flex-1 flex flex-col gap-1 justify-center min-w-0" data-ls-pod-procs></div>
+              <div class="min-w-0" data-ls-pod-procs></div>
             </div>
           </div>
         {% endif %}
@@ -960,7 +1054,7 @@
         <div class="ls-bento-activity" data-live-activity>
           {% if has_any_activity %}
             <div class="card bg-base-200 border border-base-300">
-              <div class="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-base-content/5">
+              <div class="activity-columns">
                 <div class="p-4">
                   <div class="flex items-center gap-1.5 mb-2">
                     {{ icon('image', 'w-3 h-3 text-base-content/30') }}
@@ -986,7 +1080,7 @@
                       {% if img.image_metadata and img.image_metadata.get('trigger', '').startswith('manual') %}
                         <span class="dpl-badge dpl-badge-manual" title="by {{ img.image_metadata.get('triggered_by', '?') }}">{{ icon('user', 'w-2 h-2') }} manual</span>
                       {% endif %}
-                    <span class="text-xs text-base-content/25 ml-auto"><time data-timestamp="{{ img.updated|isoformat_utc }}">{{ img.updated|humanize }}</time>
+                    <span class="activity-time text-xs text-base-content/25"><time data-timestamp="{{ img.updated|isoformat_utc }}">{{ img.updated|humanize }}</time>
                     {% if img.built %}<span class="text-base-content/15">({{ img|duration }})</span>{% endif %}
                   </span>
                 </a>
@@ -1019,7 +1113,7 @@
                   {% if rel.release_metadata and rel.release_metadata.get('trigger', '').startswith('manual') %}
                     <span class="dpl-badge dpl-badge-manual" title="by {{ rel.release_metadata.get('triggered_by', '?') }}">{{ icon('user', 'w-2 h-2') }} manual</span>
                   {% endif %}
-                <span class="text-xs text-base-content/25 ml-auto"><time data-timestamp="{{ rel.updated|isoformat_utc }}">{{ rel.updated|humanize }}</time>
+                <span class="activity-time text-xs text-base-content/25"><time data-timestamp="{{ rel.updated|isoformat_utc }}">{{ rel.updated|humanize }}</time>
                 {% if rel.built %}<span class="text-base-content/15">({{ rel|duration }})</span>{% endif %}
               </span>
             </a>
@@ -1052,7 +1146,7 @@
               {% if dep.deploy_metadata and dep.deploy_metadata.get('trigger', '').startswith('manual') %}
                 <span class="dpl-badge dpl-badge-manual" title="by {{ dep.deploy_metadata.get('triggered_by', '?') }}">{{ icon('user', 'w-2 h-2') }} manual</span>
               {% endif %}
-            <span class="text-xs text-base-content/25 ml-auto"><time data-timestamp="{{ dep.updated|isoformat_utc }}">{{ dep.updated|humanize }}</time>
+            <span class="activity-time text-xs text-base-content/25"><time data-timestamp="{{ dep.updated|isoformat_utc }}">{{ dep.updated|humanize }}</time>
             {% if dep.complete %}<span class="text-base-content/15">({{ dep|duration }})</span>{% endif %}
           </span>
         </a>
@@ -1094,7 +1188,7 @@
         {% endif %}
       </div>
       {% if not application.github_repository %}
-        <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+        <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}"
            class="pipeline-stage-body group">
           <span class="text-sm text-base-content/50">No repo configured</span>
         </a>
@@ -1113,7 +1207,7 @@
       {% endif %}
       <div class="pipeline-stage-action flex gap-1">
         {% if not application.github_repository %}
-          <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+          <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}"
              class="btn btn-ghost btn-xs flex-1 gap-1">{{ icon('settings', 'w-3 h-3') }} Configure repo</a>
         {% else %}
           <a href="{{ url_for('user.application_images', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}"
@@ -1393,7 +1487,7 @@
           cpuSpark.parentElement.classList.add('ls-loaded');
           memSpark.parentElement.classList.add('ls-loaded');
 
-          // Pod process vertical bars
+          // Ready counts and status distribution for each process
           if (data.pods != null) {
             podEl.textContent = data.pods_ready + '/' + data.pods;
             function escHtml(s) {
@@ -1411,19 +1505,26 @@
               var crashedPct = p.total > 0 ? (p.crashed / p.total) * 100 : 0;
               var pendingPct = p.total > 0 ? (p.pending / p.total) * 100 : 0;
               html += '<div class="proc-bar">' +
-                '<div class="flex flex-col">' +
-                '<span class="proc-bar-label text-base-content/50">' + escHtml(names[i]) + '</span>' +
+                '<span class="proc-bar-label">' + escHtml(names[i]) + '</span>' +
                 '<span class="proc-bar-count">' + p.ready + '/' + p.total + '</span>' +
-                '</div>' +
                 '<div class="proc-bar-track">' +
-                '<div class="proc-bar-seg proc-bar-seg--ready" style="height:' + readyPct + '%"></div>' +
-                '<div class="proc-bar-seg proc-bar-seg--pending" style="height:' + pendingPct + '%"></div>' +
-                '<div class="proc-bar-seg proc-bar-seg--crashed" style="height:' + crashedPct + '%"></div>' +
+                '<div class="proc-bar-seg proc-bar-seg--ready" style="width:' + readyPct + '%"></div>' +
+                '<div class="proc-bar-seg proc-bar-seg--pending" style="width:' + pendingPct + '%"></div>' +
+                '<div class="proc-bar-seg proc-bar-seg--crashed" style="width:' + crashedPct + '%"></div>' +
                 '</div>' +
                 '</div>';
             }
             html += '</div>';
             podProcs.innerHTML = html;
+            podProcs.querySelectorAll('.proc-bar').forEach(function(row, index) {
+              var p = procs[names[index]];
+              row.querySelector('.proc-bar-label').title = names[index];
+              var track = row.querySelector('.proc-bar-track');
+              var status = p.ready + ' ready, ' + p.pending + ' pending, ' + p.crashed + ' crashed';
+              track.title = status;
+              track.setAttribute('role', 'img');
+              track.setAttribute('aria-label', status);
+            });
           }
         })
         .catch(function() {});

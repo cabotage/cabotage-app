@@ -1,14 +1,16 @@
 import logging
 import secrets
 import time
+from typing import TYPE_CHECKING, cast
 
 from base64 import b64encode
 
-import kubernetes
+import kubernetes.client
+import kubernetes.watch
 import yaml
 
 from celery import shared_task
-from kubernetes.client.rest import ApiException
+from kubernetes.client.exceptions import ApiException
 from sqlalchemy.orm.attributes import flag_modified
 
 from flask import current_app
@@ -30,10 +32,12 @@ from cabotage.server.models.projects import (
     _ingress_hostname_pairs,
     pod_classes,
 )
+
 from cabotage.server.models.utils import (
     safe_k8s_name,
     compact_k8s_name,
     readable_k8s_hostname,
+    repair_ingress_hostname,
 )
 
 from cabotage.utils.build_log_stream import (
@@ -49,14 +53,66 @@ from cabotage.utils.github import (
     cabotage_url,
     post_deployment_status_update,
 )
+from cabotage.celery.tasks.notify import (
+    dispatch_autodeploy_notification,
+    dispatch_pipeline_notification,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from redis import Redis
+
+    from cabotage.server.models.projects import Release
+    from cabotage.utils.build_log_stream import EntityType
+
+if TYPE_CHECKING:
+    from cabotage.server.models.projects import Ingress
+
+log = logging.getLogger(__name__)
 
 
 class DeployError(RuntimeError):
     pass
 
 
+def _dispatch_deploy_failure(deployment, error_detail):
+    try:
+        app = deployment.application
+        if deployment.deploy_metadata and deployment.deploy_metadata.get("auto_deploy"):
+            image_id = deployment.deploy_metadata.get(
+                "source_image_id", str(deployment.id)
+            )
+            dispatch_autodeploy_notification(
+                "deploy_failed",
+                image_id,
+                app,
+                deployment.application_environment,
+                error=error_detail,
+                image_url=cabotage_url(app, f"images/{image_id}"),
+                deploy_url=cabotage_url(app, f"deployments/{deployment.id}"),
+                image_metadata=deployment.deploy_metadata,
+            )
+        else:
+            dispatch_pipeline_notification.delay(
+                "pipeline.deploy",
+                "Deployment",
+                str(deployment.id),
+                str(app.project.organization_id),
+                str(app.id),
+                str(deployment.application_environment_id)
+                if deployment.application_environment_id
+                else None,
+                error=error_detail,
+            )
+    except Exception:
+        log.warning("Failed to dispatch deploy failure notification", exc_info=True)
+
+
 @shared_task()
-def cleanup_app_env_k8s(app_env_id, namespace, resource_prefix, label_selector):
+def cleanup_app_env_k8s(
+    app_env_id: str, namespace: str, resource_prefix: str, label_selector: str
+) -> None:
     """Best-effort delete of all k8s resources for one ApplicationEnvironment.
 
     All k8s addressing values are passed explicitly because the originating
@@ -85,6 +141,9 @@ def cleanup_app_env_k8s(app_env_id, namespace, resource_prefix, label_selector):
             namespace, label_selector=label_selector
         )
         for d in deps.items:
+            if d.metadata is None or d.metadata.name is None:
+                log.exception("Skipping unnamed deployment in %s", namespace)
+                continue
             log.info(
                 "k8s cleanup: deleting deployment %s/%s", namespace, d.metadata.name
             )
@@ -99,6 +158,9 @@ def cleanup_app_env_k8s(app_env_id, namespace, resource_prefix, label_selector):
             namespace, label_selector=svc_label_selector
         )
         for s in svcs.items:
+            if s.metadata is None or s.metadata.name is None:
+                log.exception("Skipping unnamed service in %s", namespace)
+                continue
             log.info("k8s cleanup: deleting service %s/%s", namespace, s.metadata.name)
             core_api.delete_namespaced_service(s.metadata.name, namespace)
     except Exception:
@@ -110,6 +172,9 @@ def cleanup_app_env_k8s(app_env_id, namespace, resource_prefix, label_selector):
             namespace, label_selector=label_selector
         )
         for i in ings.items:
+            if i.metadata is None or i.metadata.name is None:
+                log.exception("Skipping unnamed ingress in %s", namespace)
+                continue
             log.info("k8s cleanup: deleting ingress %s/%s", namespace, i.metadata.name)
             networking_api.delete_namespaced_ingress(i.metadata.name, namespace)
     except Exception:
@@ -153,31 +218,54 @@ def _preview_url_for_app_env(app_env):
     return None
 
 
-def _wait_for_tls_secret(core_api, namespace, secret_name, timeout=120, log=None):
-    """Poll until a TLS secret exists with cert data, or timeout."""
+# FIXME: ParamSpec cannot express the desired signature
+# find out how to express this with the current type system
+# https://github.com/python/typing/issues/1009
+def _retry_on_404(fn, *args, retries=5, delay=2, **kwargs):
+    """Retry a kubernetes API call if it returns a 404, with backoff."""
+    for attempt in range(retries):
+        try:
+            return fn(*args, **kwargs)
+        except ApiException as exc:
+            if exc.status == 404 and attempt < retries - 1:
+                time.sleep(delay * (attempt + 1))
+            else:
+                raise
+
+    # statically reachable, but unreachable at runtime
+    # type checkers don't know that an `ApiException` is raised when retries are exhausted
+    raise Exception("unreachable")
+
+
+def _wait_for_tls_certificate(api_client, namespace, cert_name, timeout=120, log=None):
+    """Poll until a cert-manager Certificate is Ready, or timeout."""
+    custom_api = kubernetes.client.CustomObjectsApi(api_client)
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            secret = core_api.read_namespaced_secret(secret_name, namespace)
-            if secret.data and "tls.crt" in secret.data:
-                if log:
-                    log(f"TLS secret {secret_name} is ready")
-                return True
+            cert = custom_api.get_namespaced_custom_object(
+                "cert-manager.io",
+                "v1",
+                namespace,
+                "certificates",
+                cert_name,
+            )
+            for cond in (cert.get("status") or {}).get("conditions", []):
+                if cond.get("type") == "Ready" and cond.get("status") == "True":
+                    if log:
+                        log(f"Certificate {cert_name} is ready")
+                    return True
         except ApiException as exc:
             if exc.status != 404:
                 raise
         time.sleep(5)
     if log:
-        log(f"TLS secret {secret_name} not ready after {timeout}s, proceeding anyway")
+        log(f"Certificate {cert_name} not ready after {timeout}s, proceeding anyway")
     return False
 
 
-def k8s_namespace(release):
-    org_k8s = release.application.project.organization.k8s_identifier
-    app_env = release.application_environment
-    if app_env.k8s_identifier is not None:
-        return safe_k8s_name(org_k8s, app_env.environment.k8s_identifier)
-    return org_k8s
+def k8s_namespace(release: Release) -> str:
+    return release.application_environment.environment.k8s_namespace
 
 
 def k8s_resource_prefix(release):
@@ -204,11 +292,42 @@ def k8s_label_value(release):
     app = release.application
     app_env = release.application_environment
     pairs = [(org.slug, org.k8s_identifier)]
-    if app_env.k8s_identifier is not None:
+    if app_env.environment.uses_environment_namespace:
         pairs.append((app_env.environment.slug, app_env.environment.k8s_identifier))
     pairs.append((project.slug, project.k8s_identifier))
     pairs.append((app.slug, app.k8s_identifier))
     return compact_k8s_name(*pairs)
+
+
+def _safe_labels_from_release(release):
+    """Build cabotage.io/-prefixed labels using k8s_identifiers.
+
+    These are collision-safe labels that sit alongside the legacy
+    slug-based labels.
+    """
+    org = release.application.project.organization
+    project = release.application.project
+    app = release.application
+    app_env = release.application_environment
+    labels = {
+        "cabotage.io/organization": org.k8s_identifier,
+        "cabotage.io/project": project.k8s_identifier,
+        "cabotage.io/application": app.k8s_identifier,
+    }
+    if app_env.environment.uses_environment_namespace:
+        labels["cabotage.io/environment"] = app_env.environment.k8s_identifier
+    return labels
+
+
+def _safe_labels_from_application(application):
+    """Build cabotage.io/-prefixed labels from an Application (for builds)."""
+    org = application.project.organization
+    project = application.project
+    return {
+        "cabotage.io/organization": org.k8s_identifier,
+        "cabotage.io/project": project.k8s_identifier,
+        "cabotage.io/application": application.k8s_identifier,
+    }
 
 
 def render_namespace(release):
@@ -234,12 +353,18 @@ def create_namespace(core_api_instance, release):
         )
 
 
-def fetch_namespace(core_api_instance, release):
-    namespace_name = k8s_namespace(release)
+def ensure_namespace(
+    core_api_instance: kubernetes.client.CoreV1Api, namespace_name: str
+) -> kubernetes.client.V1Namespace:
+    """Create the namespace if it doesn't exist, ensure resident label is set."""
     try:
         namespace = core_api_instance.read_namespace(namespace_name)
         # Ensure the resident-namespace label is present on existing namespaces
-        labels = namespace.metadata.labels or {}
+        labels: dict[str, str] = (
+            {}
+            if namespace.metadata is None or namespace.metadata.labels is None
+            else namespace.metadata.labels
+        )
         if labels.get("resident-namespace.cabotage.io") != "true":
             namespace = core_api_instance.patch_namespace(
                 namespace_name,
@@ -251,12 +376,24 @@ def fetch_namespace(core_api_instance, release):
             )
     except ApiException as exc:
         if exc.status == 404:
-            namespace = create_namespace(core_api_instance, release)
+            namespace = core_api_instance.create_namespace(
+                kubernetes.client.V1Namespace(
+                    metadata=kubernetes.client.V1ObjectMeta(
+                        name=namespace_name,
+                        labels={"resident-namespace.cabotage.io": "true"},
+                    ),
+                ),
+            )
         else:
             raise DeployError(
                 f"Unexpected exception fetching Namespace/{namespace_name}: {exc}"
             )
+    ensure_cabotage_ca_configmap(core_api_instance, namespace_name)
     return namespace
+
+
+def fetch_namespace(core_api_instance: kubernetes.client.CoreV1Api, release: Release):
+    return ensure_namespace(core_api_instance, k8s_namespace(release))
 
 
 TENANT_NETWORK_POLICIES = [
@@ -265,6 +402,106 @@ TENANT_NETWORK_POLICIES = [
         "spec": {
             "podSelector": {},
             "policyTypes": ["Ingress"],
+        },
+    },
+    # CNPG operator-managed pods need unrestricted egress to reach
+    # the K8s API server for CRD reads at startup.
+    {
+        "name": "allow-egress-cnpg-pods",
+        "spec": {
+            "podSelector": {
+                "matchExpressions": [
+                    {"key": "cnpg.io/cluster", "operator": "Exists"},
+                ],
+            },
+            "policyTypes": ["Egress"],
+            "egress": [{}],
+        },
+    },
+    # CNPG pods need ingress from the CNPG operator (status checks
+    # on port 8000) and from other cluster members (replication on
+    # port 5432).
+    {
+        "name": "allow-ingress-cnpg-pods",
+        "spec": {
+            "podSelector": {
+                "matchExpressions": [
+                    {"key": "cnpg.io/cluster", "operator": "Exists"},
+                ],
+            },
+            "ingress": [
+                # CNPG operator (runs in postgres namespace)
+                {
+                    "from": [
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {
+                                    "kubernetes.io/metadata.name": "postgres",
+                                },
+                            },
+                            "podSelector": {
+                                "matchLabels": {
+                                    "app.kubernetes.io/name": "cloudnative-pg",
+                                },
+                            },
+                        },
+                    ],
+                    "ports": [
+                        {"port": 5432, "protocol": "TCP"},
+                        {"port": 8000, "protocol": "TCP"},
+                    ],
+                },
+                # Intra-cluster replication between CNPG instances
+                {
+                    "from": [
+                        {
+                            "podSelector": {
+                                "matchExpressions": [
+                                    {
+                                        "key": "cnpg.io/cluster",
+                                        "operator": "Exists",
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                    "ports": [
+                        {"port": 5432, "protocol": "TCP"},
+                        {"port": 8000, "protocol": "TCP"},
+                    ],
+                },
+            ],
+        },
+    },
+    {
+        "name": "allow-ingress-from-redis-operator",
+        "spec": {
+            "podSelector": {
+                "matchLabels": {
+                    "resident-redis.cabotage.io": "true",
+                },
+            },
+            "ingress": [
+                {
+                    "from": [
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {
+                                    "kubernetes.io/metadata.name": "redis",
+                                },
+                            },
+                            "podSelector": {
+                                "matchLabels": {
+                                    "name": "redis-operator",
+                                },
+                            },
+                        },
+                    ],
+                    "ports": [
+                        {"port": 6379, "protocol": "TCP"},
+                    ],
+                },
+            ],
         },
     },
     {
@@ -325,7 +562,14 @@ TENANT_NETWORK_POLICIES = [
     {
         "name": "restrict-egress",
         "spec": {
-            "podSelector": {},
+            "podSelector": {
+                "matchExpressions": [
+                    {
+                        "key": "cnpg.io/cluster",
+                        "operator": "DoesNotExist",
+                    },
+                ],
+            },
             "policyTypes": ["Egress"],
             "egress": [
                 # DNS resolution (kube-system CoreDNS)
@@ -494,7 +738,7 @@ def ensure_network_policies(networking_api, namespace):
                 )
 
 
-def render_cabotage_ca_configmap(release):
+def render_cabotage_ca_configmap():
     with open("/var/run/secrets/cabotage.io/ca.crt", "r") as f:
         ca_crt = f.read()
     configmap_object = kubernetes.client.V1ConfigMap(
@@ -508,12 +752,26 @@ def render_cabotage_ca_configmap(release):
     return configmap_object
 
 
-def create_cabotage_ca_configmap(core_api_instance, release):
-    configmap_object = render_cabotage_ca_configmap(release)
-    namespace_name = k8s_namespace(release)
+def create_cabotage_ca_configmap(core_api_instance, namespace_name):
+    configmap_object = render_cabotage_ca_configmap()
     try:
         return core_api_instance.create_namespaced_config_map(
             namespace_name, configmap_object
+        )
+    except ApiException as exc:
+        if exc.status == 409:
+            try:
+                return core_api_instance.read_namespaced_config_map(
+                    "cabotage-ca", namespace_name
+                )
+            except Exception as reread_exc:
+                raise DeployError(
+                    "ConfigMap/cabotage-ca already existed in "
+                    f"{namespace_name}, but re-read failed: {reread_exc}"
+                )
+        raise DeployError(
+            "Unexpected exception creating ConfigMap/cabotage-ca in "
+            f"{namespace_name}: {exc}"
         )
     except Exception as exc:
         raise DeployError(
@@ -522,21 +780,24 @@ def create_cabotage_ca_configmap(core_api_instance, release):
         )
 
 
-def fetch_cabotage_ca_configmap(core_api_instance, release):
-    namespace_name = k8s_namespace(release)
+def ensure_cabotage_ca_configmap(core_api_instance, namespace_name):
     try:
         configmap = core_api_instance.read_namespaced_config_map(
             "cabotage-ca", namespace_name
         )
     except ApiException as exc:
         if exc.status == 404:
-            configmap = create_cabotage_ca_configmap(core_api_instance, release)
+            configmap = create_cabotage_ca_configmap(core_api_instance, namespace_name)
         else:
             raise DeployError(
                 "Unexpected exception fetching ConfigMap/cabotage-ca in "
                 f"{namespace_name}: {exc}"
             )
     return configmap
+
+
+def fetch_cabotage_ca_configmap(core_api_instance, release):
+    return ensure_cabotage_ca_configmap(core_api_instance, k8s_namespace(release))
 
 
 def render_service_account(release):
@@ -563,7 +824,9 @@ def create_service_account(core_api_instance, release):
         )
 
 
-def fetch_service_account(core_api_instance, release):
+def fetch_service_account(
+    core_api_instance: kubernetes.client.CoreV1Api, release: Release
+) -> kubernetes.client.V1ServiceAccount:
     namespace = k8s_namespace(release)
     service_account_name = k8s_resource_prefix(release)
     try:
@@ -594,8 +857,7 @@ def render_cabotage_enrollment(release):
     env = release.application_environment.environment
     forked_from = env.forked_from_environment
     if forked_from:
-        org_k8s = release.application.project.organization.k8s_identifier
-        base_ns = safe_k8s_name(org_k8s, forked_from.k8s_identifier)
+        base_ns = forked_from.k8s_namespace
         spec["inheritsFrom"] = [
             {
                 "namespace": base_ns,
@@ -648,7 +910,7 @@ def fetch_cabotage_enrollment(custom_objects_api_instance, release):
     return cabotage_enrollment
 
 
-def _env_config_read_keys_for_release(release):
+def _env_config_read_keys_for_release(release: Release) -> tuple[set[str], set[str]]:
     """Extract env config Consul/Vault paths from a release's configuration.
 
     Includes paths from:
@@ -657,9 +919,9 @@ def _env_config_read_keys_for_release(release):
     """
     from cabotage.utils.config_templates import resolve_shared_secret_refs
 
-    consul_keys = set()
-    vault_keys = set()
-    for name, config_data in release.configuration.items():
+    consul_keys = set[str]()
+    vault_keys = set[str]()
+    for config_data in release.configuration.values():
         obj = Configuration.query.get(config_data["id"])
         if obj is None:
             obj = EnvironmentConfiguration.query.get(config_data["id"])
@@ -748,6 +1010,7 @@ def render_service(release, process_name):
     resource_prefix = k8s_resource_prefix(release)
     service_name = f"{resource_prefix}-{process_name}"
     label_value = k8s_label_value(release)
+    safe_labels = _safe_labels_from_release(release)
     service_object = kubernetes.client.V1Service(
         metadata=kubernetes.client.V1ObjectMeta(
             name=service_name,
@@ -755,6 +1018,7 @@ def render_service(release, process_name):
                 "resident-service.cabotage.io": "true",
                 "app": resource_prefix,
                 "process": process_name,
+                **safe_labels,
             },
         ),
         spec=kubernetes.client.V1ServiceSpec(
@@ -814,6 +1078,7 @@ def render_ingress(release, ingress):
 
     Convenience wrapper that extracts naming context from a Release.
     """
+    safe_labels = _safe_labels_from_release(release)
     return render_ingress_object(
         ingress=ingress,
         resource_prefix=k8s_resource_prefix(release),
@@ -822,6 +1087,7 @@ def render_ingress(release, ingress):
             "project": release.application.project.slug,
             "application": release.application.slug,
             "app": k8s_label_value(release),
+            **safe_labels,
         },
         org_k8s_identifier=release.application.project.organization.k8s_identifier,
         process_names=list(release.processes) if release.processes else [],
@@ -866,6 +1132,23 @@ def _build_ingress_paths(ingress, resource_prefix, process_names=None):
             )
         )
     return k8s_paths
+
+
+def _repair_ingress_hostnames(ingress: Ingress) -> bool:
+    changed = False
+    existing = {host.hostname for host in ingress.hosts}
+    for host in list(ingress.hosts):
+        repaired = repair_ingress_hostname(host.hostname, ingress.name)
+        if repaired == host.hostname:
+            continue
+        existing.discard(host.hostname)
+        if repaired in existing:
+            ingress.hosts.remove(host)
+        else:
+            host.hostname = repaired
+            existing.add(repaired)
+        changed = True
+    return changed
 
 
 def render_ingress_object(
@@ -939,13 +1222,15 @@ def render_ingress_object(
     tls_hosts = []
     rules = []
     for host in ingress.hosts:
+        # Old release snapshots must not reintroduce an invalid certificate SAN.
+        hostname = repair_ingress_hostname(host.hostname, ingress.name)
         if is_tailscale or host.tls_enabled:
-            tls_hosts.append(host.hostname)
+            tls_hosts.append(hostname)
         rules.append(
             kubernetes.client.V1IngressRule(
                 # Tailscale: don't set host on rules — the operator derives
                 # it from tls.hosts and rejects mismatches with the FQDN
-                host=None if is_tailscale else host.hostname,
+                host=None if is_tailscale else hostname,
                 http=kubernetes.client.V1HTTPIngressRuleValue(paths=k8s_paths),
             )
         )
@@ -1026,7 +1311,7 @@ def fetch_ingress(networking_api, release, ingress):
         if exc.status == 404:
             return create_ingress(networking_api, release, ingress)
         raise DeployError(
-            "Unexpected exception fetching Ingress/" f"{k8s_name} in {namespace}: {exc}"
+            f"Unexpected exception fetching Ingress/{k8s_name} in {namespace}: {exc}"
         )
 
 
@@ -1218,6 +1503,40 @@ def cleanup_orphaned_deployments_and_services(
                         )
 
 
+def cleanup_orphaned_cronjobs(batch_api, release, active_job_names, log=None):
+    """Delete k8s CronJobs for job processes no longer in the Procfile."""
+    namespace = k8s_namespace(release)
+    resource_prefix = k8s_resource_prefix(release)
+    label_selector = ",".join(
+        [
+            "resident-cronjob.cabotage.io=true",
+            f"organization={release.application.project.organization.slug}",
+            f"project={release.application.project.slug}",
+            f"application={release.application.slug}",
+        ]
+    )
+    expected_names = {f"{resource_prefix}-{name}" for name in active_job_names}
+
+    try:
+        existing = batch_api.list_namespaced_cron_job(
+            namespace, label_selector=label_selector
+        )
+    except ApiException:
+        return
+    for item in existing.items if existing else []:
+        if item.metadata.name not in expected_names:
+            if log:
+                log(f"Deleting orphaned CronJob/{item.metadata.name}")
+            try:
+                batch_api.delete_namespaced_cron_job(item.metadata.name, namespace)
+            except ApiException as exc:
+                if exc.status != 404:
+                    if log:
+                        log(
+                            f"Warning: failed to delete orphaned CronJob/{item.metadata.name}: {exc}"
+                        )
+
+
 def render_image_pull_secrets(release):
     registry_auth_secret = current_app.config["REGISTRY_AUTH_SECRET"]
     secret = kubernetes.client.V1Secret(
@@ -1249,7 +1568,9 @@ def create_image_pull_secret(core_api_instance, release):
         )
 
 
-def fetch_image_pull_secrets(core_api_instance, release):
+def fetch_image_pull_secrets(
+    core_api_instance: kubernetes.client.CoreV1Api, release: Release
+) -> kubernetes.client.V1Secret:
     namespace = k8s_namespace(release)
     secret_name = k8s_resource_prefix(release)
     try:
@@ -1265,12 +1586,12 @@ def fetch_image_pull_secrets(core_api_instance, release):
     return secret
 
 
-def render_cabotage_enroller_container(release, process_name, with_tls=True):
+def render_cabotage_sidecar_container(release, process_name, with_tls=True):
     role_name = k8s_role_name(release)
     resource_prefix = k8s_resource_prefix(release)
 
     args = [
-        "kube-login",
+        "kube-login-and-maintain",
         "--namespace=$(NAMESPACE)",
         f"--vault-auth-kubernetes-role={role_name}",
         "--fetch-consul-token",
@@ -1285,7 +1606,8 @@ def render_cabotage_enroller_container(release, process_name, with_tls=True):
         args.append(f"--service-names={resource_prefix}-{process_name}")
 
     return kubernetes.client.V1Container(
-        name="cabotage-enroller",
+        name="cabotage-sidecar",
+        restart_policy="Always",
         image=current_app.config["SIDECAR_IMAGE"],
         image_pull_policy="IfNotPresent",
         env=[
@@ -1315,25 +1637,18 @@ def render_cabotage_enroller_container(release, process_name, with_tls=True):
             ),
         ],
         args=args,
-        volume_mounts=[
-            kubernetes.client.V1VolumeMount(
-                name="vault-secrets", mount_path="/var/run/secrets/vault"
+        startup_probe=kubernetes.client.V1Probe(
+            _exec=kubernetes.client.V1ExecAction(
+                command=[
+                    "sh",
+                    "-c",
+                    "test -f /var/run/secrets/vault/vault-token && "
+                    "test -f /var/run/secrets/vault/consul-token",
+                ],
             ),
-        ],
-    )
-
-
-def render_cabotage_sidecar_container(release, with_tls=True):
-    role_name = k8s_role_name(release)
-    args = ["maintain"]
-    if with_tls:
-        args.append(f"--vault-pki-role={role_name}")
-    return kubernetes.client.V1Container(
-        name="cabotage-sidecar",
-        restart_policy="Always",
-        image=current_app.config["SIDECAR_IMAGE"],
-        image_pull_policy="IfNotPresent",
-        args=args,
+            period_seconds=1,
+            failure_threshold=30,
+        ),
         volume_mounts=[
             kubernetes.client.V1VolumeMount(
                 name="vault-secrets", mount_path="/var/run/secrets/vault"
@@ -1342,7 +1657,7 @@ def render_cabotage_sidecar_container(release, with_tls=True):
         resources=kubernetes.client.V1ResourceRequirements(
             limits={
                 "memory": "48Mi",
-                "cpu": "20m",
+                "cpu": "50m",
             },
             requests={
                 "memory": "32Mi",
@@ -1486,7 +1801,7 @@ def render_process_container(
     pod_class = pod_classes[process_pod_cls]
     return kubernetes.client.V1Container(
         name=process_name,
-        image=f'{current_app.config["REGISTRY_PULL"]}/{release.repository_name}:release-{release.version}',
+        image=f"{current_app.config['REGISTRY_PULL']}/{release.repository_name}:release-{release.version}",
         image_pull_policy="Always",
         env=[
             kubernetes.client.V1EnvVar(
@@ -1527,11 +1842,13 @@ def render_process_container(
     )
 
 
-def render_datadog_container(dd_api_key, datadog_tags):
+def render_datadog_container(
+    dd_api_key, datadog_tags, datadog_image: str | None = None
+):
     return kubernetes.client.V1Container(
         name="dogstatsd-sidecar",
         restart_policy="Always",
-        image=current_app.config["DATADOG_IMAGE"],
+        image=datadog_image or current_app.config["DATADOG_IMAGE"],
         image_pull_policy="IfNotPresent",
         env=[
             kubernetes.client.V1EnvVar(name="DD_API_KEY", value=dd_api_key),
@@ -1555,10 +1872,12 @@ def render_datadog_container(dd_api_key, datadog_tags):
             kubernetes.client.V1EnvVar(name="DD_APM_ENABLED", value="true"),
             kubernetes.client.V1EnvVar(name="DD_LOGS_ENABLED", value="false"),
             kubernetes.client.V1EnvVar(
-                name="DD_CONFD_PATH", value="/tmp/null"  # nosec
+                name="DD_CONFD_PATH",
+                value="/tmp/null",  # nosec
             ),
             kubernetes.client.V1EnvVar(
-                name="DD_AUTOCONF_TEMPLATE_DIR", value="/tmp/null"  # nosec
+                name="DD_AUTOCONF_TEMPLATE_DIR",
+                value="/tmp/null",  # nosec
             ),
             kubernetes.client.V1EnvVar(name="DD_ENABLE_GOHAI", value="false"),
             kubernetes.client.V1EnvVar(
@@ -1586,6 +1905,7 @@ def render_datadog_container(dd_api_key, datadog_tags):
         resources=kubernetes.client.V1ResourceRequirements(
             limits={
                 "memory": "256Mi",
+                "cpu": "50m",
             },
             requests={
                 "memory": "192Mi",
@@ -1626,10 +1946,7 @@ def render_podspec(release, process_name, service_account_name):
             )
         )
         init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=True)
-        )
-        init_containers.append(
-            render_cabotage_sidecar_container(release, with_tls=True)
+            render_cabotage_sidecar_container(release, process_name, with_tls=True)
         )
         init_containers.append(
             render_cabotage_sidecar_tls_container(release, unix=True)
@@ -1641,10 +1958,7 @@ def render_podspec(release, process_name, service_account_name):
         )
     elif process_name.startswith("tcp"):
         init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=True)
-        )
-        init_containers.append(
-            render_cabotage_sidecar_container(release, with_tls=True)
+            render_cabotage_sidecar_container(release, process_name, with_tls=True)
         )
         init_containers.append(
             render_cabotage_sidecar_tls_container(release, unix=False, tcp=True)
@@ -1656,19 +1970,26 @@ def render_podspec(release, process_name, service_account_name):
         )
     elif process_name.startswith("worker"):
         init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=False)
-        )
-        init_containers.append(
-            render_cabotage_sidecar_container(release, with_tls=False)
+            render_cabotage_sidecar_container(release, process_name, with_tls=False)
         )
         containers.append(
             render_process_container(
                 release, process_name, datadog_tags, with_tls=False, unix=False
             )
         )
+    elif process_name.startswith("job"):
+        init_containers.append(
+            render_cabotage_sidecar_container(release, process_name, with_tls=False)
+        )
+        containers.append(
+            render_process_container(
+                release, process_name, datadog_tags, with_tls=False, unix=False
+            )
+        )
+        restart_policy = "OnFailure"
     elif process_name.startswith("release"):
         init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=False)
+            render_cabotage_sidecar_container(release, process_name, with_tls=False)
         )
         containers.append(
             render_process_container(
@@ -1678,7 +1999,7 @@ def render_podspec(release, process_name, service_account_name):
         restart_policy = "Never"
     elif process_name.startswith("postdeploy"):
         init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=False)
+            render_cabotage_sidecar_container(release, process_name, with_tls=False)
         )
         containers.append(
             render_process_container(
@@ -1688,11 +2009,11 @@ def render_podspec(release, process_name, service_account_name):
         restart_policy = "Never"
     else:
         init_containers.append(
-            render_cabotage_enroller_container(release, process_name, with_tls=False)
+            render_cabotage_sidecar_container(release, process_name, with_tls=False)
         )
         containers.append(
             render_process_container(
-                release, process_name, datadog_tags, with_tls=False
+                release, process_name, datadog_tags, with_tls=False, unix=False
             )
         )
 
@@ -1708,11 +2029,20 @@ def render_podspec(release, process_name, service_account_name):
             )
         except KeyError:
             print("unable to read DD_API_KEY")
+        dd_image = None
+        if "DD_IMAGE" in release.configuration_objects:
+            try:
+                dd_image = release.configuration_objects["DD_IMAGE"].read_value(
+                    config_writer
+                )
+            except KeyError:
+                print("unable to read DD_IMAGE")
         if dd_api_key:
-            init_containers.append(render_datadog_container(dd_api_key, datadog_tags))
+            init_containers.append(
+                render_datadog_container(dd_api_key, datadog_tags, dd_image)
+            )
 
-    app_env = release.application_environment
-    env = app_env.environment if app_env.k8s_identifier is not None else None
+    env = release.application_environment.environment
     if env and getattr(env, "ephemeral", False):
         node_pool = current_app.config.get("PREVIEW_POOL") or None
     else:
@@ -1750,6 +2080,7 @@ def render_deployment(
     app_env = release.application_environment
     env_slug = app_env.environment.slug if app_env.environment else ""
     process_counts = app_env.process_counts or {}
+    safe_labels = _safe_labels_from_release(release)
     pod_labels = {
         "organization": release.application.project.organization.slug,
         "project": release.application.project.slug,
@@ -1761,6 +2092,7 @@ def render_deployment(
         "deployment": str(deployment_id),
         "ca-admission.cabotage.io": "true",
         "resident-pod.cabotage.io": "true",
+        **safe_labels,
     }
     deployment_object = kubernetes.client.V1Deployment(
         metadata=kubernetes.client.V1ObjectMeta(
@@ -1772,6 +2104,7 @@ def render_deployment(
                 "process": process_name,
                 "app": label_value,
                 "resident-deployment.cabotage.io": "true",
+                **safe_labels,
             },
         ),
         spec=kubernetes.client.V1DeploymentSpec(
@@ -1870,11 +2203,30 @@ def create_deployment(
             )
     else:
         try:
-            return apps_api_instance.patch_namespaced_deployment(
-                deployment_object.metadata.name,
-                namespace,
-                deployment_object,
-                field_validation="Ignore",
+            # Use call_api directly to force application/merge-patch+json.
+            # The default patch method uses strategic merge patch, which
+            # merges container lists by name and never removes containers
+            # absent from the new spec. JSON merge patch (RFC 7386) replaces
+            # arrays entirely, ensuring stale containers/initContainers are
+            # cleared.
+            body = apps_api_instance.api_client.sanitize_for_serialization(
+                deployment_object
+            )
+            return apps_api_instance.api_client.call_api(
+                "/apis/apps/v1/namespaces/{namespace}/deployments/{name}",
+                "PATCH",
+                path_params={
+                    "namespace": namespace,
+                    "name": deployment_object.metadata.name,
+                },
+                body=body,
+                header_params={
+                    "Content-Type": "application/merge-patch+json",
+                    "Accept": "application/json",
+                },
+                response_types_map={200: "V1Deployment", 201: "V1Deployment"},
+                auth_settings=["BearerToken"],
+                _return_http_data_only=True,
             )
         except Exception as exc:
             raise DeployError(
@@ -1944,6 +2296,7 @@ def resize_deployment(namespace, release, process_name, pod_class_name):
 
 def render_job(namespace, release, service_account_name, process_name, job_id):
     label_value = k8s_label_value(release)
+    safe_labels = _safe_labels_from_release(release)
     job_object = kubernetes.client.V1Job(
         metadata=kubernetes.client.V1ObjectMeta(
             name=f"deployment-{job_id}",
@@ -1956,6 +2309,8 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
                 "release": str(release.version),
                 "deployment": job_id,
                 "resident-job.cabotage.io": "true",
+                "resident-deployment.cabotage.io": "true",
+                **safe_labels,
             },
         ),
         spec=kubernetes.client.V1JobSpec(
@@ -1974,6 +2329,7 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
                         "deployment": job_id,
                         "ca-admission.cabotage.io": "true",
                         "resident-pod.cabotage.io": "true",
+                        **safe_labels,
                     }
                 ),
                 spec=render_podspec(release, process_name, service_account_name),
@@ -1981,6 +2337,205 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
         ),
     )
     return job_object
+
+
+def _get_job_schedule(process_def):
+    """Extract the SCHEDULE env var from a job process definition."""
+    for key, value in process_def.get("env", []):
+        if key == "SCHEDULE":
+            return value
+    return None
+
+
+def _history_limit_for_schedule(schedule, hours=12):
+    """Estimate how many times a cron schedule fires in the given window."""
+    from croniter import croniter
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    end = now + timedelta(hours=hours)
+    it = croniter(schedule, now)
+    count = 0
+    while it.get_next(datetime) <= end:
+        count += 1
+    return max(count, 3)
+
+
+def render_cronjob(
+    namespace, release, service_account_name, process_name, deployment_id
+):
+    label_value = k8s_label_value(release)
+    resource_prefix = k8s_resource_prefix(release)
+    app_env = release.application_environment
+    env_slug = app_env.environment.slug if app_env.environment else ""
+    process_def = release.job_processes.get(process_name, {})
+    schedule = _get_job_schedule(process_def)
+    if schedule is None:
+        raise DeployError(
+            f"Job process {process_name} is missing required SCHEDULE env var"
+        )
+    process_counts = app_env.process_counts or {}
+    suspended = process_counts.get(process_name, 0) == 0
+    safe_labels = _safe_labels_from_release(release)
+    common_labels = {
+        "organization": release.application.project.organization.slug,
+        "project": release.application.project.slug,
+        "application": release.application.slug,
+        "process": process_name,
+        "app": label_value,
+        "environment": env_slug,
+        "release": str(release.version),
+        "deployment": str(deployment_id),
+        **safe_labels,
+    }
+    job_labels = {
+        **common_labels,
+        "ca-admission.cabotage.io": "true",
+        "resident-job.cabotage.io": "true",
+    }
+    pod_labels = {
+        **common_labels,
+        "ca-admission.cabotage.io": "true",
+        "resident-pod.cabotage.io": "true",
+    }
+    cronjob_object = kubernetes.client.V1CronJob(
+        metadata=kubernetes.client.V1ObjectMeta(
+            name=f"{resource_prefix}-{process_name}",
+            labels={
+                "organization": release.application.project.organization.slug,
+                "project": release.application.project.slug,
+                "application": release.application.slug,
+                "process": process_name,
+                "app": label_value,
+                "resident-cronjob.cabotage.io": "true",
+                **safe_labels,
+            },
+        ),
+        spec=kubernetes.client.V1CronJobSpec(
+            schedule=schedule,
+            suspend=suspended,
+            concurrency_policy="Forbid",
+            successful_jobs_history_limit=_history_limit_for_schedule(schedule),
+            failed_jobs_history_limit=_history_limit_for_schedule(schedule),
+            job_template=kubernetes.client.V1JobTemplateSpec(
+                metadata=kubernetes.client.V1ObjectMeta(labels=job_labels),
+                spec=kubernetes.client.V1JobSpec(
+                    active_deadline_seconds=3600,
+                    backoff_limit=0,
+                    template=kubernetes.client.V1PodTemplateSpec(
+                        metadata=kubernetes.client.V1ObjectMeta(labels=pod_labels),
+                        spec=render_podspec(
+                            release, process_name, service_account_name
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    return cronjob_object
+
+
+def create_cronjob(
+    batch_api_instance,
+    namespace,
+    release,
+    service_account_name,
+    process_name,
+    deployment_id,
+):
+    cronjob_object = render_cronjob(
+        namespace, release, service_account_name, process_name, deployment_id
+    )
+    existing = None
+    try:
+        existing = batch_api_instance.read_namespaced_cron_job(
+            cronjob_object.metadata.name, namespace
+        )
+    except ApiException as exc:
+        if exc.status == 404:
+            pass
+        else:
+            raise DeployError(
+                "Unexpected exception fetching CronJob/"
+                f"{cronjob_object.metadata.name} in {namespace}: {exc}"
+            )
+    if existing is None:
+        try:
+            return batch_api_instance.create_namespaced_cron_job(
+                namespace, cronjob_object
+            )
+        except Exception as exc:
+            raise DeployError(
+                "Unexpected exception creating CronJob/"
+                f"{cronjob_object.metadata.name} in {namespace}: {exc}"
+            )
+    else:
+        try:
+            return batch_api_instance.replace_namespaced_cron_job(
+                cronjob_object.metadata.name, namespace, cronjob_object
+            )
+        except Exception as exc:
+            raise DeployError(
+                "Unexpected exception replacing CronJob/"
+                f"{cronjob_object.metadata.name} in {namespace}: {exc}"
+            )
+
+
+def suspend_cronjob(namespace, release, process_name, suspend):
+    """Suspend or unsuspend a CronJob."""
+    api_client = kubernetes_ext.kubernetes_client
+    batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+    cronjob_name = f"{k8s_resource_prefix(release)}-{process_name}"
+    try:
+        batch_api_instance.read_namespaced_cron_job(cronjob_name, namespace)
+    except ApiException as exc:
+        if exc.status == 404:
+            return
+        raise
+    patch = {"spec": {"suspend": suspend}}
+    batch_api_instance.patch_namespaced_cron_job(cronjob_name, namespace, patch)
+
+
+def resize_cronjob(namespace, release, process_name, pod_class_name):
+    """Patch a CronJob's container resources to match a new pod class."""
+    pod_class = pod_classes[pod_class_name]
+    api_client = kubernetes_ext.kubernetes_client
+    batch_api_instance = kubernetes.client.BatchV1Api(api_client)
+    cronjob_name = f"{k8s_resource_prefix(release)}-{process_name}"
+    try:
+        batch_api_instance.read_namespaced_cron_job(cronjob_name, namespace)
+    except ApiException as exc:
+        if exc.status == 404:
+            return
+        raise
+    patch = {
+        "spec": {
+            "jobTemplate": {
+                "spec": {
+                    "template": {
+                        "spec": {
+                            "containers": [
+                                {
+                                    "name": process_name,
+                                    "resources": {
+                                        "limits": {
+                                            "cpu": pod_class["cpu"]["limits"],
+                                            "memory": pod_class["memory"]["limits"],
+                                        },
+                                        "requests": {
+                                            "cpu": pod_class["cpu"]["requests"],
+                                            "memory": pod_class["memory"]["requests"],
+                                        },
+                                    },
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    }
+    batch_api_instance.patch_namespaced_cron_job(cronjob_name, namespace, patch)
 
 
 def fetch_job_logs(core_api_instance, namespace, job_object):
@@ -2031,16 +2586,18 @@ def delete_job(batch_api_instance, namespace, job_object):
 
 
 def run_job(
-    core_api_instance,
-    batch_api_instance,
-    namespace,
-    job_object,
-    redis_client=None,
-    log_key=None,
-    heartbeat_type=None,
-    heartbeat_id=None,
-    heartbeat_ttl=None,
+    core_api_instance: kubernetes.client.CoreV1Api,
+    batch_api_instance: kubernetes.client.BatchV1Api,
+    namespace: str,
+    job_object: kubernetes.client.V1Job,
+    redis_client: Redis[bytes] | None = None,
+    log_key: str | None = None,
+    heartbeat_type: EntityType | None = None,
+    heartbeat_id: str | None = None,
+    heartbeat_ttl: int | None = None,
 ):
+    if job_object.metadata is None:
+        raise DeployError("Cannot deploy job without metdata")
     try:
         batch_api_instance.create_namespaced_job(namespace, job_object)
     except ApiException as exc:
@@ -2064,9 +2621,17 @@ def run_job(
 
     try:
         while True:
-            job_status = batch_api_instance.read_namespaced_job_status(
-                job_object.metadata.name, namespace
+            # FIXME: remove the cast once `_retry_on_404` is properly typed
+            job_status = cast(
+                "kubernetes.client.V1Job",
+                _retry_on_404(
+                    batch_api_instance.read_namespaced_job_status,
+                    job_object.metadata.name,
+                    namespace,
+                ),
             )
+            if job_status.status is None:
+                raise DeployError("Cannot deploy job without a status")
             if job_status.status.failed and job_status.status.failed > 0:
                 job_logs = fetch_job_logs(core_api_instance, namespace, job_status)
                 delete_job(batch_api_instance, namespace, job_object)
@@ -2084,7 +2649,7 @@ def run_job(
     finally:
         try:
             delete_job(batch_api_instance, namespace, job_object)
-        except (DeployError, ApiException):
+        except DeployError, ApiException:
             pass
 
 
@@ -2143,9 +2708,9 @@ def _run_job_streaming(
             )
             if container:
                 kwargs["container"] = container
-            for line in w.stream(
-                core_api_instance.read_namespaced_pod_log,
-                **kwargs,
+            for line in cast(
+                "Iterator[str]",
+                w.stream(core_api_instance.read_namespaced_pod_log, **kwargs),
             ):
                 if isinstance(line, bytes):
                     line = line.decode("utf-8", errors="replace")
@@ -2163,8 +2728,10 @@ def _run_job_streaming(
         # Poll for final job status — k8s may not have updated it yet
         succeeded = False
         for _ in range(30):
-            job_status = batch_api_instance.read_namespaced_job_status(
-                job_name, namespace
+            job_status = _retry_on_404(
+                batch_api_instance.read_namespaced_job_status,
+                job_name,
+                namespace,
             )
             if job_status.status.succeeded and job_status.status.succeeded > 0:
                 succeeded = True
@@ -2186,11 +2753,11 @@ def _run_job_streaming(
     finally:
         try:
             delete_job(batch_api_instance, namespace, job_object)
-        except (DeployError, ApiException):
+        except DeployError, ApiException:
             pass
 
 
-def deploy_release(deployment):
+def deploy_release(deployment: Deployment):
     job_id = secrets.token_hex(4)
     deployment.job_id = job_id
     db.session.add(deployment)
@@ -2218,8 +2785,10 @@ def deploy_release(deployment):
                 refresh_heartbeat(
                     redis_client, "deploy", deployment_id_str, ttl=heartbeat_ttl
                 )
-            except Exception:  # nosec B110
-                pass
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "Failed to publish deploy log line to redis", exc_info=True
+                )
 
     # Pick up check run from the build pipeline metadata
     check = CheckRun.from_metadata(
@@ -2312,14 +2881,16 @@ def deploy_release(deployment):
             changed = False
             # Auto-hostname reconciliation only applies to nginx ingresses
             if ingress_domain:
+                ing: Ingress
                 for ing in app_env.ingresses:
                     if ing.ingress_class_name != "nginx":
                         continue
+                    changed |= _repair_ingress_hostnames(ing)
                     auto_hosts = [h for h in ing.hosts if h.is_auto_generated]
                     existing_hostnames = {h.hostname for h in ing.hosts}
                     expected = (
-                        f"{readable_k8s_hostname(*hostname_pairs)}"
-                        f"-{ing.name}.{ingress_domain}"
+                        f"{readable_k8s_hostname(*hostname_pairs, suffix=ing.name)}"
+                        f".{ingress_domain}"
                     )
                     has_expected = expected in existing_hostnames
                     if not has_expected:
@@ -2380,6 +2951,18 @@ def deploy_release(deployment):
             core_api_instance, deployment.release_object
         )
         log("Patching ServiceAccount with ImagePullSecrets")
+        if service_account.metadata is None or service_account.metadata.name is None:
+            raise DeployError("Release failed due to unnamed service_account")
+
+        if namespace.metadata is None or namespace.metadata.name is None:
+            raise DeployError("Release failed due to unnamed namespace")
+
+        if (
+            image_pull_secrets.metadata is None
+            or image_pull_secrets.metadata.name is None
+        ):
+            raise DeployError("Release failed due to unnamed image_pull_secrets")
+
         service_account = core_api_instance.patch_namespaced_service_account(
             service_account.metadata.name,
             namespace.metadata.name,
@@ -2391,6 +2974,10 @@ def deploy_release(deployment):
                 ],
             ),
         )
+        # check again for the patched `service_account`
+        if service_account.metadata is None or service_account.metadata.name is None:
+            raise DeployError("Release failed due to unnamed service_account")
+
         for release_command in deployment.release_object.release_commands:
             log(f"Running release command {release_command}")
             job_object = render_job(
@@ -2425,6 +3012,18 @@ def deploy_release(deployment):
             )
             create_deployment(
                 apps_api_instance,
+                namespace.metadata.name,
+                deployment.release_object,
+                service_account.metadata.name,
+                process_name,
+                deployment_id=deployment.id,
+            )
+        for process_name in deployment.release_object.job_processes:
+            _pc = deployment.application_environment.process_counts or {}
+            _suspended = "suspended" if _pc.get(process_name, 0) == 0 else "active"
+            log(f"Creating CronJob for {process_name} ({_suspended})")
+            create_cronjob(
+                batch_api_instance,
                 namespace.metadata.name,
                 deployment.release_object,
                 service_account.metadata.name,
@@ -2488,6 +3087,7 @@ def deploy_release(deployment):
         # Clean up k8s Deployments and Services for processes no longer in
         # the Procfile (e.g., a "worker" process that was removed).
         active_process_names = list(deployment.release_object.processes.keys())
+        active_job_names = list(deployment.release_object.job_processes.keys())
         cleanup_orphaned_deployments_and_services(
             apps_api_instance,
             core_api_instance,
@@ -2495,10 +3095,16 @@ def deploy_release(deployment):
             active_process_names,
             log=log,
         )
+        cleanup_orphaned_cronjobs(
+            batch_api_instance,
+            deployment.release_object,
+            active_job_names,
+            log=log,
+        )
 
         # Prune stale keys from process_counts and process_pod_classes
         app_env = deployment.application_environment
-        active_set = set(active_process_names)
+        active_set = set(active_process_names) | set(active_job_names)
         pc = dict(app_env.process_counts or {})
         ppc = dict(app_env.process_pod_classes or {})
         stale_pc = set(pc.keys()) - active_set
@@ -2564,10 +3170,13 @@ def deploy_release(deployment):
         if redis_client is not None and log_key is not None:
             try:
                 publish_end(redis_client, log_key, error=True)
-            except Exception:  # nosec B110
-                pass
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "Failed to publish deploy log stream end", exc_info=True
+                )
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
+        _dispatch_deploy_failure(deployment, str(exc))
         check.fail(
             "Deployment failed",
             detail=str(exc),
@@ -2596,10 +3205,13 @@ def deploy_release(deployment):
         if redis_client is not None and log_key is not None:
             try:
                 publish_end(redis_client, log_key, error=True)
-            except Exception:  # nosec B110
-                pass
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "Failed to publish deploy log stream end", exc_info=True
+                )
         deployment.deploy_log = "\n".join(deploy_log)
         db.session.commit()
+        _dispatch_deploy_failure(deployment, "Deploy failed due to an internal error")
         check.fail(
             "Deployment failed",
             detail=str(exc),
@@ -2610,8 +3222,10 @@ def deploy_release(deployment):
     if redis_client is not None and log_key is not None:
         try:
             publish_end(redis_client, log_key, error=False)
-        except Exception:  # nosec B110
-            pass
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "Failed to publish deploy log stream end", exc_info=True
+            )
     deployment.deploy_log = "\n".join(deploy_log)
     db.session.commit()
 
@@ -2625,12 +3239,12 @@ def deploy_release(deployment):
             if ing.enabled and any(
                 h.is_auto_generated and h.tls_enabled for h in ing.hosts
             ):
-                tls_secret = f"{resource_prefix}-{ing.name}-tls"
-                log(f"Waiting for TLS certificate ({tls_secret})")
-                tls_ready = _wait_for_tls_secret(
-                    core_api_instance,
+                cert_name = f"{resource_prefix}-{ing.name}-tls"
+                log(f"Waiting for TLS certificate ({cert_name})")
+                tls_ready = _wait_for_tls_certificate(
+                    api_client,
                     namespace.metadata.name,
-                    tls_secret,
+                    cert_name,
                     log=log,
                 )
                 break
@@ -2659,6 +3273,41 @@ def deploy_release(deployment):
         details_url=cabotage_url(check.application, deploy_path),
         **deploy_links,
     )
+    if deployment.deploy_metadata and deployment.deploy_metadata.get("auto_deploy"):
+        try:
+            image_id = deployment.deploy_metadata.get(
+                "source_image_id", str(deployment.id)
+            )
+            dispatch_autodeploy_notification(
+                "complete",
+                image_id,
+                deployment.application,
+                deployment.application_environment,
+                image_url=cabotage_url(check.application, f"images/{image_id}"),
+                deploy_url=cabotage_url(check.application, deploy_path),
+                image_metadata=deployment.deploy_metadata,
+            )
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "Failed to dispatch autodeploy completion", exc_info=True
+            )
+    else:
+        try:
+            dispatch_pipeline_notification.delay(
+                "pipeline.deploy",
+                "Deployment",
+                str(deployment.id),
+                str(deployment.application.project.organization_id),
+                str(deployment.application.id),
+                str(deployment.application_environment_id)
+                if deployment.application_environment_id
+                else None,
+                complete=True,
+            )
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "Failed to dispatch deploy completion notification", exc_info=True
+            )
 
 
 def fake_deploy_release(deployment):
@@ -2709,14 +3358,16 @@ def fake_deploy_release(deployment):
         hostname_pairs = _ingress_hostname_pairs(app_env)
         changed = False
         if ingress_domain:
+            ing: Ingress
             for ing in app_env.ingresses:
                 if ing.ingress_class_name != "nginx":
                     continue
+                changed |= _repair_ingress_hostnames(ing)
                 auto_hosts = [h for h in ing.hosts if h.is_auto_generated]
                 existing_hostnames = {h.hostname for h in ing.hosts}
                 expected = (
-                    f"{readable_k8s_hostname(*hostname_pairs)}"
-                    f"-{ing.name}.{ingress_domain}"
+                    f"{readable_k8s_hostname(*hostname_pairs, suffix=ing.name)}"
+                    f".{ingress_domain}"
                 )
                 has_expected = expected in existing_hostnames
                 if not has_expected:
@@ -2792,6 +3443,19 @@ def fake_deploy_release(deployment):
             f"in Namespace/{namespace.metadata.name}"
         )
         deploy_log.append(yaml.dump(remove_none(deployment_object.to_dict())))
+    for process in deployment.release_object.job_processes:
+        cronjob_object = render_cronjob(
+            namespace.metadata.name,
+            deployment.release_object,
+            service_account.metadata.name,
+            process,
+            deployment_id=deployment.id,
+        )
+        deploy_log.append(
+            f"Creating CronJob/{cronjob_object.metadata.name} "
+            f"in Namespace/{namespace.metadata.name}"
+        )
+        deploy_log.append(yaml.dump(remove_none(cronjob_object.to_dict())))
     deployment.deploy_log = "\n".join(deploy_log)
     db.session.commit()
     if (

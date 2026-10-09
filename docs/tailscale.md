@@ -170,7 +170,7 @@ kubectl get pods -n tailscale \
 
 Create Tailscale ingresses via the application ingress UI:
 
-1. Add new ingress with class `tailscale`
+1. Enter an ingress name and select class `tailscale` (`default` is an example, not a prefilled name)
 2. Set a hostname
 3. Deploy
 

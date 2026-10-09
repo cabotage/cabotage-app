@@ -1,0 +1,64 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, resource_path %}
+
+{% block title %}
+  Connect GitHub Installation - {{ organization.name }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': organization.slug, 'url': url_for('user.organization', org_slug=organization.slug) },
+    {'label': 'settings', 'url': url_for('user.organization_settings', org_slug=organization.slug) },
+    {'label': 'connect github'}
+  ]) }}
+{% endblock resource_path %}
+
+{% block content %}
+  <div class="max-w-2xl">
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-xl font-semibold text-base-content">Connect GitHub Installation</h1>
+        <p class="text-sm text-base-content/50">Choose an installation your GitHub account can access.</p>
+      </div>
+    </div>
+
+    {% if installations %}
+      <div class="card bg-base-200/50 border border-base-300/50">
+        <div class="card-body p-0">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Account</th>
+                <th>Repositories</th>
+                <th class="text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for installation in installations %}
+                <tr>
+                  <td>{{ installation.account_login }}</td>
+                  <td>{{ 'All repositories' if installation.repository_selection == 'all' else 'Selected repositories' }}</td>
+                  <td class="text-right">
+                    <form method="post" action="{{ url_for('user.github_connect_complete', org_slug=organization.slug) }}">
+                      {{ csrf_form.csrf_token }}
+                      <input type="hidden" name="installation" value="{{ installation.token }}">
+                      <button type="submit" class="btn btn-primary btn-sm gap-2">
+                        {{ icon('link', 'w-4 h-4') }}
+                        Connect
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% else %}
+      <div class="alert">
+        {{ icon('info', 'w-4 h-4') }}
+        <span>No accessible GitHub App installations were found for your GitHub account.</span>
+      </div>
+    {% endif %}
+  </div>
+{% endblock content %}

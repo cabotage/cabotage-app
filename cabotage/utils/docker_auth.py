@@ -2,6 +2,12 @@ import binascii
 import hashlib
 import json
 import time
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from typing import Literal
+    from cabotage._types.docker_auth import Access, JWK
+
 import uuid
 
 from base64 import (
@@ -10,6 +16,7 @@ from base64 import (
 )
 
 
+from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
     PublicFormat,
@@ -23,13 +30,13 @@ from itsdangerous import (
 from cabotage.server import vault
 
 
-def number_to_bytes(num, num_bytes):
+def number_to_bytes(num: int, num_bytes: int) -> bytes:
     padded_hex = "%0*x" % (2 * num_bytes, num)
     big_endian = binascii.a2b_hex(padded_hex.encode("ascii"))
     return big_endian
 
 
-def generate_libcrypt_key_id(public_key_pem):
+def generate_libcrypt_key_id(public_key_pem: bytes) -> str:
     pub_key = load_pem_public_key(public_key_pem)
 
     der_bytes = pub_key.public_bytes(
@@ -48,9 +55,11 @@ def generate_libcrypt_key_id(public_key_pem):
     return fingerprint
 
 
-def public_key_to_jwk(public_key_pem):
+def public_key_to_jwk(public_key_pem: bytes) -> JWK:
     """Convert a PEM-encoded EC public key to a JWK dict."""
     pub_key = load_pem_public_key(public_key_pem)
+    if not isinstance(pub_key, EllipticCurvePublicKey):
+        raise TypeError(f"Expected EC public key, got {type(pub_key).__name__}")
     numbers = pub_key.public_numbers()
     x_bytes = number_to_bytes(numbers.x, 32)
     y_bytes = number_to_bytes(numbers.y, 32)
@@ -68,11 +77,11 @@ def public_key_to_jwk(public_key_pem):
     }
 
 
-def generate_signing_jwks(public_key_pem):
+def generate_signing_jwks(public_key_pem: bytes) -> str:
     return json.dumps({"keys": [public_key_to_jwk(public_key_pem)]})
 
 
-def generate_docker_jose_header(public_key_pem):
+def generate_docker_jose_header(public_key_pem: bytes) -> str:
     return json.dumps(
         {
             "typ": "JWT",
@@ -84,11 +93,11 @@ def generate_docker_jose_header(public_key_pem):
 
 
 def generate_docker_claim_set(
-    issuer="cabotage-app",
-    subject="cabotage-builder",
-    audience="cabotage-registry",
-    access=None,
-):
+    issuer: str = "cabotage-app",
+    subject: str = "cabotage-builder",
+    audience: str = "cabotage-registry",
+    access: list[Access] | None = None,
+) -> str:
     if access is None:
         access = []
 
@@ -99,7 +108,7 @@ def generate_docker_claim_set(
             "iss": issuer,
             "sub": subject,
             "aud": audience,
-            "exp": int(issued_at + 600),  # Effectively limits builds to 10 minutes
+            "exp": issued_at + 600,  # Effectively limits builds to 10 minutes
             "nbf": issued_at,
             "iat": issued_at,
             "jti": jti,
@@ -109,32 +118,39 @@ def generate_docker_claim_set(
     )
 
 
-def _docker_credential_serializer(secret=None):
+def _docker_credential_serializer(secret: str | None = None) -> URLSafeTimedSerializer:
     if secret is None:
-        return ValueError("secret must be supplied!")
+        raise ValueError("secret must be supplied!")
     serializer = URLSafeTimedSerializer(secret)
     return serializer
 
 
-def parse_docker_scope(scope_string):
-    scopes = []
+def parse_docker_scope(scope_string: str) -> list[Access]:
+    scopes: list[Access] = []
     for scope in scope_string.split(" "):
         if len(scope.split(":")) == 3:
             r_type, r_name, r_actions = scope.split(":")
         elif len(scope.split(":")) > 3:
             r_type, r_host, r_port, r_actions = scope.split(":")
             r_name = f"{r_host}:{r_port}"
-        r_actions = r_actions.split(",")
-        scopes.append({"type": r_type, "name": r_name, "actions": r_actions})
+        else:
+            raise Exception("unreachable")
+        scopes.append({"type": r_type, "name": r_name, "actions": r_actions.split(",")})
     return scopes
 
 
-def docker_access_intersection(scope0, scope1):
-    scope0 = {f'{x["type"]}:{x["name"]}': x["actions"] for x in scope0}
-    scope1 = {f'{x["type"]}:{x["name"]}': x["actions"] for x in scope1}
-    intersection = []
-    for key in frozenset(scope0.keys()) & frozenset(scope1.keys()):
-        actions = list(frozenset(scope0[key]) & frozenset(scope1[key]))
+def docker_access_intersection(
+    scope0: list[Access], scope1: list[Access]
+) -> list[Access]:
+    scope_to_action_0 = {f"{x['type']}:{x['name']}": x["actions"] for x in scope0}
+    scope_to_action_1 = {f"{x['type']}:{x['name']}": x["actions"] for x in scope1}
+    intersection: list[Access] = []
+    for key in frozenset(scope_to_action_0.keys()) & frozenset(
+        scope_to_action_1.keys()
+    ):
+        actions = list(
+            frozenset(scope_to_action_0[key]) & frozenset(scope_to_action_1[key])
+        )
         if actions:
             r_type, r_name = key.split(":", 1)
             intersection.append({"type": r_type, "name": r_name, "actions": actions})
@@ -142,11 +158,11 @@ def docker_access_intersection(scope0, scope1):
 
 
 def generate_docker_credentials(
-    secret=None,
-    resource_type="registry",
-    resource_name="catalog",
-    resource_actions=None,
-):
+    secret: str | None = None,
+    resource_type: Literal["repository", "registry"] = "registry",
+    resource_name: str = "catalog",
+    resource_actions: list[str] | None = None,
+) -> str:
     if resource_actions is None:
         resource_actions = ["*"]
     serializer = _docker_credential_serializer(secret=secret)
@@ -157,12 +173,12 @@ def generate_docker_credentials(
 
 
 def generate_kubernetes_imagepullsecrets(
-    secret,
-    registry_urls=None,
-    resource_type="registry",
-    resource_name="catalog",
-    resource_actions=None,
-):
+    secret: str | None,
+    registry_urls: list[str] | None = None,
+    resource_type: Literal["repository", "registry"] = "registry",
+    resource_name: str = "catalog",
+    resource_actions: list[str] | None = None,
+) -> str:
     if registry_urls is None:
         registry_urls = []
     password = generate_docker_credentials(
@@ -181,16 +197,18 @@ def generate_kubernetes_imagepullsecrets(
     )
 
 
-def check_docker_credentials(token, secret=None, max_age=60):
+def check_docker_credentials(
+    token: str, secret: str | None = None, max_age: int | None = 60
+) -> list[Access]:
     serializer = _docker_credential_serializer(secret=secret)
     try:
-        access = serializer.loads(token, max_age=max_age)
+        access = cast("list[Access]", serializer.loads(token, max_age=max_age))
         return access
     except BadData:
         return []
 
 
-def generate_docker_registry_jwt(access=None):
+def generate_docker_registry_jwt(access: list[Access] | None = None) -> str:
     if access is None:
         access = []
 
@@ -201,8 +219,8 @@ def generate_docker_registry_jwt(access=None):
     header_encoded = urlsafe_b64encode(header.encode("utf-8"))
     claim_set_encoded = urlsafe_b64encode(claim_set.encode("utf-8"))
     payload = (
-        f'{header_encoded.rstrip(b"=").decode()}'
-        f'.{claim_set_encoded.rstrip(b"=").decode()}'
+        f"{header_encoded.rstrip(b'=').decode()}"
+        f".{claim_set_encoded.rstrip(b'=').decode()}"
     )
 
     signature = vault.sign_payload(payload, marshaling_algorithm="jws")

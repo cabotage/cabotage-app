@@ -1761,7 +1761,7 @@ class TestCombinedDrift:
             _, _, ingress_diff = application.ready_for_deployment_in_env(app_env)
             # If it doesn't crash, it should detect the new ingress
             assert ingress_diff.has_changes()
-        except (TypeError, AttributeError):
+        except TypeError, AttributeError:
             # Documents a real edge case: .get("ingresses", {}) returns
             # None (not {}) when the key exists with a null value
             pytest.fail(

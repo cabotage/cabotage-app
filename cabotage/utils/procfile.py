@@ -29,30 +29,46 @@ THE SOFTWARE.
 
 import re
 
-_PROCFILE_LINE = re.compile(
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from _typeshed import StrOrBytesPath, SupportsRead
+    from collections.abc import Iterable, Generator
+    from typing import TypedDict, Final
+
+    class Entry(TypedDict):
+        cmd: str
+        env: list[tuple[str, str]]
+
+    type Procfile = dict[str, Entry]
+
+_PROCFILE_LINE: Final = re.compile(
     "".join(
         [
             r"^(?P<process_type>.+?):\s*",
-            r"(?:env(?P<environment>(?:\s+\S+=\S+)+)\s+)?",
+            r"(?:env(?P<environment>(?:\s+\S+=\"[^\"]*\"|\s+\S+=\S+)+)\s+)?",
             r"(?P<command>.+)$",
         ]
     )
 )
 
+_ENV_VAR: Final = re.compile(r"""(\S+)=(?:"([^"]*)"|(\S+))""")
 
-def _find_duplicates(items):
-    seen = {}
-    duplicates = []
+
+def _find_duplicates(items: Iterable[tuple[int, str]]) -> list[tuple[int, str, int]]:
+    seen: dict[str, int] = {}
+    duplicates: list[tuple[int, str, int]] = []
     for i, item in items:
-        if item in seen:
-            duplicates.append((i, item, seen[item]))
+        if (seen_item := seen.get(item)) is not None:
+            duplicates.append((i, item, seen_item))
         else:
             seen[item] = i
     return duplicates
 
 
-def _group_lines(lines):
-    start, group = (0, [])
+def _group_lines(lines: Iterable[str]) -> Generator[tuple[int, str]]:
+    start, group = (0, list[str]())
     for i, line in enumerate(lines):
         if line.rstrip().endswith("\\"):
             group.append(line[:-1])
@@ -62,37 +78,39 @@ def _group_lines(lines):
             else:
                 group.append(line)
             yield start, "".join(group)
-            start, group = (i + 1, [])
+            start, group = (i + 1, list[str]())
     if group:
         yield start, "".join(group[:-1]) + group[-1].rstrip()
 
 
-def _parse_procfile_line(line):
+def _parse_procfile_line(line: str) -> tuple[str, str, list[tuple[str, str]]]:
     line = line.strip()
     match = _PROCFILE_LINE.match(line)
     if match is None:
         raise ValueError('Invalid profile line "%s".' % line)
     parts = match.groupdict()
     environment = parts["environment"]
-    if environment:
-        environment = [
-            tuple(variable.strip().split("=", 1))
-            for variable in environment.strip().split(" ")
-        ]
-    else:
-        environment = []
     return (
         parts["process_type"],
         parts["command"],
-        environment,
+        [
+            (m.group(1), m.group(2) if m.group(2) is not None else m.group(3))
+            for m in _ENV_VAR.finditer(environment)
+        ]
+        if environment
+        else [],
     )
 
 
-def loads(content):
+def loads(content: str) -> Procfile:
     """Load a Procfile from a string."""
     lines = _group_lines(line for line in content.split("\n"))
-    lines = [(i, _parse_procfile_line(line)) for i, line in lines if line.strip()]
-    errors = []
+    lines = [
+        (i, _parse_procfile_line(line))
+        for i, line in lines
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    errors: list[str] = []
     # Reject files with duplicate process types (no sane default).
     duplicates = _find_duplicates(((i, line[0]) for i, line in lines))
     for i, process_type, j in duplicates:
@@ -125,12 +143,12 @@ def loads(content):
     return {k: {"cmd": cmd, "env": env} for _, (k, cmd, env) in lines}
 
 
-def load(stream):
+def load(stream: SupportsRead[bytes]) -> Procfile:
     """Load a Procfile from a file-like object."""
     return loads(stream.read().decode("utf-8"))
 
 
-def loadfile(path):
+def loadfile(path: StrOrBytesPath) -> Procfile:
     """Load a Procfile from a file."""
     with open(path, "rb") as stream:
         return load(stream)

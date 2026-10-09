@@ -12,3 +12,4 @@ cabotage/client/static/main.min.css
 cabotage/client/static/main.min.js
 /htmlcov
 /.coverage
+/.state

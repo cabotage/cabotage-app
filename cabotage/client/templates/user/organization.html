@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, empty_state, service_card, stat_card, tab_nav, render_field %}
+{% from "_macros.html" import icon, resource_path, page_header, empty_state, service_card, stat_card, tab_nav, org_tab_nav, render_field %}
 
 {% block title %}
   {{ organization.name }} - Cabotage
@@ -13,16 +13,7 @@
 {% endblock resource_path %}
 
 {% block tab_bar %}
-  <div class="app-content-padded !py-0">
-    {% set proj_count = organization.active_projects|length %}
-    {% set member_count = organization.members|length %}
-    {% set observe_tab = {'id': 'observe', 'label': 'Observe', 'icon': 'bar-chart', 'url': url_for('user.organization_observe', org_slug=organization.slug)} if config.MIMIR_URL else {'id': 'observe', 'label': 'Observe', 'icon': 'bar-chart', 'disabled': true} %}
-    {{ tab_nav([
-        {'id': 'projects', 'label': 'Projects', 'icon': 'folder', 'badge': proj_count},
-        {'id': 'members', 'label': 'Members', 'icon': 'users', 'badge': member_count},
-        observe_tab
-        ]) }}
-  </div>
+  {{ org_tab_nav(organization, 'projects') }}
 {% endblock tab_bar %}
 
 {% block content %}
@@ -50,7 +41,6 @@
     </div>
   {% endcall %}
 
-  <div data-tab-panel="projects" class="tab-panel">
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
       {{ stat_card(proj_count, 'Projects', 'folder', 'secondary') }}
       {{ stat_card(org_app_count, 'Applications', 'box', 'accent') }}
@@ -127,142 +117,6 @@
     {% endif %}
   </div>
 
-  <div data-tab-panel="members" class="tab-panel">
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-      {{ stat_card(member_count, 'Members', 'users', 'secondary') }}
-    </div>
-
-    <div class="flex items-center justify-between mb-3">
-      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider">Members</h2>
-      {% if is_admin %}
-        <button type="button"
-                onclick="document.getElementById('add-member-modal').classList.remove('hidden')"
-                class="btn btn-primary btn-sm gap-2">
-          {{ icon('plus', 'w-4 h-4') }}
-          Add Member
-        </button>
-      {% endif %}
-    </div>
-
-    {% if organization.members %}
-      <div class="flex flex-col gap-2">
-        {% for membership in organization.members %}
-          <div class="flex items-center justify-between p-3 rounded-lg bg-base-200/50 border border-base-content/5">
-            <div class="flex items-center gap-3 min-w-0">
-              {% if membership.admin %}
-                <div class="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
-                  {{ icon('shield', 'w-4 h-4') }}
-                </div>
-              {% else %}
-                <div class="w-8 h-8 rounded-full bg-secondary/10 text-secondary flex items-center justify-center flex-shrink-0">
-                  {{ icon('user', 'w-4 h-4') }}
-                </div>
-              {% endif %}
-              <div class="min-w-0">
-                <span class="text-sm font-medium text-base-content truncate">{{ membership.user.username | display_username }}</span>
-                {% if membership.admin %}
-                  <span class="badge badge-xs badge-primary ml-2">Admin</span>
-                {% else %}
-                  <span class="badge badge-xs badge-ghost ml-2">Member</span>
-                {% endif %}
-                {% if membership.user.id == current_user.id %}<span class="text-xs text-base-content/30 ml-1">(you)</span>{% endif %}
-              </div>
-            </div>
-            {% if is_admin and membership.user.id != current_user.id and remove_member_form is defined %}
-              <div class="flex items-center gap-1.5 flex-shrink-0">
-                {% if membership.admin %}
-                  <button type="button"
-                          class="btn btn-ghost btn-xs gap-1 text-warning"
-                          title="Demote from admin"
-                          onclick="document.getElementById('demote-{{ membership.user.id }}').showModal()">
-                    {{ icon('shield', 'w-3.5 h-3.5') }}
-                    Demote
-                  </button>
-                {% else %}
-                  <button type="button"
-                          class="btn btn-ghost btn-xs gap-1"
-                          title="Promote to admin"
-                          onclick="document.getElementById('promote-{{ membership.user.id }}').showModal()">
-                    {{ icon('shield', 'w-3.5 h-3.5') }}
-                    Promote
-                  </button>
-                {% endif %}
-                  <button type="button"
-                          class="btn btn-ghost btn-xs text-error"
-                          title="Remove member"
-                          onclick="document.getElementById('remove-{{ membership.user.id }}').showModal()">
-                    {{ icon('x', 'w-3.5 h-3.5') }}
-                  </button>
-              </div>
-
-              {% if membership.admin %}
-              <dialog id="demote-{{ membership.user.id }}" class="modal confirm-modal" data-confirm-value="{{ membership.user.username }}">
-                <div class="modal-box max-w-sm">
-                  <form action="{{ url_for('user.organization_demote_user', org_slug=organization.slug) }}" method="post">
-                    {{ remove_member_form.hidden_tag() }}
-                    <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
-                    <h3 class="text-base font-semibold text-base-content mb-2">Demote from Admin</h3>
-                    <p class="text-sm text-base-content/60 mb-3">Remove admin privileges from <strong>{{ membership.user.username }}</strong>?</p>
-                    <p class="text-xs text-base-content/40 mb-1">Type <strong>{{ membership.user.username }}</strong> to confirm</p>
-                    <input type="text" class="input input-bordered input-sm w-full confirm-input" autocomplete="off" />
-                    <div class="modal-action">
-                      <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('dialog').close()">Cancel</button>
-                      <button type="submit" class="btn btn-warning btn-sm confirm-btn" disabled>Demote</button>
-                    </div>
-                  </form>
-                </div>
-                <form method="dialog" class="modal-backdrop"><button>close</button></form>
-              </dialog>
-              {% else %}
-              <dialog id="promote-{{ membership.user.id }}" class="modal confirm-modal" data-confirm-value="{{ membership.user.username }}">
-                <div class="modal-box max-w-sm">
-                  <form action="{{ url_for('user.organization_promote_user', org_slug=organization.slug) }}" method="post">
-                    {{ remove_member_form.hidden_tag() }}
-                    <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
-                    <h3 class="text-base font-semibold text-base-content mb-2">Promote to Admin</h3>
-                    <p class="text-sm text-base-content/60 mb-3">Grant admin privileges to <strong>{{ membership.user.username }}</strong>?</p>
-                    <p class="text-xs text-base-content/40 mb-1">Type <strong>{{ membership.user.username }}</strong> to confirm</p>
-                    <input type="text" class="input input-bordered input-sm w-full confirm-input" autocomplete="off" />
-                    <div class="modal-action">
-                      <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('dialog').close()">Cancel</button>
-                      <button type="submit" class="btn btn-primary btn-sm confirm-btn" disabled>Promote</button>
-                    </div>
-                  </form>
-                </div>
-                <form method="dialog" class="modal-backdrop"><button>close</button></form>
-              </dialog>
-              {% endif %}
-
-              <dialog id="remove-{{ membership.user.id }}" class="modal confirm-modal" data-confirm-value="{{ membership.user.username }}">
-                <div class="modal-box max-w-sm">
-                  <form action="{{ url_for('user.organization_remove_user', org_slug=organization.slug) }}" method="post">
-                    {{ remove_member_form.hidden_tag() }}
-                    <input type="hidden" name="organization_id" value="{{ organization.id }}" />
-                    <input type="hidden" name="user_id" value="{{ membership.user.id }}" />
-                    <h3 class="text-base font-semibold text-base-content mb-2">Remove Member</h3>
-                    <p class="text-sm text-base-content/60 mb-3">Remove <strong>{{ membership.user.username }}</strong> from this organization?</p>
-                    <p class="text-xs text-base-content/40 mb-1">Type <strong>{{ membership.user.username }}</strong> to confirm</p>
-                    <input type="text" class="input input-bordered input-sm w-full confirm-input" autocomplete="off" />
-                    <div class="modal-action">
-                      <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('dialog').close()">Cancel</button>
-                      <button type="submit" class="btn btn-error btn-sm confirm-btn" disabled>Remove</button>
-                    </div>
-                  </form>
-                </div>
-                <form method="dialog" class="modal-backdrop"><button>close</button></form>
-              </dialog>
-            {% endif %}
-          </div>
-        {% endfor %}
-      </div>
-    {% else %}
-      <div class="empty-state">
-        <div class="text-base-content/15 mb-4">{{ icon('users', 'w-12 h-12') }}</div>
-        <h3 class="text-base font-medium text-base-content/60 mb-1">No members</h3>
-        <p class="text-sm text-base-content/40 max-w-sm">This organization has no members.</p>
-      </div>
-    {% endif %}
-  </div>
 
   {% from "_macros.html" import create_modal %}
   {% if project_create_form %}
@@ -301,40 +155,6 @@
       });
       if (envNameEl.value && !envSlugEl.value) syncEnvSlug();
     })();
-    </script>
-  {% endif %}
-
-  {% if is_admin and add_member_form is defined %}
-    <div id="add-member-modal" class="raw-editor-modal hidden">
-      <div class="raw-editor-backdrop" data-modal-close="add-member-modal"></div>
-      <div class="raw-editor-dialog max-w-md">
-        <div class="flex items-center justify-between mb-5">
-          <div>
-            <h3 class="text-base font-semibold text-base-content">Add Member</h3>
-            <p class="text-sm text-base-content/50 mt-0.5">Add a user to {{ organization.name }}</p>
-          </div>
-          <button type="button"
-                  data-modal-close="add-member-modal"
-                  class="btn btn-ghost btn-sm btn-circle">{{ icon('x', 'w-4 h-4') }}</button>
-        </div>
-        <form action="{{ url_for('user.organization_add_user', org_slug=organization.slug) }}"
-              method="post"
-              class="flex flex-col gap-4">
-          {{ add_member_form.hidden_tag() }}
-          {{ render_field(add_member_form.identity, placeholder='user@example.com or github-username') }}
-          <div class="pt-2">
-            <button type="submit" class="btn btn-primary w-full">Add Member</button>
-          </div>
-        </form>
-      </div>
-    </div>
-    <script>
-(function() {
-  var modal = document.getElementById('add-member-modal');
-  modal.querySelectorAll('[data-modal-close="add-member-modal"]').forEach(function(el) {
-    el.addEventListener('click', function() { modal.classList.add('hidden'); });
-  });
-})();
     </script>
   {% endif %}
 

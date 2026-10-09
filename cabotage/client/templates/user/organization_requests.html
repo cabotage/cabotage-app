@@ -1,0 +1,64 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import page_header, empty_state %}
+
+{% block title %}Organization Requests - Cabotage{% endblock %}
+
+{% block content %}
+  {% call page_header('Organization Requests', 'Review pending organization creation requests') %}
+  {% endcall %}
+
+  {% if organization_requests %}
+    <div class="overflow-x-auto border border-base-300 rounded-lg">
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th>Organization</th>
+            <th>Requester</th>
+            <th>Status</th>
+            <th>Requested</th>
+            <th class="text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for org_request in organization_requests %}
+          <tr>
+            <td>
+              <div class="font-medium">{{ org_request.name }}</div>
+              <div class="text-xs text-base-content/40">{{ org_request.slug }}</div>
+              {% if org_request.note %}
+              <div class="text-xs text-base-content/60 mt-1 max-w-md whitespace-normal">{{ org_request.note }}</div>
+              {% endif %}
+            </td>
+            <td>
+              <div>{{ (org_request.requester.username or org_request.requester.email) | display_username }}</div>
+              <div class="text-xs text-base-content/40">{{ org_request.requester.email }}</div>
+            </td>
+            <td>
+              <span class="badge badge-sm {% if org_request.status == 'approved' %}badge-success{% elif org_request.status == 'denied' %}badge-error{% else %}badge-neutral{% endif %}">{{ org_request.status }}</span>
+            </td>
+            <td>{{ org_request.created_at | humanize }}</td>
+            <td class="text-right">
+              {% if org_request.status == 'pending' %}
+              <div class="flex justify-end gap-2">
+                <form method="POST" action="{{ url_for('user.organization_request_approve', request_id=org_request.id) }}">
+                  {{ review_form.hidden_tag() }}
+                  <button type="submit" class="btn btn-primary btn-xs">Approve</button>
+                </form>
+                <form method="POST" action="{{ url_for('user.organization_request_deny', request_id=org_request.id) }}">
+                  {{ review_form.hidden_tag() }}
+                  <button type="submit" class="btn btn-ghost btn-xs">Deny</button>
+                </form>
+              </div>
+              {% elif org_request.organization %}
+              <a href="{{ url_for('user.organization', org_slug=org_request.organization.slug) }}" class="btn btn-ghost btn-xs">View Org</a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    {{ empty_state('No organization requests', 'New requests will appear here.', icon_name='building') }}
+  {% endif %}
+{% endblock %}

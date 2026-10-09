@@ -1,0 +1,37 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import render_field, breadcrumbs %}
+
+{% block title %}Request Organization - Cabotage{% endblock %}
+
+{% block breadcrumbs %}
+{{ breadcrumbs([
+  {'label': 'Organizations', 'url': url_for('user.organizations')},
+  {'label': 'Request'}
+]) }}
+{% endblock %}
+
+{% block content %}
+<div class="form-card">
+  <div class="card bg-base-200 border border-base-300 shadow-xl">
+    <div class="card-body">
+      <h1 class="text-xl font-semibold text-base-content mb-4">Request Organization</h1>
+
+      <form action="{{ url_for('user.organization_request_create') }}" method="POST" name="organization_request_form" class="flex flex-col gap-4">
+        {{ organization_request_form.hidden_tag() }}
+        {{ render_field(organization_request_form.name) }}
+        {{ render_field(organization_request_form.slug) }}
+        {{ render_field(organization_request_form.note) }}
+        <div class="pt-2">
+          <button type="submit" class="btn btn-primary w-full">Submit Request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block js %}
+<script>
+  applySlugify('#name', '#slug');
+</script>
+{% endblock %}

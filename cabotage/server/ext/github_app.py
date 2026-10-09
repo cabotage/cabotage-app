@@ -46,8 +46,11 @@ class GitHubApp(object):
     def validate_webhook(self):
         if self.webhook_secret is None:
             return True
+        signature = request.headers.get("X-Hub-Signature-256")
+        if signature is None:
+            return False
         return hmac.compare_digest(
-            request.headers.get("X-Hub-Signature-256").split("=")[1],
+            signature.split("=")[1],
             hmac.new(
                 self.webhook_secret.encode(), msg=request.data, digestmod=hashlib.sha256
             ).hexdigest(),
@@ -59,11 +62,13 @@ class GitHubApp(object):
     @property
     def bearer_token(self):
         if self._bearer_token is None or self._token_needs_renewed():
+            if self.app_private_key_pem is None:
+                raise RuntimeError("GitHub App private key not configured")
             issued = int(time.time())
             payload = {
                 "iat": issued,
                 "exp": issued + 599,
-                "iss": self.app_id,
+                "iss": str(self.app_id),
             }
             self._bearer_token = jwt.encode(
                 payload, self.app_private_key_pem, algorithm="RS256"
@@ -96,6 +101,10 @@ class GitHubApp(object):
         self._fetch_app_metadata()
         return self._bot_login
 
+    @property
+    def install_url(self):
+        return f"https://github.com/apps/{self.slug}/installations/new"
+
     def fetch_installation_access_token(self, installation_id):
         try:
             resp = github_session.post(
@@ -108,9 +117,60 @@ class GitHubApp(object):
             )
             resp.raise_for_status()
             return resp.json()["token"]
-        except (requests.exceptions.RequestException, KeyError, ValueError):
+        except requests.exceptions.RequestException, KeyError, ValueError:
             logger.exception(
                 "Unable to fetch access token for installation %s",
+                installation_id,
+            )
+            return None
+
+    def fetch_installation_repositories(self, installation_id):
+        access_token = self.fetch_installation_access_token(installation_id)
+        if access_token is None:
+            return None
+
+        try:
+            repositories = []
+            url = "https://api.github.com/installation/repositories"
+            params = {"per_page": 100}
+            headers = {
+                "Accept": "application/vnd.github+json",
+                "Authorization": f"Bearer {access_token}",
+            }
+            while url:
+                resp = github_session.get(
+                    url,
+                    headers=headers,
+                    params=params,
+                    timeout=10,
+                )
+                resp.raise_for_status()
+                repositories.extend(resp.json().get("repositories") or [])
+                url = resp.links.get("next", {}).get("url")
+                params = None
+            return repositories
+        except requests.exceptions.RequestException, ValueError, AttributeError:
+            logger.exception(
+                "Unable to fetch repositories for GitHub installation %s",
+                installation_id,
+            )
+            return None
+
+    def fetch_installation(self, installation_id):
+        try:
+            resp = github_session.get(
+                f"https://api.github.com/app/installations/{installation_id}",
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "Authorization": f"Bearer {self.bearer_token}",
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except requests.exceptions.RequestException, ValueError:
+            logger.exception(
+                "Unable to fetch GitHub installation %s",
                 installation_id,
             )
             return None

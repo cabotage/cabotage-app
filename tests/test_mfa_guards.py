@@ -38,6 +38,15 @@ def user_no_mfa(app):
     db.session.add(u)
     db.session.commit()
     yield u
+    # Clean up transaction records that reference this user (from continuum)
+    db.session.execute(
+        db.text("DELETE FROM activity WHERE object_id = :uid"),
+        {"uid": u.id},
+    )
+    db.session.execute(
+        db.text("UPDATE transaction SET user_id = NULL WHERE user_id = :uid"),
+        {"uid": u.id},
+    )
     db.session.delete(u)
     db.session.commit()
 
@@ -57,6 +66,14 @@ def user_with_totp(app):
     db.session.add(u)
     db.session.commit()
     yield u
+    db.session.execute(
+        db.text("DELETE FROM activity WHERE object_id = :uid"),
+        {"uid": u.id},
+    )
+    db.session.execute(
+        db.text("UPDATE transaction SET user_id = NULL WHERE user_id = :uid"),
+        {"uid": u.id},
+    )
     db.session.delete(u)
     db.session.commit()
 
@@ -77,6 +94,14 @@ def user_fully_setup(app):
     db.session.add(u)
     db.session.commit()
     yield u
+    db.session.execute(
+        db.text("DELETE FROM activity WHERE object_id = :uid"),
+        {"uid": u.id},
+    )
+    db.session.execute(
+        db.text("UPDATE transaction SET user_id = NULL WHERE user_id = :uid"),
+        {"uid": u.id},
+    )
     db.session.delete(u)
     db.session.commit()
 
@@ -248,6 +273,14 @@ class TestGuardLastMfaMethod:
         assert resp.status_code != 403
 
         WebAuthn.query.filter_by(user_id=u.id).delete()
+        db.session.execute(
+            db.text("DELETE FROM activity WHERE object_id = :uid"),
+            {"uid": u.id},
+        )
+        db.session.execute(
+            db.text("UPDATE transaction SET user_id = NULL WHERE user_id = :uid"),
+            {"uid": u.id},
+        )
         db.session.delete(u)
         db.session.commit()
 

@@ -4,6 +4,18 @@ from base64 import (
     b64decode,
     b64encode,
 )
+from typing import TYPE_CHECKING, overload, cast
+
+if TYPE_CHECKING:
+    from typing import Literal
+
+    from cabotage._types.vault import (
+        HashAlgorithm,
+        MarshalAlgorithm,
+        VaultTransitKeyResponse,
+        VaultTransitSignResponse,
+    )
+
 
 import hvac
 
@@ -42,7 +54,7 @@ class Vault(object):
 
         app.teardown_appcontext(self.teardown)
 
-    def connect_vault(self):
+    def connect_vault(self) -> hvac.Client:
         vault_client = hvac.Client(
             url=self.vault_url,
             token=self.vault_token,
@@ -55,15 +67,17 @@ class Vault(object):
         g.pop("vault_client", None)
 
     @property
-    def vault_connection(self):
+    def vault_connection(self) -> hvac.Client:
         if "vault_client" not in g:
             g.vault_client = self.connect_vault()
-        return g.vault_client
+        return cast(hvac.Client, g.vault_client)
 
     @property
-    def signing_public_key(self):
+    def signing_public_key(self) -> bytes:
         VAULT_TRANSIT_KEY = f"{self.vault_signing_mount}/keys/{self.vault_signing_key}"
-        key_data = self.vault_connection.read(VAULT_TRANSIT_KEY)
+        key_data = cast(
+            "VaultTransitKeyResponse", self.vault_connection.read(VAULT_TRANSIT_KEY)
+        )
         keys = key_data["data"]["keys"]
         latest = str(key_data["data"]["latest_version"])
         return keys[latest]["public_key"].encode()
@@ -76,16 +90,50 @@ class Vault(object):
             "cabotage-app",
         )
 
-    def sign_payload(self, payload, algorithm="sha2-256", marshaling_algorithm="asn1"):
+    @overload
+    def sign_payload(
+        self,
+        payload: str,
+    ) -> bytes: ...
+
+    @overload
+    def sign_payload(
+        self,
+        payload: str,
+        algorithm: HashAlgorithm = "sha2-256",
+        *,
+        marshaling_algorithm: Literal["asn1"] = ...,
+    ) -> bytes: ...
+
+    @overload
+    def sign_payload(
+        self,
+        payload: str,
+        algorithm: HashAlgorithm = "sha2-256",
+        *,
+        marshaling_algorithm: Literal["jws"],
+    ) -> str: ...
+
+    def sign_payload(
+        self,
+        payload: str,
+        algorithm: HashAlgorithm = "sha2-256",
+        *,
+        marshaling_algorithm: MarshalAlgorithm = "asn1",
+    ) -> str | bytes:
         if algorithm not in ("sha2-224", "sha2-256", "sha2-384", "sha2-512"):
             raise KeyError(f"Specified algorithm ({algorithm}) not supported!")
         VAULT_TRANSIT_SIGNING = (
             f"{self.vault_signing_mount}/sign/{self.vault_signing_key}/{algorithm}"
         )
-        signature_response = self.vault_connection.write(
-            VAULT_TRANSIT_SIGNING,
-            input=b64encode(payload.encode()).decode(),
-            marshaling_algorithm=marshaling_algorithm,
+        signature_response = cast(
+            "VaultTransitSignResponse",
+            self.vault_connection.write(
+                VAULT_TRANSIT_SIGNING,
+                None,
+                input=b64encode(payload.encode()).decode(),  # ty: ignore[invalid-argument-type]
+                marshaling_algorithm=marshaling_algorithm,  # ty: ignore[invalid-argument-type]
+            ),
         )
         if marshaling_algorithm == "jws":
             return signature_response["data"]["signature"].split(":")[2]

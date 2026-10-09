@@ -14,6 +14,10 @@ from .maintain import (
     reap_stale_builds,  # noqa: F401
 )
 
+from .reap_jobs import (
+    reap_finished_jobs,  # noqa: F401
+)
+
 from .prune_images import (
     prune_images,  # noqa: F401
 )
@@ -25,4 +29,17 @@ from .tailscale import (
     reconcile_tailscale_integration_states,  # noqa: F401
     refresh_tailscale_oidc_tokens,  # noqa: F401
     teardown_tailscale_operator,  # noqa: F401
+)
+
+from .alerting import reconcile_alerts  # noqa: F401
+
+from .resources import (
+    reconcile_backing_services,  # noqa: F401
+)
+
+from .notify import (
+    dispatch_alert_notification,  # noqa: F401
+    dispatch_pipeline_notification,  # noqa: F401
+    reconcile_notifications,  # noqa: F401
+    send_notification,  # noqa: F401
 )
