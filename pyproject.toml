@@ -83,7 +83,7 @@ show_missing = true
 skip_empty = true
 
 [tool.bandit]
-exclude_dirs = ["bin", "lib", "tests", "cabotage/scripts"]
+exclude_dirs = ["bin", "lib", "tests"]
 
 [tool.uv]
 exclude-newer = "1 week"

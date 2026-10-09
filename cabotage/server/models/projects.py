@@ -774,7 +774,7 @@ class Deployment(Model, Timestamp):
     @property
     def trigger_type(self):
         meta = self.deploy_metadata or {}
-        if meta.get("auto_deploy"):
+        if meta.get("auto_deploy") and not meta.get("trigger"):
             return "auto"
         return "manual"
 

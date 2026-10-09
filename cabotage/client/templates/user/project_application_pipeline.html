@@ -268,10 +268,11 @@
     </div>
   </div>
 </div>
+{% endblock content %}
 
-<script src="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.iife.min.js"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.30/dist/uPlot.min.css">
-
+{% block js %}
+<link rel="stylesheet" href="https://unpkg.com/uplot@1.6.31/dist/uPlot.min.css">
+<script src="https://unpkg.com/uplot@1.6.31/dist/uPlot.iife.min.js"></script>
 <script>
 (function() {
   var baseUrl = {{ url_for('user.project_application_pipeline', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug)|tojson }};
@@ -298,9 +299,11 @@
     if (v == null || isNaN(v)) return '--';
     return (+v).toFixed(1) + '%';
   }
-  function fmtTime(ts) {
-    var d = new Date(ts * 1000);
-    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  function fmtDay(ts) {
+    return new Date(ts * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+  function shortSha(sha) {
+    return sha && sha !== 'null' ? sha.substring(0, 7) : '--';
   }
   function parseDate(s) {
     if (!s) return null;
@@ -340,7 +343,7 @@
           var idx = u.cursor.idx;
           if (idx == null) { tip.style.display = 'none'; return; }
           var ts = u.data[0][idx];
-          var html = '<div class="pipe-tip-time">' + fmtTime(ts) + '</div>';
+          var html = '<div class="pipe-tip-time">' + fmtDay(ts) + '</div>';
           var hasAny = false;
           for (var i = 1; i < u.series.length; i++) {
             var s = u.series[i];
@@ -438,19 +441,19 @@
              d.throughput.map(function(r) { return r.failure; })],
             [
               { label: 'Success', stroke: C.ok, fill: C.ok + '50', width: 0,
-                paths: uPlot.paths.bars ? uPlot.paths.bars({ size: [0.6, 100], align: 0 }) : undefined,
+                paths: uPlot.paths.bars({ size: [0.3, 40], align: -1 }),
                 points: { show: false } },
               { label: 'Failure', stroke: C.fail, fill: C.fail + '50', width: 0,
-                paths: uPlot.paths.bars ? uPlot.paths.bars({ size: [0.6, 100], align: 0 }) : undefined,
+                paths: uPlot.paths.bars({ size: [0.3, 40], align: 1 }),
                 points: { show: false } }
             ], { bars: true, valueFmt: function(v) { return Math.round(v).toString(); } });
         } else { showEmpty(document.getElementById('chart-throughput')); }
 
         // Success rate
-        if (d.success_rate.length) {
-          var ts3 = d.success_rate.map(function(r) { return parseDate(r.date); });
+        if (d.throughput.length) {
+          var ts3 = d.throughput.map(function(r) { return parseDate(r.date); });
           buildChart(document.getElementById('chart-success'), ts3,
-            [d.success_rate.map(function(r) { return r.rate; })],
+            [d.throughput.map(function(r) { return r.success / (r.success + r.failure) * 100; })],
             [{ label: 'Success %', stroke: C.ok, fill: C.ok + '15', width: 2, points: { show: false } }],
             { valueFmt: function(v) { return fmtPct(v); } });
         } else { showEmpty(document.getElementById('chart-success')); }
@@ -470,15 +473,12 @@
         } else { showEmpty(document.getElementById('chart-duration')); }
 
         // Stage breakdown — 3 independent mini-charts
-        var stageMap = { image: { el: 'chart-stage-image', avg: 'stage-image-avg', color: C.image, key: 'avg_image', p50: 'p50_image', p95: 'p95_image' },
-          release: { el: 'chart-stage-release', avg: 'stage-release-avg', color: C.release, key: 'avg_release', p50: 'p50_release', p95: 'p95_release' },
-          deploy: { el: 'chart-stage-deploy', avg: 'stage-deploy-avg', color: C.deploy, key: 'avg_deploy', p50: 'p50_deploy', p95: 'p95_deploy' } };
+        var stageMap = { image: { el: 'chart-stage-image', avg: 'stage-image-avg', color: C.image, p50: 'p50_image', p95: 'p95_image' },
+          release: { el: 'chart-stage-release', avg: 'stage-release-avg', color: C.release, p50: 'p50_release', p95: 'p95_release' },
+          deploy: { el: 'chart-stage-deploy', avg: 'stage-deploy-avg', color: C.deploy, p50: 'p50_deploy', p95: 'p95_deploy' } };
         Object.keys(stageMap).forEach(function(stage) {
           var cfg = stageMap[stage];
-          // Compute overall average from stage_duration data
-          var vals = d.stage_duration.map(function(r) { return r[cfg.key]; }).filter(function(v) { return v != null; });
-          var avg = vals.length ? vals.reduce(function(a, b) { return a + b; }, 0) / vals.length : null;
-          document.getElementById(cfg.avg).textContent = avg != null ? fmtDur(avg) : '--';
+          document.getElementById(cfg.avg).textContent = fmtDur(d.stage_avg[stage]);
 
           if (d.duration_trend.length) {
             var ts = d.duration_trend.map(function(r) { return parseDate(r.date); });
@@ -504,7 +504,7 @@
   var runsOffset = 0;
 
   function loadRuns() {
-    fetch(baseUrl + '/runs?limit=' + RUNS_PER_PAGE + '&offset=' + runsOffset)
+    fetch(baseUrl + '/runs?range=' + currentRange + '&limit=' + RUNS_PER_PAGE + '&offset=' + runsOffset)
       .then(function(r) { return r.json(); })
       .then(function(d) {
         var container = document.getElementById('runs-container');
@@ -524,7 +524,7 @@
         });
 
         container.innerHTML = d.runs.map(function(r) {
-          var sha = r.sha ? r.sha.substring(0, 7) : '--';
+          var sha = shortSha(r.sha);
           var trigger = r.trigger_type === 'auto'
             ? '<span class="pipe-trigger pipe-trigger-auto">auto</span>'
             : '<span class="pipe-trigger pipe-trigger-manual">manual</span>';
@@ -607,7 +607,7 @@
         var maxDur = d.items[0].duration || 1;
         var color = stageColor(currentStage);
         container.innerHTML = d.items.map(function(item, i) {
-          var sha = item.sha && item.sha !== 'null' ? item.sha.substring(0, 7) : '--';
+          var sha = shortSha(item.sha);
           var barW = Math.max(8, Math.round((item.duration / maxDur) * 100));
           return '<div class="pipe-slowest-row">' +
             '<span class="pipe-slowest-rank">#' + (i + 1) + '</span>' +
@@ -630,8 +630,8 @@
   var resizeTimer;
   window.addEventListener('resize', function() {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(loadAll, 200);
+    resizeTimer = setTimeout(loadStats, 200);
   });
 })();
 </script>
-{% endblock content %}
+{% endblock js %}
