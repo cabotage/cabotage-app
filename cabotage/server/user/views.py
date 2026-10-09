@@ -34,7 +34,7 @@ from kubernetes.stream.ws_client import RESIZE_CHANNEL
 from dxf import DXF
 import requests as requests_lib
 from requests.exceptions import HTTPError
-from sqlalchemy import and_, case, desc, func, or_
+from sqlalchemy import Uuid, and_, case, desc, func, or_
 from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import joinedload, subqueryload
 from sqlalchemy.orm.attributes import flag_modified
@@ -9158,3 +9158,310 @@ def infra_observe_metric():
         result = result if result else None
 
     return jsonify({"result": result, "queries": queries})
+
+
+# ---------------------------------------------------------------------------
+# Pipeline Stats
+# ---------------------------------------------------------------------------
+
+_PIPELINE_RANGES = {"7d": 7, "30d": 30, "90d": 90}
+# stage -> (model, column marking success); error marks failure for all stages
+_PIPELINE_STAGES = {
+    "image": (Image, Image.built),
+    "release": (Release, Release.built),
+    "deploy": (Deployment, Deployment.complete),
+}
+
+
+def _pipeline_range():
+    range_key = request.args.get("range", "30d")
+    return range_key if range_key in _PIPELINE_RANGES else "30d"
+
+
+def _pipeline_window():
+    """Start and optional end of the requested window.
+
+    `since`/`until` (inclusive UTC days) narrow a brushed window; otherwise
+    the window is the trailing range.
+    """
+    try:
+        since = datetime.date.fromisoformat(request.args.get("since", ""))
+        until = datetime.date.fromisoformat(request.args.get("until", ""))
+    except ValueError:
+        now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+        return now - datetime.timedelta(days=_PIPELINE_RANGES[_pipeline_range()]), None
+    start = datetime.datetime.combine(min(since, until), datetime.time())
+    end = datetime.datetime.combine(max(since, until), datetime.time())
+    return start, end + datetime.timedelta(days=1)
+
+
+def _pipeline_finished(
+    stage: str,
+    app_env_id: uuid.UUID,
+    start: datetime.datetime,
+    end: datetime.datetime | None,
+):
+    """Model and filters for a stage's finished rows within the window."""
+    model, done = _PIPELINE_STAGES[stage]
+    filters = [
+        model.application_environment_id == app_env_id,
+        or_(done, model.error),
+        model.updated >= start,
+    ]
+    if end is not None:
+        filters.append(model.updated < end)
+    return model, filters
+
+
+def _duration(model):
+    """Seconds between a row's creation and its last update."""
+    return func.extract("epoch", model.updated - model.created)
+
+
+def _percentiles(duration):
+    """p50/p95 aggregates over a duration expression."""
+    return (
+        func.percentile_cont(0.5).within_group(duration),
+        func.percentile_cont(0.95).within_group(duration),
+    )
+
+
+def _seconds(value):
+    return round(float(value), 2) if value is not None else None
+
+
+def _iso_utc(value):
+    return value.isoformat() + "Z" if value else None
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/pipeline",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/pipeline",
+    defaults={"env_slug": None},
+)
+@login_required
+def project_application_pipeline(org_slug, project_slug, app_slug, env_slug=None):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=False
+    )
+
+    return render_template(
+        "user/project_application_pipeline.html",
+        application=application,
+        environment=app_env.environment if app_env else None,
+        app_env=app_env,
+        current_range=_pipeline_range(),
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/pipeline/stats",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/pipeline/stats",
+    defaults={"env_slug": None},
+)
+@login_required
+def project_application_pipeline_stats(org_slug, project_slug, app_slug, env_slug=None):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=True
+    )
+    start, end = _pipeline_window()
+
+    trend = collections.defaultdict(dict)
+    stages = {}
+    for stage in _PIPELINE_STAGES:
+        model, filters = _pipeline_finished(stage, app_env.id, start, end)
+        p50, p95 = _percentiles(_duration(model))
+        day = func.date_trunc("day", model.updated)
+        for row in db.session.query(day, p50, p95).filter(*filters).group_by(day):
+            trend[row[0].isoformat()].update(
+                {f"p50_{stage}": _seconds(row[1]), f"p95_{stage}": _seconds(row[2])}
+            )
+        overall = db.session.query(p50, p95).filter(*filters).one()
+        stages[stage] = {"p50": _seconds(overall[0]), "p95": _seconds(overall[1])}
+
+    _, deploy_filters = _pipeline_finished("deploy", app_env.id, start, end)
+    day = func.date_trunc("day", Deployment.updated)
+    throughput = [
+        {"date": row[0].isoformat(), "success": row[1], "failure": row[2]}
+        for row in db.session.query(
+            day,
+            func.count().filter(Deployment.complete),
+            func.count().filter(Deployment.error),
+        )
+        .filter(*deploy_filters)
+        .group_by(day)
+        .order_by(day)
+    ]
+
+    total, succeeded, failed = (
+        db.session.query(
+            func.count(),
+            func.count().filter(Deployment.complete),
+            func.count().filter(Deployment.error),
+        )
+        .filter(*deploy_filters)
+        .one()
+    )
+
+    # Run time: image build + release build + deploy, matching each run's total
+    run_time = _percentiles(
+        _duration(Image) + _duration(Release) + _duration(Deployment)
+    )
+    run_rows = (
+        db.session.query(Deployment)
+        .join(Release, Release.id == Deployment.release["id"].astext.cast(Uuid))
+        .join(Image, Image.id == Release.image["id"].astext.cast(Uuid))
+        .filter(*deploy_filters)
+    )
+    run_p50, run_p95 = run_rows.with_entities(*run_time).one()
+    for row in run_rows.with_entities(day, *run_time).group_by(day):
+        trend[cast(datetime.datetime, row[0]).isoformat()].update(
+            {"p50_run": _seconds(row[1]), "p95_run": _seconds(row[2])}
+        )
+
+    return jsonify(
+        {
+            "summary": {
+                "runs": total,
+                "failed": failed,
+                "success_rate": round(succeeded / total * 100, 1) if total else None,
+                "run_p50": _seconds(run_p50),
+                "run_p95": _seconds(run_p95),
+            },
+            "stages": stages,
+            "throughput": throughput,
+            "duration_trend": [{"date": k, **v} for k, v in sorted(trend.items())],
+        }
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/pipeline/runs",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/pipeline/runs",
+    defaults={"env_slug": None},
+)
+@login_required
+def project_application_pipeline_runs(org_slug, project_slug, app_slug, env_slug=None):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=True
+    )
+
+    limit = max(1, min(request.args.get("limit", 20, type=int), 200))
+    offset = max(request.args.get("offset", 0, type=int), 0)
+
+    start, end = _pipeline_window()
+    query = Deployment.query.filter(
+        Deployment.application_environment_id == app_env.id,
+        Deployment.updated >= start,
+    )
+    if end is not None:
+        query = query.filter(Deployment.updated < end)
+    query = query.order_by(desc(Deployment.created))
+    total_count = query.count()
+    deployments = query.offset(offset).limit(limit).all()
+
+    # Batch-fetch releases and images to avoid N+1 queries
+    release_ids = {(d.release or {}).get("id") for d in deployments} - {None}
+    releases: dict[str | None, Release] = {
+        str(r.id): r for r in Release.query.filter(Release.id.in_(release_ids))
+    }
+    image_ids = {(r.image or {}).get("id") for r in releases.values()} - {None}
+    images: dict[str | None, Image] = {
+        str(i.id): i for i in Image.query.filter(Image.id.in_(image_ids))
+    }
+
+    def stage(obj, done):
+        if obj is None:
+            return None, "pending"
+        status = "error" if obj.error else ("success" if done else "pending")
+        return _seconds(obj.duration_seconds), status
+
+    runs = []
+    for d in deployments:
+        rel = releases.get((d.release or {}).get("id"))
+        img = images.get((rel.image or {}).get("id")) if rel else None
+        image_duration, image_status = stage(img, img and img.built)
+        release_duration, release_status = stage(rel, rel and rel.built)
+        deploy_duration, deploy_status = stage(d, d.complete)
+        durations = [
+            x
+            for x in (image_duration, release_duration, deploy_duration)
+            if x is not None
+        ]
+        runs.append(
+            {
+                "id": str(d.id),
+                "image_duration": image_duration,
+                "image_status": image_status,
+                "release_duration": release_duration,
+                "release_status": release_status,
+                "deploy_duration": deploy_duration,
+                "deploy_status": deploy_status,
+                "total_duration": (
+                    _seconds(sum(durations)) if len(durations) == 3 else None
+                ),
+                "trigger_type": d.trigger_type,
+                "sha": d.release_snapshot.commit_sha if d.release_snapshot else None,
+                "started": _iso_utc(img.created if img else d.created),
+                "finished": _iso_utc(d.updated) if d.complete or d.error else None,
+            }
+        )
+
+    return jsonify({"runs": runs, "total": total_count})
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/pipeline/slowest",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/pipeline/slowest",
+    defaults={"env_slug": None},
+)
+@login_required
+def project_application_pipeline_slowest(
+    org_slug, project_slug, app_slug, env_slug=None
+):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=True
+    )
+
+    stage = request.args.get("stage", "image")
+    if stage not in _PIPELINE_STAGES:
+        stage = "image"
+    model, filters = _pipeline_finished(stage, app_env.id, *_pipeline_window())
+    rows = (
+        model.query.filter(*filters)
+        .order_by(desc(model.updated - model.created))
+        .limit(10)
+        .all()
+    )
+
+    items = []
+    for r in rows:
+        if isinstance(r, Deployment):
+            snapshot = r.release_snapshot
+        elif isinstance(r, Release):
+            snapshot = r.image_snapshot
+        else:
+            snapshot = r
+        items.append(
+            {
+                "id": str(r.id),
+                "duration": _seconds(r.duration_seconds),
+                "sha": snapshot.commit_sha if snapshot else None,
+                "created": _iso_utc(r.created),
+                "finished": _iso_utc(r.updated),
+            }
+        )
+
+    return jsonify({"stage": stage, "items": items})

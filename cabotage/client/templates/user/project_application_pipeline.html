@@ -1,0 +1,838 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, app_tab_nav, app_resource_path %}
+
+{% set org_slug = application.project.organization.slug %}
+{% set project_slug = application.project.slug %}
+{% set app_slug = application.slug %}
+{% set env_slug = environment.slug if environment else none %}
+
+{% block title %}
+  Pipeline - {{ app_slug }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ app_resource_path(application, 'Pipeline', env=environment|default(none)) }}
+{% endblock resource_path %}
+
+{% block tab_bar %}
+  {{ app_tab_nav(application, 'pipeline', env=environment|default(none)) }}
+{% endblock tab_bar %}
+
+{% block content %}
+<style>
+/* Stages are one hue stepping toward the foreground: build → release → deploy.
+   Status colors stay reserved for outcomes. */
+.pipe {
+  --pipe-image: var(--color-info);
+  --pipe-release: color-mix(in oklab, var(--color-info) 62%, var(--text-bright));
+  --pipe-deploy: color-mix(in oklab, var(--color-info) 30%, var(--text-bright));
+  --pipe-ok: var(--color-success);
+  --pipe-fail: var(--color-error);
+  --pipe-run: var(--color-warning);
+  --pipe-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+.pipe .num { font-family: var(--pipe-mono); font-variant-numeric: tabular-nums; }
+
+.pipe-card { background: var(--surface-card); border: 1px solid var(--border-color); border-radius: 0.75rem; }
+.pipe-label { font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--text-faint); }
+.pipe-section-title { font-size: 0.75rem; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--text-faint); }
+
+/* ── Summary ── */
+.pipe-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.pipe-stat { display: flex; flex-direction: column; gap: 0.375rem; padding: 1rem 1.25rem; min-width: 0; }
+.pipe-stat + .pipe-stat { border-left: 1px solid var(--border-color); }
+.pipe-stat-value { font-size: 1.5rem; font-weight: 600; line-height: 1; color: var(--text-bright); }
+.pipe-stat-sub { font-size: 0.75rem; color: var(--text-muted); min-height: 1rem; }
+.pipe-split { border-top: 1px solid var(--border-color); padding: 0.875rem 1.25rem 1rem; }
+.pipe-split-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 0.625rem; }
+.pipe-split-bar { display: flex; height: 0.5rem; border-radius: 0.25rem; overflow: hidden; background: var(--surface-inset); gap: 2px; }
+.pipe-split-bar > span { min-width: 2px; transition: flex-grow 250ms cubic-bezier(0.16, 1, 0.3, 1); }
+.pipe-split-legend { display: flex; flex-wrap: wrap; gap: 0.375rem 1.25rem; margin-top: 0.625rem; font-size: 0.75rem; color: var(--text-muted); }
+.pipe-split-legend .num { color: var(--text-bright); margin-left: 0.25rem; }
+@media (max-width: 720px) {
+  .pipe-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pipe-stat:nth-child(3) { border-left: 0; }
+  .pipe-stat:nth-child(n+3) { border-top: 1px solid var(--border-color); }
+}
+
+/* ── Charts ── */
+.pipe-stage-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
+@media (max-width: 860px) { .pipe-stage-grid { grid-template-columns: 1fr; } }
+.pipe-chart-card { padding: 0.875rem 1rem 0.5rem; min-width: 0; }
+.pipe-chart-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.25rem 0.75rem; margin-bottom: 0.5rem; }
+.pipe-stage-name { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; font-weight: 600; color: var(--text-bright); white-space: nowrap; }
+.pipe-stage-figs { font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; }
+.pipe-stage-figs b { font-weight: 600; color: var(--text-bright); }
+.pipe-swatch { width: 0.625rem; height: 0.625rem; border-radius: 0.25rem; flex-shrink: 0; display: inline-block; }
+.pipe-legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.25rem 0.875rem; font-size: 0.75rem; color: var(--text-muted); }
+@media (max-width: 640px) { .pipe-legend-optional { display: none; } }
+.pipe-legend > span { display: inline-flex; align-items: center; gap: 0.375rem; }
+.pipe-plot { position: relative; }
+
+.pipe-tip { display: none; position: absolute; pointer-events: none; z-index: 20; min-width: 9rem;
+  background: var(--surface-card); border: 1px solid var(--border-color); border-radius: 0.5rem;
+  padding: 0.5rem 0.625rem; font-size: 0.75rem; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25); }
+.pipe-tip-time { color: var(--text-faint); margin-bottom: 0.25rem; }
+.pipe-tip-row { display: flex; align-items: center; gap: 0.5rem; padding: 1px 0; color: var(--text-muted); }
+.pipe-tip-row .num { margin-left: auto; color: var(--text-bright); font-weight: 600; }
+
+/* ── Runs ── */
+.pipe-table { overflow-x: auto; }
+.pipe-row { display: grid; align-items: center; gap: 0 0.75rem; padding: 0 1rem; min-width: 800px;
+  grid-template-columns: 8rem 5rem 4.5rem 4.5rem minmax(7rem, 1fr) 3.75rem 3.75rem 3.75rem 4.5rem; }
+.pipe-row-head { height: 2rem; border-bottom: 1px solid var(--border-color); }
+.pipe-row-head > span:nth-child(n+6) { text-align: right; }
+a.pipe-row { height: 2.5rem; font-size: 0.875rem; color: var(--text-muted); text-decoration: none;
+  border-bottom: 1px solid var(--border-color-subtle); transition: background-color 150ms ease-out; }
+a.pipe-row:last-child { border-bottom: 0; }
+a.pipe-row:hover { background: var(--hover-overlay); color: var(--text-bright); }
+a.pipe-row:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+.pipe-row .dur { text-align: right; }
+.pipe-row .total { text-align: right; color: var(--text-bright); font-weight: 600; }
+.pipe-row .sha { color: var(--text-bright); }
+.pipe-status { display: inline-flex; align-items: center; gap: 0.5rem; white-space: nowrap; color: var(--text-bright); }
+.pipe-dot { width: 0.5rem; height: 0.5rem; border-radius: 9999px; flex-shrink: 0; }
+.pipe-dot-ok { background: var(--pipe-ok); box-shadow: 0 0 8px color-mix(in srgb, var(--pipe-ok) 40%, transparent); }
+.pipe-dot-fail { background: var(--pipe-fail); box-shadow: 0 0 8px color-mix(in srgb, var(--pipe-fail) 40%, transparent); }
+.pipe-dot-run { background: var(--pipe-run); animation: pulse-dot 2s ease-in-out infinite; }
+.pipe-fall { display: flex; gap: 2px; height: 0.5rem; }
+.pipe-fall > span { border-radius: 0.25rem; min-width: 2px; }
+.seg-image { background: var(--pipe-image); }
+.seg-release { background: var(--pipe-release); }
+.seg-deploy { background: var(--pipe-deploy); }
+.seg-fail { background: var(--pipe-fail); }
+.seg-run { background: var(--pipe-run); opacity: 0.7; }
+.pipe-foot { display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 0.5rem 1rem; border-top: 1px solid var(--border-color); font-size: 0.75rem; color: var(--text-muted); }
+
+/* ── Slowest ── */
+.pipe-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 0.5rem; background: var(--surface-inset);
+  border: 1px solid var(--border-color); }
+.pipe-seg button { padding: 0.25rem 0.625rem; border-radius: 0.375rem; font-size: 0.75rem; font-weight: 500;
+  color: var(--text-muted); transition: background-color 150ms ease-out, color 150ms ease-out; }
+.pipe-seg button:hover { color: var(--text-bright); }
+.pipe-seg button[aria-pressed="true"] { background: var(--surface-card); color: var(--text-bright);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2); }
+.pipe-seg button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+a.pipe-slow { display: grid; align-items: center; gap: 0 0.75rem; height: 2.25rem; padding: 0 1rem;
+  grid-template-columns: 1.5rem 4.5rem minmax(4rem, 1fr) 4.5rem 5rem; min-width: 480px;
+  font-size: 0.875rem; color: var(--text-muted); text-decoration: none; border-bottom: 1px solid var(--border-color-subtle);
+  transition: background-color 150ms ease-out; }
+a.pipe-slow:last-child { border-bottom: 0; }
+a.pipe-slow:hover { background: var(--hover-overlay); color: var(--text-bright); }
+a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+.pipe-slow-bar { height: 0.375rem; border-radius: 0.25rem; opacity: 0.6; }
+.pipe-slow .total { text-align: right; color: var(--text-bright); font-weight: 600; }
+.pipe-slow .when { text-align: right; }
+
+.pipe-note { padding: 1.5rem 1rem; text-align: center; font-size: 0.875rem; color: var(--text-muted); }
+
+/* ── Loading ── */
+.pipe-skel { border-radius: 0.375rem; background: linear-gradient(90deg, var(--surface-inset) 0%,
+  color-mix(in srgb, var(--surface-inset) 60%, var(--surface-card)) 50%, var(--surface-inset) 100%);
+  background-size: 200% 100%; animation: pipe-shimmer 1.4s ease-in-out infinite; }
+@keyframes pipe-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .pipe-skel, .pipe-dot-run { animation: none; }
+  .pipe-split-bar > span, .pipe-scrubbable a { transition: none; }
+}
+
+/* ── Scrubbing: hover a day, drag (or click) to narrow the window ── */
+.pipe-chip { display: inline-flex; align-items: center; gap: 0.375rem; height: 1.5rem; padding: 0 0.375rem 0 0.625rem;
+  border-radius: 9999px; border: 1px solid var(--border-color); background: var(--surface-card);
+  font-size: 0.75rem; color: var(--text-bright); white-space: nowrap; transition: background-color 150ms ease-out; }
+.pipe-chip:hover { background: var(--hover-overlay-strong); }
+.pipe-chip:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+.pipe-chip svg { color: var(--text-muted); }
+.pipe-scope { font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; }
+.pipe-scope.is-preview { color: var(--text-bright); }
+.pipe-scrubbable a { transition: opacity 150ms ease-out, background-color 150ms ease-out; }
+.pipe-scrubbing a:not(.is-hit) { opacity: 0.35; }
+.pipe-scrubbing a.is-hit { background: var(--hover-overlay-strong); color: var(--text-bright); }
+.pipe .u-over { cursor: crosshair; }
+.pipe .u-cursor-x { border-right: 1px dashed color-mix(in srgb, var(--text-bright) 35%, transparent); }
+.pipe .u-cursor-y { display: none; }
+.pipe .u-select { background: color-mix(in srgb, var(--text-bright) 6%, transparent);
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--text-bright) 30%, transparent),
+              inset -1px 0 0 color-mix(in srgb, var(--text-bright) 30%, transparent); }
+</style>
+
+<div class="settings-page pipe" id="pipeline">
+  <div class="flex flex-wrap items-end justify-between gap-x-4 gap-y-3 mb-4">
+    <div>
+      <h1 class="text-lg font-semibold text-base-content">Pipeline</h1>
+      <p class="text-xs text-base-content/50">Build, release, and deploy times for each run. Hover a chart to inspect a day; drag or click to narrow.</p>
+    </div>
+    <div class="flex items-center gap-3 ml-auto">
+      <button type="button" class="pipe-chip" id="brush-chip" hidden aria-label="Clear date selection" title="Clear selection (Esc)">
+        <span class="num" id="brush-label"></span>{{ icon('x', 'w-3 h-3') }}
+      </button>
+      <div class="flex gap-1.5" id="range-selector" role="group" aria-label="Time range">
+        {% for r in ['7d', '30d', '90d'] %}
+          <button type="button" data-range="{{ r }}" aria-pressed="{{ 'true' if current_range == r else 'false' }}"
+             class="btn btn-xs {% if current_range == r %}btn-primary{% else %}btn-ghost{% endif %}">{{ r }}</button>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div id="pipe-error" class="pipe-card pipe-note mb-3" hidden>
+    Couldn't load pipeline data. <button type="button" class="btn btn-xs btn-ghost ml-1" data-retry>Retry</button>
+  </div>
+
+  <div id="pipe-empty" class="pipe-card pipe-note" hidden>
+    No runs in the last <span data-range-label>{{ current_range[:-1] }} days</span>. Each image build, release, and deploy of
+    <span class="text-base-content">{{ app_slug }}</span> shows up here once it finishes.
+    <a class="link link-hover text-base-content ml-1"
+       href="{{ url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}">Go to overview</a>
+  </div>
+
+  <div id="pipe-body">
+    {# Summary #}
+    <section class="pipe-card mb-3" aria-label="Summary">
+      <div class="pipe-stats">
+        <div class="pipe-stat">
+          <span class="pipe-label">Runs</span>
+          <span class="pipe-stat-value num" data-stat="runs"><span class="pipe-skel inline-block w-10 h-5"></span></span>
+          <span class="pipe-stat-sub" data-stat="failed"></span>
+        </div>
+        <div class="pipe-stat">
+          <span class="pipe-label">Success rate</span>
+          <span class="pipe-stat-value num" data-stat="success"><span class="pipe-skel inline-block w-16 h-5"></span></span>
+          <span class="pipe-stat-sub">Deploys that went live</span>
+        </div>
+        <div class="pipe-stat">
+          <span class="pipe-label">Median run</span>
+          <span class="pipe-stat-value num" data-stat="p50"><span class="pipe-skel inline-block w-16 h-5"></span></span>
+          <span class="pipe-stat-sub">Build + release + deploy</span>
+        </div>
+        <div class="pipe-stat">
+          <span class="pipe-label">p95 run</span>
+          <span class="pipe-stat-value num" data-stat="p95"><span class="pipe-skel inline-block w-16 h-5"></span></span>
+          <span class="pipe-stat-sub">1 in 20 runs is slower</span>
+        </div>
+      </div>
+      <div class="pipe-split">
+        <div class="pipe-split-head">
+          <span class="pipe-section-title">Where a median run spends its time</span>
+          <span class="pipe-scope" id="pm-scope"></span>
+        </div>
+        <div class="pipe-split-bar" id="pm-split" role="img" aria-label="Share of median run time by stage">
+          <span class="seg-image" style="flex-grow:1"></span>
+          <span class="seg-release" style="flex-grow:1"></span>
+          <span class="seg-deploy" style="flex-grow:1"></span>
+        </div>
+        <div class="pipe-split-legend" id="pm-split-legend">
+          <span><span class="pipe-swatch seg-image"></span> Image build<span class="num" data-share="image">—</span></span>
+          <span><span class="pipe-swatch seg-release"></span> Release build<span class="num" data-share="release">—</span></span>
+          <span><span class="pipe-swatch seg-deploy"></span> Deploy<span class="num" data-share="deploy">—</span></span>
+        </div>
+      </div>
+    </section>
+
+    {# Stage trends #}
+    <div class="pipe-stage-grid mb-3">
+      {% for stage, name in [('image', 'Image build'), ('release', 'Release build'), ('deploy', 'Deploy')] %}
+        <section class="pipe-card pipe-chart-card" aria-label="{{ name }} duration">
+          <div class="pipe-chart-head">
+            <span class="pipe-stage-name"><span class="pipe-swatch seg-{{ stage }}"></span>{{ name }}</span>
+            <span class="pipe-stage-figs num" data-stage-figs="{{ stage }}">p50 <b>—</b> · p95 <b>—</b></span>
+          </div>
+          <div class="pipe-plot" data-chart="stage-{{ stage }}" style="height:120px"><div class="pipe-skel h-full"></div></div>
+        </section>
+      {% endfor %}
+    </div>
+
+    {# Runs per day #}
+    <section class="pipe-card pipe-chart-card mb-5" aria-label="Runs per day">
+      <div class="pipe-chart-head">
+        <span class="pipe-section-title">Runs per day</span>
+        <span class="pipe-legend">
+          <span><span class="pipe-swatch" style="background:var(--pipe-ok)"></span>Succeeded</span>
+          <span><span class="pipe-swatch" style="background:var(--pipe-fail)"></span>Failed</span>
+        </span>
+      </div>
+      <div class="pipe-plot" data-chart="throughput" style="height:140px"><div class="pipe-skel h-full"></div></div>
+    </section>
+
+    {# Recent runs #}
+    <div class="flex items-center justify-between mb-2">
+      <h2 class="pipe-section-title">Recent runs</h2>
+      <span class="pipe-legend pipe-legend-optional">
+        <span><span class="pipe-swatch seg-image"></span>Image</span>
+        <span><span class="pipe-swatch seg-release"></span>Release</span>
+        <span><span class="pipe-swatch seg-deploy"></span>Deploy</span>
+      </span>
+    </div>
+    <section class="pipe-card mb-5" aria-label="Recent runs">
+      <div class="pipe-table">
+        <div class="pipe-row pipe-row-head pipe-label" aria-hidden="true">
+          <span>Status</span><span>Started</span><span>Commit</span><span>Trigger</span><span>Timeline</span>
+          <span>Image</span><span>Release</span><span>Deploy</span><span>Total</span>
+        </div>
+        <div id="runs" class="pipe-scrubbable"><div class="p-4 flex flex-col gap-3">{% for _ in range(4) %}<div class="pipe-skel h-4"></div>{% endfor %}</div></div>
+      </div>
+      <div class="pipe-foot" id="runs-pager" hidden>
+        <span class="num" id="runs-range"></span>
+        <span class="flex gap-1">
+          <button type="button" class="btn btn-xs btn-ghost" id="runs-newer">{{ icon('chevron-left', 'w-3.5 h-3.5') }} Newer</button>
+          <button type="button" class="btn btn-xs btn-ghost" id="runs-older">Older {{ icon('chevron-right', 'w-3.5 h-3.5') }}</button>
+        </span>
+      </div>
+    </section>
+
+    {# Slowest #}
+    <div class="flex items-center justify-between mb-2">
+      <h2 class="pipe-section-title">Slowest</h2>
+      <div class="pipe-seg" id="slowest-selector" role="group" aria-label="Stage">
+        <button type="button" data-stage="image" aria-pressed="true">Image</button>
+        <button type="button" data-stage="release" aria-pressed="false">Release</button>
+        <button type="button" data-stage="deploy" aria-pressed="false">Deploy</button>
+      </div>
+    </div>
+    <section class="pipe-card pipe-table" aria-label="Slowest runs">
+      <div id="slowest" class="pipe-scrubbable"><div class="p-4 flex flex-col gap-3">{% for _ in range(3) %}<div class="pipe-skel h-4"></div>{% endfor %}</div></div>
+    </section>
+  </div>
+</div>
+{% endblock content %}
+
+{% block js %}
+<link rel="stylesheet" href="https://unpkg.com/uplot@1.6.31/dist/uPlot.min.css">
+<script src="https://unpkg.com/uplot@1.6.31/dist/uPlot.iife.min.js"></script>
+<script>
+(function() {
+  var root = document.getElementById('pipeline');
+  var baseUrl = {{ url_for('user.project_application_pipeline', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug)|tojson }};
+  var detailUrls = {
+    image: {{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id='__ID__')|tojson }},
+    release: {{ url_for('user.release_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id='__ID__')|tojson }},
+    deploy: {{ url_for('user.deployment_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id='__ID__')|tojson }}
+  };
+  var triggerIcons = { auto: {{ icon('zap', 'w-2.5 h-2.5')|tojson }}, manual: {{ icon('user', 'w-2.5 h-2.5')|tojson }} };
+  var STAGES = ['image', 'release', 'deploy'];
+  var STAGE_NAMES = { image: 'image builds', release: 'release builds', deploy: 'deploys' };
+  var PER_PAGE = 15;
+  var DAY = 86400;
+  var DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
+  // Scope precedence: hovered day > brushed window > trailing range.
+  var query = new URLSearchParams(location.search);
+  var state = {
+    range: {{ current_range|tojson }},
+    brush: parseBrush(query.get('since'), query.get('until')),
+    hover: null,
+    offset: 0,
+    stage: 'image',
+    stats: null,     // trailing range: drives the charts
+    scoped: null,    // brushed window: drives the summary
+    byDay: {}
+  };
+  var charts = [];
+  var activePlot = null;
+  var lastPayload = {};
+
+  function parseBrush(since, until) {
+    if (!DAY_KEY.test(since || '') || !DAY_KEY.test(until || '')) return null;
+    return since <= until ? { since: since, until: until } : { since: until, until: since };
+  }
+
+  // Skip re-rendering identical data so the refresh doesn't drop focus or hover.
+  function whenChanged(key, render) {
+    return function(d) {
+      var json = [state.range, state.offset, state.stage, JSON.stringify(state.brush), JSON.stringify(d)].join('|');
+      if (lastPayload[key] === json) return;
+      lastPayload[key] = json;
+      render(d);
+    };
+  }
+
+  // ── Formatting ──
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function(c) { return '&#' + c.charCodeAt(0) + ';'; });
+  }
+  function fmtDur(v) {
+    if (v == null || isNaN(v)) return '—';
+    v = +v;
+    if (v < 60) return v.toFixed(1) + 's';
+    if (v < 3600) {
+      var s = Math.round(v % 60);
+      return Math.floor(v / 60) + 'm ' + (s < 10 ? '0' : '') + s + 's';
+    }
+    return Math.floor(v / 3600) + 'h ' + Math.round((v % 3600) / 60) + 'm';
+  }
+  function fmtAxisDur(v) {
+    if (v < 60) return Math.round(v) + 's';
+    if (v < 3600) return +(v / 60).toFixed(1) + 'm';
+    return +(v / 3600).toFixed(1) + 'h';
+  }
+  function fmtCount(v) { return v % 1 ? '' : String(v); }
+  function relTime(iso) {
+    if (!iso) return '—';
+    var d = new Date(iso), diff = (Date.now() - d.getTime()) / 1000;
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    if (diff < DAY) return Math.floor(diff / 3600) + 'h ago';
+    if (diff < 7 * DAY) return Math.floor(diff / DAY) + 'd ago';
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+  function absTime(iso) { return iso ? new Date(iso).toLocaleString() : ''; }
+  function shortSha(sha) { return sha && sha !== 'null' ? esc(sha.substring(0, 7)) : '—'; }
+
+  // Days are UTC buckets, matching the server's date_trunc('day', ...).
+  function keyTs(key) { var p = key.split('-'); return Date.UTC(+p[0], p[1] - 1, +p[2]) / 1000; }
+  function tsKey(ts) { return new Date(ts * 1000).toISOString().slice(0, 10); }
+  function fmtKey(key, opts) {
+    return new Date(keyTs(key) * 1000).toLocaleDateString(undefined, Object.assign({ month: 'short', day: 'numeric', timeZone: 'UTC' }, opts));
+  }
+  function brushWords() {
+    var b = state.brush;
+    return b.since === b.until ? fmtKey(b.since) : fmtKey(b.since) + ' – ' + fmtKey(b.until);
+  }
+  function scopeWords() {
+    if (!state.brush) return 'in the last ' + parseInt(state.range, 10) + ' days';
+    return state.brush.since === state.brush.until ? 'on ' + fmtKey(state.brush.since)
+      : 'between ' + fmtKey(state.brush.since) + ' and ' + fmtKey(state.brush.until);
+  }
+  function windowQuery() {
+    return '?range=' + state.range + (state.brush ? '&since=' + state.brush.since + '&until=' + state.brush.until : '');
+  }
+
+  // ── Theme palette (canvas needs concrete colors) ──
+  var palette;
+  function resolvePalette() {
+    var probe = document.createElement('span');
+    var ctx = document.createElement('canvas').getContext('2d');
+    root.appendChild(probe);
+    function rgb(cssValue) {
+      probe.style.color = cssValue;
+      ctx.clearRect(0, 0, 1, 1);
+      ctx.fillStyle = getComputedStyle(probe).color;
+      ctx.fillRect(0, 0, 1, 1);
+      var p = ctx.getImageData(0, 0, 1, 1).data;
+      return [p[0], p[1], p[2]];
+    }
+    function css(c, a) { return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + (a == null ? 1 : a) + ')'; }
+    var c = {
+      image: rgb('var(--pipe-image)'), release: rgb('var(--pipe-release)'), deploy: rgb('var(--pipe-deploy)'),
+      ok: rgb('var(--pipe-ok)'), fail: rgb('var(--pipe-fail)'), text: rgb('var(--text-bright)')
+    };
+    root.removeChild(probe);
+    palette = { css: css, c: c, axis: css(c.text, 0.45), grid: css(c.text, 0.06) };
+  }
+
+  // ── Charts: one cursor across all of them ──
+  var sync = uPlot.sync('pipeline');
+
+  function scrubPlugin(fmt) {
+    var tip = document.createElement('div');
+    tip.className = 'pipe-tip';
+    return { hooks: {
+      init: function(u) {
+        var downX = null;
+        u.over.appendChild(tip);
+        u.over.addEventListener('mouseenter', function() { activePlot = u; });
+        u.over.addEventListener('mouseleave', function() {
+          if (activePlot === u) { activePlot = null; setHover(null); }
+        });
+        // A click (not a drag) focuses the hovered day; clicking it again releases it.
+        u.over.addEventListener('mousedown', function(e) { downX = e.clientX; });
+        u.over.addEventListener('mouseup', function(e) {
+          if (downX == null || Math.abs(e.clientX - downX) > 3 || !state.hover) return;
+          var day = state.hover;
+          var same = state.brush && state.brush.since === day && state.brush.until === day;
+          setBrush(same ? null : { since: day, until: day });
+          // uPlot resets its selection box on mouseup; restore ours after it.
+          requestAnimationFrame(function() { charts.forEach(drawBrush); });
+        });
+      },
+      setCursor: function(u) {
+        var idx = u.cursor.idx;
+        // Every synced chart moves its crosshair; only the one under the pointer narrates.
+        if (u !== activePlot || idx == null) { tip.style.display = 'none'; return; }
+        setHover(tsKey(u.data[0][idx]));
+        var rows = '';
+        for (var i = 1; i < u.series.length; i++) {
+          var v = u.data[i][idx];
+          if (v == null) continue;
+          rows += '<div class="pipe-tip-row"><span class="pipe-swatch" style="background:' + u.series[i]._swatch + '"></span>' +
+            esc(u.series[i].label) + '<span class="num">' + fmt(v) + '</span></div>';
+        }
+        if (!rows) { tip.style.display = 'none'; return; }
+        tip.innerHTML = '<div class="pipe-tip-time">' + fmtKey(tsKey(u.data[0][idx]), { weekday: 'short' }) + '</div>' + rows;
+        tip.style.display = 'block';
+        var x = u.cursor.left + 14, y = u.cursor.top - tip.offsetHeight - 10;
+        if (x + tip.offsetWidth > u.over.clientWidth) x = u.cursor.left - tip.offsetWidth - 14;
+        if (y < 0) y = u.cursor.top + 14;
+        tip.style.left = x + 'px'; tip.style.top = y + 'px';
+      },
+      setSelect: function(u) {
+        var sel = u.select;
+        if (u !== activePlot || sel.width <= 3) return;
+        // Snap to the days whose ticks the dragged span covers.
+        var from = u.posToVal(sel.left, 'x') / DAY, to = u.posToVal(sel.left + sel.width, 'x') / DAY;
+        var first = Math.ceil(from), last = Math.floor(to);
+        if (last < first) first = last = Math.round((from + to) / 2);
+        setBrush(parseBrush(tsKey(first * DAY), tsKey(last * DAY)));
+      }
+    } };
+  }
+
+  function drawBrush(u) {
+    if (!state.brush) { u.setSelect({ left: 0, width: 0, top: 0, height: 0 }, false); return; }
+    var w = u.over.clientWidth;
+    var l = Math.max(0, u.valToPos(keyTs(state.brush.since) - DAY / 2, 'x'));
+    var r = Math.min(w, u.valToPos(keyTs(state.brush.until) + DAY / 2, 'x'));
+    u.setSelect({ left: l, width: Math.max(0, r - l), top: 0, height: u.over.clientHeight }, false);
+  }
+
+  function plot(el, xs, cols, series, opts) {
+    el.innerHTML = '';
+    if (!xs.length) {
+      el.innerHTML = '<div class="h-full flex items-center justify-center text-xs" style="color:var(--text-faint)">No runs in range</div>';
+      return;
+    }
+    var fmt = opts.fmt || fmtDur;
+    var font = '10px ' + getComputedStyle(root).getPropertyValue('--pipe-mono');
+    var axis = { stroke: palette.axis, font: font, grid: { stroke: palette.grid, width: 1 }, ticks: { show: false } };
+    // A lone day still needs an x span to draw on.
+    var pad = xs.length === 1 || opts.bars ? DAY / 2 : 0;
+    var u = new uPlot({
+      width: el.clientWidth, height: el.clientHeight,
+      series: [{}].concat(series),
+      legend: { show: false },
+      cursor: {
+        sync: { key: sync.key, setSeries: false },
+        drag: { x: true, y: false, setScale: false },
+        // uPlot builds hover dots via points.show(); bars get none.
+        points: Object.assign({ size: 6, fill: function(u, i) { return u.series[i]._swatch; } },
+          opts.bars ? { show: function() {} } : {})
+      },
+      plugins: [scrubPlugin(fmt)],
+      axes: [
+        Object.assign({}, axis, { size: 22, gap: 4, space: 44, values: function(u, vals) {
+          return vals.map(function(ts) { return new Date(ts * 1000).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', timeZone: 'UTC' }); });
+        } }),
+        Object.assign({}, axis, { size: 44, gap: 4, values: function(u, vals) {
+          return vals.map(function(v) { return v === 0 ? '' : (opts.axisFmt || fmtAxisDur)(v); });
+        } })
+      ],
+      scales: {
+        x: { time: true, range: function(u, min, max) { return [min - pad, max + pad]; } },
+        y: { range: function(u, min, max) { return [0, (max || 1) * 1.15]; } }
+      }
+    }, [xs].concat(cols), el);
+    charts.push(u);
+    // Scales settle after the first layout pass.
+    requestAnimationFrame(function() { if (charts.indexOf(u) !== -1) drawBrush(u); });
+  }
+
+  function line(label, color, dashed) {
+    return { label: label, _swatch: palette.css(color), stroke: palette.css(color, dashed ? 0.55 : 1),
+      width: dashed ? 1.25 : 1.75, dash: dashed ? [4, 3] : undefined,
+      fill: dashed ? undefined : palette.css(color, 0.08), points: { show: false, size: 5 }, spanGaps: true };
+  }
+  function bar(label, color, align) {
+    return { label: label, _swatch: palette.css(color), stroke: palette.css(color), fill: palette.css(color, 0.6),
+      width: 0, points: { show: false }, paths: uPlot.paths.bars({ size: [0.3, 10], align: align, gap: 1 }) };
+  }
+
+  function renderCharts() {
+    charts.forEach(function(u) { u.destroy(); });
+    charts = [];
+    activePlot = null;
+    var d = state.stats;
+    if (!d) return;
+    var trendXs = d.duration_trend.map(function(r) { return keyTs(r.date.slice(0, 10)); });
+    STAGES.forEach(function(stage) {
+      var color = palette.c[stage];
+      var pick = function(k) { return d.duration_trend.map(function(r) { return r[k + '_' + stage]; }); };
+      var p50 = line('p50', color), p95 = line('p95', color, true);
+      if (trendXs.length === 1) { p50.points.show = true; p95.points.show = true; }
+      plot(root.querySelector('[data-chart="stage-' + stage + '"]'), trendXs, [pick('p50'), pick('p95')], [p50, p95], {});
+    });
+    plot(root.querySelector('[data-chart="throughput"]'),
+      d.throughput.map(function(r) { return keyTs(r.date.slice(0, 10)); }),
+      [d.throughput.map(function(r) { return r.success; }), d.throughput.map(function(r) { return r.failure; })],
+      [bar('Succeeded', palette.c.ok, -1), bar('Failed', palette.c.fail, 1)],
+      { bars: true, fmt: String, axisFmt: fmtCount });
+  }
+
+  // ── Summary ──
+  function summaryOf(label, s, stages, preview) {
+    return { label: label, preview: preview, runs: s.runs, failed: s.failed, success_rate: s.success_rate,
+      run_p50: s.run_p50, run_p95: s.run_p95, stages: stages };
+  }
+  function daySummary(key) {
+    var t = state.byDay[key] || {};
+    var runs = (t.success || 0) + (t.failure || 0);
+    var stages = {};
+    STAGES.forEach(function(st) { stages[st] = { p50: t['p50_' + st], p95: t['p95_' + st] }; });
+    return summaryOf(fmtKey(key, { weekday: 'short' }), {
+      runs: runs, failed: t.failure || 0, success_rate: runs ? t.success / runs * 100 : null,
+      run_p50: t.p50_run, run_p95: t.p95_run
+    }, stages, true);
+  }
+  function currentSummary() {
+    if (state.hover) return daySummary(state.hover);
+    if (state.brush && state.scoped) return summaryOf(brushWords(), state.scoped.summary, state.scoped.stages, false);
+    return summaryOf('Last ' + parseInt(state.range, 10) + ' days', state.stats.summary, state.stats.stages, false);
+  }
+  function setStat(name, html) { root.querySelector('[data-stat="' + name + '"]').innerHTML = html; }
+
+  function renderSummary() {
+    if (!state.stats) return;
+    var s = currentSummary();
+    var scope = document.getElementById('pm-scope');
+    scope.textContent = s.label;
+    scope.classList.toggle('is-preview', !!s.preview);
+    setStat('runs', String(s.runs));
+    setStat('failed', s.failed
+      ? '<span class="inline-flex items-center gap-1.5"><span class="pipe-dot pipe-dot-fail"></span>' + s.failed + ' failed</span>'
+      : (s.runs ? 'None failed' : 'No runs'));
+    setStat('success', s.success_rate == null ? '—' : (+s.success_rate).toFixed(1) + '%');
+    setStat('p50', fmtDur(s.run_p50));
+    setStat('p95', fmtDur(s.run_p95));
+
+    var total = STAGES.reduce(function(sum, st) { return sum + (s.stages[st].p50 || 0); }, 0);
+    var segs = document.getElementById('pm-split').children;
+    STAGES.forEach(function(stage, i) {
+      var p50 = s.stages[stage].p50;
+      segs[i].style.flexGrow = total ? (p50 || 0) / total : 1;
+      root.querySelector('[data-share="' + stage + '"]').textContent = total && p50 != null ? Math.round(p50 / total * 100) + '%' : '—';
+      root.querySelector('[data-stage-figs="' + stage + '"]').innerHTML =
+        'p50 <b>' + fmtDur(p50) + '</b> · p95 <b>' + fmtDur(s.stages[stage].p95) + '</b>';
+    });
+  }
+
+  function renderStats() {
+    var d = state.stats;
+    var empty = !d.summary.runs && !d.duration_trend.length;
+    document.getElementById('pipe-empty').hidden = !empty;
+    document.getElementById('pipe-body').hidden = empty;
+    root.querySelectorAll('[data-range-label]').forEach(function(el) { el.textContent = parseInt(state.range, 10) + ' days'; });
+    if (empty) return;
+    state.byDay = {};
+    d.throughput.concat(d.duration_trend).forEach(function(r) {
+      var key = r.date.slice(0, 10);
+      state.byDay[key] = Object.assign(state.byDay[key] || {}, r);
+    });
+    renderSummary();
+    renderCharts();
+  }
+
+  // ── Scrubbing ──
+  var hoverFrame = 0;
+  function setHover(key) {
+    if (key === state.hover) return;
+    state.hover = key;
+    cancelAnimationFrame(hoverFrame);
+    hoverFrame = requestAnimationFrame(function() { renderSummary(); markRows(); });
+  }
+  function markRows() {
+    ['runs', 'slowest'].forEach(function(id) {
+      var el = document.getElementById(id);
+      el.classList.toggle('pipe-scrubbing', !!state.hover);
+      el.querySelectorAll('a[data-day]').forEach(function(a) {
+        a.classList.toggle('is-hit', a.dataset.day === state.hover);
+      });
+    });
+  }
+  function setBrush(brush) {
+    if (JSON.stringify(brush) === JSON.stringify(state.brush)) return;
+    state.brush = brush;
+    state.scoped = null;
+    state.offset = 0;
+    syncUrl();
+    var chip = document.getElementById('brush-chip');
+    chip.hidden = !brush;
+    if (brush) document.getElementById('brush-label').textContent = brushWords();
+    charts.forEach(drawBrush);
+    renderSummary();
+    loadScoped();
+    loadRuns();
+    loadSlowest();
+  }
+  function syncUrl() {
+    var url = new URL(location.href);
+    url.searchParams.set('range', state.range);
+    if (state.brush) {
+      url.searchParams.set('since', state.brush.since);
+      url.searchParams.set('until', state.brush.until);
+    } else {
+      url.searchParams.delete('since');
+      url.searchParams.delete('until');
+    }
+    history.replaceState(null, '', url);
+  }
+
+  // ── Runs ──
+  function statusOf(r) {
+    if (r.image_status === 'error') return ['fail', 'Build failed'];
+    if (r.release_status === 'error') return ['fail', 'Release failed'];
+    if (r.deploy_status === 'error') return ['fail', 'Deploy failed'];
+    if (r.deploy_status === 'success') return ['ok', 'Deployed'];
+    return ['run', 'Running'];
+  }
+  function segClass(stage, status) {
+    return status === 'error' ? 'seg-fail' : status === 'pending' ? 'seg-run' : 'seg-' + stage;
+  }
+
+  function renderRuns(d) {
+    var el = document.getElementById('runs');
+    var pager = document.getElementById('runs-pager');
+    if (!d.runs.length) {
+      el.innerHTML = '<div class="pipe-note">No runs ' + esc(scopeWords()) + '.</div>';
+      pager.hidden = true;
+      return;
+    }
+    var maxTotal = Math.max.apply(null, d.runs.map(function(r) {
+      return (r.image_duration || 0) + (r.release_duration || 0) + (r.deploy_duration || 0);
+    })) || 1;
+    el.innerHTML = d.runs.map(function(r) {
+      var st = statusOf(r);
+      var fall = STAGES.map(function(stage) {
+        var dur = r[stage + '_duration'];
+        if (dur == null) return '';
+        return '<span class="' + segClass(stage, r[stage + '_status']) + '" style="flex:0 0 ' + (dur / maxTotal * 100).toFixed(2) + '%"></span>';
+      }).join('');
+      var day = (r.finished || r.started || '').slice(0, 10);
+      return '<a class="pipe-row" data-day="' + day + '" href="' + detailUrls.deploy.replace('__ID__', r.id) + '" aria-label="' +
+          esc(st[1] + ', started ' + relTime(r.started) + ', total ' + fmtDur(r.total_duration)) + '">' +
+        '<span class="pipe-status"><span class="pipe-dot pipe-dot-' + st[0] + '"></span>' + st[1] + '</span>' +
+        '<span title="' + esc(absTime(r.started)) + '">' + relTime(r.started) + '</span>' +
+        '<span class="num sha">' + shortSha(r.sha) + '</span>' +
+        '<span><span class="dpl-badge dpl-badge-' + r.trigger_type + '">' + triggerIcons[r.trigger_type] + ' ' +
+          (r.trigger_type === 'auto' ? 'Auto' : 'Manual') + '</span></span>' +
+        '<span class="pipe-fall">' + fall + '</span>' +
+        '<span class="num dur">' + fmtDur(r.image_duration) + '</span>' +
+        '<span class="num dur">' + fmtDur(r.release_duration) + '</span>' +
+        '<span class="num dur">' + fmtDur(r.deploy_duration) + '</span>' +
+        '<span class="num total">' + fmtDur(r.total_duration) + '</span></a>';
+    }).join('');
+    document.getElementById('runs-range').textContent =
+      (state.offset + 1) + '–' + (state.offset + d.runs.length) + ' of ' + d.total;
+    document.getElementById('runs-newer').disabled = state.offset === 0;
+    document.getElementById('runs-older').disabled = state.offset + PER_PAGE >= d.total;
+    pager.hidden = d.total <= PER_PAGE;
+    markRows();
+  }
+
+  // ── Slowest ──
+  function renderSlowest(d) {
+    var el = document.getElementById('slowest');
+    if (!d.items.length) {
+      el.innerHTML = '<div class="pipe-note">No finished ' + STAGE_NAMES[d.stage] + ' ' + esc(scopeWords()) + '.</div>';
+      return;
+    }
+    var max = d.items[0].duration || 1;
+    var color = 'var(--pipe-' + d.stage + ')';
+    el.innerHTML = d.items.map(function(item, i) {
+      return '<a class="pipe-slow" data-day="' + (item.finished || '').slice(0, 10) + '" href="' + detailUrls[d.stage].replace('__ID__', item.id) + '">' +
+        '<span class="num" style="color:var(--text-faint)">' + (i + 1) + '</span>' +
+        '<span class="num sha">' + shortSha(item.sha) + '</span>' +
+        '<span><span class="pipe-slow-bar block" style="width:' + Math.max(2, item.duration / max * 100).toFixed(1) + '%;background:' + color + '"></span></span>' +
+        '<span class="num total">' + fmtDur(item.duration) + '</span>' +
+        '<span class="when" title="' + esc(absTime(item.created)) + '">' + relTime(item.created) + '</span></a>';
+    }).join('');
+    markRows();
+  }
+
+  // ── Data ──
+  function getJSON(path) {
+    return fetch(baseUrl + path).then(function(r) {
+      if (!r.ok) throw new Error(r.status);
+      return r.json();
+    });
+  }
+  function fail(key) {
+    return function() {
+      document.getElementById('pipe-error').hidden = false;
+      delete lastPayload[key];
+      if (key === 'runs' || key === 'slowest') {
+        document.getElementById(key).innerHTML = '<div class="pipe-note">Couldn’t load this section.</div>';
+      }
+    };
+  }
+
+  function loadStats() {
+    return getJSON('/stats?range=' + state.range).then(whenChanged('stats', function(d) { state.stats = d; renderStats(); }), fail('stats'));
+  }
+  function loadScoped() {
+    if (!state.brush) return Promise.resolve();
+    return getJSON('/stats' + windowQuery()).then(whenChanged('scoped', function(d) { state.scoped = d; renderSummary(); }), fail('scoped'));
+  }
+  function loadRuns() {
+    return getJSON('/runs' + windowQuery() + '&limit=' + PER_PAGE + '&offset=' + state.offset).then(whenChanged('runs', renderRuns), fail('runs'));
+  }
+  function loadSlowest() {
+    return getJSON('/slowest' + windowQuery() + '&stage=' + state.stage).then(whenChanged('slowest', renderSlowest), fail('slowest'));
+  }
+  function loadAll() {
+    document.getElementById('pipe-error').hidden = true;
+    return Promise.all([loadStats(), loadScoped(), loadRuns(), loadSlowest()]);
+  }
+
+  // ── Controls ──
+  function press(group, attr, value) {
+    group.querySelectorAll('button').forEach(function(b) {
+      var on = b.dataset[attr] === value;
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      if (attr === 'range') b.className = 'btn btn-xs ' + (on ? 'btn-primary' : 'btn-ghost');
+    });
+  }
+  var rangeGroup = document.getElementById('range-selector');
+  rangeGroup.addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-range]');
+    if (!btn || btn.dataset.range === state.range) return;
+    state.range = btn.dataset.range;
+    state.offset = 0;
+    state.brush = null;
+    state.scoped = null;
+    document.getElementById('brush-chip').hidden = true;
+    press(rangeGroup, 'range', state.range);
+    syncUrl();
+    loadAll();
+  });
+  var stageGroup = document.getElementById('slowest-selector');
+  stageGroup.addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-stage]');
+    if (!btn || btn.dataset.stage === state.stage) return;
+    state.stage = btn.dataset.stage;
+    press(stageGroup, 'stage', state.stage);
+    loadSlowest();
+  });
+  document.getElementById('runs-newer').addEventListener('click', function() {
+    state.offset = Math.max(0, state.offset - PER_PAGE);
+    loadRuns();
+  });
+  document.getElementById('runs-older').addEventListener('click', function() {
+    state.offset += PER_PAGE;
+    loadRuns();
+  });
+  document.getElementById('brush-chip').addEventListener('click', function() { setBrush(null); });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && state.brush && !e.target.closest('input, textarea, select')) setBrush(null);
+  });
+  root.querySelector('[data-retry]').addEventListener('click', loadAll);
+
+  if (state.brush) {
+    document.getElementById('brush-chip').hidden = false;
+    document.getElementById('brush-label').textContent = brushWords();
+  }
+  resolvePalette();
+  loadAll();
+  setInterval(function() { if (!document.hidden) loadAll(); }, 60000);
+
+  var resizeTimer;
+  window.addEventListener('resize', function() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(renderCharts, 150);
+  });
+  new MutationObserver(function() { resolvePalette(); renderCharts(); })
+    .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+})();
+</script>
+{% endblock js %}
