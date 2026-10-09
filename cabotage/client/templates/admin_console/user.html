@@ -1,0 +1,235 @@
+{% extends "admin_console/_layout.html" %}
+{% from "_macros.html" import page_header, icon %}
+{% from "admin_console/_macros.html" import crumbs, deleted_badge, when %}
+
+{% set label = target.username | display_username %}
+{% set back = url_for('admin_console.user', user_id=target.id) %}
+
+{% block page_title %}{{ label }}{% endblock page_title %}
+{% block console_crumbs %}{{ crumbs([{'label': 'users', 'url': url_for('admin_console.users')}, {'label': label}]) }}{% endblock console_crumbs %}
+
+{% block console %}
+  {% call page_header(label, target.email) %}
+    <div class="flex flex-wrap items-center gap-1">
+      {% if target.admin %}<span class="badge badge-sm badge-ghost">{{ icon('shield', 'w-3 h-3') }} Global admin</span>{% endif %}
+      {% if not target.active %}<span class="badge badge-sm badge-ghost">Inactive</span>{% endif %}
+      {% if not detail.has_mfa %}<span class="badge badge-sm badge-warning">No MFA</span>{% endif %}
+      {% if is_self %}<span class="badge badge-sm badge-ghost">You</span>{% endif %}
+    </div>
+  {% endcall %}
+
+  <div class="adm-panel">
+    <dl class="adm-facts">
+      <div><dt>ID</dt><dd class="adm-mono">{{ target.id }}</dd></div>
+      <div><dt>Username</dt><dd class="adm-mono">{{ target.username }}</dd></div>
+      <div><dt>Sign-in</dt><dd>{% if target.github_identity %}GitHub · <span class="adm-mono">{{ target.github_identity.github_username }}</span>{% else %}Email and password{% endif %}</dd></div>
+      <div><dt>Registered</dt><dd>{{ when(target.registered_at) }}</dd></div>
+      <div><dt>Last sign-in</dt><dd>{{ when(target.current_login_at or target.last_login_at) }}{% if target.current_login_ip %} <span class="adm-sub adm-mono">{{ target.current_login_ip }}</span>{% endif %}</dd></div>
+      <div><dt>Sign-ins</dt><dd class="adm-num">{{ target.login_count or 0 }}</dd></div>
+    </dl>
+  </div>
+
+  {# ── Account controls: state first, consequence only when opened ── #}
+  <section class="adm-section" aria-labelledby="access-label">
+    <div class="adm-section-head">
+      <h2 id="access-label" class="adm-label">Access</h2>
+      {% if is_self %}<span class="adm-sub">Your own account is changed by another global admin.</span>{% endif %}
+    </div>
+    <div class="adm-panel adm-actions">
+
+      {# Account active #}
+      {% set deactivate_block = refusals['deactivate'] if target.active else none %}
+      {% if deactivate_block %}
+        <div class="adm-action-locked">
+          <span><span class="adm-primary">Account</span> <span class="adm-sub">· Active</span></span>
+          <span class="adm-sub">{{ deactivate_block }}</span>
+        </div>
+      {% else %}
+        <details class="adm-action">
+          <summary>
+            <span><span class="adm-primary">Account</span> <span class="adm-sub">· {{ 'Active' if target.active else 'Inactive' }}</span></span>
+            <span class="btn btn-ghost btn-xs {% if target.active %}text-error{% endif %}">{{ 'Deactivate' if target.active else 'Activate' }}</span>
+          </summary>
+          <div class="adm-action-body">
+            {% if target.active %}
+              <p>{{ label }} is signed out everywhere and can't sign in or use tokens. Memberships and data stay; reactivating restores access with a fresh sign-in.</p>
+            {% else %}
+              <p>{{ label }} can sign in again with their existing credentials{% if not detail.has_mfa %} and will be asked to enroll MFA{% endif %}.</p>
+            {% endif %}
+            <form method="post" action="{{ url_for('admin_console.user_set_active', user_id=target.id, next=back) }}">
+              {{ active_form.csrf_token(id='csrf-active') }}
+              {{ active_form.active(id='set-active', value='false' if target.active else 'true') }}
+              {% if target.active %}
+                <button type="submit" class="btn btn-outline btn-sm border-error/40 text-error hover:bg-error/10">Deactivate {{ label }}</button>
+              {% else %}
+                <button type="submit" class="btn btn-ghost btn-sm">Activate {{ label }}</button>
+              {% endif %}
+              <span class="adm-sub">Verify with passkey, then review and confirm.</span>
+            </form>
+          </div>
+        </details>
+      {% endif %}
+
+      {# Global admin #}
+      {% set demote_block = refusals['demote'] if target.admin else none %}
+      {% if demote_block %}
+        <div class="adm-action-locked">
+          <span><span class="adm-primary">Global admin</span> <span class="adm-sub">· Yes</span></span>
+          <span class="adm-sub">{{ demote_block }}</span>
+        </div>
+      {% else %}
+        <details class="adm-action">
+          <summary>
+            <span><span class="adm-primary">Global admin</span> <span class="adm-sub">· {{ 'Yes' if target.admin else 'No' }}{% if target.admin and not detail.passkeys %} (no passkey, can't enter this console){% endif %}</span></span>
+            <span class="btn btn-ghost btn-xs {% if target.admin %}text-error{% endif %}">{{ 'Remove' if target.admin else 'Grant' }}</span>
+          </summary>
+          <div class="adm-action-body">
+            {% if target.admin %}
+              <p>{{ label }} loses this console and every cross-tenant permission. Any open admin session they hold ends now. Organization memberships are unchanged.</p>
+            {% else %}
+              <p>{{ label }} can open this console after verifying a passkey and then read and change every organization, project, application and account.{% if not detail.passkeys %} They have no passkey yet, so they can't enter until they register one.{% endif %}{% if not target.active %} The account is inactive.{% endif %}</p>
+            {% endif %}
+            <form method="post" action="{{ url_for('admin_console.user_set_admin', user_id=target.id, next=back) }}">
+              {{ admin_form.csrf_token(id='csrf-admin') }}
+              {{ admin_form.admin(id='set-admin', value='false' if target.admin else 'true') }}
+              {% if target.admin %}
+                <button type="submit" class="btn btn-outline btn-sm border-error/40 text-error hover:bg-error/10">Remove global admin</button>
+              {% else %}
+                <button type="submit" class="btn btn-ghost btn-sm">Make global admin</button>
+              {% endif %}
+              <span class="adm-sub">Verify with passkey, then review and confirm.</span>
+            </form>
+          </div>
+        </details>
+      {% endif %}
+
+      {# MFA #}
+      {% set mfa_summary %}
+        {%- if detail.passkeys %}{{ detail.passkeys | length }} passkey{{ 's' if detail.passkeys | length != 1 }}{% endif -%}
+        {%- if detail.passkeys and detail.has_totp %} · {% endif -%}
+        {%- if detail.has_totp %}Authenticator app{% endif -%}
+        {%- if not detail.has_mfa %}Not enrolled{% endif -%}
+        {%- if detail.recovery_codes %} · {{ detail.recovery_codes }} recovery codes{% endif -%}
+      {% endset %}
+      {% if not detail.has_mfa and not detail.recovery_codes %}
+        <div class="adm-action-locked">
+          <span><span class="adm-primary">MFA</span> <span class="adm-sub">· Not enrolled</span></span>
+          <span class="adm-sub">{% if target.active %}Enrollment is required at their next sign-in.{% else %}Nothing to reset.{% endif %}</span>
+        </div>
+      {% elif refusals['reset_mfa'] %}
+        <div class="adm-action-locked">
+          <span><span class="adm-primary">MFA</span> <span class="adm-sub">· {{ mfa_summary }}</span></span>
+          <span class="adm-sub">{{ refusals['reset_mfa'] }}</span>
+        </div>
+      {% else %}
+        <details class="adm-action">
+          <summary>
+            <span><span class="adm-primary">MFA</span> <span class="adm-sub">· {{ mfa_summary }}</span></span>
+            <span class="btn btn-ghost btn-xs text-error">Reset</span>
+          </summary>
+          <div class="adm-action-body">
+            <p>Deletes every passkey, the authenticator app secret and all recovery codes, and signs {{ label }} out everywhere. They must enroll MFA again at next sign-in. The password is unchanged.{% if target.admin %} Their admin console access ends until they register a new passkey.{% endif %}</p>
+            <form method="post" action="{{ url_for('admin_console.user_reset_mfa', user_id=target.id, next=back) }}">
+              {{ mfa_form.csrf_token(id='csrf-mfa') }}
+              {{ mfa_form.confirm(id='mfa-confirm', type='hidden', value=target.username or target.email or target.id) }}
+              <button type="submit" class="btn btn-outline btn-sm border-error/40 text-error hover:bg-error/10">Reset MFA</button>
+              <span class="adm-sub">Verify with passkey, then type the username to confirm.</span>
+            </form>
+          </div>
+        </details>
+      {% endif %}
+    </div>
+  </section>
+
+  {% if detail.passkeys %}
+    <section class="adm-section">
+      <div class="adm-section-head"><h2 class="adm-label">Passkeys</h2></div>
+      <div class="adm-panel">
+        <table class="adm-table">
+          <thead><tr><th>Name</th><th>Use</th><th class="adm-hide-sm">Added</th><th class="end">Last used</th></tr></thead>
+          <tbody>
+            {% for key in detail.passkeys %}
+              <tr>
+                <td class="adm-primary">{{ key.name }}</td>
+                <td class="adm-sub">{{ 'Sign-in' if key.usage == 'first' else 'Second factor' }}</td>
+                <td class="adm-hide-sm adm-sub">{{ when(key.create_datetime) }}</td>
+                <td class="end adm-sub">{{ when(key.lastuse_datetime) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% endif %}
+
+  <section class="adm-section">
+    <div class="adm-section-head"><h2 class="adm-label">Organizations</h2></div>
+    <div class="adm-panel">
+      {% if detail.memberships %}
+        <table class="adm-table">
+          <thead><tr><th>Organization</th><th>Role</th><th class="end">Membership</th></tr></thead>
+          <tbody>
+            {% for m in detail.memberships %}
+              {% set org = m.organization %}
+              <tr class="{% if org.deleted_at %}adm-deleted{% endif %}">
+                <td>
+                  <a class="adm-link adm-primary" href="{{ url_for('admin_console.organization', organization_id=org.id) }}">{{ org.name }}</a>
+                  {% if org.deleted_at %}{{ deleted_badge(org.deleted_at) }}{% endif %}
+                  <div class="adm-sub adm-mono">{{ org.slug | admin_slug }}</div>
+                </td>
+                <td>{% if m.admin %}Admin{% else %}<span class="adm-sub">Member</span>{% endif %}</td>
+                <td class="end">
+                  {% if not org.deleted_at %}<a class="btn btn-ghost btn-xs" href="{{ url_for('user.organization_members', org_slug=org.slug) }}">Manage {{ icon('arrow-up-right', 'w-3 h-3 opacity-60') }}</a>{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="adm-empty">Not a member of any organization. Add them from an organization's Members page.</div>
+      {% endif %}
+    </div>
+  </section>
+
+  {% if detail.requests %}
+    <section class="adm-section">
+      <div class="adm-section-head"><h2 class="adm-label">Organization requests</h2></div>
+      <div class="adm-panel">
+        <table class="adm-table"><tbody>
+          {% for req in detail.requests %}
+            <tr>
+              <td><span class="adm-primary">{{ req.name }}</span> <span class="adm-sub adm-mono">{{ req.slug }}</span></td>
+              <td>{{ req.status | capitalize }}</td>
+              <td class="end adm-sub">{{ when(req.created_at) }}</td>
+            </tr>
+          {% endfor %}
+        </tbody></table>
+      </div>
+    </section>
+  {% endif %}
+
+  <section class="adm-section">
+    <div class="adm-section-head"><h2 class="adm-label">Account events</h2></div>
+    <div class="adm-panel">
+      {% if detail.events %}
+        <table class="adm-table">
+          <thead><tr><th>Event</th><th class="adm-hide-sm">By</th><th class="end">When</th></tr></thead>
+          <tbody>
+            {% for e in detail.events %}
+              <tr>
+                <td>
+                  <span class="adm-primary">{{ (e.detail or e.verb or '') | replace('_', ' ') | capitalize }}</span>
+                  {% if e.remote_addr %}<span class="adm-sub adm-mono">{{ e.remote_addr }}</span>{% endif %}
+                </td>
+                <td class="adm-hide-sm adm-sub">{{ (e.actor_username or '') | display_username }}</td>
+                <td class="end adm-sub">{{ when(e.timestamp) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="adm-empty">No account events recorded.</div>
+      {% endif %}
+    </div>
+  </section>
+{% endblock console %}

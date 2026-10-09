@@ -133,7 +133,7 @@ def test_admin_flag_and_totp_are_not_entry_authority(client, admin_user, tenant)
     db.session.commit()
     _login(client, admin_user)
     assert client.get(_settings(tenant)).status_code == 403
-    assert client.get("/admin/").status_code == 302
+    assert client.get("/admin/db/").status_code == 302
     assert client.post("/admin/passkey/options", json={}).status_code == 403
     assert AdminChallenge.query.filter_by(user_id=admin_user.id).count() == 0
     for _ in range(3):
@@ -1032,6 +1032,91 @@ def test_shell_capability_is_one_use_and_entry_bound(client, admin_user, passkey
         session.update(saved)
         assert not has_admin_session()
         assert not consume_shell_ticket()
+
+
+@pytest.mark.parametrize(
+    "suffix,data",
+    [
+        ("active", {"active": "false"}),
+        ("admin", {"admin": "false"}),
+        ("mfa-reset", None),
+    ],
+)
+def test_console_refuses_self_lockout(client, admin_user, passkey, suffix, data):
+    _login(client, admin_user)
+    passkey.enter(client)
+    old_uniquifier = admin_user.fs_uniquifier
+    response = client.post(
+        f"/admin/users/{admin_user.id}/{suffix}",
+        data=data or {"confirm": admin_user.username},
+    )
+    assert response.status_code == 302
+    db.session.refresh(admin_user)
+    assert admin_user.active and admin_user.admin
+    assert admin_user.fs_uniquifier == old_uniquifier
+    assert WebAuthn.query.filter_by(user_id=admin_user.id).count() == 1
+
+
+def test_console_deactivation_requires_fresh_proof_and_rotates_login(
+    client, admin_user, regular_user, passkey
+):
+    _login(client, admin_user)
+    passkey.enter(client)
+    before = regular_user.fs_uniquifier
+    response = passkey.post(
+        client, f"/admin/users/{regular_user.id}/active", {"active": "false"}
+    )
+    assert response.status_code == 302
+    db.session.refresh(regular_user)
+    assert not regular_user.active
+    assert regular_user.fs_uniquifier != before
+
+
+def test_console_mfa_reset_revokes_keys_sessions_and_entry(
+    client, admin_user, regular_user, passkey
+):
+    regular_user.admin = True
+    regular_user.tf_primary_method = "authenticator"
+    regular_user.tf_totp_secret = "test-secret"
+    regular_user.mf_recovery_codes = ["test-recovery"]
+    target_key = SigningPasskey.register(regular_user)
+    target_client = client.application.test_client()
+    _login(target_client, regular_user)
+    target_key.enter(target_client)
+    before, password = regular_user.fs_uniquifier, regular_user.password
+    _login(client, admin_user)
+    passkey.enter(client)
+    response = passkey.post(
+        client,
+        f"/admin/users/{regular_user.id}/mfa-reset",
+        {"confirm": regular_user.username},
+    )
+    assert response.status_code == 302
+    db.session.refresh(regular_user)
+    assert regular_user.fs_uniquifier != before
+    assert regular_user.password == password
+    assert not regular_user.tf_primary_method
+    assert not regular_user.tf_totp_secret
+    assert not regular_user.mf_recovery_codes
+    assert WebAuthn.query.filter_by(user_id=regular_user.id).count() == 0
+    assert AdminGrant.query.filter_by(user_id=regular_user.id).count() == 0
+
+
+@pytest.mark.parametrize("change", ["deactivate", "demote", "reset_mfa"])
+def test_last_usable_admin_refusal_excludes_keyless_admins(
+    admin_user, regular_user, passkey, change
+):
+    from cabotage.server.admin_console.accounts import _usable_admin_ids, refusal
+
+    regular_user.admin = True
+    db.session.commit()
+    assert admin_user.id in _usable_admin_ids()
+    assert regular_user.id not in _usable_admin_ids()
+    assert refusal(change, admin_user, regular_user.id, {admin_user.id}) is not None
+    assert (
+        refusal(change, admin_user, regular_user.id, {admin_user.id, regular_user.id})
+        is None
+    )
 
 
 def test_native_last_passkey_deletion_with_totp_revokes_elevation_not_login(

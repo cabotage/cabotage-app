@@ -1,0 +1,78 @@
+{% extends "admin_console/_layout.html" %}
+{% from "_macros.html" import page_header %}
+{% from "admin_console/_macros.html" import crumbs, segments, when %}
+
+{% block page_title %}Requests{% endblock page_title %}
+{% block console_crumbs %}{{ crumbs([{'label': 'requests'}]) }}{% endblock console_crumbs %}
+
+{% block console %}
+  {% call page_header('Organization requests') %}{% endcall %}
+
+  {% if not admin_requests_enabled %}
+    <p class="adm-note adm-note-warn">Organization requests are turned off (<span class="adm-mono">ORGANIZATION_REQUESTS_ENABLED</span>). Existing requests are shown read-only.</p>
+  {% endif %}
+
+  <div class="adm-toolbar">
+    {{ segments('admin_console.requests', 'status', status, [('pending', 'Pending'), ('all', 'All')]) }}
+  </div>
+
+  <div class="adm-panel">
+    {% if organization_requests %}
+      <table class="adm-table">
+        <thead>
+          <tr>
+            <th>Organization</th>
+            <th>Requester</th>
+            <th>Status</th>
+            <th class="adm-hide-sm">Requested</th>
+            <th class="end"><span class="adm-hide-sm">Decision</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for req in organization_requests %}
+            <tr id="request-{{ req.id }}" class="adm-request-target">
+              <td>
+                <span class="adm-primary">{{ req.name }}</span>
+                <div class="adm-sub adm-mono">{{ req.slug }}</div>
+                {% if req.note %}<div class="adm-sub">{{ req.note }}</div>{% endif %}
+              </td>
+              <td>
+                <a class="adm-link" href="{{ url_for('admin_console.user', user_id=req.requester_user_id) }}">{{ req.requester.username | display_username }}</a>
+                <div class="adm-sub">{{ req.requester.email }}</div>
+              </td>
+              <td>
+                {% if req.is_pending %}
+                  <span class="adm-state adm-state-deploying"><span class="status-dot status-dot-warning"></span>Pending</span>
+                {% elif req.status == 'approved' %}
+                  <span class="adm-state"><span class="status-dot status-dot-success"></span>Approved</span>
+                {% else %}
+                  <span class="adm-state adm-sub"><span class="status-dot status-dot-neutral"></span>Denied</span>
+                {% endif %}
+                {% if req.reviewer %}<div class="adm-sub">by {{ req.reviewer.username | display_username }} · {{ when(req.reviewed_at) }}</div>{% endif %}
+              </td>
+              <td class="adm-hide-sm adm-sub">{{ when(req.created_at) }}</td>
+              <td class="end">
+                {% if req.is_pending and admin_requests_enabled %}
+                  <div class="flex justify-end gap-1">
+                    <form method="post" action="{{ url_for('user.organization_request_approve', request_id=req.id) }}">
+                      {{ review_form.hidden_tag() }}
+                      <button type="submit" class="btn btn-ghost btn-xs" title="Create {{ req.slug }} with {{ req.requester.username | display_username }} as admin">Approve</button>
+                    </form>
+                    <form method="post" action="{{ url_for('user.organization_request_deny', request_id=req.id) }}">
+                      {{ review_form.hidden_tag() }}
+                      <button type="submit" class="btn btn-ghost btn-xs text-error">Deny</button>
+                    </form>
+                  </div>
+                {% elif req.organization %}
+                  <a class="btn btn-ghost btn-xs" href="{{ url_for('admin_console.organization', organization_id=req.organization_id) }}">Organization</a>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="adm-empty">{% if status == 'pending' %}No pending requests.{% else %}No organization requests yet.{% endif %}</div>
+    {% endif %}
+  </div>
+{% endblock console %}

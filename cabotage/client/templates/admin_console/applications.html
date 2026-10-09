@@ -1,0 +1,54 @@
+{% extends "admin_console/_layout.html" %}
+{% from "_macros.html" import page_header %}
+{% from "admin_console/_macros.html" import crumbs, search_form, state_segments, pager, no_results, deleted_badge, deploy_state, when %}
+
+{% block page_title %}Applications{% endblock page_title %}
+{% block console_crumbs %}{{ crumbs([{'label': 'applications'}]) }}{% endblock console_crumbs %}
+
+{% block console %}
+  {% call page_header('Applications') %}{% endcall %}
+
+  <div class="adm-toolbar">
+    {{ search_form('admin_console.applications', term, 'App, project, org, repository or ID', {'state': state}) }}
+    {{ state_segments('admin_console.applications', state, term) }}
+  </div>
+
+  <div class="adm-panel">
+    {% if page.items %}
+      <table class="adm-table">
+        <thead>
+          <tr>
+            <th>Application</th>
+            <th class="adm-hide-sm">Repository</th>
+            <th>Current deployment</th>
+            <th class="end">Deployed</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for app, latest in page.items %}
+            <tr class="{% if app.deleted_at %}adm-deleted{% endif %}">
+              <td>
+                <a class="adm-link adm-primary" href="{{ url_for('admin_console.application', application_id=app.id) }}">{{ app.name }}</a>
+                {% if app.deleted_at %}{{ deleted_badge(app.deleted_at) }}{% endif %}
+                <div class="adm-sub adm-mono">{{ app.project.organization.slug | admin_slug }}/{{ app.project.slug | admin_slug }}/{{ app.slug | admin_slug }}</div>
+              </td>
+              <td class="adm-hide-sm adm-sub">{{ app.github_repository or '—' }}</td>
+              <td>
+                {% if app.deleted_at %}
+                  <span class="adm-sub">Removed</span>
+                {% else %}
+                  {{ deploy_state(latest) }}
+                  {% if latest %}<span class="adm-sub adm-num">{% if latest.version %} v{{ latest.version }}{% endif %}{% if app.project.environments_enabled and latest.environment_name %} · {{ latest.environment_name }}{% endif %}</span>{% endif %}
+                {% endif %}
+              </td>
+              <td class="end adm-sub">{{ when(latest.created if latest else none) }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      {{ no_results(term, 'admin_console.applications', 'applications', {'state': state}) }}
+    {% endif %}
+  </div>
+  {{ pager(page, 'admin_console.applications', {'q': term, 'state': state}, 'applications') }}
+{% endblock console %}

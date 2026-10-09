@@ -284,12 +284,9 @@
                 <a href="{{ url_for('user.guide') }}"
                    class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Guide</a>
                 {% if current_user.admin %}
-                {% if config.ORGANIZATION_REQUESTS_ENABLED %}
-                <a href="{{ url_for('user.organization_requests') }}"
-                   class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Requests</a>
-                {% endif %}
-                <a href="{{ url_for('user.infra_observe') }}"
-                   class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Infra</a>
+                <a href="{{ url_for('admin_console.index') }}"
+                   class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium gap-1.5"
+                   {% if admin_elevated %}title="Admin access active"{% endif %}>{% if admin_elevated %}<span class="status-dot status-dot-success" aria-hidden="true"></span>{% endif %}Admin</a>
                 {% endif %}
               </nav>
               <div class="dropdown dropdown-hover dropdown-end theme-toggle-wrap">
@@ -644,12 +641,8 @@
             <a href="{{ url_for('user.guide') }}"
                class="btn btn-ghost btn-sm justify-start text-sm">Guide</a>
             {% if current_user.admin %}
-            {% if config.ORGANIZATION_REQUESTS_ENABLED %}
-            <a href="{{ url_for('user.organization_requests') }}"
-               class="btn btn-ghost btn-sm justify-start text-sm">Requests</a>
-            {% endif %}
-            <a href="{{ url_for('user.infra_observe') }}"
-               class="btn btn-ghost btn-sm justify-start text-sm">Infrastructure</a>
+            <a href="{{ url_for('admin_console.index') }}"
+               class="btn btn-ghost btn-sm justify-start text-sm gap-2">{% if admin_elevated %}<span class="status-dot status-dot-success" aria-hidden="true"></span>{% endif %}Admin{% if admin_elevated %}<span class="text-xs text-base-content/60">access active</span>{% endif %}</a>
             {% endif %}
           </nav>
         {% endif %}
