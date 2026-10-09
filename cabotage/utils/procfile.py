@@ -78,7 +78,7 @@ def _group_lines(lines: Iterable[str]) -> Generator[tuple[int, str]]:
             else:
                 group.append(line)
             yield start, "".join(group)
-            start, group = (i + 1, [])
+            start, group = (i + 1, list[str]())
     if group:
         yield start, "".join(group[:-1]) + group[-1].rstrip()
 
@@ -90,17 +90,15 @@ def _parse_procfile_line(line: str) -> tuple[str, str, list[tuple[str, str]]]:
         raise ValueError('Invalid profile line "%s".' % line)
     parts = match.groupdict()
     environment = parts["environment"]
-    if environment:
-        environment = [
-            (m.group(1), m.group(2) if m.group(2) is not None else m.group(3))
-            for m in _ENV_VAR.finditer(environment)
-        ]
-    else:
-        environment = []
     return (
         parts["process_type"],
         parts["command"],
-        environment,
+        [
+            (m.group(1), m.group(2) if m.group(2) is not None else m.group(3))
+            for m in _ENV_VAR.finditer(environment)
+        ]
+        if environment
+        else [],
     )
 
 

@@ -751,7 +751,9 @@ def organization_settings(org_slug):
         and action == "save_tailscale"
         and ts_form.validate_on_submit()
     ):
-        client_id = ts_form.client_id.data
+        client_id = assume_not_none(
+            ts_form.client_id.data, because="InputRequired has already run"
+        )
         # Validate the OIDC trust by attempting a token exchange
         import requests as http_requests
 
@@ -925,6 +927,20 @@ def organization_settings(org_slug):
     )
 
 
+def _organization_application_or_404(organization, application_id):
+    if not application_id:
+        return None
+    application = _safe_get(Application, application_id)
+    if (
+        application is None
+        or application.deleted_at is not None
+        or application.project.organization_id != organization.id
+        or not AdministerApplicationPermission(application.id).can()
+    ):
+        abort(404)
+    return application
+
+
 @user_blueprint.route("/github/install/<org_slug>")
 @login_required
 def github_install_start(org_slug):
@@ -1058,8 +1074,13 @@ def github_connect_start(org_slug):
     if not AdministerOrganizationPermission(organization.id).can():
         abort(403)
 
+    application = _organization_application_or_404(
+        organization, request.args.get("application_id")
+    )
     authorize_url = github_installations.user_authorize_url(
-        github_installations.connect_state(organization, current_user.id)
+        github_installations.connect_state(
+            organization, current_user.id, application=application
+        )
     )
     if authorize_url is None:
         flash("GitHub user authorization is not configured.", "danger")
@@ -1132,11 +1153,15 @@ def github_connect_complete(org_slug):
         )
         return redirect(url_for("user.organization_settings", org_slug=org_slug))
 
+    application = _organization_application_or_404(
+        organization, payload.get("application_id")
+    )
     authorize_url = github_installations.user_authorize_url(
         github_installations.connect_state(
             organization,
             current_user.id,
             installation_id=payload.get("installation_id"),
+            application=application,
         )
     )
     if authorize_url is None:
@@ -2172,7 +2197,11 @@ def project_environment_configuration_create(org_slug, project_slug, env_slug):
     if form.validate_on_submit():
         from cabotage.utils.config_templates import has_template_variables
 
-        is_template = has_template_variables(form.value.data)
+        value = assume_not_none(
+            form.value.data, because="InputRequired has already run"
+        )
+
+        is_template = has_template_variables(value)
         if is_template and form.secure.data:
             flash("Template configs cannot be secrets.", "error")
             return redirect(
@@ -2189,7 +2218,7 @@ def project_environment_configuration_create(org_slug, project_slug, env_slug):
             project_id=project.id,
             environment_id=environment.id,
             name=form.name.data,
-            value=form.value.data,
+            value=value,
             secret=form.secure.data,
             buildtime=form.buildtime.data,
         )
@@ -3880,7 +3909,11 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
     if form.validate_on_submit():
         from cabotage.utils.config_templates import has_template_variables
 
-        is_template = has_template_variables(form.value.data)
+        value = assume_not_none(
+            form.value.data, because="InputRequired has already run"
+        )
+
+        is_template = has_template_variables(value)
         if is_template and form.secure.data:
             flash("Template configs cannot be secrets.", "error")
             return render_template(
@@ -3903,7 +3936,7 @@ def project_application_configuration_create(org_slug, project_slug, app_slug):
             application_id=form.application_id.data,
             application_environment_id=app_env.id,
             name=form.name.data,
-            value=form.value.data,
+            value=value,
             secret=form.secure.data,
             buildtime=form.buildtime.data,
         )
@@ -4218,16 +4251,23 @@ def project_application_configuration_edit(org_slug, project_slug, app_slug, con
 )
 @login_required
 def project_application_settings(org_slug, project_slug, app_slug):
-    org, project, application = _lookup_app_context(
-        org_slug, project_slug, app_slug, require_admin=True
+    org, project, application = cast(
+        tuple[Organization, Project, Application],
+        _lookup_app_context(org_slug, project_slug, app_slug, require_admin=True),
     )
+    env_slug = request.args.get("env_slug")
+    if env_slug:
+        app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
+        environment = app_env.environment if project.environments_enabled else None
+    else:
+        environment = _default_environment(project)
 
     form = _prepare_application_settings_form(application, org)
 
     if form.validate_on_submit():
         _validate_github_source_settings(form, application, org)
         if form.github_app_installation_id.errors or form.github_repository.errors:
-            return _render_application_settings(application, org, project, form)
+            return _render_application_settings(application, org, environment, form)
 
         previous_github_app_installation_id = application.github_app_installation_id
         previous_github_repository = application.github_repository
@@ -4251,7 +4291,6 @@ def project_application_settings(org_slug, project_slug, app_slug):
         )
         db.session.add(activity)
         db.session.commit()
-        environment = _default_environment(project)
         return redirect(
             url_for(
                 "user.project_application",
@@ -4262,7 +4301,7 @@ def project_application_settings(org_slug, project_slug, app_slug):
             )
         )
 
-    return _render_application_settings(application, org, project, form)
+    return _render_application_settings(application, org, environment, form)
 
 
 def _prepare_application_settings_form(application, org):
@@ -4415,7 +4454,7 @@ def _application_delete_context(application):
     return delete_form, delete_impact
 
 
-def _render_application_settings(application, org, project, form):
+def _render_application_settings(application, org, environment, form):
     delete_form, delete_impact = _application_delete_context(application)
     return render_template(
         "user/project_application_settings.html",
@@ -4426,10 +4465,15 @@ def _render_application_settings(application, org, project, form):
             org_slug=org.slug,
             application_id=application.id,
         ),
+        connect_url=url_for(
+            "user.github_connect_start",
+            org_slug=org.slug,
+            application_id=application.id,
+        ),
         github_repository_options=github_installations.repository_options_by_installation(
             org
         ),
-        environment=_default_environment(project),
+        environment=environment,
         delete_form=delete_form,
         delete_impact=delete_impact,
     )

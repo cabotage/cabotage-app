@@ -4,6 +4,7 @@
 {% set org_slug = application.project.organization.slug %}
 {% set project_slug = application.project.slug %}
 {% set app_slug = application.slug %}
+{% set env_slug = environment.slug if environment else none %}
 
 {% block title %}
   Settings - {{ app_slug }} - Cabotage
@@ -25,6 +26,9 @@
         <div>
           <h1 class="text-xl font-semibold text-base-content">Application Settings</h1>
           <p class="text-sm text-base-content/40">Configure how your application builds, deploys, and stays healthy</p>
+          {% if application.project.environments_enabled %}
+            <p class="text-sm text-base-content/70 mt-1">These settings apply to this application across all environments{% if environment %}, not just {{ environment.name }}{% endif %}.</p>
+          {% endif %}
         </div>
       </div>
       <button type="submit"
@@ -35,7 +39,7 @@
       </button>
     </div>
 
-    <form action="{{ url_for('user.project_application_settings', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug) }}"
+    <form action="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
           method="post"
           id="settings-form"
           name="project_application_settings_form">
@@ -54,7 +58,7 @@
                 <span class="text-success/70">GitHub App connected</span>
               {% else %}
                 {{ icon('external-link', 'w-3 h-3 text-info/60 flex-shrink-0') }}
-                <span><a href="{{ app_url }}" class="text-accent hover:underline">Install the GitHub App</a> to connect this application.</span>
+                <span><a href="{{ app_url }}" class="text-accent hover:underline">Install the GitHub App</a> or <a href="{{ connect_url }}" class="text-accent hover:underline">connect an existing installation</a> to connect this application.</span>
               {% endif %}
             </div>
           </div>
@@ -142,8 +146,7 @@
       </div>
 
       <div class="settings-row-actions">
-        <a href="#"
-           onclick="history.back();return false"
+        <a href="{{ url_for('user.project_application', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
            class="btn btn-ghost btn-sm">Cancel</a>
         <button type="submit" class="btn btn-primary btn-sm gap-1.5">
           {{ icon('check', 'w-3.5 h-3.5') }}
@@ -159,7 +162,7 @@
         confirm_slug=app_slug,
         form=delete_form,
         action_url=url_for('user.project_application_delete', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug),
-        description='Deleting this application will remove all configurations, images, releases, and deployments across all environments.',
+        description='Deleting this application will remove all configurations, images, releases, and deployments across all environments. To remove it from only one environment, use Settings > Environment instead.' if application.project.environments_enabled else 'Deleting this application will remove all configurations, images, releases, and deployments.',
         impact_items=delete_impact
       ) }}
     {% endif %}

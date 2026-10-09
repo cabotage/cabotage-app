@@ -64,6 +64,7 @@ if TYPE_CHECKING:
     from redis import Redis
 
     from cabotage.server.models.projects import Release
+    from cabotage.utils.build_log_stream import EntityType
 
 if TYPE_CHECKING:
     from cabotage.server.models.projects import Ingress
@@ -2591,8 +2592,7 @@ def run_job(
     job_object: kubernetes.client.V1Job,
     redis_client: Redis[bytes] | None = None,
     log_key: str | None = None,
-    # FIXME: Seems like a Literal
-    heartbeat_type: str | None = None,
+    heartbeat_type: EntityType | None = None,
     heartbeat_id: str | None = None,
     heartbeat_ttl: int | None = None,
 ):

@@ -256,14 +256,14 @@
           <span class="tab-label">Settings {{ icon('chevron-down', 'w-3 h-3 opacity-40') }}</span>
         </div>
         <ul tabindex="0" class="menu menu-md dropdown-content bg-base-100 rounded-box z-50 mt-1 w-52 p-2 shadow-lg border border-base-300">
-          <li><a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+          <li><a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
                  class="{% if active == 'settings' %}active{% endif %}">{{ icon('box', 'w-3.5 h-3.5') }} Application</a></li>
           <li><a href="{{ url_for('user.project_application_environment_settings', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug, app_slug=app_slug) }}"
                  class="{% if active == 'env_settings' %}active{% endif %}">{{ icon('layers', 'w-3.5 h-3.5') }} Environment</a></li>
         </ul>
       </div>
       {% else %}
-      <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+      <a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
          title="Settings"
          class="tab-item
                 {% if active == 'settings' %}tab-active{% endif %}">{{ icon('settings', 'w-4 h-4') }} <span class="tab-label">Settings</span></a>
