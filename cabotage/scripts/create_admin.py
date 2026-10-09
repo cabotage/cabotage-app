@@ -6,12 +6,13 @@ from cabotage.server.models.projects import (
     Environment,
     Project,
 )
+import sys
 
 app = create_app()
 
 if not app.config["DEBUG"]:
     print("Warning: this command should only be run in development/test environments")
-    exit(1)
+    sys.exit(1)
 
 with app.app_context():
     user = User(  # nosec
