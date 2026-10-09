@@ -23479,13 +23479,6 @@
       "severity": "error"
     },
     {
-      "column": 23,
-      "path": "cabotage/server/ext/github_app.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `url` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
       "column": 17,
       "path": "cabotage/server/ext/github_app.py",
       "name": "unknown-argument-type",
