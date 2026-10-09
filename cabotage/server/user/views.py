@@ -58,6 +58,13 @@ from cabotage.server.acl import (
     AdministerProjectPermission,
     AdministerApplicationPermission,
 )
+from cabotage.server.admin_passkey import (
+    elevated_stream_valid,
+    has_admin_session,
+    issue_shell_ticket,
+    require_admin_session,
+    require_elevated_request,
+)
 
 from cabotage.server.models.auth import (
     GitHubAppInstallation,
@@ -179,6 +186,7 @@ if TYPE_CHECKING:
     from kubernetes.stream.ws_client import WSClient
     from simple_websocket import Server
     from werkzeug.wrappers import Response
+    from cabotage.utils.build_log_stream import BuildType
 
 _REGEX_META = re.compile(r"[.*+?{}()|\\^$\[\]]")
 
@@ -1223,8 +1231,7 @@ def github_installation_refresh(org_slug, installation_id):
 @login_required
 def organization_create():
     user = current_user
-    if not user.admin:
-        abort(403)
+    _require_admin()
     form = CreateOrganizationForm()
 
     if form.validate_on_submit():
@@ -1275,8 +1282,7 @@ def organization_request_create():
 @login_required
 def organization_requests():
     _require_organization_requests_enabled()
-    if not current_user.admin:
-        abort(403)
+    _require_admin()
 
     requests = (
         OrganizationRequest.query.options(
@@ -1305,8 +1311,7 @@ def organization_requests():
 @login_required
 def organization_request_approve(request_id):
     _require_organization_requests_enabled()
-    if not current_user.admin:
-        abort(403)
+    _require_admin()
 
     form = ReviewOrganizationRequestForm()
     if not form.validate_on_submit():
@@ -1353,8 +1358,7 @@ def organization_request_approve(request_id):
 @login_required
 def organization_request_deny(request_id):
     _require_organization_requests_enabled()
-    if not current_user.admin:
-        abort(403)
+    _require_admin()
 
     form = ReviewOrganizationRequestForm()
     if not form.validate_on_submit():
@@ -3485,13 +3489,17 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
 
 
 @user_blueprint.route(
-    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/shell"
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/shell",
+    methods=["GET", "POST"],
 )
 @user_blueprint.route(
-    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/shell"
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/shell",
+    methods=["GET", "POST"],
 )
 @login_required
-def project_application_shell(org_slug, project_slug, app_slug, env_slug=None):
+def project_application_shell(
+    org_slug: str, project_slug: str, app_slug: str, env_slug: str | None = None
+) -> str:
     if not current_app.config.get("SHELLZ_ENABLED", False):
         abort(404)
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
@@ -3518,6 +3526,20 @@ def project_application_shell(org_slug, project_slug, app_slug, env_slug=None):
         ][0]
     except IndexError:
         abort(404)
+    socket_endpoint = (
+        "user.project_application_shell_socket_env"
+        if env_slug
+        else "user.project_application_shell_socket"
+    )
+    issue_shell_ticket(
+        url_for(
+            socket_endpoint,
+            org_slug=org_slug,
+            project_slug=project_slug,
+            app_slug=app_slug,
+            env_slug=env_slug,
+        )
+    )
 
     return render_template(
         "user/project_application_shell.html",
@@ -3607,6 +3629,9 @@ def _shell_socket(
     if pod.metadata is None or pod.metadata.name is None:
         current_app.logger.warning("Skipping unnamed pod in %s", namespace)
         abort(404)
+    if not elevated_stream_valid():
+        ws.close()
+        return
 
     resp = cast(  # stubs aren't perfect, `_preload_content=False` returns a client not a str
         "WSClient",
@@ -3626,6 +3651,8 @@ def _shell_socket(
 
     last_ping = time.monotonic()
     while resp.is_open():
+        if not elevated_stream_valid():
+            break
         resp.update()
         now = time.monotonic()
         if now - last_ping >= 25:
@@ -4588,6 +4615,10 @@ def project_application_ingress(
         _lookup_app_context(org_slug, project_slug, app_slug, require_admin=True),
     )
     user = cast(User, current_user)
+    if request.method == "POST" and has_admin_session():
+        verification = require_elevated_request()
+        if verification is not None:
+            return verification
 
     ingress_domain: str | None = current_app.config.get("INGRESS_DOMAIN")
     org_has_tailscale = org.tailscale_integration is not None
@@ -4636,7 +4667,7 @@ def project_application_ingress(
             ingress_domain=ingress_domain,
             org_has_tailscale=org_has_tailscale,
             ts_integration=org.tailscale_integration,
-            is_admin=user.admin,
+            is_admin=has_admin_session(),
             ingress_errors=ingress_errors,
         )
 
@@ -4848,7 +4879,7 @@ def project_application_ingress(
                     )
 
                 # Annotations (admin only)
-                if user.admin:
+                if has_admin_session():
                     allow = request.form.get("_allow_annotations") == "on"
                     ingress.allow_annotations = allow
                     if allow:
@@ -5391,24 +5422,32 @@ def image_detail_legacy(image_id):
     )
 
 
-def _stream_redis_build_logs(ws, build_type, build_job_id, job_label):
+def _stream_redis_build_logs(
+    ws: Server, build_type: BuildType, build_job_id: str | None, job_label: str
+) -> None:
     """Stream build logs from Redis over a WebSocket."""
     redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
-    log_key = stream_key(build_type, build_job_id)
+    log_key = stream_key(build_type, str(build_job_id))
     ws.send(f"Job Pod {job_label}")
     for line in read_log_stream(redis_client, log_key):
+        if not elevated_stream_valid():
+            ws.close()
+            return
         if line is None:
             continue
         ws.send(f"  {line}")
     ws.send("=================END OF LOGS=================")
 
 
-def _stream_image_build_logs(ws, image):
+def _stream_image_build_logs(ws: Server, image: Image) -> None:
     """Stream image build logs over a websocket, handling error state."""
     if image.error:
         ws.send(f"Job Pod imagebuild-{image.build_job_id}")
         if image.image_build_log:
             for line in image.image_build_log.split("\n"):
+                if not elevated_stream_valid():
+                    ws.close()
+                    return
                 ws.send(f"  {line}")
         if image.error_detail:
             ws.send(f"  Error: {image.error_detail}")
@@ -5420,6 +5459,9 @@ def _stream_image_build_logs(ws, image):
     if image_build_log is not None:
         ws.send(f"Job Pod imagebuild-{build_job_id}")
         for line in image_build_log.split("\n"):
+            if not elevated_stream_valid():
+                ws.close()
+                return
             ws.send(f"  {line}")
         ws.send("=================END OF LOGS=================")
         return
@@ -5633,12 +5675,15 @@ def release_detail_legacy(release_id):
     )
 
 
-def _stream_release_build_logs(ws, release):
+def _stream_release_build_logs(ws: Server, release: Release) -> None:
     """Stream release build logs over a websocket, handling error state."""
     if release.error:
         ws.send(f"Job Pod releasebuild-{release.build_job_id}")
         if release.release_build_log:
             for line in release.release_build_log.split("\n"):
+                if not elevated_stream_valid():
+                    ws.close()
+                    return
                 ws.send(f"  {line}")
         if release.error_detail:
             ws.send(f"  Error: {release.error_detail}")
@@ -5650,6 +5695,9 @@ def _stream_release_build_logs(ws, release):
     if release_build_log is not None:
         ws.send(f"Job Pod releasebuild-{build_job_id}")
         for line in release_build_log.split("\n"):
+            if not elevated_stream_valid():
+                ws.close()
+                return
             ws.send(f"  {line}")
         ws.send("=================END OF LOGS=================")
         return
@@ -5688,7 +5736,7 @@ def release_build_livelogs_legacy(ws, release_id):
     _stream_release_build_logs(ws, release)
 
 
-def _stream_deployment_logs(ws, deployment):
+def _stream_deployment_logs(ws: Server, deployment: Deployment) -> None:
     """Stream deploy logs for a deployment over a websocket."""
     deployment_id = deployment.id
     job_id = deployment.job_id
@@ -5697,6 +5745,9 @@ def _stream_deployment_logs(ws, deployment):
     if deploy_log is not None:
         ws.send(f"Job Pod deployment-{job_id}")
         for line in deploy_log.split("\n"):
+            if not elevated_stream_valid():
+                ws.close()
+                return
             ws.send(f"  {line}")
         ws.send("=================END OF LOGS=================")
         return
@@ -5707,6 +5758,9 @@ def _stream_deployment_logs(ws, deployment):
         if job_id is None:
             for _ in range(60):
                 time.sleep(0.5)
+                if not elevated_stream_valid():
+                    ws.close()
+                    return
                 dep = Deployment.query.filter_by(id=deployment_id).first()
                 if dep is None:
                     ws.send("=================END OF LOGS=================")
@@ -5717,6 +5771,9 @@ def _stream_deployment_logs(ws, deployment):
                 if dep.deploy_log is not None:
                     ws.send(f"Job Pod deployment-{dep.job_id}")
                     for line in dep.deploy_log.split("\n"):
+                        if not elevated_stream_valid():
+                            ws.close()
+                            return
                         ws.send(f"  {line}")
                     ws.send("=================END OF LOGS=================")
                     return
@@ -6596,7 +6653,7 @@ def organization_add_user(org_slug):
         abort(403)
 
     form = AddOrganizationUserForm()
-    all_users = User.query.all() if current_user.admin else None
+    all_users = User.query.all() if has_admin_session() else None
 
     if form.validate_on_submit():
         value = assume_not_none(
@@ -8888,10 +8945,15 @@ _INFRA_OBSERVE_GROUPS = {"total", "pod", "workload", "container"}
 _INFRA_TENANT = "cabotage-infra"
 
 
-def _require_admin():
-    """Abort 403 unless the current user is a super admin."""
-    if not current_user.admin:
-        abort(403)
+def _require_admin() -> None:
+    """Direct platform-admin routes require passkey entry and exact-request proof."""
+    verification = require_admin_session()
+    if verification is not None:
+        abort(verification)
+    if request.method not in {"GET", "HEAD", "OPTIONS"}:
+        verification = require_elevated_request()
+        if verification is not None:
+            abort(verification)
 
 
 def _discover_infra_workloads():

@@ -16,6 +16,7 @@ from cabotage.server.models.auth import (
 )
 from cabotage.server.models.auth_associations import OrganizationMember
 from cabotage.server.wsgi import app as _app
+from tests.admin_passkey_helpers import SigningPasskey
 
 
 @pytest.fixture
@@ -182,6 +183,7 @@ def test_admin_can_view_organization_requests(client, regular_user, admin_user):
     db.session.commit()
 
     _login(client, admin_user)
+    SigningPasskey.register(admin_user).enter(client)
     response = client.get("/organization-requests")
     assert response.status_code == 200
     assert b"Viewable Org" in response.data
@@ -201,10 +203,9 @@ def test_admin_can_approve_organization_request(client, regular_user, admin_user
     request_id = org_request.id
 
     _login(client, admin_user)
-    response = client.post(
-        f"/organization-requests/{request_id}/approve",
-        follow_redirects=False,
-    )
+    passkey = SigningPasskey.register(admin_user)
+    passkey.enter(client)
+    response = passkey.post(client, f"/organization-requests/{request_id}/approve")
     assert response.status_code == 302
 
     db.session.refresh(org_request)
@@ -234,10 +235,9 @@ def test_admin_can_deny_organization_request(client, regular_user, admin_user):
     request_id = org_request.id
 
     _login(client, admin_user)
-    response = client.post(
-        f"/organization-requests/{request_id}/deny",
-        follow_redirects=False,
-    )
+    passkey = SigningPasskey.register(admin_user)
+    passkey.enter(client)
+    response = passkey.post(client, f"/organization-requests/{request_id}/deny")
     assert response.status_code == 302
 
     db.session.refresh(org_request)

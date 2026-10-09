@@ -6,22 +6,30 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
+from urllib.parse import urlencode
+from unittest.mock import Mock
 
 import pytest
-from flask import g
-from sqlalchemy import delete
+from flask import g, session
+from sqlalchemy import delete, event, update
 
 from cabotage.server import db, security
-from flask import abort, redirect, request
-from flask_login import login_required
-from cabotage.server.admin_passkey import require_admin_action, require_admin_session
+from cabotage.server.admin_passkey import (
+    consume_shell_ticket,
+    elevated_stream_valid,
+    has_admin_session,
+    issue_shell_ticket,
+)
 from cabotage.server.models.admin_security import AdminChallenge, AdminGrant
 from cabotage.server.models.auth import (
     DiscordIntegration,
     Organization,
+    OrganizationRequest,
     SlackIntegration,
+    User,
     WebAuthn,
 )
+from cabotage.server.models.auth_associations import OrganizationMember
 from tests.admin_passkey_helpers import SigningPasskey
 from tests.test_organization_requests import (
     _delete_org,
@@ -35,34 +43,18 @@ from tests.test_organization_requests import (
 
 @pytest.fixture(autouse=True)
 def _admin_security_config(app, monkeypatch):
+    from cabotage.server.integrations.discord_oauth import discord_oauth_bp
+    from cabotage.server.integrations.slack_oauth import slack_oauth_bp
+
+    # Settings expose the OIDC issuer, which must use HTTPS outside debug mode.
     monkeypatch.setitem(app.config, "EXT_PREFERRED_URL_SCHEME", "https")
-
-    @login_required
-    def protected_action(org_slug, operation):
-        verification = require_admin_session()
-        if verification is not None:
-            return verification
-        organization = Organization.query.filter_by(slug=org_slug).first_or_404()
-        if request.method == "GET":
-            return organization.name
-        verification = require_admin_action("test.protected_action", request.path, {})
-        if verification is not None:
-            return verification
-        if operation != "settings":
-            abort(400)
-        organization.name = request.form["name"]
-        db.session.commit()
-        return redirect(request.path)
-
+    # Optional OAuth providers are absent from the shared app's startup config.
+    # Register their real routes before requests, as the provider tests do.
     with monkeypatch.context() as setup:
         setup.setattr(app, "_got_first_request", False)
-        if "test.protected_action" not in app.view_functions:
-            app.add_url_rule(
-                "/test/admin-action/<org_slug>/<operation>",
-                endpoint="test.protected_action",
-                view_func=protected_action,
-                methods=["GET", "POST"],
-            )
+        for blueprint in (slack_oauth_bp, discord_oauth_bp):
+            if blueprint.name not in app.blueprints:
+                app.register_blueprint(blueprint)
 
 
 @pytest.fixture
@@ -76,6 +68,30 @@ def passkey(admin_user):
     db.session.execute(delete(AdminGrant).where(AdminGrant.user_id == admin_user.id))
     WebAuthn.query.filter_by(user_id=admin_user.id).delete()
     db.session.commit()
+
+
+@pytest.fixture
+def stream_clock(monkeypatch):
+    from cabotage.server import admin_passkey
+
+    clock = {"wall": admin_passkey._now(), "monotonic": 0.0}
+    monkeypatch.setattr(admin_passkey, "_now", lambda: clock["wall"])
+    monkeypatch.setattr(admin_passkey, "monotonic", lambda: clock["monotonic"])
+    return clock
+
+
+@pytest.fixture
+def stream_grant_queries(app):
+    queries = []
+    engine = db.engine
+
+    def record(connection, cursor, statement, parameters, context, executemany):
+        if statement.startswith("SELECT") and "admin_grants" in statement:
+            queries.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record)
+    yield queries
+    event.remove(engine, "before_cursor_execute", record)
 
 
 @pytest.fixture
@@ -93,7 +109,7 @@ def tenant(app):
 
 
 def _settings(tenant):
-    return f"/test/admin-action/{tenant.slug}/settings"
+    return f"/organizations/{tenant.slug}/settings"
 
 
 def _data(tenant, name="Changed tenant"):
@@ -116,7 +132,7 @@ def test_admin_flag_and_totp_are_not_entry_authority(client, admin_user, tenant)
     admin_user.tf_primary_method = "authenticator"
     db.session.commit()
     _login(client, admin_user)
-    assert client.get(f"/organizations/{tenant.slug}/settings").status_code == 403
+    assert client.get(_settings(tenant)).status_code == 403
     assert client.get("/admin/").status_code == 302
     assert client.post("/admin/passkey/options", json={}).status_code == 403
     assert AdminChallenge.query.filter_by(user_id=admin_user.id).count() == 0
@@ -171,7 +187,7 @@ def test_other_users_credential_cannot_elevate(
     assert other_key.verify(client).status_code == 403
 
 
-def test_protected_action_needs_separate_exact_one_use_proof(
+def test_cross_tenant_write_needs_separate_exact_one_use_proof(
     client, admin_user, passkey, tenant
 ):
     _login(client, admin_user)
@@ -209,7 +225,7 @@ def test_verified_but_cancelled_action_does_not_mutate(
         data=_data(tenant, "secret-draft-not-for-review"),
         headers={"X-Admin-Fetch": "1"},
     ).get_json()["admin_verification"]
-    assert pending["summary"]["title"] == "Protected action"
+    assert pending["summary"]["title"] == "Update organization"
     assert tenant.slug in pending["summary"]["target"]
     assert "secret-draft-not-for-review" not in str(pending)
     assert pending["replay"] is None
@@ -229,6 +245,73 @@ def test_verified_but_cancelled_action_does_not_mutate(
     assert fresh.get_json()["admin_verification"]["request_id"] != proof["action_token"]
     db.session.refresh(tenant)
     assert tenant.name == "Other tenant"
+
+
+@pytest.mark.parametrize("action", ["approve", "deny"])
+def test_request_review_names_proposed_organization_and_requester(
+    client, admin_user, regular_user, passkey, monkeypatch, action
+):
+    monkeypatch.setitem(
+        client.application.config, "ORGANIZATION_REQUESTS_ENABLED", True
+    )
+    org_request = OrganizationRequest(
+        requester_user_id=regular_user.id,
+        name="Proposed organization",
+        slug=f"review-{uuid.uuid4().hex[:8]}",
+        note="private-note-not-for-impact-review",
+    )
+    db.session.add(org_request)
+    db.session.commit()
+    _login(client, admin_user)
+    passkey.enter(client)
+    response = client.post(
+        f"/organization-requests/{org_request.id}/{action}",
+        headers={"X-Admin-Fetch": "1"},
+    )
+    assert response.status_code == 428
+    context = response.get_json()["admin_verification"]
+    summary = context["summary"]
+    assert summary["title"] == f"{action.capitalize()} organization request"
+    assert org_request.name in summary["target"]
+    assert org_request.slug in summary["target"]
+    assert regular_user.username in summary["target"]
+    assert str(org_request.id) in summary["target"]
+    assert org_request.note not in str(context)
+    if action == "approve":
+        assert "organization admin access" in summary["consequence"]
+    else:
+        assert "No organization or membership will be created" in summary["consequence"]
+    assert passkey.verify(client, context["request_id"]).status_code == 200
+    db.session.refresh(org_request)
+    assert org_request.is_pending
+    assert Organization.query.filter_by(slug=org_request.slug).first() is None
+
+
+def test_add_member_review_only_names_resolved_accounts(
+    client, admin_user, regular_user, passkey, tenant
+):
+    _login(client, admin_user)
+    passkey.enter(client)
+    for identity in (regular_user.email, "unknown-secret-input"):
+        response = client.post(
+            f"/organizations/{tenant.slug}/users/add",
+            data={"identity": identity},
+            headers={"X-Admin-Fetch": "1"},
+        )
+        assert response.status_code == 428
+        context = response.get_json()["admin_verification"]
+        assert tenant.slug in context["summary"]["target"]
+        if identity == regular_user.email:
+            assert regular_user.username in context["summary"]["target"]
+            assert regular_user.email in context["summary"]["target"]
+        else:
+            assert identity not in str(context)
+    assert (
+        OrganizationMember.query.filter_by(
+            organization_id=tenant.id, user_id=regular_user.id
+        ).first()
+        is None
+    )
 
 
 def test_unverified_intent_cannot_mutate(client, admin_user, passkey, tenant):
@@ -284,6 +367,45 @@ def test_expired_elevation_returns_entry_intent_then_fresh_action(
         ).status_code
         == 302
     )
+
+
+@pytest.mark.parametrize("member", [False, True])
+def test_expired_elevation_retains_membership_precedence(
+    client, admin_user, passkey, tenant, member
+):
+    if member:
+        db.session.add(
+            OrganizationMember(
+                user_id=admin_user.id, organization_id=tenant.id, admin=True
+            )
+        )
+        db.session.commit()
+    _login(client, admin_user)
+    passkey.enter(client)
+    with client.session_transaction() as state:
+        grant_id = state["admin_grant"]
+    db.session.get(AdminGrant, grant_id).expires_at = datetime.now(
+        timezone.utc
+    ).replace(tzinfo=None) - timedelta(seconds=1)
+    db.session.commit()
+    response = client.post(
+        _settings(tenant), data=_data(tenant), headers={"X-Admin-Fetch": "1"}
+    )
+    assert response.status_code == (302 if member else 428)
+    db.session.refresh(tenant)
+    assert tenant.name == ("Changed tenant" if member else "Other tenant")
+
+
+@pytest.mark.parametrize("global_admin", [False, True])
+def test_no_prior_elevation_is_not_an_inplace_entry_hint(
+    client, admin_user, regular_user, tenant, global_admin
+):
+    _login(client, admin_user if global_admin else regular_user)
+    response = client.post(
+        _settings(tenant), data=_data(tenant), headers={"X-Admin-Fetch": "1"}
+    )
+    assert response.status_code == 403
+    assert "admin_verification" not in response.get_data(as_text=True)
 
 
 def test_status_is_metadata_not_authority(client, admin_user, passkey, tenant):
@@ -392,12 +514,26 @@ def test_action_proof_is_bound_to_target_and_method(
     proof = _proof(client, passkey, tenant)
     headers = {"X-Admin-Action": proof}
     response = client.post(
-        f"/test/admin-action/{tenant.slug}/delete", data=_data(tenant), headers=headers
+        f"/organizations/{tenant.slug}/delete", data=_data(tenant), headers=headers
     )
     assert response.status_code == 403
     assert client.get(_settings(tenant), headers=headers).status_code == 200
     row = db.session.get(AdminChallenge, proof)
     assert row.used_at is None
+
+
+def test_membership_behavior_does_not_require_elevation(client, regular_user, tenant):
+    db.session.add(
+        OrganizationMember(
+            user_id=regular_user.id, organization_id=tenant.id, admin=True
+        )
+    )
+    db.session.commit()
+    _login(client, regular_user)
+    assert client.post(_settings(tenant), data=_data(tenant)).status_code == 302
+    db.session.refresh(tenant)
+    assert tenant.name == "Changed tenant"
+    assert AdminChallenge.query.filter_by(user_id=regular_user.id).count() == 0
 
 
 @pytest.mark.parametrize(
@@ -511,6 +647,393 @@ def test_entry_ceremony_accepts_real_csrf_token(
     )
 
 
+@pytest.mark.parametrize("provider", ["slack", "discord"])
+def test_elevated_oauth_get_stages_post_without_consuming_state(
+    client, admin_user, passkey, tenant, provider
+):
+    _login(client, admin_user)
+    passkey.enter(client)
+    with client.session_transaction() as state:
+        state[f"{provider}_oauth_state"] = "bound-state"
+        state[f"{provider}_oauth_org_slug"] = tenant.slug
+    response = client.get(
+        f"/integrations/{provider}/callback?state=bound-state&code=provider-code",
+        headers={"X-Admin-Fetch": "1"},
+    )
+    assert response.status_code == 428
+    context = response.get_json()["admin_verification"]
+    assert context["request_id"] is None
+    assert context["replay"]["method"] == "POST"
+    with client.session_transaction() as state:
+        assert state[f"{provider}_oauth_state"] == "bound-state"
+        assert state[f"{provider}_oauth_org_slug"] == tenant.slug
+    assert tenant.discord_integration is None
+    assert tenant.slack_integration is None
+
+
+@pytest.mark.parametrize("provider", ["slack", "discord"])
+def test_elevated_oauth_completion_consumes_state_after_real_assertion(
+    client, admin_user, passkey, tenant, monkeypatch, provider
+):
+    from cabotage.server.integrations import discord_oauth, slack_oauth
+
+    _login(client, admin_user)
+    passkey.enter(client)
+    integration_module = slack_oauth if provider == "slack" else discord_oauth
+    monkeypatch.setitem(
+        client.application.config, f"{provider.upper()}_CLIENT_ID", "test-client"
+    )
+    monkeypatch.setitem(
+        client.application.config, f"{provider.upper()}_CLIENT_SECRET", "test-secret"
+    )
+    if provider == "slack":
+        data = {
+            "ok": True,
+            "access_token": "test-token",
+            "team": {"id": "123", "name": "Test workspace"},
+            "bot_user_id": "456",
+        }
+        monkeypatch.setattr(
+            slack_oauth, "vault", Mock(vault_prefix="test", vault_connection=Mock())
+        )
+    else:
+        data = {"guild": {"id": "123", "name": "Test guild"}}
+    exchange = Mock(return_value=Mock(json=lambda: data))
+    monkeypatch.setattr(integration_module.http_requests, "post", exchange)
+    with client.session_transaction() as state:
+        state[f"{provider}_oauth_state"] = "bound-state"
+        state[f"{provider}_oauth_org_slug"] = tenant.slug
+    url = f"/integrations/{provider}/callback?" + urlencode(
+        {"state": "bound-state", "code": "provider-code"}
+    )
+    pending = client.post(url, headers={"X-Admin-Fetch": "1"})
+    assert pending.status_code == 428
+    exchange.assert_not_called()
+    with client.session_transaction() as state:
+        assert state[f"{provider}_oauth_state"] == "bound-state"
+        assert state[f"{provider}_oauth_org_slug"] == tenant.slug
+    proof = passkey.verify(
+        client, pending.get_json()["admin_verification"]["request_id"]
+    )
+    assert proof.status_code == 200
+    headers = {"X-Admin-Action": proof.get_json()["action_token"]}
+    with client.session_transaction() as state:
+        original_cookie = dict(state)
+        assert state[f"{provider}_oauth_state"] == "bound-state"
+        assert state[f"{provider}_oauth_org_slug"] == tenant.slug
+    response = client.post(url, headers=headers)
+    assert response.status_code == 302
+    assert exchange.call_count == 1
+    if provider == "slack":
+        assert (
+            SlackIntegration.query.filter_by(organization_id=tenant.id).one().team_id
+            == "123"
+        )
+    else:
+        assert (
+            DiscordIntegration.query.filter_by(organization_id=tenant.id).one().guild_id
+            == "123"
+        )
+    with client.session_transaction() as state:
+        assert f"{provider}_oauth_state" not in state
+        assert f"{provider}_oauth_org_slug" not in state
+    assert client.post(url).status_code == 302
+    assert exchange.call_count == 1
+    with client.session_transaction() as state:
+        state.clear()
+        state.update(original_cookie)
+    assert client.post(url, headers=headers).status_code == 403
+    assert exchange.call_count == 1
+
+
+@pytest.mark.parametrize("provider", ["slack", "discord"])
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_oauth_permission_rejection_consumes_state(
+    client, regular_user, tenant, monkeypatch, provider, method
+):
+    from cabotage.server.integrations import discord_oauth, slack_oauth
+
+    _login(client, regular_user)
+    integration_module = slack_oauth if provider == "slack" else discord_oauth
+    exchange = Mock()
+    monkeypatch.setattr(integration_module.http_requests, "post", exchange)
+    with client.session_transaction() as state:
+        state[f"{provider}_oauth_state"] = "bound-state"
+        state[f"{provider}_oauth_org_slug"] = tenant.slug
+    url = f"/integrations/{provider}/callback?state=bound-state&code=provider-code"
+    assert client.open(url, method=method).status_code == 403
+    with client.session_transaction() as state:
+        assert f"{provider}_oauth_state" not in state
+        assert f"{provider}_oauth_org_slug" not in state
+    exchange.assert_not_called()
+    assert tenant.slack_integration is None
+    assert tenant.discord_integration is None
+
+    # Restoring permission must not make the rejected callback reusable.
+    db.session.add(
+        OrganizationMember(
+            user_id=regular_user.id, organization_id=tenant.id, admin=True
+        )
+    )
+    db.session.commit()
+    assert client.open(url, method=method).status_code == 302
+    exchange.assert_not_called()
+
+
+def test_elevated_github_callback_stages_before_token_exchange(
+    client, admin_user, passkey, tenant, monkeypatch
+):
+    from cabotage.server.user import github_installations, github_oauth
+
+    application = client.application
+    if "github_oauth" not in application.blueprints:
+        application._got_first_request = False
+        application.register_blueprint(github_oauth.github_oauth_bp)
+    _login(client, admin_user)
+    passkey.enter(client)
+    exchange = Mock(side_effect=AssertionError("GET must not exchange the OAuth code"))
+    monkeypatch.setattr(github_oauth, "_fetch_github_user_access_token", exchange)
+    state = github_installations.connect_state(
+        tenant, admin_user.id, installation_id=123
+    )
+    response = client.get(
+        "/auth/github/callback?" + urlencode({"state": state, "code": "provider-code"}),
+        headers={"X-Admin-Fetch": "1"},
+    )
+    assert response.status_code == 428
+    assert response.get_json()["admin_verification"]["replay"]["method"] == "POST"
+    exchange.assert_not_called()
+
+
+def test_elevated_stream_hot_loop_bounds_grant_queries(
+    client, admin_user, passkey, stream_clock, stream_grant_queries
+):
+    _login(client, admin_user)
+    passkey.enter(client)
+    with client.session_transaction() as state:
+        saved = dict(state)
+    with client.application.test_request_context():
+        session.update(saved)
+        g.admin_elevated = True
+        stream_grant_queries.clear()
+        for second in range(3):
+            for tick in range(1000):
+                stream_clock["monotonic"] = second + tick / 1000
+                assert elevated_stream_valid()
+            assert len(stream_grant_queries) == second + 1
+
+
+@pytest.mark.parametrize(
+    "revocation", ["grant", "demotion", "deactivation", "rotation", "credential"]
+)
+def test_elevated_stream_detects_revocation_at_one_second(
+    client, admin_user, passkey, stream_clock, stream_grant_queries, revocation
+):
+    _login(client, admin_user)
+    passkey.enter(client)
+    with client.session_transaction() as state:
+        saved = dict(state)
+    with client.application.test_request_context():
+        session.update(saved)
+        g.admin_elevated = True
+        stream_grant_queries.clear()
+        assert elevated_stream_valid()
+        # Revoke in a separate transaction, as another request would.
+        with db.engine.begin() as connection:
+            if revocation == "grant":
+                connection.execute(
+                    delete(AdminGrant).where(AdminGrant.user_id == admin_user.id)
+                )
+            elif revocation == "credential":
+                connection.execute(
+                    delete(WebAuthn).where(WebAuthn.user_id == admin_user.id)
+                )
+            else:
+                changes = {
+                    "demotion": {"admin": False},
+                    "deactivation": {"active": False},
+                    "rotation": {"fs_uniquifier": uuid.uuid4().hex},
+                }
+                connection.execute(
+                    update(User)
+                    .where(User.id == admin_user.id)
+                    .values(**changes[revocation])
+                )
+        stream_clock["monotonic"] = 0.999
+        assert elevated_stream_valid()
+        assert len(stream_grant_queries) == 1
+        stream_clock["monotonic"] = 1.0
+        assert not elevated_stream_valid()
+        assert not elevated_stream_valid()
+        assert len(stream_grant_queries) == 2
+
+
+def test_elevated_stream_checks_absolute_expiry_between_revocation_checks(
+    client, admin_user, passkey, stream_clock, stream_grant_queries
+):
+    _login(client, admin_user)
+    passkey.enter(client)
+    with client.session_transaction() as state:
+        saved = dict(state)
+    expires_at = stream_clock["wall"] + timedelta(milliseconds=250)
+    db.session.get(AdminGrant, saved["admin_grant"]).expires_at = expires_at
+    db.session.commit()
+    with client.application.test_request_context():
+        session.update(saved)
+        g.admin_elevated = True
+        stream_grant_queries.clear()
+        assert elevated_stream_valid()
+        stream_clock["monotonic"] = 0.249
+        stream_clock["wall"] = expires_at - timedelta(milliseconds=1)
+        assert elevated_stream_valid()
+        stream_clock["monotonic"] = 0.250
+        stream_clock["wall"] = expires_at
+        assert not elevated_stream_valid()
+        stream_clock["monotonic"] = 0.500
+        stream_clock["wall"] += timedelta(milliseconds=250)
+        assert not elevated_stream_valid()
+        assert len(stream_grant_queries) == 1
+
+
+@pytest.mark.parametrize("change", ["grant", "binding", "user", "uniquifier", "logout"])
+def test_elevated_stream_does_not_reuse_another_identity_check(
+    client,
+    admin_user,
+    regular_user,
+    passkey,
+    stream_clock,
+    stream_grant_queries,
+    change,
+):
+    _login(client, admin_user)
+    passkey.enter(client)
+    with client.session_transaction() as state:
+        saved = dict(state)
+    with client.application.test_request_context():
+        session.update(saved)
+        g.admin_elevated = True
+        stream_grant_queries.clear()
+        assert elevated_stream_valid()
+        if change == "grant":
+            session["admin_grant"] = "another-grant"
+        elif change == "binding":
+            session["admin_binding"] = "another-binding"
+        elif change == "user":
+            session["_user_id"] = regular_user.fs_uniquifier
+            g.pop("_login_user", None)
+        elif change == "uniquifier":
+            g._login_user.fs_uniquifier = uuid.uuid4().hex
+            db.session.commit()
+        else:
+            session.pop("_user_id")
+            g.pop("_login_user", None)
+        assert not elevated_stream_valid()
+        assert len(stream_grant_queries) == (1 if change == "logout" else 2)
+
+
+def test_elevated_stream_cache_is_request_local(
+    client, admin_user, passkey, stream_clock, stream_grant_queries
+):
+    _login(client, admin_user)
+    passkey.enter(client)
+    with client.session_transaction() as state:
+        saved = dict(state)
+    stream_grant_queries.clear()
+    with client.application.test_request_context():
+        session.update(saved)
+        g.admin_elevated = True
+        assert elevated_stream_valid()
+    db.session.execute(delete(AdminGrant).where(AdminGrant.user_id == admin_user.id))
+    db.session.commit()
+    with client.application.test_request_context():
+        session.update(saved)
+        g.admin_elevated = True
+        assert not elevated_stream_valid()
+    assert len(stream_grant_queries) == 2
+
+
+def test_ordinary_member_stream_never_queries_admin_grants(
+    client, regular_user, stream_clock, stream_grant_queries
+):
+    _login(client, regular_user)
+    with client.session_transaction() as state:
+        saved = dict(state)
+    with client.application.test_request_context():
+        session.update(saved)
+        g.admin_elevated = False
+        stream_grant_queries.clear()
+        for second in range(3):
+            stream_clock["monotonic"] = second
+            assert elevated_stream_valid()
+        assert not stream_grant_queries
+
+
+def test_live_log_idle_tick_closes_after_revocation(
+    client, admin_user, passkey, monkeypatch, stream_clock, stream_grant_queries
+):
+    from cabotage.server.user import views
+
+    _login(client, admin_user)
+    passkey.enter(client)
+    with client.session_transaction() as state:
+        saved = dict(state)
+    socket = Mock()
+    monkeypatch.setattr(views, "get_redis_client", lambda _: object())
+
+    def lines(*args):
+        db.session.execute(
+            delete(AdminGrant).where(AdminGrant.user_id == admin_user.id)
+        )
+        db.session.commit()
+        stream_clock["monotonic"] = 0.999
+        yield None
+        socket.close.assert_not_called()
+        stream_clock["monotonic"] = 1.0
+        yield None
+        yield "must never leave the server"
+
+    monkeypatch.setattr(views, "read_log_stream", lines)
+    with client.application.test_request_context():
+        session.update(saved)
+        g.admin_elevated = True
+        stream_grant_queries.clear()
+        assert elevated_stream_valid()
+        views._stream_redis_build_logs(socket, "image", "job", "test")
+    socket.close.assert_called_once()
+    assert all("must never" not in str(call) for call in socket.send.call_args_list)
+    assert len(stream_grant_queries) == 2
+
+
+def test_shell_capability_is_one_use_and_entry_bound(client, admin_user, passkey):
+    _login(client, admin_user)
+    passkey.enter(client)
+    with client.session_transaction() as state:
+        saved = dict(state)
+    with client.application.test_request_context("/shell", method="POST"):
+        session.update(saved)
+        g.admin_elevated = True
+        g.admin_action_digest = "already-consumed-request-proof"
+        issue_shell_ticket("/shell/socket")
+        saved = dict(session)
+    with client.application.test_request_context("/shell/socket"):
+        origin = security.webauthn_util.origin()
+    with client.application.test_request_context(
+        "/shell/socket", headers={"Origin": origin}
+    ):
+        session.update(saved)
+        assert has_admin_session()
+        assert consume_shell_ticket()
+        assert not consume_shell_ticket()
+    db.session.execute(delete(AdminGrant).where(AdminGrant.user_id == admin_user.id))
+    db.session.commit()
+    with client.application.test_request_context(
+        "/shell/socket", headers={"Origin": origin}
+    ):
+        session.update(saved)
+        assert not has_admin_session()
+        assert not consume_shell_ticket()
+
+
 def test_native_last_passkey_deletion_with_totp_revokes_elevation_not_login(
     client, admin_user, passkey
 ):
@@ -588,36 +1111,6 @@ def test_ending_access_invalidates_pending_entry_assertion(
         state.update(original_cookie)
     g.pop("_login_user", None)
     assert client.post("/admin/passkey/verify", json=signed).status_code == 403
-
-
-def test_entry_does_not_grant_native_tenant_permissions(
-    client, admin_user, passkey, tenant
-):
-    _login(client, admin_user)
-    passkey.enter(client)
-    url = f"/organizations/{tenant.slug}/settings"
-    assert client.get(url).status_code == 403
-    assert client.post(url, data=_data(tenant)).status_code == 403
-    db.session.refresh(tenant)
-    assert tenant.name == "Other tenant"
-
-
-def test_native_membership_does_not_require_passkey_entry(client, regular_user, tenant):
-    from cabotage.server.models.auth_associations import OrganizationMember
-
-    db.session.add(
-        OrganizationMember(
-            organization_id=tenant.id, user_id=regular_user.id, admin=True
-        )
-    )
-    db.session.commit()
-    _login(client, regular_user)
-    url = f"/organizations/{tenant.slug}/settings"
-    assert client.get(url).status_code == 200
-    assert client.post(url, data=_data(tenant)).status_code == 302
-    db.session.refresh(tenant)
-    assert tenant.name == "Changed tenant"
-    assert AdminChallenge.query.filter_by(user_id=regular_user.id).count() == 0
 
 
 def test_elevated_member_form_redirect_is_returned_not_followed(

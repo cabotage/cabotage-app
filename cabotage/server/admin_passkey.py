@@ -3,7 +3,9 @@
 import hashlib
 import json
 import secrets
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from time import monotonic
 from typing import cast
 from urllib.parse import urlencode, urlsplit
 from uuid import UUID
@@ -26,7 +28,7 @@ from flask import Response as FlaskResponse
 from flask_login import user_logged_in, user_logged_out
 from flask_login.utils import current_user, login_required
 from flask_security.signals import wan_deleted
-from flask_wtf.csrf import validate_csrf
+from flask_wtf.csrf import generate_csrf, validate_csrf
 from sqlalchemy import ColumnElement, delete, insert, select, update
 from webauthn import generate_authentication_options, options_to_json
 from webauthn import verify_authentication_response
@@ -41,10 +43,16 @@ from werkzeug.wrappers import Response
 
 from cabotage.server import db, security
 from cabotage.server.models.admin_security import AdminChallenge, AdminGrant
-from cabotage.server.models.auth import User, WebAuthn
+from cabotage.server.models.auth import OrganizationRequest, User, WebAuthn
 
 blueprint = Blueprint("admin_passkey", __name__, url_prefix="/admin/passkey")
 ENTRY_LIFETIME = timedelta(minutes=15)
+ELEVATED_POST_ENDPOINTS = {
+    "github_oauth.callback",
+    "slack_oauth.callback",
+    "discord_oauth.callback",
+    "user.project_application_shell",
+}
 ACTION_LIFETIME = timedelta(minutes=2)
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
@@ -228,9 +236,188 @@ def _action_summary(action: str, target: str) -> dict[str, str]:
         "Submit this exact request using admin access. "
         "The submitted values are not displayed here."
     )
+    if endpoint == "organization_settings":
+        changes = {
+            "save_org": (
+                "Update organization",
+                "Save the submitted organization settings.",
+            ),
+            "save_tailscale": (
+                "Update Tailscale integration",
+                "Replace this organization's Tailscale credentials.",
+            ),
+            "delete_tailscale": (
+                "Remove Tailscale integration",
+                "Remove this organization's integration and its Tailscale operators.",
+            ),
+        }
+        title, consequence = changes.get(
+            request.form.get("_action", ""), (title, consequence)
+        )
+    elif endpoint == "release_deploy":
+        title = "Deploy release"
+        consequence = (
+            "Start a deployment of this release. "
+            "Running application processes may be replaced."
+        )
+    elif endpoint == "application_scale":
+        title = "Scale application"
+        consequence = (
+            "Change process replica counts using the submitted scaling settings."
+        )
+    elif endpoint == "project_application_shell":
+        title = "Open application shell"
+        consequence = (
+            "Open an interactive shell with access to this application's "
+            "runtime and environment."
+        )
+    elif endpoint in {
+        "organization_delete",
+        "project_delete",
+        "project_application_delete",
+    }:
+        title, consequence = {
+            "organization_delete": (
+                "Delete organization",
+                "Delete this organization and every project, application, "
+                "environment and backing service in it. Queue removal of its "
+                "application Kubernetes resources and any Tailscale operator. "
+                "This cannot be undone here.",
+            ),
+            "project_delete": (
+                "Delete project",
+                "Delete every application, environment and backing service in "
+                "this project, and queue removal of its application Kubernetes "
+                "resources. Other projects remain. This cannot be undone here.",
+            ),
+            "project_application_delete": (
+                "Delete application",
+                "Delete this application in every environment and queue removal "
+                "of its Kubernetes resources. Other applications and shared "
+                "environments remain. This cannot be undone here.",
+            ),
+        }[endpoint]
+    elif endpoint.endswith("_delete"):
+        consequence = (
+            "Delete the selected resource. Its dependent resources may also be "
+            "removed; this cannot be undone here."
+        )
+    elif "config" in endpoint:
+        consequence = (
+            "Change configuration for this resource. "
+            "Secret values are intentionally omitted from this review."
+        )
+    elif action in {
+        "github_oauth.callback",
+        "slack_oauth.callback",
+        "discord_oauth.callback",
+    }:
+        title = f"Connect {action.split('_', 1)[0].capitalize()}"
+        consequence = (
+            "Complete the pending integration authorization "
+            "for the selected organization."
+        )
+    elif endpoint in {
+        "organization_add_user",
+        "organization_remove_user",
+        "organization_promote_user",
+        "organization_demote_user",
+    }:
+        title, consequence = {
+            "organization_add_user": (
+                "Add organization member",
+                "Give the selected account member access to this organization.",
+            ),
+            "organization_remove_user": (
+                "Remove organization member",
+                "Remove the selected account's membership in this organization.",
+            ),
+            "organization_promote_user": (
+                "Grant organization admin",
+                "Allow the selected member to administer this organization.",
+            ),
+            "organization_demote_user": (
+                "Remove organization admin",
+                "Keep membership but remove organization administration rights.",
+            ),
+        }[endpoint]
+    elif endpoint in {"organization_request_approve", "organization_request_deny"}:
+        if endpoint == "organization_request_approve":
+            title = "Approve organization request"
+            consequence = (
+                "Create the proposed organization and grant its requester "
+                "organization admin access."
+            )
+        else:
+            title = "Deny organization request"
+            consequence = (
+                "Reject this organization request. No organization or "
+                "membership will be created."
+            )
+    arguments = request.view_args or {}
+    labels = [
+        f"{label}: {arguments[key]}"
+        for key, label in (
+            ("org_slug", "Organization"),
+            ("project_slug", "Project"),
+            ("env_slug", "Environment"),
+            ("app_slug", "Application"),
+            ("release_id", "Release"),
+            ("config_id", "Configuration"),
+            ("resource_slug", "Resource"),
+        )
+        if arguments.get(key) is not None
+    ]
+    if endpoint in {"organization_request_approve", "organization_request_deny"}:
+        try:
+            request_id = UUID(str(arguments.get("request_id", "")))
+        except ValueError:
+            request_id = None
+        org_request = (
+            db.session.get(OrganizationRequest, request_id)
+            if request_id is not None
+            else None
+        )
+        if org_request is not None:
+            requester = org_request.requester
+            labels.extend(
+                (
+                    f"Proposed organization: {org_request.name} ({org_request.slug})",
+                    f"Requester: {requester.username or requester.email}",
+                    f"Request: {org_request.id}",
+                )
+            )
+    if action in {"slack_oauth.callback", "discord_oauth.callback"}:
+        org_slug = session.get(f"{action.split('.', 1)[0]}_org_slug")
+        if isinstance(org_slug, str):
+            labels.append(f"Organization: {org_slug}")
+    if endpoint in {
+        "organization_remove_user",
+        "organization_promote_user",
+        "organization_demote_user",
+    }:
+        try:
+            member_id = UUID(request.form.get("user_id", ""))
+        except ValueError:
+            member_id = None
+        member = db.session.get(User, member_id) if member_id is not None else None
+        if member is not None:
+            labels.append(f"Account: {member.username or member.email}")
+    elif endpoint == "organization_add_user":
+        # Only disclose an account resolved from the database. Unknown identity
+        # input might contain sensitive text and is never echoed into the review.
+        member = db.session.scalar(
+            select(User).where(
+                User.__table__.c.email == request.form.get("identity", "").strip()
+            )
+        )
+        if member is not None:
+            labels.append(
+                f"Account: {member.username or member.email} ({member.email})"
+            )
     return {
         "title": title,
-        "target": target,
+        "target": " · ".join(labels) or target,
         "consequence": consequence,
         "confirm_label": "Confirm action",
     }
@@ -340,6 +527,11 @@ def require_admin_action(
             )
         )
     return _verification_response(_context("action", action, target, challenge_id))
+
+
+def require_elevated_request() -> Response | None:
+    """One exact HTTP-request proof shared by all native permission checks."""
+    return require_admin_action(request.endpoint or request.path, request.path, {})
 
 
 def revoke_admin_access(user_id: UUID) -> None:
@@ -581,6 +773,7 @@ def _revoke_session_grants(sender: Flask, user: User, **extra: object) -> None:
     db.session.commit()
     session.pop("admin_grant", None)
     session.pop("admin_binding", None)
+    session.pop("admin_shell_ticket", None)
 
 
 def _revoke_credential_grants(sender: Flask, user: User, **extra: object) -> None:
@@ -589,6 +782,7 @@ def _revoke_credential_grants(sender: Flask, user: User, **extra: object) -> Non
     revoke_admin_access(user.id)
     session.pop("admin_grant", None)
     session.pop("admin_binding", None)
+    session.pop("admin_shell_ticket", None)
 
 
 def register_admin_guards(app: Flask) -> None:
@@ -613,8 +807,120 @@ def register_admin_guards(app: Flask) -> None:
             response = jsonify(admin_redirect=response.headers["Location"])
         if (
             converted
-            or request.blueprint == "admin_passkey"
+            or request.blueprint in {"admin_passkey", "admin_console"}
+            or getattr(g, "admin_elevated", False)
             or getattr(g, "admin_action_digest", None)
         ):
             response.headers["Cache-Control"] = "no-store"
         return response
+
+
+@dataclass(frozen=True)
+class _StreamGrantCheck:
+    identity: tuple[UUID, str, str | None, str | None, str | None]
+    checked_at: float
+    expires_at: datetime | None
+
+
+def elevated_stream_valid() -> bool:
+    """Check revocation at most one second apart, and absolute expiry on every tick."""
+    if not getattr(g, "admin_elevated", False):
+        return True
+    user = cast(User, current_user)
+    if not user.is_authenticated:
+        return False
+    grant_id = _grant_id()
+    binding = cast(str | None, session.get("admin_binding"))
+    identity = (
+        user.id,
+        cast(str, cast(object, user.fs_uniquifier)),
+        cast(str | None, session.get("_user_id")),
+        grant_id,
+        binding,
+    )
+    # Keep this on the request itself, never an application or browser-session cache.
+    cached = cast(
+        _StreamGrantCheck | None, request.environ.get("cabotage.admin_stream_grant")
+    )
+    checked_at = monotonic()
+    if (
+        cached is None
+        or cached.identity != identity
+        or checked_at - cached.checked_at >= 1.0
+    ):
+        cached = _StreamGrantCheck(
+            identity, checked_at, _grant_expiration(grant_id, binding, user.id)
+        )
+        request.environ["cabotage.admin_stream_grant"] = cached
+    return cached.expires_at is not None and cached.expires_at > _now()
+
+
+def confirm_elevated_get() -> Response:
+    """A side-effecting legacy GET becomes a confirmed POST for elevated callers."""
+    context = _context("action", request.endpoint or request.path, request.path)
+    context["replay"] = {
+        "url": request.full_path.rstrip("?"),
+        "method": "POST",
+        "body": urlencode({"csrf_token": generate_csrf()}),
+        "content_type": "application/x-www-form-urlencoded",
+    }
+    return _verification_response(context)
+
+
+def issue_shell_ticket(socket_url: str) -> None:
+    """Issue one socket capability only after the shell page's confirmed POST."""
+    if not getattr(g, "admin_elevated", False):
+        return
+    if request.method != "POST" or not getattr(g, "admin_action_digest", None):
+        abort(403)
+    user = cast(User, current_user)
+    token = secrets.token_urlsafe(32)
+    with db.engine.begin() as connection:
+        _ = connection.execute(
+            insert(AdminChallenge).values(
+                id=token,
+                user_id=user.id,
+                uniquifier=user.fs_uniquifier,
+                session_binding=_binding(),
+                grant_id=_grant_id(),
+                challenge=b"",
+                request_digest=hashlib.sha256(
+                    ("shell:" + socket_url).encode()
+                ).hexdigest(),
+                origin=security.webauthn_util.origin(),
+                rp_id=request.host.split(":")[0],
+                expires_at=_now() + ACTION_LIFETIME,
+                attempted_at=_now(),
+                verified_at=_now(),
+            )
+        )
+    session["admin_shell_ticket"] = token
+
+
+def consume_shell_ticket() -> bool:
+    token = cast(str | None, session.get("admin_shell_ticket"))
+    if (
+        not token
+        or not has_admin_session()
+        or request.headers.get("Origin") != security.webauthn_util.origin()
+    ):
+        return False
+    user = cast(User, current_user)
+    with db.engine.begin() as connection:
+        consumed = connection.execute(
+            update(AdminChallenge)
+            .where(
+                AdminChallenge.id == token,
+                AdminChallenge.user_id == user.id,
+                AdminChallenge.grant_id == _grant_id(),
+                AdminChallenge.session_binding == session.get("admin_binding"),
+                AdminChallenge.request_digest
+                == hashlib.sha256(("shell:" + request.path).encode()).hexdigest(),
+                AdminChallenge.expires_at > _now(),
+                AdminChallenge.used_at.is_(None),
+                AdminChallenge.verified_at.is_not(None),
+            )
+            .values(used_at=_now())
+            .returning(AdminChallenge.id)
+        ).scalar_one_or_none()
+    return consumed is not None
