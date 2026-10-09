@@ -3,6 +3,8 @@ import uuid
 from unittest.mock import patch
 
 import pytest
+from flask import Flask
+from flask.testing import FlaskClient
 from flask_security import hash_password
 
 from cabotage.server import db
@@ -16,6 +18,8 @@ from cabotage.server.models.projects import (
 )
 from cabotage.server.models.resources import PostgresResource, RedisResource
 from cabotage.server.wsgi import app as _app
+from tests.admin_passkey_helpers import SigningPasskey
+from tests.test_organization_requests import _RequestScopedClient
 
 
 def _login(client, user):
@@ -335,3 +339,185 @@ class TestObserveMetricQueries:
         )
 
         assert resp.status_code == 400
+
+
+@pytest.fixture
+def infra_client(
+    app: Flask, admin_user: User, monkeypatch: pytest.MonkeyPatch
+) -> FlaskClient:
+    admin_user.admin = True
+    db.session.commit()
+    monkeypatch.setattr(app, "test_client_class", _RequestScopedClient)
+    client = app.test_client()
+    key = SigningPasskey.register(admin_user)
+    _login(client, admin_user)
+    key.enter(client)
+    return client
+
+
+@pytest.mark.parametrize("metric", ["cpu", "memory", "network"])
+def test_infra_metric_successful_empty_is_not_an_error(
+    infra_client: FlaskClient, metric: str
+) -> None:
+    with patch(
+        "cabotage.server.user.views._query_mimir_range", return_value=[]
+    ) as query:
+        response = infra_client.get(f"/infra/observe/metric?metric={metric}")
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["result"] == []
+    assert data["step"] == 15
+    assert "error" not in data
+    assert len(data["queries"]) == (2 if metric == "network" else 3)
+    for call in query.call_args_list:
+        assert call.kwargs["tenant_id"] == "cabotage-infra"
+        assert 'label_cabotage_io_infra="true"' in call.args[0]
+
+
+@pytest.mark.parametrize(
+    ("metric", "components"),
+    [
+        ("cpu", ["usage", "requests", "limits"]),
+        ("memory", ["usage", "requests", "limits"]),
+        ("network", ["tx", "rx"]),
+    ],
+)
+def test_infra_metric_upstream_failure_is_unavailable(
+    infra_client: FlaskClient, metric: str, components: list[str]
+) -> None:
+    with patch("cabotage.server.user.views._query_mimir_range", return_value=None):
+        response = infra_client.get(f"/infra/observe/metric?metric={metric}")
+
+    assert response.status_code == 502
+    data = response.get_json()
+    assert data["error"] == "monitoring unavailable"
+    assert data["result"] is None
+    assert data["failed_queries"] == components
+    assert len(data["queries"]) == len(components)
+
+
+@pytest.mark.parametrize(
+    ("metric", "failed_index", "component"),
+    [
+        ("cpu", 0, "usage"),
+        ("cpu", 1, "requests"),
+        ("cpu", 2, "limits"),
+        ("memory", 0, "usage"),
+        ("memory", 1, "requests"),
+        ("memory", 2, "limits"),
+        ("network", 0, "tx"),
+        ("network", 1, "rx"),
+    ],
+)
+def test_infra_metric_rejects_incomplete_aggregate(
+    infra_client: FlaskClient, metric: str, failed_index: int, component: str
+) -> None:
+    count = 2 if metric == "network" else 3
+    results = [
+        None
+        if index == failed_index
+        else [{"metric": {}, "values": [[1700000010, "1"]]}]
+        for index in range(count)
+    ]
+    with patch("cabotage.server.user.views._query_mimir_range", side_effect=results):
+        response = infra_client.get(f"/infra/observe/metric?metric={metric}&group=pod")
+
+    assert response.status_code == 502
+    data = response.get_json()
+    assert data["result"] is None
+    assert data["failed_queries"] == [component]
+    assert len(data["queries"]) == count
+
+
+@pytest.mark.parametrize("value", ["NaN", "+Inf", "-Inf"])
+def test_infra_metric_preserves_missing_measurements_and_reference_series(
+    infra_client: FlaskClient, value: str
+) -> None:
+    usage = {"metric": {}, "values": [[1700000010, value]]}
+    reference = {"metric": {}, "values": [[1700000010, "2"]]}
+    with patch(
+        "cabotage.server.user.views._query_mimir_range",
+        side_effect=[[usage], [reference], []],
+    ):
+        response = infra_client.get("/infra/observe/metric?metric=cpu")
+
+    assert response.status_code == 200
+    rows = response.get_json()["result"]
+    assert rows[0]["values"][0][1] == value
+    assert rows[1]["metric"]["__ref__"] == "requests"
+
+
+def test_infra_metric_reference_only_response_preserves_missing_usage(
+    infra_client: FlaskClient,
+) -> None:
+    with patch(
+        "cabotage.server.user.views._query_mimir_range",
+        side_effect=[[], [{"metric": {}, "values": [[1700000010, "2"]]}], []],
+    ):
+        response = infra_client.get("/infra/observe/metric?metric=memory")
+
+    assert response.status_code == 200
+    rows = response.get_json()["result"]
+    assert len(rows) == 1
+    assert rows[0]["metric"]["__ref__"] == "requests"
+
+
+def test_infra_metric_keeps_historical_window_and_filters_isolated(
+    infra_client: FlaskClient,
+) -> None:
+    start, end = 1700000100, 1700086500
+    with patch(
+        "cabotage.server.user.views._query_mimir_range", return_value=[]
+    ) as query:
+        response = infra_client.get(
+            "/infra/observe/metric?metric=cpu&range=24h&group=container"
+            f"&start={start}&end={end}&workload_namespace=infra-system"
+            "&pod=metrics-0&system_containers=1"
+        )
+
+    assert response.status_code == 200
+    assert response.get_json()["step"] == 300
+    for call in query.call_args_list:
+        assert call.args[1:] == (start, end, 300)
+        assert call.kwargs["tenant_id"] == "cabotage-infra"
+        assert 'namespace="infra-system"' in call.args[0]
+        assert 'pod="metrics-0"' in call.args[0]
+        assert 'label_cabotage_io_infra="true"' in call.args[0]
+        assert 'container!="cabotage-sidecar"' not in call.args[0]
+
+
+def test_infra_metric_not_configured_is_not_empty(
+    app: Flask, infra_client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(app.config, "MIMIR_URL", None)
+    with patch("cabotage.server.user.views._query_mimir_range") as query:
+        response = infra_client.get("/infra/observe/metric?metric=cpu")
+
+    assert response.status_code == 404
+    assert response.get_json()["error"] == "not configured"
+    query.assert_not_called()
+
+
+def test_infra_metric_requires_global_admin(
+    client: FlaskClient, admin_user: User
+) -> None:
+    _login(client, admin_user)
+    with patch("cabotage.server.user.views._query_mimir_range") as query:
+        response = client.get("/infra/observe/metric?metric=cpu")
+
+    assert response.status_code == 403
+    query.assert_not_called()
+
+
+def test_infra_metric_requires_passkey_elevation(
+    client: FlaskClient, admin_user: User
+) -> None:
+    admin_user.admin = True
+    db.session.commit()
+    _login(client, admin_user)
+    with patch("cabotage.server.user.views._query_mimir_range") as query:
+        response = client.get("/infra/observe/metric?metric=cpu")
+
+    assert response.status_code == 302
+    query.assert_not_called()

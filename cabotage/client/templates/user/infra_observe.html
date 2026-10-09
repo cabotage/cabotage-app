@@ -1,5 +1,6 @@
 {% extends "_base.html" %}
 {% from "_macros.html" import icon, resource_path %}
+{% from "user/_infra_charts.html" import chart_canvas, chart_script %}
 
 {% block title %}Infrastructure Observe - Cabotage{% endblock title %}
 
@@ -86,11 +87,7 @@
                 {% endfor %}
               </div>
             </div>
-            <div id="chart-cpu" class="metric-panel" data-metric-panel>
-              <div class="flex items-center justify-center h-full text-base-content/20">
-                {{ icon('loader', 'w-5 h-5 animate-spin') }}
-              </div>
-            </div>
+            {{ chart_canvas('cpu', 'CPU usage') }}
             <p class="text-[0.6rem] text-base-content/20 mt-1 break-all leading-tight hidden" data-query-debug="cpu"></p>
           </div>
         </div>
@@ -106,11 +103,7 @@
                 {% endfor %}
               </div>
             </div>
-            <div id="chart-memory" class="metric-panel" data-metric-panel>
-              <div class="flex items-center justify-center h-full text-base-content/20">
-                {{ icon('loader', 'w-5 h-5 animate-spin') }}
-              </div>
-            </div>
+            {{ chart_canvas('memory', 'memory usage') }}
             <p class="text-[0.6rem] text-base-content/20 mt-1 break-all leading-tight hidden" data-query-debug="memory"></p>
           </div>
         </div>
@@ -126,11 +119,7 @@
                 {% endfor %}
               </div>
             </div>
-            <div id="chart-network" class="metric-panel" data-metric-panel>
-              <div class="flex items-center justify-center h-full text-base-content/20">
-                {{ icon('loader', 'w-5 h-5 animate-spin') }}
-              </div>
-            </div>
+            {{ chart_canvas('network', 'network I/O') }}
             <p class="text-[0.6rem] text-base-content/20 mt-1 break-all leading-tight hidden" data-query-debug="network"></p>
           </div>
         </div>
@@ -147,5 +136,5 @@
 {% endblock content %}
 
 {% block js %}
-{% include "user/_infra_charts.html" %}
+  {{ chart_script(metric_url, current_range, current_groups, workloads_json, enabled=mimir_configured) }}
 {% endblock js %}

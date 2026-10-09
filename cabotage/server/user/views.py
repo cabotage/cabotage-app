@@ -9117,8 +9117,17 @@ def infra_observe_metric():
         "total": "",
     }.get(group, "")
 
-    result = None
+    result = []
     queries = []
+    failed_queries = []
+
+    def _query_component(query, component):
+        queries.append(query)
+        rows = _query_mimir_range(query, start, end, step, tenant_id=_INFRA_TENANT)
+        if rows is None:
+            failed_queries.append(component)
+            return []
+        return rows
 
     # KSM ref lines use the same join + narrowing but with resource= filter
     def _append_ref_lines(resource):
@@ -9130,7 +9139,6 @@ def infra_observe_metric():
         Per-container grouping always emits (each container either has
         the value or doesn't — no ambiguity).
         """
-        nonlocal result
         ksm_narrow = (
             f'{narrow}, {container_filter}, resource="{resource}"'
             if narrow
@@ -9160,13 +9168,10 @@ def infra_observe_metric():
                 )
             else:
                 rq = f"sum({ksm_metric}{{{ksm_narrow}}} {infra_join})"
-            queries.append(rq)
-            rr = _query_mimir_range(rq, start, end, step, tenant_id=_INFRA_TENANT)
+            rr = _query_component(rq, ref_type)
             if rr:
                 for series in rr:
                     series["metric"]["__ref__"] = ref_type
-                if result is None:
-                    result = []
                 result.extend(rr)
 
     if metric == "cpu":
@@ -9174,19 +9179,16 @@ def infra_observe_metric():
             f"sum(rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}]) "
             f"{infra_join}) {by_clause}"
         )
-        queries.append(q)
-        result = _query_mimir_range(q, start, end, step, tenant_id=_INFRA_TENANT)
+        result = _query_component(q, "usage")
         _append_ref_lines("cpu")
     elif metric == "memory":
         q = (
             f"sum(container_memory_working_set_bytes{{{labels}}} "
             f"{infra_join}) {by_clause}"
         )
-        queries.append(q)
-        result = _query_mimir_range(q, start, end, step, tenant_id=_INFRA_TENANT)
+        result = _query_component(q, "usage")
         _append_ref_lines("memory")
     elif metric == "network":
-        result = []
         for direction, counter in [
             ("tx", "container_network_transmit_bytes_total"),
             ("rx", "container_network_receive_bytes_total"),
@@ -9195,15 +9197,25 @@ def infra_observe_metric():
                 q = f"sum(rate({counter}{{{network_labels}}}[{rate_window}]) {infra_join}) {by_clause}"
             else:
                 q = f"sum(rate({counter}[{rate_window}]) {infra_join}) {by_clause}"
-            queries.append(q)
-            qr = _query_mimir_range(q, start, end, step, tenant_id=_INFRA_TENANT)
+            qr = _query_component(q, direction)
             if qr:
                 for series in qr:
                     series["metric"]["direction"] = direction
                 result.extend(qr)
-        result = result if result else None
 
-    return jsonify({"result": result, "queries": queries})
+    # Never present an incomplete aggregate as a successful (or empty) chart.
+    # An empty list from Mimir is valid missing data; None means query failure.
+    if failed_queries:
+        return jsonify(
+            {
+                "error": "monitoring unavailable",
+                "result": None,
+                "failed_queries": failed_queries,
+                "queries": queries,
+            }
+        ), 502
+
+    return jsonify({"result": result, "queries": queries, "step": step})
 
 
 # ---------------------------------------------------------------------------
