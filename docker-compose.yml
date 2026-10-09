@@ -1,7 +1,7 @@
 volumes:
   consuldata:
   vaultdata:
-  miniodata:
+  seaweedfsdata:
   postgresdata:
   redisdata:
 
@@ -61,10 +61,10 @@ services:
     restart: always
     command: ["/etc/docker/registry-local/config.yml"]
     environment:
-      REGISTRY_STORAGE_S3_ACCESSKEY: MINIOACCESSKEY
-      REGISTRY_STORAGE_S3_SECRETKEY: MINIOSECRETKEY
+      REGISTRY_STORAGE_S3_ACCESSKEY: SEAWEEDFS_ACCESS_KEY
+      REGISTRY_STORAGE_S3_SECRETKEY: SEAWEEDFS_SECRET_KEY
       REGISTRY_STORAGE_S3_REGION: us-east-1
-      REGISTRY_STORAGE_S3_REGIONENDPOINT: http://minio:9000
+      REGISTRY_STORAGE_S3_REGIONENDPOINT: http://seaweedfs:8333
       REGISTRY_STORAGE_S3_BUCKET: cabotage-registry
       REGISTRY_STORAGE_S3_SECURE: "false"
       REGISTRY_STORAGE_S3_V4AUTH: "true"
@@ -84,20 +84,33 @@ services:
     privileged: true
     volumes:
       - ./docker-compose/buildkitd:/home/user/.config/buildkit
-  minio:
-    image: minio/minio
-    entrypoint: sh
-    command: -c 'mkdir -p /export/cabotage-registry && /usr/bin/docker-entrypoint.sh server /export --console-address ":9001"'
-    restart: always
+  seaweedfs:
+    image: chrislusf/seaweedfs
     environment:
-      MINIO_ROOT_USER: MINIOACCESSKEY
-      MINIO_ROOT_PASSWORD: MINIOSECRETKEY
-      MINIO_REGION: us-east-1
+      - AWS_ACCESS_KEY_ID=SEAWEEDFS_ACCESS_KEY
+      - AWS_SECRET_ACCESS_KEY=SEAWEEDFS_SECRET_KEY
+    command: mini -dir=/data -ip=seaweedfs
     ports:
-      - "9000:9000"
-      - "9001:9001"
+        - "9333:9333"
+        - "8888:8888"
+        - "8333:8333"
+        - "9340:9340"
+        - "23646:23646"
+    tmpfs:
+      - /tmp
     volumes:
-      - miniodata:/export
+      - seaweedfsdata:/data
+  bucket-creator:
+    image: chrislusf/seaweedfs
+    depends_on:
+      - seaweedfs
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        # Wait for filer to start
+        sleep 5;
+        echo "s3.bucket.create -name cabotage-registry" | /usr/bin/weed shell -master=seaweedfs:9333 -filer=seaweedfs:8888
   static:
     image: oven/bun:1-slim
     working_dir: /app
