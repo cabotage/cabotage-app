@@ -70,7 +70,6 @@
 @media (max-width: 640px) { .pipe-legend-optional { display: none; } }
 .pipe-legend > span { display: inline-flex; align-items: center; gap: 0.375rem; }
 .pipe-plot { position: relative; }
-.pipe-plot .u-over { cursor: crosshair; }
 
 .pipe-tip { display: none; position: absolute; pointer-events: none; z-index: 20; min-width: 9rem;
   background: var(--surface-card); border: 1px solid var(--border-color); border-radius: 0.5rem;
@@ -137,21 +136,45 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
 @keyframes pipe-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (prefers-reduced-motion: reduce) {
   .pipe-skel, .pipe-dot-run { animation: none; }
-  .pipe-split-bar > span { transition: none; }
+  .pipe-split-bar > span, .pipe-scrubbable a { transition: none; }
 }
+
+/* ── Scrubbing: hover a day, drag (or click) to narrow the window ── */
+.pipe-chip { display: inline-flex; align-items: center; gap: 0.375rem; height: 1.5rem; padding: 0 0.375rem 0 0.625rem;
+  border-radius: 9999px; border: 1px solid var(--border-color); background: var(--surface-card);
+  font-size: 0.75rem; color: var(--text-bright); white-space: nowrap; transition: background-color 150ms ease-out; }
+.pipe-chip:hover { background: var(--hover-overlay-strong); }
+.pipe-chip:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+.pipe-chip svg { color: var(--text-muted); }
+.pipe-scope { font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; }
+.pipe-scope.is-preview { color: var(--text-bright); }
+.pipe-scrubbable a { transition: opacity 150ms ease-out, background-color 150ms ease-out; }
+.pipe-scrubbing a:not(.is-hit) { opacity: 0.35; }
+.pipe-scrubbing a.is-hit { background: var(--hover-overlay-strong); color: var(--text-bright); }
+.pipe .u-over { cursor: crosshair; }
+.pipe .u-cursor-x { border-right: 1px dashed color-mix(in srgb, var(--text-bright) 35%, transparent); }
+.pipe .u-cursor-y { display: none; }
+.pipe .u-select { background: color-mix(in srgb, var(--text-bright) 6%, transparent);
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--text-bright) 30%, transparent),
+              inset -1px 0 0 color-mix(in srgb, var(--text-bright) 30%, transparent); }
 </style>
 
 <div class="settings-page pipe" id="pipeline">
-  <div class="flex items-end justify-between gap-4 mb-4">
+  <div class="flex flex-wrap items-end justify-between gap-x-4 gap-y-3 mb-4">
     <div>
       <h1 class="text-lg font-semibold text-base-content">Pipeline</h1>
-      <p class="text-xs text-base-content/50">Build, release, and deploy times for each run</p>
+      <p class="text-xs text-base-content/50">Build, release, and deploy times for each run. Hover a chart to inspect a day; drag or click to narrow.</p>
     </div>
-    <div class="flex gap-1.5" id="range-selector" role="group" aria-label="Time range">
-      {% for r in ['7d', '30d', '90d'] %}
-        <button type="button" data-range="{{ r }}" aria-pressed="{{ 'true' if current_range == r else 'false' }}"
-           class="btn btn-xs {% if current_range == r %}btn-primary{% else %}btn-ghost{% endif %}">{{ r }}</button>
-      {% endfor %}
+    <div class="flex items-center gap-3 ml-auto">
+      <button type="button" class="pipe-chip" id="brush-chip" hidden aria-label="Clear date selection" title="Clear selection (Esc)">
+        <span class="num" id="brush-label"></span>{{ icon('x', 'w-3 h-3') }}
+      </button>
+      <div class="flex gap-1.5" id="range-selector" role="group" aria-label="Time range">
+        {% for r in ['7d', '30d', '90d'] %}
+          <button type="button" data-range="{{ r }}" aria-pressed="{{ 'true' if current_range == r else 'false' }}"
+             class="btn btn-xs {% if current_range == r %}btn-primary{% else %}btn-ghost{% endif %}">{{ r }}</button>
+        {% endfor %}
+      </div>
     </div>
   </div>
 
@@ -194,6 +217,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
       <div class="pipe-split">
         <div class="pipe-split-head">
           <span class="pipe-section-title">Where a median run spends its time</span>
+          <span class="pipe-scope" id="pm-scope"></span>
         </div>
         <div class="pipe-split-bar" id="pm-split" role="img" aria-label="Share of median run time by stage">
           <span class="seg-image" style="flex-grow:1"></span>
@@ -248,7 +272,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
           <span>Status</span><span>Started</span><span>Commit</span><span>Trigger</span><span>Timeline</span>
           <span>Image</span><span>Release</span><span>Deploy</span><span>Total</span>
         </div>
-        <div id="runs"><div class="p-4 flex flex-col gap-3">{% for _ in range(4) %}<div class="pipe-skel h-4"></div>{% endfor %}</div></div>
+        <div id="runs" class="pipe-scrubbable"><div class="p-4 flex flex-col gap-3">{% for _ in range(4) %}<div class="pipe-skel h-4"></div>{% endfor %}</div></div>
       </div>
       <div class="pipe-foot" id="runs-pager" hidden>
         <span class="num" id="runs-range"></span>
@@ -261,7 +285,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
 
     {# Slowest #}
     <div class="flex items-center justify-between mb-2">
-      <h2 class="pipe-section-title">Slowest in range</h2>
+      <h2 class="pipe-section-title">Slowest</h2>
       <div class="pipe-seg" id="slowest-selector" role="group" aria-label="Stage">
         <button type="button" data-stage="image" aria-pressed="true">Image</button>
         <button type="button" data-stage="release" aria-pressed="false">Release</button>
@@ -269,7 +293,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
       </div>
     </div>
     <section class="pipe-card pipe-table" aria-label="Slowest runs">
-      <div id="slowest"><div class="p-4 flex flex-col gap-3">{% for _ in range(3) %}<div class="pipe-skel h-4"></div>{% endfor %}</div></div>
+      <div id="slowest" class="pipe-scrubbable"><div class="p-4 flex flex-col gap-3">{% for _ in range(3) %}<div class="pipe-skel h-4"></div>{% endfor %}</div></div>
     </section>
   </div>
 </div>
@@ -289,16 +313,36 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
   };
   var triggerIcons = { auto: {{ icon('zap', 'w-2.5 h-2.5')|tojson }}, manual: {{ icon('user', 'w-2.5 h-2.5')|tojson }} };
   var STAGES = ['image', 'release', 'deploy'];
+  var STAGE_NAMES = { image: 'image builds', release: 'release builds', deploy: 'deploys' };
   var PER_PAGE = 15;
-  function rangeWords() { return parseInt(state.range, 10) + ' days'; }
-  var state = { range: {{ current_range|tojson }}, offset: 0, stage: 'image', stats: null };
+  var DAY = 86400;
+  var DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
+  // Scope precedence: hovered day > brushed window > trailing range.
+  var query = new URLSearchParams(location.search);
+  var state = {
+    range: {{ current_range|tojson }},
+    brush: parseBrush(query.get('since'), query.get('until')),
+    hover: null,
+    offset: 0,
+    stage: 'image',
+    stats: null,     // trailing range: drives the charts
+    scoped: null,    // brushed window: drives the summary
+    byDay: {}
+  };
   var charts = [];
+  var activePlot = null;
   var lastPayload = {};
+
+  function parseBrush(since, until) {
+    if (!DAY_KEY.test(since || '') || !DAY_KEY.test(until || '')) return null;
+    return since <= until ? { since: since, until: until } : { since: until, until: since };
+  }
 
   // Skip re-rendering identical data so the refresh doesn't drop focus or hover.
   function whenChanged(key, render) {
     return function(d) {
-      var json = [state.range, state.offset, state.stage, JSON.stringify(d)].join('|');
+      var json = [state.range, state.offset, state.stage, JSON.stringify(state.brush), JSON.stringify(d)].join('|');
       if (lastPayload[key] === json) return;
       lastPayload[key] = json;
       render(d);
@@ -325,21 +369,36 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     return +(v / 3600).toFixed(1) + 'h';
   }
   function fmtCount(v) { return v % 1 ? '' : String(v); }
-  function fmtDay(ts) {
-    return new Date(ts * 1000).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-  }
   function relTime(iso) {
     if (!iso) return '—';
     var d = new Date(iso), diff = (Date.now() - d.getTime()) / 1000;
     if (diff < 60) return 'just now';
     if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
-    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
-    if (diff < 7 * 86400) return Math.floor(diff / 86400) + 'd ago';
+    if (diff < DAY) return Math.floor(diff / 3600) + 'h ago';
+    if (diff < 7 * DAY) return Math.floor(diff / DAY) + 'd ago';
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
   function absTime(iso) { return iso ? new Date(iso).toLocaleString() : ''; }
   function shortSha(sha) { return sha && sha !== 'null' ? esc(sha.substring(0, 7)) : '—'; }
-  function dayTs(s) { return Math.floor(new Date(s).getTime() / 1000); }
+
+  // Days are UTC buckets, matching the server's date_trunc('day', ...).
+  function keyTs(key) { var p = key.split('-'); return Date.UTC(+p[0], p[1] - 1, +p[2]) / 1000; }
+  function tsKey(ts) { return new Date(ts * 1000).toISOString().slice(0, 10); }
+  function fmtKey(key, opts) {
+    return new Date(keyTs(key) * 1000).toLocaleDateString(undefined, Object.assign({ month: 'short', day: 'numeric', timeZone: 'UTC' }, opts));
+  }
+  function brushWords() {
+    var b = state.brush;
+    return b.since === b.until ? fmtKey(b.since) : fmtKey(b.since) + ' – ' + fmtKey(b.until);
+  }
+  function scopeWords() {
+    if (!state.brush) return 'in the last ' + parseInt(state.range, 10) + ' days';
+    return state.brush.since === state.brush.until ? 'on ' + fmtKey(state.brush.since)
+      : 'between ' + fmtKey(state.brush.since) + ' and ' + fmtKey(state.brush.until);
+  }
+  function windowQuery() {
+    return '?range=' + state.range + (state.brush ? '&since=' + state.brush.since + '&until=' + state.brush.until : '');
+  }
 
   // ── Theme palette (canvas needs concrete colors) ──
   var palette;
@@ -364,15 +423,36 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     palette = { css: css, c: c, axis: css(c.text, 0.45), grid: css(c.text, 0.06) };
   }
 
-  // ── Charts ──
-  function tooltipPlugin(fmt) {
+  // ── Charts: one cursor across all of them ──
+  var sync = uPlot.sync('pipeline');
+
+  function scrubPlugin(fmt) {
     var tip = document.createElement('div');
     tip.className = 'pipe-tip';
     return { hooks: {
-      init: function(u) { u.over.appendChild(tip); },
+      init: function(u) {
+        var downX = null;
+        u.over.appendChild(tip);
+        u.over.addEventListener('mouseenter', function() { activePlot = u; });
+        u.over.addEventListener('mouseleave', function() {
+          if (activePlot === u) { activePlot = null; setHover(null); }
+        });
+        // A click (not a drag) focuses the hovered day; clicking it again releases it.
+        u.over.addEventListener('mousedown', function(e) { downX = e.clientX; });
+        u.over.addEventListener('mouseup', function(e) {
+          if (downX == null || Math.abs(e.clientX - downX) > 3 || !state.hover) return;
+          var day = state.hover;
+          var same = state.brush && state.brush.since === day && state.brush.until === day;
+          setBrush(same ? null : { since: day, until: day });
+          // uPlot resets its selection box on mouseup; restore ours after it.
+          requestAnimationFrame(function() { charts.forEach(drawBrush); });
+        });
+      },
       setCursor: function(u) {
         var idx = u.cursor.idx;
-        if (idx == null) { tip.style.display = 'none'; return; }
+        // Every synced chart moves its crosshair; only the one under the pointer narrates.
+        if (u !== activePlot || idx == null) { tip.style.display = 'none'; return; }
+        setHover(tsKey(u.data[0][idx]));
         var rows = '';
         for (var i = 1; i < u.series.length; i++) {
           var v = u.data[i][idx];
@@ -381,14 +461,31 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
             esc(u.series[i].label) + '<span class="num">' + fmt(v) + '</span></div>';
         }
         if (!rows) { tip.style.display = 'none'; return; }
-        tip.innerHTML = '<div class="pipe-tip-time">' + fmtDay(u.data[0][idx]) + '</div>' + rows;
+        tip.innerHTML = '<div class="pipe-tip-time">' + fmtKey(tsKey(u.data[0][idx]), { weekday: 'short' }) + '</div>' + rows;
         tip.style.display = 'block';
         var x = u.cursor.left + 14, y = u.cursor.top - tip.offsetHeight - 10;
         if (x + tip.offsetWidth > u.over.clientWidth) x = u.cursor.left - tip.offsetWidth - 14;
         if (y < 0) y = u.cursor.top + 14;
         tip.style.left = x + 'px'; tip.style.top = y + 'px';
+      },
+      setSelect: function(u) {
+        var sel = u.select;
+        if (u !== activePlot || sel.width <= 3) return;
+        // Snap to the days whose ticks the dragged span covers.
+        var from = u.posToVal(sel.left, 'x') / DAY, to = u.posToVal(sel.left + sel.width, 'x') / DAY;
+        var first = Math.ceil(from), last = Math.floor(to);
+        if (last < first) first = last = Math.round((from + to) / 2);
+        setBrush(parseBrush(tsKey(first * DAY), tsKey(last * DAY)));
       }
     } };
+  }
+
+  function drawBrush(u) {
+    if (!state.brush) { u.setSelect({ left: 0, width: 0, top: 0, height: 0 }, false); return; }
+    var w = u.over.clientWidth;
+    var l = Math.max(0, u.valToPos(keyTs(state.brush.since) - DAY / 2, 'x'));
+    var r = Math.min(w, u.valToPos(keyTs(state.brush.until) + DAY / 2, 'x'));
+    u.setSelect({ left: l, width: Math.max(0, r - l), top: 0, height: u.over.clientHeight }, false);
   }
 
   function plot(el, xs, cols, series, opts) {
@@ -401,16 +498,22 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     var font = '10px ' + getComputedStyle(root).getPropertyValue('--pipe-mono');
     var axis = { stroke: palette.axis, font: font, grid: { stroke: palette.grid, width: 1 }, ticks: { show: false } };
     // A lone day still needs an x span to draw on.
-    var pad = xs.length === 1 || opts.bars ? 43200 : 0;
+    var pad = xs.length === 1 || opts.bars ? DAY / 2 : 0;
     var u = new uPlot({
       width: el.clientWidth, height: el.clientHeight,
       series: [{}].concat(series),
       legend: { show: false },
-      cursor: { drag: { x: false, y: false }, points: { size: 6, fill: function(u, i) { return u.series[i]._swatch; } } },
-      plugins: [tooltipPlugin(fmt)],
+      cursor: {
+        sync: { key: sync.key, setSeries: false },
+        drag: { x: true, y: false, setScale: false },
+        // uPlot builds hover dots via points.show(); bars get none.
+        points: Object.assign({ size: 6, fill: function(u, i) { return u.series[i]._swatch; } },
+          opts.bars ? { show: function() {} } : {})
+      },
+      plugins: [scrubPlugin(fmt)],
       axes: [
         Object.assign({}, axis, { size: 22, gap: 4, space: 44, values: function(u, vals) {
-          return vals.map(function(ts) { return new Date(ts * 1000).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' }); });
+          return vals.map(function(ts) { return new Date(ts * 1000).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', timeZone: 'UTC' }); });
         } }),
         Object.assign({}, axis, { size: 44, gap: 4, values: function(u, vals) {
           return vals.map(function(v) { return v === 0 ? '' : (opts.axisFmt || fmtAxisDur)(v); });
@@ -422,6 +525,8 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
       }
     }, [xs].concat(cols), el);
     charts.push(u);
+    // Scales settle after the first layout pass.
+    requestAnimationFrame(function() { if (charts.indexOf(u) !== -1) drawBrush(u); });
   }
 
   function line(label, color, dashed) {
@@ -437,53 +542,130 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
   function renderCharts() {
     charts.forEach(function(u) { u.destroy(); });
     charts = [];
+    activePlot = null;
     var d = state.stats;
     if (!d) return;
-    var trendXs = d.duration_trend.map(function(r) { return dayTs(r.date); });
+    var trendXs = d.duration_trend.map(function(r) { return keyTs(r.date.slice(0, 10)); });
     STAGES.forEach(function(stage) {
       var color = palette.c[stage];
       var pick = function(k) { return d.duration_trend.map(function(r) { return r[k + '_' + stage]; }); };
-      var single = trendXs.length === 1;
       var p50 = line('p50', color), p95 = line('p95', color, true);
-      if (single) { p50.points.show = true; p95.points.show = true; }
+      if (trendXs.length === 1) { p50.points.show = true; p95.points.show = true; }
       plot(root.querySelector('[data-chart="stage-' + stage + '"]'), trendXs, [pick('p50'), pick('p95')], [p50, p95], {});
     });
     plot(root.querySelector('[data-chart="throughput"]'),
-      d.throughput.map(function(r) { return dayTs(r.date); }),
+      d.throughput.map(function(r) { return keyTs(r.date.slice(0, 10)); }),
       [d.throughput.map(function(r) { return r.success; }), d.throughput.map(function(r) { return r.failure; })],
       [bar('Succeeded', palette.c.ok, -1), bar('Failed', palette.c.fail, 1)],
       { bars: true, fmt: String, axisFmt: fmtCount });
   }
 
-  // ── Stats ──
+  // ── Summary ──
+  function summaryOf(label, s, stages, preview) {
+    return { label: label, preview: preview, runs: s.runs, failed: s.failed, success_rate: s.success_rate,
+      run_p50: s.run_p50, run_p95: s.run_p95, stages: stages };
+  }
+  function daySummary(key) {
+    var t = state.byDay[key] || {};
+    var runs = (t.success || 0) + (t.failure || 0);
+    var stages = {};
+    STAGES.forEach(function(st) { stages[st] = { p50: t['p50_' + st], p95: t['p95_' + st] }; });
+    return summaryOf(fmtKey(key, { weekday: 'short' }), {
+      runs: runs, failed: t.failure || 0, success_rate: runs ? t.success / runs * 100 : null,
+      run_p50: t.p50_run, run_p95: t.p95_run
+    }, stages, true);
+  }
+  function currentSummary() {
+    if (state.hover) return daySummary(state.hover);
+    if (state.brush && state.scoped) return summaryOf(brushWords(), state.scoped.summary, state.scoped.stages, false);
+    return summaryOf('Last ' + parseInt(state.range, 10) + ' days', state.stats.summary, state.stats.stages, false);
+  }
   function setStat(name, html) { root.querySelector('[data-stat="' + name + '"]').innerHTML = html; }
 
-  function renderStats() {
-    var d = state.stats, s = d.summary;
-    var empty = !s.runs && !d.duration_trend.length;
-    document.getElementById('pipe-empty').hidden = !empty;
-    document.getElementById('pipe-body').hidden = empty;
-    root.querySelectorAll('[data-range-label]').forEach(function(el) { el.textContent = rangeWords(); });
-    if (empty) return;
-
+  function renderSummary() {
+    if (!state.stats) return;
+    var s = currentSummary();
+    var scope = document.getElementById('pm-scope');
+    scope.textContent = s.label;
+    scope.classList.toggle('is-preview', !!s.preview);
     setStat('runs', String(s.runs));
     setStat('failed', s.failed
       ? '<span class="inline-flex items-center gap-1.5"><span class="pipe-dot pipe-dot-fail"></span>' + s.failed + ' failed</span>'
-      : 'None failed');
-    setStat('success', s.success_rate == null ? '—' : s.success_rate.toFixed(1) + '%');
+      : (s.runs ? 'None failed' : 'No runs'));
+    setStat('success', s.success_rate == null ? '—' : (+s.success_rate).toFixed(1) + '%');
     setStat('p50', fmtDur(s.run_p50));
     setStat('p95', fmtDur(s.run_p95));
 
-    var total = STAGES.reduce(function(sum, st) { return sum + (d.stages[st].p50 || 0); }, 0);
+    var total = STAGES.reduce(function(sum, st) { return sum + (s.stages[st].p50 || 0); }, 0);
     var segs = document.getElementById('pm-split').children;
     STAGES.forEach(function(stage, i) {
-      var p50 = d.stages[stage].p50;
+      var p50 = s.stages[stage].p50;
       segs[i].style.flexGrow = total ? (p50 || 0) / total : 1;
       root.querySelector('[data-share="' + stage + '"]').textContent = total && p50 != null ? Math.round(p50 / total * 100) + '%' : '—';
       root.querySelector('[data-stage-figs="' + stage + '"]').innerHTML =
-        'p50 <b>' + fmtDur(p50) + '</b> · p95 <b>' + fmtDur(d.stages[stage].p95) + '</b>';
+        'p50 <b>' + fmtDur(p50) + '</b> · p95 <b>' + fmtDur(s.stages[stage].p95) + '</b>';
     });
+  }
+
+  function renderStats() {
+    var d = state.stats;
+    var empty = !d.summary.runs && !d.duration_trend.length;
+    document.getElementById('pipe-empty').hidden = !empty;
+    document.getElementById('pipe-body').hidden = empty;
+    root.querySelectorAll('[data-range-label]').forEach(function(el) { el.textContent = parseInt(state.range, 10) + ' days'; });
+    if (empty) return;
+    state.byDay = {};
+    d.throughput.concat(d.duration_trend).forEach(function(r) {
+      var key = r.date.slice(0, 10);
+      state.byDay[key] = Object.assign(state.byDay[key] || {}, r);
+    });
+    renderSummary();
     renderCharts();
+  }
+
+  // ── Scrubbing ──
+  var hoverFrame = 0;
+  function setHover(key) {
+    if (key === state.hover) return;
+    state.hover = key;
+    cancelAnimationFrame(hoverFrame);
+    hoverFrame = requestAnimationFrame(function() { renderSummary(); markRows(); });
+  }
+  function markRows() {
+    ['runs', 'slowest'].forEach(function(id) {
+      var el = document.getElementById(id);
+      el.classList.toggle('pipe-scrubbing', !!state.hover);
+      el.querySelectorAll('a[data-day]').forEach(function(a) {
+        a.classList.toggle('is-hit', a.dataset.day === state.hover);
+      });
+    });
+  }
+  function setBrush(brush) {
+    if (JSON.stringify(brush) === JSON.stringify(state.brush)) return;
+    state.brush = brush;
+    state.scoped = null;
+    state.offset = 0;
+    syncUrl();
+    var chip = document.getElementById('brush-chip');
+    chip.hidden = !brush;
+    if (brush) document.getElementById('brush-label').textContent = brushWords();
+    charts.forEach(drawBrush);
+    renderSummary();
+    loadScoped();
+    loadRuns();
+    loadSlowest();
+  }
+  function syncUrl() {
+    var url = new URL(location.href);
+    url.searchParams.set('range', state.range);
+    if (state.brush) {
+      url.searchParams.set('since', state.brush.since);
+      url.searchParams.set('until', state.brush.until);
+    } else {
+      url.searchParams.delete('since');
+      url.searchParams.delete('until');
+    }
+    history.replaceState(null, '', url);
   }
 
   // ── Runs ──
@@ -502,7 +684,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     var el = document.getElementById('runs');
     var pager = document.getElementById('runs-pager');
     if (!d.runs.length) {
-      el.innerHTML = '<div class="pipe-note">No runs in the last ' + rangeWords() + '.</div>';
+      el.innerHTML = '<div class="pipe-note">No runs ' + esc(scopeWords()) + '.</div>';
       pager.hidden = true;
       return;
     }
@@ -516,7 +698,8 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
         if (dur == null) return '';
         return '<span class="' + segClass(stage, r[stage + '_status']) + '" style="flex:0 0 ' + (dur / maxTotal * 100).toFixed(2) + '%"></span>';
       }).join('');
-      return '<a class="pipe-row" href="' + detailUrls.deploy.replace('__ID__', r.id) + '" aria-label="' +
+      var day = (r.finished || r.started || '').slice(0, 10);
+      return '<a class="pipe-row" data-day="' + day + '" href="' + detailUrls.deploy.replace('__ID__', r.id) + '" aria-label="' +
           esc(st[1] + ', started ' + relTime(r.started) + ', total ' + fmtDur(r.total_duration)) + '">' +
         '<span class="pipe-status"><span class="pipe-dot pipe-dot-' + st[0] + '"></span>' + st[1] + '</span>' +
         '<span title="' + esc(absTime(r.started)) + '">' + relTime(r.started) + '</span>' +
@@ -534,25 +717,27 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     document.getElementById('runs-newer').disabled = state.offset === 0;
     document.getElementById('runs-older').disabled = state.offset + PER_PAGE >= d.total;
     pager.hidden = d.total <= PER_PAGE;
+    markRows();
   }
 
   // ── Slowest ──
   function renderSlowest(d) {
     var el = document.getElementById('slowest');
     if (!d.items.length) {
-      el.innerHTML = '<div class="pipe-note">No finished ' + esc(d.stage) + ' steps in the last ' + rangeWords() + '.</div>';
+      el.innerHTML = '<div class="pipe-note">No finished ' + STAGE_NAMES[d.stage] + ' ' + esc(scopeWords()) + '.</div>';
       return;
     }
     var max = d.items[0].duration || 1;
     var color = 'var(--pipe-' + d.stage + ')';
     el.innerHTML = d.items.map(function(item, i) {
-      return '<a class="pipe-slow" href="' + detailUrls[d.stage].replace('__ID__', item.id) + '">' +
+      return '<a class="pipe-slow" data-day="' + (item.finished || '').slice(0, 10) + '" href="' + detailUrls[d.stage].replace('__ID__', item.id) + '">' +
         '<span class="num" style="color:var(--text-faint)">' + (i + 1) + '</span>' +
         '<span class="num sha">' + shortSha(item.sha) + '</span>' +
         '<span><span class="pipe-slow-bar block" style="width:' + Math.max(2, item.duration / max * 100).toFixed(1) + '%;background:' + color + '"></span></span>' +
         '<span class="num total">' + fmtDur(item.duration) + '</span>' +
         '<span class="when" title="' + esc(absTime(item.created)) + '">' + relTime(item.created) + '</span></a>';
     }).join('');
+    markRows();
   }
 
   // ── Data ──
@@ -566,22 +751,28 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     return function() {
       document.getElementById('pipe-error').hidden = false;
       delete lastPayload[key];
-      if (key !== 'stats') document.getElementById(key).innerHTML = '<div class="pipe-note">Couldn\u2019t load this section.</div>';
+      if (key === 'runs' || key === 'slowest') {
+        document.getElementById(key).innerHTML = '<div class="pipe-note">Couldn’t load this section.</div>';
+      }
     };
   }
 
   function loadStats() {
     return getJSON('/stats?range=' + state.range).then(whenChanged('stats', function(d) { state.stats = d; renderStats(); }), fail('stats'));
   }
+  function loadScoped() {
+    if (!state.brush) return Promise.resolve();
+    return getJSON('/stats' + windowQuery()).then(whenChanged('scoped', function(d) { state.scoped = d; renderSummary(); }), fail('scoped'));
+  }
   function loadRuns() {
-    return getJSON('/runs?range=' + state.range + '&limit=' + PER_PAGE + '&offset=' + state.offset).then(whenChanged('runs', renderRuns), fail('runs'));
+    return getJSON('/runs' + windowQuery() + '&limit=' + PER_PAGE + '&offset=' + state.offset).then(whenChanged('runs', renderRuns), fail('runs'));
   }
   function loadSlowest() {
-    return getJSON('/slowest?range=' + state.range + '&stage=' + state.stage).then(whenChanged('slowest', renderSlowest), fail('slowest'));
+    return getJSON('/slowest' + windowQuery() + '&stage=' + state.stage).then(whenChanged('slowest', renderSlowest), fail('slowest'));
   }
   function loadAll() {
     document.getElementById('pipe-error').hidden = true;
-    return Promise.all([loadStats(), loadRuns(), loadSlowest()]);
+    return Promise.all([loadStats(), loadScoped(), loadRuns(), loadSlowest()]);
   }
 
   // ── Controls ──
@@ -598,10 +789,11 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     if (!btn || btn.dataset.range === state.range) return;
     state.range = btn.dataset.range;
     state.offset = 0;
+    state.brush = null;
+    state.scoped = null;
+    document.getElementById('brush-chip').hidden = true;
     press(rangeGroup, 'range', state.range);
-    var url = new URL(location.href);
-    url.searchParams.set('range', state.range);
-    history.replaceState(null, '', url);
+    syncUrl();
     loadAll();
   });
   var stageGroup = document.getElementById('slowest-selector');
@@ -620,8 +812,16 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     state.offset += PER_PAGE;
     loadRuns();
   });
+  document.getElementById('brush-chip').addEventListener('click', function() { setBrush(null); });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && state.brush && !e.target.closest('input, textarea, select')) setBrush(null);
+  });
   root.querySelector('[data-retry]').addEventListener('click', loadAll);
 
+  if (state.brush) {
+    document.getElementById('brush-chip').hidden = false;
+    document.getElementById('brush-label').textContent = brushWords();
+  }
   resolvePalette();
   loadAll();
   setInterval(function() { if (!document.hidden) loadAll(); }, 60000);

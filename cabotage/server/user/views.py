@@ -9178,19 +9178,39 @@ def _pipeline_range():
     return range_key if range_key in _PIPELINE_RANGES else "30d"
 
 
-def _pipeline_start():
-    now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
-    return now - datetime.timedelta(days=_PIPELINE_RANGES[_pipeline_range()])
+def _pipeline_window():
+    """Start and optional end of the requested window.
+
+    `since`/`until` (inclusive UTC days) narrow a brushed window; otherwise
+    the window is the trailing range.
+    """
+    try:
+        since = datetime.date.fromisoformat(request.args.get("since", ""))
+        until = datetime.date.fromisoformat(request.args.get("until", ""))
+    except ValueError:
+        now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+        return now - datetime.timedelta(days=_PIPELINE_RANGES[_pipeline_range()]), None
+    start = datetime.datetime.combine(min(since, until), datetime.time())
+    end = datetime.datetime.combine(max(since, until), datetime.time())
+    return start, end + datetime.timedelta(days=1)
 
 
-def _pipeline_finished(stage: str, app_env_id: uuid.UUID, start: datetime.datetime):
-    """Model and filters for a stage's finished rows within the range."""
+def _pipeline_finished(
+    stage: str,
+    app_env_id: uuid.UUID,
+    start: datetime.datetime,
+    end: datetime.datetime | None,
+):
+    """Model and filters for a stage's finished rows within the window."""
     model, done = _PIPELINE_STAGES[stage]
-    return model, (
+    filters = [
         model.application_environment_id == app_env_id,
         or_(done, model.error),
         model.updated >= start,
-    )
+    ]
+    if end is not None:
+        filters.append(model.updated < end)
+    return model, filters
 
 
 def _duration(model):
@@ -9250,12 +9270,12 @@ def project_application_pipeline_stats(org_slug, project_slug, app_slug, env_slu
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=True
     )
-    start = _pipeline_start()
+    start, end = _pipeline_window()
 
     trend = collections.defaultdict(dict)
     stages = {}
     for stage in _PIPELINE_STAGES:
-        model, filters = _pipeline_finished(stage, app_env.id, start)
+        model, filters = _pipeline_finished(stage, app_env.id, start, end)
         p50, p95 = _percentiles(_duration(model))
         day = func.date_trunc("day", model.updated)
         for row in db.session.query(day, p50, p95).filter(*filters).group_by(day):
@@ -9265,7 +9285,7 @@ def project_application_pipeline_stats(org_slug, project_slug, app_slug, env_slu
         overall = db.session.query(p50, p95).filter(*filters).one()
         stages[stage] = {"p50": _seconds(overall[0]), "p95": _seconds(overall[1])}
 
-    _, deploy_filters = _pipeline_finished("deploy", app_env.id, start)
+    _, deploy_filters = _pipeline_finished("deploy", app_env.id, start, end)
     day = func.date_trunc("day", Deployment.updated)
     throughput = [
         {"date": row[0].isoformat(), "success": row[1], "failure": row[2]}
@@ -9290,16 +9310,20 @@ def project_application_pipeline_stats(org_slug, project_slug, app_slug, env_slu
     )
 
     # Run time: image build + release build + deploy, matching each run's total
-    run_p50, run_p95 = (
-        db.session.query(
-            *_percentiles(_duration(Image) + _duration(Release) + _duration(Deployment))
-        )
-        .select_from(Deployment)
+    run_time = _percentiles(
+        _duration(Image) + _duration(Release) + _duration(Deployment)
+    )
+    run_rows = (
+        db.session.query(Deployment)
         .join(Release, Release.id == Deployment.release["id"].astext.cast(Uuid))
         .join(Image, Image.id == Release.image["id"].astext.cast(Uuid))
         .filter(*deploy_filters)
-        .one()
     )
+    run_p50, run_p95 = run_rows.with_entities(*run_time).one()
+    for row in run_rows.with_entities(day, *run_time).group_by(day):
+        trend[cast(datetime.datetime, row[0]).isoformat()].update(
+            {"p50_run": _seconds(row[1]), "p95_run": _seconds(row[2])}
+        )
 
     return jsonify(
         {
@@ -9334,10 +9358,14 @@ def project_application_pipeline_runs(org_slug, project_slug, app_slug, env_slug
     limit = max(1, min(request.args.get("limit", 20, type=int), 200))
     offset = max(request.args.get("offset", 0, type=int), 0)
 
+    start, end = _pipeline_window()
     query = Deployment.query.filter(
         Deployment.application_environment_id == app_env.id,
-        Deployment.created >= _pipeline_start(),
-    ).order_by(desc(Deployment.created))
+        Deployment.updated >= start,
+    )
+    if end is not None:
+        query = query.filter(Deployment.updated < end)
+    query = query.order_by(desc(Deployment.created))
     total_count = query.count()
     deployments = query.offset(offset).limit(limit).all()
 
@@ -9384,6 +9412,7 @@ def project_application_pipeline_runs(org_slug, project_slug, app_slug, env_slug
                 "trigger_type": d.trigger_type,
                 "sha": d.release_snapshot.commit_sha if d.release_snapshot else None,
                 "started": _iso_utc(img.created if img else d.created),
+                "finished": _iso_utc(d.updated) if d.complete or d.error else None,
             }
         )
 
@@ -9409,7 +9438,7 @@ def project_application_pipeline_slowest(
     stage = request.args.get("stage", "image")
     if stage not in _PIPELINE_STAGES:
         stage = "image"
-    model, filters = _pipeline_finished(stage, app_env.id, _pipeline_start())
+    model, filters = _pipeline_finished(stage, app_env.id, *_pipeline_window())
     rows = (
         model.query.filter(*filters)
         .order_by(desc(model.updated - model.created))
@@ -9431,6 +9460,7 @@ def project_application_pipeline_slowest(
                 "duration": _seconds(r.duration_seconds),
                 "sha": snapshot.commit_sha if snapshot else None,
                 "created": _iso_utc(r.created),
+                "finished": _iso_utc(r.updated),
             }
         )
 
