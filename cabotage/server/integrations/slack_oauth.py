@@ -1,6 +1,10 @@
 import datetime
 import logging
 import secrets
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from cabotage._types.vault import VaultSecretResponse
 
 import requests as http_requests
 from flask import (
@@ -137,7 +141,7 @@ def callback():
     # Store token in Vault
     vault_path = f"{vault.vault_prefix}/integrations/slack/{organization.id}"
     try:
-        vault.vault_connection.write(vault_path, bot_token=access_token)
+        vault.vault_connection.write(vault_path, None, bot_token=access_token)
     except Exception:
         log.exception("Failed to write Slack token to Vault")
         flash("Failed to store credentials securely. Please try again.", "danger")
@@ -285,19 +289,22 @@ def update_channel(org_slug):
     return redirect(url_for("user.organization_settings", org_slug=org_slug))
 
 
-def _get_slack_token(integration):
+def _get_slack_token(integration: SlackIntegration) -> str | None:
     """Read the bot token from Vault. Returns None on failure."""
     if not integration.access_token_vault_path:
         return None
     try:
-        secret = vault.vault_connection.read(integration.access_token_vault_path)
+        secret = cast(
+            "VaultSecretResponse",
+            vault.vault_connection.read(integration.access_token_vault_path),
+        )
         return secret["data"]["bot_token"]
     except Exception:
         log.warning("Failed to read Slack token from Vault", exc_info=True)
         return None
 
 
-def _slack_join_channel(integration, channel_id):
+def _slack_join_channel(integration: SlackIntegration, channel_id: str) -> None:
     """Join a public Slack channel. No-op if already joined or private."""
     token = _get_slack_token(integration)
     if not token:
@@ -313,7 +320,7 @@ def _slack_join_channel(integration, channel_id):
         log.warning("Failed to join Slack channel %s", channel_id, exc_info=True)
 
 
-def _slack_leave_channel(integration, channel_id):
+def _slack_leave_channel(integration: SlackIntegration, channel_id: str) -> None:
     """Leave a Slack channel. Best-effort."""
     token = _get_slack_token(integration)
     if not token:
@@ -329,13 +336,19 @@ def _slack_leave_channel(integration, channel_id):
         log.warning("Failed to leave Slack channel %s", channel_id, exc_info=True)
 
 
-def _send_slack_message(integration, channel_id, text, attachments=None):
+def _send_slack_message(
+    integration: SlackIntegration,
+    channel_id: str,
+    text: str,
+    # FIXME: properly annotate this
+    attachments: list[dict[str, object]] | None = None,
+):
     """Send a message to a Slack channel. Returns the message ts on success."""
     token = _get_slack_token(integration)
     if not token:
         return None
     try:
-        payload = {"channel": channel_id, "text": text}
+        payload: dict[str, object] = {"channel": channel_id, "text": text}
         if attachments:
             payload["attachments"] = attachments
         resp = http_requests.post(
@@ -376,14 +389,17 @@ def _update_slack_message(integration, channel_id, ts, text, attachments=None):
         log.warning("Failed to update Slack message", exc_info=True)
 
 
-def get_slack_channels(organization):
+def get_slack_channels(organization: Organization):
     """Fetch available channels from Slack for channel selection UI."""
     integration = organization.slack_integration
     if not integration or not integration.access_token_vault_path:
         return []
 
     try:
-        secret = vault.vault_connection.read(integration.access_token_vault_path)
+        secret = cast(
+            "VaultSecretResponse",
+            vault.vault_connection.read(integration.access_token_vault_path),
+        )
         token = secret["data"]["bot_token"]
     except Exception:
         log.warning("Failed to read Slack token from Vault", exc_info=True)

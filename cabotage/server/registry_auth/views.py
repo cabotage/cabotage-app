@@ -22,6 +22,8 @@ def docker_auth():
     if request.authorization is None:
         return jsonify({"error": "authorization required"}), 401
     password = request.authorization.password
+    if password is None:
+        return jsonify({"error": "invalid credentials"}), 401
     scope_params = request.args.getlist("scope")
     scope = " ".join(scope_params) if scope_params else "registry:catalog:*"
     requested_access = parse_docker_scope(scope)

@@ -289,7 +289,7 @@ class BuildError(RuntimeError):
 class BuildkitEnv:
     """Shared registry and buildkit configuration."""
 
-    def __init__(self, repository_name):
+    def __init__(self, repository_name: str) -> None:
         self.secret = current_app.config["REGISTRY_AUTH_SECRET"]
         self.registry = current_app.config["REGISTRY_BUILD"]
         self.registry_secure = current_app.config["REGISTRY_SECURE"]
@@ -517,7 +517,7 @@ def _fetch_image_source(image, access_token):
     }
 
 
-def build_release_buildkit(release):
+def build_release_buildkit(release: Release):
     bke = BuildkitEnv(release.repository_name)
     registry = bke.registry
     buildkit_image = bke.buildkit_image
@@ -595,6 +595,9 @@ def build_release_buildkit(release):
             )
             context_configmap_object = release.release_build_context_configmap
             safe_labels = _safe_labels_from_application(release.application)
+            if release.build_job_id is None:
+                raise Exception("Release missing build_job_id")
+
             job_object = kubernetes.client.V1Job(
                 metadata=kubernetes.client.V1ObjectMeta(
                     name=f"releasebuild-{release.build_job_id}",
@@ -799,6 +802,10 @@ def build_release_buildkit(release):
                 "context=context",
             ]
             context_configmap_object = release.release_build_context_configmap
+
+            if context_configmap_object.data is None:
+                raise Exception("ConfigMap missing data")
+
             with TemporaryDirectory() as tempdir:
                 os.makedirs(os.path.join(tempdir, "context"), exist_ok=True)
                 for file, contents in context_configmap_object.data.items():
@@ -836,6 +843,8 @@ def build_release_buildkit(release):
                 buildctl_command = [wrapper]
 
                 try:
+                    if release.build_job_id is None:
+                        raise Exception("Release missing build_job_id")
                     output = run_and_stream(
                         buildctl_command + buildctl_args,
                         env={
