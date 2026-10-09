@@ -16,7 +16,7 @@ jobs:
     name: Lint
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv sync --frozen
       - run: uv run ruff format --check --diff .
       - run: uv run ruff check .
@@ -26,7 +26,7 @@ jobs:
     name: Type-Check
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv sync --frozen
       - name: ty
         run: uv run ty check cabotage
@@ -38,7 +38,7 @@ jobs:
     name: Security-Check
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv sync --frozen
       - run: uv run bandit -c pyproject.toml -r .
 
@@ -78,7 +78,7 @@ jobs:
       - name: Set up database extensions
         run: |
           docker run --rm --network host postgres:16 psql -h localhost -U postgres -d cabotage_test -c "CREATE EXTENSION IF NOT EXISTS citext; CREATE EXTENSION IF NOT EXISTS pgcrypto;"
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv sync --frozen
       - name: Run migrations
         run: uv run flask db upgrade

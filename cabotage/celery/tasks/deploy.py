@@ -2228,7 +2228,7 @@ def create_deployment(
                     "Content-Type": "application/merge-patch+json",
                     "Accept": "application/json",
                 },
-                response_type="V1Deployment",
+                response_types_map={200: "V1Deployment", 201: "V1Deployment"},
                 auth_settings=["BearerToken"],
                 _return_http_data_only=True,
             )
