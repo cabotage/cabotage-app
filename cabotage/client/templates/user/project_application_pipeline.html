@@ -112,7 +112,11 @@
 
 /* ── Section ── */
 .pipe-section { background: var(--surface-card); border: 1px solid var(--border-color);
-  border-radius: 0.75rem; overflow: hidden; }
+  border-radius: 0.75rem; overflow-x: auto; }
+@media (max-width: 640px) {
+  .pipe-run, .pipe-run-head { min-width: 640px; }
+  .pipe-slowest-row { min-width: 480px; }
+}
 .pipe-section-head { display: flex; align-items: center; justify-content: space-between;
   padding: 0.75rem 0.75rem 0; }
 .pipe-section-title { font-size: 0.75rem; font-weight: 600; color: var(--text-faint);
@@ -417,6 +421,8 @@
     };
     if (opts.bars) {
       chartOpts.scales.y.range = function(u, dmin, dmax) { return [0, (dmax || 1) * 1.2]; };
+      // half-day padding so edge bars aren't clipped
+      chartOpts.scales.x.range = function(u, min, max) { return [min - 43200, max + 43200]; };
     }
     new uPlot(chartOpts, data, el);
   }
@@ -446,7 +452,7 @@
               { label: 'Failure', stroke: C.fail, fill: C.fail + '50', width: 0,
                 paths: uPlot.paths.bars({ size: [0.3, 40], align: 1 }),
                 points: { show: false } }
-            ], { bars: true, valueFmt: function(v) { return Math.round(v).toString(); } });
+            ], { bars: true, valueFmt: function(v) { return v % 1 ? '' : String(v); } });
         } else { showEmpty(document.getElementById('chart-throughput')); }
 
         // Success rate
