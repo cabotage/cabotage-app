@@ -235,7 +235,7 @@ class Environment(Model, Timestamp):
         cascade="all, delete-orphan",
         order_by="EnvironmentConfiguration.name",
     )
-    resources: Mapped[list["Resource"]] = relationship(
+    resources: Mapped[list[Resource]] = relationship(
         back_populates="environment",
         cascade="all, delete-orphan",
     )
