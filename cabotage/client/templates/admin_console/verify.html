@@ -28,6 +28,9 @@
     {% else %}
       <p class="text-sm text-base-content/70">Verify your passkey, then review the target and impact. Nothing changes until you explicitly confirm on the next step.</p>
       <p class="adm-sub mt-2">Cancelling leaves the action unapplied.</p>
+      {% if v.replay and v.replay.body %}
+        <p class="adm-sub mt-2">Your submitted values stay in this page, not displayed, so it can resend the form after you confirm.</p>
+      {% endif %}
     {% endif %}
 
     <div class="flex flex-wrap items-center gap-2 mt-4">
