@@ -101,7 +101,7 @@ class User(Model, FsUserMixin):
     teams: Mapped[list[TeamMember]] = relationship(back_populates="user")
 
     def __repr__(self):
-        return "<User {0}>".format(self.username)
+        return f"<User {self.username}>"
 
     @property
     def projects(self):
