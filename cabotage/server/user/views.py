@@ -8691,8 +8691,7 @@ def _loki_query_response(selectors, process_names, tenant_id=None):
                         log_stream = parsed.get("stream", "")
                 except json.JSONDecodeError, TypeError:
                     pass
-            if message.endswith("\n"):
-                message = message[:-1]
+            message = message.removesuffix("\n")
             entries.append(
                 {
                     "ts": ts_ns,
