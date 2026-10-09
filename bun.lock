@@ -159,7 +159,7 @@
 
     "braces": ["braces@3.0.3", "", { "dependencies": { "fill-range": "^7.1.1" } }, "sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA=="],
 
-    "daisyui": ["daisyui@5.7.42", "", {}, "sha512-1Enls+br/2ZJG+DHUlaVYMq/hQLTP2hyiTKt0kRBywJjoau0kHy1NDF1Oqo95cyVR1STzZK+7vyz1KxQroJU3w=="],
+    "daisyui": ["daisyui@5.7.46", "", {}, "sha512-z/tfVXLpLRe1ojGeokzxauHA9Ij5CGfk+83EdatQbFSVr02h5mUcp4nkgQJOw68wH1wAAPu/SY+MWbDdJG2R4w=="],
 
     "detect-libc": ["detect-libc@2.1.2", "", {}, "sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ=="],
 
