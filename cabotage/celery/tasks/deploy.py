@@ -2834,10 +2834,8 @@ def deploy_release(deployment: Deployment):
             custom_objects_api_instance, enrollment, deployment.release_object, log=log
         )
         if any(
-            [
-                process_name.startswith("web")
+            process_name.startswith("web")
                 for process_name in deployment.release_object.processes
-            ]
         ):
             log("Fetching web Service(s)")
             for process_name in deployment.release_object.processes:
@@ -2847,10 +2845,8 @@ def deploy_release(deployment: Deployment):
                         core_api_instance, deployment.release_object, process_name
                     )
         if any(
-            [
-                process_name.startswith("tcp")
+            process_name.startswith("tcp")
                 for process_name in deployment.release_object.processes
-            ]
         ):
             log("Fetching tcp Service(s)")
             for process_name in deployment.release_object.processes:
@@ -3314,10 +3310,8 @@ def fake_deploy_release(deployment):
     )
     deploy_log.append(yaml.dump(remove_none(cabotage_enrollment)))
     if any(
-        [
-            process_name.startswith("web")
+        process_name.startswith("web")
             for process_name in deployment.release_object.processes
-        ]
     ):
         deploy_log.append("Fetching web Service(s)")
         for process_name in deployment.release_object.processes:
@@ -3326,10 +3320,8 @@ def fake_deploy_release(deployment):
                 service = render_service(deployment.release_object, process_name)
                 deploy_log.append(yaml.dump(remove_none(service.to_dict())))
     if any(
-        [
-            process_name.startswith("tcp")
+        process_name.startswith("tcp")
             for process_name in deployment.release_object.processes
-        ]
     ):
         deploy_log.append("Fetching tcp Service(s)")
         for process_name in deployment.release_object.processes:
