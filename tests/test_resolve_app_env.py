@@ -1,6 +1,7 @@
 """Tests for _resolve_app_env_for_hook — pure DB tests, no mocking."""
 
 import uuid
+from datetime import UTC
 
 import pytest
 
@@ -13,7 +14,6 @@ from cabotage.server.models.projects import (
     Project,
 )
 from cabotage.server.wsgi import app as _app
-from datetime import UTC
 
 REPO = "myorg/myrepo"
 

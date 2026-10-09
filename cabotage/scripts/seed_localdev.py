@@ -9,6 +9,7 @@ realistic data so the UI is fully populated:
 """
 
 import datetime
+import sys
 
 from cabotage.server import create_app, db
 from cabotage.server.models import Organization, User
@@ -26,7 +27,6 @@ from cabotage.server.models.projects import (
     Project,
     Release,
 )
-import sys
 
 
 def _make_config(app, app_env, name, value, *, secret=False):

@@ -15,6 +15,8 @@ except ImportError:
     DockerLexer: Any = None
     TextLexer: Any = None
 
+from datetime import UTC
+
 import humanize as humanize_lib
 from celery import Celery, Task
 from celery.schedules import crontab
@@ -47,7 +49,6 @@ from cabotage.server.ext.kubernetes import Kubernetes
 from cabotage.server.ext.vault import Vault
 from cabotage.server.ext.vault_db_creds import VaultDBCreds
 from cabotage.server.mfa import CabotageWebauthnUtil
-from datetime import UTC
 
 # instantiate the extensions
 bcrypt = Bcrypt()

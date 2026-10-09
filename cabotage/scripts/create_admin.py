@@ -1,3 +1,5 @@
+import sys
+
 from cabotage.server import create_app, db
 from cabotage.server.models import Organization, User
 from cabotage.server.models.projects import (
@@ -6,7 +8,6 @@ from cabotage.server.models.projects import (
     Environment,
     Project,
 )
-import sys
 
 app = create_app()
 
