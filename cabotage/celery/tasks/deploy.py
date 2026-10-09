@@ -1982,7 +1982,7 @@ def render_podspec(release, process_name, service_account_name):
             )
         )
         restart_policy = "OnFailure"
-    elif process_name.startswith("release") or process_name.startswith("postdeploy"):
+    elif process_name.startswith(("release", "postdeploy")):
         init_containers.append(
             render_cabotage_sidecar_container(release, process_name, with_tls=False)
         )
@@ -2004,7 +2004,7 @@ def render_podspec(release, process_name, service_account_name):
 
     if (
         not (
-            process_name.startswith("release") or process_name.startswith("postdeploy")
+            process_name.startswith(("release", "postdeploy"))
         )
         and "DD_API_KEY" in release.configuration_objects
     ):

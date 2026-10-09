@@ -3505,7 +3505,7 @@ def project_application_shell(org_slug, project_slug, app_slug, env_slug=None):
         [
             k
             for k, v in app_env.process_counts.items()
-            if (k.startswith("web") or k.startswith("worker")) and v > 0
+            if (k.startswith(("web", "worker"))) and v > 0
         ][0]
     except IndexError:
         abort(404)
@@ -3573,7 +3573,7 @@ def _shell_socket(
         process_name = [
             k
             for k, v in process_counts.items()
-            if (k.startswith("web") or k.startswith("worker")) and v > 0
+            if (k.startswith(("web", "worker"))) and v > 0
         ][0]
     except IndexError:
         abort(404)

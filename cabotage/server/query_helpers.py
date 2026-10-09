@@ -549,7 +549,7 @@ def split_image_processes(
         k: v
         for k, v in all_procs.items()
         if not (
-            k.startswith("release") or k.startswith("postdeploy") or k.startswith("job")
+            k.startswith(("release", "postdeploy", "job"))
         )
     }
     release_cmds = {k: v for k, v in all_procs.items() if k.startswith("release")}
