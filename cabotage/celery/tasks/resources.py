@@ -7,15 +7,18 @@ import struct
 from collections.abc import Mapping
 
 import kubernetes.client
-from kubernetes.client.api_client import ApiClient
 from celery import shared_task
 from flask import current_app, has_app_context
+from kubernetes.client.api_client import ApiClient
 from kubernetes.client.exceptions import ApiException
 from sqlalchemy import text
 
+from cabotage.celery.tasks.deploy import ensure_namespace, ensure_network_policies
 from cabotage.server import (
     config_writer,
     db,
+)
+from cabotage.server import (
     kubernetes as kubernetes_ext,
 )
 from cabotage.server.config import validate_tenant_postgres_backup_config
@@ -24,7 +27,6 @@ from cabotage.server.models.resources import (
     redis_size_classes,
 )
 from cabotage.server.models.utils import safe_k8s_name
-from cabotage.celery.tasks.deploy import ensure_namespace, ensure_network_policies
 
 log = logging.getLogger(__name__)
 
@@ -176,7 +178,7 @@ def _resource_env_config_is_current(config, value, secret):
 
 
 def _is_legacy_resource_url_config(name):
-    return name.endswith("_DATABASE_URL") or name.endswith("_REDIS_URL")
+    return name.endswith(("_DATABASE_URL", "_REDIS_URL"))
 
 
 def _resource_labels(resource):
@@ -243,9 +245,9 @@ def _tenant_postgres_backups_enabled(resource=None):
         return False
     if not current_app.config.get("TENANT_POSTGRES_BACKUPS_ENABLED"):
         return False
-    if resource is not None and getattr(resource, "backup_strategy", None) == "none":
-        return False
-    return True
+    return not (
+        resource is not None and getattr(resource, "backup_strategy", None) == "none"
+    )
 
 
 def _postgres_backup_requires_continuous_archiving(resource):
@@ -531,7 +533,7 @@ def _sync_statefulset_pod_annotations(apps_api, namespace, statefulset_name):
         raise
 
     metadata = statefulset.spec.template.metadata
-    current_annotations = dict((metadata.annotations or {}))
+    current_annotations = dict(metadata.annotations or {})
     annotations = {
         key: value
         for key, value in current_annotations.items()
@@ -1580,10 +1582,10 @@ _RECONCILERS = {
 @shared_task()
 def reconcile_backing_services():
     """Periodic task: converge all backing service resources to desired state."""
-    from cabotage.server.models.resources import Resource
     from cabotage.celery.tasks.build import (
         resume_branch_deploy_releases_for_environment,
     )
+    from cabotage.server.models.resources import Resource
 
     lock_conn = _try_acquire_reconcile_lock()
     if lock_conn is None:

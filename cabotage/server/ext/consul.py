@@ -1,12 +1,13 @@
 import os
+from typing import cast
 
 import consul
-
-from cabotage.utils.context import modified_environ
 from flask import g
 
+from cabotage.utils.context import modified_environ
 
-class Consul(object):
+
+class Consul:
     def __init__(self, app=None):
         self.app = app
         if app is not None:
@@ -19,15 +20,19 @@ class Consul(object):
         self.consul_verify = app.config.get("CONSUL_VERIFY", False)
         self.consul_cert = app.config.get("CONSUL_CERT", None)
         self.consul_prefix = app.config.get("CONSUL_PREFIX", "cabotage")
-        self.consul_token_file = app.config.get(
-            "CONSUL_TOKEN_FILE", os.path.expanduser("~/.consul-token")
+        self.consul_token_file = (
+            cast(  # FIXME: Remove once "typed config" is implemented
+                str,
+                app.config.get(
+                    "CONSUL_TOKEN_FILE", os.path.expanduser("~/.consul-token")
+                ),
+            )
         )
         self.consul_token = app.config.get("CONSUL_TOKEN", None)
 
-        if self.consul_token is None:
-            if os.path.exists(self.consul_token_file):
-                with open(self.consul_token_file, "r") as consul_token_file:
-                    self.consul_token = consul_token_file.read().lstrip().rstrip()
+        if self.consul_token is None and os.path.exists(self.consul_token_file):
+            with open(self.consul_token_file, "r") as consul_token_file:
+                self.consul_token = consul_token_file.read().lstrip().rstrip()
 
         app.teardown_appcontext(self.teardown)
 

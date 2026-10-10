@@ -175,10 +175,8 @@ class TestApplicationClearCache:
             ]
 
             response = client.post(
-                (
-                    f"/projects/{org.slug}/{project.slug}/applications/"
-                    f"{application.slug}/clearcache"
-                )
+                f"/projects/{org.slug}/{project.slug}/applications/"
+                f"{application.slug}/clearcache"
             )
 
         assert response.status_code == 302

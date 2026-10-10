@@ -5,12 +5,12 @@ import os
 from unittest.mock import MagicMock, patch
 
 from cabotage.celery.tasks.reap_jobs import (
+    DEFAULT_REAP_LIMIT,
+    _extract_resources,
     _is_finished,
     _is_succeeded,
     _parse_datetime,
-    _extract_resources,
     _reap_limit,
-    DEFAULT_REAP_LIMIT,
 )
 
 # ---------------------------------------------------------------------------
@@ -128,7 +128,7 @@ class TestParseDatetime:
         assert _parse_datetime(None) is None
 
     def test_datetime_passthrough(self):
-        dt = datetime.datetime(2026, 3, 27, 14, 2, 0)
+        dt = datetime.datetime(2026, 3, 27, 14, 2, 0, tzinfo=datetime.UTC)
         assert _parse_datetime(dt) is dt
 
     def test_iso_string_with_z(self):

@@ -8,13 +8,13 @@ import datetime
 import os
 
 import kubernetes.client
+from celery import shared_task
+from flask import current_app
 from kubernetes.client.exceptions import ApiException
 from sqlalchemy.exc import IntegrityError
 
-from celery import shared_task
-from flask import current_app
-
-from cabotage.server import db, kubernetes as kubernetes_ext
+from cabotage.server import db
+from cabotage.server import kubernetes as kubernetes_ext
 from cabotage.server.models.projects import (
     Application,
     ApplicationEnvironment,
@@ -52,7 +52,7 @@ def _parse_datetime(value):
         return None
     if isinstance(value, datetime.datetime):
         return value
-    return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return datetime.datetime.fromisoformat(value)
 
 
 def _extract_resources(job):

@@ -9,6 +9,7 @@ realistic data so the UI is fully populated:
 """
 
 import datetime
+import sys
 
 from cabotage.server import create_app, db
 from cabotage.server.models import Organization, User
@@ -180,7 +181,7 @@ def seed():
         print(
             "Warning: this command should only be run in development/test environments"
         )
-        exit(1)
+        sys.exit(1)
 
     with app.app_context():
         # ── Run create_admin logic first ──────────────────────────────
@@ -209,7 +210,7 @@ def seed():
             org = Organization.query.filter_by(slug="acme-corp").first()
             if org is None:
                 print("ERROR: admin exists but Acme Corp org not found!")
-                exit(1)
+                sys.exit(1)
 
         # ── Extra dev user ────────────────────────────────────────────
         dev_user = User.query.filter_by(username="dev").first()
@@ -547,7 +548,7 @@ def seed():
             application_environment_id=web_prod.id,
         ).count()
         if existing_job_logs == 0:
-            now = datetime.datetime.now(datetime.timezone.utc)
+            now = datetime.datetime.now(datetime.UTC)
             for proc_name, interval_min, count in [
                 ("job-cleanup", 360, 12),
                 ("job-reports", 1440, 7),

@@ -141,7 +141,7 @@ def repair_ingress_hostname(hostname: str, ingress_name: str) -> str:
     return _shorten_ingress_hostname(label, ingress_name) + dot + domain
 
 
-class DictDiffer(object):
+class DictDiffer:
     """
     Calculate the difference between two dictionaries as:
     (1) items added
@@ -197,18 +197,18 @@ class DictDiffer(object):
         return self.past_keys - self.intersect
 
     def changed(self):
-        return set(
+        return {
             o
             for o in self.intersect
             if self._strip(self.past_dict[o]) != self._strip(self.current_dict[o])
-        )
+        }
 
     def unchanged(self):
-        return set(
+        return {
             o
             for o in self.intersect
             if self._strip(self.past_dict[o]) == self._strip(self.current_dict[o])
-        )
+        }
 
     def has_changes(self):
         return self.added() or self.removed() or self.changed()

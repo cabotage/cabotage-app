@@ -85,6 +85,9 @@ skip_empty = true
 [tool.bandit]
 exclude_dirs = ["bin", "lib", "tests"]
 
+[tool.ruff.lint]
+ignore = ["EXE002"]
+
 [tool.uv]
 exclude-newer = "1 week"
 

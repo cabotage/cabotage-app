@@ -1,7 +1,7 @@
 import hashlib
 import os
 from html import escape
-from typing import Any, ClassVar, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import sentry_sdk
 
@@ -15,42 +15,40 @@ except ImportError:
     DockerLexer: Any = None
     TextLexer: Any = None
 
+from datetime import UTC
+
+import humanize as humanize_lib
+from celery import Celery, Task
+from celery.schedules import crontab
 from flask import Flask, render_template, url_for
-from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_admin import Admin
 from flask_babel import Babel
 from flask_bcrypt import Bcrypt
 from flask_debugtoolbar import DebugToolbarExtension
-import humanize as humanize_lib
 from flask_mail import Mail
 from flask_migrate import Migrate
-from flask_security import Security, SQLAlchemyUserDatastore
 from flask_principal import Principal, identity_loaded
-
-from flask_sqlalchemy import SQLAlchemy
+from flask_security import Security, SQLAlchemyUserDatastore
 from flask_sock import Sock
+from flask_sqlalchemy import SQLAlchemy
 from flask_wtf.csrf import CSRFProtect
-
-from celery import Celery
-from celery import Task
-from celery.schedules import crontab
 from sentry_sdk.integrations.flask import FlaskIntegration
 from sqlalchemy import MetaData
 from sqlalchemy.orm import DeclarativeBase
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from cabotage.server.acl import cabotage_on_identity_loaded
-
-from cabotage.server.ext.consul import Consul
-from cabotage.server.ext.vault import Vault
-from cabotage.server.ext.config_writer import ConfigWriter
-from cabotage.server.ext.kubernetes import Kubernetes
-from cabotage.server.ext.vault_db_creds import VaultDBCreds
-from cabotage.server.ext.github_app import GitHubApp
-from cabotage.server.mfa import CabotageWebauthnUtil
 from cabotage.server.config import (
     validate_security_secrets_config,
     validate_tenant_postgres_backup_config,
 )
+from cabotage.server.ext.config_writer import ConfigWriter
+from cabotage.server.ext.consul import Consul
+from cabotage.server.ext.github_app import GitHubApp
+from cabotage.server.ext.kubernetes import Kubernetes
+from cabotage.server.ext.vault import Vault
+from cabotage.server.ext.vault_db_creds import VaultDBCreds
+from cabotage.server.mfa import CabotageWebauthnUtil
 
 # instantiate the extensions
 bcrypt = Bcrypt()
@@ -102,7 +100,7 @@ def _sentry_before_send(event, hint):
     gunicorn that a WebSocket connection has closed (not an error)."""
     exc_info = hint.get("exc_info")
     if exc_info:
-        exc_type, exc_value, tb = exc_info
+        exc_type, _exc_value, tb = exc_info
         if exc_type is StopIteration and tb is not None:
             # Walk to the innermost frame
             while tb.tb_next:
@@ -193,7 +191,7 @@ def create_app():
 
     admin = Admin(name="cabotage_admin", index_view=AdminIndexView())
 
-    from cabotage.server.models.auth import User, Role, WebAuthn
+    from cabotage.server.models.auth import Role, User, WebAuthn
 
     user_datastore = SQLAlchemyUserDatastore(db, User, Role, webauthn_model=WebAuthn)
 
@@ -277,12 +275,12 @@ def create_app():
         register_form=ExtendedRegisterForm,
         login_form=ExtendedLoginForm,
     )
-    from cabotage.server.user.github_oauth import init_github_oauth
-    from cabotage.server.integrations.slack_oauth import init_slack_oauth
     from cabotage.server.integrations.discord_oauth import init_discord_oauth
     from cabotage.server.integrations.notification_routing import (
         init_notification_routing,
     )
+    from cabotage.server.integrations.slack_oauth import init_slack_oauth
+    from cabotage.server.user.github_oauth import init_github_oauth
 
     init_github_oauth(app)
     init_slack_oauth(app)
@@ -317,11 +315,11 @@ def create_app():
         """Server-side timeago matching the JS timeago() function exactly."""
         if value is None:
             return ""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
+            value = value.replace(tzinfo=UTC)
         diff = max(0, int((now - value).total_seconds()))
         if diff < 2:
             return "just now"
@@ -393,11 +391,11 @@ def create_app():
     babel.init_app(app)
 
     # register blueprints
-    from cabotage.server.user.views import user_blueprint
+    from cabotage.server.alerting.views import alerting_blueprint
     from cabotage.server.main.views import main_blueprint
     from cabotage.server.oidc.views import oidc_blueprint
     from cabotage.server.registry_auth.views import registry_auth_blueprint
-    from cabotage.server.alerting.views import alerting_blueprint
+    from cabotage.server.user.views import user_blueprint
 
     app.register_blueprint(user_blueprint)
     app.register_blueprint(main_blueprint)
@@ -434,17 +432,17 @@ def create_app():
     from cabotage.server.models.admin import AdminModelView
     from cabotage.server.models.auth import Organization, OrganizationRequest, Team
     from cabotage.server.models.projects import (
-        Project,
+        Alert,
         Application,
         Configuration,
+        Deployment,
+        Hook,
         Image,
         Ingress,
         IngressHost,
         IngressPath,
+        Project,
         Release,
-        Deployment,
-        Hook,
-        Alert,
     )
 
     admin.add_view(AdminModelView(Role, db.session))

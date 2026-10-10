@@ -1,7 +1,7 @@
 import datetime
 import json
 import uuid
-from typing import Any, TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 if TYPE_CHECKING:
     from cabotage.server.models.auth import Organization
@@ -9,8 +9,8 @@ if TYPE_CHECKING:
 
 from flask import current_app
 from sqlalchemy import (
-    Boolean,
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -23,30 +23,29 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.event import listens_for
-from sqlalchemy.orm import DynamicMapped, Mapped, mapped_column, relationship, backref
+from sqlalchemy.orm import DynamicMapped, Mapped, backref, mapped_column, relationship
 from sqlalchemy_continuum import make_versioned
 from sqlalchemy_continuum.plugins import FlaskPlugin
 from sqlalchemy_utils.models import Timestamp
 
-from cabotage.server import db, Model
-
+from cabotage._types import assume_not_none
+from cabotage.server import Model, db
 from cabotage.server.models.plugins import ActivityPlugin
 from cabotage.server.models.utils import (
+    DictDiffer,
     generate_k8s_identifier,
     readable_k8s_hostname,
     safe_k8s_name,
     slugify,
-    DictDiffer,
 )
 from cabotage.utils.docker_auth import (
     generate_docker_credentials,
     generate_kubernetes_imagepullsecrets,
 )
 from cabotage.utils.release_build_context import (
-    configmap_context_for_release,
     RELEASE_DOCKERFILE_TEMPLATE,
+    configmap_context_for_release,
 )
-from cabotage._types import assume_not_none
 
 activity_plugin = ActivityPlugin()
 flask_plugin = FlaskPlugin()
@@ -236,7 +235,7 @@ class Environment(Model, Timestamp):
         cascade="all, delete-orphan",
         order_by="EnvironmentConfiguration.name",
     )
-    resources: Mapped[list["Resource"]] = relationship(
+    resources: Mapped[list[Resource]] = relationship(
         back_populates="environment",
         cascade="all, delete-orphan",
     )
@@ -463,9 +462,11 @@ class ApplicationEnvironment(Model, Timestamp):
     def effective_github_environment_name(self):
         if self.github_environment_name is not None:
             return self.github_environment_name
-        if not self.application.project.environments_enabled:
-            if self.application.github_environment_name is not None:
-                return self.application.github_environment_name
+        if (
+            not self.application.project.environments_enabled
+            and self.application.github_environment_name is not None
+        ):
+            return self.application.github_environment_name
         return f"{self.application.project.organization.slug}/{self.application.project.slug}/{self.environment.slug}/{self.application.slug}"
 
     @property
@@ -1013,7 +1014,7 @@ class Release(Model, Timestamp):
                 '    denylist = ["CONSUL_*", "VAULT_*", "KUBERNETES_*"]\n  }\n'
             )
         exec_statement += "}"
-        configurations["shell"] = "\n".join([exec_statement, environment_statements])
+        configurations["shell"] = f"{exec_statement}\n{environment_statements}"
         for proc_name, proc in self.image_snapshot.processes.items():
             proc_env = [f"{key}={value}" for key, value in proc["env"]]
             proc_env.extend(resolved_template_env)
@@ -1027,9 +1028,7 @@ class Release(Model, Timestamp):
                     "  }\n"
                 )
             exec_statement += "}"
-            configurations[proc_name] = "\n".join(
-                [exec_statement, environment_statements]
-            )
+            configurations[proc_name] = f"{exec_statement}\n{environment_statements}"
         return configurations
 
     @property
@@ -1053,11 +1052,7 @@ class Release(Model, Timestamp):
         return {
             k: v
             for k, v in self.image_snapshot.processes.items()
-            if not (
-                k.startswith("release")
-                or k.startswith("postdeploy")
-                or k.startswith("job")
-            )
+            if not (k.startswith(("release", "postdeploy", "job")))
         }
 
     @property
@@ -1789,11 +1784,7 @@ class ReleaseSnapshot:
         return {
             k: v
             for k, v in self.image_snapshot.processes.items()
-            if not (
-                k.startswith("release")
-                or k.startswith("postdeploy")
-                or k.startswith("job")
-            )
+            if not (k.startswith(("release", "postdeploy", "job")))
         }
 
     @property

@@ -2,16 +2,21 @@ import datetime
 import logging
 
 import kubernetes.client
-
 from celery import shared_task
 from flask import current_app
 
-from cabotage.server import db, github_app, kubernetes as kubernetes_ext
-from cabotage.server.models.projects import Deployment, Image, Release
+from cabotage._types import (
+    K8S_OBJECT_HAS_STATUS,
+    K8S_POD_HAS_START_TIME,
+    assume_not_none,
+)
 from cabotage.celery.tasks.notify import (
     dispatch_autodeploy_notification,
     dispatch_pipeline_notification,
 )
+from cabotage.server import db, github_app
+from cabotage.server import kubernetes as kubernetes_ext
+from cabotage.server.models.projects import Deployment, Image, Release
 from cabotage.utils.build_log_stream import (
     get_redis_client,
     heartbeat_key,
@@ -19,11 +24,6 @@ from cabotage.utils.build_log_stream import (
     stream_key,
 )
 from cabotage.utils.github import cabotage_url, post_deployment_status_update
-from cabotage._types import (
-    assume_not_none,
-    K8S_OBJECT_HAS_STATUS,
-    K8S_POD_HAS_START_TIME,
-)
 
 log = logging.getLogger(__name__)
 
@@ -84,14 +84,12 @@ def _dispatch_reap_failure(obj, obj_type, notification_type):
 def reap_stale_builds():
     """Find stuck image builds, release builds, and deploys with no heartbeat."""
     redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
-    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
-        seconds=90
-    )
+    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=90)
 
     # Images: built=False, error=False, updated < cutoff, no heartbeat
     stuck_images = Image.query.filter(
-        Image.built == False,  # noqa: E712
-        Image.error == False,  # noqa: E712
+        Image.built == False,
+        Image.error == False,
         Image.updated < cutoff,
     ).all()
     for image in stuck_images:
@@ -135,8 +133,8 @@ def reap_stale_builds():
 
     # Releases: built=False, error=False, updated < cutoff, no heartbeat
     stuck_releases = Release.query.filter(
-        Release.built == False,  # noqa: E712
-        Release.error == False,  # noqa: E712
+        Release.built == False,
+        Release.error == False,
         Release.updated < cutoff,
     ).all()
     for release in stuck_releases:
@@ -180,8 +178,8 @@ def reap_stale_builds():
 
     # Deployments: complete=False, error=False, updated < cutoff, no heartbeat
     stuck_deployments = Deployment.query.filter(
-        Deployment.complete == False,  # noqa: E712
-        Deployment.error == False,  # noqa: E712
+        Deployment.complete == False,
+        Deployment.error == False,
         Deployment.updated < cutoff,
     ).all()
     for deployment in stuck_deployments:
@@ -237,15 +235,15 @@ def reap_pods() -> None:
     )
     if not pods.items:
         return
-    candidate = sorted(
+    candidate = min(
         pods.items,
         key=lambda pod: assume_not_none(
             assume_not_none(pod.status, because=K8S_OBJECT_HAS_STATUS).start_time,
             because=K8S_POD_HAS_START_TIME,
         ),
-    )[0]
+    )
     lookback = datetime.datetime.now().replace(
-        tzinfo=datetime.timezone.utc
+        tzinfo=datetime.UTC
     ) - datetime.timedelta(days=7)
 
     # https://github.com/kubernetes/community/blob/a27eb0e0dbf559dd5c7be668d18709b5b6110631/contributors/devel/sig-architecture/api-conventions.md?plain=1#L231-L232

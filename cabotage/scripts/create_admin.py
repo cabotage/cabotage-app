@@ -1,3 +1,5 @@
+import sys
+
 from cabotage.server import create_app, db
 from cabotage.server.models import Organization, User
 from cabotage.server.models.projects import (
@@ -11,7 +13,7 @@ app = create_app()
 
 if not app.config["DEBUG"]:
     print("Warning: this command should only be run in development/test environments")
-    exit(1)
+    sys.exit(1)
 
 with app.app_context():
     user = User(  # nosec

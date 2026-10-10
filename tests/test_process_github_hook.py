@@ -71,10 +71,10 @@ def environment(db_session, project):
 
 
 def _make_app(project, installation_id, slug="webapp", **kwargs):
-    defaults = dict(
-        github_repository=REPO,
-        auto_deploy_branch="main",
-    )
+    defaults = {
+        "github_repository": REPO,
+        "auto_deploy_branch": "main",
+    }
     defaults.update(kwargs)
     application = Application(
         name=slug,

@@ -23,8 +23,6 @@ SHARED_TEMPLATE_PATTERN: Final = re.compile(r"\$\{shared\.([a-zA-Z_][a-zA-Z0-9_]
 class TemplateResolutionError(Exception):
     """Raised when a template variable cannot be resolved."""
 
-    pass
-
 
 def has_template_variables(value: str) -> bool:
     """Return True if the value contains any template variable references."""

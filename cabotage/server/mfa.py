@@ -61,7 +61,7 @@ def register_mfa_guards(app):
         if endpoint in {"security.logout", "security.static", "static"}:
             return None
 
-        has_totp, num_webauthn, has_mfa = get_mfa_status(current_user)
+        _has_totp, _num_webauthn, has_mfa = get_mfa_status(current_user)
 
         # Step 1: No MFA — force setup
         if not has_mfa:
@@ -101,13 +101,15 @@ def register_mfa_guards(app):
         """Block password endpoints for GitHub OAuth users and intercept
         password reset requests to send a reminder email instead."""
         # Authenticated GitHub users can't change password
-        if current_user.is_authenticated:
-            if (
+        if (
+            current_user.is_authenticated
+            and (
                 hasattr(current_user, "github_identity")
                 and current_user.github_identity
-            ):
-                if request.endpoint == "security.change_password":
-                    abort(403)
+            )
+            and request.endpoint == "security.change_password"
+        ):
+            abort(403)
 
         # Intercept forgot_password POST for GitHub users
         if request.endpoint == "security.forgot_password" and request.method == "POST":
@@ -152,7 +154,7 @@ def register_mfa_guards(app):
         """Set session['tf_remember_login'] from the 'Trust this browser'
         checkbox on 2FA verification forms."""
         if request.method != "POST":
-            return None
+            return
 
         tf_endpoints = {
             "security.two_factor_token_validation",
@@ -161,7 +163,7 @@ def register_mfa_guards(app):
             "security.mf_recovery",
         }
         if request.endpoint not in tf_endpoints:
-            return None
+            return
 
         # wan_signin POST carries the checkbox; stash for wan_signin_response
         if request.form.get("remember"):
@@ -170,7 +172,7 @@ def register_mfa_guards(app):
             # Don't clear on wan_signin_response — it was set by wan_signin
             session.pop("tf_remember_login", None)
 
-        return None
+        return
 
     @app.before_request
     def guard_last_mfa_method():
@@ -179,10 +181,10 @@ def register_mfa_guards(app):
             not hasattr(current_user, "tf_primary_method")
             or not current_user.is_authenticated
         ):
-            return None
+            return
 
         if request.method != "POST":
-            return None
+            return
 
         endpoint = request.endpoint
         if endpoint == "security.wan_delete":
@@ -198,4 +200,4 @@ def register_mfa_guards(app):
                 if total <= 1:
                     abort(403)
 
-        return None
+        return

@@ -11,8 +11,8 @@ import struct
 import uuid as _uuid
 from datetime import UTC, datetime, timedelta
 
-from celery import shared_task
 import sqlalchemy as sa
+from celery import shared_task
 from sqlalchemy.exc import IntegrityError
 
 from cabotage.server import db
@@ -843,7 +843,7 @@ def _reconcile_pipeline_notification(sent):
     if not check:
         return False
 
-    model_cls, is_terminal, get_state = check
+    model_cls, is_terminal, _get_state = check
     obj = model_cls.query.filter_by(id=sent.object_id).first()
     if not obj or not is_terminal(obj):
         return False

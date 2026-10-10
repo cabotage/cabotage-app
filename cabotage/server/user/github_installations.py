@@ -1,9 +1,9 @@
 import datetime
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+import requests
 from flask import current_app, url_for
 from itsdangerous import BadSignature, URLSafeTimedSerializer
-import requests
 from sqlalchemy import or_
 
 from cabotage.server import db, github_app
@@ -243,7 +243,7 @@ def sync_installation_repositories(
 
     app_installation.repositories = merge_repository_metadata([], repositories)
     app_installation.repositories_synced_at = datetime.datetime.now(
-        datetime.timezone.utc
+        datetime.UTC
     ).replace(tzinfo=None)
     sync_application_repository_metadata(app_installation)
     return True
@@ -401,7 +401,7 @@ def upsert_installation(
         app_installation.installed_by_user_id = installed_by_user_id
     app_installation.repositories = merge_repository_metadata([], repositories)
     app_installation.repositories_synced_at = datetime.datetime.now(
-        datetime.timezone.utc
+        datetime.UTC
     ).replace(tzinfo=None)
     sync_application_repository_metadata(app_installation)
     reconcile_selected_repository_applications(app_installation)
