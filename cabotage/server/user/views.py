@@ -6864,8 +6864,8 @@ def _observe_common_groups(allowed):
         "errors": request.args.get("errors", "total"),
         "network": request.args.get("network", "total"),
     }
-    for k in current_groups:
-        if current_groups[k] not in allowed:
+    for k, v in current_groups.items():
+        if v not in allowed:
             current_groups[k] = "total"
     return current_groups
 
@@ -6877,8 +6877,8 @@ def _observe_backing_service_groups(allowed):
         "memory": request.args.get("backing_memory", "total"),
         "network": request.args.get("backing_network", "total"),
     }
-    for key in current_groups:
-        if current_groups[key] not in allowed:
+    for key, value in current_groups.items():
+        if value not in allowed:
             current_groups[key] = "total"
     return current_groups
 
@@ -8985,8 +8985,8 @@ def infra_observe():
         "memory": request.args.get("memory", "total"),
         "network": request.args.get("network", "total"),
     }
-    for k in current_groups:
-        if current_groups[k] not in _INFRA_OBSERVE_GROUPS:
+    for k, v in current_groups.items():
+        if v not in _INFRA_OBSERVE_GROUPS:
             current_groups[k] = "total"
 
     has_time_window = bool(request.args.get("start") and request.args.get("end"))
