@@ -387,12 +387,9 @@ def _associate_app_with_environment(application, environment, organization, proj
         secret=False,
         buildtime=False,
     )
-    try:
-        ns = _config_k8s_namespace(organization, app_env)
-        prefix = _config_k8s_resource_prefix(project, application)
-        key_slugs = config_writer.write_configuration(ns, prefix, sentinel)
-    except Exception:
-        raise
+    ns = _config_k8s_namespace(organization, app_env)
+    prefix = _config_k8s_resource_prefix(project, application)
+    key_slugs = config_writer.write_configuration(ns, prefix, sentinel)
     sentinel.key_slug = key_slugs["config_key_slug"]
     sentinel.build_key_slug = key_slugs["build_key_slug"]
     db.session.add(sentinel)
@@ -2210,21 +2207,18 @@ def project_environment_configuration_create(org_slug, project_slug, env_slug):
             buildtime=form.buildtime.data,
         )
         if not is_template:
-            try:
-                # Use any active app_env to derive the k8s namespace
-                app_env = (
-                    environment.active_application_environments[0]
-                    if environment.active_application_environments
-                    else None
-                )
-                if app_env:
-                    ns = _config_k8s_namespace(organization, app_env)
-                else:
-                    ns = environment.k8s_namespace
-                prefix = _env_config_k8s_resource_prefix(project)
-                key_slugs = config_writer.write_configuration(ns, prefix, configuration)
-            except Exception:
-                raise
+            # Use any active app_env to derive the k8s namespace
+            app_env = (
+                environment.active_application_environments[0]
+                if environment.active_application_environments
+                else None
+            )
+            if app_env:
+                ns = _config_k8s_namespace(organization, app_env)
+            else:
+                ns = environment.k8s_namespace
+            prefix = _env_config_k8s_resource_prefix(project)
+            key_slugs = config_writer.write_configuration(ns, prefix, configuration)
             configuration.key_slug = key_slugs["config_key_slug"]
             configuration.build_key_slug = key_slugs["build_key_slug"]
             if configuration.secret:
@@ -2338,20 +2332,17 @@ def project_environment_configuration_edit(org_slug, project_slug, env_slug, con
             )
 
         if not is_template:
-            try:
-                app_env = (
-                    environment.active_application_environments[0]
-                    if environment.active_application_environments
-                    else None
-                )
-                if app_env:
-                    ns = _config_k8s_namespace(organization, app_env)
-                else:
-                    ns = environment.k8s_namespace
-                prefix = _env_config_k8s_resource_prefix(project)
-                key_slugs = config_writer.write_configuration(ns, prefix, configuration)
-            except Exception:
-                raise
+            app_env = (
+                environment.active_application_environments[0]
+                if environment.active_application_environments
+                else None
+            )
+            if app_env:
+                ns = _config_k8s_namespace(organization, app_env)
+            else:
+                ns = environment.k8s_namespace
+            prefix = _env_config_k8s_resource_prefix(project)
+            key_slugs = config_writer.write_configuration(ns, prefix, configuration)
             configuration.key_slug = key_slugs["config_key_slug"]
             configuration.build_key_slug = key_slugs["build_key_slug"]
             if configuration.secret:
@@ -3736,12 +3727,9 @@ def project_application_create(org_slug, project_slug):
                 secret=False,
                 buildtime=False,
             )
-            try:
-                ns = _config_k8s_namespace(organization, app_env)
-                prefix = _config_k8s_resource_prefix(project, application)
-                key_slugs = config_writer.write_configuration(ns, prefix, configuration)
-            except Exception:
-                raise  # No, we should def not do this
+            ns = _config_k8s_namespace(organization, app_env)
+            prefix = _config_k8s_resource_prefix(project, application)
+            key_slugs = config_writer.write_configuration(ns, prefix, configuration)
             configuration.key_slug = key_slugs["config_key_slug"]
             configuration.build_key_slug = key_slugs["build_key_slug"]
             db.session.add(configuration)
