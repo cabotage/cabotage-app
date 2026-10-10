@@ -483,11 +483,11 @@ def _teardown_environment(environment: Environment) -> None:
     # SQLAlchemy Continuum can version subtype rows during flush.
     for resource in list(environment.active_resources):
         if isinstance(resource, PostgresResource):
-            resource.backup_strategy
-            resource.postgres_parameters
+            _ = resource.backup_strategy
+            _ = resource.postgres_parameters
         elif isinstance(resource, RedisResource):
-            resource.leader_replicas
-            resource.follower_replicas
+            _ = resource.leader_replicas
+            _ = resource.follower_replicas
     db.session.flush()
     # Deleting the environment cascades to its application_environments
     db.session.delete(environment)
