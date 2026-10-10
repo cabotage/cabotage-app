@@ -266,7 +266,7 @@ def reconcile_tailscale_integration_states():
                 integration.operator_state = "missing"
                 db.session.commit()
             continue
-        except Exception:  # nosec B112 — don't let one org's error stop the reconcile loop
+        except Exception:  # nosec B112 — don't let one org's error stop the reconcile loop # noqa: S112
             continue
 
         status = crd.get("status", {}).get("reconcile_operator", {})
