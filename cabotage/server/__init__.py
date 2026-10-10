@@ -315,7 +315,7 @@ def create_app():
         """Server-side timeago matching the JS timeago() function exactly."""
         if value is None:
             return ""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         now = datetime.now(UTC)
         if value.tzinfo is None:
