@@ -1,5 +1,6 @@
 import atexit
 import hashlib
+from typing import cast
 import os
 from urllib.parse import urlsplit, urlunsplit
 
@@ -21,8 +22,13 @@ class VaultDBCreds:
             self.vault_verify = app.config.get("VAULT_VERIFY", False)
             self.vault_cert = app.config.get("VAULT_CERT", None)
             self.vault_token = app.config.get("VAULT_TOKEN", None)
-            self.vault_token_file = app.config.get(
-                "VAULT_TOKEN_FILE", os.path.expanduser("~/.vault-token")
+            self.vault_token_file = (
+                cast(  # FIXME: Remove once "typed config" is implemented
+                    str,
+                    app.config.get(
+                        "VAULT_TOKEN_FILE", os.path.expanduser("~/.vault-token")
+                    ),
+                )
             )
             self.vault_token_unwrap = app.config.get("VAULT_TOKEN_UNWRAP", False)
             self.vault_db_database_uri = app.config.get("VAULT_DB_DATABASE_URI", None)

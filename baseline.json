@@ -764,20 +764,6 @@
       "severity": "error"
     },
     {
-      "column": 39,
-      "path": "cabotage/celery/tasks/branch_deploy.py",
-      "name": "implicit-reexport",
-      "concise_description": "`run_image_build` is not exported from module `cabotage.celery.tasks`",
-      "severity": "error"
-    },
-    {
-      "column": 56,
-      "path": "cabotage/celery/tasks/branch_deploy.py",
-      "name": "implicit-reexport",
-      "concise_description": "`run_omnibus_build` is not exported from module `cabotage.celery.tasks`",
-      "severity": "error"
-    },
-    {
       "column": 13,
       "path": "cabotage/celery/tasks/branch_deploy.py",
       "name": "not-callable",
@@ -9742,20 +9728,6 @@
       "path": "cabotage/celery/tasks/github.py",
       "name": "implicit-reexport",
       "concise_description": "`NoResultFound` is not exported from module `sqlalchemy.orm.exc`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/celery/tasks/github.py",
-      "name": "implicit-reexport",
-      "concise_description": "`run_image_build` is not exported from module `cabotage.celery.tasks`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/celery/tasks/github.py",
-      "name": "implicit-reexport",
-      "concise_description": "`run_omnibus_build` is not exported from module `cabotage.celery.tasks`",
       "severity": "error"
     },
     {
@@ -23983,13 +23955,6 @@
       "severity": "error"
     },
     {
-      "column": 35,
-      "path": "cabotage/server/ext/vault_db_creds.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 31,
       "path": "cabotage/server/ext/vault_db_creds.py",
       "name": "unknown-argument-type",
@@ -35750,13 +35715,6 @@
       "severity": "error"
     },
     {
-      "column": 75,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 32,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
@@ -38999,13 +38957,6 @@
     },
     {
       "column": 63,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 75,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
