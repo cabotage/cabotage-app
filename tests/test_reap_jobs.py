@@ -128,7 +128,7 @@ class TestParseDatetime:
         assert _parse_datetime(None) is None
 
     def test_datetime_passthrough(self):
-        dt = datetime.datetime(2026, 3, 27, 14, 2, 0)
+        dt = datetime.datetime(2026, 3, 27, 14, 2, 0, tzinfo=datetime.UTC)
         assert _parse_datetime(dt) is dt
 
     def test_iso_string_with_z(self):

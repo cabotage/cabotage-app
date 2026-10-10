@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -111,7 +111,7 @@ def _mock_am_response(alerts, status_code=200):
     return mock_resp
 
 
-STARTS_AT = datetime(2026, 3, 30, 17, 57, 58)
+STARTS_AT = datetime(2026, 3, 30, 17, 57, 58, tzinfo=UTC)
 STARTS_AT_STR = "2026-03-30T17:57:58Z"
 
 
@@ -205,7 +205,7 @@ class TestReconcileAlerts:
     @patch("cabotage.celery.tasks.alerting.requests.get")
     def test_does_not_resolve_already_resolved(self, mock_get, app, db_session):
         fingerprint = uuid.uuid4().hex[:16]
-        ends_at = datetime(2026, 3, 30, 18, 5, 0)
+        ends_at = datetime(2026, 3, 30, 18, 5, 0, tzinfo=UTC)
 
         existing = Alert(
             fingerprint=fingerprint,
@@ -423,7 +423,7 @@ class TestReconcileAlerts:
             labels={"alertname": "ResidentDeploymentOOMKilled", "severity": "critical"},
             annotations={"summary": "OOM killed"},
             starts_at=STARTS_AT,
-            last_notified_at=datetime(2026, 3, 30, 18, 0, 0),
+            last_notified_at=datetime(2026, 3, 30, 18, 0, 0, tzinfo=UTC),
         )
         db_session.add(existing)
         db_session.commit()

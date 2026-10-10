@@ -105,7 +105,7 @@ def firing_alert(db_session, application, app_env):
         alertname="ResidentDeploymentOOMKilled",
         labels={"alertname": "ResidentDeploymentOOMKilled", "severity": "critical"},
         annotations={"summary": "Pod OOM killed"},
-        starts_at=datetime(2026, 3, 30, 17, 0, 0),
+        starts_at=datetime(2026, 3, 30, 17, 0, 0, tzinfo=UTC),
         ends_at=None,
         generator_url="http://prometheus/graph?g0.expr=test",
         application_id=application.id,
@@ -124,8 +124,8 @@ def resolved_alert(db_session, application, app_env):
         alertname="ResidentDeploymentOOMKilled",
         labels={"alertname": "ResidentDeploymentOOMKilled", "severity": "critical"},
         annotations={"summary": "Pod OOM killed"},
-        starts_at=datetime(2026, 3, 30, 17, 0, 0),
-        ends_at=datetime(2026, 3, 30, 17, 12, 34),
+        starts_at=datetime(2026, 3, 30, 17, 0, 0, tzinfo=UTC),
+        ends_at=datetime(2026, 3, 30, 17, 12, 34, tzinfo=UTC),
         generator_url="http://prometheus/graph?g0.expr=test",
         application_id=application.id,
         application_environment_id=app_env.id,
@@ -556,7 +556,7 @@ class TestDispatchAlertNotification:
             alertname="SomeInfraAlert",
             labels={"alertname": "SomeInfraAlert"},
             annotations={},
-            starts_at=datetime(2026, 3, 30, 17, 0, 0),
+            starts_at=datetime(2026, 3, 30, 17, 0, 0, tzinfo=UTC),
         )
         db_session.add(alert)
         db_session.flush()
@@ -584,7 +584,7 @@ class TestDispatchAlertNotification:
             alertname="UnknownAlert",
             labels={"alertname": "UnknownAlert", "severity": "warning"},
             annotations={},
-            starts_at=datetime(2026, 3, 30, 17, 0, 0),
+            starts_at=datetime(2026, 3, 30, 17, 0, 0, tzinfo=UTC),
             application_id=application.id,
             application_environment_id=app_env.id,
         )
@@ -834,7 +834,8 @@ class TestFormatDuration:
     def test_seconds_only(self):
         assert (
             _format_duration(
-                datetime(2026, 1, 1, 0, 0, 0), datetime(2026, 1, 1, 0, 0, 45)
+                datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC),
+                datetime(2026, 1, 1, 0, 0, 45, tzinfo=UTC),
             )
             == "45s"
         )
@@ -842,7 +843,8 @@ class TestFormatDuration:
     def test_minutes_and_seconds(self):
         assert (
             _format_duration(
-                datetime(2026, 1, 1, 0, 0, 0), datetime(2026, 1, 1, 0, 12, 34)
+                datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC),
+                datetime(2026, 1, 1, 0, 12, 34, tzinfo=UTC),
             )
             == "12m 34s"
         )
@@ -850,7 +852,8 @@ class TestFormatDuration:
     def test_hours_and_minutes(self):
         assert (
             _format_duration(
-                datetime(2026, 1, 1, 0, 0, 0), datetime(2026, 1, 1, 2, 15, 0)
+                datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC),
+                datetime(2026, 1, 1, 2, 15, 0, tzinfo=UTC),
             )
             == "2h 15m"
         )
