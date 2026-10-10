@@ -7341,14 +7341,13 @@ def project_application_observe_metric(
             traefik_svc_names.add(
                 f"{namespace}-{prefix}-{ingress.name}-{prefix}-{path.target_process_name}-8000@kubernetesingressnginx"
             )
-        if not ingress.paths:
-            if not process_filter or process_filter == "web":
-                traefik_svc_names.add(
-                    f"{namespace}-{prefix}-{ingress.name}-{prefix}-web-https@kubernetesingressnginx"
-                )
-                traefik_svc_names.add(
-                    f"{namespace}-{prefix}-{ingress.name}-{prefix}-web-8000@kubernetesingressnginx"
-                )
+        if not ingress.paths and (not process_filter or process_filter == "web"):
+            traefik_svc_names.add(
+                f"{namespace}-{prefix}-{ingress.name}-{prefix}-web-https@kubernetesingressnginx"
+            )
+            traefik_svc_names.add(
+                f"{namespace}-{prefix}-{ingress.name}-{prefix}-web-8000@kubernetesingressnginx"
+            )
     if len(traefik_svc_names) == 1:
         traefik_svc = f'service="{next(iter(traefik_svc_names))}"'
     elif traefik_svc_names:
@@ -7601,14 +7600,13 @@ def _collect_traefik_svc_names(app_envs, namespace_fn, prefix_fn, process_filter
                 names.add(
                     f"{ns}-{pfx}-{ingress.name}-{pfx}-{path.target_process_name}-8000@kubernetesingressnginx"
                 )
-            if not ingress.paths:
-                if not process_filter or process_filter == "web":
-                    names.add(
-                        f"{ns}-{pfx}-{ingress.name}-{pfx}-web-https@kubernetesingressnginx"
-                    )
-                    names.add(
-                        f"{ns}-{pfx}-{ingress.name}-{pfx}-web-8000@kubernetesingressnginx"
-                    )
+            if not ingress.paths and (not process_filter or process_filter == "web"):
+                names.add(
+                    f"{ns}-{pfx}-{ingress.name}-{pfx}-web-https@kubernetesingressnginx"
+                )
+                names.add(
+                    f"{ns}-{pfx}-{ingress.name}-{pfx}-web-8000@kubernetesingressnginx"
+                )
     return names
 
 

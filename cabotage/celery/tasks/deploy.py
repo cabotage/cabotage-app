@@ -1431,11 +1431,10 @@ def cleanup_orphaned_ingresses(networking_api, release, active_ingress_names, lo
             try:
                 networking_api.delete_namespaced_ingress(item.metadata.name, namespace)
             except ApiException as exc:
-                if exc.status != 404:
-                    if log:
-                        log(
-                            f"Warning: failed to delete orphaned Ingress/{item.metadata.name}: {exc}"
-                        )
+                if exc.status != 404 and log:
+                    log(
+                        f"Warning: failed to delete orphaned Ingress/{item.metadata.name}: {exc}"
+                    )
 
 
 def cleanup_orphaned_deployments_and_services(
@@ -1468,11 +1467,10 @@ def cleanup_orphaned_deployments_and_services(
             try:
                 apps_api.delete_namespaced_deployment(item.metadata.name, namespace)
             except ApiException as exc:
-                if exc.status != 404:
-                    if log:
-                        log(
-                            f"Warning: failed to delete orphaned Deployment/{item.metadata.name}: {exc}"
-                        )
+                if exc.status != 404 and log:
+                    log(
+                        f"Warning: failed to delete orphaned Deployment/{item.metadata.name}: {exc}"
+                    )
 
     # Clean up Services (services use app=<resource_prefix> label, not org/project/application)
     svc_label_selector = f"resident-service.cabotage.io=true,app={resource_prefix}"
@@ -1490,11 +1488,10 @@ def cleanup_orphaned_deployments_and_services(
             try:
                 core_api.delete_namespaced_service(item.metadata.name, namespace)
             except ApiException as exc:
-                if exc.status != 404:
-                    if log:
-                        log(
-                            f"Warning: failed to delete orphaned Service/{item.metadata.name}: {exc}"
-                        )
+                if exc.status != 404 and log:
+                    log(
+                        f"Warning: failed to delete orphaned Service/{item.metadata.name}: {exc}"
+                    )
 
 
 def cleanup_orphaned_cronjobs(batch_api, release, active_job_names, log=None):
@@ -1524,11 +1521,10 @@ def cleanup_orphaned_cronjobs(batch_api, release, active_job_names, log=None):
             try:
                 batch_api.delete_namespaced_cron_job(item.metadata.name, namespace)
             except ApiException as exc:
-                if exc.status != 404:
-                    if log:
-                        log(
-                            f"Warning: failed to delete orphaned CronJob/{item.metadata.name}: {exc}"
-                        )
+                if exc.status != 404 and log:
+                    log(
+                        f"Warning: failed to delete orphaned CronJob/{item.metadata.name}: {exc}"
+                    )
 
 
 def render_image_pull_secrets(release):

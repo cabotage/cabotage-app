@@ -42,10 +42,9 @@ class VaultDBCreds:
                     "VAULT_DB_CREDS_PATH is specified"
                 )
 
-            if self.vault_token is None:
-                if os.path.exists(self.vault_token_file):
-                    with open(self.vault_token_file, "r") as vault_token_file:
-                        self.vault_token = vault_token_file.read().lstrip().rstrip()
+            if self.vault_token is None and os.path.exists(self.vault_token_file):
+                with open(self.vault_token_file, "r") as vault_token_file:
+                    self.vault_token = vault_token_file.read().strip()
 
             self.logger = app.logger
             with app.app_context():
