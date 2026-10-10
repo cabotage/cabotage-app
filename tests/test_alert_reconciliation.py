@@ -205,7 +205,7 @@ class TestReconcileAlerts:
     @patch("cabotage.celery.tasks.alerting.requests.get")
     def test_does_not_resolve_already_resolved(self, mock_get, app, db_session):
         fingerprint = uuid.uuid4().hex[:16]
-        ends_at = datetime(2026, 3, 30, 18, 5, 0, tzinfo=UTC)
+        ends_at = datetime(2026, 3, 30, 18, 5, 0)  # noqa: DTZ001 SQLA stores returns a naive datetime
 
         existing = Alert(
             fingerprint=fingerprint,
