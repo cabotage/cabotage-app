@@ -4018,7 +4018,7 @@ def _parse_raw_config(raw_text: str, fmt: str) -> dict[str, str]:
             raise ValueError('JSON must be an object of "KEY": "VALUE" strings.')
         for name, value in data:
             if not isinstance(name, str) or not isinstance(value, str):
-                raise ValueError('JSON must be an object of "KEY": "VALUE" strings.')
+                raise ValueError('JSON must be an object of "KEY": "VALUE" strings.')  # noqa: TRY004
             _add_raw_config_entry(entries, seen_names, name, value, f"JSON key {name}")
         return entries
 
