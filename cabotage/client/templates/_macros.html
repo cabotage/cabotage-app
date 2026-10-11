@@ -1370,6 +1370,11 @@
                class="js-search input input-bordered input-sm bg-base-100 text-base-content border-base-content/10 w-60 font-mono"
                placeholder="Search logs...">
 
+        <select aria-label="Log display" class="js-log-display select select-bordered select-sm bg-base-100 text-base-content border-base-content/10">
+          <option value="structured">Structured</option>
+          <option value="raw">Raw</option>
+        </select>
+
         <label class="label cursor-pointer gap-2 ml-auto">
           <span class="text-xs text-base-content/40">Show probes</span>
           <input type="checkbox" class="js-show-probes checkbox checkbox-xs checkbox-ghost">

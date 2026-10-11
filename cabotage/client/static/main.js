@@ -2133,6 +2133,7 @@ function initLokiLogViewer() {
     var searchInput = root.querySelector('.js-search');
     var processFilter = root.querySelector('.js-process-filter');
     var showProbes = root.querySelector('.js-show-probes');
+    var logDisplay = root.querySelector('.js-log-display');
     var scrollAnchor = root.querySelector('.js-scroll-anchor');
     var logNav = root.querySelector('.js-log-nav');
     var scrollTopBtn = root.querySelector('.js-scroll-top');
@@ -2194,11 +2195,121 @@ function initLokiLogViewer() {
       return digits.join('');
     }
 
+    function parseLogObject(message) {
+      if (message.trim().charAt(0) !== '{') return null;
+      try {
+        var value = JSON.parse(message);
+        return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function logValue(value) {
+      return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+    }
+
+    function firstField(fields, keys) {
+      for (var i = 0; i < keys.length; i++) {
+        if (fields[keys[i]] != null) return fields[keys[i]];
+      }
+      return null;
+    }
+
+    function logSpan(className, text) {
+      var span = document.createElement('span');
+      span.className = className;
+      span.textContent = text;
+      return span;
+    }
+
+    function structuredLine(e, fields) {
+      var line = document.createElement('details');
+      line.className = 'log-line log-line-structured' + (e.stream === 'stderr' ? ' log-line-stderr' : '');
+      var summary = document.createElement('summary');
+      summary.className = 'log-entry-summary';
+      summary.appendChild(logSpan('log-entry-chevron', ''));
+      summary.appendChild(logSpan('log-line-ts', formatTs(e.ts)));
+      summary.appendChild(logSpan('log-line-process', e.process));
+
+      var level = firstField(fields, ['level', 'severity', 'levelname']);
+      level = typeof level === 'string' ? level.toLowerCase() : '';
+      var severity = 'unknown';
+      switch (level) {
+        case 'warn': case 'warning': severity = 'warning'; break;
+        case 'error': case 'critical': case 'fatal': severity = 'error'; break;
+        case 'info': severity = 'info'; break;
+        case 'debug': case 'trace': severity = 'debug'; break;
+      }
+      summary.appendChild(logSpan('log-entry-level log-entry-level-' + severity, level || '\u2014'));
+
+      var content = document.createElement('span');
+      content.className = 'log-entry-content';
+      var message = firstField(fields, ['message', 'event', 'msg']);
+      content.appendChild(logSpan('log-entry-message', message == null ? 'Structured entry' : logValue(message)));
+      var context = document.createElement('span');
+      context.className = 'log-entry-context';
+      ['method', 'path', 'status', 'duration_ms', 'logger'].forEach(function(key) {
+        var value = fields[key];
+        if (value == null || value === '' || typeof value === 'object') return;
+        var text = key === 'duration_ms' && typeof value === 'number' ? String(Math.round(value * 100) / 100) + ' ms' : String(value);
+        var field = logSpan('log-entry-context-field', text);
+        field.title = key;
+        context.appendChild(field);
+      });
+      content.appendChild(context);
+      summary.appendChild(content);
+      summary.appendChild(logSpan('log-entry-field-count', Object.keys(fields).length + ' fields'));
+      summary.appendChild(logSpan('log-entry-raw-message log-line-msg', e.message));
+      line.appendChild(summary);
+
+      // Build the inspector only when opened; most live-tail rows stay collapsed.
+      line.addEventListener('toggle', function() {
+        if (!line.open || line.querySelector('.log-entry-inspector')) return;
+        var inspector = document.createElement('div');
+        inspector.className = 'log-entry-inspector';
+        var heading = document.createElement('h3');
+        heading.className = 'log-entry-heading';
+        heading.textContent = 'Fields';
+        inspector.appendChild(heading);
+        var list = document.createElement('dl');
+        list.className = 'log-entry-fields';
+        Object.keys(fields).forEach(function(key) {
+          var term = document.createElement('dt');
+          term.textContent = key;
+          var value = document.createElement('dd');
+          value.textContent = logValue(fields[key]);
+          list.appendChild(term);
+          list.appendChild(value);
+        });
+        inspector.appendChild(list);
+        var raw = document.createElement('details');
+        raw.className = 'log-entry-original';
+        var label = document.createElement('summary');
+        label.textContent = 'Original line';
+        raw.appendChild(label);
+        var pre = document.createElement('pre');
+        pre.textContent = e.message;
+        raw.appendChild(pre);
+        inspector.appendChild(raw);
+        line.appendChild(inspector);
+      });
+      summary.addEventListener('click', function(event) {
+        if (root.classList.contains('log-display-raw')) event.preventDefault();
+      });
+      return line;
+    }
+
     // Build a document fragment from entries
     function buildFragment(entries) {
       var frag = document.createDocumentFragment();
       for (var i = 0; i < entries.length; i++) {
         var e = entries[i];
+        var fields = parseLogObject(e.message);
+        if (fields) {
+          frag.appendChild(structuredLine(e, fields));
+          continue;
+        }
         var line = document.createElement('div');
         line.className = e.stream === 'stderr' ? 'log-line log-line-stderr' : 'log-line';
 
@@ -2401,6 +2512,11 @@ function initLokiLogViewer() {
       debounceTimer = setTimeout(function() { resetAndPoll(); }, 300);
     });
     showProbes.addEventListener('change', function() { resetAndPoll(); });
+    logDisplay.addEventListener('change', function() {
+      var top = logWrap.scrollTop;
+      root.classList.toggle('log-display-raw', logDisplay.value === 'raw');
+      logWrap.scrollTop = top;
+    });
     document.addEventListener('visibilitychange', function() {
       if (document.hidden) { stopPolling(); cancelFetch(); } else { idleCount = 0; pollInterval = POLL_FAST; schedulePoll(); }
     });
