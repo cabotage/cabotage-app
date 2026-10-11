@@ -17,8 +17,8 @@ from flask import (
     Blueprint,
     Response,
     abort,
-    flash,
     current_app,
+    flash,
     jsonify,
     redirect,
     render_template,
@@ -29,12 +29,12 @@ from flask_login import current_user, login_required
 from kombu.exceptions import OperationalError
 from werkzeug.wrappers import Response as RedirectResponse
 
+from cabotage.celery.tasks.cost import collect_costs
 from cabotage.server.acl import (
     ViewApplicationPermission,
     ViewOrganizationPermission,
     ViewProjectPermission,
 )
-from cabotage.celery.tasks.cost import collect_costs
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import Application, Environment, Project
 from cabotage.utils.cost.reports import CostScope, build_report

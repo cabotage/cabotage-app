@@ -45,7 +45,7 @@ class CostCollectionRun(Model):
         postgresql.JSONB(), server_default=text("'{}'::jsonb")
     )
 
-    line_items: Mapped[list["CostLineItem"]] = relationship(
+    line_items: Mapped[list[CostLineItem]] = relationship(
         back_populates="run", cascade="all, delete-orphan"
     )
 

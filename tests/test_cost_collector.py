@@ -24,7 +24,7 @@ from cabotage.server.wsgi import app as _app
 from cabotage.utils.cost.collector import collect_hour
 from cabotage.utils.mimir import MimirError
 
-PERIOD_START = datetime.datetime(2026, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
+PERIOD_START = datetime.datetime(2026, 1, 1, 12, 0, 0, tzinfo=datetime.UTC)
 
 
 @pytest.fixture

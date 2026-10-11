@@ -21,7 +21,7 @@ from cabotage.server.models.resources import PostgresResource, Resource
 from cabotage.server.wsgi import app as _app
 from cabotage.utils.cost.reports import CostScope, build_report
 
-NOW = datetime.datetime(2026, 10, 15, 10, 30, 0, tzinfo=datetime.timezone.utc)
+NOW = datetime.datetime(2026, 10, 15, 10, 30, 0, tzinfo=datetime.UTC)
 
 
 @pytest.fixture
@@ -368,7 +368,7 @@ class TestBuildReportBasics:
 
         series = report["series"]
         assert len(series["timestamps"]) == 24
-        for category, values in series["categories"].items():
+        for values in series["categories"].values():
             assert len(values) == 24
         nonzero = [v for v in series["categories"]["compute"] if v != 0.0]
         assert nonzero == [3.0]
@@ -634,7 +634,7 @@ class TestBuildReportBasics:
         assert len(series["efficiency"]["usage"]) == n
         assert len(series["efficiency"]["request"]) == n
         assert len(series["efficiency"]["billed"]) == n
-        for name, breakdown in series["breakdowns"].items():
+        for breakdown in series["breakdowns"].values():
             assert len(breakdown["other"]) == n
             for values in breakdown["values"].values():
                 assert len(values) == n

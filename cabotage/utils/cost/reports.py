@@ -10,10 +10,11 @@ import datetime
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal, NotRequired, TypedDict, TypeVar, cast
+from typing import Literal, NotRequired, TypedDict, cast
 
 from flask import current_app
-from sqlalchemy import Float, Integer, case, cast as sa_cast, func
+from sqlalchemy import Float, Integer, case, func
+from sqlalchemy import cast as sa_cast
 from sqlalchemy.orm import InstrumentedAttribute, Query
 
 from cabotage.server import db
@@ -24,8 +25,6 @@ from cabotage.server.models.resources import Resource
 from cabotage.utils.cost.rates import CostRates, effective_rates, node_hourly_price
 
 Interval = Literal["hour", "day", "week"]
-
-_Q = TypeVar("_Q")
 
 
 class MeterRow(TypedDict):
@@ -344,10 +343,10 @@ class CostScope:
     kind: str
     # Every kind except "platform" (admin-only, whole-install view) needs an
     # organization; platform aggregates across all of them.
-    organization: "Organization | None" = None
-    project: "Project | None" = None
-    environment: "Environment | None" = None
-    application: "Application | None" = None
+    organization: Organization | None = None
+    project: Project | None = None
+    environment: Environment | None = None
+    application: Application | None = None
 
     @property
     def name(self) -> str:
@@ -371,7 +370,7 @@ def build_report(
     start: datetime.datetime | str | None = None,
     end: datetime.datetime | str | None = None,
 ) -> dict[str, object]:
-    now = _as_utc(now or datetime.datetime.now(datetime.timezone.utc))
+    now = _as_utc(now or datetime.datetime.now(datetime.UTC))
     rates = effective_rates()
 
     first_hour, last_hour = _extent()
@@ -571,8 +570,8 @@ def build_report(
 
 def _as_utc(dt: datetime.datetime) -> datetime.datetime:
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=datetime.timezone.utc)
-    return dt.astimezone(datetime.timezone.utc)
+        return dt.replace(tzinfo=datetime.UTC)
+    return dt.astimezone(datetime.UTC)
 
 
 def _parse_range_param(value: datetime.datetime | str) -> datetime.datetime:
@@ -618,8 +617,7 @@ def _resolve_custom_range(
     # into the most recent, possibly-not-yet-collected, in-progress hour.
     if first_hour is not None and range_start < first_hour:
         range_start = first_hour
-    if range_end > now:
-        range_end = now
+    range_end = min(range_end, now)
     if range_end <= range_start:
         range_end = range_start + datetime.timedelta(hours=1)
 
@@ -665,10 +663,10 @@ def _bucket_starts(
 # ---------------------------------------------------------------------------
 
 
-def _scope_filter(query: _Q, scope: CostScope) -> _Q:
+def _scope_filter[Q](query: Q, scope: CostScope) -> Q:
     q = cast("Query[object]", query)
     if scope.kind == "platform":
-        return cast(_Q, q)
+        return cast(Q, q)
     if scope.organization is None:
         raise ValueError("Non-platform cost scopes require an organization")
     q = q.filter(CostLineItem.organization_id == scope.organization.id)
@@ -680,7 +678,7 @@ def _scope_filter(query: _Q, scope: CostScope) -> _Q:
         q = q.filter(CostLineItem.application_id == scope.application.id)
         if scope.environment is not None:
             q = q.filter(CostLineItem.environment_id == scope.environment.id)
-    return cast(_Q, q)
+    return cast(Q, q)
 
 
 # ---------------------------------------------------------------------------

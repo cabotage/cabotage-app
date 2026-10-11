@@ -18,7 +18,8 @@ from typing import TypedDict
 import kubernetes.client
 from flask import current_app
 
-from cabotage.server import db, kubernetes as kubernetes_ext
+from cabotage.server import db
+from cabotage.server import kubernetes as kubernetes_ext
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.cost import CostCollectionRun, CostLineItem, CostNode
 from cabotage.server.models.projects import (
@@ -114,7 +115,7 @@ def collect_hour(period_start: datetime.datetime) -> CostCollectionRun:
     """
     period_start = _floor_hour(period_start)
     period_end = period_start + datetime.timedelta(hours=1)
-    started_at = datetime.datetime.now(datetime.timezone.utc)
+    started_at = datetime.datetime.now(datetime.UTC)
     rates = effective_rates()
 
     try:
@@ -154,7 +155,7 @@ def _record_attempt(
     freshness reporting can see that collection is currently failing even
     though the run's own `status`/data are untouched.
     """
-    attempt_at = datetime.datetime.now(datetime.timezone.utc)
+    attempt_at = datetime.datetime.now(datetime.UTC)
     stats = dict(run.stats or {})
     stats["last_attempt_status"] = status
     stats["last_attempt_error"] = error
@@ -179,7 +180,7 @@ def _write_run(
     CostCollectionRun.query.filter_by(period_start=period_start).delete()
     db.session.flush()
 
-    finished_at = datetime.datetime.now(datetime.timezone.utc)
+    finished_at = datetime.datetime.now(datetime.UTC)
     full_stats: dict[str, StatValue | str | None] = dict(stats)
     full_stats["last_attempt_status"] = status
     full_stats["last_attempt_error"] = error
@@ -207,10 +208,8 @@ def _write_run(
 
 def _floor_hour(dt: datetime.datetime) -> datetime.datetime:
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=datetime.timezone.utc)
-    return dt.astimezone(datetime.timezone.utc).replace(
-        minute=0, second=0, microsecond=0
-    )
+        dt = dt.replace(tzinfo=datetime.UTC)
+    return dt.astimezone(datetime.UTC).replace(minute=0, second=0, microsecond=0)
 
 
 # ---------------------------------------------------------------------------
@@ -970,7 +969,7 @@ def _refresh_nodes() -> None:
     except Exception:
         return
 
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     for node in nodes.items:
         if node.metadata is None or node.metadata.name is None:
             continue

@@ -280,7 +280,7 @@ def _get_or_create_project(
         db.session.flush()
         db.session.refresh(proj)
     if deleted and proj.deleted_at is None:
-        proj.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        proj.deleted_at = datetime.datetime.now(datetime.UTC)
     return proj
 
 
@@ -327,7 +327,7 @@ def _get_or_create_app(
         db.session.flush()
         db.session.refresh(app)
     if deleted and app.deleted_at is None:
-        app.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        app.deleted_at = datetime.datetime.now(datetime.UTC)
     return app
 
 
@@ -501,7 +501,7 @@ def seed_pypi_scale(admin: User, dev_user: User) -> None:
     app_warehouse = _get_or_create_app(proj_warehouse, "Warehouse", "warehouse")
 
     warehouse_prod = _get_or_create_app_env(app_warehouse, env_warehouse_prod)
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     if warehouse_prod.images.count() == 0:
         # ~25 real "about daily" deploys, then fast-forward the version
         # counter so this looks like a mature, high-throughput project.

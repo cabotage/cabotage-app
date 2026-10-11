@@ -17,7 +17,7 @@ BACKFILL_HOURS = 48
 def _last_completed_hour(
     now: datetime.datetime | None = None,
 ) -> datetime.datetime:
-    now = now or datetime.datetime.now(datetime.timezone.utc)
+    now = now or datetime.datetime.now(datetime.UTC)
     return now.replace(minute=0, second=0, microsecond=0) - datetime.timedelta(hours=1)
 
 

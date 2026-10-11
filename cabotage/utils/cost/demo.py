@@ -31,15 +31,14 @@ from typing import TypedDict, cast
 import psycopg
 from psycopg import sql as pg_sql
 from psycopg.types.json import Json
-
 from sqlalchemy import func
 
 from cabotage.server import db
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.cost import CostCollectionRun, CostLineItem, CostNode
 from cabotage.server.models.projects import (
-    Application,
     DEFAULT_POD_CLASS,
+    Application,
     pod_classes,
 )
 from cabotage.server.models.resources import RedisResource
@@ -135,9 +134,9 @@ def seed_cost_history(
 
     Returns the number of CostLineItem rows written.
     """
-    now = now or datetime.datetime.now(datetime.timezone.utc)
+    now = now or datetime.datetime.now(datetime.UTC)
     if now.tzinfo is None:
-        now = now.replace(tzinfo=datetime.timezone.utc)
+        now = now.replace(tzinfo=datetime.UTC)
 
     last_hour = now.replace(minute=0, second=0, microsecond=0) - datetime.timedelta(
         hours=1
@@ -356,9 +355,9 @@ def finalize_platform_stats(
     Real (non-demo) hours are left untouched. Returns the number of runs
     updated.
     """
-    now = now or datetime.datetime.now(datetime.timezone.utc)
+    now = now or datetime.datetime.now(datetime.UTC)
     if now.tzinfo is None:
-        now = now.replace(tzinfo=datetime.timezone.utc)
+        now = now.replace(tzinfo=datetime.UTC)
     last_hour = now.replace(minute=0, second=0, microsecond=0) - datetime.timedelta(
         hours=1
     )

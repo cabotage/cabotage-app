@@ -7,7 +7,8 @@ UI can render a "how costs are calculated" panel.
 """
 
 import copy
-from typing import Mapping, TypedDict, cast
+from collections.abc import Mapping
+from typing import TypedDict, cast
 
 
 class CostRates(TypedDict):
