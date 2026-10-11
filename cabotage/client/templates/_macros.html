@@ -214,7 +214,8 @@
           {% else %}
           <li class="disabled opacity-30"><span>{{ icon('file-text', 'w-3.5 h-3.5') }} Logs</span></li>
           {% endif %}
-          <li class="disabled opacity-30"><span>{{ icon('bar-chart-2', 'w-3.5 h-3.5') }} Pipeline <span class="text-[0.6rem] opacity-40">(Soon)</span></span></li>
+          <li><a href="{{ url_for('user.project_application_pipeline', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
+                 class="{% if active == 'pipeline' %}active{% endif %}">{{ icon('bar-chart-2', 'w-3.5 h-3.5') }} Pipeline</a></li>
           <li><a href="{{ url_for('user.application_audit_log', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
                  class="{% if active == 'audit' %}active{% endif %}">{{ icon('clock', 'w-3.5 h-3.5') }} Audit Log</a></li>
         </ul>
@@ -1368,6 +1369,11 @@
         <input type="text"
                class="js-search input input-bordered input-sm bg-base-100 text-base-content border-base-content/10 w-60 font-mono"
                placeholder="Search logs...">
+
+        <select aria-label="Log display" class="js-log-display select select-bordered select-sm bg-base-100 text-base-content border-base-content/10">
+          <option value="structured">Structured</option>
+          <option value="raw">Raw</option>
+        </select>
 
         <label class="label cursor-pointer gap-2 ml-auto">
           <span class="text-xs text-base-content/40">Show probes</span>

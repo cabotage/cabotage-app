@@ -177,7 +177,7 @@ def callback():
             "user_id": str(current_user.id),
             "action": f"discord_{verb}",
             "guild_name": guild_name,
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         },
     )
     db.session.add(activity)
@@ -220,7 +220,7 @@ def disconnect(org_slug):
                 "user_id": str(current_user.id),
                 "action": "discord_disconnect",
                 "guild_name": guild_name,
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)

@@ -6,10 +6,15 @@ import time
 import uuid
 from typing import TYPE_CHECKING, cast
 
+import kubernetes.client
+import kubernetes.stream
+import requests as requests_lib
+from dxf import DXF
 from flask import (
     Blueprint,
     abort,
     current_app,
+    flash,
     jsonify,
     make_response,
     redirect,
@@ -17,7 +22,6 @@ from flask import (
     request,
     session,
     url_for,
-    flash,
 )
 from flask_security import (
     current_user,
@@ -25,16 +29,10 @@ from flask_security import (
 )
 from flask_wtf import FlaskForm
 from itsdangerous import BadData
-
-import kubernetes.client
-import kubernetes.stream
 from kubernetes.client.exceptions import ApiException
 from kubernetes.stream.ws_client import RESIZE_CHANNEL
-
-from dxf import DXF
-import requests as requests_lib
 from requests.exceptions import HTTPError
-from sqlalchemy import and_, case, desc, func, or_
+from sqlalchemy import Uuid, and_, case, desc, func, or_
 from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import joinedload, subqueryload
 from sqlalchemy.orm.attributes import flag_modified
@@ -42,23 +40,36 @@ from sqlalchemy_continuum import version_class
 from werkzeug.datastructures import MultiDict
 from werkzeug.wrappers import Response
 
+from cabotage._types import assume_not_none
+from cabotage.celery.tasks import (
+    cleanup_app_env_k8s,
+    deploy_tailscale_operator,
+    dispatch_pipeline_notification,
+    process_github_hook,
+    run_deploy,
+    run_image_build,
+    run_release_build,
+    teardown_tailscale_operator,
+)
+from cabotage.celery.tasks.deploy import resize_deployment, scale_deployment
+from cabotage.celery.tasks.notify import dispatch_autodeploy_notification
 from cabotage.server import (
     config_writer,
     db,
     github_app,
-    kubernetes as kubernetes_ext,
     sock,
 )
-
+from cabotage.server import (
+    kubernetes as kubernetes_ext,
+)
 from cabotage.server.acl import (
-    ViewOrganizationPermission,
-    ViewProjectPermission,
-    ViewApplicationPermission,
+    AdministerApplicationPermission,
     AdministerOrganizationPermission,
     AdministerProjectPermission,
-    AdministerApplicationPermission,
+    ViewApplicationPermission,
+    ViewOrganizationPermission,
+    ViewProjectPermission,
 )
-
 from cabotage.server.models.auth import (
     GitHubAppInstallation,
     GitHubIdentity,
@@ -80,15 +91,15 @@ from cabotage.server.models.projects import (
     Hook,
     Image,
     Ingress,
-    JobLog,
     IngressHost,
     IngressPath,
+    JobLog,
     Project,
     Release,
+    activity_plugin,
     create_default_ingresses,
     pod_classes,
 )
-from cabotage.server.models.projects import activity_plugin
 from cabotage.server.models.resources import (
     PostgresResource,
     RedisResource,
@@ -96,84 +107,65 @@ from cabotage.server.models.resources import (
     postgres_size_classes,
     redis_size_classes,
 )
-
+from cabotage.server.models.utils import readable_k8s_hostname, safe_k8s_name, slugify
 from cabotage.server.query_helpers import (
-    compute_app_status_sets,
+    RelatedObjectResolver,
     compute_ae_status_sets,
+    compute_app_status_sets,
     compute_process_counts,
     compute_release_change_details,
     extract_latest_variants,
-    RelatedObjectResolver,
     split_image_processes,
 )
-from cabotage.server.models.utils import safe_k8s_name, readable_k8s_hostname, slugify
-
+from cabotage.server.user import github_installations
 from cabotage.server.user.forms import (
     AddApplicationToEnvironmentForm,
+    AddOrganizationUserForm,
     ApplicationScaleForm,
     CreateApplicationForm,
     CreateConfigurationForm,
     CreateEnvironmentConfigurationForm,
     CreateEnvironmentForm,
     CreateOrganizationForm,
+    CreatePostgresResourceForm,
     CreateProjectForm,
-    DeleteApplicationForm,
+    CreateRedisResourceForm,
     DeleteApplicationEnvironmentForm,
+    DeleteApplicationForm,
     DeleteConfigurationForm,
     DeleteEnvironmentConfigurationForm,
     DeleteEnvironmentForm,
     DeleteOrganizationForm,
+    DeletePostgresResourceForm,
     DeleteProjectForm,
+    DeleteRedisResourceForm,
     EditApplicationEnvironmentSettingsForm,
     EditApplicationSettingsForm,
     EditConfigurationForm,
     EditEnvironmentConfigurationForm,
     EditEnvironmentForm,
     EditOrganizationForm,
+    EditPostgresResourceForm,
     EditProjectSettingsForm,
-    IngressSettingsForm,
+    EditRedisResourceForm,
     IngressHostForm,
+    IngressSettingsForm,
+    ReleaseDeployForm,
     RequestOrganizationForm,
     ReviewOrganizationRequestForm,
-    TailscaleIntegrationForm,
     TailscaleIngressSettingsForm,
-    ReleaseDeployForm,
-    AddOrganizationUserForm,
-    CreatePostgresResourceForm,
-    EditPostgresResourceForm,
-    DeletePostgresResourceForm,
-    CreateRedisResourceForm,
-    EditRedisResourceForm,
-    DeleteRedisResourceForm,
+    TailscaleIntegrationForm,
 )
-from cabotage.server.user import github_installations
-
-from cabotage.utils.docker_auth import (
-    generate_docker_registry_jwt,
-)
-
-from cabotage.celery.tasks import (
-    cleanup_app_env_k8s,
-    deploy_tailscale_operator,
-    dispatch_pipeline_notification,
-    process_github_hook,
-    run_deploy,
-    run_image_build,
-    run_release_build,
-    teardown_tailscale_operator,
-)
-from cabotage.celery.tasks.notify import dispatch_autodeploy_notification
-
-from cabotage.celery.tasks.deploy import resize_deployment, scale_deployment
+from cabotage.server.websocket import close_on_abort
+from cabotage.utils import oidc
 from cabotage.utils.build_log_stream import (
     get_redis_client,
     read_log_stream,
     stream_key,
 )
-
-from cabotage.utils import oidc
-from cabotage._types import assume_not_none
-from cabotage.server.websocket import close_on_abort
+from cabotage.utils.docker_auth import (
+    generate_docker_registry_jwt,
+)
 
 if TYPE_CHECKING:
     from kubernetes.stream.ws_client import WSClient
@@ -330,7 +322,7 @@ def _enqueue_app_env_cleanup(app_env, organization):
 def _soft_delete_app_env(app_env, organization):
     """Soft-delete an ApplicationEnvironment and queue k8s resource cleanup."""
     _enqueue_app_env_cleanup(app_env, organization)
-    app_env.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+    app_env.deleted_at = datetime.datetime.now(datetime.UTC)
 
 
 def _soft_delete_application(application, organization):
@@ -338,7 +330,7 @@ def _soft_delete_application(application, organization):
     for app_env in application.application_environments:
         if app_env.deleted_at is None:
             _soft_delete_app_env(app_env, organization)
-    application.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+    application.deleted_at = datetime.datetime.now(datetime.UTC)
     application.slug = f"{application.slug}--deleted-{uuid.uuid4().hex[:12]}"
 
 
@@ -346,7 +338,7 @@ def _soft_delete_resource(resource):
     """Soft-delete a backing service resource."""
     if resource.deleted_at is not None:
         return
-    resource.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+    resource.deleted_at = datetime.datetime.now(datetime.UTC)
     resource.slug = f"--deleted-{resource.slug}-{str(resource.id)[:8]}"
 
 
@@ -355,10 +347,10 @@ def _soft_delete_environment(environment, organization):
     for app_env in environment.application_environments:
         if app_env.deleted_at is None:
             _enqueue_app_env_cleanup(app_env, organization)
-            app_env.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+            app_env.deleted_at = datetime.datetime.now(datetime.UTC)
     for resource in environment.resources:
         _soft_delete_resource(resource)
-    environment.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+    environment.deleted_at = datetime.datetime.now(datetime.UTC)
     environment.slug = f"{environment.slug}--deleted-{uuid.uuid4().hex[:12]}"
 
 
@@ -370,7 +362,7 @@ def _soft_delete_project(project, organization):
     for env in project.project_environments:
         if env.deleted_at is None:
             _soft_delete_environment(env, organization)
-    project.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+    project.deleted_at = datetime.datetime.now(datetime.UTC)
     project.slug = f"{project.slug}--deleted-{uuid.uuid4().hex[:12]}"
 
 
@@ -410,7 +402,7 @@ def _associate_app_with_environment(application, environment, organization, proj
         object=app_env,
         data={
             "user_id": str(current_user.id),
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         },
     )
     db.session.add(activity)
@@ -593,7 +585,7 @@ def organizations():
                 Application.deleted_at.is_(None),
                 ApplicationEnvironment.deleted_at.is_(None),
                 ApplicationEnvironment.k8s_identifier.is_(None),
-                Deployment.complete == True,  # noqa: E712
+                Deployment.complete == True,
             )
             .group_by(Project.organization_id)
             .all()
@@ -654,7 +646,7 @@ def organization(org_slug):
                 Deployment.application_id.in_(app_ids),
                 ApplicationEnvironment.deleted_at.is_(None),
                 ApplicationEnvironment.k8s_identifier.is_(None),
-                Deployment.complete == True,  # noqa: E712
+                Deployment.complete == True,
             )
             .one()
         )
@@ -736,7 +728,7 @@ def organization_settings(org_slug):
             object=organization,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -843,7 +835,7 @@ def organization_settings(org_slug):
                 "user_id": str(current_user.id),
                 "action": f"tailscale_{ts_verb}",
                 "tailnet": tailnet_name,
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -869,9 +861,7 @@ def organization_settings(org_slug):
                 data={
                     "user_id": str(current_user.id),
                     "action": "tailscale_delete",
-                    "timestamp": datetime.datetime.now(
-                        datetime.timezone.utc
-                    ).isoformat(),
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -1237,7 +1227,7 @@ def organization_create():
             object=organization,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(org_create)
@@ -1329,9 +1319,7 @@ def organization_request_approve(request_id):
 
     org_request.status = OrganizationRequest.STATUS_APPROVED
     org_request.reviewer_user_id = current_user.id
-    org_request.reviewed_at = datetime.datetime.now(datetime.timezone.utc).replace(
-        tzinfo=None
-    )
+    org_request.reviewed_at = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
     org_request.organization_id = organization.id
 
     org_create = Activity(
@@ -1340,7 +1328,7 @@ def organization_request_approve(request_id):
         data={
             "user_id": str(current_user.id),
             "organization_request_id": str(org_request.id),
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         },
     )
     db.session.add(org_create)
@@ -1366,7 +1354,7 @@ def organization_request_deny(request_id):
     if org_request.is_pending:
         org_request.status = OrganizationRequest.STATUS_DENIED
         org_request.reviewer_user_id = current_user.id
-        org_request.reviewed_at = datetime.datetime.now(datetime.timezone.utc).replace(
+        org_request.reviewed_at = datetime.datetime.now(datetime.UTC).replace(
             tzinfo=None
         )
         db.session.commit()
@@ -1425,7 +1413,7 @@ def organization_project_create(org_slug):
             object=project,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -1708,7 +1696,7 @@ def project_settings(org_slug, project_slug):
             object=project,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -1787,7 +1775,7 @@ def project_create():
             object=project,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -1856,7 +1844,7 @@ def project_environment_create(org_slug, project_slug):
             object=environment,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -1954,7 +1942,7 @@ def project_environment_settings(org_slug, project_slug, env_slug):
             object=environment,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2037,7 +2025,7 @@ def project_environment_delete(org_slug, project_slug, env_slug):
             object=environment,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2254,7 +2242,7 @@ def project_environment_configuration_create(org_slug, project_slug, env_slug):
             object=configuration,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2382,7 +2370,7 @@ def project_environment_configuration_edit(org_slug, project_slug, env_slug, con
             object=configuration,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2450,7 +2438,7 @@ def project_environment_configuration_delete(
             object=configuration,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2544,7 +2532,7 @@ def environment_postgres_create(org_slug, project_slug, env_slug):
             object=resource,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2627,7 +2615,7 @@ def environment_postgres_settings(org_slug, project_slug, env_slug, resource_slu
             object=resource,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2677,7 +2665,7 @@ def environment_postgres_delete(org_slug, project_slug, env_slug, resource_slug)
     form.resource_id.data = str(resource.id)
     form.name.data = resource.slug
     if form.validate_on_submit():
-        resource.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        resource.deleted_at = datetime.datetime.now(datetime.UTC)
         resource.slug = f"--deleted-{resource.slug}-{str(resource.id)[:8]}"
         db.session.add(resource)
         db.session.flush()
@@ -2686,7 +2674,7 @@ def environment_postgres_delete(org_slug, project_slug, env_slug, resource_slug)
             object=resource,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2740,7 +2728,7 @@ def environment_redis_create(org_slug, project_slug, env_slug):
             object=resource,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2845,7 +2833,7 @@ def environment_redis_settings(org_slug, project_slug, env_slug, resource_slug):
             object=resource,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2893,7 +2881,7 @@ def environment_redis_delete(org_slug, project_slug, env_slug, resource_slug):
     form.resource_id.data = str(resource.id)
     form.name.data = resource.slug
     if form.validate_on_submit():
-        resource.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        resource.deleted_at = datetime.datetime.now(datetime.UTC)
         resource.slug = f"--deleted-{resource.slug}-{str(resource.id)[:8]}"
         db.session.add(resource)
         db.session.flush()
@@ -2902,7 +2890,7 @@ def environment_redis_delete(org_slug, project_slug, env_slug, resource_slug):
             object=resource,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2970,7 +2958,7 @@ def project_application_env_config_subscribe(
             data={
                 "user_id": str(current_user.id),
                 "env_config_name": env_config.name,
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -3029,7 +3017,7 @@ def project_application_env_config_unsubscribe(
             data={
                 "user_id": str(current_user.id),
                 "env_config_name": env_config.name,
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -3079,7 +3067,7 @@ def project_application_delete(org_slug, project_slug, app_slug):
             object=application,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -3121,7 +3109,7 @@ def project_delete(org_slug, project_slug):
             object=project,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -3153,14 +3141,14 @@ def organization_delete(org_slug):
         for project in list(organization.projects):
             if project.deleted_at is None:
                 _soft_delete_project(project, organization)
-        organization.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        organization.deleted_at = datetime.datetime.now(datetime.UTC)
         organization.slug = f"{organization.slug}--deleted-{uuid.uuid4().hex[:12]}"
         activity = Activity(
             verb="delete",
             object=organization,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -3294,9 +3282,9 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
             app_env.deployments.order_by(Deployment.created.desc()).limit(50).all()
         )
 
-        images = all_images[:10]
-        releases = all_releases[:10]
-        deployments = all_deployments[:10]
+        images = all_images[:25]
+        releases = all_releases[:25]
+        deployments = all_deployments[:25]
 
         # Extract latest_* variants from pre-fetched lists
         variants = extract_latest_variants(all_images, all_releases, all_deployments)
@@ -3760,7 +3748,7 @@ def project_application_create(org_slug, project_slug):
             object=application,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -3995,7 +3983,7 @@ def _save_app_configuration(
             object=configuration,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
     )
@@ -4286,7 +4274,7 @@ def project_application_settings(org_slug, project_slug, app_slug):
             object=application,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -4533,7 +4521,7 @@ def project_application_environment_settings(
             object=app_env,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -4869,9 +4857,7 @@ def project_application_ingress(
                     object=ingress,
                     data={
                         "user_id": str(user.id),
-                        "timestamp": datetime.datetime.now(
-                            datetime.timezone.utc
-                        ).isoformat(),
+                        "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                     },
                 )
                 db.session.add(activity)
@@ -4902,9 +4888,7 @@ def project_application_ingress(
                 object=ingress,
                 data={
                     "user_id": str(user.id),
-                    "timestamp": datetime.datetime.now(
-                        datetime.timezone.utc
-                    ).isoformat(),
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -5006,7 +4990,7 @@ def project_application_ingress(
                         data={
                             "user_id": str(user.id),
                             "timestamp": datetime.datetime.now(
-                                datetime.timezone.utc
+                                datetime.UTC
                             ).isoformat(),
                         },
                     )
@@ -5068,7 +5052,7 @@ def project_application_configuration_delete(
             object=configuration,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -5877,7 +5861,7 @@ def application_release_create(org_slug, project_slug, app_slug):
         object=release,
         data={
             "user_id": str(current_user.id),
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         },
     )
     db.session.add(activity)
@@ -5934,8 +5918,9 @@ def guide():
 @user_blueprint.route("/account/security")
 @login_required
 def account_security():
-    from cabotage.server.models.auth import WebAuthn
     from flask import session as _session
+
+    from cabotage.server.models.auth import WebAuthn
 
     initial_setup = _session.pop("mfa_initial_setup", False)
 
@@ -6006,7 +5991,7 @@ def account_security_verify_recovery_code():
         data={
             "user_id": str(current_user.id),
             "action": "recovery_code_used",
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         },
     )
     db.session.add(activity)
@@ -6023,6 +6008,7 @@ def account_security_verify_recovery_code():
 @login_required
 def account_security_qr():
     import io
+
     import qrcode
     import qrcode.image.svg
 
@@ -6084,7 +6070,7 @@ def application_images_build_fromsource(org_slug, project_slug, app_slug):
         object=image,
         data={
             "user_id": str(current_user.id),
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         },
     )
     db.session.add(activity)
@@ -6174,11 +6160,11 @@ def application_clear_cache(org_slug, project_slug, app_slug):
     batch_api_instance = kubernetes.client.BatchV1Api(api_client)
     image = application.images.first()
     if image is not None and current_app.config["KUBERNETES_ENABLED"]:
-        from cabotage.celery.tasks.deploy import run_job
         from cabotage.celery.tasks.build import (
             _build_namespace,
             fetch_image_build_cache_volume_claim,
         )
+        from cabotage.celery.tasks.deploy import run_job
 
         buildkit_image = current_app.config["BUILDKIT_IMAGE"]
         build_namespace = _build_namespace(app_env)
@@ -6207,7 +6193,7 @@ def application_clear_cache(org_slug, project_slug, app_slug):
                 template=kubernetes.client.V1PodTemplateSpec(
                     metadata=kubernetes.client.V1ObjectMeta(
                         labels={
-                            "organization": image.application.project.organization.slug,  # noqa: E501
+                            "organization": image.application.project.organization.slug,
                             "project": image.application.project.slug,
                             "application": image.application.slug,
                             "process": "clear-cache",
@@ -6216,7 +6202,7 @@ def application_clear_cache(org_slug, project_slug, app_slug):
                             **safe_labels,
                         },
                         annotations={
-                            "container.apparmor.security.beta.kubernetes.io/clear-cache": "unconfined",  # noqa: E501
+                            "container.apparmor.security.beta.kubernetes.io/clear-cache": "unconfined",
                         },
                     ),
                     spec=kubernetes.client.V1PodSpec(
@@ -6234,7 +6220,7 @@ def application_clear_cache(org_slug, project_slug, app_slug):
                                 env=[
                                     kubernetes.client.V1EnvVar(
                                         name="BUILDKITD_FLAGS",
-                                        value="--oci-worker-no-process-sandbox",  # noqa: E501
+                                        value="--oci-worker-no-process-sandbox",
                                     ),
                                 ],
                                 security_context=kubernetes.client.V1SecurityContext(
@@ -6403,9 +6389,7 @@ def application_scale(org_slug, project_slug, app_slug):
                 object=application,
                 data={
                     "user_id": str(current_user.id),
-                    "timestamp": datetime.datetime.now(
-                        datetime.timezone.utc
-                    ).isoformat(),
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                     "changes": scaled,
                 },
             )
@@ -6415,8 +6399,7 @@ def application_scale(org_slug, project_slug, app_slug):
 
             if current_app.config["KUBERNETES_ENABLED"]:
                 from cabotage.celery.tasks.deploy import k8s_namespace as _k8s_ns
-                from cabotage.celery.tasks.deploy import resize_cronjob
-                from cabotage.celery.tasks.deploy import suspend_cronjob
+                from cabotage.celery.tasks.deploy import resize_cronjob, suspend_cronjob
 
                 latest = app_env.latest_release_built
                 if latest:
@@ -6510,7 +6493,7 @@ def release_deploy(org_slug, project_slug, app_slug, release_id):
         object=deployment,
         data={
             "user_id": str(current_user.id),
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         },
     )
     db.session.add(activity)
@@ -6640,9 +6623,7 @@ def organization_add_user(org_slug):
                         "user_id": str(current_user.id),
                         "member_email": user.email,
                         "action": "add_member",
-                        "timestamp": datetime.datetime.now(
-                            datetime.timezone.utc
-                        ).isoformat(),
+                        "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                     },
                 )
                 db.session.add(activity)
@@ -6684,9 +6665,7 @@ def organization_remove_user(org_slug):
                     "user_id": str(current_user.id),
                     "member_email": user.email,
                     "action": "remove_member",
-                    "timestamp": datetime.datetime.now(
-                        datetime.timezone.utc
-                    ).isoformat(),
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -6721,9 +6700,7 @@ def organization_promote_user(org_slug):
                     "user_id": str(current_user.id),
                     "member_email": user.email,
                     "action": "promote_member",
-                    "timestamp": datetime.datetime.now(
-                        datetime.timezone.utc
-                    ).isoformat(),
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -6758,9 +6735,7 @@ def organization_demote_user(org_slug):
                     "user_id": str(current_user.id),
                     "member_email": user.email,
                     "action": "demote_member",
-                    "timestamp": datetime.datetime.now(
-                        datetime.timezone.utc
-                    ).isoformat(),
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -8698,8 +8673,7 @@ def _loki_query_response(selectors, process_names, tenant_id=None):
                         log_stream = parsed.get("stream", "")
                 except json.JSONDecodeError, TypeError:
                     pass
-            if message.endswith("\n"):
-                message = message[:-1]
+            message = message.removesuffix("\n")
             entries.append(
                 {
                     "ts": ts_ns,
@@ -9158,3 +9132,351 @@ def infra_observe_metric():
         result = result if result else None
 
     return jsonify({"result": result, "queries": queries})
+
+
+# ---------------------------------------------------------------------------
+# Pipeline Stats
+# ---------------------------------------------------------------------------
+
+_PIPELINE_RANGES = {"7d": 7, "30d": 30, "90d": 90}
+# stage -> (model, column marking success); error marks failure for all stages
+_PIPELINE_STAGES = {
+    "image": (Image, Image.built),
+    "release": (Release, Release.built),
+    "deploy": (Deployment, Deployment.complete),
+}
+
+
+def _pipeline_range():
+    range_key = request.args.get("range", "30d")
+    return range_key if range_key in _PIPELINE_RANGES else "30d"
+
+
+def _pipeline_window():
+    """Start and optional end of the requested window.
+
+    `since`/`until` (inclusive UTC days) narrow a brushed window; otherwise
+    the window is the trailing range.
+    """
+    try:
+        since = datetime.date.fromisoformat(request.args.get("since", ""))
+        until = datetime.date.fromisoformat(request.args.get("until", ""))
+    except ValueError:
+        now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+        return now - datetime.timedelta(days=_PIPELINE_RANGES[_pipeline_range()]), None
+    start = datetime.datetime.combine(min(since, until), datetime.time())
+    end = datetime.datetime.combine(max(since, until), datetime.time())
+    try:
+        return start, end + datetime.timedelta(days=1)
+    except OverflowError:
+        abort(400)
+
+
+def _pipeline_finished(
+    stage: str,
+    app_env_id: uuid.UUID,
+    start: datetime.datetime,
+    end: datetime.datetime | None,
+):
+    """Model and filters for a stage's finished rows within the window."""
+    model, done = _PIPELINE_STAGES[stage]
+    filters = [
+        model.application_environment_id == app_env_id,
+        or_(done, model.error),
+        model.updated >= start,
+    ]
+    if end is not None:
+        filters.append(model.updated < end)
+    return model, filters
+
+
+def _duration(model):
+    """Seconds between a row's creation and its last update."""
+    return func.extract("epoch", model.updated - model.created)
+
+
+def _percentiles(duration):
+    """p50/p95 aggregates over a duration expression."""
+    return (
+        func.percentile_cont(0.5).within_group(duration),
+        func.percentile_cont(0.95).within_group(duration),
+    )
+
+
+def _seconds(value):
+    return round(float(value), 2) if value is not None else None
+
+
+def _iso_utc(value):
+    return value.isoformat() + "Z" if value else None
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/pipeline",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/pipeline",
+    defaults={"env_slug": None},
+)
+@login_required
+def project_application_pipeline(org_slug, project_slug, app_slug, env_slug=None):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=False
+    )
+
+    return render_template(
+        "user/project_application_pipeline.html",
+        application=application,
+        environment=app_env.environment if app_env else None,
+        app_env=app_env,
+        current_range=_pipeline_range(),
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/pipeline/stats",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/pipeline/stats",
+    defaults={"env_slug": None},
+)
+@login_required
+def project_application_pipeline_stats(org_slug, project_slug, app_slug, env_slug=None):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=True
+    )
+    start, end = _pipeline_window()
+
+    trend = collections.defaultdict(dict)
+    stages = {}
+    for stage in _PIPELINE_STAGES:
+        model, filters = _pipeline_finished(stage, app_env.id, start, end)
+        p50, p95 = _percentiles(_duration(model))
+        day = func.date_trunc("day", model.updated)
+        for row in db.session.query(day, p50, p95).filter(*filters).group_by(day):
+            trend[row[0].isoformat()].update(
+                {f"p50_{stage}": _seconds(row[1]), f"p95_{stage}": _seconds(row[2])}
+            )
+        overall = db.session.query(p50, p95).filter(*filters).one()
+        stages[stage] = {"p50": _seconds(overall[0]), "p95": _seconds(overall[1])}
+
+    _, deploy_filters = _pipeline_finished("deploy", app_env.id, start, end)
+    day = func.date_trunc("day", Deployment.updated)
+    throughput = [
+        {"date": row[0].isoformat(), "success": row[1], "failure": row[2]}
+        for row in db.session.query(
+            day,
+            func.count().filter(Deployment.complete),
+            func.count().filter(Deployment.error),
+        )
+        .filter(*deploy_filters)
+        .group_by(day)
+        .order_by(day)
+    ]
+
+    total, succeeded, failed = (
+        db.session.query(
+            func.count(),
+            func.count().filter(Deployment.complete),
+            func.count().filter(Deployment.error),
+        )
+        .filter(*deploy_filters)
+        .one()
+    )
+
+    # Only new build pipelines include build times; shared build time counts once.
+    is_build_pipeline = Deployment.deploy_metadata["auto_deploy"].astext == "true"
+    image_release_overlap = func.greatest(
+        0.0,
+        func.extract(
+            "epoch",
+            func.least(Image.updated, Release.updated)
+            - func.greatest(Image.created, Release.created),
+        ),
+    )
+    run_time = _percentiles(
+        case(
+            (
+                is_build_pipeline,
+                _duration(Image)
+                + _duration(Release)
+                + _duration(Deployment)
+                - image_release_overlap,
+            ),
+            else_=_duration(Deployment),
+        )
+    )
+    run_rows = (
+        db.session.query(Deployment)
+        .join(Release, Release.id == Deployment.release["id"].astext.cast(Uuid))
+        .join(Image, Image.id == Release.image["id"].astext.cast(Uuid))
+        .filter(*deploy_filters)
+    )
+    run_p50, run_p95 = run_rows.with_entities(*run_time).one()
+    for row in run_rows.with_entities(day, *run_time).group_by(day):
+        trend[cast(datetime.datetime, row[0]).isoformat()].update(
+            {"p50_run": _seconds(row[1]), "p95_run": _seconds(row[2])}
+        )
+
+    return jsonify(
+        {
+            "summary": {
+                "runs": total,
+                "failed": failed,
+                "success_rate": round(succeeded / total * 100, 1) if total else None,
+                "run_p50": _seconds(run_p50),
+                "run_p95": _seconds(run_p95),
+            },
+            "stages": stages,
+            "throughput": throughput,
+            "duration_trend": [{"date": k, **v} for k, v in sorted(trend.items())],
+        }
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/pipeline/runs",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/pipeline/runs",
+    defaults={"env_slug": None},
+)
+@login_required
+def project_application_pipeline_runs(org_slug, project_slug, app_slug, env_slug=None):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=True
+    )
+
+    limit = max(1, min(request.args.get("limit", 20, type=int), 200))
+    offset = max(request.args.get("offset", 0, type=int), 0)
+    if offset > 2**63 - 1:
+        abort(400)
+
+    start, end = _pipeline_window()
+    query = Deployment.query.filter(
+        Deployment.application_environment_id == app_env.id,
+        Deployment.updated >= start,
+    )
+    if end is not None:
+        query = query.filter(Deployment.updated < end)
+    query = query.order_by(desc(Deployment.created))
+    total_count = query.count()
+    deployments = query.offset(offset).limit(limit).all()
+
+    # Batch-fetch releases and images to avoid N+1 queries
+    release_ids = {(d.release or {}).get("id") for d in deployments} - {None}
+    releases: dict[str | None, Release] = {
+        str(r.id): r for r in Release.query.filter(Release.id.in_(release_ids))
+    }
+    image_ids = {(r.image or {}).get("id") for r in releases.values()} - {None}
+    images: dict[str | None, Image] = {
+        str(i.id): i for i in Image.query.filter(Image.id.in_(image_ids))
+    }
+
+    def stage(obj, done):
+        if obj is None:
+            return None, "pending"
+        status = "error" if obj.error else ("success" if done else "pending")
+        return _seconds(obj.duration_seconds), status
+
+    runs = []
+    for d in deployments:
+        pipeline = bool((d.deploy_metadata or {}).get("auto_deploy"))
+        rel = releases.get((d.release or {}).get("id"))
+        img = images.get((rel.image or {}).get("id")) if rel else None
+        image_duration, image_status = stage(img, img and img.built)
+        release_duration, release_status = stage(rel, rel and rel.built)
+        deploy_duration, deploy_status = stage(d, d.complete)
+        if not pipeline:
+            image_duration = None
+            release_duration = None
+            total_duration = deploy_duration
+        elif (
+            img is not None
+            and rel is not None
+            and image_duration is not None
+            and release_duration is not None
+            and deploy_duration is not None
+        ):
+            overlap = max(
+                (
+                    min(img.updated, rel.updated) - max(img.created, rel.created)
+                ).total_seconds(),
+                0.0,
+            )
+            total_duration = _seconds(
+                image_duration + release_duration + deploy_duration - overlap
+            )
+        else:
+            total_duration = None
+        runs.append(
+            {
+                "id": str(d.id),
+                "image_duration": image_duration,
+                "image_status": image_status,
+                "release_duration": release_duration,
+                "release_status": release_status,
+                "deploy_duration": deploy_duration,
+                "deploy_status": deploy_status,
+                "total_duration": total_duration,
+                "trigger_type": d.trigger_type,
+                "sha": d.release_snapshot.commit_sha if d.release_snapshot else None,
+                "started": _iso_utc(
+                    d.created if not pipeline else (img.created if img else d.created)
+                ),
+                "finished": _iso_utc(d.updated) if d.complete or d.error else None,
+            }
+        )
+
+    return jsonify({"runs": runs, "total": total_count})
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/pipeline/slowest",
+)
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/pipeline/slowest",
+    defaults={"env_slug": None},
+)
+@login_required
+def project_application_pipeline_slowest(
+    org_slug, project_slug, app_slug, env_slug=None
+):
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    app_env = _resolve_app_env(
+        application, env_slug=env_slug, project=project, required=True
+    )
+
+    stage = request.args.get("stage", "image")
+    if stage not in _PIPELINE_STAGES:
+        stage = "image"
+    model, filters = _pipeline_finished(stage, app_env.id, *_pipeline_window())
+    rows = (
+        model.query.filter(*filters)
+        .order_by(desc(model.updated - model.created))
+        .limit(10)
+        .all()
+    )
+
+    items = []
+    for r in rows:
+        if isinstance(r, Deployment):
+            snapshot = r.release_snapshot
+        elif isinstance(r, Release):
+            snapshot = r.image_snapshot
+        else:
+            snapshot = r
+        items.append(
+            {
+                "id": str(r.id),
+                "duration": _seconds(r.duration_seconds),
+                "sha": snapshot.commit_sha if snapshot else None,
+                "created": _iso_utc(r.created),
+                "finished": _iso_utc(r.updated),
+            }
+        )
+
+    return jsonify({"stage": stage, "items": items})

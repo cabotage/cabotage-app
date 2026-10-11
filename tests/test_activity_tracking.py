@@ -9,8 +9,8 @@ from flask_security import (
     logout_user,
     tf_code_confirmed,
     tf_disabled,
-    wan_registered,
     wan_deleted,
+    wan_registered,
 )
 
 from cabotage.server import db

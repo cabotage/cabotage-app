@@ -8,8 +8,8 @@ from flask_security import hash_password
 
 from cabotage.server import db
 from cabotage.server.models.auth import Organization, User
-from cabotage.server.models.notifications import NotificationRoute
 from cabotage.server.models.auth_associations import OrganizationMember
+from cabotage.server.models.notifications import NotificationRoute
 from cabotage.server.models.projects import (
     Application,
     Environment,

@@ -88,6 +88,39 @@ exclude_dirs = ["bin", "lib", "tests"]
 [tool.uv]
 exclude-newer = "1 week"
 
+[tool.ruff.lint]
+# FIXME: temporary "fix" to update ruff without a huge diff
+# these require either an unsafe or manual fix
+ignore = [
+    "RUF012",   # mutable-class-default
+    "RUF059",   # unused-unpacked-variable
+    "BLE001",   # blind-except
+    "F401", # unused-import
+    "SIM102",   # collapsible-if
+    "DTZ001",   # call-datetime-without-tzinfo
+    "EXE002",   # shebang-missing-executable-file
+    "TRY002",   # raise-vanilla-class
+    "PIE810",   # multiple-starts-ends-with
+    "RUF015",   # unnecessary-iterable-allocation-for-first-element
+    "C408",     # unnecessary-collection-call
+    "FLY002",   # static-join-to-f-string
+    "B018",     # useless-expression
+    "C419",     # unnecessary-comprehension-in-call
+    "TRY203",   # useless-try-except
+    "PLR1722",  # sys-exit-alias
+    "UP031",    # printf-string-formatting
+    "PLC0206",  # dict-index-missing-items
+    "SIM103",   # needless-bool
+    "C401",     # unnecessary-generator-set
+    "ISC004",   # implicit-string-concatenation-in-collection-literal
+    "FURB192",  # sorted-min-max
+    "DTZ005",   # call-datetime-now-without-tzinfo
+    "FURB162",  # fromisoformat-replace-z
+    "S112",     # try-except-continue
+    "TRY004",   # type-check-without-type-error
+    "SIM117",   # multiple-with-statements
+]
+
 [tool.pyrefly]
 preset = "all"
 project-includes = ["cabotage"]

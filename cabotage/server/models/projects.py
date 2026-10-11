@@ -1,7 +1,7 @@
 import datetime
 import json
 import uuid
-from typing import Any, TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 if TYPE_CHECKING:
     from cabotage.server.models.auth import Organization
@@ -9,8 +9,8 @@ if TYPE_CHECKING:
 
 from flask import current_app
 from sqlalchemy import (
-    Boolean,
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -23,30 +23,29 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.event import listens_for
-from sqlalchemy.orm import DynamicMapped, Mapped, mapped_column, relationship, backref
+from sqlalchemy.orm import DynamicMapped, Mapped, backref, mapped_column, relationship
 from sqlalchemy_continuum import make_versioned
 from sqlalchemy_continuum.plugins import FlaskPlugin
 from sqlalchemy_utils.models import Timestamp
 
-from cabotage.server import db, Model
-
+from cabotage._types import assume_not_none
+from cabotage.server import Model, db
 from cabotage.server.models.plugins import ActivityPlugin
 from cabotage.server.models.utils import (
+    DictDiffer,
     generate_k8s_identifier,
     readable_k8s_hostname,
     safe_k8s_name,
     slugify,
-    DictDiffer,
 )
 from cabotage.utils.docker_auth import (
     generate_docker_credentials,
     generate_kubernetes_imagepullsecrets,
 )
 from cabotage.utils.release_build_context import (
-    configmap_context_for_release,
     RELEASE_DOCKERFILE_TEMPLATE,
+    configmap_context_for_release,
 )
-from cabotage._types import assume_not_none
 
 activity_plugin = ActivityPlugin()
 flask_plugin = FlaskPlugin()
@@ -236,7 +235,7 @@ class Environment(Model, Timestamp):
         cascade="all, delete-orphan",
         order_by="EnvironmentConfiguration.name",
     )
-    resources: Mapped[list["Resource"]] = relationship(
+    resources: Mapped[list[Resource]] = relationship(
         back_populates="environment",
         cascade="all, delete-orphan",
     )
@@ -766,6 +765,19 @@ class Deployment(Model, Timestamp):
     __mapper_args__ = {"version_id_col": version_id}
 
     @property
+    def duration_seconds(self):
+        if (self.complete or self.error) and self.created and self.updated:
+            return (self.updated - self.created).total_seconds()
+        return None
+
+    @property
+    def trigger_type(self):
+        meta = self.deploy_metadata or {}
+        if meta.get("auto_deploy") and not meta.get("trigger"):
+            return "auto"
+        return "manual"
+
+    @property
     def release_object(self):
         return Release.query.filter_by(id=self.release.get("id", None)).first()
 
@@ -901,6 +913,12 @@ class Release(Model, Timestamp):
     )
 
     __mapper_args__ = {"version_id_col": version_id}
+
+    @property
+    def duration_seconds(self):
+        if (self.built or self.error) and self.created and self.updated:
+            return (self.updated - self.created).total_seconds()
+        return None
 
     @property
     def valid(self):
@@ -1454,6 +1472,12 @@ class Image(Model, Timestamp):
             name="image_has_build_target",
         ),
     )
+
+    @property
+    def duration_seconds(self):
+        if (self.built or self.error) and self.created and self.updated:
+            return (self.updated - self.created).total_seconds()
+        return None
 
     @property
     def repository_name(self):

@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from typing import TypedDict, NotRequired, Literal
+    from typing import Literal, NotRequired, TypedDict
 
     class Host(TypedDict):
         id: str
