@@ -369,6 +369,7 @@ def seed():
             )
             rel = _make_release(app_web, web_prod, img, configs_web_prod)
             dep = _make_deployment(app_web, web_prod, rel, complete=not failed)
+            dep.deploy_metadata = {"auto_deploy": True}
             if failed:
                 dep.error = True
                 dep.error_detail = "Readiness probe failed"
@@ -620,6 +621,7 @@ def seed():
                         updated=started + datetime.timedelta(seconds=secs),
                     )
                 )
+                started += datetime.timedelta(seconds=secs)
         db.session.commit()
         print()
         print("Seed complete!")

@@ -9286,9 +9286,19 @@ def project_application_pipeline_stats(org_slug, project_slug, app_slug, env_slu
         .one()
     )
 
-    # Run time: image build + release build + deploy, matching each run's total
+    # Run time: for an actual build pipeline, image + release + deploy; a
+    # deploy-only run (no "auto_deploy" in deploy_metadata, e.g.
+    # redeploy/rollback) only counts its own deploy duration, not the
+    # historical image/release build.
+    is_build_pipeline = Deployment.deploy_metadata["auto_deploy"].astext == "true"
     run_time = _percentiles(
-        _duration(Image) + _duration(Release) + _duration(Deployment)
+        case(
+            (
+                is_build_pipeline,
+                _duration(Image) + _duration(Release) + _duration(Deployment),
+            ),
+            else_=_duration(Deployment),
+        )
     )
     run_rows = (
         db.session.query(Deployment)
@@ -9366,16 +9376,26 @@ def project_application_pipeline_runs(org_slug, project_slug, app_slug, env_slug
 
     runs = []
     for d in deployments:
+        # A deployment only belongs to a build pipeline (image + release +
+        # deploy) when its metadata carries "auto_deploy"; a plain redeploy
+        # or rollback (release_deploy) sets only trigger/triggered_by and
+        # reuses a historical release/image whose build time and start
+        # shouldn't be re-counted against this deployment.
+        pipeline = bool((d.deploy_metadata or {}).get("auto_deploy"))
         rel = releases.get((d.release or {}).get("id"))
         img = images.get((rel.image or {}).get("id")) if rel else None
         image_duration, image_status = stage(img, img and img.built)
         release_duration, release_status = stage(rel, rel and rel.built)
         deploy_duration, deploy_status = stage(d, d.complete)
-        durations = [
-            x
-            for x in (image_duration, release_duration, deploy_duration)
-            if x is not None
-        ]
+        if not pipeline:
+            image_duration = None
+            release_duration = None
+            total_duration = deploy_duration
+        else:
+            durations = (image_duration, release_duration, deploy_duration)
+            total_duration = (
+                _seconds(sum(durations)) if None not in durations else None
+            )
         runs.append(
             {
                 "id": str(d.id),
@@ -9385,12 +9405,10 @@ def project_application_pipeline_runs(org_slug, project_slug, app_slug, env_slug
                 "release_status": release_status,
                 "deploy_duration": deploy_duration,
                 "deploy_status": deploy_status,
-                "total_duration": (
-                    _seconds(sum(durations)) if len(durations) == 3 else None
-                ),
+                "total_duration": total_duration,
                 "trigger_type": d.trigger_type,
                 "sha": d.release_snapshot.commit_sha if d.release_snapshot else None,
-                "started": _iso_utc(img.created if img else d.created),
+                "started": _iso_utc(d.created if not pipeline else (img.created if img else d.created)),
                 "finished": _iso_utc(d.updated) if d.complete or d.error else None,
             }
         )

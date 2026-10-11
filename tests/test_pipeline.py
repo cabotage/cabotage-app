@@ -1,5 +1,6 @@
 """Regression tests for the pipeline stats/runs endpoints."""
 
+import datetime
 import time
 import uuid
 from unittest.mock import patch
@@ -13,8 +14,11 @@ from cabotage.server.models.auth_associations import OrganizationMember
 from cabotage.server.models.projects import (
     Application,
     ApplicationEnvironment,
+    Deployment,
     Environment,
+    Image,
     Project,
+    Release,
 )
 from cabotage.server.wsgi import app as _app
 
@@ -79,6 +83,88 @@ def _pipeline_app():
     return client, application, app_env, base
 
 
+def _repo_name(application, app_env):
+    return Image._build_repository_name(
+        application.project.organization.k8s_identifier,
+        application.project.k8s_identifier,
+        application.k8s_identifier,
+        app_env.k8s_identifier,
+    )
+
+
+def _make_image(application, app_env, created, updated, *, built=True, error=False):
+    img = Image(
+        application_id=application.id,
+        application_environment_id=app_env.id,
+        _repository_name=_repo_name(application, app_env),
+        build_ref="main",
+        built=built,
+        error=error,
+        processes={},
+        image_metadata={"sha": "deadbeef"},
+        created=created,
+        updated=updated,
+    )
+    db.session.add(img)
+    db.session.flush()
+    return img
+
+
+def _make_release(application, app_env, image, created, updated, *, built=True, error=False):
+    release = Release(
+        application_id=application.id,
+        application_environment_id=app_env.id,
+        _repository_name=_repo_name(application, app_env),
+        image=image.asdict,
+        configuration={},
+        image_changes={"added": [], "removed": [], "changed": [], "unchanged": []},
+        configuration_changes={
+            "added": [],
+            "removed": [],
+            "changed": [],
+            "unchanged": [],
+        },
+        platform=application.platform,
+        built=built,
+        error=error,
+        created=created,
+        updated=updated,
+    )
+    db.session.add(release)
+    db.session.flush()
+    return release
+
+
+def _make_deployment(
+    application,
+    app_env,
+    release,
+    created,
+    updated,
+    *,
+    complete=True,
+    error=False,
+    deploy_metadata=None,
+):
+    dep = Deployment(
+        application_id=application.id,
+        application_environment_id=app_env.id,
+        release=release.asdict,
+        complete=complete,
+        error=error,
+        deploy_metadata=deploy_metadata,
+        created=created,
+        updated=updated,
+    )
+    db.session.add(dep)
+    db.session.flush()
+    return dep
+
+
+def _iso_day(dt):
+    return dt.date().isoformat()
+
+
 def test_pipeline_window_rejects_overflowing_until(pipeline_app):
     client, _application, _app_env, base = pipeline_app
     response = client.get(f"{base}/stats?since=2024-01-01&until=9999-12-31")
@@ -102,3 +188,76 @@ def test_pipeline_runs_clamps_negative_offset(pipeline_app):
     client, _application, _app_env, base = pipeline_app
     response = client.get(f"{base}/runs?offset=-5")
     assert response.status_code == 200
+
+
+def test_deploy_only_redeploy_excludes_historical_build_time(pipeline_app):
+    client, application, app_env, base = pipeline_app
+    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+
+    # Historical build, long before the redeploy.
+    old = now - datetime.timedelta(days=5)
+    img = _make_image(application, app_env, old, old + datetime.timedelta(seconds=100))
+    rel = _make_release(
+        application, app_env, img, old + datetime.timedelta(seconds=100),
+        old + datetime.timedelta(seconds=120),
+    )
+
+    # A plain redeploy/rollback reuses the release and only runs a deploy.
+    dep_start = now - datetime.timedelta(minutes=10)
+    dep_end = dep_start + datetime.timedelta(seconds=30)
+    _make_deployment(
+        application,
+        app_env,
+        rel,
+        dep_start,
+        dep_end,
+        deploy_metadata={"trigger": "manual_deploy", "triggered_by": "alice"},
+    )
+
+    day = _iso_day(now)
+    response = client.get(f"{base}/runs?since={day}&until={day}")
+    assert response.status_code == 200
+    runs = response.get_json()["runs"]
+    assert len(runs) == 1
+    run = runs[0]
+    assert run["image_duration"] is None
+    assert run["release_duration"] is None
+    assert run["total_duration"] == pytest.approx(30.0)
+    assert run["started"] == dep_start.isoformat() + "Z"
+
+
+def test_manual_build_and_deploy_counts_full_pipeline(pipeline_app):
+    client, application, app_env, base = pipeline_app
+    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    t0 = now - datetime.timedelta(minutes=30)
+
+    img = _make_image(application, app_env, t0, t0 + datetime.timedelta(seconds=100))
+    rel = _make_release(
+        application, app_env, img,
+        t0 + datetime.timedelta(seconds=100), t0 + datetime.timedelta(seconds=120),
+    )
+    # Manual "Build and deploy" sets both auto_deploy and trigger=manual_deploy.
+    _make_deployment(
+        application,
+        app_env,
+        rel,
+        t0 + datetime.timedelta(seconds=120),
+        t0 + datetime.timedelta(seconds=150),
+        deploy_metadata={
+            "auto_deploy": True,
+            "trigger": "manual_deploy",
+            "triggered_by": "alice",
+        },
+    )
+
+    day = _iso_day(now)
+    response = client.get(f"{base}/runs?since={day}&until={day}")
+    assert response.status_code == 200
+    run = response.get_json()["runs"][0]
+    assert run["image_duration"] == pytest.approx(100.0)
+    assert run["release_duration"] == pytest.approx(20.0)
+    assert run["deploy_duration"] == pytest.approx(30.0)
+    assert run["total_duration"] == pytest.approx(150.0)
+
+    stats = client.get(f"{base}/stats?since={day}&until={day}").get_json()
+    assert stats["summary"]["run_p50"] == pytest.approx(150.0)
