@@ -20147,38 +20147,10 @@
       "severity": "error"
     },
     {
-      "column": 25,
-      "path": "cabotage/scripts/seed_localdev.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 34,
-      "path": "cabotage/scripts/seed_localdev.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 13,
       "path": "cabotage/scripts/seed_localdev.py",
       "name": "unused-call-result",
       "concise_description": "Result of call expression is of type `Image` and is not used; assign to `_` if this is intentional",
-      "severity": "error"
-    },
-    {
-      "column": 25,
-      "path": "cabotage/scripts/seed_localdev.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 34,
-      "path": "cabotage/scripts/seed_localdev.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
