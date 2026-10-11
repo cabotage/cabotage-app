@@ -405,3 +405,53 @@ def test_rollup_run_time_matches_deployment_type(
         assert row[percentile] == pytest.approx(expected)
         assert rollup["summary"][f"run_{percentile}"] == pytest.approx(expected)
         assert stats["summary"][f"run_{percentile}"] == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        None,
+        {"trigger": "manual_deploy"},
+        {"auto_deploy": False, "trigger": "rollback"},
+        {"auto_deploy": True},
+    ],
+)
+def test_live_run_only_includes_current_pipeline_stages(pipeline_app, metadata):
+    client, application, app_env, base = pipeline_app
+    start = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    img = _make_image(
+        application,
+        app_env,
+        start - datetime.timedelta(minutes=2),
+        start - datetime.timedelta(minutes=1),
+    )
+    rel = _make_release(
+        application,
+        app_env,
+        img,
+        start - datetime.timedelta(minutes=1),
+        start - datetime.timedelta(seconds=30),
+    )
+    dep = _make_deployment(
+        application,
+        app_env,
+        rel,
+        start,
+        start,
+        complete=False,
+        deploy_metadata=metadata,
+    )
+    response = client.get(f"{base}/live")
+    assert response.status_code == 200
+    run = response.get_json()["run"]
+    assert run["status"] == "running"
+    assert run["deploy"]["id"] == str(dep.id)
+    assert run["sha"] == "deadbee"
+    if (metadata or {}).get("auto_deploy"):
+        assert run["image"]["id"] == str(img.id)
+        assert run["release"]["id"] == str(rel.id)
+        assert run["started"] == img.created.isoformat() + "Z"
+    else:
+        assert run["image"] is None
+        assert run["release"] is None
+        assert run["started"] == start.isoformat() + "Z"

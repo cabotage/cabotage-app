@@ -9645,7 +9645,7 @@ def _pipeline_live_run(
     deploy = anchor if isinstance(anchor, Deployment) else None
     release = anchor if isinstance(anchor, Release) else None
     image = anchor if isinstance(anchor, Image) else None
-    if deploy is not None:
+    if deploy is not None and (deploy.deploy_metadata or {}).get("auto_deploy"):
         release = cast(
             "Release | None",
             Release.query.filter_by(id=(deploy.release or {}).get("id")).first(),

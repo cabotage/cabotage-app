@@ -23,6 +23,8 @@ Open **Observe → Pipeline** to review build and deployment times. Redeploys
 count only deployment time. Builds that run at the same time count once in the
 run total, including project, organization, and platform rollup percentiles.
 The summary and tables still load when charts are unavailable.
+The latest-run strip shows only the deploy stage for redeploys and rollbacks;
+reused images and releases do not shift the current run's start time.
 
 
 ## Development workflow
