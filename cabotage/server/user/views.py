@@ -3282,9 +3282,9 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
             app_env.deployments.order_by(Deployment.created.desc()).limit(50).all()
         )
 
-        images = all_images[:10]
-        releases = all_releases[:10]
-        deployments = all_deployments[:10]
+        images = all_images[:25]
+        releases = all_releases[:25]
+        deployments = all_deployments[:25]
 
         # Extract latest_* variants from pre-fetched lists
         variants = extract_latest_variants(all_images, all_releases, all_deployments)
