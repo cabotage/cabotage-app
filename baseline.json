@@ -22590,20 +22590,6 @@
       "severity": "error"
     },
     {
-      "column": 28,
-      "path": "cabotage/server/config.py",
-      "name": "implicit-reexport",
-      "concise_description": "`uia_username_mapper` is not exported from module `flask_security`",
-      "severity": "error"
-    },
-    {
-      "column": 49,
-      "path": "cabotage/server/config.py",
-      "name": "implicit-reexport",
-      "concise_description": "`uia_email_mapper` is not exported from module `flask_security`",
-      "severity": "error"
-    },
-    {
       "column": 5,
       "path": "cabotage/server/config.py",
       "name": "unannotated-return",

@@ -1,13 +1,13 @@
 """Tests for MFA enforcement guards."""
 
-import uuid
 import time
+import uuid
 
-import pytest  # noqa: F401 (used by fixtures)
+import pytest
 from flask_security import hash_password
 
 from cabotage.server import db
-from cabotage.server.models.auth import User, WebAuthn, GitHubIdentity
+from cabotage.server.models.auth import GitHubIdentity, User, WebAuthn
 from cabotage.server.wsgi import app as _app
 
 

@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """Parser for Procfiles.
 
 Implements `Smartmob RFC 1 <http://smartmob-rfc.readthedocs.org/en/latest/1-procfile.html>`_.
@@ -28,14 +26,13 @@ THE SOFTWARE.
 """
 
 import re
-
-
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Generator, Iterable
+    from typing import Final, TypedDict
+
     from _typeshed import StrOrBytesPath, SupportsRead
-    from collections.abc import Iterable, Generator
-    from typing import TypedDict, Final
 
     class Entry(TypedDict):
         cmd: str
@@ -126,7 +123,7 @@ def loads(content: str) -> Procfile:
     # Reject commands with duplicate variables (no sane default).
     for i, line in lines:
         process_type, env = line[0], line[2]
-        duplicates = _find_duplicates(((0, var[0]) for var in env))
+        duplicates = _find_duplicates((0, var[0]) for var in env)
         for _, variable, _ in duplicates:
             errors.append(
                 "".join(
