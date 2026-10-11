@@ -120,6 +120,19 @@
   </div>
 {% endmacro %}
 
+{% macro infra_tab_nav(active='') %}
+  <div class="app-content-padded !py-0">
+    <div class="tab-bar" data-tabs>
+      <a href="{{ url_for('user.infra_observe') }}"
+         title="Observe"
+         class="tab-item {% if active == 'observe' %}tab-active{% endif %}">{{ icon('search', 'w-4 h-4') }} <span class="tab-label">Observe</span></a>
+      <a href="{{ url_for('user.infra_pipeline') }}"
+         title="Pipeline"
+         class="tab-item {% if active == 'pipeline' %}tab-active{% endif %}">{{ icon('bar-chart-2', 'w-4 h-4') }} <span class="tab-label">Pipeline</span></a>
+    </div>
+  </div>
+{% endmacro %}
+
 {% macro env_tab_nav(project, environment, active='') %}
   {% set org_slug = project.organization.slug %}
   {% set project_slug = project.slug %}
