@@ -1,0 +1,330 @@
+{% from "_macros.html" import icon %}
+{#
+  Shared pipeline rollup table, included by project_pipeline.html and
+  organization_pipeline.html. The includer must set, before including:
+    rollup_level      'project' | 'organization'
+    rollup_root_id    unique element id for this page's root
+    rollup_url        JSON endpoint returning {rows, summary?}
+    rollup_empty_text teaching sentence shown when nothing has run in range
+    show_summary      true to render the pooled summary line (org page)
+#}
+<style>
+.roll { --roll-ok: var(--color-success); --roll-fail: var(--color-error);
+  --roll-mono: 'JetBrains Mono', ui-monospace, monospace; }
+.roll .num { font-family: var(--roll-mono); font-variant-numeric: tabular-nums; }
+.roll-card { background: var(--surface-card); border: 1px solid var(--border-color); border-radius: 0.75rem; overflow: hidden; }
+.roll-note { padding: 1.5rem 1rem; text-align: center; font-size: 0.875rem; color: var(--text-muted); }
+.roll-note.mb { margin-bottom: 0.75rem; }
+
+.roll-summary { display: flex; flex-wrap: wrap; gap: 0.375rem 1.75rem; padding: 0.875rem 1.25rem;
+  font-size: 0.8125rem; color: var(--text-muted); border-bottom: 1px solid var(--border-color); }
+.roll-summary b { font-family: var(--roll-mono); color: var(--text-bright); font-weight: 600; margin-left: 0.3rem; }
+
+.roll-table-wrap { overflow-x: auto; }
+table.roll-table { width: 100%; border-collapse: collapse; min-width: 760px; }
+.roll-table th, .roll-table td { padding: 0 0.75rem; white-space: nowrap; }
+.roll-table thead th { height: 2.25rem; font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--text-faint); text-align: right; border-bottom: 1px solid var(--border-color); }
+.roll-table thead th.roll-status, .roll-table thead th.roll-name, .roll-table thead th.roll-trend-head { text-align: left; }
+.roll-table thead button { all: unset; cursor: pointer; font: inherit; letter-spacing: inherit; text-transform: inherit;
+  color: inherit; display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.25rem 0; border-radius: 0.25rem; }
+.roll-table thead button:hover { color: var(--text-bright); }
+.roll-table thead button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.roll-table thead th[aria-sort="ascending"] button,
+.roll-table thead th[aria-sort="descending"] button { color: var(--text-bright); }
+.roll-sort-arrow { font-size: 0.625rem; width: 0.75rem; display: inline-block; opacity: 0; }
+th[aria-sort="ascending"] .roll-sort-arrow, th[aria-sort="descending"] .roll-sort-arrow { opacity: 1; }
+
+tr.roll-row { position: relative; height: 2.75rem; font-size: 0.875rem; color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color-subtle); transition: background-color 150ms ease-out; }
+tr.roll-row:last-child { border-bottom: 0; }
+tr.roll-row:hover { background: var(--hover-overlay); }
+tr.roll-row.is-empty { color: var(--text-faint); }
+.roll-table td.num { text-align: right; }
+.roll-link { color: var(--text-bright); text-decoration: none; }
+.roll-link:focus-visible { outline: none; }
+.roll-link:focus-visible::after { outline: 2px solid var(--color-primary); outline-offset: -2px; border-radius: 0.375rem; }
+.roll-link::after { content: ''; position: absolute; inset: 0; }
+.roll-name .proj { color: var(--text-muted); }
+.roll-status { width: 1.75rem; }
+.roll-dot { width: 0.5rem; height: 0.5rem; border-radius: 9999px; display: inline-block; }
+.roll-dot-ok { background: var(--roll-ok); }
+.roll-dot-fail { background: var(--roll-fail); box-shadow: 0 0 8px color-mix(in srgb, var(--roll-fail) 40%, transparent); }
+.roll-dot-none { background: var(--border-color); }
+.roll-trend-head { width: 6.5rem; }
+.roll-spark { display: flex; align-items: flex-end; gap: 1px; height: 1.25rem; width: 6rem; }
+.roll-spark > span { flex: 1 1 0; min-width: 1px; border-radius: 1px;
+  background: color-mix(in srgb, var(--text-muted) 55%, transparent); }
+.roll-spark > span.has-fail { background: var(--roll-fail); }
+
+.roll-skel { border-radius: 0.375rem; background: linear-gradient(90deg, var(--surface-inset) 0%,
+  color-mix(in srgb, var(--surface-inset) 60%, var(--surface-card)) 50%, var(--surface-inset) 100%);
+  background-size: 200% 100%; animation: roll-shimmer 1.4s ease-in-out infinite; }
+@keyframes roll-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .roll-skel { animation: none; }
+  tr.roll-row { transition: none; }
+}
+</style>
+
+<div class="settings-page roll" id="{{ rollup_root_id }}">
+  <div class="flex flex-wrap items-end justify-between gap-x-4 gap-y-3 mb-4">
+    <div>
+      <h1 class="text-lg font-semibold text-base-content">Pipeline</h1>
+      <p class="text-xs text-base-content/50">
+        {% if rollup_level == 'organization' %}
+          Run time and failure rate for every application environment across the organization.
+        {% else %}
+          Run time and failure rate for every application environment in this project.
+        {% endif %}
+      </p>
+    </div>
+    <div class="flex gap-1.5" id="roll-range-selector" role="group" aria-label="Time range">
+      {% for r in ['7d', '30d', '90d'] %}
+        <button type="button" data-range="{{ r }}" aria-pressed="{{ 'true' if current_range == r else 'false' }}"
+           class="btn btn-xs {% if current_range == r %}btn-primary{% else %}btn-ghost{% endif %}">{{ r }}</button>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div id="roll-error" class="roll-card roll-note mb-3" hidden>
+    Couldn't load pipeline data. <button type="button" class="btn btn-xs btn-ghost ml-1" data-retry>Retry</button>
+  </div>
+
+  <div id="roll-empty" class="roll-card roll-note mb-3" hidden>
+    {{ rollup_empty_text }}
+  </div>
+
+  <div class="roll-card">
+    {% if show_summary %}
+    <div class="roll-summary" id="roll-summary" hidden>
+      <span>Deploys <span data-range-label></span><b data-summary="runs">—</b></span>
+      <span>Change failure rate<b data-summary="cfr">—</b></span>
+      <span>Median run<b data-summary="p50">—</b></span>
+    </div>
+    {% endif %}
+    <div class="roll-table-wrap">
+      <table class="roll-table">
+        <caption class="sr-only">Pipeline runs by application environment</caption>
+        <thead>
+          <tr>
+            <th scope="col" class="roll-status"><span class="sr-only">Status</span></th>
+            <th scope="col" class="roll-name">
+              {% if rollup_level == 'organization' %}Project / App · Environment{% else %}App · Environment{% endif %}
+            </th>
+            <th scope="col" aria-sort="none">
+              <button type="button" data-sort="runs">Runs<span class="roll-sort-arrow"></span></button>
+            </th>
+            <th scope="col" aria-sort="none">
+              <button type="button" data-sort="failed">Failed<span class="roll-sort-arrow"></span></button>
+            </th>
+            <th scope="col" aria-sort="none">
+              <button type="button" data-sort="success_rate">Success<span class="roll-sort-arrow"></span></button>
+            </th>
+            <th scope="col" aria-sort="none">
+              <button type="button" data-sort="p50">p50<span class="roll-sort-arrow"></span></button>
+            </th>
+            <th scope="col" aria-sort="none">
+              <button type="button" data-sort="p95">p95<span class="roll-sort-arrow"></span></button>
+            </th>
+            <th scope="col" aria-sort="descending">
+              <button type="button" data-sort="last_at">Last run<span class="roll-sort-arrow">▼</span></button>
+            </th>
+            <th scope="col" class="roll-trend-head">Deploys/day</th>
+          </tr>
+        </thead>
+        <tbody id="roll-body">
+          <tr><td colspan="9" class="p-4"><div class="roll-skel h-4"></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var root = document.getElementById({{ rollup_root_id|tojson }});
+  var level = {{ rollup_level|tojson }};
+  var rollupUrl = {{ rollup_url|tojson }};
+  var DAY = 86400;
+
+  var state = { range: {{ current_range|tojson }}, sort: { key: 'last_at', dir: 'desc' }, rows: null };
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function(c) { return '&#' + c.charCodeAt(0) + ';'; });
+  }
+  function fmtDur(v) {
+    if (v == null) return '—';
+    v = +v;
+    if (v < 60) return v.toFixed(1) + 's';
+    if (v < 3600) {
+      var s = Math.round(v % 60);
+      return Math.floor(v / 60) + 'm ' + (s < 10 ? '0' : '') + s + 's';
+    }
+    return Math.floor(v / 3600) + 'h ' + Math.round((v % 3600) / 60) + 'm';
+  }
+  function fmtPct(v) { return v == null ? '—' : v.toFixed(1) + '%'; }
+  function relTime(iso) {
+    if (!iso) return '—';
+    var d = new Date(iso), diff = (Date.now() - d.getTime()) / 1000;
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    if (diff < DAY) return Math.floor(diff / 3600) + 'h ago';
+    if (diff < 7 * DAY) return Math.floor(diff / DAY) + 'd ago';
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+  function absTime(iso) { return iso ? new Date(iso).toLocaleString() : ''; }
+
+  function dayList() {
+    var n = parseInt(state.range, 10), days = [], now = new Date();
+    for (var i = n - 1; i >= 0; i--) {
+      days.push(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i))
+        .toISOString().slice(0, 10));
+    }
+    return days;
+  }
+
+  function labelHtml(row) {
+    var prefix = level === 'organization'
+      ? '<span class="proj">' + esc(row.project_name) + ' / </span>' : '';
+    return prefix + esc(row.app_name) + ' · ' + esc(row.env_name);
+  }
+
+  function sparkHtml(row) {
+    var days = dayList();
+    if (!row.sparkline.length) {
+      return '<span class="roll-spark" aria-hidden="true">' +
+        days.map(function() { return '<span style="height:2px"></span>'; }).join('') + '</span>';
+    }
+    var byDate = {};
+    row.sparkline.forEach(function(p) { byDate[p.date] = p; });
+    var max = row.sparkline.reduce(function(m, p) { return Math.max(m, p.count); }, 1);
+    var bars = days.map(function(d) {
+      var p = byDate[d];
+      var h = p ? Math.max(8, Math.round(p.count / max * 100)) : 2;
+      var cls = p && p.failed > 0 ? ' class="has-fail"' : '';
+      return '<span style="height:' + h + '%"' + cls + '></span>';
+    }).join('');
+    return '<span class="roll-spark" role="img" aria-label="' + row.runs + ' deploys over ' +
+      days.length + ' days">' + bars + '</span>';
+  }
+
+  function rowHtml(row) {
+    var empty = row.runs === 0;
+    var dotClass = row.last_status === 'fail' ? 'roll-dot-fail'
+      : row.last_status === 'ok' ? 'roll-dot-ok' : 'roll-dot-none';
+    var statusWord = row.last_status === 'fail' ? 'Failed' : row.last_status === 'ok' ? 'Deployed' : '—';
+    return (
+      '<tr class="roll-row' + (empty ? ' is-empty' : '') + '">' +
+      '<td class="roll-status"><span class="roll-dot ' + dotClass + '" title="' + statusWord + '"></span></td>' +
+      '<td class="roll-name"><a class="roll-link" href="' + row.url + '">' + labelHtml(row) + '</a></td>' +
+      '<td class="num">' + (empty ? '—' : row.runs) + '</td>' +
+      '<td class="num">' + (empty ? '—' : row.failed) + '</td>' +
+      '<td class="num">' + (empty ? '—' : fmtPct(row.success_rate)) + '</td>' +
+      '<td class="num">' + fmtDur(row.p50) + '</td>' +
+      '<td class="num">' + fmtDur(row.p95) + '</td>' +
+      '<td class="num" title="' + absTime(row.last_at) + '">' + relTime(row.last_at) + '</td>' +
+      '<td>' + sparkHtml(row) + '</td>' +
+      '</tr>'
+    );
+  }
+
+  function sortRows(rows) {
+    var withRuns = rows.filter(function(r) { return r.runs > 0; });
+    var withoutRuns = rows.filter(function(r) { return r.runs === 0; });
+    var key = state.sort.key, dir = state.sort.dir;
+    withRuns.sort(function(a, b) {
+      var av = a[key], bv = b[key];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      var cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      return dir === 'asc' ? cmp : -cmp;
+    });
+    withoutRuns.sort(function(a, b) {
+      return (a.project_slug + a.app_slug + a.env_slug)
+        .localeCompare(b.project_slug + b.app_slug + b.env_slug);
+    });
+    return withRuns.concat(withoutRuns);
+  }
+
+  function render() {
+    if (!state.rows) return;
+    document.getElementById('roll-empty').hidden = state.rows.some(function(r) { return r.runs > 0; });
+    root.querySelectorAll('[data-range-label]').forEach(function(el) {
+      el.textContent = 'in the last ' + parseInt(state.range, 10) + ' days';
+    });
+    var body = document.getElementById('roll-body');
+    body.innerHTML = sortRows(state.rows).map(rowHtml).join('') ||
+      '<tr><td colspan="9" class="roll-note">No application environments in scope.</td></tr>';
+  }
+
+  function renderSummary(payload) {
+    var el = document.getElementById('roll-summary');
+    if (!el || !payload.summary) return;
+    el.hidden = false;
+    el.querySelector('[data-summary="runs"]').textContent = payload.summary.runs;
+    el.querySelector('[data-summary="cfr"]').textContent = fmtPct(payload.summary.change_failure_rate);
+    el.querySelector('[data-summary="p50"]').textContent = fmtDur(payload.summary.run_p50);
+  }
+
+  function syncUrl() {
+    var url = new URL(location.href);
+    url.searchParams.set('range', state.range);
+    history.replaceState(null, '', url);
+  }
+
+  function load() {
+    document.getElementById('roll-error').hidden = true;
+    fetch(rollupUrl + '?range=' + encodeURIComponent(state.range), { headers: { Accept: 'application/json' } })
+      .then(function(r) { if (!r.ok) throw new Error('request failed'); return r.json(); })
+      .then(function(payload) {
+        state.rows = payload.rows;
+        render();
+        renderSummary(payload);
+      })
+      .catch(function() {
+        document.getElementById('roll-error').hidden = false;
+      });
+  }
+
+  document.getElementById('roll-range-selector').addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-range]');
+    if (!btn || btn.dataset.range === state.range) return;
+    state.range = btn.dataset.range;
+    document.querySelectorAll('#roll-range-selector [data-range]').forEach(function(b) {
+      b.classList.toggle('btn-primary', b === btn);
+      b.classList.toggle('btn-ghost', b !== btn);
+      b.setAttribute('aria-pressed', b === btn ? 'true' : 'false');
+    });
+    syncUrl();
+    load();
+  });
+
+  document.getElementById('roll-error').addEventListener('click', function(e) {
+    if (e.target.closest('[data-retry]')) load();
+  });
+
+  root.querySelectorAll('.roll-table thead button[data-sort]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var key = btn.dataset.sort;
+      if (state.sort.key === key) {
+        state.sort.dir = state.sort.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        state.sort.key = key;
+        state.sort.dir = 'desc';
+      }
+      root.querySelectorAll('.roll-table thead th').forEach(function(th) {
+        var b = th.querySelector('button[data-sort]');
+        if (!b) return;
+        var active = b.dataset.sort === state.sort.key;
+        th.setAttribute('aria-sort', active ? (state.sort.dir === 'asc' ? 'ascending' : 'descending') : 'none');
+        b.querySelector('.roll-sort-arrow').textContent = active ? (state.sort.dir === 'asc' ? '▲' : '▼') : '';
+      });
+      render();
+    });
+  });
+
+  load();
+})();
+</script>

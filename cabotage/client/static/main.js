@@ -1779,6 +1779,472 @@ function initTimestampsAndDeployForm() {
   }
 }
 
+/* Structured Live Log (build/release/deploy) */
+var STRUCT_LOG_ERROR_RE = /error|failed|failure|exception|traceback|timed?\s*out/i;
+var STRUCT_LOG_ERROR_EXCLUDE_RE = /no error|warning|cache importer/i;
+var STRUCT_LOG_VERTEX_RE = /^#(\d+)\s(.*)$/;
+var STRUCT_LOG_CACHED_RE = /^CACHED\s*$/i;
+var STRUCT_LOG_DONE_RE = /^DONE(?:\s+([\d.]+)s)?\s*$/i;
+var STRUCT_LOG_VERTEX_ERROR_RE = /^ERROR:?\s*(.*)$/i;
+var STRUCT_LOG_BRACKET_RE = /\[(?:\S+\s+)?(\d+)\/(\d+)\]/;
+var STRUCT_LOG_PHASE_START_PATTERNS = [
+  /^Constructing API Clients$/i,
+  /^Fetching Namespace$/i,
+  /^Fetching Cabotage CA Cert ConfigMap$/i,
+  /^Fetching ServiceAccount$/i,
+  /^Fetching CabotageEnrollment$/i,
+  /^Fetching (?:web|tcp) Service\(s\)$/i,
+  /^Fetching \S+ Service$/i,
+  /^Fetching ImagePullSecrets$/i,
+  /^Patching ServiceAccount with ImagePullSecrets/i,
+  /^Running release command /i,
+  /^Creating deployment for /i,
+  /^Creating CronJob for /i,
+  /^Waiting on deployment to rollout/i,
+  /^Running postdeploy command /i,
+  /^Waiting for TLS certificate/i,
+  /^Deployment \S+ complete$/i
+];
+var STRUCT_LOG_PHASE_TERMINAL_RE = /^Deployment \S+ complete$/i;
+var STRUCT_LOG_PHASE_FINISH_RE = /complete!\s*$/i;
+var STRUCT_LOG_CHEVRON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6" /></svg>';
+
+function structLogLooksLikeError(trimmed) {
+  return STRUCT_LOG_ERROR_RE.test(trimmed) && !STRUCT_LOG_ERROR_EXCLUDE_RE.test(trimmed);
+}
+function structLogFmtLive(seconds) {
+  seconds = Math.floor(seconds);
+  if (seconds < 60) return seconds + 's';
+  var m = Math.floor(seconds / 60), s = seconds % 60;
+  return m + ':' + (s < 10 ? '0' : '') + s;
+}
+function structLogFmtFinal(seconds) {
+  if (seconds < 60) return (Math.round(seconds * 10) / 10) + 's';
+  var m = Math.floor(seconds / 60), s = Math.round(seconds % 60);
+  return m + ':' + (s < 10 ? '0' : '') + s;
+}
+function structLogAttachTailTracking(scrollEl, chipEl) {
+  var state = { follow: true };
+  scrollEl.addEventListener('scroll', function () {
+    var atBottom = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 32;
+    state.follow = atBottom;
+    chipEl.hidden = atBottom;
+  });
+  chipEl.addEventListener('click', function () {
+    state.follow = true;
+    chipEl.hidden = true;
+    scrollEl.scrollTop = scrollEl.scrollHeight;
+  });
+  return state;
+}
+
+function StructuredLogViewer(container, kind) {
+  this.container = container;
+  this.kind = kind; /* 'buildkit' | 'phases' */
+  this.allLines = [];
+  this.steps = [];
+  this.vertexIndex = {};
+  this.currentPhaseStep = null;
+  this.leadingFinalized = false;
+  this.hasError = false;
+  this.firstErrorLineEl = null;
+  this.maxBracketTotal = 0;
+  this.bracketCurrent = 0;
+  this.scrollScheduled = false;
+  this.rawMode = false;
+  container.classList.add('struct-log-active');
+  container.innerHTML = '';
+  this.buildDom();
+}
+
+StructuredLogViewer.prototype.buildDom = function () {
+  var self = this;
+  var root = document.createElement('div');
+  root.className = 'struct-log';
+
+  var header = document.createElement('div');
+  header.className = 'struct-log-header';
+
+  var stepCount = document.createElement('span');
+  stepCount.className = 'struct-log-stepcount';
+  stepCount.hidden = true;
+
+  var jumpError = document.createElement('button');
+  jumpError.type = 'button';
+  jumpError.className = 'struct-log-btn struct-log-jump-error';
+  jumpError.textContent = 'Jump to error';
+  jumpError.hidden = true;
+
+  var spacer = document.createElement('span');
+  spacer.className = 'struct-log-spacer';
+
+  var rawToggle = document.createElement('button');
+  rawToggle.type = 'button';
+  rawToggle.className = 'struct-log-btn';
+  rawToggle.setAttribute('aria-pressed', 'false');
+  rawToggle.textContent = 'Raw';
+
+  header.appendChild(stepCount);
+  header.appendChild(jumpError);
+  header.appendChild(spacer);
+  header.appendChild(rawToggle);
+
+  var body = document.createElement('div');
+  body.className = 'struct-log-body';
+
+  var waiting = document.createElement('div');
+  waiting.className = 'struct-log-waiting';
+  waiting.textContent = 'Waiting for output\u2026';
+  body.appendChild(waiting);
+
+  var leadingGroup = document.createElement('div');
+  leadingGroup.className = 'log-output-group';
+  leadingGroup.hidden = true;
+  leadingGroup.innerHTML = '<div class="log-output-label">Output</div><div class="log-output-lines"></div>';
+  body.appendChild(leadingGroup);
+
+  var trailingGroup = document.createElement('div');
+  trailingGroup.className = 'log-output-group';
+  trailingGroup.hidden = true;
+  trailingGroup.innerHTML = '<div class="log-output-label">Output</div><div class="log-output-lines"></div>';
+  body.appendChild(trailingGroup);
+
+  var bodyChip = document.createElement('button');
+  bodyChip.type = 'button';
+  bodyChip.className = 'struct-log-latest-chip';
+  bodyChip.textContent = 'Jump to latest';
+  bodyChip.hidden = true;
+  body.appendChild(bodyChip);
+
+  var rawText = document.createElement('pre');
+  rawText.className = 'struct-log-raw-text';
+
+  var rawChip = document.createElement('button');
+  rawChip.type = 'button';
+  rawChip.className = 'struct-log-latest-chip';
+  rawChip.textContent = 'Jump to latest';
+  rawChip.hidden = true;
+
+  var raw = document.createElement('div');
+  raw.className = 'struct-log-raw';
+  raw.hidden = true;
+  raw.appendChild(rawText);
+  raw.appendChild(rawChip);
+
+  root.appendChild(header);
+  root.appendChild(body);
+  root.appendChild(raw);
+  this.container.appendChild(root);
+
+  this.stepCountEl = stepCount;
+  this.jumpErrorEl = jumpError;
+  this.rawToggleEl = rawToggle;
+  this.bodyEl = body;
+  this.waitingEl = waiting;
+  this.leadingGroupEl = leadingGroup;
+  this.trailingGroupEl = trailingGroup;
+  this.rawEl = raw;
+  this.rawTextEl = rawText;
+
+  this.bodyFollow = structLogAttachTailTracking(body, bodyChip);
+  this.rawFollow = structLogAttachTailTracking(raw, rawChip);
+
+  jumpError.addEventListener('click', function () { self.jumpToError(); });
+  rawToggle.addEventListener('click', function () {
+    self.rawMode = !self.rawMode;
+    rawToggle.setAttribute('aria-pressed', self.rawMode ? 'true' : 'false');
+    rawToggle.textContent = self.rawMode ? 'Structured' : 'Raw';
+    body.hidden = self.rawMode;
+    raw.hidden = !self.rawMode;
+    if (self.rawMode) raw.scrollTop = raw.scrollHeight;
+  });
+};
+
+StructuredLogViewer.prototype.scheduleScroll = function () {
+  if (this.scrollScheduled) return;
+  this.scrollScheduled = true;
+  var self = this;
+  requestAnimationFrame(function () {
+    self.scrollScheduled = false;
+    if (self.bodyFollow.follow) self.bodyEl.scrollTop = self.bodyEl.scrollHeight;
+    if (self.rawFollow.follow) self.rawEl.scrollTop = self.rawEl.scrollHeight;
+  });
+};
+
+StructuredLogViewer.prototype.processLine = function (rawLine) {
+  this.waitingEl.hidden = true;
+  this.allLines.push(rawLine);
+  this.rawTextEl.appendChild(document.createTextNode(rawLine + '\n'));
+  var trimmed = rawLine.replace(/^\s+/, '');
+  if (/^Job Pod /.test(trimmed)) {
+    this.pushOutputLine(rawLine, false);
+    this.scheduleScroll();
+    return;
+  }
+  var isError = structLogLooksLikeError(trimmed);
+  if (this.kind === 'buildkit') {
+    this.processBuildkitLine(trimmed, rawLine, isError);
+  } else {
+    this.processPhaseLine(trimmed, rawLine, isError);
+  }
+  this.scheduleScroll();
+};
+
+StructuredLogViewer.prototype.processBuildkitLine = function (trimmed, rawLine, isError) {
+  var m = trimmed.match(STRUCT_LOG_VERTEX_RE);
+  if (!m) {
+    this.pushOutputLine(rawLine, isError);
+    return;
+  }
+  var vid = m[1];
+  var rest = m[2];
+  var step = this.vertexIndex[vid];
+  if (!step) {
+    step = this.createStep('bk-' + vid, rest);
+    this.vertexIndex[vid] = step;
+    var br = rest.match(STRUCT_LOG_BRACKET_RE);
+    if (br) {
+      var cur = parseInt(br[1], 10), tot = parseInt(br[2], 10);
+      if (tot > this.maxBracketTotal) this.maxBracketTotal = tot;
+      if (cur > this.bracketCurrent) this.bracketCurrent = cur;
+      this.updateHeader();
+    }
+    return;
+  }
+  var cachedM = STRUCT_LOG_CACHED_RE.test(rest);
+  var doneM = rest.match(STRUCT_LOG_DONE_RE);
+  var errM = rest.match(STRUCT_LOG_VERTEX_ERROR_RE);
+  if (cachedM) {
+    this.closeStep(step, 'cached', null);
+  } else if (doneM) {
+    this.closeStep(step, 'done', doneM[1] ? parseFloat(doneM[1]) : null);
+  } else if (errM) {
+    this.addStepLine(step, rawLine, true);
+    this.flagStepError(step);
+    this.closeStep(step, 'failed', null);
+  } else {
+    this.addStepLine(step, rawLine, isError);
+  }
+};
+
+StructuredLogViewer.prototype.processPhaseLine = function (trimmed, rawLine, isError) {
+  if (STRUCT_LOG_PHASE_FINISH_RE.test(trimmed) && !STRUCT_LOG_PHASE_TERMINAL_RE.test(trimmed)) {
+    if (this.currentPhaseStep) {
+      this.addStepLine(this.currentPhaseStep, rawLine, isError);
+      this.closeStep(this.currentPhaseStep, isError ? 'failed' : 'done', null);
+      this.currentPhaseStep = null;
+    } else {
+      this.pushOutputLine(rawLine, isError);
+    }
+    return;
+  }
+  for (var i = 0; i < STRUCT_LOG_PHASE_START_PATTERNS.length; i++) {
+    if (STRUCT_LOG_PHASE_START_PATTERNS[i].test(trimmed)) {
+      if (this.currentPhaseStep) this.closeStep(this.currentPhaseStep, 'done', null);
+      var step = this.createStep('ph-' + this.steps.length, trimmed);
+      this.currentPhaseStep = step;
+      if (STRUCT_LOG_PHASE_TERMINAL_RE.test(trimmed)) {
+        this.closeStep(step, 'done', 0);
+        this.currentPhaseStep = null;
+      }
+      return;
+    }
+  }
+  if (this.currentPhaseStep) {
+    this.addStepLine(this.currentPhaseStep, rawLine, isError);
+    if (isError) this.flagStepError(this.currentPhaseStep);
+  } else {
+    this.pushOutputLine(rawLine, isError);
+  }
+};
+
+StructuredLogViewer.prototype.pushOutputLine = function (rawLine, isError) {
+  var group = this.leadingFinalized ? this.trailingGroupEl : this.leadingGroupEl;
+  group.hidden = false;
+  var linesEl = group.querySelector('.log-output-lines');
+  var lineEl = document.createElement('div');
+  lineEl.className = 'log-step-line';
+  lineEl.textContent = rawLine.replace(/^\s+/, '');
+  if (isError) this.markErrorLine(lineEl);
+  linesEl.appendChild(lineEl);
+};
+
+StructuredLogViewer.prototype.markErrorLine = function (lineEl) {
+  lineEl.classList.add('log-line-error');
+  lineEl.tabIndex = -1;
+  if (!this.firstErrorLineEl) {
+    this.firstErrorLineEl = lineEl;
+    this.hasError = true;
+    this.updateHeader();
+  }
+};
+
+StructuredLogViewer.prototype.createStep = function (key, label) {
+  if (!this.leadingFinalized) this.leadingFinalized = true;
+  var step = {
+    key: key,
+    label: label,
+    status: 'running',
+    startTime: Date.now(),
+    duration: null,
+    autoManaged: true,
+    lines: []
+  };
+  this.steps.push(step);
+  this.renderStep(step);
+  this.startStepTimer(step);
+  this.updateHeader();
+  return step;
+};
+
+StructuredLogViewer.prototype.renderStep = function (step) {
+  var self = this;
+  var row = document.createElement('div');
+  row.className = 'log-step log-step-running';
+
+  var toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'log-step-toggle';
+  toggle.setAttribute('aria-expanded', 'true');
+
+  var chevron = document.createElement('span');
+  chevron.className = 'log-step-chevron';
+  chevron.innerHTML = STRUCT_LOG_CHEVRON_SVG;
+
+  var dot = document.createElement('span');
+  dot.className = 'log-step-dot';
+
+  var label = document.createElement('span');
+  label.className = 'log-step-label';
+  label.textContent = step.label;
+  label.title = step.label;
+
+  var duration = document.createElement('span');
+  duration.className = 'log-step-duration';
+
+  toggle.appendChild(chevron);
+  toggle.appendChild(dot);
+  toggle.appendChild(label);
+  toggle.appendChild(duration);
+
+  var lines = document.createElement('div');
+  lines.className = 'log-step-lines';
+
+  row.appendChild(toggle);
+  row.appendChild(lines);
+
+  toggle.addEventListener('click', function () {
+    var expanded = toggle.getAttribute('aria-expanded') === 'true';
+    self.setStepExpanded(step, !expanded, true);
+  });
+
+  this.bodyEl.insertBefore(row, this.trailingGroupEl);
+  step.el = row;
+  step.toggleEl = toggle;
+  step.durationEl = duration;
+  step.linesEl = lines;
+};
+
+StructuredLogViewer.prototype.setStepExpanded = function (step, expanded, isManual) {
+  if (isManual) step.autoManaged = false;
+  step.linesEl.hidden = !expanded;
+  step.toggleEl.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  step.el.classList.toggle('log-step-collapsed', !expanded);
+};
+
+StructuredLogViewer.prototype.addStepLine = function (step, rawLine, isError) {
+  step.lines.push(rawLine);
+  var lineEl = document.createElement('div');
+  lineEl.className = 'log-step-line';
+  lineEl.textContent = rawLine.replace(/^\s+/, '');
+  if (isError) this.markErrorLine(lineEl);
+  step.linesEl.appendChild(lineEl);
+};
+
+StructuredLogViewer.prototype.flagStepError = function (step) {
+  if (step.status === 'failed') return;
+  step.status = 'failed';
+  this.hasError = true;
+  this.updateStepVisual(step);
+  this.setStepExpanded(step, true, false);
+  this.updateHeader();
+};
+
+StructuredLogViewer.prototype.closeStep = function (step, statusIfNotFailed, explicitDuration) {
+  if (step.status !== 'failed') step.status = statusIfNotFailed;
+  step.endTime = Date.now();
+  step.duration = (explicitDuration != null) ? explicitDuration : (step.endTime - step.startTime) / 1000;
+  this.stopStepTimer(step);
+  this.updateStepVisual(step);
+  if (step.status !== 'failed' && step.autoManaged) this.setStepExpanded(step, false, false);
+  this.updateHeader();
+};
+
+StructuredLogViewer.prototype.updateStepVisual = function (step) {
+  var collapsed = step.el.classList.contains('log-step-collapsed');
+  step.el.className = 'log-step log-step-' + step.status + (collapsed ? ' log-step-collapsed' : '');
+  if (step.status === 'cached') {
+    step.durationEl.textContent = 'cached';
+  } else if (step.status === 'running') {
+    /* left to the live timer */
+  } else {
+    step.durationEl.textContent = structLogFmtFinal(step.duration);
+  }
+};
+
+StructuredLogViewer.prototype.startStepTimer = function (step) {
+  var self = this;
+  step.timerId = setInterval(function () {
+    step.durationEl.textContent = structLogFmtLive((Date.now() - step.startTime) / 1000);
+  }, 1000);
+  step.durationEl.textContent = '0s';
+};
+StructuredLogViewer.prototype.stopStepTimer = function (step) {
+  if (step.timerId) { clearInterval(step.timerId); step.timerId = null; }
+};
+
+StructuredLogViewer.prototype.updateHeader = function () {
+  if (this.kind === 'buildkit' && this.maxBracketTotal > 0) {
+    this.stepCountEl.hidden = false;
+    this.stepCountEl.textContent = 'Step ' + Math.min(this.bracketCurrent, this.maxBracketTotal) + ' of ' + this.maxBracketTotal;
+  } else {
+    this.stepCountEl.hidden = true;
+  }
+  this.jumpErrorEl.hidden = !this.hasError;
+};
+
+StructuredLogViewer.prototype.jumpToError = function () {
+  if (!this.firstErrorLineEl) return;
+  var stepRow = this.firstErrorLineEl.closest ? this.firstErrorLineEl.closest('.log-step') : null;
+  if (stepRow) {
+    for (var i = 0; i < this.steps.length; i++) {
+      if (this.steps[i].el === stepRow) { this.setStepExpanded(this.steps[i], true, false); break; }
+    }
+  }
+  if (this.rawMode) {
+    this.rawMode = false;
+    this.rawToggleEl.setAttribute('aria-pressed', 'false');
+    this.rawToggleEl.textContent = 'Raw';
+    this.bodyEl.hidden = false;
+    this.rawEl.hidden = true;
+  }
+  var el = this.firstErrorLineEl;
+  el.scrollIntoView({ block: 'center' });
+  el.focus();
+  el.classList.add('log-line-flash');
+  setTimeout(function () { el.classList.remove('log-line-flash'); }, 1200);
+};
+
+StructuredLogViewer.prototype.complete = function (errored) {
+  for (var i = 0; i < this.steps.length; i++) {
+    var step = this.steps[i];
+    if (step.status === 'running') this.closeStep(step, errored ? 'failed' : 'done', null);
+  }
+  this.currentPhaseStep = null;
+  if (errored) { this.hasError = true; this.updateHeader(); }
+  this.waitingEl.hidden = true;
+};
+
 /* Build/Release Detail Page */
 function initBuildDetailPage(opts) {
   var nextStepUrl = opts.nextStepUrl;
@@ -1788,9 +2254,8 @@ function initBuildDetailPage(opts) {
     nextStepBanner.hidden = false;
   }
   var logsPre = document.getElementById(opts.logElementId);
-  var placeholder = document.getElementById('logPlaceholder');
-  if (!logsPre || !placeholder) return;
-  logsPre.innerHTML = '';
+  if (!logsPre) return;
+  var structLog = new StructuredLogViewer(logsPre, 'buildkit');
   var barFill = document.getElementById('buildProgressFill');
   var phaseLabel = document.getElementById('buildPhase');
   var stepsEl = document.getElementById('buildSteps');
@@ -1805,8 +2270,7 @@ function initBuildDetailPage(opts) {
   var flushScheduled = false;
   function flushPendingLines() {
     if (pendingLines.length === 0) return;
-    logsPre.appendChild(document.createTextNode(pendingLines.join('\n') + '\n'));
-    logsPre.scrollTop = logsPre.scrollHeight;
+    for (var i = 0; i < pendingLines.length; i++) structLog.processLine(pendingLines[i]);
     pendingLines = [];
     flushScheduled = false;
   }
@@ -1829,6 +2293,7 @@ function initBuildDetailPage(opts) {
           tracker.complete();
           if (tracker.errored && progressBanner) progressBanner.classList.add('deploy-progress-banner-error');
         }
+        structLog.complete(tracker ? tracker.errored : false);
         return;
       }
       linesReceived++;
@@ -1885,7 +2350,8 @@ function initBuildDetailPage(opts) {
   connectWebSocket();
 }
 function copyBuildLog() {
-  var text = document.getElementById('buildLog').textContent;
+  var raw = document.querySelector('#buildLog .struct-log-raw-text');
+  var text = raw ? raw.textContent : document.getElementById('buildLog').textContent;
   navigator.clipboard.writeText(text).then(function() {
     var btn = event.currentTarget;
     var orig = btn.innerHTML;
@@ -1897,9 +2363,8 @@ function copyBuildLog() {
 /* Deploy Detail Page */
 function initDeployDetailPage(opts) {
   var logsPre = document.getElementById(opts.logElementId);
-  var placeholder = document.getElementById('logPlaceholder');
-  if (!logsPre || !placeholder) return;
-  logsPre.innerHTML = '';
+  if (!logsPre) return;
+  var structLog = new StructuredLogViewer(logsPre, 'phases');
   var barFill = document.getElementById('deployProgressFill');
   var phaseLabel = document.getElementById('deployPhase');
   var stepsEl = document.getElementById('deploySteps');
@@ -1916,8 +2381,7 @@ function initDeployDetailPage(opts) {
   var flushScheduled = false;
   function flushPendingLines() {
     if (pendingLines.length === 0) return;
-    logsPre.appendChild(document.createTextNode(pendingLines.join('\n') + '\n'));
-    logsPre.scrollTop = logsPre.scrollHeight;
+    for (var i = 0; i < pendingLines.length; i++) structLog.processLine(pendingLines[i]);
     pendingLines = [];
     flushScheduled = false;
   }
@@ -1941,6 +2405,7 @@ function initDeployDetailPage(opts) {
           tracker.complete();
           if (tracker.errored && progressBanner) progressBanner.classList.add('deploy-progress-banner-error');
         }
+        structLog.complete(tracker ? tracker.errored : false);
         fetchDeploymentStatus();
         return;
       }
@@ -2001,7 +2466,8 @@ function initDeployDetailPage(opts) {
   connectWebSocket();
 }
 function copyDeployLog() {
-  var text = document.getElementById('deployLog').textContent;
+  var raw = document.querySelector('#deployLog .struct-log-raw-text');
+  var text = raw ? raw.textContent : document.getElementById('deployLog').textContent;
   navigator.clipboard.writeText(text).then(function() {
     var btn = event.currentTarget;
     var orig = btn.innerHTML;
@@ -2139,6 +2605,29 @@ function initLokiLogViewer() {
     var scrollTopBtn = root.querySelector('.js-scroll-top');
     var scrollBottomBtn = root.querySelector('.js-scroll-bottom');
     var noPoll = root.getAttribute('data-no-poll') === 'true';
+
+    // Optional fixed time window (set when opened from an Observe panel click/zoom).
+    // Validated client-side; any parse failure falls back to today's live-tail behavior.
+    var startTsAttr = root.getAttribute('data-start-ts');
+    var endTsAttr = root.getAttribute('data-end-ts');
+    var windowStartNs = null, windowEndNs = null, windowStartMs = null, windowEndMs = null;
+    if (startTsAttr && endTsAttr) {
+      var parsedStartMs = Date.parse(startTsAttr);
+      var parsedEndMs = Date.parse(endTsAttr);
+      if (!isNaN(parsedStartMs) && !isNaN(parsedEndMs) && parsedEndMs > parsedStartMs) {
+        windowStartMs = parsedStartMs;
+        windowEndMs = parsedEndMs;
+        windowStartNs = String(Math.round(parsedStartMs * 1e6));
+        windowEndNs = String(Math.round(parsedEndMs * 1e6));
+      }
+    }
+    var hasWindow = !!(windowStartNs && windowEndNs);
+    var windowLabel = root.querySelector('.js-window-label');
+    if (hasWindow && windowLabel) {
+      var fmtOpts = { hour: '2-digit', minute: '2-digit' };
+      windowLabel.textContent = new Date(windowStartMs).toLocaleTimeString(undefined, fmtOpts) +
+        '\u2013' + new Date(windowEndMs).toLocaleTimeString(undefined, fmtOpts);
+    }
 
     var newestTs = null;
     var oldestTs = null;
@@ -2424,6 +2913,12 @@ function initLokiLogViewer() {
       } else if (mode === 'older' && oldestTs) {
         params.set('end', tsDecrement(oldestTs));
         params.set('direction', 'backward');
+        // Never page further back than the active window's lower bound.
+        if (hasWindow) params.set('start', windowStartNs);
+      } else if (mode === 'reset' && hasWindow) {
+        params.set('start', windowStartNs);
+        params.set('end', windowEndNs);
+        params.set('direction', 'backward');
       }
 
       var ctrl = new AbortController();
@@ -2493,7 +2988,7 @@ function initLokiLogViewer() {
     }
 
     function schedulePoll() {
-      if (noPoll) return;
+      if (noPoll || hasWindow) return;
       stopPolling();
       pollTimer = setTimeout(function() { fetchLogs('newer'); }, pollInterval);
     }
