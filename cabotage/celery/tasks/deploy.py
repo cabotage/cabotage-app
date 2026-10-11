@@ -3475,7 +3475,7 @@ def start_next_deployment(application_environment_id: uuid.UUID) -> None:
     db.session.execute(sa.text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
     pending = Deployment.query.filter(
         Deployment.application_environment_id == application_environment_id,
-        Deployment.complete == False,  # noqa: E712
+        Deployment.complete.is_(False),
         Deployment.error == False,  # noqa: E712
     )
     deployment: Deployment | None = None
