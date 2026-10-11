@@ -90,3 +90,15 @@ def test_pipeline_window_accepts_valid_reversed_bounds(pipeline_app):
     # since/until reversed; should still be treated as an inclusive window.
     response = client.get(f"{base}/stats?since=2024-01-05&until=2024-01-01")
     assert response.status_code == 200
+
+
+def test_pipeline_runs_rejects_oversized_offset(pipeline_app):
+    client, _application, _app_env, base = pipeline_app
+    response = client.get(f"{base}/runs?offset=99999999999999999999")
+    assert response.status_code == 400
+
+
+def test_pipeline_runs_clamps_negative_offset(pipeline_app):
+    client, _application, _app_env, base = pipeline_app
+    response = client.get(f"{base}/runs?offset=-5")
+    assert response.status_code == 200

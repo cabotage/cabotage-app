@@ -9334,6 +9334,8 @@ def project_application_pipeline_runs(org_slug, project_slug, app_slug, env_slug
 
     limit = max(1, min(request.args.get("limit", 20, type=int), 200))
     offset = max(request.args.get("offset", 0, type=int), 0)
+    if offset > 2**63 - 1:
+        abort(400)
 
     start, end = _pipeline_window()
     query = Deployment.query.filter(
