@@ -227,3 +227,4 @@ class Config(metaclass=MetaFlaskEnv):
     ALERTMANAGER_URL = None
     ALERTMANAGER_VERIFY = None
     PROXY_FIX_NUM_PROXIES = 1
+    SHOW_COST_ESTIMATES = False

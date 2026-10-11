@@ -5,6 +5,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0f0f17" />
+    <meta name="csrf-token" content="{{ csrf_token() }}" />
     <meta name="referrer" content="same-origin" />
     <script>
     // Apply theme + accent before render to prevent flash
@@ -439,6 +440,11 @@
                   {% if security.two_factor or security.webauthn %}
                   <a href="{{ url_for('user.account_security') }}"
                      class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors">Two-Factor Auth</a>
+                  {% endif %}
+                  {% if config.SHOW_COST_ESTIMATES %}
+                  <div class="border-t border-base-content/10 my-1"></div>
+                  <a href="{{ url_for('cost.cost_index') }}"
+                     class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors">{{ icon('dollar-sign', 'w-3.5 h-3.5') }} Cost</a>
                   {% endif %}
                   <div class="border-t border-base-content/10 my-1"></div>
                   <a href="{{ url_for('security.logout') }}"

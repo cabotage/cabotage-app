@@ -1,3 +1,4 @@
+
 """Seed script for local development.
 
 Runs create_admin first (user + org + bare project), then layers on
@@ -603,6 +604,7 @@ def seed():
             "job-cleanup": 1,
             "job-reports": 1,
         }
+
 
         # ── Commit everything ─────────────────────────────────────────
         db.session.commit()

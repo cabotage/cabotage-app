@@ -27,11 +27,11 @@
           <span class="text-base-content/20">&middot;</span>
           {{ deployment.id|string|truncate(8, True, '') }}
           {% if deployment_is_live %}
-            <span class="badge badge-success badge-xs ml-1">Live</span>
+            <span class="badge badge-outline badge-xs gap-1 font-medium border-success/40 text-success ml-1"><span class="status-dot status-dot-success"></span>Live</span>
           {% elif deployment.error %}
-            <span class="badge badge-error badge-xs ml-1">Error</span>
+            <span class="badge badge-outline badge-xs gap-1 font-medium border-error/40 text-error ml-1"><span class="status-dot status-dot-error"></span>Error</span>
           {% else %}
-            <span class="badge badge-ghost badge-xs ml-1">Superseded</span>
+            <span class="badge badge-outline badge-xs gap-1 border-base-content/20 text-base-content/50 ml-1"><span class="status-dot status-dot-neutral"></span>Superseded</span>
           {% endif %}
         </p>
       </div>

@@ -35,7 +35,7 @@
           {% if form.value %}{{ form.value(type='hidden') }}{% endif %}
           {{ render_field(form.confirm) }}
           <div class="flex items-center gap-3 pt-2">
-            <button type="submit" class="btn btn-error">Delete Variable</button>
+            <button type="submit" class="btn btn-outline border-error/40 text-error hover:bg-error/10 hover:border-error/60">Delete Variable</button>
             <a href="#" onclick="history.back();return false" class="btn btn-ghost">Cancel</a>
           </div>
         </form>
