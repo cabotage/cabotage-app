@@ -19,7 +19,7 @@ request](https://github.com/python/pypi-infra/pull/3) for more on design goals.
 
 ## Documentation
 
-The [documentation site](docs/index.md) is built with [Zensical](https://zensical.org/).
+The [documentation site](https://cabotage.github.io/cabotage-app/) is built with [Zensical](https://zensical.org/).
 It separates [Using Cabotage](docs/using/index.md) (deploying your applications),
 [Operating Cabotage](docs/operating/index.md) (running the platform), and
 [Contributing to Cabotage](docs/contributing/index.md) (**working on Cabotage itself**).

@@ -12,3 +12,9 @@ If you deploy applications on an existing platform, read [Using Cabotage](../usi
 - [Tailscale ingress](tailscale.md) — cluster prerequisites and per-organization tailnet integration through workload identity federation.
 
 These guides describe settings for the Cabotage service and its infrastructure. They are separate from the environment variables configured for a deployed application on its Config tab.
+
+## Documentation links
+
+All Cabotage instances (Cabo Prime, PSF Cabo, PyPI Cabo) share one documentation site, built from this repository and published at `https://cabotage.github.io/cabotage-app/`. The app's "Docs" navigation links and in-app help links use this URL by default via the `CABOTAGE_DOCS_URL` setting. No documentation is built or hosted inside the app itself.
+
+Operators may optionally override `CABOTAGE_DOCS_URL` to point at a different build of the same docs (for example, a fork or a staging deployment). This is not required for normal operation.

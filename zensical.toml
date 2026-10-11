@@ -2,6 +2,7 @@
 site_name = "Cabotage documentation"
 site_description = "Deploy applications with Cabotage, operate the platform, and contribute to Cabotage itself."
 repo_url = "https://github.com/cabotage/cabotage-app"
+site_url = "https://cabotage.github.io/cabotage-app/"
 repo_name = "cabotage/cabotage-app"
 edit_uri = "edit/main/docs/"
 docs_dir = "docs"

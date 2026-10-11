@@ -5905,15 +5905,6 @@ def application_release_create_legacy(application_id):
     )
 
 
-@user_blueprint.route("/guide")
-@login_required
-def guide():
-    return render_template(
-        "user/guide.html",
-        github_app_url=current_app.config.get("GITHUB_APP_URL", "https://github.com"),
-    )
-
-
 @user_blueprint.route("/account/security")
 @login_required
 def account_security():

@@ -33,8 +33,8 @@ The header uses `docs/overrides/.icons/cabotage.svg`, copied from the applicatio
 so the logo follows the light and dark themes. Keep the two assets aligned
 when updating the Cabotage logo.
 
-The deployment, release, and GitHub setup timelines preserve the app Guide's
-numbered steps. Their shared styles live in `docs/stylesheets/guide.css` and
+The deployment, release, and GitHub setup timelines use numbered steps to walk
+through each process. Their shared styles live in `docs/stylesheets/guide.css` and
 use Zensical's theme colors. Keep each timeline as an ordered list with
 `role="list"` and decorative numbers marked `aria-hidden="true"`.
 Set `markdown="block"` on the list, each list item, and each step's content
@@ -46,8 +46,28 @@ contents contains only the step titles.
 
 Use relative Markdown links between pages in `docs/`, for example
 `[authentication](../operating/authentication.md)` from a page under `docs/using/` or
-`docs/contributing/`. Set `site_url` in `zensical.toml` once the documentation's
-deployment URL is decided; no deployment URL is configured yet.
+`docs/contributing/`. `site_url` in `zensical.toml` is set to the published
+site's canonical URL, `https://cabotage.github.io/cabotage-app/`; relative
+links resolve correctly under that path.
+
+## Where and when the site is published
+
+This documentation is a single site shared by every Cabotage deployment —
+Cabo Prime, PSF Cabo, and PyPI Cabo all point here instead of each bundling
+or hosting its own copy. The content isn't tied to any one instance's
+configuration or release; it describes Cabotage itself.
+
+GitHub Pages serves the site at `https://cabotage.github.io/cabotage-app/`
+from the `cabotage/cabotage-app` repository, built by the `docs` job in
+`.github/workflows/ci.yml` using `make docs-build` (the same strict Zensical
+build used for pull request validation) and uploaded with
+`actions/upload-pages-artifact`. A separate `pages` job, gated to
+`push` events on `main`, deploys that artifact with `actions/deploy-pages`
+under the `github-pages` environment.
+
+Pull requests targeting `main` and tag pushes run the strict build to catch
+broken links and warnings, but never upload a Pages artifact or deploy. Only
+a push to `main` publishes the updated site, so the published docs reflect `main`.
 
 ## Python dependencies
 

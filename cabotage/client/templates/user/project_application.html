@@ -742,7 +742,7 @@
                   </div>
                 </div>
                 <div class="info-popup-footer">
-                  <a href="{{ url_for('user.guide') }}#processes" class="info-popup-link">Learn more in the Guide →</a>
+                  <a href="{{ config.DOCS_URL.rstrip('/') }}/using/processes/" target="_blank" rel="noopener" class="info-popup-link">Learn more in the Docs →</a>
                 </div>
               </div>
             </div>
@@ -853,7 +853,7 @@
                   </div>
                 </div>
                 <div class="info-popup-footer">
-                  <a href="{{ url_for('user.guide') }}#jobs" class="info-popup-link">Learn more in the Guide →</a>
+                  <a href="{{ config.DOCS_URL.rstrip('/') }}/using/jobs/" target="_blank" rel="noopener" class="info-popup-link">Learn more in the Docs →</a>
                 </div>
               </div>
             </div>
@@ -1410,10 +1410,11 @@
 </details>
 
 <div class="py-2">
-  <a href="{{ url_for('user.guide') }}"
+  <a href="{{ config.DOCS_URL.rstrip('/') }}/using/"
+     target="_blank" rel="noopener"
      class="text-xs text-base-content/30 hover:text-accent transition-colors inline-flex items-center gap-1.5">
     {{ icon('book-open', 'w-3 h-3') }}
-    <span>Read the full guide</span>
+    <span>Read the full docs</span>
     <span>→</span>
   </a>
 </div>
