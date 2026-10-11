@@ -360,3 +360,48 @@ def test_running_pipeline_has_no_total(pipeline_app):
     assert run["deploy_status"] == "pending"
     assert run["deploy_duration"] is None
     assert run["total_duration"] is None
+
+
+@pytest.mark.parametrize(
+    "metadata,release_start,expected",
+    [
+        ({"trigger": "manual_deploy"}, 120, 30.0),
+        ({"auto_deploy": True}, 120, 270.0),
+        ({"auto_deploy": True}, 0, 150.0),
+    ],
+)
+def test_rollup_run_time_matches_deployment_type(
+    pipeline_app, metadata, release_start, expected
+):
+    client, application, app_env, base = pipeline_app
+    start = datetime.datetime(2000, 1, 10, 12)
+    img = _make_image(
+        application, app_env, start, start + datetime.timedelta(seconds=120)
+    )
+    rel = _make_release(
+        application,
+        app_env,
+        img,
+        start + datetime.timedelta(seconds=release_start),
+        start + datetime.timedelta(seconds=release_start + 120),
+    )
+    _make_deployment(
+        application,
+        app_env,
+        rel,
+        start + datetime.timedelta(seconds=240),
+        start + datetime.timedelta(seconds=270),
+        deploy_metadata=metadata,
+    )
+    window = "?since=2000-01-10&until=2000-01-10"
+    stats = client.get(f"{base}/stats{window}").get_json()
+    response = client.get(
+        f"/organizations/{application.project.organization.slug}/pipeline/rollup{window}"
+    )
+    assert response.status_code == 200
+    rollup = response.get_json()
+    row = next(row for row in rollup["rows"] if row["app_env_id"] == str(app_env.id))
+    for percentile in ("p50", "p95"):
+        assert row[percentile] == pytest.approx(expected)
+        assert rollup["summary"][f"run_{percentile}"] == pytest.approx(expected)
+        assert stats["summary"][f"run_{percentile}"] == pytest.approx(expected)

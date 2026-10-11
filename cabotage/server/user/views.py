@@ -9282,6 +9282,29 @@ def _duration(
     return func.extract("epoch", model.updated - model.created)
 
 
+def _pipeline_run_duration() -> ColumnElement[int]:
+    """Deploy-only time, or build and deploy time with shared builds counted once."""
+    is_build_pipeline = Deployment.deploy_metadata["auto_deploy"].astext == "true"
+    image_release_overlap = func.greatest(
+        0.0,
+        func.extract(
+            "epoch",
+            func.least(Image.updated, Release.updated)
+            - func.greatest(Image.created, Release.created),
+        ),
+    )
+    return case(
+        (
+            is_build_pipeline,
+            _duration(Image)
+            + _duration(Release)
+            + _duration(Deployment)
+            - image_release_overlap,
+        ),
+        else_=_duration(Deployment),
+    )
+
+
 def _percentiles(
     duration: ColumnElement[int],
 ) -> tuple[ColumnElement[float], ColumnElement[float]]:
@@ -9380,28 +9403,7 @@ def project_application_pipeline_stats(
         .one()
     )
 
-    # Only new build pipelines include build times; shared build time counts once.
-    is_build_pipeline = Deployment.deploy_metadata["auto_deploy"].astext == "true"
-    image_release_overlap = func.greatest(
-        0.0,
-        func.extract(
-            "epoch",
-            func.least(Image.updated, Release.updated)
-            - func.greatest(Image.created, Release.created),
-        ),
-    )
-    run_time = _percentiles(
-        case(
-            (
-                is_build_pipeline,
-                _duration(Image)
-                + _duration(Release)
-                + _duration(Deployment)
-                - image_release_overlap,
-            ),
-            else_=_duration(Deployment),
-        )
-    )
+    run_time = _percentiles(_pipeline_run_duration())
     run_rows = (
         db.session.query(Deployment)
         .join(Release, Release.id == Deployment.release["id"].astext.cast(Uuid))
@@ -10028,10 +10030,7 @@ def _pipeline_rollup_stats(
             }
         )
 
-    # Run time: image build + release build + deploy, matching each run's
-    # total on the app page.
-    total_duration = _duration(Image) + _duration(Release) + _duration(Deployment)
-    run_p50, run_p95 = _percentiles(total_duration)
+    run_p50, run_p95 = _percentiles(_pipeline_run_duration())
     run_rows = (
         db.session.query(aid, run_p50, run_p95)
         .select_from(Deployment)
@@ -10109,8 +10108,7 @@ def _pipeline_rollup_summary(
         .filter(*filters)
         .one()
     )
-    total_duration = _duration(Image) + _duration(Release) + _duration(Deployment)
-    run_p50, run_p95 = _percentiles(total_duration)
+    run_p50, run_p95 = _percentiles(_pipeline_run_duration())
     p50, p95 = (
         db.session.query(run_p50, run_p95)
         .select_from(Deployment)
