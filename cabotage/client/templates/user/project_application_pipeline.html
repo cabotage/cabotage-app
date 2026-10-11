@@ -300,8 +300,8 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
 {% endblock content %}
 
 {% block js %}
-<link rel="stylesheet" href="https://unpkg.com/uplot@1.6.31/dist/uPlot.min.css">
-<script src="https://unpkg.com/uplot@1.6.31/dist/uPlot.iife.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/uplot@1.6.31/dist/uPlot.min.css" integrity="sha384-IfV0B7MIOYuO95kO9G5ySKPz/85zqFNOAs8iy4tkK5zd9izhJAB8b7lHrwYqqmYE" crossorigin="anonymous">
+<script src="https://unpkg.com/uplot@1.6.31/dist/uPlot.iife.min.js" integrity="sha384-XMP23k7YSCFr13Xrkxh4IO0v1W+8fB6AP+3Vycxphp2Z0V2vocAZHyuGaFCysrtM" crossorigin="anonymous"></script>
 <script>
 (function() {
   var root = document.getElementById('pipeline');
@@ -317,6 +317,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
   var PER_PAGE = 15;
   var DAY = 86400;
   var DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
+  var HAS_UPLOT = typeof window.uPlot !== 'undefined';
 
   // Scope precedence: hovered day > brushed window > trailing range.
   var query = new URLSearchParams(location.search);
@@ -424,7 +425,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
   }
 
   // ── Charts: one cursor across all of them ──
-  var sync = uPlot.sync('pipeline');
+  var sync = HAS_UPLOT ? uPlot.sync('pipeline') : null;
 
   function scrubPlugin(fmt) {
     var tip = document.createElement('div');
@@ -539,10 +540,18 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
       width: 0, points: { show: false }, paths: uPlot.paths.bars({ size: [0.3, 10], align: align, gap: 1 }) };
   }
 
+  function showChartUnavailable(el) {
+    el.innerHTML = '<div class="h-full flex items-center justify-center text-xs" style="color:var(--text-faint)">Chart library failed to load</div>';
+  }
   function renderCharts() {
     charts.forEach(function(u) { u.destroy(); });
     charts = [];
     activePlot = null;
+    if (!HAS_UPLOT) {
+      STAGES.forEach(function(stage) { showChartUnavailable(root.querySelector('[data-chart="stage-' + stage + '"]')); });
+      showChartUnavailable(root.querySelector('[data-chart="throughput"]'));
+      return;
+    }
     var d = state.stats;
     if (!d) return;
     var trendXs = d.duration_trend.map(function(r) { return keyTs(r.date.slice(0, 10)); });
@@ -822,7 +831,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     document.getElementById('brush-chip').hidden = false;
     document.getElementById('brush-label').textContent = brushWords();
   }
-  resolvePalette();
+  if (HAS_UPLOT) resolvePalette();
   loadAll();
   setInterval(function() { if (!document.hidden) loadAll(); }, 60000);
 
@@ -831,7 +840,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(renderCharts, 150);
   });
-  new MutationObserver(function() { resolvePalette(); renderCharts(); })
+  new MutationObserver(function() { if (HAS_UPLOT) resolvePalette(); renderCharts(); })
     .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 })();
 </script>
