@@ -334,6 +334,15 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
   var charts = [];
   var activePlot = null;
   var lastPayload = {};
+  var requestSeq = { stats: 0, scoped: 0, runs: 0, slowest: 0 };
+
+  // Drop a response handler if a newer request for the same section has started since.
+  function guarded(key, seq, handler) {
+    return function(arg) {
+      if (seq !== requestSeq[key]) return;
+      handler(arg);
+    };
+  }
 
   function parseBrush(since, until) {
     if (!DAY_KEY.test(since || '') || !DAY_KEY.test(until || '')) return null;
@@ -767,17 +776,33 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
   }
 
   function loadStats() {
-    return getJSON('/stats?range=' + state.range).then(whenChanged('stats', function(d) { state.stats = d; renderStats(); }), fail('stats'));
+    var seq = ++requestSeq.stats;
+    return getJSON('/stats?range=' + state.range).then(
+      guarded('stats', seq, whenChanged('stats', function(d) { state.stats = d; renderStats(); })),
+      guarded('stats', seq, fail('stats'))
+    );
   }
   function loadScoped() {
+    var seq = ++requestSeq.scoped;
     if (!state.brush) return Promise.resolve();
-    return getJSON('/stats' + windowQuery()).then(whenChanged('scoped', function(d) { state.scoped = d; renderSummary(); }), fail('scoped'));
+    return getJSON('/stats' + windowQuery()).then(
+      guarded('scoped', seq, whenChanged('scoped', function(d) { state.scoped = d; renderSummary(); })),
+      guarded('scoped', seq, fail('scoped'))
+    );
   }
   function loadRuns() {
-    return getJSON('/runs' + windowQuery() + '&limit=' + PER_PAGE + '&offset=' + state.offset).then(whenChanged('runs', renderRuns), fail('runs'));
+    var seq = ++requestSeq.runs;
+    return getJSON('/runs' + windowQuery() + '&limit=' + PER_PAGE + '&offset=' + state.offset).then(
+      guarded('runs', seq, whenChanged('runs', renderRuns)),
+      guarded('runs', seq, fail('runs'))
+    );
   }
   function loadSlowest() {
-    return getJSON('/slowest' + windowQuery() + '&stage=' + state.stage).then(whenChanged('slowest', renderSlowest), fail('slowest'));
+    var seq = ++requestSeq.slowest;
+    return getJSON('/slowest' + windowQuery() + '&stage=' + state.stage).then(
+      guarded('slowest', seq, whenChanged('slowest', renderSlowest)),
+      guarded('slowest', seq, fail('slowest'))
+    );
   }
   function loadAll() {
     document.getElementById('pipe-error').hidden = true;
