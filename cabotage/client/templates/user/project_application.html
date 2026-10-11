@@ -25,8 +25,7 @@
 
   /* Latest pipeline run strip */
   .run-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem 0.875rem; min-height: 2.75rem;
-    padding: 0.375rem 0.625rem 0.375rem 1rem; border: 1px solid var(--border-color); border-radius: 0.75rem;
-    background: var(--surface-card); font-size: 0.75rem; line-height: 1.25rem; color: var(--text-muted); }
+    padding: 0.375rem 0.625rem 0.375rem 1rem; font-size: 0.75rem; line-height: 1.25rem; color: var(--text-muted); }
   .run-strip .num { font-family: 'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
   .run-title { font-size: 0.6875rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em;
     color: var(--text-faint); white-space: nowrap; }
@@ -74,7 +73,8 @@
   .run-step-reused-note { color: var(--text-faint); font-style: italic; }
   .run-strip-collapse { display: grid; grid-template-rows: 0fr; opacity: 0; margin-bottom: 0;
     transition: grid-template-rows 200ms ease-out, opacity 200ms ease-out, margin-bottom 200ms ease-out; }
-  .run-strip-collapse > .run-strip-inner { overflow: hidden; min-height: 0; }
+  .run-strip-inner { overflow: hidden; min-height: 0; border: 1px solid var(--border-color);
+    border-radius: 0.75rem; background: var(--surface-card); }
   .run-strip-collapse.is-visible { grid-template-rows: 1fr; opacity: 1; margin-bottom: 1rem; }
 
   /* Next-action slot (part of the run timeline) and its disclosure drawer */
@@ -95,22 +95,33 @@
   .run-next-success { border-color: color-mix(in srgb, var(--color-success) 30%, var(--border-color)); }
   .run-next-error { border-color: color-mix(in srgb, var(--color-error) 30%, var(--border-color)); color: var(--color-error); }
   .run-dot-next { border: 0; background: var(--color-primary); box-shadow: 0 0 8px color-mix(in srgb, var(--color-primary) 40%, transparent); }
+  .run-next-primary[aria-expanded="true"] { background: color-mix(in srgb, var(--color-primary) 4%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 12%, transparent); }
+  .run-next-primary[aria-expanded="true"]:hover { background: color-mix(in srgb, var(--color-primary) 8%, transparent); }
+  .run-next-success[aria-expanded="true"] { background: color-mix(in srgb, var(--color-success) 4%, transparent);
+    border-color: color-mix(in srgb, var(--color-success) 12%, transparent); }
+  .run-next-success[aria-expanded="true"]:hover { background: color-mix(in srgb, var(--color-success) 8%, transparent); }
 
   .run-drawer { display: grid; grid-template-rows: 0fr; opacity: 0;
     transition: grid-template-rows 200ms ease-out, opacity 150ms ease-out; }
   .run-drawer > .run-drawer-inner { overflow: hidden; min-height: 0; }
   .run-drawer.is-open { grid-template-rows: 1fr; opacity: 1; }
-  .run-drawer-inner { padding: 0.875rem 1rem 1rem; display: flex; flex-direction: column; gap: 0.875rem;
-    border-top: 1px solid var(--border-subtle); }
+  .run-drawer-content { padding: 0.875rem 1rem 1rem; display: flex; flex-direction: column; gap: 0.875rem;
+    border-top: 1px solid var(--border-color); }
+  .run-drawer--primary .run-drawer-content { background: color-mix(in srgb, var(--color-primary) 4%, transparent); }
+  .run-drawer--success .run-drawer-content { background: color-mix(in srgb, var(--color-success) 4%, transparent); }
   .run-drawer-section { display: flex; flex-direction: column; gap: 0.625rem; }
   .run-drawer-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .run-drawer-row-changes { align-items: flex-start; }
+  .run-drawer-changes { flex: 1; min-width: 0; }
+  .run-drawer-side { display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0; }
   .run-drawer-summary { display: flex; align-items: center; gap: 0.625rem; min-width: 0; }
   .run-drawer-title { font-size: 0.8125rem; font-weight: 500; color: var(--text-bright); }
   .run-drawer-meta { font-size: 0.75rem; color: var(--text-faint); margin-top: 0.125rem; }
   .run-drawer-warn { display: flex; align-items: center; gap: 0.375rem; font-size: 0.75rem;
     color: color-mix(in srgb, var(--color-warning) 85%, var(--text-bright)); margin-top: 0.125rem; }
   .run-drawer-cta { flex-shrink: 0; }
-  .run-drawer-divider { height: 1px; background: var(--border-subtle); }
+  .run-drawer-divider { height: 1px; background: var(--border-color); }
   @media (max-width: 639px) {
     .run-strip { padding-left: 0.75rem; }
     .run-body { display: contents; }
@@ -122,6 +133,7 @@
     .run-sep, .run-step-label { display: none; }
     .run-next { margin-left: 0; order: 20; flex-basis: 100%; justify-content: space-between; }
     .run-drawer-row { flex-direction: column; align-items: stretch; }
+    .run-drawer-side { flex-direction: column; align-items: stretch; }
     .run-drawer-cta, .run-drawer-cta form { width: 100%; }
     .run-drawer-cta .btn { width: 100%; justify-content: center; }
   }
@@ -445,7 +457,7 @@
                       class="run-next run-next-success"
                       data-drawer-toggle
                       data-focus-key="next"
-                      aria-expanded="false"
+                      aria-expanded="true"
                       aria-controls="run-drawer">
                 <span class="run-next-label">
                   <span class="run-dot run-dot-success"></span>
@@ -458,7 +470,7 @@
                       class="run-next run-next-primary"
                       data-drawer-toggle
                       data-focus-key="next"
-                      aria-expanded="false"
+                      aria-expanded="true"
                       aria-controls="run-drawer">
                 <span class="run-next-label">
                   <span class="run-dot run-dot-next"></span>
@@ -470,8 +482,9 @@
             <span class="run-sr" role="status" data-run-announce></span>
           </div>
           {% if next_action_kind in ('ready_to_deploy', 'pending_changes') %}
-            <div class="run-drawer" id="run-drawer" data-run-drawer aria-hidden="true">
+            <div class="run-drawer run-drawer--{{ 'success' if next_action_kind == 'ready_to_deploy' else 'primary' }} is-open" id="run-drawer" data-run-drawer>
               <div class="run-drawer-inner">
+                <div class="run-drawer-content">
 
                 {% if next_action_kind == 'ready_to_deploy' %}
                   <div class="run-drawer-section">
@@ -512,120 +525,124 @@
                 {% if next_action_kind == 'pending_changes' or (next_action_kind == 'ready_to_deploy' and has_pending) %}
                   {% if next_action_kind == 'ready_to_deploy' %}<div class="run-drawer-divider"></div>{% endif %}
                   <div class="run-drawer-section">
-                    <div class="changes-summary">
-                      <div class="flex items-center gap-2 flex-wrap">
-                        {% if has_image_changes %}
-                          <span class="change-pill change-pill-image">
-                            {{ icon('image', 'w-3 h-3') }}
-                            {{ img_total }} image {{ 'setting' if img_total == 1 else 'settings' }}
-                          </span>
-                        {% endif %}
-                        {% if has_config_changes %}
-                          <span class="change-pill change-pill-config">
-                            {{ icon('key', 'w-3 h-3') }}
-                            {{ cfg_total }} config {{ 'variable' if cfg_total == 1 else 'variables' }}
-                          </span>
-                        {% endif %}
-                        {% if has_ingress_changes %}
-                          <span class="change-pill change-pill-config">
-                            {{ icon('globe', 'w-3 h-3') }}
-                            {{ ing_total }} {{ 'ingress' if ing_total == 1 else 'ingresses' }}
-                          </span>
-                        {% endif %}
-                        {% if img_total + cfg_total + ing_total > 0 %}
-                          <button class="change-details-toggle"
-                                  onclick="var d=this.closest('.changes-summary').querySelector('.change-details'); d.classList.toggle('change-details-open'); this.querySelector('span').textContent = d.classList.contains('change-details-open') ? 'hide details' : 'show details'">
-                            {{ icon('chevron-right', 'w-3 h-3 change-details-chevron') }}
-                            <span>show details</span>
-                          </button>
-                        {% endif %}
-                      </div>
+                    <div class="run-drawer-row run-drawer-row-changes">
+                      <div class="run-drawer-changes">
+                        <div class="changes-summary">
+                          <div class="flex items-center gap-2 flex-wrap">
+                            {% if has_image_changes %}
+                              <span class="change-pill change-pill-image">
+                                {{ icon('image', 'w-3 h-3') }}
+                                {{ img_total }} image {{ 'setting' if img_total == 1 else 'settings' }}
+                              </span>
+                            {% endif %}
+                            {% if has_config_changes %}
+                              <span class="change-pill change-pill-config">
+                                {{ icon('key', 'w-3 h-3') }}
+                                {{ cfg_total }} config {{ 'variable' if cfg_total == 1 else 'variables' }}
+                              </span>
+                            {% endif %}
+                            {% if has_ingress_changes %}
+                              <span class="change-pill change-pill-config">
+                                {{ icon('globe', 'w-3 h-3') }}
+                                {{ ing_total }} {{ 'ingress' if ing_total == 1 else 'ingresses' }}
+                              </span>
+                            {% endif %}
+                            {% if img_total + cfg_total + ing_total > 0 %}
+                              <button class="change-details-toggle"
+                                      onclick="var d=this.closest('.changes-summary').querySelector('.change-details'); d.classList.toggle('change-details-open'); this.querySelector('span').textContent = d.classList.contains('change-details-open') ? 'hide details' : 'show details'">
+                                {{ icon('chevron-right', 'w-3 h-3 change-details-chevron') }}
+                                <span>show details</span>
+                              </button>
+                            {% endif %}
+                          </div>
 
-                      <div class="change-details">
-                        <div class="change-details-inner">
-                          {% if has_image_changes %}
-                            <div class="change-group">
-                              <span class="change-group-label">Image</span>
-                              {% for item in img_added %}<span class="change-item change-item-added">{{ item }} <em>added</em></span>{% endfor %}
-                              {% for item in img_changed %}
-                                <span class="change-item change-item-updated">{{ item }} <em>updated</em></span>
-                              {% endfor %}
-                              {% for item in img_removed %}
-                                <span class="change-item change-item-removed">{{ item }} <em>removed</em></span>
-                              {% endfor %}
+                          <div class="change-details">
+                            <div class="change-details-inner">
+                              {% if has_image_changes %}
+                                <div class="change-group">
+                                  <span class="change-group-label">Image</span>
+                                  {% for item in img_added %}<span class="change-item change-item-added">{{ item }} <em>added</em></span>{% endfor %}
+                                  {% for item in img_changed %}
+                                    <span class="change-item change-item-updated">{{ item }} <em>updated</em></span>
+                                  {% endfor %}
+                                  {% for item in img_removed %}
+                                    <span class="change-item change-item-removed">{{ item }} <em>removed</em></span>
+                                  {% endfor %}
+                                </div>
+                              {% endif %}
+                              {% if has_config_changes %}
+                                <div class="change-group">
+                                  <span class="change-group-label">Config</span>
+                                  {% for item in cfg_added %}
+                                    <span class="change-item change-item-added"><code>{{ item }}</code> <em>added</em></span>
+                                  {% endfor %}
+                                  {% for item in cfg_changed %}
+                                    <span class="change-item change-item-updated"><code>{{ item }}</code> <em>updated</em></span>
+                                  {% endfor %}
+                                  {% for item in cfg_removed %}
+                                    <span class="change-item change-item-removed"><code>{{ item }}</code> <em>removed</em></span>
+                                  {% endfor %}
+                                </div>
+                              {% endif %}
+                              {% if has_ingress_changes %}
+                                <div class="change-group">
+                                  <span class="change-group-label">Ingress</span>
+                                  {% for item in ing_added %}
+                                    <span class="change-item change-item-added"><code>{{ item }}</code> <em>added</em></span>
+                                  {% endfor %}
+                                  {% for item in ing_changed %}
+                                    <span class="change-item change-item-updated">
+                                      <code>{{ item }}</code> <em>updated</em>
+                                      {% if ingress_change_details.get(item) %}
+                                        <span class="text-base-content/50"> — {{ ingress_change_details[item]|join('; ') }}</span>
+                                      {% endif %}
+                                    </span>
+                                  {% endfor %}
+                                  {% for item in ing_removed %}
+                                    <span class="change-item change-item-removed"><code>{{ item }}</code> <em>removed</em></span>
+                                  {% endfor %}
+                                </div>
+                              {% endif %}
                             </div>
-                          {% endif %}
-                          {% if has_config_changes %}
-                            <div class="change-group">
-                              <span class="change-group-label">Config</span>
-                              {% for item in cfg_added %}
-                                <span class="change-item change-item-added"><code>{{ item }}</code> <em>added</em></span>
-                              {% endfor %}
-                              {% for item in cfg_changed %}
-                                <span class="change-item change-item-updated"><code>{{ item }}</code> <em>updated</em></span>
-                              {% endfor %}
-                              {% for item in cfg_removed %}
-                                <span class="change-item change-item-removed"><code>{{ item }}</code> <em>removed</em></span>
-                              {% endfor %}
-                            </div>
-                          {% endif %}
-                          {% if has_ingress_changes %}
-                            <div class="change-group">
-                              <span class="change-group-label">Ingress</span>
-                              {% for item in ing_added %}
-                                <span class="change-item change-item-added"><code>{{ item }}</code> <em>added</em></span>
-                              {% endfor %}
-                              {% for item in ing_changed %}
-                                <span class="change-item change-item-updated">
-                                  <code>{{ item }}</code> <em>updated</em>
-                                  {% if ingress_change_details.get(item) %}
-                                    <span class="text-base-content/50"> — {{ ingress_change_details[item]|join('; ') }}</span>
-                                  {% endif %}
-                                </span>
-                              {% endfor %}
-                              {% for item in ing_removed %}
-                                <span class="change-item change-item-removed"><code>{{ item }}</code> <em>removed</em></span>
-                              {% endfor %}
-                            </div>
-                          {% endif %}
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div class="run-drawer-row">
-                      <div class="deploy-steps-inline">
-                        {% if next_action_kind == 'ready_to_deploy' %}
-                          <span class="deploy-step-inline deploy-step-inline-done">{{ icon('check', 'w-3 h-3') }} Build</span>
-                          <span class="deploy-step-inline-arrow">→</span>
-                          <span class="deploy-step-inline deploy-step-inline-next">Create Release</span>
-                          <span class="deploy-step-inline-arrow">→</span>
-                          <span class="deploy-step-inline deploy-step-inline-pending">Deploy</span>
-                        {% elif (has_config_changes or has_ingress_changes) and not has_image_changes %}
-                          <span class="deploy-step-inline deploy-step-inline-next">Create Release</span>
-                          <span class="deploy-step-inline-arrow">→</span>
-                          <span class="deploy-step-inline deploy-step-inline-pending">Deploy</span>
-                        {% else %}
-                          <span class="deploy-step-inline deploy-step-inline-done">{{ icon('check', 'w-3 h-3') }} Build</span>
-                          <span class="deploy-step-inline-arrow">→</span>
-                          <span class="deploy-step-inline deploy-step-inline-next">Create Release</span>
-                          <span class="deploy-step-inline-arrow">→</span>
-                          <span class="deploy-step-inline deploy-step-inline-pending">Deploy</span>
-                        {% endif %}
+                      <div class="run-drawer-side">
+                        <div class="deploy-steps-inline">
+                          {% if next_action_kind == 'ready_to_deploy' %}
+                            <span class="deploy-step-inline deploy-step-inline-done">{{ icon('check', 'w-3 h-3') }} Build</span>
+                            <span class="deploy-step-inline-arrow">→</span>
+                            <span class="deploy-step-inline deploy-step-inline-next">Create Release</span>
+                            <span class="deploy-step-inline-arrow">→</span>
+                            <span class="deploy-step-inline deploy-step-inline-pending">Deploy</span>
+                          {% elif (has_config_changes or has_ingress_changes) and not has_image_changes %}
+                            <span class="deploy-step-inline deploy-step-inline-next">Create Release</span>
+                            <span class="deploy-step-inline-arrow">→</span>
+                            <span class="deploy-step-inline deploy-step-inline-pending">Deploy</span>
+                          {% else %}
+                            <span class="deploy-step-inline deploy-step-inline-done">{{ icon('check', 'w-3 h-3') }} Build</span>
+                            <span class="deploy-step-inline-arrow">→</span>
+                            <span class="deploy-step-inline deploy-step-inline-next">Create Release</span>
+                            <span class="deploy-step-inline-arrow">→</span>
+                            <span class="deploy-step-inline deploy-step-inline-pending">Deploy</span>
+                          {% endif %}
+                        </div>
+                        <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+                              method="post"
+                              class="run-drawer-cta">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                          {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
+                          <button type="submit" class="btn {{ 'btn-outline' if next_action_kind == 'ready_to_deploy' else 'btn-primary' }} btn-sm gap-1.5">
+                            {{ icon('scissors', 'w-3.5 h-3.5') }}
+                            Create Release
+                          </button>
+                        </form>
                       </div>
-                      <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
-                            method="post"
-                            class="run-drawer-cta">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-                        {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
-                        <button type="submit" class="btn {{ 'btn-outline' if next_action_kind == 'ready_to_deploy' else 'btn-primary' }} btn-sm gap-1.5">
-                          {{ icon('scissors', 'w-3.5 h-3.5') }}
-                          Create Release
-                        </button>
-                      </form>
                     </div>
                   </div>
                 {% endif %}
-
+                </div>
               </div>
             </div>
           {% endif %}
@@ -795,7 +812,7 @@
       </div>
     {% endif %}
 
-    {% if has_releases and latest_release.built %}
+    {% if latest_deployment_completed %}
       <div class="mb-4" data-live-processes>
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center gap-1.5">
@@ -1058,12 +1075,14 @@
     {% endif %}
 
     {% set has_any_activity = images or releases or deployments %}
-    {% set has_live_status = has_releases and latest_release.built %}
+    {# Gate on something running, not on the newest release: a release that's
+       still building (or stalled) mustn't hide the app that's live. #}
+    {% set has_live_status = latest_deployment_completed %}
 
     <div class="mb-4">
       <div class="flex items-center justify-between mb-3">
         <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Recent Activity</h2>
-        {% if has_releases and latest_release.built %}
+        {% if has_live_status %}
           <div class="flex items-center gap-2 text-xs text-base-content/30">
             <span class="inline-flex items-center gap-1">
               {{ icon('key', 'w-2.5 h-2.5') }}
@@ -1898,15 +1917,18 @@
   })();
 
   // Next-action drawer: the disclosure under the strip for the pending-change
-  // or ready-to-deploy details. Persisted per app+environment in
-  // sessionStorage; lives outside [data-run-body] so the poll above never
-  // touches it or steals focus from it.
+  // or ready-to-deploy details. It lives outside [data-run-body] so the poll
+  // above never touches it or steals focus from it.
   (function() {
     var toggleBtn = document.querySelector('[data-drawer-toggle]');
     var drawer = document.querySelector('[data-run-drawer]');
     if (!toggleBtn || !drawer) return;
     var stripEl = document.querySelector('[data-run-strip]');
     var storageKey = stripEl ? stripEl.getAttribute('data-storage-key') : null;
+    // The drawer renders open whenever there's an action to take. Collapsing
+    // remembers that action (by its label), so the same action stays out of
+    // the way but a new one opens the drawer again.
+    var action = toggleBtn.textContent.replace(/\s+/g, ' ').trim();
 
     function setOpen(open, returnFocus) {
       drawer.classList.toggle('is-open', open);
@@ -1915,8 +1937,8 @@
       toggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
       if (storageKey) {
         try {
-          if (open) sessionStorage.setItem(storageKey, '1');
-          else sessionStorage.removeItem(storageKey);
+          if (open) localStorage.removeItem(storageKey);
+          else localStorage.setItem(storageKey, action);
         } catch (e) {}
       }
       if (!open && returnFocus) toggleBtn.focus({ preventScroll: true });
@@ -1932,11 +1954,19 @@
       }
     });
 
-    var initiallyOpen = false;
+    var dismissed = null;
     if (storageKey) {
-      try { initiallyOpen = sessionStorage.getItem(storageKey) === '1'; } catch (e) {}
+      try { dismissed = localStorage.getItem(storageKey); } catch (e) {}
     }
-    if (initiallyOpen) setOpen(true);
+    if (dismissed === action) {
+      // Already collapsed by the user: close without animating on load.
+      drawer.style.transition = 'none';
+      setOpen(false);
+      void drawer.offsetHeight;
+      drawer.style.transition = '';
+    } else if (dismissed !== null && storageKey) {
+      try { localStorage.removeItem(storageKey); } catch (e) {}
+    }
   })();
   </script>
 {% endblock js %}

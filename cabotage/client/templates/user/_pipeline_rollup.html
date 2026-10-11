@@ -1,17 +1,20 @@
 {% from "_macros.html" import icon %}
 {#
-  Shared pipeline rollup table, included by project_pipeline.html and
-  organization_pipeline.html. The includer must set, before including:
-    rollup_level      'project' | 'organization'
+  Shared pipeline rollup table, included by project_pipeline.html,
+  organization_pipeline.html, and infra_pipeline.html. The includer must
+  set, before including:
+    rollup_level      'project' | 'organization' | 'infra'
     rollup_root_id    unique element id for this page's root
-    rollup_url        JSON endpoint returning {rows, summary?}
+    rollup_url        JSON endpoint returning
+                       {rows, summary?, inactive_total?, inactive_included?}
     rollup_empty_text teaching sentence shown when nothing has run in range
-    show_summary      true to render the pooled summary line (org page)
+    show_summary      true to render the pooled summary line
 #}
 <style>
 .roll { --roll-ok: var(--color-success); --roll-fail: var(--color-error);
   --roll-mono: 'JetBrains Mono', ui-monospace, monospace; }
 .roll .num { font-family: var(--roll-mono); font-variant-numeric: tabular-nums; }
+.roll.roll-wide { max-width: 80rem; }
 .roll-card { background: var(--surface-card); border: 1px solid var(--border-color); border-radius: 0.75rem; overflow: hidden; }
 .roll-note { padding: 1.5rem 1rem; text-align: center; font-size: 0.875rem; color: var(--text-muted); }
 .roll-note.mb { margin-bottom: 0.75rem; }
@@ -20,20 +23,48 @@
   font-size: 0.8125rem; color: var(--text-muted); border-bottom: 1px solid var(--border-color); }
 .roll-summary b { font-family: var(--roll-mono); color: var(--text-bright); font-weight: 600; margin-left: 0.3rem; }
 
-.roll-table-wrap { overflow-x: auto; }
-table.roll-table { width: 100%; border-collapse: collapse; min-width: 760px; }
+/* Scroll-edge fade: a cue that content continues past the card's edge,
+   never a resting shadow on the card itself. The two outer layers are
+   fixed to the viewport (background-attachment: scroll) and only peek out
+   from under the two content-colored mask layers (attachment: local) once
+   there is more to scroll in that direction. Columns below are sized to
+   avoid this entirely at ≥768px; it only engages on narrow viewports. */
+.roll-table-wrap { overflow-x: auto; background-color: var(--surface-card);
+  background-repeat: no-repeat;
+  background-image:
+    linear-gradient(to right, var(--surface-card) 50%, transparent),
+    linear-gradient(to left, var(--surface-card) 50%, transparent),
+    linear-gradient(to right, var(--shadow-card, rgba(0,0,0,0.25)), transparent),
+    linear-gradient(to left, var(--shadow-card, rgba(0,0,0,0.25)), transparent);
+  background-position: left center, right center, left center, right center;
+  background-size: 1.5rem 100%, 1.5rem 100%, 0.75rem 100%, 0.75rem 100%;
+  background-attachment: local, local, scroll, scroll;
+}
+table.roll-table { width: 100%; min-width: 44rem; border-collapse: collapse; table-layout: fixed; }
 .roll-table th, .roll-table td { padding: 0 0.75rem; white-space: nowrap; }
 .roll-table thead th { height: 2.25rem; font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.05em;
   text-transform: uppercase; color: var(--text-faint); text-align: right; border-bottom: 1px solid var(--border-color); }
 .roll-table thead th.roll-status, .roll-table thead th.roll-name, .roll-table thead th.roll-trend-head { text-align: left; }
 .roll-table thead button { all: unset; cursor: pointer; font: inherit; letter-spacing: inherit; text-transform: inherit;
   color: inherit; display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.25rem 0; border-radius: 0.25rem; }
+.roll-table thead th:not(.roll-status):not(.roll-name):not(.roll-trend-head) button { justify-content: flex-end; }
 .roll-table thead button:hover { color: var(--text-bright); }
 .roll-table thead button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 .roll-table thead th[aria-sort="ascending"] button,
 .roll-table thead th[aria-sort="descending"] button { color: var(--text-bright); }
-.roll-sort-arrow { font-size: 0.625rem; width: 0.75rem; display: inline-block; opacity: 0; }
+.roll-sort-arrow { font-size: 0.625rem; width: 0.75rem; display: inline-block; opacity: 0; flex: none; }
 th[aria-sort="ascending"] .roll-sort-arrow, th[aria-sort="descending"] .roll-sort-arrow { opacity: 1; }
+
+/* Column plan: status + every trailing metric/trend column is a fixed
+   width sized to its content with room to spare, never truncated or
+   wrapped. The name column is the only flexible one; it alone truncates,
+   with an ellipsis and a title tooltip carrying the full path. */
+.roll-status { width: 1.75rem; }
+.roll-runs, .roll-failed { width: 4.25rem; }
+.roll-success { width: 5.25rem; }
+.roll-p50, .roll-p95 { width: 4.75rem; }
+.roll-last { width: 5.75rem; }
+.roll-trend-head, .roll-trend { width: 7.5rem; }
 
 tr.roll-row { position: relative; height: 2.75rem; font-size: 0.875rem; color: var(--text-muted);
   border-bottom: 1px solid var(--border-color-subtle); transition: background-color 150ms ease-out; }
@@ -41,21 +72,29 @@ tr.roll-row:last-child { border-bottom: 0; }
 tr.roll-row:hover { background: var(--hover-overlay); }
 tr.roll-row.is-empty { color: var(--text-faint); }
 .roll-table td.num { text-align: right; }
-.roll-link { color: var(--text-bright); text-decoration: none; }
+.roll-name { overflow: hidden; }
+.roll-link { display: block; color: var(--text-bright); text-decoration: none; overflow: hidden; }
 .roll-link:focus-visible { outline: none; }
 .roll-link:focus-visible::after { outline: 2px solid var(--color-primary); outline-offset: -2px; border-radius: 0.375rem; }
 .roll-link::after { content: ''; position: absolute; inset: 0; }
-.roll-name .proj { color: var(--text-muted); }
-.roll-status { width: 1.75rem; }
+.roll-name-main { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.roll-name-prefix { color: var(--text-faint); font-weight: 400; }
 .roll-dot { width: 0.5rem; height: 0.5rem; border-radius: 9999px; display: inline-block; }
 .roll-dot-ok { background: var(--roll-ok); }
 .roll-dot-fail { background: var(--roll-fail); box-shadow: 0 0 8px color-mix(in srgb, var(--roll-fail) 40%, transparent); }
 .roll-dot-none { background: var(--border-color); }
-.roll-trend-head { width: 6.5rem; }
-.roll-spark { display: flex; align-items: flex-end; gap: 1px; height: 1.25rem; width: 6rem; }
+.roll-spark { display: flex; align-items: flex-end; gap: 1px; height: 1.25rem; width: 100%; }
 .roll-spark > span { flex: 1 1 0; min-width: 1px; border-radius: 1px;
   background: color-mix(in srgb, var(--text-muted) 55%, transparent); }
 .roll-spark > span.has-fail { background: var(--roll-fail); }
+
+/* Taxonomy subheaders (org · project), shown only while the table is in
+   its default unsorted order; see render()/groupedRowsHtml() below. Uses
+   the shared section_label recipe (DESIGN.md): text-xs font-medium
+   text-base-content/40 uppercase tracking-wider. */
+tr.roll-group-row th { text-align: left; font-size: 0.75rem; font-weight: 500; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--text-faint); padding: 0.5rem 0.75rem 0.375rem; }
+tr.roll-group-row:not(:first-child) th { border-top: 1px solid var(--border-color-subtle); padding-top: 0.75rem; }
 
 .roll-skel { border-radius: 0.375rem; background: linear-gradient(90deg, var(--surface-inset) 0%,
   color-mix(in srgb, var(--surface-inset) 60%, var(--surface-card)) 50%, var(--surface-inset) 100%);
@@ -67,23 +106,32 @@ tr.roll-row.is-empty { color: var(--text-faint); }
 }
 </style>
 
-<div class="settings-page roll" id="{{ rollup_root_id }}">
+<div class="settings-page roll {% if rollup_level == 'infra' %}roll-wide{% endif %}" id="{{ rollup_root_id }}">
   <div class="flex flex-wrap items-end justify-between gap-x-4 gap-y-3 mb-4">
     <div>
       <h1 class="text-lg font-semibold text-base-content">Pipeline</h1>
       <p class="text-xs text-base-content/50">
-        {% if rollup_level == 'organization' %}
+        {% if rollup_level == 'infra' %}
+          Run time and failure rate for every application environment across every organization.
+        {% elif rollup_level == 'organization' %}
           Run time and failure rate for every application environment across the organization.
         {% else %}
           Run time and failure rate for every application environment in this project.
         {% endif %}
       </p>
     </div>
-    <div class="flex gap-1.5" id="roll-range-selector" role="group" aria-label="Time range">
-      {% for r in ['7d', '30d', '90d'] %}
-        <button type="button" data-range="{{ r }}" aria-pressed="{{ 'true' if current_range == r else 'false' }}"
-           class="btn btn-xs {% if current_range == r %}btn-primary{% else %}btn-ghost{% endif %}">{{ r }}</button>
-      {% endfor %}
+    <div class="flex flex-wrap items-center gap-2">
+      {% if rollup_level == 'infra' %}
+      <label class="sr-only" for="roll-org-filter">Filter by organization</label>
+      <input type="text" id="roll-org-filter" class="input input-xs input-bordered w-44"
+             placeholder="Filter by organization…" autocomplete="off">
+      {% endif %}
+      <div class="flex gap-1.5" id="roll-range-selector" role="group" aria-label="Time range">
+        {% for r in ['7d', '30d', '90d'] %}
+          <button type="button" data-range="{{ r }}" aria-pressed="{{ 'true' if current_range == r else 'false' }}"
+             class="btn btn-xs {% if current_range == r %}btn-primary{% else %}btn-ghost{% endif %}">{{ r }}</button>
+        {% endfor %}
+      </div>
     </div>
   </div>
 
@@ -101,6 +149,10 @@ tr.roll-row.is-empty { color: var(--text-faint); }
       <span>Deploys <span data-range-label></span><b data-summary="runs">—</b></span>
       <span>Change failure rate<b data-summary="cfr">—</b></span>
       <span>Median run<b data-summary="p50">—</b></span>
+      {% if rollup_level == 'infra' %}
+      <span>p95 run<b data-summary="p95">—</b></span>
+      <span>Active app envs<b data-summary="active">—</b></span>
+      {% endif %}
     </div>
     {% endif %}
     <div class="roll-table-wrap">
@@ -110,25 +162,27 @@ tr.roll-row.is-empty { color: var(--text-faint); }
           <tr>
             <th scope="col" class="roll-status"><span class="sr-only">Status</span></th>
             <th scope="col" class="roll-name">
-              {% if rollup_level == 'organization' %}Project / App · Environment{% else %}App · Environment{% endif %}
+              {% if rollup_level == 'infra' %}Org / Project / App · Environment
+              {% elif rollup_level == 'organization' %}Project / App · Environment
+              {% else %}App · Environment{% endif %}
             </th>
-            <th scope="col" aria-sort="none">
+            <th scope="col" class="roll-runs" aria-sort="none">
               <button type="button" data-sort="runs">Runs<span class="roll-sort-arrow"></span></button>
             </th>
-            <th scope="col" aria-sort="none">
+            <th scope="col" class="roll-failed" aria-sort="none">
               <button type="button" data-sort="failed">Failed<span class="roll-sort-arrow"></span></button>
             </th>
-            <th scope="col" aria-sort="none">
+            <th scope="col" class="roll-success" aria-sort="none">
               <button type="button" data-sort="success_rate">Success<span class="roll-sort-arrow"></span></button>
             </th>
-            <th scope="col" aria-sort="none">
+            <th scope="col" class="roll-p50" aria-sort="none">
               <button type="button" data-sort="p50">p50<span class="roll-sort-arrow"></span></button>
             </th>
-            <th scope="col" aria-sort="none">
+            <th scope="col" class="roll-p95" aria-sort="none">
               <button type="button" data-sort="p95">p95<span class="roll-sort-arrow"></span></button>
             </th>
-            <th scope="col" aria-sort="descending">
-              <button type="button" data-sort="last_at">Last run<span class="roll-sort-arrow">▼</span></button>
+            <th scope="col" class="roll-last" aria-sort="none">
+              <button type="button" data-sort="last_at">Last run<span class="roll-sort-arrow"></span></button>
             </th>
             <th scope="col" class="roll-trend-head">Deploys/day</th>
           </tr>
@@ -138,6 +192,11 @@ tr.roll-row.is-empty { color: var(--text-faint); }
         </tbody>
       </table>
     </div>
+    <div id="roll-inactive" class="roll-note" hidden>
+      <button type="button" class="btn btn-xs btn-ghost" id="roll-inactive-toggle">
+        Show <span id="roll-inactive-count">0</span> inactive app environments
+      </button>
+    </div>
   </div>
 </div>
 
@@ -145,10 +204,12 @@ tr.roll-row.is-empty { color: var(--text-faint); }
 (function() {
   var root = document.getElementById({{ rollup_root_id|tojson }});
   var level = {{ rollup_level|tojson }};
+  var groupable = (level === 'infra' || level === 'organization');
   var rollupUrl = {{ rollup_url|tojson }};
   var DAY = 86400;
 
-  var state = { range: {{ current_range|tojson }}, sort: { key: 'last_at', dir: 'desc' }, rows: null };
+  var state = { range: {{ current_range|tojson }}, sort: { key: 'last_at', dir: 'desc' }, rows: null,
+    orgFilter: '', inactiveTotal: 0, inactiveIncluded: true, grouped: groupable };
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function(c) { return '&#' + c.charCodeAt(0) + ';'; });
@@ -184,10 +245,32 @@ tr.roll-row.is-empty { color: var(--text-faint); }
     return days;
   }
 
-  function labelHtml(row) {
-    var prefix = level === 'organization'
-      ? '<span class="proj">' + esc(row.project_name) + ' / </span>' : '';
-    return prefix + esc(row.app_name) + ' · ' + esc(row.env_name);
+  function fullPath(row) {
+    if (level === 'infra') return row.org_name + ' / ' + row.project_name + ' / ' + row.app_name + ' \u00b7 ' + row.env_name;
+    if (level === 'organization') return row.project_name + ' / ' + row.app_name + ' \u00b7 ' + row.env_name;
+    return row.app_name + ' \u00b7 ' + row.env_name;
+  }
+
+  // Grouped rows (default order) repeat org/project as subheaders, so the
+  // label is just the app · environment. Flat rows (any explicit sort)
+  // interleave organizations/projects, so the path becomes a muted prefix
+  // on the same line; the org is dropped from it when every visible row
+  // already shares one (e.g. after filtering to a single organization).
+  function labelHtml(row, grouped, showOrg) {
+    if (grouped) {
+      return '<span class="roll-name-main">' + esc(row.app_name) + ' \u00b7 ' + esc(row.env_name) + '</span>';
+    }
+    var parts = [];
+    if (level === 'infra') {
+      if (showOrg) parts.push(row.org_name);
+      parts.push(row.project_name);
+    } else if (level === 'organization') {
+      parts.push(row.project_name);
+    }
+    var prefix = parts.length ? esc(parts.join(' / ')) + ' / ' : '';
+    return '<span class="roll-name-main">' +
+      (prefix ? '<span class="roll-name-prefix">' + prefix + '</span>' : '') +
+      esc(row.app_name) + ' \u00b7 ' + esc(row.env_name) + '</span>';
   }
 
   function sparkHtml(row) {
@@ -209,7 +292,7 @@ tr.roll-row.is-empty { color: var(--text-faint); }
       days.length + ' days">' + bars + '</span>';
   }
 
-  function rowHtml(row) {
+  function rowHtml(row, grouped, showOrg) {
     var empty = row.runs === 0;
     var dotClass = row.last_status === 'fail' ? 'roll-dot-fail'
       : row.last_status === 'ok' ? 'roll-dot-ok' : 'roll-dot-none';
@@ -217,16 +300,42 @@ tr.roll-row.is-empty { color: var(--text-faint); }
     return (
       '<tr class="roll-row' + (empty ? ' is-empty' : '') + '">' +
       '<td class="roll-status"><span class="roll-dot ' + dotClass + '" title="' + statusWord + '"></span></td>' +
-      '<td class="roll-name"><a class="roll-link" href="' + row.url + '">' + labelHtml(row) + '</a></td>' +
-      '<td class="num">' + (empty ? '—' : row.runs) + '</td>' +
-      '<td class="num">' + (empty ? '—' : row.failed) + '</td>' +
-      '<td class="num">' + (empty ? '—' : fmtPct(row.success_rate)) + '</td>' +
-      '<td class="num">' + fmtDur(row.p50) + '</td>' +
-      '<td class="num">' + fmtDur(row.p95) + '</td>' +
-      '<td class="num" title="' + absTime(row.last_at) + '">' + relTime(row.last_at) + '</td>' +
-      '<td>' + sparkHtml(row) + '</td>' +
+      '<td class="roll-name"><a class="roll-link" href="' + row.url + '" title="' + esc(fullPath(row)) + '">' +
+        labelHtml(row, grouped, showOrg) + '</a></td>' +
+      '<td class="num roll-runs">' + (empty ? '—' : row.runs) + '</td>' +
+      '<td class="num roll-failed">' + (empty ? '—' : row.failed) + '</td>' +
+      '<td class="num roll-success">' + (empty ? '—' : fmtPct(row.success_rate)) + '</td>' +
+      '<td class="num roll-p50">' + fmtDur(row.p50) + '</td>' +
+      '<td class="num roll-p95">' + fmtDur(row.p95) + '</td>' +
+      '<td class="num roll-last" title="' + absTime(row.last_at) + '">' + relTime(row.last_at) + '</td>' +
+      '<td class="roll-trend">' + sparkHtml(row) + '</td>' +
       '</tr>'
     );
+  }
+
+  // One subheader per org·project change, over the table's natural
+  // (already org/project/app/env-ordered) inventory. Used only while
+  // state.grouped is true.
+  function groupedRowsHtml(rows) {
+    var html = '', lastKey = null;
+    rows.forEach(function(row) {
+      var key = row.org_slug + '\u0000' + row.project_slug;
+      if (key !== lastKey) {
+        var label = level === 'infra' ? row.org_name + ' \u00b7 ' + row.project_name : row.project_name;
+        html += '<tr class="roll-group-row"><th colspan="9" scope="colgroup">' + esc(label) + '</th></tr>';
+        lastKey = key;
+      }
+      html += rowHtml(row, true, false);
+    });
+    return html;
+  }
+
+  function filterRows(rows) {
+    var q = state.orgFilter.trim().toLowerCase();
+    if (!q || level !== 'infra') return rows;
+    return rows.filter(function(r) {
+      return (r.org_name + ' ' + r.org_slug).toLowerCase().indexOf(q) !== -1;
+    });
   }
 
   function sortRows(rows) {
@@ -248,15 +357,42 @@ tr.roll-row.is-empty { color: var(--text-faint); }
     return withRuns.concat(withoutRuns);
   }
 
+  function markSortActive(key, dir) {
+    root.querySelectorAll('.roll-table thead th').forEach(function(th) {
+      var b = th.querySelector('button[data-sort]');
+      if (!b) return;
+      var active = b.dataset.sort === key;
+      th.setAttribute('aria-sort', active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none');
+      b.querySelector('.roll-sort-arrow').textContent = active ? (dir === 'asc' ? '▲' : '▼') : '';
+    });
+  }
+
   function render() {
     if (!state.rows) return;
     document.getElementById('roll-empty').hidden = state.rows.some(function(r) { return r.runs > 0; });
     root.querySelectorAll('[data-range-label]').forEach(function(el) {
       el.textContent = 'in the last ' + parseInt(state.range, 10) + ' days';
     });
+    var inactiveEl = document.getElementById('roll-inactive');
+    if (inactiveEl) {
+      var hideDisclosure = state.inactiveIncluded || state.inactiveTotal === 0;
+      inactiveEl.hidden = hideDisclosure;
+      if (!hideDisclosure) {
+        document.getElementById('roll-inactive-count').textContent = state.inactiveTotal;
+      }
+    }
+    var filtered = filterRows(state.rows);
     var body = document.getElementById('roll-body');
-    body.innerHTML = sortRows(state.rows).map(rowHtml).join('') ||
-      '<tr><td colspan="9" class="roll-note">No application environments in scope.</td></tr>';
+    var html;
+    if (groupable && state.grouped) {
+      html = groupedRowsHtml(filtered);
+    } else {
+      var orgs = {};
+      filtered.forEach(function(r) { orgs[r.org_slug] = true; });
+      var showOrg = level === 'infra' && Object.keys(orgs).length > 1;
+      html = sortRows(filtered).map(function(row) { return rowHtml(row, false, showOrg); }).join('');
+    }
+    body.innerHTML = html || '<tr><td colspan="9" class="roll-note">No application environments match.</td></tr>';
   }
 
   function renderSummary(payload) {
@@ -266,6 +402,10 @@ tr.roll-row.is-empty { color: var(--text-faint); }
     el.querySelector('[data-summary="runs"]').textContent = payload.summary.runs;
     el.querySelector('[data-summary="cfr"]').textContent = fmtPct(payload.summary.change_failure_rate);
     el.querySelector('[data-summary="p50"]').textContent = fmtDur(payload.summary.run_p50);
+    var p95El = el.querySelector('[data-summary="p95"]');
+    if (p95El) p95El.textContent = fmtDur(payload.summary.run_p95);
+    var activeEl = el.querySelector('[data-summary="active"]');
+    if (activeEl) activeEl.textContent = payload.summary.active_app_envs;
   }
 
   function syncUrl() {
@@ -274,12 +414,16 @@ tr.roll-row.is-empty { color: var(--text-faint); }
     history.replaceState(null, '', url);
   }
 
-  function load() {
+  function load(includeInactive) {
     document.getElementById('roll-error').hidden = true;
-    fetch(rollupUrl + '?range=' + encodeURIComponent(state.range), { headers: { Accept: 'application/json' } })
+    var url = rollupUrl + '?range=' + encodeURIComponent(state.range);
+    if (includeInactive) url += '&include_inactive=1';
+    fetch(url, { headers: { Accept: 'application/json' } })
       .then(function(r) { if (!r.ok) throw new Error('request failed'); return r.json(); })
       .then(function(payload) {
         state.rows = payload.rows;
+        state.inactiveTotal = payload.inactive_total || 0;
+        state.inactiveIncluded = payload.inactive_included !== false;
         render();
         renderSummary(payload);
       })
@@ -314,17 +458,29 @@ tr.roll-row.is-empty { color: var(--text-faint); }
         state.sort.key = key;
         state.sort.dir = 'desc';
       }
-      root.querySelectorAll('.roll-table thead th').forEach(function(th) {
-        var b = th.querySelector('button[data-sort]');
-        if (!b) return;
-        var active = b.dataset.sort === state.sort.key;
-        th.setAttribute('aria-sort', active ? (state.sort.dir === 'asc' ? 'ascending' : 'descending') : 'none');
-        b.querySelector('.roll-sort-arrow').textContent = active ? (state.sort.dir === 'asc' ? '▲' : '▼') : '';
-      });
+      state.grouped = false;
+      markSortActive(state.sort.key, state.sort.dir);
       render();
     });
   });
 
+  var orgFilterInput = document.getElementById('roll-org-filter');
+  if (orgFilterInput) {
+    orgFilterInput.addEventListener('input', function() {
+      state.orgFilter = orgFilterInput.value;
+      render();
+    });
+  }
+
+  var inactiveToggle = document.getElementById('roll-inactive-toggle');
+  if (inactiveToggle) {
+    inactiveToggle.addEventListener('click', function() {
+      inactiveToggle.disabled = true;
+      load(true);
+    });
+  }
+
+  if (!groupable) markSortActive(state.sort.key, state.sort.dir);
   load();
 })();
 </script>
