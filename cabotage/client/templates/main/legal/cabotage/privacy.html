@@ -1,134 +1,26 @@
-{% extends "_base.html" %}
+{% extends "main/legal/_document.html" %}
 {% from "_macros.html" import icon %}
+{% set current = 'main.privacy' %}
+{% set doc_icon = 'shield-check' %}
+{% set toc = [
+  ('collect', '1. Information We Collect'),
+  ('how', '2. How We Use Information'),
+  ('sharing', '3. How We Share Information'),
+  ('retention', '4. Data Retention'),
+  ('security', '5. Security'),
+  ('cookies', '6. Cookies & Tracking'),
+  ('rights', '7. Your Rights & Choices'),
+  ('us-state', '8. U.S. State Privacy'),
+  ('intl', '9. International & GDPR'),
+  ('children', "10. Children's Privacy"),
+  ('pp-changes', '11. Changes'),
+  ('pp-contact', '12. Contact'),
+] %}
 
-{% block title %}
-  Privacy Policy - Cabotage
-{% endblock title %}
+{% block doc_title %}Privacy Policy{% endblock doc_title %}
+{% block doc_subtitle %}Cabotage Deploys, LLC &middot; Effective April 11, 2026{% endblock doc_subtitle %}
 
-{% block css %}
-<style>
-  .legal-page { scroll-behavior: smooth; }
-  .legal-section { scroll-margin-top: 5rem; }
-
-  .toc-link {
-    position: relative;
-    padding-left: 1rem;
-    border-left: 2px solid transparent;
-    transition: border-color 0.2s ease, color 0.2s ease;
-  }
-  .toc-link:hover,
-  .toc-link.active {
-    border-left-color: var(--color-primary);
-    color: var(--color-primary);
-  }
-
-  .legal-section:target > .section-heading { color: var(--color-primary); }
-  .legal-section:target > .section-heading::after {
-    content: '';
-    position: absolute;
-    left: -1.5rem;
-    top: 0;
-    bottom: 0;
-    width: 3px;
-    border-radius: 2px;
-    background: var(--color-primary);
-  }
-
-  .reading-progress {
-    position: fixed;
-    top: 0;
-    left: 0;
-    height: 2px;
-    background: var(--color-primary);
-    z-index: 100;
-    transition: width 0.1s linear;
-    opacity: 0.8;
-  }
-
-  @media (max-width: 1023px) {
-    .legal-sidebar { display: none; }
-  }
-</style>
-{% endblock css %}
-
-{% block content_full %}
-<div class="reading-progress" id="reading-progress" style="width: 0%"></div>
-
-<div class="app-content-padded legal-page">
-  {# ── Page header ── #}
-  <div class="max-w-4xl mx-auto mb-8">
-    <div class="flex items-center gap-3 mb-2">
-      <div class="p-2 rounded-xl bg-primary/10 text-primary">
-        {{ icon('shield-check', 'w-6 h-6') }}
-      </div>
-      <div>
-        <h1 class="text-2xl font-bold text-base-content">Privacy Policy</h1>
-        <p class="text-sm text-base-content/40 mt-0.5">Cabotage Deploys, LLC &middot; Effective April 11, 2026</p>
-      </div>
-    </div>
-  </div>
-
-  <div class="max-w-4xl mx-auto flex gap-10">
-    {# ── Sticky sidebar ToC (desktop) ── #}
-    <nav class="legal-sidebar w-56 shrink-0 hidden lg:block" aria-label="Table of contents">
-      <div class="sticky top-20">
-        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/30 mb-3">On this page</p>
-        <ul class="flex flex-col gap-1 text-sm" id="toc-list">
-          <li><a href="#collect"    class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">1. Information We Collect</a></li>
-          <li><a href="#how"        class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">2. How We Use Information</a></li>
-          <li><a href="#sharing"    class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">3. How We Share Information</a></li>
-          <li><a href="#retention"  class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">4. Data Retention</a></li>
-          <li><a href="#security"   class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">5. Security</a></li>
-          <li><a href="#cookies"    class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">6. Cookies &amp; Tracking</a></li>
-          <li><a href="#rights"     class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">7. Your Rights &amp; Choices</a></li>
-          <li><a href="#us-state"   class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">8. U.S. State Privacy</a></li>
-          <li><a href="#intl"       class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">9. International &amp; GDPR</a></li>
-          <li><a href="#children"   class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">10. Children's Privacy</a></li>
-          <li><a href="#pp-changes" class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">11. Changes</a></li>
-          <li><a href="#pp-contact" class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">12. Contact</a></li>
-        </ul>
-
-        <div class="mt-6 pt-4 border-t border-base-content/5 space-y-2">
-          <a href="{{ url_for('main.about') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
-            {{ icon('info', 'w-4 h-4') }}
-            <span>About</span>
-          </a>
-          <a href="{{ url_for('main.fair_use') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
-            {{ icon('scale', 'w-4 h-4') }}
-            <span>Fair Use</span>
-          </a>
-          <a href="{{ url_for('main.terms') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
-            {{ icon('scroll-text', 'w-4 h-4') }}
-            <span>Terms of Service</span>
-          </a>
-        </div>
-      </div>
-    </nav>
-
-    {# ── Main content ── #}
-    <article class="flex-1 min-w-0">
-      {# Mobile ToC #}
-      <details class="lg:hidden mb-6 card bg-base-200 border border-base-300 group">
-        <summary class="flex items-center justify-between cursor-pointer px-4 py-3 text-sm font-medium text-base-content/60 hover:text-base-content transition-colors">
-          <span class="flex items-center gap-2">{{ icon('list', 'w-4 h-4') }} Table of Contents</span>
-          {{ icon('chevron-down', 'w-4 h-4 transition-transform group-open:rotate-180') }}
-        </summary>
-        <ul class="px-4 pb-3 flex flex-col gap-1 text-sm border-t border-base-content/5 pt-3">
-          <li><a href="#collect"    class="block py-1 text-base-content/50 hover:text-primary transition-colors">1. Information We Collect</a></li>
-          <li><a href="#how"        class="block py-1 text-base-content/50 hover:text-primary transition-colors">2. How We Use Information</a></li>
-          <li><a href="#sharing"    class="block py-1 text-base-content/50 hover:text-primary transition-colors">3. How We Share Information</a></li>
-          <li><a href="#retention"  class="block py-1 text-base-content/50 hover:text-primary transition-colors">4. Data Retention</a></li>
-          <li><a href="#security"   class="block py-1 text-base-content/50 hover:text-primary transition-colors">5. Security</a></li>
-          <li><a href="#cookies"    class="block py-1 text-base-content/50 hover:text-primary transition-colors">6. Cookies &amp; Tracking</a></li>
-          <li><a href="#rights"     class="block py-1 text-base-content/50 hover:text-primary transition-colors">7. Your Rights &amp; Choices</a></li>
-          <li><a href="#us-state"   class="block py-1 text-base-content/50 hover:text-primary transition-colors">8. U.S. State Privacy</a></li>
-          <li><a href="#intl"       class="block py-1 text-base-content/50 hover:text-primary transition-colors">9. International &amp; GDPR</a></li>
-          <li><a href="#children"   class="block py-1 text-base-content/50 hover:text-primary transition-colors">10. Children's Privacy</a></li>
-          <li><a href="#pp-changes" class="block py-1 text-base-content/50 hover:text-primary transition-colors">11. Changes</a></li>
-          <li><a href="#pp-contact" class="block py-1 text-base-content/50 hover:text-primary transition-colors">12. Contact</a></li>
-        </ul>
-      </details>
-
+{% block doc_body %}
       {# ── TL;DR card ── #}
       <div class="mb-8 card bg-primary/5 border border-primary/10 p-5">
         <div class="flex items-start gap-3">
@@ -148,7 +40,7 @@
           This Privacy Policy describes how Cabotage Deploys, LLC ("Cabotage," "we," "us," or "our") collects, uses, and discloses information when you use our platform and services available at cabotage.io (the "Services"). By using the Services, you agree to the terms of this Privacy Policy.
         </p>
         <p class="text-sm text-base-content/70 leading-relaxed">
-          This Privacy Policy applies to the hosted Cabotage platform operated by Cabotage Deploys, LLC. If you are running a self-hosted instance of the Cabotage software under the Functional Source License, this policy does not apply; your organization's own privacy practices govern.
+          This Privacy Policy applies to the hosted Cabotage platform operated by Cabotage Deploys, LLC. If you are running a self-hosted instance of the open-source Cabotage software, this policy does not apply; your organization's own privacy practices govern.
         </p>
         <p class="text-sm text-base-content/70 leading-relaxed">
           This policy covers two categories of people: <strong class="text-base-content/80">Customers</strong> (individuals or organizations that create an account and use our platform to deploy applications) and <strong class="text-base-content/80">End Users</strong> (individuals whose data may be processed by Customers' applications running on our infrastructure). Cabotage acts as a <strong class="text-base-content/80">data controller</strong> for Customer account data and as a <strong class="text-base-content/80">data processor</strong> for any personal data Customers process through their deployments.
@@ -619,49 +511,4 @@
           </div>
         </section>
       </div>
-
-      {# ── Bottom navigation ── #}
-      <div class="mt-12 pt-6 border-t border-base-content/5 flex items-center justify-between">
-        <a href="{{ url_for('main.terms') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
-          {{ icon('arrow-left', 'w-4 h-4') }}
-          <span>Terms of Service</span>
-        </a>
-        <a href="{{ url_for('main.fair_use') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
-          <span>Fair Use</span>
-          {{ icon('arrow-right', 'w-4 h-4') }}
-        </a>
-      </div>
-    </article>
-  </div>
-</div>
-{% endblock content_full %}
-
-{% block js %}
-<script>
-(function() {
-  var bar = document.getElementById('reading-progress');
-  if (bar) {
-    window.addEventListener('scroll', function() {
-      var h = document.documentElement;
-      var pct = (h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100;
-      bar.style.width = Math.min(pct, 100) + '%';
-    }, { passive: true });
-  }
-
-  var sections = document.querySelectorAll('.legal-section');
-  var tocLinks = document.querySelectorAll('#toc-list .toc-link');
-  if (sections.length && tocLinks.length) {
-    var observer = new IntersectionObserver(function(entries) {
-      entries.forEach(function(entry) {
-        if (entry.isIntersecting) {
-          tocLinks.forEach(function(l) { l.classList.remove('active'); });
-          var active = document.querySelector('#toc-list a[href="#' + entry.target.id + '"]');
-          if (active) active.classList.add('active');
-        }
-      });
-    }, { rootMargin: '-80px 0px -60% 0px', threshold: 0 });
-    sections.forEach(function(s) { observer.observe(s); });
-  }
-})();
-</script>
-{% endblock js %}
+{% endblock doc_body %}

@@ -65,23 +65,19 @@
           <li><a href="#features"   class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">What you can do</a></li>
           <li><a href="#how"        class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">How it works</a></li>
           <li><a href="#open"       class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Open source</a></li>
-          <li><a href="#legal"      class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Legal</a></li>
+          {% if legal_nav %}<li><a href="#legal"      class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Legal</a></li>{% endif %}
         </ul>
 
+        {% if legal_nav %}
         <div class="mt-6 pt-4 border-t border-base-content/5 space-y-2">
-          <a href="{{ url_for('main.fair_use') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
-            {{ icon('scale', 'w-4 h-4') }}
-            <span>Fair Use</span>
+          {% for link in legal_nav %}
+          <a href="{{ link.href }}"{% if link.external %} target="_blank" rel="noopener noreferrer"{% endif %} class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+            {{ icon(link.icon, 'w-4 h-4') }}
+            <span>{{ link.label }}</span>
           </a>
-          <a href="{{ url_for('main.privacy') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
-            {{ icon('shield-check', 'w-4 h-4') }}
-            <span>Privacy Policy</span>
-          </a>
-          <a href="{{ url_for('main.terms') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
-            {{ icon('scroll-text', 'w-4 h-4') }}
-            <span>Terms of Service</span>
-          </a>
+          {% endfor %}
         </div>
+        {% endif %}
       </div>
     </nav>
 
@@ -98,7 +94,7 @@
           <li><a href="#features"   class="block py-1 text-base-content/50 hover:text-primary transition-colors">What you can do</a></li>
           <li><a href="#how"        class="block py-1 text-base-content/50 hover:text-primary transition-colors">How it works</a></li>
           <li><a href="#open"       class="block py-1 text-base-content/50 hover:text-primary transition-colors">Open source</a></li>
-          <li><a href="#legal"      class="block py-1 text-base-content/50 hover:text-primary transition-colors">Legal</a></li>
+          {% if legal_nav %}<li><a href="#legal"      class="block py-1 text-base-content/50 hover:text-primary transition-colors">Legal</a></li>{% endif %}
         </ul>
       </details>
 
@@ -113,7 +109,7 @@
               Cabotage is a platform that handles the operational work of running applications &mdash; container builds, deployments, TLS, secret management, scaling, and more &mdash; so your team can focus on shipping code.
             </p>
             <p class="text-sm text-base-content/70 leading-relaxed">
-              Built by <strong class="text-base-content/80">Cabotage Deploys, LLC</strong>, the platform runs on Kubernetes and is designed for teams that want the convenience of a managed PaaS without the overhead of building deployment tooling in-house.
+              The platform runs on Kubernetes and is designed for teams that want the convenience of a managed PaaS without the overhead of building deployment tooling in-house.
             </p>
           </div>
         </section>
@@ -210,7 +206,7 @@
           </h2>
           <div class="card bg-base-200 border border-base-300 p-5 space-y-3">
             <p class="text-sm text-base-content/70 leading-relaxed">
-              Cabotage's source code is available on GitHub under the <strong class="text-base-content/80">Functional Source License (FSL-1.1-ALv2)</strong>. The FSL grants you the right to use, copy, modify, and redistribute the software for any non-competing purpose. After two years, each release converts to the Apache License 2.0.
+              Cabotage is open source software, available on GitHub under the <strong class="text-base-content/80">MIT License</strong>. You are free to use, copy, modify, and redistribute it, including to run your own instance.
             </p>
             <div class="flex flex-wrap gap-3">
               <a href="https://github.com/cabotage/cabotage-app"
@@ -226,13 +222,14 @@
                  rel="noopener noreferrer"
                  class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-base-100/50 border border-base-content/5 text-sm text-base-content/60 hover:text-primary hover:border-primary/20 transition-colors">
                 {{ icon('file-text', 'w-4 h-4') }}
-                <span>FSL-1.1-ALv2</span>
+                <span>MIT License</span>
                 {{ icon('external-link', 'w-3 h-3') }}
               </a>
             </div>
           </div>
         </section>
 
+        {% if legal_nav %}
         {# §5 Legal #}
         <section id="legal" class="about-section">
           <h2 class="section-heading relative text-lg font-semibold text-base-content mb-3 flex items-center gap-2">
@@ -240,49 +237,41 @@
           </h2>
           <div class="card bg-base-200 border border-base-300 p-5">
             <p class="text-sm text-base-content/70 leading-relaxed mb-4">
-              Use of this Cabotage instance is governed by the following:
+              Use of this Cabotage instance is governed by the following.{% if legal_home %} See <a href="{{ legal_home.href }}"{% if legal_home.external %} target="_blank" rel="noopener noreferrer"{% endif %} class="text-primary hover:underline">Legal</a> for who operates it and how to reach them.{% endif %}
             </p>
             <div class="grid gap-3 sm:grid-cols-2">
-              <a href="{{ url_for('main.terms') }}"
+              {% for link in legal_nav %}
+              <a href="{{ link.href }}"
+                 {% if link.external %}target="_blank" rel="noopener noreferrer"{% endif %}
                  class="flex items-start gap-3 p-3 rounded-lg bg-base-100/50 border border-base-content/5 hover:border-primary/20 transition-colors group">
-                <span class="text-primary mt-0.5">{{ icon('file-text', 'w-4 h-4') }}</span>
+                <span class="text-primary mt-0.5">{{ icon(link.icon, 'w-4 h-4') }}</span>
                 <div>
-                  <p class="text-sm font-medium text-base-content/80 group-hover:text-primary transition-colors">Terms of Service</p>
-                  <p class="text-xs text-base-content/40">Rules governing use of the platform</p>
+                  <p class="text-sm font-medium text-base-content/80 group-hover:text-primary transition-colors">{{ link.label }}{% if link.external %} {{ icon('external-link', 'w-3 h-3 inline') }}{% endif %}</p>
+                  <p class="text-xs text-base-content/40">{{ link.summary }}</p>
                 </div>
               </a>
-              <a href="{{ url_for('main.privacy') }}"
-                 class="flex items-start gap-3 p-3 rounded-lg bg-base-100/50 border border-base-content/5 hover:border-primary/20 transition-colors group">
-                <span class="text-primary mt-0.5">{{ icon('shield-check', 'w-4 h-4') }}</span>
-                <div>
-                  <p class="text-sm font-medium text-base-content/80 group-hover:text-primary transition-colors">Privacy Policy</p>
-                  <p class="text-xs text-base-content/40">How we handle your data</p>
-                </div>
-              </a>
-              <a href="{{ url_for('main.fair_use') }}"
-                 class="flex items-start gap-3 p-3 rounded-lg bg-base-100/50 border border-base-content/5 hover:border-primary/20 transition-colors group">
-                <span class="text-primary mt-0.5">{{ icon('scale', 'w-4 h-4') }}</span>
-                <div>
-                  <p class="text-sm font-medium text-base-content/80 group-hover:text-primary transition-colors">Fair Use Policy</p>
-                  <p class="text-xs text-base-content/40">What's allowed on the platform</p>
-                </div>
-              </a>
+              {% endfor %}
             </div>
           </div>
         </section>
+        {% endif %}
       </div>
 
+      {% if legal_nav and not (legal_nav | first).external %}
       {# ── Bottom navigation ── #}
       <div class="mt-12 pt-6 border-t border-base-content/5 flex items-center justify-between">
-        <a href="{{ url_for('main.privacy') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+        {% set prev_link = legal_nav | last %}
+        {% set next_link = legal_nav | first %}
+        <a href="{{ prev_link.href }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
           {{ icon('arrow-left', 'w-4 h-4') }}
-          <span>Privacy Policy</span>
+          <span>{{ prev_link.label }}</span>
         </a>
-        <a href="{{ url_for('main.terms') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
-          <span>Terms of Service</span>
-          {{ icon('chevron-right', 'w-4 h-4') }}
+        <a href="{{ next_link.href }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+          <span>{{ next_link.label }}</span>
+          {{ icon('arrow-right', 'w-4 h-4') }}
         </a>
       </div>
+      {% endif %}
     </article>
   </div>
 </div>

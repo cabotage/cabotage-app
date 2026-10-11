@@ -1,114 +1,21 @@
-{% extends "_base.html" %}
+{% extends "main/legal/_document.html" %}
 {% from "_macros.html" import icon %}
+{% set current = 'main.acceptable_use' %}
+{% set doc_icon = 'scale' %}
+{% set toc = [
+  ('principle', 'Guiding Principle'),
+  ('allowed', "What's Allowed"),
+  ('prohibited', "What's Not Allowed"),
+  ('resources', 'Resource Usage'),
+  ('network', 'Network & Security'),
+  ('enforcement', 'Enforcement'),
+  ('aup-contact', 'Reporting & Contact'),
+] %}
 
-{% block title %}
-  Fair Use &amp; Acceptable Use - Cabotage
-{% endblock title %}
+{% block doc_title %}Fair Use &amp; Acceptable Use Policy{% endblock doc_title %}
+{% block doc_subtitle %}Cabotage Deploys, LLC{% endblock doc_subtitle %}
 
-{% block css %}
-<style>
-  .legal-page { scroll-behavior: smooth; }
-  .legal-section { scroll-margin-top: 5rem; }
-
-  .toc-link {
-    position: relative;
-    padding-left: 1rem;
-    border-left: 2px solid transparent;
-    transition: border-color 0.2s ease, color 0.2s ease;
-  }
-  .toc-link:hover,
-  .toc-link.active {
-    border-left-color: var(--color-primary);
-    color: var(--color-primary);
-  }
-
-  .legal-section:target > .section-heading { color: var(--color-primary); }
-
-  .reading-progress {
-    position: fixed;
-    top: 0;
-    left: 0;
-    height: 2px;
-    background: var(--color-primary);
-    z-index: 100;
-    transition: width 0.1s linear;
-    opacity: 0.8;
-  }
-
-  @media (max-width: 1023px) {
-    .legal-sidebar { display: none; }
-  }
-</style>
-{% endblock css %}
-
-{% block content_full %}
-<div class="reading-progress" id="reading-progress" style="width: 0%"></div>
-
-<div class="app-content-padded legal-page">
-  {# ── Page header ── #}
-  <div class="max-w-4xl mx-auto mb-8">
-    <div class="flex items-center gap-3 mb-2">
-      <div class="p-2 rounded-xl bg-primary/10 text-primary">
-        {{ icon('scale', 'w-6 h-6') }}
-      </div>
-      <div>
-        <h1 class="text-2xl font-bold text-base-content">Fair Use &amp; Acceptable Use Policy</h1>
-        <p class="text-sm text-base-content/40 mt-0.5">Cabotage Deploys, LLC</p>
-      </div>
-    </div>
-  </div>
-
-  <div class="max-w-4xl mx-auto flex gap-10">
-    {# ── Sticky sidebar ToC (desktop) ── #}
-    <nav class="legal-sidebar w-56 shrink-0 hidden lg:block" aria-label="Table of contents">
-      <div class="sticky top-20">
-        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/30 mb-3">On this page</p>
-        <ul class="flex flex-col gap-1 text-sm" id="toc-list">
-          <li><a href="#principle"   class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Guiding Principle</a></li>
-          <li><a href="#allowed"     class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">What's Allowed</a></li>
-          <li><a href="#prohibited"  class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">What's Not Allowed</a></li>
-          <li><a href="#resources"   class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Resource Usage</a></li>
-          <li><a href="#network"     class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Network &amp; Security</a></li>
-          <li><a href="#enforcement" class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Enforcement</a></li>
-          <li><a href="#aup-contact" class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">Reporting &amp; Contact</a></li>
-        </ul>
-
-        <div class="mt-6 pt-4 border-t border-base-content/5 space-y-2">
-          <a href="{{ url_for('main.about') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
-            {{ icon('info', 'w-4 h-4') }}
-            <span>About</span>
-          </a>
-          <a href="{{ url_for('main.privacy') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
-            {{ icon('shield-check', 'w-4 h-4') }}
-            <span>Privacy Policy</span>
-          </a>
-          <a href="{{ url_for('main.terms') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
-            {{ icon('scroll-text', 'w-4 h-4') }}
-            <span>Terms of Service</span>
-          </a>
-        </div>
-      </div>
-    </nav>
-
-    {# ── Main content ── #}
-    <article class="flex-1 min-w-0">
-      {# Mobile ToC #}
-      <details class="lg:hidden mb-6 card bg-base-200 border border-base-300 group">
-        <summary class="flex items-center justify-between cursor-pointer px-4 py-3 text-sm font-medium text-base-content/60 hover:text-base-content transition-colors">
-          <span class="flex items-center gap-2">{{ icon('list', 'w-4 h-4') }} Table of Contents</span>
-          {{ icon('chevron-down', 'w-4 h-4 transition-transform group-open:rotate-180') }}
-        </summary>
-        <ul class="px-4 pb-3 flex flex-col gap-1 text-sm border-t border-base-content/5 pt-3">
-          <li><a href="#principle"   class="block py-1 text-base-content/50 hover:text-primary transition-colors">Guiding Principle</a></li>
-          <li><a href="#allowed"     class="block py-1 text-base-content/50 hover:text-primary transition-colors">What's Allowed</a></li>
-          <li><a href="#prohibited"  class="block py-1 text-base-content/50 hover:text-primary transition-colors">What's Not Allowed</a></li>
-          <li><a href="#resources"   class="block py-1 text-base-content/50 hover:text-primary transition-colors">Resource Usage</a></li>
-          <li><a href="#network"     class="block py-1 text-base-content/50 hover:text-primary transition-colors">Network &amp; Security</a></li>
-          <li><a href="#enforcement" class="block py-1 text-base-content/50 hover:text-primary transition-colors">Enforcement</a></li>
-          <li><a href="#aup-contact" class="block py-1 text-base-content/50 hover:text-primary transition-colors">Reporting &amp; Contact</a></li>
-        </ul>
-      </details>
-
+{% block doc_body %}
       {# ── TL;DR ── #}
       <div class="mb-8 card bg-primary/5 border border-primary/10 p-5">
         <div class="flex items-start gap-3">
@@ -415,49 +322,4 @@
           </div>
         </section>
       </div>
-
-      {# ── Bottom navigation ── #}
-      <div class="mt-12 pt-6 border-t border-base-content/5 flex items-center justify-between">
-        <a href="{{ url_for('main.privacy') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
-          {{ icon('arrow-left', 'w-4 h-4') }}
-          <span>Privacy Policy</span>
-        </a>
-        <a href="{{ url_for('main.about') }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
-          <span>About</span>
-          {{ icon('arrow-right', 'w-4 h-4') }}
-        </a>
-      </div>
-    </article>
-  </div>
-</div>
-{% endblock content_full %}
-
-{% block js %}
-<script>
-(function() {
-  var bar = document.getElementById('reading-progress');
-  if (bar) {
-    window.addEventListener('scroll', function() {
-      var h = document.documentElement;
-      var pct = (h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100;
-      bar.style.width = Math.min(pct, 100) + '%';
-    }, { passive: true });
-  }
-
-  var sections = document.querySelectorAll('.legal-section');
-  var tocLinks = document.querySelectorAll('#toc-list .toc-link');
-  if (sections.length && tocLinks.length) {
-    var observer = new IntersectionObserver(function(entries) {
-      entries.forEach(function(entry) {
-        if (entry.isIntersecting) {
-          tocLinks.forEach(function(l) { l.classList.remove('active'); });
-          var active = document.querySelector('#toc-list a[href="#' + entry.target.id + '"]');
-          if (active) active.classList.add('active');
-        }
-      });
-    }, { rootMargin: '-80px 0px -60% 0px', threshold: 0 });
-    sections.forEach(function(s) { observer.observe(s); });
-  }
-})();
-</script>
-{% endblock js %}
+{% endblock doc_body %}
