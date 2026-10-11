@@ -583,7 +583,7 @@ def organizations():
                 Application.deleted_at.is_(None),
                 ApplicationEnvironment.deleted_at.is_(None),
                 ApplicationEnvironment.k8s_identifier.is_(None),
-                Deployment.complete == True,
+                Deployment.complete.is_(True),
             )
             .group_by(Project.organization_id)
             .all()
@@ -644,7 +644,7 @@ def organization(org_slug):
                 Deployment.application_id.in_(app_ids),
                 ApplicationEnvironment.deleted_at.is_(None),
                 ApplicationEnvironment.k8s_identifier.is_(None),
-                Deployment.complete == True,
+                Deployment.complete.is_(True),
             )
             .one()
         )
@@ -3404,7 +3404,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
                 details.append(f"settings: {', '.join(sorted(changed_settings))}")
             ingress_change_details[name] = details
 
-    live_now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+    live_now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
     live_run = (
         _pipeline_live_run(app_env, org_slug, project_slug, app_slug, live_now)
         if app_env is not None
@@ -8788,9 +8788,9 @@ def _parse_log_window() -> (
     except ValueError:
         return None, None
     if start_dt.tzinfo is not None:
-        start_dt = start_dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+        start_dt = start_dt.astimezone(datetime.UTC).replace(tzinfo=None)
     if end_dt.tzinfo is not None:
-        end_dt = end_dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+        end_dt = end_dt.astimezone(datetime.UTC).replace(tzinfo=None)
     if end_dt <= start_dt:
         return None, None
     return start_dt, end_dt
@@ -9221,6 +9221,9 @@ def infra_observe_metric():
 # ---------------------------------------------------------------------------
 
 _PIPELINE_RANGES = {"7d": 7, "30d": 30, "90d": 90}
+# Above this many app envs with zero runs in range, the infra rollup hides
+# them behind a disclosure instead of shipping every inventory row.
+_INFRA_PIPELINE_INACTIVE_LIMIT = 300
 # stage -> (model, column marking success); error marks failure for all stages
 _PIPELINE_STAGES = {
     "image": (Image, Image.built),
@@ -9259,7 +9262,7 @@ def _pipeline_finished(
     app_env_id: uuid.UUID,
     start: datetime.datetime,
     end: datetime.datetime | None,
-) -> tuple[type[Image] | type[Release] | type[Deployment], list[ColumnElement[bool]]]:
+) -> tuple[type[Image | Release | Deployment], list[ColumnElement[bool]]]:
     """Model and filters for a stage's finished rows within the window."""
     model, done = _PIPELINE_STAGES[stage]
     filters = [
@@ -9273,7 +9276,7 @@ def _pipeline_finished(
 
 
 def _duration(
-    model: type[Image] | type[Release] | type[Deployment],
+    model: type[Image | Release | Deployment],
 ) -> ColumnElement[int]:
     """Seconds between a row's creation and its last update."""
     return func.extract("epoch", model.updated - model.created)
@@ -9520,7 +9523,9 @@ def project_application_pipeline_runs(
                 "started": _iso_utc(
                     cast(
                         datetime.datetime,
-                        d.created if not pipeline else (img.created if img else d.created),
+                        d.created
+                        if not pipeline
+                        else (img.created if img else d.created),
                     )
                 ),
                 "finished": _iso_utc(d.updated) if d.complete or d.error else None,
@@ -9789,7 +9794,7 @@ def project_application_pipeline_live(
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=True
     )
-    now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
     run = _pipeline_live_run(app_env, org_slug, project_slug, app_slug, now)
     return jsonify({"server_time": _iso_utc(now), "run": run})
 
@@ -9800,7 +9805,7 @@ def project_application_pipeline_live(
 
 
 def _pipeline_finished_many(
-    model: type[Image] | type[Release] | type[Deployment],
+    model: type[Image | Release | Deployment],
     done: ColumnElement[bool] | InstrumentedAttribute[bool],
     app_env_ids: list[uuid.UUID],
     start: datetime.datetime,
@@ -9826,6 +9831,11 @@ class _PipelineRollupMeta(TypedDict):
     env_slug: str
     env_name: str
     url: str
+
+
+class _InfraPipelineMeta(_PipelineRollupMeta):
+    org_slug: str
+    org_name: str
 
 
 class _PipelineRollupAgg(TypedDict):
@@ -9883,6 +9893,62 @@ def _pipeline_app_env_inventory(
                 "url": url_for(
                     "user.project_application_pipeline",
                     org_slug=organization.slug,
+                    project_slug=proj.slug,
+                    app_slug=application.slug,
+                    env_slug=app_env.env_slug_for_paths,
+                ),
+            }
+        )
+    return inventory
+
+
+def _pipeline_app_env_inventory_all() -> list[_InfraPipelineMeta]:
+    """List every active application environment across every organization,
+    to drive the platform-wide infra pipeline rollup table.
+
+    Mirrors `_pipeline_app_env_inventory` but spans organizations, in a
+    single query (never one query per org).
+    """
+    query = (
+        db.session.query(
+            ApplicationEnvironment, Application, Environment, Project, Organization
+        )
+        .join(Application, Application.id == ApplicationEnvironment.application_id)
+        .join(Environment, Environment.id == ApplicationEnvironment.environment_id)
+        .join(Project, Project.id == Application.project_id)
+        .join(Organization, Organization.id == Project.organization_id)
+        .filter(
+            ApplicationEnvironment.deleted_at.is_(None),
+            Application.deleted_at.is_(None),
+            Environment.deleted_at.is_(None),
+            Project.deleted_at.is_(None),
+            Organization.deleted_at.is_(None),
+        )
+        .order_by(
+            Organization.slug,
+            Project.slug,
+            Application.slug,
+            Environment.sort_order,
+            Environment.slug,
+        )
+    )
+
+    inventory: list[_InfraPipelineMeta] = []
+    for app_env, application, environment, proj, org in query:
+        inventory.append(
+            {
+                "app_env_id": app_env.id,
+                "org_slug": org.slug,
+                "org_name": org.name,
+                "project_slug": proj.slug,
+                "project_name": proj.name,
+                "app_slug": application.slug,
+                "app_name": application.name,
+                "env_slug": environment.slug,
+                "env_name": environment.name,
+                "url": url_for(
+                    "user.project_application_pipeline",
+                    org_slug=org.slug,
                     project_slug=proj.slug,
                     app_slug=application.slug,
                     env_slug=app_env.env_slug_for_paths,
@@ -10160,4 +10226,44 @@ def organization_pipeline_rollup(org_slug: str) -> Response:
     summary = _pipeline_rollup_summary(app_env_ids, start, end)
     return jsonify(
         {"rows": _pipeline_rollup_rows(inventory, stats), "summary": summary}
+    )
+
+
+@user_blueprint.route("/infra/pipeline")
+@login_required
+def infra_pipeline() -> str:
+    _require_admin()
+    return render_template(
+        "user/infra_pipeline.html",
+        current_range=_pipeline_range(),
+    )
+
+
+@user_blueprint.route("/infra/pipeline/rollup")
+@login_required
+def infra_pipeline_rollup() -> Response:
+    _require_admin()
+
+    start, end = _pipeline_window()
+    inventory = _pipeline_app_env_inventory_all()
+    app_env_ids = [meta["app_env_id"] for meta in inventory]
+    stats = _pipeline_rollup_stats(app_env_ids, start, end)
+    summary = _pipeline_rollup_summary(app_env_ids, start, end)
+
+    active = [meta for meta in inventory if stats[meta["app_env_id"]]["runs"] > 0]
+    inactive = [meta for meta in inventory if stats[meta["app_env_id"]]["runs"] == 0]
+    inactive_total = len(inactive)
+    include_inactive = (
+        request.args.get("include_inactive") == "1"
+        or inactive_total <= _INFRA_PIPELINE_INACTIVE_LIMIT
+    )
+    shown = active + inactive if include_inactive else active
+
+    return jsonify(
+        {
+            "rows": _pipeline_rollup_rows(shown, stats),
+            "summary": summary,
+            "inactive_total": inactive_total,
+            "inactive_included": include_inactive,
+        }
     )
