@@ -9166,7 +9166,10 @@ def _pipeline_window():
         return now - datetime.timedelta(days=_PIPELINE_RANGES[_pipeline_range()]), None
     start = datetime.datetime.combine(min(since, until), datetime.time())
     end = datetime.datetime.combine(max(since, until), datetime.time())
-    return start, end + datetime.timedelta(days=1)
+    try:
+        return start, end + datetime.timedelta(days=1)
+    except OverflowError:
+        abort(400)
 
 
 def _pipeline_finished(
