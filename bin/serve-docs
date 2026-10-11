@@ -1,0 +1,13 @@
+"""Preview the documentation on an available loopback port."""
+
+import os
+import socket
+
+
+# Zensical accepts port 0 but prints :0 rather than the assigned port.
+# Pick an OS-assigned port so its startup message contains a usable URL.
+with socket.socket() as listener:
+    listener.bind(("127.0.0.1", 0))
+    port = listener.getsockname()[1]
+
+os.execvp("zensical", ["zensical", "serve", "--dev-addr", f"127.0.0.1:{port}"])
