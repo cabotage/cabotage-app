@@ -9162,7 +9162,7 @@ def _pipeline_window():
         since = datetime.date.fromisoformat(request.args.get("since", ""))
         until = datetime.date.fromisoformat(request.args.get("until", ""))
     except ValueError:
-        now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+        now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
         return now - datetime.timedelta(days=_PIPELINE_RANGES[_pipeline_range()]), None
     start = datetime.datetime.combine(min(since, until), datetime.time())
     end = datetime.datetime.combine(max(since, until), datetime.time())

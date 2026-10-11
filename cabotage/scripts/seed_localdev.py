@@ -607,7 +607,7 @@ def seed():
 
         # Backdate pipeline runs with core UPDATEs; the ORM's onupdate would
         # otherwise reset `updated` to now().
-        now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+        now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
         for age_days, stages in pipeline_runs:
             started = now - datetime.timedelta(days=age_days)
             for obj, secs in stages:
