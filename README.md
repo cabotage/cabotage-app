@@ -25,6 +25,8 @@ run total, including project, organization, and platform rollup percentiles.
 The summary and tables still load when charts are unavailable.
 The latest-run strip shows only the deploy stage for redeploys and rollbacks;
 reused images and releases do not shift the current run's start time.
+Running runs refresh every five seconds. Stalled runs remain visible but
+refresh every 30 seconds.
 
 
 ## Development workflow

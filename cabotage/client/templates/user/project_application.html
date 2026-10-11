@@ -1755,12 +1755,12 @@
       return '<a class="run-link" href="' + esc(pipelineUrl) + '" data-focus-key="pipeline">Pipeline<span aria-hidden="true">\u2192</span></a>';
     }
 
-    // In flight: keep polling fast and never let the strip collapse away.
-    function isActive(r) { return !!r && (r.status === 'running' || r.status === 'stalled'); }
-    // Shown while active, and for a while after finishing so the outcome registers.
+    // Only running runs need fast polling; stalled runs stay visible below.
+    function isActive(r) { return !!r && r.status === 'running'; }
+    // Shown while running or stalled, and briefly after finishing.
     function isVisible(r) {
       if (!r) return false;
-      if (isActive(r)) return true;
+      if (isActive(r) || r.status === 'stalled') return true;
       if (!r.finished) return false;
       return now() - Date.parse(r.finished) < LINGER;
     }
