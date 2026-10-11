@@ -141,7 +141,7 @@ def repair_ingress_hostname(hostname: str, ingress_name: str) -> str:
     return _shorten_ingress_hostname(label, ingress_name) + dot + domain
 
 
-class DictDiffer(object):
+class DictDiffer:
     """
     Calculate the difference between two dictionaries as:
     (1) items added

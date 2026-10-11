@@ -6,10 +6,15 @@ import time
 import uuid
 from typing import TYPE_CHECKING, cast
 
+import kubernetes.client
+import kubernetes.stream
+import requests as requests_lib
+from dxf import DXF
 from flask import (
     Blueprint,
     abort,
     current_app,
+    flash,
     jsonify,
     make_response,
     redirect,
@@ -17,7 +22,6 @@ from flask import (
     request,
     session,
     url_for,
-    flash,
 )
 from flask_security import (
     current_user,
@@ -25,14 +29,8 @@ from flask_security import (
 )
 from flask_wtf import FlaskForm
 from itsdangerous import BadData
-
-import kubernetes.client
-import kubernetes.stream
 from kubernetes.client.exceptions import ApiException
 from kubernetes.stream.ws_client import RESIZE_CHANNEL
-
-from dxf import DXF
-import requests as requests_lib
 from requests.exceptions import HTTPError
 from sqlalchemy import Uuid, and_, case, desc, func, or_
 from sqlalchemy.exc import DataError, IntegrityError
@@ -42,23 +40,36 @@ from sqlalchemy_continuum import version_class
 from werkzeug.datastructures import MultiDict
 from werkzeug.wrappers import Response
 
+from cabotage._types import assume_not_none
+from cabotage.celery.tasks import (
+    cleanup_app_env_k8s,
+    deploy_tailscale_operator,
+    dispatch_pipeline_notification,
+    process_github_hook,
+    run_deploy,
+    run_image_build,
+    run_release_build,
+    teardown_tailscale_operator,
+)
+from cabotage.celery.tasks.deploy import resize_deployment, scale_deployment
+from cabotage.celery.tasks.notify import dispatch_autodeploy_notification
 from cabotage.server import (
     config_writer,
     db,
     github_app,
-    kubernetes as kubernetes_ext,
     sock,
 )
-
+from cabotage.server import (
+    kubernetes as kubernetes_ext,
+)
 from cabotage.server.acl import (
-    ViewOrganizationPermission,
-    ViewProjectPermission,
-    ViewApplicationPermission,
+    AdministerApplicationPermission,
     AdministerOrganizationPermission,
     AdministerProjectPermission,
-    AdministerApplicationPermission,
+    ViewApplicationPermission,
+    ViewOrganizationPermission,
+    ViewProjectPermission,
 )
-
 from cabotage.server.models.auth import (
     GitHubAppInstallation,
     GitHubIdentity,
@@ -80,15 +91,15 @@ from cabotage.server.models.projects import (
     Hook,
     Image,
     Ingress,
-    JobLog,
     IngressHost,
     IngressPath,
+    JobLog,
     Project,
     Release,
+    activity_plugin,
     create_default_ingresses,
     pod_classes,
 )
-from cabotage.server.models.projects import activity_plugin
 from cabotage.server.models.resources import (
     PostgresResource,
     RedisResource,
@@ -96,84 +107,65 @@ from cabotage.server.models.resources import (
     postgres_size_classes,
     redis_size_classes,
 )
-
+from cabotage.server.models.utils import readable_k8s_hostname, safe_k8s_name, slugify
 from cabotage.server.query_helpers import (
-    compute_app_status_sets,
+    RelatedObjectResolver,
     compute_ae_status_sets,
+    compute_app_status_sets,
     compute_process_counts,
     compute_release_change_details,
     extract_latest_variants,
-    RelatedObjectResolver,
     split_image_processes,
 )
-from cabotage.server.models.utils import safe_k8s_name, readable_k8s_hostname, slugify
-
+from cabotage.server.user import github_installations
 from cabotage.server.user.forms import (
     AddApplicationToEnvironmentForm,
+    AddOrganizationUserForm,
     ApplicationScaleForm,
     CreateApplicationForm,
     CreateConfigurationForm,
     CreateEnvironmentConfigurationForm,
     CreateEnvironmentForm,
     CreateOrganizationForm,
+    CreatePostgresResourceForm,
     CreateProjectForm,
-    DeleteApplicationForm,
+    CreateRedisResourceForm,
     DeleteApplicationEnvironmentForm,
+    DeleteApplicationForm,
     DeleteConfigurationForm,
     DeleteEnvironmentConfigurationForm,
     DeleteEnvironmentForm,
     DeleteOrganizationForm,
+    DeletePostgresResourceForm,
     DeleteProjectForm,
+    DeleteRedisResourceForm,
     EditApplicationEnvironmentSettingsForm,
     EditApplicationSettingsForm,
     EditConfigurationForm,
     EditEnvironmentConfigurationForm,
     EditEnvironmentForm,
     EditOrganizationForm,
+    EditPostgresResourceForm,
     EditProjectSettingsForm,
-    IngressSettingsForm,
+    EditRedisResourceForm,
     IngressHostForm,
+    IngressSettingsForm,
+    ReleaseDeployForm,
     RequestOrganizationForm,
     ReviewOrganizationRequestForm,
-    TailscaleIntegrationForm,
     TailscaleIngressSettingsForm,
-    ReleaseDeployForm,
-    AddOrganizationUserForm,
-    CreatePostgresResourceForm,
-    EditPostgresResourceForm,
-    DeletePostgresResourceForm,
-    CreateRedisResourceForm,
-    EditRedisResourceForm,
-    DeleteRedisResourceForm,
+    TailscaleIntegrationForm,
 )
-from cabotage.server.user import github_installations
-
-from cabotage.utils.docker_auth import (
-    generate_docker_registry_jwt,
-)
-
-from cabotage.celery.tasks import (
-    cleanup_app_env_k8s,
-    deploy_tailscale_operator,
-    dispatch_pipeline_notification,
-    process_github_hook,
-    run_deploy,
-    run_image_build,
-    run_release_build,
-    teardown_tailscale_operator,
-)
-from cabotage.celery.tasks.notify import dispatch_autodeploy_notification
-
-from cabotage.celery.tasks.deploy import resize_deployment, scale_deployment
+from cabotage.server.websocket import close_on_abort
+from cabotage.utils import oidc
 from cabotage.utils.build_log_stream import (
     get_redis_client,
     read_log_stream,
     stream_key,
 )
-
-from cabotage.utils import oidc
-from cabotage._types import assume_not_none
-from cabotage.server.websocket import close_on_abort
+from cabotage.utils.docker_auth import (
+    generate_docker_registry_jwt,
+)
 
 if TYPE_CHECKING:
     from kubernetes.stream.ws_client import WSClient
@@ -330,7 +322,7 @@ def _enqueue_app_env_cleanup(app_env, organization):
 def _soft_delete_app_env(app_env, organization):
     """Soft-delete an ApplicationEnvironment and queue k8s resource cleanup."""
     _enqueue_app_env_cleanup(app_env, organization)
-    app_env.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+    app_env.deleted_at = datetime.datetime.now(datetime.UTC)
 
 
 def _soft_delete_application(application, organization):
@@ -338,7 +330,7 @@ def _soft_delete_application(application, organization):
     for app_env in application.application_environments:
         if app_env.deleted_at is None:
             _soft_delete_app_env(app_env, organization)
-    application.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+    application.deleted_at = datetime.datetime.now(datetime.UTC)
     application.slug = f"{application.slug}--deleted-{uuid.uuid4().hex[:12]}"
 
 
@@ -346,7 +338,7 @@ def _soft_delete_resource(resource):
     """Soft-delete a backing service resource."""
     if resource.deleted_at is not None:
         return
-    resource.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+    resource.deleted_at = datetime.datetime.now(datetime.UTC)
     resource.slug = f"--deleted-{resource.slug}-{str(resource.id)[:8]}"
 
 
@@ -355,10 +347,10 @@ def _soft_delete_environment(environment, organization):
     for app_env in environment.application_environments:
         if app_env.deleted_at is None:
             _enqueue_app_env_cleanup(app_env, organization)
-            app_env.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+            app_env.deleted_at = datetime.datetime.now(datetime.UTC)
     for resource in environment.resources:
         _soft_delete_resource(resource)
-    environment.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+    environment.deleted_at = datetime.datetime.now(datetime.UTC)
     environment.slug = f"{environment.slug}--deleted-{uuid.uuid4().hex[:12]}"
 
 
@@ -370,7 +362,7 @@ def _soft_delete_project(project, organization):
     for env in project.project_environments:
         if env.deleted_at is None:
             _soft_delete_environment(env, organization)
-    project.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+    project.deleted_at = datetime.datetime.now(datetime.UTC)
     project.slug = f"{project.slug}--deleted-{uuid.uuid4().hex[:12]}"
 
 
@@ -410,7 +402,7 @@ def _associate_app_with_environment(application, environment, organization, proj
         object=app_env,
         data={
             "user_id": str(current_user.id),
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         },
     )
     db.session.add(activity)
@@ -593,7 +585,7 @@ def organizations():
                 Application.deleted_at.is_(None),
                 ApplicationEnvironment.deleted_at.is_(None),
                 ApplicationEnvironment.k8s_identifier.is_(None),
-                Deployment.complete == True,  # noqa: E712
+                Deployment.complete == True,
             )
             .group_by(Project.organization_id)
             .all()
@@ -654,7 +646,7 @@ def organization(org_slug):
                 Deployment.application_id.in_(app_ids),
                 ApplicationEnvironment.deleted_at.is_(None),
                 ApplicationEnvironment.k8s_identifier.is_(None),
-                Deployment.complete == True,  # noqa: E712
+                Deployment.complete == True,
             )
             .one()
         )
@@ -736,7 +728,7 @@ def organization_settings(org_slug):
             object=organization,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -843,7 +835,7 @@ def organization_settings(org_slug):
                 "user_id": str(current_user.id),
                 "action": f"tailscale_{ts_verb}",
                 "tailnet": tailnet_name,
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -869,9 +861,7 @@ def organization_settings(org_slug):
                 data={
                     "user_id": str(current_user.id),
                     "action": "tailscale_delete",
-                    "timestamp": datetime.datetime.now(
-                        datetime.timezone.utc
-                    ).isoformat(),
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -1237,7 +1227,7 @@ def organization_create():
             object=organization,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(org_create)
@@ -1329,9 +1319,7 @@ def organization_request_approve(request_id):
 
     org_request.status = OrganizationRequest.STATUS_APPROVED
     org_request.reviewer_user_id = current_user.id
-    org_request.reviewed_at = datetime.datetime.now(datetime.timezone.utc).replace(
-        tzinfo=None
-    )
+    org_request.reviewed_at = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
     org_request.organization_id = organization.id
 
     org_create = Activity(
@@ -1340,7 +1328,7 @@ def organization_request_approve(request_id):
         data={
             "user_id": str(current_user.id),
             "organization_request_id": str(org_request.id),
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         },
     )
     db.session.add(org_create)
@@ -1366,7 +1354,7 @@ def organization_request_deny(request_id):
     if org_request.is_pending:
         org_request.status = OrganizationRequest.STATUS_DENIED
         org_request.reviewer_user_id = current_user.id
-        org_request.reviewed_at = datetime.datetime.now(datetime.timezone.utc).replace(
+        org_request.reviewed_at = datetime.datetime.now(datetime.UTC).replace(
             tzinfo=None
         )
         db.session.commit()
@@ -1425,7 +1413,7 @@ def organization_project_create(org_slug):
             object=project,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -1708,7 +1696,7 @@ def project_settings(org_slug, project_slug):
             object=project,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -1787,7 +1775,7 @@ def project_create():
             object=project,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -1856,7 +1844,7 @@ def project_environment_create(org_slug, project_slug):
             object=environment,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -1954,7 +1942,7 @@ def project_environment_settings(org_slug, project_slug, env_slug):
             object=environment,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2037,7 +2025,7 @@ def project_environment_delete(org_slug, project_slug, env_slug):
             object=environment,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2254,7 +2242,7 @@ def project_environment_configuration_create(org_slug, project_slug, env_slug):
             object=configuration,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2382,7 +2370,7 @@ def project_environment_configuration_edit(org_slug, project_slug, env_slug, con
             object=configuration,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2450,7 +2438,7 @@ def project_environment_configuration_delete(
             object=configuration,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2544,7 +2532,7 @@ def environment_postgres_create(org_slug, project_slug, env_slug):
             object=resource,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2627,7 +2615,7 @@ def environment_postgres_settings(org_slug, project_slug, env_slug, resource_slu
             object=resource,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2677,7 +2665,7 @@ def environment_postgres_delete(org_slug, project_slug, env_slug, resource_slug)
     form.resource_id.data = str(resource.id)
     form.name.data = resource.slug
     if form.validate_on_submit():
-        resource.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        resource.deleted_at = datetime.datetime.now(datetime.UTC)
         resource.slug = f"--deleted-{resource.slug}-{str(resource.id)[:8]}"
         db.session.add(resource)
         db.session.flush()
@@ -2686,7 +2674,7 @@ def environment_postgres_delete(org_slug, project_slug, env_slug, resource_slug)
             object=resource,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2740,7 +2728,7 @@ def environment_redis_create(org_slug, project_slug, env_slug):
             object=resource,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2845,7 +2833,7 @@ def environment_redis_settings(org_slug, project_slug, env_slug, resource_slug):
             object=resource,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2893,7 +2881,7 @@ def environment_redis_delete(org_slug, project_slug, env_slug, resource_slug):
     form.resource_id.data = str(resource.id)
     form.name.data = resource.slug
     if form.validate_on_submit():
-        resource.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        resource.deleted_at = datetime.datetime.now(datetime.UTC)
         resource.slug = f"--deleted-{resource.slug}-{str(resource.id)[:8]}"
         db.session.add(resource)
         db.session.flush()
@@ -2902,7 +2890,7 @@ def environment_redis_delete(org_slug, project_slug, env_slug, resource_slug):
             object=resource,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -2970,7 +2958,7 @@ def project_application_env_config_subscribe(
             data={
                 "user_id": str(current_user.id),
                 "env_config_name": env_config.name,
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -3029,7 +3017,7 @@ def project_application_env_config_unsubscribe(
             data={
                 "user_id": str(current_user.id),
                 "env_config_name": env_config.name,
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -3079,7 +3067,7 @@ def project_application_delete(org_slug, project_slug, app_slug):
             object=application,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -3121,7 +3109,7 @@ def project_delete(org_slug, project_slug):
             object=project,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -3153,14 +3141,14 @@ def organization_delete(org_slug):
         for project in list(organization.projects):
             if project.deleted_at is None:
                 _soft_delete_project(project, organization)
-        organization.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        organization.deleted_at = datetime.datetime.now(datetime.UTC)
         organization.slug = f"{organization.slug}--deleted-{uuid.uuid4().hex[:12]}"
         activity = Activity(
             verb="delete",
             object=organization,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -3760,7 +3748,7 @@ def project_application_create(org_slug, project_slug):
             object=application,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -3995,7 +3983,7 @@ def _save_app_configuration(
             object=configuration,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
     )
@@ -4286,7 +4274,7 @@ def project_application_settings(org_slug, project_slug, app_slug):
             object=application,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -4533,7 +4521,7 @@ def project_application_environment_settings(
             object=app_env,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -4869,9 +4857,7 @@ def project_application_ingress(
                     object=ingress,
                     data={
                         "user_id": str(user.id),
-                        "timestamp": datetime.datetime.now(
-                            datetime.timezone.utc
-                        ).isoformat(),
+                        "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                     },
                 )
                 db.session.add(activity)
@@ -4902,9 +4888,7 @@ def project_application_ingress(
                 object=ingress,
                 data={
                     "user_id": str(user.id),
-                    "timestamp": datetime.datetime.now(
-                        datetime.timezone.utc
-                    ).isoformat(),
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -5006,7 +4990,7 @@ def project_application_ingress(
                         data={
                             "user_id": str(user.id),
                             "timestamp": datetime.datetime.now(
-                                datetime.timezone.utc
+                                datetime.UTC
                             ).isoformat(),
                         },
                     )
@@ -5068,7 +5052,7 @@ def project_application_configuration_delete(
             object=configuration,
             data={
                 "user_id": str(current_user.id),
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             },
         )
         db.session.add(activity)
@@ -5877,7 +5861,7 @@ def application_release_create(org_slug, project_slug, app_slug):
         object=release,
         data={
             "user_id": str(current_user.id),
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         },
     )
     db.session.add(activity)
@@ -5934,8 +5918,9 @@ def guide():
 @user_blueprint.route("/account/security")
 @login_required
 def account_security():
-    from cabotage.server.models.auth import WebAuthn
     from flask import session as _session
+
+    from cabotage.server.models.auth import WebAuthn
 
     initial_setup = _session.pop("mfa_initial_setup", False)
 
@@ -6006,7 +5991,7 @@ def account_security_verify_recovery_code():
         data={
             "user_id": str(current_user.id),
             "action": "recovery_code_used",
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         },
     )
     db.session.add(activity)
@@ -6023,6 +6008,7 @@ def account_security_verify_recovery_code():
 @login_required
 def account_security_qr():
     import io
+
     import qrcode
     import qrcode.image.svg
 
@@ -6084,7 +6070,7 @@ def application_images_build_fromsource(org_slug, project_slug, app_slug):
         object=image,
         data={
             "user_id": str(current_user.id),
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         },
     )
     db.session.add(activity)
@@ -6174,11 +6160,11 @@ def application_clear_cache(org_slug, project_slug, app_slug):
     batch_api_instance = kubernetes.client.BatchV1Api(api_client)
     image = application.images.first()
     if image is not None and current_app.config["KUBERNETES_ENABLED"]:
-        from cabotage.celery.tasks.deploy import run_job
         from cabotage.celery.tasks.build import (
             _build_namespace,
             fetch_image_build_cache_volume_claim,
         )
+        from cabotage.celery.tasks.deploy import run_job
 
         buildkit_image = current_app.config["BUILDKIT_IMAGE"]
         build_namespace = _build_namespace(app_env)
@@ -6207,7 +6193,7 @@ def application_clear_cache(org_slug, project_slug, app_slug):
                 template=kubernetes.client.V1PodTemplateSpec(
                     metadata=kubernetes.client.V1ObjectMeta(
                         labels={
-                            "organization": image.application.project.organization.slug,  # noqa: E501
+                            "organization": image.application.project.organization.slug,
                             "project": image.application.project.slug,
                             "application": image.application.slug,
                             "process": "clear-cache",
@@ -6216,7 +6202,7 @@ def application_clear_cache(org_slug, project_slug, app_slug):
                             **safe_labels,
                         },
                         annotations={
-                            "container.apparmor.security.beta.kubernetes.io/clear-cache": "unconfined",  # noqa: E501
+                            "container.apparmor.security.beta.kubernetes.io/clear-cache": "unconfined",
                         },
                     ),
                     spec=kubernetes.client.V1PodSpec(
@@ -6234,7 +6220,7 @@ def application_clear_cache(org_slug, project_slug, app_slug):
                                 env=[
                                     kubernetes.client.V1EnvVar(
                                         name="BUILDKITD_FLAGS",
-                                        value="--oci-worker-no-process-sandbox",  # noqa: E501
+                                        value="--oci-worker-no-process-sandbox",
                                     ),
                                 ],
                                 security_context=kubernetes.client.V1SecurityContext(
@@ -6403,9 +6389,7 @@ def application_scale(org_slug, project_slug, app_slug):
                 object=application,
                 data={
                     "user_id": str(current_user.id),
-                    "timestamp": datetime.datetime.now(
-                        datetime.timezone.utc
-                    ).isoformat(),
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                     "changes": scaled,
                 },
             )
@@ -6415,8 +6399,7 @@ def application_scale(org_slug, project_slug, app_slug):
 
             if current_app.config["KUBERNETES_ENABLED"]:
                 from cabotage.celery.tasks.deploy import k8s_namespace as _k8s_ns
-                from cabotage.celery.tasks.deploy import resize_cronjob
-                from cabotage.celery.tasks.deploy import suspend_cronjob
+                from cabotage.celery.tasks.deploy import resize_cronjob, suspend_cronjob
 
                 latest = app_env.latest_release_built
                 if latest:
@@ -6510,7 +6493,7 @@ def release_deploy(org_slug, project_slug, app_slug, release_id):
         object=deployment,
         data={
             "user_id": str(current_user.id),
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         },
     )
     db.session.add(activity)
@@ -6640,9 +6623,7 @@ def organization_add_user(org_slug):
                         "user_id": str(current_user.id),
                         "member_email": user.email,
                         "action": "add_member",
-                        "timestamp": datetime.datetime.now(
-                            datetime.timezone.utc
-                        ).isoformat(),
+                        "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                     },
                 )
                 db.session.add(activity)
@@ -6684,9 +6665,7 @@ def organization_remove_user(org_slug):
                     "user_id": str(current_user.id),
                     "member_email": user.email,
                     "action": "remove_member",
-                    "timestamp": datetime.datetime.now(
-                        datetime.timezone.utc
-                    ).isoformat(),
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -6721,9 +6700,7 @@ def organization_promote_user(org_slug):
                     "user_id": str(current_user.id),
                     "member_email": user.email,
                     "action": "promote_member",
-                    "timestamp": datetime.datetime.now(
-                        datetime.timezone.utc
-                    ).isoformat(),
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -6758,9 +6735,7 @@ def organization_demote_user(org_slug):
                     "user_id": str(current_user.id),
                     "member_email": user.email,
                     "action": "demote_member",
-                    "timestamp": datetime.datetime.now(
-                        datetime.timezone.utc
-                    ).isoformat(),
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -8698,8 +8673,7 @@ def _loki_query_response(selectors, process_names, tenant_id=None):
                         log_stream = parsed.get("stream", "")
                 except json.JSONDecodeError, TypeError:
                     pass
-            if message.endswith("\n"):
-                message = message[:-1]
+            message = message.removesuffix("\n")
             entries.append(
                 {
                     "ts": ts_ns,

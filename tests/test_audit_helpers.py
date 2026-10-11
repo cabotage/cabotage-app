@@ -1,17 +1,17 @@
 """Tests for audit log diff computation helpers."""
 
 import uuid
+from types import SimpleNamespace
 
 import pytest
-from types import SimpleNamespace
 
 from cabotage.server import db
 from cabotage.server.audit_helpers import (
+    _compute_release_changes,
+    _compute_scale_changes,
     compute_audit_changes,
     diff_versions,
     format_value,
-    _compute_scale_changes,
-    _compute_release_changes,
 )
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import (

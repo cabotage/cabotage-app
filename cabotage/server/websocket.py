@@ -1,5 +1,6 @@
-from typing import Concatenate, TYPE_CHECKING
 from functools import wraps
+from typing import TYPE_CHECKING, Concatenate
+
 from werkzeug.exceptions import HTTPException
 
 if TYPE_CHECKING:

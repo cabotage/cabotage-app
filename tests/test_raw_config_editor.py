@@ -89,7 +89,7 @@ def _raw_editor():
     form = re.search(
         r'<div id="raw-editor-modal".*?<form action="([^"]*)"(.*?)</form>',
         page.get_data(as_text=True),
-        re.S,
+        re.DOTALL,
     )
     assert form, "Raw Editor form not rendered"
     fields = dict(
