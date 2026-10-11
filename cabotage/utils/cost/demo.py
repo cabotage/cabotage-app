@@ -18,7 +18,7 @@ Idempotent and scale-safe:
 - Every demo-written ``CostCollectionRun`` is tagged ``stats["seed"] ==
   "demo"``. Re-seeding only deletes+recreates hours carrying that tag; any
   hour whose existing run lacks the tag is treated as real collector
-  output (e.g. from ``flask cost collect --backfill``) and is left alone
+  output from the collection task and is left alone
   and skipped entirely, so a later demo reseed never clobbers real data.
 """
 
