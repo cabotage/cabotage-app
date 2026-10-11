@@ -1,5 +1,8 @@
 # Network Policies
 
+**Audience: platform administrators operating Cabotage.** This guide changes cluster
+network isolation. See [Operating Cabotage](operating/index.md).
+
 Cabotage can apply Kubernetes NetworkPolicies to tenant namespaces, enforcing
 default-deny ingress and restricted egress at the network level.
 
