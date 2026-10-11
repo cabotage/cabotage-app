@@ -1,1 +1,1 @@
-"""Cost-viewing module — read-only AWS spend estimates per service / project / org."""
+"""Read-only cost visibility: collection, pricing, and report assembly."""
