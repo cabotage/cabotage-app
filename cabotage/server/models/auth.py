@@ -507,5 +507,3 @@ class Team(Model):
         association = TeamMember.query.filter_by(user_id=user.id, team_id=self.id)
         if association:
             db.session.delete(association)
-
-
