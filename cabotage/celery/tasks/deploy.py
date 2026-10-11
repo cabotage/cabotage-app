@@ -10,11 +10,11 @@ from typing import TYPE_CHECKING, cast
 
 import kubernetes.client
 import kubernetes.watch
+import sqlalchemy as sa
 import yaml
 from celery import shared_task
 from flask import current_app
 from kubernetes.client.exceptions import ApiException
-import sqlalchemy as sa
 from sqlalchemy.orm.attributes import flag_modified
 
 from cabotage.celery.tasks.notify import (
@@ -3476,7 +3476,7 @@ def start_next_deployment(application_environment_id: uuid.UUID) -> None:
     pending = Deployment.query.filter(
         Deployment.application_environment_id == application_environment_id,
         Deployment.complete.is_(False),
-        Deployment.error == False,  # noqa: E712
+        Deployment.error.is_(False),
     )
     deployment: Deployment | None = None
     if pending.filter(Deployment.started_at.isnot(None)).first() is None:
@@ -3486,9 +3486,7 @@ def start_next_deployment(application_environment_id: uuid.UUID) -> None:
             .first()
         )
         if deployment is not None:
-            deployment.started_at = datetime.datetime.now(
-                datetime.timezone.utc
-            ).replace(tzinfo=None)
+            deployment.started_at = datetime.datetime.now(UTC).replace(tzinfo=None)
     db.session.commit()
     if deployment is not None:
         run_deploy.delay(deployment_id=deployment.id)
