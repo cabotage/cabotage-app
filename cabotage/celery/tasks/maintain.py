@@ -189,7 +189,7 @@ def reap_stale_builds() -> None:
         Deployment.error.is_(False),
         Deployment.updated < cutoff,
     ).all()
-    reaped_app_env_ids: set[uuid.UUID] = set()
+    reaped_app_env_ids = set[uuid.UUID]()
     for deployment in stuck_deployments:
         key = heartbeat_key("deploy", str(deployment.id))
         if not redis_client.exists(key) and try_deploy_execution_lock(
