@@ -206,12 +206,12 @@ def compute_ae_status_sets(ae_ids):
     image_stats = (
         db.session.query(
             Image.application_environment_id,
-            func.max(
-                case((Image.error == True, Image.version), else_=None)
-            ).label("max_error_v"),
-            func.max(
-                case((Image.built == True, Image.version), else_=None)
-            ).label("max_built_v"),
+            func.max(case((Image.error == True, Image.version), else_=None)).label(
+                "max_error_v"
+            ),
+            func.max(case((Image.built == True, Image.version), else_=None)).label(
+                "max_built_v"
+            ),
             func.count(
                 case(
                     (

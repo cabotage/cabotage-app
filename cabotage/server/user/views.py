@@ -861,9 +861,7 @@ def organization_settings(org_slug):
                 data={
                     "user_id": str(current_user.id),
                     "action": "tailscale_delete",
-                    "timestamp": datetime.datetime.now(
-                        datetime.UTC
-                    ).isoformat(),
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -1321,9 +1319,7 @@ def organization_request_approve(request_id):
 
     org_request.status = OrganizationRequest.STATUS_APPROVED
     org_request.reviewer_user_id = current_user.id
-    org_request.reviewed_at = datetime.datetime.now(datetime.UTC).replace(
-        tzinfo=None
-    )
+    org_request.reviewed_at = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
     org_request.organization_id = organization.id
 
     org_create = Activity(
@@ -4861,9 +4857,7 @@ def project_application_ingress(
                     object=ingress,
                     data={
                         "user_id": str(user.id),
-                        "timestamp": datetime.datetime.now(
-                            datetime.UTC
-                        ).isoformat(),
+                        "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                     },
                 )
                 db.session.add(activity)
@@ -4894,9 +4888,7 @@ def project_application_ingress(
                 object=ingress,
                 data={
                     "user_id": str(user.id),
-                    "timestamp": datetime.datetime.now(
-                        datetime.UTC
-                    ).isoformat(),
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -6397,9 +6389,7 @@ def application_scale(org_slug, project_slug, app_slug):
                 object=application,
                 data={
                     "user_id": str(current_user.id),
-                    "timestamp": datetime.datetime.now(
-                        datetime.UTC
-                    ).isoformat(),
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                     "changes": scaled,
                 },
             )
@@ -6633,9 +6623,7 @@ def organization_add_user(org_slug):
                         "user_id": str(current_user.id),
                         "member_email": user.email,
                         "action": "add_member",
-                        "timestamp": datetime.datetime.now(
-                            datetime.UTC
-                        ).isoformat(),
+                        "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                     },
                 )
                 db.session.add(activity)
@@ -6677,9 +6665,7 @@ def organization_remove_user(org_slug):
                     "user_id": str(current_user.id),
                     "member_email": user.email,
                     "action": "remove_member",
-                    "timestamp": datetime.datetime.now(
-                        datetime.UTC
-                    ).isoformat(),
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -6714,9 +6700,7 @@ def organization_promote_user(org_slug):
                     "user_id": str(current_user.id),
                     "member_email": user.email,
                     "action": "promote_member",
-                    "timestamp": datetime.datetime.now(
-                        datetime.UTC
-                    ).isoformat(),
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                 },
             )
             db.session.add(activity)
@@ -6751,9 +6735,7 @@ def organization_demote_user(org_slug):
                     "user_id": str(current_user.id),
                     "member_email": user.email,
                     "action": "demote_member",
-                    "timestamp": datetime.datetime.now(
-                        datetime.UTC
-                    ).isoformat(),
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                 },
             )
             db.session.add(activity)

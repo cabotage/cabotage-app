@@ -1,4 +1,3 @@
-
 """Parser for Procfiles.
 
 Implements `Smartmob RFC 1 <http://smartmob-rfc.readthedocs.org/en/latest/1-procfile.html>`_.

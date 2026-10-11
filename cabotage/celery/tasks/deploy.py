@@ -2,6 +2,7 @@ import logging
 import secrets
 import time
 from base64 import b64encode
+from datetime import UTC
 from typing import TYPE_CHECKING, cast
 
 import kubernetes.client
@@ -53,7 +54,6 @@ from cabotage.utils.github import (
     cabotage_url,
     post_deployment_status_update,
 )
-from datetime import UTC
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -2336,7 +2336,7 @@ def _get_job_schedule(process_def):
 
 def _history_limit_for_schedule(schedule, hours=12):
     """Estimate how many times a cron schedule fires in the given window."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     from croniter import croniter
 

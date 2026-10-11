@@ -605,9 +605,7 @@ def _build_images_for_app_envs(app_envs, commit_sha, installation_id):
         activity = Activity(
             verb="submit",
             object=image,
-            data={
-                "timestamp": datetime.datetime.now(datetime.UTC).isoformat()
-            },
+            data={"timestamp": datetime.datetime.now(datetime.UTC).isoformat()},
         )
         db.session.add(activity)
         images.append(image)

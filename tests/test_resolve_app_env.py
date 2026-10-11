@@ -1,6 +1,7 @@
 """Tests for _resolve_app_env_for_hook — pure DB tests, no mocking."""
 
 import uuid
+from datetime import UTC
 
 import pytest
 
@@ -13,7 +14,6 @@ from cabotage.server.models.projects import (
     Project,
 )
 from cabotage.server.wsgi import app as _app
-from datetime import UTC
 
 REPO = "myorg/myrepo"
 
@@ -133,7 +133,7 @@ class TestResolveAppEnvByGithubEnvironmentName:
     def test_ignores_deleted_application(
         self, db_session, project, environment, installation_id
     ):
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         application = _make_app(project, installation_id)
         application.deleted_at = datetime.now(UTC)

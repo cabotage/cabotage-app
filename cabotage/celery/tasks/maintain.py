@@ -84,9 +84,7 @@ def _dispatch_reap_failure(obj, obj_type, notification_type):
 def reap_stale_builds():
     """Find stuck image builds, release builds, and deploys with no heartbeat."""
     redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
-    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
-        seconds=90
-    )
+    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=90)
 
     # Images: built=False, error=False, updated < cutoff, no heartbeat
     stuck_images = Image.query.filter(

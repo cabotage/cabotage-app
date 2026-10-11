@@ -86,9 +86,7 @@ class User(Model, FsUserMixin):
     admin: Mapped[bool] = mapped_column(Boolean, default=False)
     registered_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.UTC).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
 
     roles: Mapped[list[Role]] = relationship(  # type: ignore[assignment]
@@ -132,9 +130,7 @@ class GitHubIdentity(Model):
     github_access_token: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.UTC).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
 
     user: Mapped[User] = relationship(backref=backref("github_identity", uselist=False))
@@ -168,18 +164,12 @@ class GitHubAppInstallation(Model):
     )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.UTC).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.UTC).replace(
-            tzinfo=None
-        ),
-        onupdate=lambda: datetime.datetime.now(datetime.UTC).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
+        onupdate=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
 
     organization: Mapped[Organization] = relationship(
@@ -247,18 +237,12 @@ class TailscaleIntegration(Model):
     operator_version: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.UTC).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.UTC).replace(
-            tzinfo=None
-        ),
-        onupdate=lambda: datetime.datetime.now(datetime.UTC).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
+        onupdate=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
 
     organization: Mapped[Organization] = relationship(
@@ -296,18 +280,12 @@ class SlackIntegration(Model):
     )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.UTC).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.UTC).replace(
-            tzinfo=None
-        ),
-        onupdate=lambda: datetime.datetime.now(datetime.UTC).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
+        onupdate=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
 
     version_id: Mapped[int] = mapped_column(Integer)
@@ -350,18 +328,12 @@ class DiscordIntegration(Model):
     )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.UTC).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.UTC).replace(
-            tzinfo=None
-        ),
-        onupdate=lambda: datetime.datetime.now(datetime.UTC).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
+        onupdate=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
 
     version_id: Mapped[int] = mapped_column(Integer)
@@ -479,19 +451,13 @@ class OrganizationRequest(Model):
     status: Mapped[str] = mapped_column(String(32), default=STATUS_PENDING, index=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.UTC).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
         index=True,
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.UTC).replace(
-            tzinfo=None
-        ),
-        onupdate=lambda: datetime.datetime.now(datetime.UTC).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
+        onupdate=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
     reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
 
