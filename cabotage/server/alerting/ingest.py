@@ -5,13 +5,13 @@ import logging
 from datetime import UTC, datetime
 
 from cabotage.server import db
+from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import (
     Alert,
     Application,
     Project,
     activity_plugin,
 )
-from cabotage.server.models.auth import Organization
 
 log = logging.getLogger(__name__)
 

@@ -1,4 +1,4 @@
-from typing import cast, Final
+from typing import Final, cast
 
 
 def assume_not_none[T](val: T | None, /, *, because: str) -> T:

@@ -22,18 +22,18 @@ from cabotage.server.models.projects import (
 )
 
 if TYPE_CHECKING:
-    from cabotage.server import Model
-    from cabotage.server.models.audit import AuditLog
     from cabotage._types.audit_helpers import (
-        Diff,
         ConfigurationVersion,
+        Diff,
         GenericModelVersion,
         IngressHostVersion,
         IngressPathVersion,
         ScaleChanges,
-        VersionKey,
         VersionIndex,
+        VersionKey,
     )
+    from cabotage.server import Model
+    from cabotage.server.models.audit import AuditLog
 
 
 # ---------------------------------------------------------------------------

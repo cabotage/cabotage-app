@@ -1,8 +1,13 @@
 """Docker registry authentication and signing key endpoints."""
 
-from flask import Blueprint, jsonify, make_response, render_template, request
-
-from flask import current_app
+from flask import (
+    Blueprint,
+    current_app,
+    jsonify,
+    make_response,
+    render_template,
+    request,
+)
 
 from cabotage.server import vault
 from cabotage.utils.docker_auth import (
