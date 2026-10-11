@@ -67,6 +67,9 @@ dev = [
     "types-simple-websocket>=1.1.0.20260512",
     "prek>=0.5.3",
 ]
+docs = [
+    "zensical>=0.0.67,<0.1",
+]
 
 [tool.pytest.ini_options]
 addopts = "--cov=cabotage --cov-report=term-missing --cov-report=html:htmlcov"
