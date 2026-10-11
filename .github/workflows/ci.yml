@@ -94,6 +94,14 @@ jobs:
           CABOTAGE_TESTING: "True"
           FLASK_APP: cabotage.server.wsgi
 
+  docs:
+    runs-on: ubuntu-24.04-arm
+    name: Documentation
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+      - run: make docs-build
+
   publish:
     if: github.event_name == 'push'
     needs: [lint, type-check, security-check, test]
