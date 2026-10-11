@@ -3885,6 +3885,9 @@ a.obs-pod-link:hover {
     border-left: 1px solid var(--border-color-subtle);
   }
 }
+.activity-row[hidden] {
+  display: none;
+}
 .activity-row {
   flex-wrap: wrap;
   transition: background 0.15s ease, color 0.15s ease;
@@ -3911,6 +3914,8 @@ a.obs-pod-link:hover {
   border: 1px solid var(--border-color);
   border-radius: 0.5rem;
   min-width: 0;
+  /* Keep activity expansion from changing the height used to fit its rows. */
+  align-self: start;
   display: flex;
   flex-direction: column;
 }
