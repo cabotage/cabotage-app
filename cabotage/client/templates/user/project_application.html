@@ -22,6 +22,115 @@
     -webkit-mask-image: linear-gradient(to right, transparent, black 2rem, black calc(100% - 2rem), transparent);
     mask-image: linear-gradient(to right, transparent, black 2rem, black calc(100% - 2rem), transparent);
   }
+
+  /* Latest pipeline run strip */
+  .run-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem 0.875rem; min-height: 2.75rem;
+    padding: 0.375rem 0.625rem 0.375rem 1rem; border: 1px solid var(--border-color); border-radius: 0.75rem;
+    background: var(--surface-card); font-size: 0.75rem; line-height: 1.25rem; color: var(--text-muted); }
+  .run-strip .num { font-family: 'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  .run-title { font-size: 0.6875rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--text-faint); white-space: nowrap; }
+  .run-body { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 0.375rem 0.875rem; min-width: 0; }
+  .run-overall { display: inline-flex; align-items: center; gap: 0.375rem; font-weight: 500; color: var(--text-bright); white-space: nowrap; }
+  .run-sha { color: var(--text-bright); }
+  .run-time { color: var(--text-faint); white-space: nowrap; }
+  .run-dot { width: 0.5rem; height: 0.5rem; border-radius: 9999px; flex-shrink: 0; box-sizing: border-box;
+    border: 1px solid var(--text-faintest); }
+  .run-dot-success { --run-c: var(--color-success); }
+  .run-dot-error { --run-c: var(--color-error); }
+  .run-dot-running { --run-c: var(--color-warning); animation: pulse-dot 2s ease-in-out infinite; }
+  .run-dot-success, .run-dot-error, .run-dot-running { border: 0; background: var(--run-c);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--run-c) 40%, transparent); }
+  .run-dot-pending { border: 0; background: var(--text-faintest); }
+  .run-dot-stalled { border: 0; background: var(--text-muted); }
+  .run-steps { display: flex; align-items: center; gap: 0.125rem; margin: 0; padding: 0; list-style: none; min-width: 0; }
+  .run-steps > li { display: flex; align-items: center; min-width: 0; }
+  .run-step { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.25rem 0.5rem; border-radius: 0.375rem;
+    color: var(--text-muted); text-decoration: none; white-space: nowrap; transition: background-color 150ms ease-out; }
+  a.run-step:hover { background: var(--hover-overlay-strong); }
+  a.run-step:hover .run-step-name { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--text-ghost); }
+  .run-step-name { font-weight: 500; color: var(--text-bright); }
+  .run-step-none .run-step-name { font-weight: 400; color: var(--text-faint); }
+  .run-step-label { color: var(--text-faint); }
+  .run-step-running .run-step-dur { color: var(--text-bright); }
+  .run-step-none .run-step-dur, .run-step-pending .run-step-dur { color: var(--text-faint); }
+  .run-step-fail { color: var(--color-error); font-weight: 500; }
+  .run-step-stalled-note { color: var(--text-muted); font-weight: 500; }
+  .run-step-changed { animation: run-step-flash 1.2s cubic-bezier(0.16, 1, 0.3, 1); }
+  @keyframes run-step-flash {
+    from { background: color-mix(in srgb, var(--run-c, var(--text-bright)) 16%, transparent); }
+    to { background: transparent; }
+  }
+  .run-sep { width: 0.75rem; height: 0.75rem; flex-shrink: 0; color: var(--text-ghost); }
+  .run-link { margin-left: auto; display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.25rem 0.5rem;
+    border-radius: 0.375rem; color: var(--text-muted); text-decoration: none; white-space: nowrap;
+    transition: background-color 150ms ease-out, color 150ms ease-out; }
+  .run-link:hover { color: var(--text-bright); background: var(--hover-overlay-strong); }
+  .run-strip a:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+  .run-empty { color: var(--text-muted); }
+  .run-note { color: var(--text-faint); white-space: nowrap; }
+  .run-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .run-break { display: none; }
+  .run-step-reused-note { color: var(--text-faint); font-style: italic; }
+  .run-strip-collapse { display: grid; grid-template-rows: 0fr; opacity: 0; margin-bottom: 0;
+    transition: grid-template-rows 200ms ease-out, opacity 200ms ease-out, margin-bottom 200ms ease-out; }
+  .run-strip-collapse > .run-strip-inner { overflow: hidden; min-height: 0; }
+  .run-strip-collapse.is-visible { grid-template-rows: 1fr; opacity: 1; margin-bottom: 1rem; }
+
+  /* Next-action slot (part of the run timeline) and its disclosure drawer */
+  .run-next { display: inline-flex; align-items: center; gap: 0.5rem; margin-left: auto;
+    padding: 0.25rem 0.625rem; border-radius: 9999px; border: 1px solid var(--border-color);
+    background: var(--surface-raised); color: var(--text-bright); text-decoration: none; font-size: 0.75rem;
+    font-weight: 500; white-space: nowrap; cursor: pointer; appearance: none; font-family: inherit;
+    transition: background-color 150ms ease-out, border-color 150ms ease-out; }
+  .run-next:hover { background: var(--hover-overlay-strong); }
+  .run-next:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+  .run-next-label { display: inline-flex; align-items: center; gap: 0.4375rem; min-width: 0; }
+  .run-next-chevron { width: 0.75rem; height: 0.75rem; flex-shrink: 0; color: var(--text-faint);
+    transition: transform 150ms ease-out; }
+  .run-next[aria-expanded="true"] .run-next-chevron { transform: rotate(90deg); }
+  .run-next-primary { border-color: color-mix(in srgb, var(--color-primary) 30%, var(--border-color));
+    background: color-mix(in srgb, var(--color-primary) 6%, var(--surface-raised)); }
+  .run-next-primary:hover { background: color-mix(in srgb, var(--color-primary) 10%, var(--surface-raised)); }
+  .run-next-success { border-color: color-mix(in srgb, var(--color-success) 30%, var(--border-color)); }
+  .run-next-error { border-color: color-mix(in srgb, var(--color-error) 30%, var(--border-color)); color: var(--color-error); }
+  .run-dot-next { border: 0; background: var(--color-primary); box-shadow: 0 0 8px color-mix(in srgb, var(--color-primary) 40%, transparent); }
+
+  .run-drawer { display: grid; grid-template-rows: 0fr; opacity: 0;
+    transition: grid-template-rows 200ms ease-out, opacity 150ms ease-out; }
+  .run-drawer > .run-drawer-inner { overflow: hidden; min-height: 0; }
+  .run-drawer.is-open { grid-template-rows: 1fr; opacity: 1; }
+  .run-drawer-inner { padding: 0.875rem 1rem 1rem; display: flex; flex-direction: column; gap: 0.875rem;
+    border-top: 1px solid var(--border-subtle); }
+  .run-drawer-section { display: flex; flex-direction: column; gap: 0.625rem; }
+  .run-drawer-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .run-drawer-summary { display: flex; align-items: center; gap: 0.625rem; min-width: 0; }
+  .run-drawer-title { font-size: 0.8125rem; font-weight: 500; color: var(--text-bright); }
+  .run-drawer-meta { font-size: 0.75rem; color: var(--text-faint); margin-top: 0.125rem; }
+  .run-drawer-warn { display: flex; align-items: center; gap: 0.375rem; font-size: 0.75rem;
+    color: color-mix(in srgb, var(--color-warning) 85%, var(--text-bright)); margin-top: 0.125rem; }
+  .run-drawer-cta { flex-shrink: 0; }
+  .run-drawer-divider { height: 1px; background: var(--border-subtle); }
+  @media (max-width: 639px) {
+    .run-strip { padding-left: 0.75rem; }
+    .run-body { display: contents; }
+    .run-title { order: -3; }
+    .run-link { order: -2; }
+    .run-break { display: block; order: -1; flex-basis: 100%; height: 0; }
+    .run-steps { order: 10; flex-basis: 100%; flex-wrap: wrap; margin-left: -0.375rem; }
+    .run-step { padding: 0.25rem 0.375rem; }
+    .run-sep, .run-step-label { display: none; }
+    .run-next { margin-left: 0; order: 20; flex-basis: 100%; justify-content: space-between; }
+    .run-drawer-row { flex-direction: column; align-items: stretch; }
+    .run-drawer-cta, .run-drawer-cta form { width: 100%; }
+    .run-drawer-cta .btn { width: 100%; justify-content: center; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .run-dot-running, .run-step-changed { animation: none; }
+    .run-step, .run-link { transition: none; }
+    .run-strip-collapse { transition: none; }
+    .run-drawer, .run-next-chevron { transition: none; }
+  }
 </style>
 {% endblock css %}
 
@@ -95,6 +204,42 @@
   {% set latest_release_live = latest_release_id and latest_deployed_release_id == latest_release_id %}
   {% set is_deploying = latest_deployment and not latest_deployment.complete and not latest_deployment.error %}
   {% set show_ready_to_deploy = has_deployable and not latest_release_live and not is_deploying %}
+
+  {% set has_build_error = latest_image_error and (latest_image_error.version|default(0) > (latest_image.version|default(0) if latest_image else 0)) %}
+  {% set in_wizard_mode = not latest_release_live and not latest_deployment_completed %}
+  {% set run_is_running = live_run and live_run.status == 'running' %}
+
+  {% set img_added = image_diff.added()|list if has_image_changes else [] %}
+  {% set img_changed = image_diff.changed()|list if has_image_changes else [] %}
+  {% set img_removed = image_diff.removed()|list if has_image_changes else [] %}
+  {% set cfg_added = config_diff.added()|list if has_config_changes else [] %}
+  {% set cfg_changed = config_diff.changed()|list if has_config_changes else [] %}
+  {% set cfg_removed = config_diff.removed()|list if has_config_changes else [] %}
+  {% set ing_added = ingress_diff.added()|list if has_ingress_changes else [] %}
+  {% set ing_changed = ingress_diff.changed()|list if has_ingress_changes else [] %}
+  {% set ing_removed = ingress_diff.removed()|list if has_ingress_changes else [] %}
+  {% set img_total = img_added|length + img_changed|length + img_removed|length %}
+  {% set cfg_total = cfg_added|length + cfg_changed|length + cfg_removed|length %}
+  {% set ing_total = ing_added|length + ing_changed|length + ing_removed|length %}
+
+  {% set next_action_kind = none %}
+  {% if not in_wizard_mode %}
+    {% if has_build_error %}
+      {% set next_action_kind = 'build_error' %}
+    {% elif not run_is_running %}
+      {% if show_ready_to_deploy %}
+        {% set next_action_kind = 'ready_to_deploy' %}
+      {% elif has_pending %}
+        {% set next_action_kind = 'pending_changes' %}
+      {% endif %}
+    {% endif %}
+  {% endif %}
+
+  {% set _change_parts = [] %}
+  {% if has_image_changes %}{% set _ = _change_parts.append(img_total ~ ' image') %}{% endif %}
+  {% if has_config_changes %}{% set _ = _change_parts.append(cfg_total ~ ' config') %}{% endif %}
+  {% if has_ingress_changes %}{% set _ = _change_parts.append(ing_total ~ ' ingress') %}{% endif %}
+  {% set next_action_summary = _change_parts|join(', ') %}
 
   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
     <div class="flex items-center gap-3">
@@ -273,13 +418,223 @@
 
       <div data-pipeline-banners>
 
-        {% set is_building_image = latest_image_building and (latest_image_building.version|default(0) > (latest_image.version|default(0) if latest_image else 0)) %}
-        {% set has_build_error = latest_image_error and (latest_image_error.version|default(0) > (latest_image.version|default(0) if latest_image else 0)) %}
-        {% set is_building_release = latest_release_building %}
-        {% set has_no_image = not latest_image %}
-        {% set has_no_release = not has_releases %}
+      <section class="run-strip-collapse"
+               aria-label="Delivery console"
+               data-run-strip
+               data-has-next-action="{{ 'true' if next_action_kind else 'false' }}"
+               data-storage-key="cabotage:run-drawer:{{ application.id }}:{{ environment.id if environment else 'default' }}"
+               data-live-url="{{ url_for('user.project_application_pipeline_live', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}"
+               data-pipeline-url="{{ url_for('user.project_application_pipeline', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}">
+        <div class="run-strip-inner">
+          <div class="run-strip">
+            <span class="run-title">Latest run</span>
+            <div class="run-body" data-run-body></div>
+            <span class="run-break" aria-hidden="true"></span>
+            {% if next_action_kind == 'build_error' %}
+              <a class="run-next run-next-error"
+                 href="{{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id=latest_image_error.id) }}"
+                 data-focus-key="next">
+                <span class="run-next-label">
+                  <span class="run-dot run-dot-error"></span>
+                  Build <span class="font-mono">#{{ latest_image_error.version }}</span> failed — view logs
+                </span>
+                <span aria-hidden="true">→</span>
+              </a>
+            {% elif next_action_kind == 'ready_to_deploy' %}
+              <button type="button"
+                      class="run-next run-next-success"
+                      data-drawer-toggle
+                      data-focus-key="next"
+                      aria-expanded="false"
+                      aria-controls="run-drawer">
+                <span class="run-next-label">
+                  <span class="run-dot run-dot-success"></span>
+                  Ready to deploy <span class="font-mono">v{{ latest_release.version }}</span>{% if has_pending %} · changes pending{% endif %}
+                </span>
+                {{ icon('chevron-right', 'w-3 h-3 run-next-chevron') }}
+              </button>
+            {% elif next_action_kind == 'pending_changes' %}
+              <button type="button"
+                      class="run-next run-next-primary"
+                      data-drawer-toggle
+                      data-focus-key="next"
+                      aria-expanded="false"
+                      aria-controls="run-drawer">
+                <span class="run-next-label">
+                  <span class="run-dot run-dot-next"></span>
+                  Next: Create release · {{ next_action_summary }} changed
+                </span>
+                {{ icon('chevron-right', 'w-3 h-3 run-next-chevron') }}
+              </button>
+            {% endif %}
+            <span class="run-sr" role="status" data-run-announce></span>
+          </div>
+          {% if next_action_kind in ('ready_to_deploy', 'pending_changes') %}
+            <div class="run-drawer" id="run-drawer" data-run-drawer aria-hidden="true">
+              <div class="run-drawer-inner">
 
-        {% if not latest_release_live and not latest_deployment_completed %}
+                {% if next_action_kind == 'ready_to_deploy' %}
+                  <div class="run-drawer-section">
+                    <div class="run-drawer-row">
+                      <div class="run-drawer-summary">
+                        <span class="status-dot status-dot-success status-dot-lg"></span>
+                        <div>
+                          <p class="run-drawer-title">Release <span class="font-mono text-accent">v{{ latest_release.version }}</span> ready to deploy</p>
+                          {% if has_pending %}
+                            <p class="run-drawer-warn">{{ icon('alert-circle', 'w-3.5 h-3.5 text-warning') }} There are also unreleased changes below — deploy this release now, or create a new release to include them first.</p>
+                          {% else %}
+                            <p class="run-drawer-meta"><time data-timestamp="{{ latest_release.updated|isoformat_utc }}">{{ latest_release.updated|humanize }}</time></p>
+                          {% endif %}
+                        </div>
+                      </div>
+                      <form action="{{ url_for('user.release_deploy', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id=latest_release.id) }}"
+                            method="post"
+                            name="deploy_release_form"
+                            enctype="multipart/form-data"
+                            class="run-drawer-cta">
+                        {{ deploy_form.hidden_tag() }}
+                        <button type="submit" class="btn btn-primary btn-sm gap-1.5">
+                          {{ icon('deploy', 'w-4 h-4') }}
+                          Deploy
+                        </button>
+                      </form>
+                    </div>
+                    <div class="deploy-steps-inline">
+                      <span class="deploy-step-inline deploy-step-inline-done">{{ icon('check', 'w-3 h-3') }} Build</span>
+                      <span class="deploy-step-inline-arrow">→</span>
+                      <span class="deploy-step-inline deploy-step-inline-done">{{ icon('check', 'w-3 h-3') }} Release</span>
+                      <span class="deploy-step-inline-arrow">→</span>
+                      <span class="deploy-step-inline deploy-step-inline-next">Deploy</span>
+                    </div>
+                  </div>
+                {% endif %}
+
+                {% if next_action_kind == 'pending_changes' or (next_action_kind == 'ready_to_deploy' and has_pending) %}
+                  {% if next_action_kind == 'ready_to_deploy' %}<div class="run-drawer-divider"></div>{% endif %}
+                  <div class="run-drawer-section">
+                    <div class="changes-summary">
+                      <div class="flex items-center gap-2 flex-wrap">
+                        {% if has_image_changes %}
+                          <span class="change-pill change-pill-image">
+                            {{ icon('image', 'w-3 h-3') }}
+                            {{ img_total }} image {{ 'setting' if img_total == 1 else 'settings' }}
+                          </span>
+                        {% endif %}
+                        {% if has_config_changes %}
+                          <span class="change-pill change-pill-config">
+                            {{ icon('key', 'w-3 h-3') }}
+                            {{ cfg_total }} config {{ 'variable' if cfg_total == 1 else 'variables' }}
+                          </span>
+                        {% endif %}
+                        {% if has_ingress_changes %}
+                          <span class="change-pill change-pill-config">
+                            {{ icon('globe', 'w-3 h-3') }}
+                            {{ ing_total }} {{ 'ingress' if ing_total == 1 else 'ingresses' }}
+                          </span>
+                        {% endif %}
+                        {% if img_total + cfg_total + ing_total > 0 %}
+                          <button class="change-details-toggle"
+                                  onclick="var d=this.closest('.changes-summary').querySelector('.change-details'); d.classList.toggle('change-details-open'); this.querySelector('span').textContent = d.classList.contains('change-details-open') ? 'hide details' : 'show details'">
+                            {{ icon('chevron-right', 'w-3 h-3 change-details-chevron') }}
+                            <span>show details</span>
+                          </button>
+                        {% endif %}
+                      </div>
+
+                      <div class="change-details">
+                        <div class="change-details-inner">
+                          {% if has_image_changes %}
+                            <div class="change-group">
+                              <span class="change-group-label">Image</span>
+                              {% for item in img_added %}<span class="change-item change-item-added">{{ item }} <em>added</em></span>{% endfor %}
+                              {% for item in img_changed %}
+                                <span class="change-item change-item-updated">{{ item }} <em>updated</em></span>
+                              {% endfor %}
+                              {% for item in img_removed %}
+                                <span class="change-item change-item-removed">{{ item }} <em>removed</em></span>
+                              {% endfor %}
+                            </div>
+                          {% endif %}
+                          {% if has_config_changes %}
+                            <div class="change-group">
+                              <span class="change-group-label">Config</span>
+                              {% for item in cfg_added %}
+                                <span class="change-item change-item-added"><code>{{ item }}</code> <em>added</em></span>
+                              {% endfor %}
+                              {% for item in cfg_changed %}
+                                <span class="change-item change-item-updated"><code>{{ item }}</code> <em>updated</em></span>
+                              {% endfor %}
+                              {% for item in cfg_removed %}
+                                <span class="change-item change-item-removed"><code>{{ item }}</code> <em>removed</em></span>
+                              {% endfor %}
+                            </div>
+                          {% endif %}
+                          {% if has_ingress_changes %}
+                            <div class="change-group">
+                              <span class="change-group-label">Ingress</span>
+                              {% for item in ing_added %}
+                                <span class="change-item change-item-added"><code>{{ item }}</code> <em>added</em></span>
+                              {% endfor %}
+                              {% for item in ing_changed %}
+                                <span class="change-item change-item-updated">
+                                  <code>{{ item }}</code> <em>updated</em>
+                                  {% if ingress_change_details.get(item) %}
+                                    <span class="text-base-content/50"> — {{ ingress_change_details[item]|join('; ') }}</span>
+                                  {% endif %}
+                                </span>
+                              {% endfor %}
+                              {% for item in ing_removed %}
+                                <span class="change-item change-item-removed"><code>{{ item }}</code> <em>removed</em></span>
+                              {% endfor %}
+                            </div>
+                          {% endif %}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="run-drawer-row">
+                      <div class="deploy-steps-inline">
+                        {% if next_action_kind == 'ready_to_deploy' %}
+                          <span class="deploy-step-inline deploy-step-inline-done">{{ icon('check', 'w-3 h-3') }} Build</span>
+                          <span class="deploy-step-inline-arrow">→</span>
+                          <span class="deploy-step-inline deploy-step-inline-next">Create Release</span>
+                          <span class="deploy-step-inline-arrow">→</span>
+                          <span class="deploy-step-inline deploy-step-inline-pending">Deploy</span>
+                        {% elif (has_config_changes or has_ingress_changes) and not has_image_changes %}
+                          <span class="deploy-step-inline deploy-step-inline-next">Create Release</span>
+                          <span class="deploy-step-inline-arrow">→</span>
+                          <span class="deploy-step-inline deploy-step-inline-pending">Deploy</span>
+                        {% else %}
+                          <span class="deploy-step-inline deploy-step-inline-done">{{ icon('check', 'w-3 h-3') }} Build</span>
+                          <span class="deploy-step-inline-arrow">→</span>
+                          <span class="deploy-step-inline deploy-step-inline-next">Create Release</span>
+                          <span class="deploy-step-inline-arrow">→</span>
+                          <span class="deploy-step-inline deploy-step-inline-pending">Deploy</span>
+                        {% endif %}
+                      </div>
+                      <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+                            method="post"
+                            class="run-drawer-cta">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                        {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
+                        <button type="submit" class="btn {{ 'btn-outline' if next_action_kind == 'ready_to_deploy' else 'btn-primary' }} btn-sm gap-1.5">
+                          {{ icon('scissors', 'w-3.5 h-3.5') }}
+                          Create Release
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                {% endif %}
+
+              </div>
+            </div>
+          {% endif %}
+        </div>
+      </section>
+      <script type="application/json" data-run-initial>{{ {"server_time": live_server_time, "run": live_run}|tojson }}</script>
+
+      {% if in_wizard_mode %}
+
           {% set repo_done = application.github_repository %}
           {% set image_done = latest_image_built %}
           {% set release_done = latest_release_built %}
@@ -361,277 +716,6 @@
                 </div>
               </div>
             </div>
-          </div>
-        {% else %}
-
-          <div class="flex flex-col gap-3 mb-4">
-
-            {% if is_building_image %}
-              <a href="{{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id=latest_image_building.id) }}"
-                 class="action-banner action-banner-info">
-                <div class="flex items-center gap-3">
-                  <div class="action-banner-spinner"></div>
-                  <div>
-                    <p class="text-sm font-medium text-base-content">
-                      Building image <span class="font-mono text-accent">#{{ latest_image_building.version }}</span>
-                    </p>
-                    <p class="text-xs text-base-content/40">Click to view build logs</p>
-                  </div>
-                </div>
-                <svg class="w-4 h-4 text-base-content/20 flex-shrink-0"
-                     viewBox="0 0 24 24"
-                     fill="none"
-                     stroke="currentColor"
-                     stroke-width="2">
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
-              </a>
-            {% endif %}
-
-            {% if has_build_error %}
-              <a href="{{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id=latest_image_error.id) }}"
-                 class="action-banner action-banner-error">
-                <div class="flex items-center gap-3">
-                  {{ icon('alert-triangle', 'w-4 h-4 text-error flex-shrink-0') }}
-                  <div>
-                    <p class="text-sm font-medium text-base-content">
-                      Build <span class="font-mono text-error">#{{ latest_image_error.version }}</span> failed
-                    </p>
-                    <p class="text-xs text-base-content/40">Click to view error details</p>
-                  </div>
-                </div>
-                <svg class="w-4 h-4 text-base-content/20 flex-shrink-0"
-                     viewBox="0 0 24 24"
-                     fill="none"
-                     stroke="currentColor"
-                     stroke-width="2">
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
-              </a>
-            {% endif %}
-
-            {% if is_building_release %}
-              <div class="action-banner action-banner-info">
-                <div class="flex items-center gap-3">
-                  <div class="action-banner-spinner"></div>
-                  <div>
-                    <p class="text-sm font-medium text-base-content">
-                      Release <span class="font-mono text-accent">v{{ is_building_release.version }}</span> building
-                    </p>
-                    <p class="text-xs text-base-content/40">Deploy will be available when complete</p>
-                  </div>
-                </div>
-              </div>
-            {% endif %}
-
-            {% if has_pending %}
-              <div class="action-banner action-banner-changes">
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-center gap-2 mb-1.5">
-                    {{ icon('zap', 'w-4 h-4 text-primary') }}
-                    <span class="text-sm font-medium text-base-content">
-                      {% set change_types = [] %}
-                      {% if has_image_changes %}{% set _ = change_types.append('image') %}{% endif %}
-                      {% if has_config_changes %}{% set _ = change_types.append('configuration') %}{% endif %}
-                      {% if has_ingress_changes %}{% set _ = change_types.append('ingress') %}{% endif %}
-                      {% if change_types|length == 1 and has_image_changes %}
-                        New image available since last release
-                      {% elif change_types|length == 1 %}
-                        {{ change_types[0] | capitalize }} changes since last release
-                      {% elif change_types|length == 2 %}
-                        {{ change_types[0] | capitalize }} and {{ change_types[1] }} changes since last release
-                      {% else %}
-                        {{ change_types[:-1]|join(', ') | capitalize }} and {{ change_types[-1] }} changes since last release
-                      {% endif %}
-                    </span>
-                  </div>
-
-                  {% set img_added = image_diff.added()|list if has_image_changes else [] %}
-                  {% set img_changed = image_diff.changed()|list if has_image_changes else [] %}
-                  {% set img_removed = image_diff.removed()|list if has_image_changes else [] %}
-                  {% set cfg_added = config_diff.added()|list if has_config_changes else [] %}
-                  {% set cfg_changed = config_diff.changed()|list if has_config_changes else [] %}
-                  {% set cfg_removed = config_diff.removed()|list if has_config_changes else [] %}
-                  {% set ing_added = ingress_diff.added()|list if has_ingress_changes else [] %}
-                  {% set ing_changed = ingress_diff.changed()|list if has_ingress_changes else [] %}
-                  {% set ing_removed = ingress_diff.removed()|list if has_ingress_changes else [] %}
-                  {% set img_total = img_added|length + img_changed|length + img_removed|length %}
-                  {% set cfg_total = cfg_added|length + cfg_changed|length + cfg_removed|length %}
-                  {% set ing_total = ing_added|length + ing_changed|length + ing_removed|length %}
-                  {% set diff_id = application.id|string %}
-
-                  <div class="changes-summary text-xs mb-2">
-                    <div class="flex items-center gap-2 flex-wrap">
-                      {% if has_image_changes %}
-                        <span class="change-pill change-pill-image">
-                          {{ icon('image', 'w-3 h-3') }}
-                          {{ img_total }} image {{ 'setting' if img_total == 1 else 'settings' }}
-                        </span>
-                      {% endif %}
-                      {% if has_config_changes %}
-                        <span class="change-pill change-pill-config">
-                          {{ icon('key', 'w-3 h-3') }}
-                          {{ cfg_total }} config {{ 'variable' if cfg_total == 1 else 'variables' }}
-                        </span>
-                      {% endif %}
-                      {% if has_ingress_changes %}
-                        <span class="change-pill change-pill-config">
-                          {{ icon('globe', 'w-3 h-3') }}
-                          {{ ing_total }} {{ 'ingress' if ing_total == 1 else 'ingresses' }}
-                        </span>
-                      {% endif %}
-                      {% if img_total + cfg_total + ing_total > 0 %}
-                        <button class="change-details-toggle"
-                                onclick="var d=this.closest('.changes-summary').querySelector('.change-details'); d.classList.toggle('change-details-open'); this.querySelector('span').textContent = d.classList.contains('change-details-open') ? 'hide details' : 'show details'">
-                          {{ icon('chevron-right', 'w-3 h-3 change-details-chevron') }}
-                          <span>show details</span>
-                        </button>
-                      {% endif %}
-                    </div>
-
-                    <div class="change-details">
-                      <div class="change-details-inner">
-                        {% if has_image_changes %}
-                          <div class="change-group">
-                            <span class="change-group-label">Image</span>
-                            {% for item in img_added %}<span class="change-item change-item-added">{{ item }} <em>added</em></span>{% endfor %}
-                            {% for item in img_changed %}
-                              <span class="change-item change-item-updated">{{ item }} <em>updated</em></span>
-                            {% endfor %}
-                            {% for item in img_removed %}
-                              <span class="change-item change-item-removed">{{ item }} <em>removed</em></span>
-                            {% endfor %}
-                          </div>
-                        {% endif %}
-                        {% if has_config_changes %}
-                          <div class="change-group">
-                            <span class="change-group-label">Config</span>
-                            {% for item in cfg_added %}
-                              <span class="change-item change-item-added"><code>{{ item }}</code> <em>added</em></span>
-                            {% endfor %}
-                            {% for item in cfg_changed %}
-                              <span class="change-item change-item-updated"><code>{{ item }}</code> <em>updated</em></span>
-                            {% endfor %}
-                            {% for item in cfg_removed %}
-                              <span class="change-item change-item-removed"><code>{{ item }}</code> <em>removed</em></span>
-                            {% endfor %}
-                          </div>
-                        {% endif %}
-                        {% if has_ingress_changes %}
-                          <div class="change-group">
-                            <span class="change-group-label">Ingress</span>
-                            {% for item in ing_added %}
-                              <span class="change-item change-item-added"><code>{{ item }}</code> <em>added</em></span>
-                            {% endfor %}
-                            {% for item in ing_changed %}
-                              <span class="change-item change-item-updated">
-                                <code>{{ item }}</code> <em>updated</em>
-                                {% if ingress_change_details.get(item) %}
-                                  <span class="text-base-content/50"> — {{ ingress_change_details[item]|join('; ') }}</span>
-                                {% endif %}
-                              </span>
-                            {% endfor %}
-                            {% for item in ing_removed %}
-                              <span class="change-item change-item-removed"><code>{{ item }}</code> <em>removed</em></span>
-                            {% endfor %}
-                          </div>
-                        {% endif %}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="deploy-steps-inline">
-                    {% if (has_config_changes or has_ingress_changes) and not has_image_changes %}
-                      <span class="deploy-step-inline deploy-step-inline-next">Create Release</span>
-                      <span class="deploy-step-inline-arrow">→</span>
-                      <span class="deploy-step-inline deploy-step-inline-pending">Deploy</span>
-                    {% else %}
-                      <span class="deploy-step-inline deploy-step-inline-done">{{ icon('check', 'w-3 h-3') }} Build</span>
-                      <span class="deploy-step-inline-arrow">→</span>
-                      <span class="deploy-step-inline deploy-step-inline-next">Create Release</span>
-                      <span class="deploy-step-inline-arrow">→</span>
-                      <span class="deploy-step-inline deploy-step-inline-pending">Deploy</span>
-                    {% endif %}
-                  </div>
-                </div>
-                <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
-                      method="post" class="flex-shrink-0">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-                  {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
-                  <button type="submit" class="btn btn-primary btn-sm gap-1.5">
-                    {{ icon('scissors', 'w-3.5 h-3.5') }}
-                    Create Release
-                  </button>
-                </form>
-              </div>
-            {% endif %}
-
-            {% if is_deploying %}
-              <a href="{{ url_for('user.deployment_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id=latest_deployment.id) }}"
-                 class="action-banner action-banner-info">
-                <div class="flex items-center gap-3">
-                  <div class="action-banner-spinner"></div>
-                  <div>
-                    <p class="text-sm font-medium text-base-content">
-                      Deploying release
-                      {% if latest_deploy_release %}
-                        <span class="font-mono text-accent">v{{ latest_deploy_release.version }}</span>
-                      {% endif %}
-                    </p>
-                    <p class="text-xs text-base-content/40">Click to view deployment progress</p>
-                  </div>
-                </div>
-                <svg class="w-4 h-4 text-base-content/20 flex-shrink-0"
-                     viewBox="0 0 24 24"
-                     fill="none"
-                     stroke="currentColor"
-                     stroke-width="2">
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
-              </a>
-            {% endif %}
-
-            {% if show_ready_to_deploy %}
-              <div class="action-banner action-banner-deploy">
-                <div class="flex-1">
-                  <div class="flex items-center gap-3">
-                    <span class="status-dot status-dot-success status-dot-lg"></span>
-                    <div>
-                      <p class="text-sm font-medium text-base-content">
-                        Release <span class="font-mono text-accent">v{{ latest_release.version }}</span> ready to deploy
-                      </p>
-                      {% if has_pending %}
-                        <p class="text-xs text-warning/70">
-                          There are also unreleased changes above -- deploy this release now or create a new release first.
-                        </p>
-                      {% else %}
-                        <p class="text-xs text-base-content/40">
-                          <time data-timestamp="{{ latest_release.updated|isoformat_utc }}">{{ latest_release.updated|humanize }}</time>
-                        </p>
-                      {% endif %}
-                    </div>
-                  </div>
-                  <div class="deploy-steps-inline mt-2">
-                    <span class="deploy-step-inline deploy-step-inline-done">{{ icon('check', 'w-3 h-3') }} Build</span>
-                    <span class="deploy-step-inline-arrow">→</span>
-                    <span class="deploy-step-inline deploy-step-inline-done">{{ icon('check', 'w-3 h-3') }} Release</span>
-                    <span class="deploy-step-inline-arrow">→</span>
-                    <span class="deploy-step-inline deploy-step-inline-next">Deploy</span>
-                  </div>
-                </div>
-                <form action="{{ url_for('user.release_deploy', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id=latest_release.id) }}"
-                      method="post"
-                      name="deploy_release_form"
-                      enctype="multipart/form-data">
-                  {{ deploy_form.hidden_tag() }}
-                  <button type="submit" class="btn btn-primary btn-sm gap-1.5">
-                    {{ icon('deploy', 'w-4 h-4') }}
-                    Deploy
-                  </button>
-                </form>
-              </div>
-            {% endif %}
-
           </div>
         {% endif %}
 
@@ -1580,6 +1664,279 @@
 
     poll();
     setInterval(poll, 15000);
+  })();
+
+  // Latest pipeline run strip: visible only while a run is in flight or just
+  // finished, polls fast while in flight, slow while hidden/lingering.
+  (function() {
+    var strip = document.querySelector('[data-run-strip]');
+    if (!strip) return;
+    var url = strip.getAttribute('data-live-url');
+    var pipelineUrl = strip.getAttribute('data-pipeline-url');
+    var body = strip.querySelector('[data-run-body]');
+    var announce = strip.querySelector('[data-run-announce]');
+    var initialEl = document.querySelector('[data-run-initial]');
+    var STAGES = [['image', 'Image'], ['release', 'Release'], ['deploy', 'Deploy']];
+    var OVERALL = { running: 'Running', success: 'Succeeded', error: 'Failed', stalled: 'Stalled' };
+    var FAST = 5000, SLOW = 30000, LINGER = 10 * 60 * 1000;
+    var offset = 0, run = null, lastKey = null, loaded = false, failed = false;
+    var hasNextAction = strip.getAttribute('data-has-next-action') === 'true';
+    var busy = false, timer = null, ticker = null;
+    var SEP = '<svg class="run-sep" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="9 18 15 12 9 6" /></svg>';
+
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, function(c) { return '&#' + c.charCodeAt(0) + ';'; });
+    }
+    function now() { return Date.now() + offset; }
+    function fmtDur(sec) {
+      if (sec == null || isNaN(sec)) return '\u2014';
+      sec = Math.max(0, Math.floor(sec));
+      if (sec < 60) return sec + 's';
+      if (sec < 3600) {
+        var s = sec % 60;
+        return Math.floor(sec / 60) + 'm ' + (s < 10 ? '0' : '') + s + 's';
+      }
+      return Math.floor(sec / 3600) + 'h ' + Math.floor((sec % 3600) / 60) + 'm';
+    }
+    function relTime(iso) {
+      var diff = (now() - Date.parse(iso)) / 1000;
+      if (diff < 60) return 'just now';
+      if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+      if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+      if (diff < 7 * 86400) return Math.floor(diff / 86400) + 'd ago';
+      return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    }
+    // The endpoint labels stages "Image v15"; the step already names the stage, so keep the version
+    function stageLabel(name, label) {
+      if (label === name) return '';
+      return label.indexOf(name + ' ') === 0 ? label.substring(name.length + 1) : label;
+    }
+    function stageDur(st) {
+      if (!st || !st.started || st.reused) return '\u2014';
+      if (st.status === 'pending') return 'queued';
+      if (st.status === 'stalled') return '\u2014';
+      var end = st.finished ? Date.parse(st.finished) : (st.status === 'running' ? now() : NaN);
+      return fmtDur((end - Date.parse(st.started)) / 1000);
+    }
+    function timeText() {
+      if (run.status === 'running' || !run.finished) return 'started ' + relTime(run.started);
+      return 'finished ' + relTime(run.finished);
+    }
+    function stageWords(label, st) {
+      if (!st) return label + ': not started';
+      if (st.reused) return label + ': reused from an earlier build';
+      var d = stageDur(st);
+      if (st.status === 'success') return label + ': succeeded in ' + d;
+      if (st.status === 'error') return label + ': failed after ' + d;
+      if (st.status === 'running') return label + ': running for ' + d;
+      if (st.status === 'stalled') return label + ': stalled, no progress in over an hour';
+      return label + ': queued';
+    }
+    function pipelineLink() {
+      return '<a class="run-link" href="' + esc(pipelineUrl) + '" data-focus-key="pipeline">Pipeline<span aria-hidden="true">\u2192</span></a>';
+    }
+
+    // In flight: keep polling fast and never let the strip collapse away.
+    function isActive(r) { return !!r && (r.status === 'running' || r.status === 'stalled'); }
+    // Shown while active, and for a while after finishing so the outcome registers.
+    function isVisible(r) {
+      if (!r) return false;
+      if (isActive(r)) return true;
+      if (!r.finished) return false;
+      return now() - Date.parse(r.finished) < LINGER;
+    }
+    function updateVisibility() {
+      var vis = isVisible(run) || hasNextAction;
+      strip.classList.toggle('is-visible', vis);
+      if (vis) strip.removeAttribute('aria-hidden');
+      else strip.setAttribute('aria-hidden', 'true');
+      return vis;
+    }
+
+    function render(changed) {
+      var focused = document.activeElement;
+      var focusKey = focused && strip.contains(focused) ? focused.getAttribute('data-focus-key') : null;
+      var html;
+      if (!run) {
+        html = '<span class="run-empty">No runs yet \u2014 builds, releases, and deploys for this environment show up here as they happen.</span>';
+      } else {
+        html = '<span class="run-overall"><span class="run-dot run-dot-' + esc(run.status) + '"></span>' +
+          esc(OVERALL[run.status] || run.status) + '</span>';
+        if (run.sha) html += '<code class="run-sha num">' + esc(run.sha.substring(0, 7)) + '</code>';
+        html += '<ol class="run-steps">';
+        STAGES.forEach(function(s, i) {
+          var st = run[s[0]];
+          var status = st ? st.status : 'none';
+          var cls = 'run-step run-step-' + esc(status) + (changed && changed[s[0]] ? ' run-step-changed' : '');
+          var dotCls = status === 'none' ? 'run-dot' : 'run-dot run-dot-' + esc(status);
+          var label = st && st.label ? stageLabel(s[1], st.label) : '';
+          var inner = '<span class="' + dotCls + '"></span>' +
+            '<span class="run-step-name">' + s[1] + '</span>' +
+            (label ? '<span class="run-step-label num">' + esc(label) + '</span>' : '') +
+            (status === 'error' ? '<span class="run-step-fail">failed</span>' : '') +
+            (status === 'stalled' ? '<span class="run-step-stalled-note">stalled</span>' : '') +
+            (st && st.reused ? '<span class="run-step-reused-note">reused</span>' : '') +
+            '<span class="run-step-dur num" data-run-dur="' + s[0] + '">' + stageDur(st) + '</span>';
+          var words = esc(stageWords(s[1], st));
+          html += '<li>' + (i ? SEP : '') + (st && st.url
+            ? '<a class="' + cls + '" href="' + esc(st.url) + '" data-focus-key="' + s[0] + '" title="' + words + '" aria-label="' + words + '">' + inner + '</a>'
+            : '<span class="' + cls + '" title="' + words + '" aria-label="' + words + '" role="img">' + inner + '</span>') + '</li>';
+        });
+        html += '</ol><time class="run-time" data-run-time datetime="' + esc(run.started) + '" title="' +
+          esc(new Date(run.started).toLocaleString()) + '">' + timeText() + '</time>';
+      }
+      if (failed) html += '<span class="run-note" title="The latest run will update when the connection recovers.">Couldn\u2019t refresh</span>';
+      html += pipelineLink();
+      body.innerHTML = html;
+      if (focusKey) {
+        var el = body.querySelector('[data-focus-key="' + focusKey + '"]');
+        if (el) el.focus({ preventScroll: true });
+      }
+      updateVisibility();
+    }
+
+    // Only the live text moves between polls; no DOM rebuild, so hover and focus stay put
+    function tick() {
+      updateVisibility();
+      if (!run) return;
+      STAGES.forEach(function(s) {
+        var st = run[s[0]];
+        if (!st || st.status !== 'running') return;
+        var el = body.querySelector('[data-run-dur="' + s[0] + '"]');
+        var text = stageDur(st);
+        if (el && el.textContent !== text) el.textContent = text;
+      });
+      var t = body.querySelector('[data-run-time]');
+      if (t) {
+        var text = timeText();
+        if (t.textContent !== text) t.textContent = text;
+      }
+    }
+    function startTick() { if (!ticker) ticker = setInterval(tick, 1000); }
+    function stopTick() { clearInterval(ticker); ticker = null; }
+
+    function schedule() {
+      clearTimeout(timer);
+      if (document.hidden) return;
+      timer = setTimeout(poll, isActive(run) ? FAST : SLOW);
+    }
+
+    function apply(data) {
+      offset = data.server_time ? Date.parse(data.server_time) - Date.now() : 0;
+      var next = data.run || null;
+      var key = JSON.stringify(next);
+      var wasFailed = failed;
+      failed = false;
+      if (loaded && key === lastKey && !wasFailed) return;
+      var changed = null;
+      if (loaded && run && next && run.started === next.started) {
+        changed = {};
+        STAGES.forEach(function(s) {
+          var a = run[s[0]], b = next[s[0]];
+          changed[s[0]] = (a ? a.status : null) !== (b ? b.status : null);
+        });
+      }
+      if (loaded && next && (!run || run.status !== next.status || run.started !== next.started)) {
+        announce.textContent = 'Pipeline run ' + (next.status === 'running' ? 'started' : (OVERALL[next.status] || next.status).toLowerCase());
+      }
+      run = next;
+      lastKey = key;
+      loaded = true;
+      render(changed);
+    }
+
+    function poll() {
+      if (busy) return;
+      busy = true;
+      clearTimeout(timer);
+      fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(data) {
+          if (data) {
+            apply(data);
+          } else {
+            throw new Error('bad response');
+          }
+        })
+        .catch(function() {
+          // Keep the last known run on screen; just say it may be stale
+          if (!failed || !loaded) {
+            failed = true;
+            if (loaded) {
+              render(null);
+            } else {
+              body.innerHTML = '<span class="run-empty">Couldn\u2019t load the latest run.</span>' + pipelineLink();
+            }
+          }
+        })
+        .then(function() {
+          busy = false;
+          schedule();
+        });
+    }
+
+    document.addEventListener('visibilitychange', function() {
+      if (document.hidden) {
+        clearTimeout(timer);
+        stopTick();
+      } else {
+        startTick();
+        poll();
+      }
+    });
+
+    // Hydrate from the server-rendered payload first so the strip is correct
+    // (or correctly hidden) before the first network round-trip completes.
+    if (initialEl) {
+      try {
+        apply(JSON.parse(initialEl.textContent));
+      } catch (e) {}
+    }
+    if (!document.hidden) startTick();
+    if (loaded) schedule();
+    else poll();
+  })();
+
+  // Next-action drawer: the disclosure under the strip for the pending-change
+  // or ready-to-deploy details. Persisted per app+environment in
+  // sessionStorage; lives outside [data-run-body] so the poll above never
+  // touches it or steals focus from it.
+  (function() {
+    var toggleBtn = document.querySelector('[data-drawer-toggle]');
+    var drawer = document.querySelector('[data-run-drawer]');
+    if (!toggleBtn || !drawer) return;
+    var stripEl = document.querySelector('[data-run-strip]');
+    var storageKey = stripEl ? stripEl.getAttribute('data-storage-key') : null;
+
+    function setOpen(open, returnFocus) {
+      drawer.classList.toggle('is-open', open);
+      if (open) drawer.removeAttribute('aria-hidden');
+      else drawer.setAttribute('aria-hidden', 'true');
+      toggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (storageKey) {
+        try {
+          if (open) sessionStorage.setItem(storageKey, '1');
+          else sessionStorage.removeItem(storageKey);
+        } catch (e) {}
+      }
+      if (!open && returnFocus) toggleBtn.focus({ preventScroll: true });
+    }
+
+    toggleBtn.addEventListener('click', function() {
+      setOpen(!drawer.classList.contains('is-open'));
+    });
+
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && drawer.classList.contains('is-open')) {
+        setOpen(false, true);
+      }
+    });
+
+    var initiallyOpen = false;
+    if (storageKey) {
+      try { initiallyOpen = sessionStorage.getItem(storageKey) === '1'; } catch (e) {}
+    }
+    if (initiallyOpen) setOpen(true);
   })();
   </script>
 {% endblock js %}
