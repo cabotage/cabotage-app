@@ -662,6 +662,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     if (JSON.stringify(brush) === JSON.stringify(state.brush)) return;
     state.brush = brush;
     state.scoped = null;
+    delete lastPayload.scoped;
     state.offset = 0;
     syncUrl();
     var chip = document.getElementById('brush-chip');
@@ -825,6 +826,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     state.offset = 0;
     state.brush = null;
     state.scoped = null;
+    delete lastPayload.scoped;
     document.getElementById('brush-chip').hidden = true;
     press(rangeGroup, 'range', state.range);
     syncUrl();
