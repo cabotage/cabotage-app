@@ -23,10 +23,10 @@ nav = [
     ] },
     { "Operating Cabotage" = [
         { "Overview" = "operating/index.md" },
-        { "Authentication and MFA" = "authentication.md" },
-        { "MFA rollout" = "rollout-mfa.md" },
-        { "Network policies" = "network-policies.md" },
-        { "Tailscale ingress" = "tailscale.md" },
+        { "Authentication and MFA" = "operating/authentication.md" },
+        { "MFA rollout" = "operating/rollout-mfa.md" },
+        { "Network policies" = "operating/network-policies.md" },
+        { "Tailscale ingress" = "operating/tailscale.md" },
     ] },
     { "Contributing to Cabotage" = [
         { "Working on Cabotage itself" = "contributing/index.md" },

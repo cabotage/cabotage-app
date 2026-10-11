@@ -12,9 +12,9 @@ grouped by audience:
 
 - **Using Cabotage** (`docs/using/`) — for application developers deploying
   on top of a Cabotage platform.
-- **Operating Cabotage** (the operator guides at the root of `docs/`, such as
-  `authentication.md`, `tailscale.md`, `network-policies.md`, and
-  `rollout-mfa.md`) — for platform administrators running Cabotage.
+- **Operating Cabotage** (`docs/operating/`) — for platform administrators
+  running Cabotage, including authentication, MFA rollout, network policies,
+  and Tailscale integration.
 - **Contributing to Cabotage** (`docs/contributing/`, this section) — for
   people changing Cabotage's own code, tooling, or documentation.
 
@@ -45,7 +45,7 @@ contents contains only the step titles.
 ### Linking between pages
 
 Use relative Markdown links between pages in `docs/`, for example
-`[authentication](../authentication.md)` from a page under `docs/using/` or
+`[authentication](../operating/authentication.md)` from a page under `docs/using/` or
 `docs/contributing/`. Set `site_url` in `zensical.toml` once the documentation's
 deployment URL is decided; no deployment URL is configured yet.
 

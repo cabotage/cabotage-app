@@ -1,7 +1,7 @@
 # Authentication & Multi-Factor Authentication
 
 **Audience: platform administrators operating Cabotage.** These settings configure
-Cabotage itself, not the applications deployed with it. See [Operating Cabotage](operating/index.md).
+Cabotage itself, not the applications deployed with it. See [Operating Cabotage](index.md).
 
 Cabotage supports password-based login, GitHub OAuth, and mandatory multi-factor authentication (MFA) using WebAuthn security keys/passkeys and TOTP authenticator apps.
 

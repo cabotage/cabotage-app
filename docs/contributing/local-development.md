@@ -33,7 +33,7 @@ After these commands, visit `http://localhost:8000/` and log in with
 Use `CABOTAGE_DEBUG=True` for local development. Flask's `FLASK_DEBUG=1` or
 `flask --debug run` alone does not bypass Cabotage's default-secret startup
 validation. `make test` supplies test-only secrets with debug mode disabled.
-See [startup validation](../authentication.md#startup-validation) for commands
+See [startup validation](../operating/authentication.md#startup-validation) for commands
 run outside debug mode.
 
 Run `make help` (or just `make`) at any time for a full, sectioned list of

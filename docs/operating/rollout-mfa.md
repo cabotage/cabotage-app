@@ -1,7 +1,7 @@
 # Rollout Guide: Multi-Factor Authentication
 
 **Audience: platform administrators operating Cabotage.** This guide rolls out
-authentication changes to the platform itself. See [Operating Cabotage](operating/index.md).
+authentication changes to the platform itself. See [Operating Cabotage](index.md).
 
 This document covers deploying MFA support, including pre-deployment requirements, configuration, migration steps, rollback procedures, and user communication.
 
