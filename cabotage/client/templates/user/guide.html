@@ -100,6 +100,19 @@
 
   <div class="mb-10">
     <div class="flex items-center gap-2 mb-4">
+      {{ icon('file-text', 'w-4 h-4 text-primary') }}
+      <h2 class="text-base font-semibold text-base-content">Reading application logs</h2>
+    </div>
+    <div class="text-sm text-base-content/70 leading-relaxed space-y-2 max-w-prose">
+      <p>Open <strong class="text-base-content">Observe &gt; Logs</strong> on an application to view its output when Loki is configured. Select a process or search for text to narrow the results.</p>
+      <p><strong class="text-base-content">Structured</strong> display turns JSON objects into rows showing the timestamp, process, level, and message or event. Request details such as method, path, status, and duration appear when the log includes them.</p>
+      <p>Expand a row to inspect every field, including nested values and request or trace IDs. Open <strong class="text-base-content">Original line</strong> inside the expanded row to see the original message, or select <strong class="text-base-content">Raw</strong> to show original messages for all rows.</p>
+      <p>Plain text, malformed JSON, and non-object JSON stay as text in either display. Search matches the original log line in Loki, including fields not shown in the collapsed row.</p>
+    </div>
+  </div>
+
+  <div class="mb-10">
+    <div class="flex items-center gap-2 mb-4">
       {{ icon('key', 'w-4 h-4 text-primary') }}
       <h2 class="text-base font-semibold text-base-content">Config-only changes</h2>
     </div>
