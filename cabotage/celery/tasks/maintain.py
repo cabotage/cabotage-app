@@ -185,8 +185,8 @@ def reap_stale_builds() -> None:
     # heartbeat, and no run_deploy task still running for the environment
     stuck_deployments = Deployment.query.filter(
         Deployment.started_at.isnot(None),
-        Deployment.complete == False,
-        Deployment.error == False,
+        Deployment.complete.is_(False),
+        Deployment.error.is_(False),
         Deployment.updated < cutoff,
     ).all()
     reaped_app_env_ids: set[uuid.UUID] = set()
