@@ -48,6 +48,9 @@ def register_mfa_guards(app):
     @app.before_request
     def require_mfa_setup():
         """Force authenticated users to set up MFA and recovery codes."""
+        if request.endpoint == "grafana.tenants":
+            # The tenant registry callback authenticates the router, not a browser session.
+            return None
         if (
             not hasattr(current_user, "tf_primary_method")
             or not current_user.is_authenticated
@@ -76,6 +79,8 @@ def register_mfa_guards(app):
             }
             if endpoint in mfa_setup_endpoints:
                 return None
+            if endpoint == "grafana.auth":
+                abort(403)
             session["mfa_initial_setup"] = True
             flash("Please set up two-factor authentication to continue.", "warning")
             return redirect(url_for("security.two_factor_setup"))
@@ -91,6 +96,8 @@ def register_mfa_guards(app):
                 if "fs_paa" not in session:
                     session["fs_paa"] = time.time()
                 return None
+            if endpoint == "grafana.auth":
+                abort(403)
             flash("Please generate recovery codes before continuing.", "warning")
             return redirect(url_for("security.mf_recovery_codes"))
 
