@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 import pytest
 from flask_security import hash_password
 
+from cabotage.celery.tasks.grafana import request_organization_sync
 from cabotage.server import db
 from cabotage.server.integrations.grafana import (
     GrafanaIntegrationError,
@@ -1128,6 +1129,24 @@ class TestReconcileGrafanaOrganization:
         assert folders[(oid, app_dashboard_uid(site_web))] == project_folder_uid(site)
         moves = [c for c in fake_grafana.calls if c[1].endswith("/move")]
         assert len(moves) == 1
+
+    def test_request_organization_sync_only_queues_enabled_orgs(
+        self, app, db_session, org
+    ):
+        with patch(
+            "cabotage.celery.tasks.grafana.enqueue_reconcile_organization"
+        ) as enqueue:
+            request_organization_sync(org)
+            gi = OrganizationGrafanaIntegration(organization_id=org.id, enabled=False)
+            db_session.add(gi)
+            db_session.flush()
+            db_session.expire(org, ["grafana_integration"])
+            request_organization_sync(org)
+            gi.enabled = True
+            db_session.flush()
+            request_organization_sync(org)
+
+        enqueue.assert_called_once_with(str(org.id))
 
     def test_disabled_integration_revokes_access_but_preserves_org(
         self, app, db_session, org, member_user, fake_grafana

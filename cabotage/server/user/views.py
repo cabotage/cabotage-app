@@ -53,6 +53,7 @@ from cabotage.celery.tasks import (
     teardown_tailscale_operator,
 )
 from cabotage.celery.tasks.deploy import resize_deployment, scale_deployment
+from cabotage.celery.tasks.grafana import request_organization_sync
 from cabotage.celery.tasks.notify import dispatch_autodeploy_notification
 from cabotage.server import (
     config_writer,
@@ -1416,6 +1417,7 @@ def organization_project_create(org_slug):
         )
         db.session.add(activity)
         db.session.commit()
+        request_organization_sync(organization)
         return redirect(
             url_for(
                 "user.project",
@@ -1778,6 +1780,7 @@ def project_create():
         )
         db.session.add(activity)
         db.session.commit()
+        request_organization_sync(organization)
         return redirect(
             url_for(
                 "user.project",
@@ -1847,6 +1850,7 @@ def project_environment_create(org_slug, project_slug):
         )
         db.session.add(activity)
         db.session.commit()
+        request_organization_sync(organization)
         return redirect(
             url_for(
                 "user.project_environment",
@@ -2028,6 +2032,7 @@ def project_environment_delete(org_slug, project_slug, env_slug):
         )
         db.session.add(activity)
         db.session.commit()
+        request_organization_sync(organization)
         flash(f"Environment {environment.name} deleted.", "success")
         return redirect(
             url_for(
@@ -3064,6 +3069,7 @@ def project_application_delete(org_slug, project_slug, app_slug):
         )
         db.session.add(activity)
         db.session.commit()
+        request_organization_sync(organization)
         flash(f"Application {application.name} deleted.", "success")
         return redirect(
             url_for(
@@ -3106,6 +3112,7 @@ def project_delete(org_slug, project_slug):
         )
         db.session.add(activity)
         db.session.commit()
+        request_organization_sync(organization)
         flash(f"Project {project.name} deleted.", "success")
         return redirect(url_for("user.organization", org_slug=org_slug))
     abort(400)
@@ -3745,6 +3752,7 @@ def project_application_create(org_slug, project_slug):
         )
         db.session.add(activity)
         db.session.commit()
+        request_organization_sync(organization)
         return redirect(
             url_for(
                 "user.project_application",

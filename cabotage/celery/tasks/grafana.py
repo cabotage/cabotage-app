@@ -3,12 +3,14 @@ import uuid
 from typing import Protocol, cast
 
 from celery import shared_task
+from kombu.exceptions import OperationalError
 
 from cabotage.server.integrations.grafana import (
     GrafanaIntegrationError,
     grafana_configured,
     reconcile_grafana_organization,
 )
+from cabotage.server.models.auth import Organization
 from cabotage.server.models.grafana import OrganizationGrafanaIntegration
 
 log = logging.getLogger(__name__)
@@ -42,6 +44,21 @@ _reconcile_organization_task = cast(_ReconcileOrganizationTask, reconcile_organi
 def enqueue_reconcile_organization(organization_id: str) -> None:
     """Typed wrapper for ``reconcile_organization.delay(...)``."""
     _reconcile_organization_task.delay(organization_id)
+
+
+def request_organization_sync(organization: Organization) -> None:
+    """Sync Grafana now instead of on the next scheduled run, so new projects,
+    apps, and environments show up right away."""
+    integration = organization.grafana_integration
+    if integration is None or not integration.enabled or not grafana_configured():
+        return
+    try:
+        enqueue_reconcile_organization(str(organization.id))
+    except OperationalError:
+        log.warning(
+            "Could not queue Grafana sync for organization %s; the scheduled sync will retry",
+            organization.id,
+        )
 
 
 @shared_task()
