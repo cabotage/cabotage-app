@@ -7,6 +7,7 @@ this module never queries Mimir or Kubernetes.
 """
 
 import datetime
+import uuid
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -163,23 +164,28 @@ class FreshnessStats(TypedDict):
     failing_since: str | None
 
 
+#: A breakdown's raw group-by key: a scope id, or a component/process name.
+type BreakdownKey = uuid.UUID | str
+
 #: What a breakdown's name-resolver callback returns for one raw group-by
 #: key: (display name, context line, link slugs, soft-deleted?); ``None``
 #: lets a resolver skip a key entirely (no current resolver does, but
 #: ``_build_rows`` handles it defensively).
 type ResolvedName = tuple[str, str | None, BreakdownSlugs, bool]
-type NameResolver = Callable[[object], ResolvedName | None]
+type NameResolver = Callable[[BreakdownKey], ResolvedName | None]
 
 #: (aggregation column, optional category filter) per breakdown name.
-type BreakdownDimension = tuple[InstrumentedAttribute[object], list[str] | None]
+type BreakdownDimension = tuple[
+    InstrumentedAttribute[BreakdownKey | None], list[str] | None
+]
 
 #: The 5-tuple ``_aggregate_breakdown`` hands to ``_build_rows``.
 type BreakdownAggregates = tuple[
-    dict[object, float],
-    dict[object, dict[str, float]],
-    dict[object, float],
-    dict[object, float],
-    dict[object, float],
+    dict[BreakdownKey, float],
+    dict[BreakdownKey, dict[str, float]],
+    dict[BreakdownKey, float],
+    dict[BreakdownKey, float],
+    dict[BreakdownKey, float],
 ]
 
 type BreakdownFunc = Callable[
@@ -191,7 +197,7 @@ type BreakdownFunc = Callable[
         datetime.datetime,
         CostRates,
     ],
-    tuple[list[BreakdownRow], list[object]],
+    tuple[list[BreakdownRow], list[BreakdownKey]],
 ]
 
 CATEGORY_ORDER = [
@@ -444,7 +450,7 @@ def build_report(
     )
 
     breakdowns: dict[str, list[BreakdownRow]] = {}
-    raw_keys_by_name: dict[str, list[object]] = {}
+    raw_keys_by_name: dict[str, list[BreakdownKey]] = {}
     breakdown_funcs: dict[str, BreakdownFunc] = _BREAKDOWN_FUNCS[scope.kind]
     for name, breakdown_func in breakdown_funcs.items():
         rows, raw_keys = breakdown_func(
@@ -817,7 +823,7 @@ def _series_breakdowns(
     end: datetime.datetime,
     interval: Interval,
     buckets: list[datetime.datetime],
-    raw_keys_by_name: dict[str, list[object]],
+    raw_keys_by_name: dict[str, list[BreakdownKey]],
 ) -> dict[str, SeriesBreakdownEntry]:
     trunc = func.date_trunc(interval, CostLineItem.period_start)
     result: dict[str, SeriesBreakdownEntry] = {}
@@ -849,7 +855,7 @@ def _series_breakdowns(
             query = query.filter(CostLineItem.category.in_(category_filter))
 
         top_key_set = set(top_keys)
-        values_by_key: dict[object, dict[datetime.datetime, float]] = {
+        values_by_key: dict[BreakdownKey, dict[datetime.datetime, float]] = {
             key: defaultdict(float) for key in top_keys
         }
         other_by_bucket: dict[datetime.datetime, float] = defaultdict(float)
@@ -873,8 +879,10 @@ def _series_breakdowns(
     return result
 
 
-def _resolve_names(breakdown_name: str, keys: list[object]) -> dict[object, str]:
-    names: dict[object, str] = {}
+def _resolve_names(
+    breakdown_name: str, keys: list[BreakdownKey]
+) -> dict[BreakdownKey, str]:
+    names: dict[BreakdownKey, str] = {}
     if breakdown_name == "processes":
         return {key: str(key) for key in keys}
     if breakdown_name == "organizations":
@@ -902,15 +910,17 @@ def _resolve_names(breakdown_name: str, keys: list[object]) -> dict[object, str]
 
 def _breakdown_detail(
     scope: CostScope,
-    column: InstrumentedAttribute[object],
+    column: InstrumentedAttribute[BreakdownKey | None],
     category_filter: list[str] | None,
-    keys: list[object],
+    keys: list[BreakdownKey],
     start: datetime.datetime,
     end: datetime.datetime,
     interval: Interval,
     buckets: list[datetime.datetime],
     rates: CostRates,
-) -> tuple[dict[object, list[MeterRow]], dict[object, dict[str, list[float]]]]:
+) -> tuple[
+    dict[BreakdownKey, list[MeterRow]], dict[BreakdownKey, dict[str, list[float]]]
+]:
     if not keys:
         return {}, {}
 
@@ -929,11 +939,13 @@ def _breakdown_detail(
     )
     if category_filter:
         totals_query = totals_query.filter(CostLineItem.category.in_(category_filter))
-    totals_by_key: dict[object, dict[str, tuple[float, float]]] = defaultdict(dict)
+    totals_by_key: dict[BreakdownKey, dict[str, tuple[float, float]]] = defaultdict(
+        dict
+    )
     for row in totals_query.group_by("key", CostLineItem.meter).all():
         totals_by_key[row.key][row.meter] = (float(row.quantity), float(row.cost))
 
-    meters_by_key: dict[object, list[MeterRow]] = {}
+    meters_by_key: dict[BreakdownKey, list[MeterRow]] = {}
     for key in keys:
         meters_by_key[key] = [
             {
@@ -963,13 +975,13 @@ def _breakdown_detail(
     )
     if category_filter:
         series_query = series_query.filter(CostLineItem.category.in_(category_filter))
-    series_tmp: dict[object, dict[str, dict[datetime.datetime, float]]] = defaultdict(
-        lambda: defaultdict(lambda: defaultdict(float))
+    series_tmp: dict[BreakdownKey, dict[str, dict[datetime.datetime, float]]] = (
+        defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
     )
     for row in series_query.group_by("bucket", "key", CostLineItem.meter).all():
         series_tmp[row.key][row.meter][_as_utc(row.bucket)] += float(row.quantity)
 
-    resource_series_by_key: dict[object, dict[str, list[float]]] = {}
+    resource_series_by_key: dict[BreakdownKey, dict[str, list[float]]] = {}
     for key in keys:
         resource_series_by_key[key] = {
             meter: [series_tmp[key][meter].get(bucket, 0.0) for bucket in buckets]
@@ -1047,7 +1059,7 @@ _BREAKDOWN_DIMENSIONS: dict[str, BreakdownDimension] = {
 
 def _aggregate_breakdown(
     scope: CostScope,
-    column: InstrumentedAttribute[object],
+    column: InstrumentedAttribute[BreakdownKey | None],
     start: datetime.datetime,
     end: datetime.datetime,
     previous_start: datetime.datetime,
@@ -1071,10 +1083,10 @@ def _aggregate_breakdown(
         cat_query = cat_query.filter(CostLineItem.category.in_(category_filter))
     cat_rows = cat_query.group_by("key", CostLineItem.category).all()
 
-    categories_by_key: dict[object, dict[str, float]] = defaultdict(
+    categories_by_key: dict[BreakdownKey, dict[str, float]] = defaultdict(
         lambda: defaultdict(float)
     )
-    totals_by_key: dict[object, float] = defaultdict(float)
+    totals_by_key: dict[BreakdownKey, float] = defaultdict(float)
     for row in cat_rows:
         categories_by_key[row.key][row.category] += float(row.cost)
         totals_by_key[row.key] += float(row.cost)
@@ -1110,8 +1122,8 @@ def _aggregate_breakdown(
         CostLineItem.meter.in_(["vcpu", "memory"]),
         CostLineItem.category.in_(["compute", "backing_service"]),
     )
-    efficiency_num: dict[object, float] = defaultdict(float)
-    efficiency_den: dict[object, float] = defaultdict(float)
+    efficiency_num: dict[BreakdownKey, float] = defaultdict(float)
+    efficiency_den: dict[BreakdownKey, float] = defaultdict(float)
     for row in eff_query.group_by("key", CostLineItem.meter).all():
         rate = _rate_for_meter(rates, row.meter)
         efficiency_num[row.key] += float(row.usage or 0.0) * rate
@@ -1127,17 +1139,17 @@ def _aggregate_breakdown(
 
 
 def _build_rows(
-    totals_by_key: dict[object, float],
-    categories_by_key: dict[object, dict[str, float]],
-    previous_by_key: dict[object, float],
-    efficiency_num: dict[object, float],
-    efficiency_den: dict[object, float],
+    totals_by_key: dict[BreakdownKey, float],
+    categories_by_key: dict[BreakdownKey, dict[str, float]],
+    previous_by_key: dict[BreakdownKey, float],
+    efficiency_num: dict[BreakdownKey, float],
+    efficiency_den: dict[BreakdownKey, float],
     name_resolver: NameResolver,
-) -> tuple[list[BreakdownRow], list[object]]:
+) -> tuple[list[BreakdownRow], list[BreakdownKey]]:
     total_cost = sum(totals_by_key.values())
     rows: list[BreakdownRow] = []
     row_costs: list[float] = []
-    raw_keys_tmp: list[object] = []
+    raw_keys_tmp: list[BreakdownKey] = []
     for key, cost in totals_by_key.items():
         resolved = name_resolver(key)
         if resolved is None:
@@ -1182,7 +1194,7 @@ def _breakdown_organizations(
     previous_start: datetime.datetime,
     previous_end: datetime.datetime,
     rates: CostRates,
-) -> tuple[list[BreakdownRow], list[object]]:
+) -> tuple[list[BreakdownRow], list[BreakdownKey]]:
     aggregates = _aggregate_breakdown(
         scope,
         CostLineItem.organization_id,
@@ -1193,7 +1205,7 @@ def _breakdown_organizations(
         rates,
     )
 
-    def resolver(key: object) -> ResolvedName:
+    def resolver(key: BreakdownKey) -> ResolvedName:
         organization: Organization | None = Organization.query.get(key)
         if organization is None:
             return (
@@ -1229,12 +1241,12 @@ def _breakdown_projects(
     previous_start: datetime.datetime,
     previous_end: datetime.datetime,
     rates: CostRates,
-) -> tuple[list[BreakdownRow], list[object]]:
+) -> tuple[list[BreakdownRow], list[BreakdownKey]]:
     aggregates = _aggregate_breakdown(
         scope, CostLineItem.project_id, start, end, previous_start, previous_end, rates
     )
 
-    def resolver(key: object) -> ResolvedName:
+    def resolver(key: BreakdownKey) -> ResolvedName:
         project: Project | None = Project.query.get(key)
         if project is None:
             return (
@@ -1265,7 +1277,7 @@ def _breakdown_environments(
     previous_start: datetime.datetime,
     previous_end: datetime.datetime,
     rates: CostRates,
-) -> tuple[list[BreakdownRow], list[object]]:
+) -> tuple[list[BreakdownRow], list[BreakdownKey]]:
     aggregates = _aggregate_breakdown(
         scope,
         CostLineItem.environment_id,
@@ -1276,7 +1288,7 @@ def _breakdown_environments(
         rates,
     )
 
-    def resolver(key: object) -> ResolvedName:
+    def resolver(key: BreakdownKey) -> ResolvedName:
         environment: Environment | None = Environment.query.get(key)
         if environment is None:
             return (
@@ -1307,7 +1319,7 @@ def _breakdown_applications(
     previous_start: datetime.datetime,
     previous_end: datetime.datetime,
     rates: CostRates,
-) -> tuple[list[BreakdownRow], list[object]]:
+) -> tuple[list[BreakdownRow], list[BreakdownKey]]:
     aggregates = _aggregate_breakdown(
         scope,
         CostLineItem.application_id,
@@ -1318,7 +1330,7 @@ def _breakdown_applications(
         rates,
     )
 
-    def resolver(key: object) -> ResolvedName:
+    def resolver(key: BreakdownKey) -> ResolvedName:
         application: Application | None = Application.query.get(key)
         if application is None:
             return (
@@ -1351,7 +1363,7 @@ def _breakdown_backing_services(
     previous_start: datetime.datetime,
     previous_end: datetime.datetime,
     rates: CostRates,
-) -> tuple[list[BreakdownRow], list[object]]:
+) -> tuple[list[BreakdownRow], list[BreakdownKey]]:
     aggregates = _aggregate_breakdown(
         scope,
         CostLineItem.resource_id,
@@ -1363,7 +1375,7 @@ def _breakdown_backing_services(
         category_filter=["backing_service", "storage"],
     )
 
-    def resolver(key: object) -> ResolvedName:
+    def resolver(key: BreakdownKey) -> ResolvedName:
         resource: Resource | None = Resource.query.get(key)
         if resource is None:
             return (
@@ -1395,7 +1407,7 @@ def _breakdown_processes(
     previous_start: datetime.datetime,
     previous_end: datetime.datetime,
     rates: CostRates,
-) -> tuple[list[BreakdownRow], list[object]]:
+) -> tuple[list[BreakdownRow], list[BreakdownKey]]:
     aggregates = _aggregate_breakdown(
         scope,
         CostLineItem.component,
@@ -1414,7 +1426,7 @@ def _breakdown_processes(
         else None
     )
 
-    def resolver(key: object) -> ResolvedName:
+    def resolver(key: BreakdownKey) -> ResolvedName:
         return (
             str(key),
             None,
