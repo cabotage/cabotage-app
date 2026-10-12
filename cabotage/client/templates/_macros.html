@@ -84,6 +84,20 @@
   </div>
 {% endmacro %}
 
+{% macro grafana_menu_item(organization, field=none, value=none) %}
+  {% set integration = organization.grafana_integration %}
+  {% if config.GRAFANA_ENABLED and integration and integration.ready %}
+    {% set form_id = 'grafana-open-' ~ (value or organization.id) %}
+    <li>
+      <button type="submit" form="{{ form_id }}">{{ icon('external-link', 'w-3.5 h-3.5') }} Grafana</button>
+      <form id="{{ form_id }}" method="POST" action="{{ url_for('grafana.open_grafana', org_slug=organization.slug) }}" class="hidden">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if field %}<input type="hidden" name="{{ field }}" value="{{ value }}">{% endif %}
+      </form>
+    </li>
+  {% endif %}
+{% endmacro %}
+
 {% macro org_tab_nav(organization, active='') %}
   {% set org_slug = organization.slug %}
   <div class="app-content-padded !py-0">
@@ -107,6 +121,7 @@
           {% else %}
           <li class="disabled opacity-30"><span>{{ icon('bar-chart', 'w-3.5 h-3.5') }} Metrics</span></li>
           {% endif %}
+          {{ grafana_menu_item(organization) }}
           <li><a href="{{ url_for('user.organization_pipeline', org_slug=org_slug) }}"
                  class="{% if active == 'pipeline' %}active{% endif %}">{{ icon('bar-chart-2', 'w-3.5 h-3.5') }} Pipeline</a></li>
           <li><a href="{{ url_for('user.organization_audit_log', org_slug=org_slug) }}"
@@ -187,6 +202,7 @@
           {% else %}
           <li class="disabled opacity-30"><span>{{ icon('bar-chart', 'w-3.5 h-3.5') }} Metrics</span></li>
           {% endif %}
+          {{ grafana_menu_item(project.organization, 'project_id', project.id) }}
           <li><a href="{{ url_for('user.project_pipeline', org_slug=org_slug, project_slug=project_slug) }}"
                  class="{% if active == 'pipeline' %}active{% endif %}">{{ icon('bar-chart-2', 'w-3.5 h-3.5') }} Pipeline</a></li>
           <li><a href="{{ url_for('user.project_audit_log', org_slug=org_slug, project_slug=project_slug) }}"
@@ -231,6 +247,7 @@
           {% else %}
           <li class="disabled opacity-30"><span>{{ icon('file-text', 'w-3.5 h-3.5') }} Logs</span></li>
           {% endif %}
+          {{ grafana_menu_item(application.project.organization, 'application_id', application.id) }}
           <li><a href="{{ url_for('user.project_application_pipeline', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
                  class="{% if active == 'pipeline' %}active{% endif %}">{{ icon('bar-chart-2', 'w-3.5 h-3.5') }} Pipeline</a></li>
           <li><a href="{{ url_for('user.application_audit_log', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
