@@ -4,7 +4,9 @@ import datetime
 import logging
 
 from celery import shared_task
+from sqlalchemy.exc import SQLAlchemyError
 
+from cabotage.server import db
 from cabotage.server.models.cost import CostCollectionRun
 from cabotage.utils.cost.collector import collect_hour
 
@@ -48,7 +50,8 @@ def collect_costs() -> None:
     for hour in to_collect:
         try:
             run = collect_hour(hour)
-        except Exception:
+        except SQLAlchemyError:
+            db.session.rollback()
             log.exception("Cost collection failed for hour %s", hour.isoformat())
             continue
         stats: dict[str, object] = run.stats or {}
