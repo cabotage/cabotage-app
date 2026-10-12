@@ -174,6 +174,11 @@ def celery_init_app(app):
             "schedule": 10.0,
             "args": None,
         },
+        "grafana-organization-reconciler": {
+            "task": "cabotage.celery.tasks.grafana.reconcile_organizations",
+            "schedule": 60.0,
+            "args": None,
+        },
     }
     app.extensions["celery"] = celery_app
     return celery_app
