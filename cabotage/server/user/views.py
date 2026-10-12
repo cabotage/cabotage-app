@@ -71,6 +71,7 @@ from cabotage.server.acl import (
     ViewOrganizationPermission,
     ViewProjectPermission,
 )
+from cabotage.server.integrations.grafana import organization_tenants
 from cabotage.server.models.auth import (
     GitHubAppInstallation,
     GitHubIdentity,
@@ -6778,6 +6779,16 @@ def _project_tenant_ids(organization, project):
     return "|".join(sorted(tenant_ids))
 
 
+def _observe_metrics_tenants(organization):
+    if not current_app.config.get("MONITORING_ORGANIZATION_TENANTS"):
+        return None
+    # Shared history stays behind Cabotage's fixed, ownership-scoped queries.
+    # Never use these legacy tenants for arbitrary Grafana queries.
+    tenants = set(organization_tenants(organization))
+    tenants.update({str(current_app.config["MIMIR_TENANT_ID"]), "anonymous"})
+    return "|".join(sorted(tenants))
+
+
 def _mimir_connection(tenant_id=None):
     """Return (mimir_url, verify, headers) tuple, or (None, None, {}) if not configured.
 
@@ -7320,6 +7331,7 @@ def project_application_observe_metric(
         return jsonify({"error": "not configured"}), 404
 
     namespace = _compute_observe_namespace(application, app_env)
+    tenant_id = _observe_metrics_tenants(org)
     prefix = _compute_observe_prefix(application)
     escaped_prefix = _REGEX_META.sub(r"\\\g<0>", prefix)
 
@@ -7432,7 +7444,7 @@ def project_application_observe_metric(
         else:
             q = f"sum(rate(container_cpu_usage_seconds_total{{{labels}}}[{rate_window}])) {by_clause}"
         queries.append(q)
-        result = _query_mimir_range(q, start, end, step)
+        result = _query_mimir_range(q, start, end, step, tenant_id=tenant_id)
     elif metric == "memory":
         if group == "process":
             q = (
@@ -7443,7 +7455,7 @@ def project_application_observe_metric(
         else:
             q = f"sum(container_memory_working_set_bytes{{{labels}}}) {by_clause}"
         queries.append(q)
-        result = _query_mimir_range(q, start, end, step)
+        result = _query_mimir_range(q, start, end, step, tenant_id=tenant_id)
     elif metric in ("requests", "errors", "latency") and traefik_svc is None:
         # Process has no ingresses — no HTTP metrics
         result = None
@@ -7458,7 +7470,7 @@ def project_application_observe_metric(
                 f'{{{traefik_svc}, code=~"{code_class}.."}}[{req_step}s]))'
             )
             queries.append(q)
-            qr = _query_mimir_range(q, req_start, end, req_step)
+            qr = _query_mimir_range(q, req_start, end, req_step, tenant_id=tenant_id)
             if qr:
                 for series in qr:
                     series["metric"]["code"] = f"{code_class}xx"
@@ -7479,7 +7491,9 @@ def project_application_observe_metric(
                     f"{{{traefik_svc}}}[{err_step}s]))"
                 )
                 queries.append(q)
-                qr = _query_mimir_range(q, err_start, end, err_step)
+                qr = _query_mimir_range(
+                    q, err_start, end, err_step, tenant_id=tenant_id
+                )
                 if qr:
                     for series in qr:
                         series["metric"]["label"] = label
@@ -7494,25 +7508,28 @@ def project_application_observe_metric(
                 f"{{{traefik_svc}}}[{err_step}s]))"
             )
             queries.append(q)
-            result = _query_mimir_range(q, err_start, end, err_step)
+            result = _query_mimir_range(
+                q, err_start, end, err_step, tenant_id=tenant_id
+            )
             if result:
                 for series in result:
                     series["metric"]["label"] = "error rate"
     elif metric == "latency":
-        # Use pre-aggregated recording rules for latency histograms
+        # Namespace tenants do not inherit the platform's local-file ruler rules.
         rate_seconds = max(step, 30)
         rate_rule_suffix = {30: "rate30s", 60: "rate1m", 300: "rate5m"}.get(
             rate_seconds, "rate5m"
         )
+        buckets = (
+            f"rate(traefik_router_request_duration_seconds_bucket{{{traefik_svc}}}[{rate_seconds}s])"
+            if tenant_id is not None
+            else f"traefik:router_request_duration_seconds_bucket:{rate_rule_suffix}{{{traefik_svc}}}"
+        )
         result = []
         for quantile in [0.5, 0.9, 0.95, 0.99]:
-            q = (
-                f"histogram_quantile({quantile}, sum by (le)("
-                f"traefik:router_request_duration_seconds_bucket:{rate_rule_suffix}"
-                f"{{{traefik_svc}}}))"
-            )
+            q = f"histogram_quantile({quantile}, sum by (le)({buckets}))"
             queries.append(q)
-            qr = _query_mimir_range(q, start, end, step)
+            qr = _query_mimir_range(q, start, end, step, tenant_id=tenant_id)
             if qr:
                 for series in qr:
                     series["metric"]["quantile"] = f"p{int(quantile * 100)}"
@@ -7535,7 +7552,7 @@ def project_application_observe_metric(
             else:
                 q = f"sum(rate({counter}{{{network_labels}}}[{rate_window}])) {by_clause}"
             queries.append(q)
-            qr = _query_mimir_range(q, start, end, step)
+            qr = _query_mimir_range(q, start, end, step, tenant_id=tenant_id)
             if qr:
                 for series in qr:
                     series["metric"]["direction"] = direction
@@ -7656,6 +7673,7 @@ def _build_observe_queries(
     network_labels=None,
     pod_join=None,
     group_label_map=None,
+    tenant_id=None,
 ):
     """Build PromQL queries and execute them. Returns (result, queries)."""
 
@@ -7698,7 +7716,7 @@ def _build_observe_queries(
         else:
             q = f"sum({cpu_source}) {by_clause}"
         queries.append(q)
-        result = _query_mimir_range(q, start, end, step)
+        result = _query_mimir_range(q, start, end, step, tenant_id=tenant_id)
 
     elif metric == "memory":
         mem_source = f"(container_memory_working_set_bytes{{{labels}}}){pod_join}"
@@ -7731,7 +7749,7 @@ def _build_observe_queries(
         else:
             q = f"sum({mem_source}) {by_clause}"
         queries.append(q)
-        result = _query_mimir_range(q, start, end, step)
+        result = _query_mimir_range(q, start, end, step, tenant_id=tenant_id)
 
     elif metric in ("requests", "errors", "latency") and traefik_svc is None:
         result = None
@@ -7746,7 +7764,7 @@ def _build_observe_queries(
                 f'{{{traefik_svc}, code=~"{code_class}.."}}[{req_step}s]))'
             )
             queries.append(q)
-            qr = _query_mimir_range(q, req_start, end, req_step)
+            qr = _query_mimir_range(q, req_start, end, req_step, tenant_id=tenant_id)
             if qr:
                 for series in qr:
                     series["metric"]["code"] = f"{code_class}xx"
@@ -7766,7 +7784,9 @@ def _build_observe_queries(
                     f"{{{traefik_svc}}}[{err_step}s]))"
                 )
                 queries.append(q)
-                qr = _query_mimir_range(q, err_start, end, err_step)
+                qr = _query_mimir_range(
+                    q, err_start, end, err_step, tenant_id=tenant_id
+                )
                 if qr:
                     for series in qr:
                         series["metric"]["label"] = label
@@ -7780,7 +7800,9 @@ def _build_observe_queries(
                 f"{{{traefik_svc}}}[{err_step}s]))"
             )
             queries.append(q)
-            result = _query_mimir_range(q, err_start, end, err_step)
+            result = _query_mimir_range(
+                q, err_start, end, err_step, tenant_id=tenant_id
+            )
             if result:
                 for series in result:
                     series["metric"]["label"] = "error rate"
@@ -7790,15 +7812,16 @@ def _build_observe_queries(
         rate_rule_suffix = {30: "rate30s", 60: "rate1m", 300: "rate5m"}.get(
             rate_seconds, "rate5m"
         )
+        buckets = (
+            f"rate(traefik_router_request_duration_seconds_bucket{{{traefik_svc}}}[{rate_seconds}s])"
+            if tenant_id is not None
+            else f"traefik:router_request_duration_seconds_bucket:{rate_rule_suffix}{{{traefik_svc}}}"
+        )
         result = []
         for quantile in [0.5, 0.9, 0.95, 0.99]:
-            q = (
-                f"histogram_quantile({quantile}, sum by (le)("
-                f"traefik:router_request_duration_seconds_bucket:{rate_rule_suffix}"
-                f"{{{traefik_svc}}}))"
-            )
+            q = f"histogram_quantile({quantile}, sum by (le)({buckets}))"
             queries.append(q)
-            qr = _query_mimir_range(q, start, end, step)
+            qr = _query_mimir_range(q, start, end, step, tenant_id=tenant_id)
             if qr:
                 for series in qr:
                     series["metric"]["quantile"] = f"p{int(quantile * 100)}"
@@ -7846,7 +7869,7 @@ def _build_observe_queries(
             else:
                 q = f"sum({network_source}) {by_clause}"
             queries.append(q)
-            qr = _query_mimir_range(q, start, end, step)
+            qr = _query_mimir_range(q, start, end, step, tenant_id=tenant_id)
             if qr:
                 for series in qr:
                     series["metric"]["direction"] = direction
@@ -8001,6 +8024,7 @@ def environment_observe_metric(org_slug, project_slug, env_slug):
         network_labels=network_labels,
         pod_join=pod_join,
         group_label_map=group_label_map,
+        tenant_id=_observe_metrics_tenants(organization),
     )
     return jsonify({"result": result, "queries": queries})
 
@@ -8157,6 +8181,7 @@ def project_observe_metric(org_slug, project_slug):
         network_labels=network_labels,
         pod_join=pod_join,
         group_label_map=group_label_map,
+        tenant_id=_observe_metrics_tenants(organization),
     )
     return jsonify({"result": result, "queries": queries})
 
@@ -8325,6 +8350,7 @@ def organization_observe_metric(org_slug):
         network_labels=network_labels,
         pod_join=pod_join,
         group_label_map=group_label_map,
+        tenant_id=_observe_metrics_tenants(organization),
     )
     return jsonify({"result": result, "queries": queries})
 
@@ -8375,6 +8401,7 @@ def project_application_live_stats(
         return jsonify({"error": "not configured"}), 404
 
     namespace = _compute_observe_namespace(application, app_env)
+    tenant_id = _observe_metrics_tenants(org)
     prefix = _compute_observe_prefix(application)
     escaped_prefix = _REGEX_META.sub(r"\\\g<0>", prefix)
 
@@ -8467,6 +8494,7 @@ def project_application_live_stats(
         start,
         end,
         step,
+        tenant_id=tenant_id,
     )
     if cpu_series and len(cpu_series) > 0:
         for ts, val in cpu_series[0].get("values", []):
@@ -8477,6 +8505,7 @@ def project_application_live_stats(
         start,
         end,
         step,
+        tenant_id=tenant_id,
     )
     if mem_series and len(mem_series) > 0:
         for ts, val in mem_series[0].get("values", []):
@@ -8498,14 +8527,16 @@ def project_application_live_stats(
         )
         cpu_result = _query_mimir_instant(
             f"sum(rate(container_cpu_usage_seconds_total"
-            f'{{namespace="{namespace}", pod=~"{pod_regex}"{app_container_filter}}}[5m]))'
+            f'{{namespace="{namespace}", pod=~"{pod_regex}"{app_container_filter}}}[5m]))',
+            tenant_id=tenant_id,
         )
         if cpu_result and len(cpu_result) > 0 and cpu_result[0].get("value"):
             cpu_val = round(float(cpu_result[0]["value"][1]) * 1000, 1)
 
         mem_result = _query_mimir_instant(
             f"sum(container_memory_working_set_bytes"
-            f'{{namespace="{namespace}", pod=~"{pod_regex}"{app_container_filter}}})'
+            f'{{namespace="{namespace}", pod=~"{pod_regex}"{app_container_filter}}})',
+            tenant_id=tenant_id,
         )
         if mem_result and len(mem_result) > 0 and mem_result[0].get("value"):
             mem_val = float(mem_result[0]["value"][1])
