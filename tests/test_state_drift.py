@@ -335,8 +335,8 @@ class TestImageDrift:
         self, db_session, application, app_env, built_image
     ):
         """With no prior deployment, all current state is considered new."""
-        image_diff, _config_diff, _ingress_diff = application.ready_for_deployment_in_env(
-            app_env
+        image_diff, _config_diff, _ingress_diff = (
+            application.ready_for_deployment_in_env(app_env)
         )
         # Image exists but no deployment yet - should detect the image as new
         assert image_diff.has_changes()
@@ -1483,8 +1483,8 @@ class TestCombinedDrift:
         db_session.add(cfg)
         db_session.flush()
 
-        image_diff, config_diff, _ingress_diff = application.ready_for_deployment_in_env(
-            app_env
+        image_diff, config_diff, _ingress_diff = (
+            application.ready_for_deployment_in_env(app_env)
         )
         assert image_diff.has_changes()
         assert config_diff.has_changes()
@@ -1665,8 +1665,8 @@ class TestCombinedDrift:
 
         # No further changes — drift should compare against v2 (latest),
         # not v1, so there should be zero drift
-        _image_diff, config_diff, _ingress_diff = application.ready_for_deployment_in_env(
-            app_env
+        _image_diff, config_diff, _ingress_diff = (
+            application.ready_for_deployment_in_env(app_env)
         )
         assert not config_diff.has_changes()
 

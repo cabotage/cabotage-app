@@ -2005,9 +2005,7 @@ def render_podspec(release, process_name, service_account_name):
         )
 
     if (
-        not (
-            process_name.startswith(("release", "postdeploy"))
-        )
+        not (process_name.startswith(("release", "postdeploy")))
         and "DD_API_KEY" in release.configuration_objects
     ):
         try:

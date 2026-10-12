@@ -1071,9 +1071,7 @@ class Release(Model, Timestamp):
         return {
             k: v
             for k, v in self.image_snapshot.processes.items()
-            if not (
-                k.startswith(("release", "postdeploy", "job"))
-            )
+            if not (k.startswith(("release", "postdeploy", "job")))
         }
 
     @property
@@ -1811,9 +1809,7 @@ class ReleaseSnapshot:
         return {
             k: v
             for k, v in self.image_snapshot.processes.items()
-            if not (
-                k.startswith(("release", "postdeploy", "job"))
-            )
+            if not (k.startswith(("release", "postdeploy", "job")))
         }
 
     @property

@@ -548,9 +548,7 @@ def split_image_processes(
     service_procs = {
         k: v
         for k, v in all_procs.items()
-        if not (
-            k.startswith(("release", "postdeploy", "job"))
-        )
+        if not (k.startswith(("release", "postdeploy", "job")))
     }
     release_cmds = {k: v for k, v in all_procs.items() if k.startswith("release")}
     postdeploy_cmds = {k: v for k, v in all_procs.items() if k.startswith("postdeploy")}
