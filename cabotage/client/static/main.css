@@ -1047,6 +1047,38 @@ a.live-commit-sha:hover {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
+button.dash-kpi {
+  position: relative;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+button.dash-kpi:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 35%, var(--border-color));
+  background: color-mix(in srgb, var(--color-primary) 4%, var(--surface-card));
+}
+button.dash-kpi:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.dash-kpi-go {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  display: flex;
+  color: var(--text-ghost);
+  transition:
+    color 0.15s ease,
+    transform 0.15s ease;
+}
+button.dash-kpi:hover .dash-kpi-go,
+button.dash-kpi:focus-visible .dash-kpi-go {
+  color: var(--accent-text);
+  transform: translateX(2px);
+}
 .dash-kpi-meta {
   display: flex;
   align-items: center;
@@ -1150,12 +1182,27 @@ a.live-commit-sha:hover {
   border-radius: 9999px;
   font-family: var(--dash-mono);
   font-size: 0.625rem;
+  color: var(--text-faint);
+  background: var(--hover-overlay-strong);
+}
+[data-dash-filter='failing'] .dash-seg-n,
+[data-dash-sheet-filter='failing'] .dash-seg-n,
+[data-dash-sheet-filter='failed'] .dash-seg-n {
   color: var(--dash-fail);
   background: color-mix(in srgb, var(--dash-fail) 16%, transparent);
 }
-[data-dash-filter='in-flight'] .dash-seg-n {
+[data-dash-filter='in-progress'] .dash-seg-n,
+[data-dash-sheet-filter='in-progress'] .dash-seg-n {
   color: var(--dash-build);
   background: color-mix(in srgb, var(--dash-build) 16%, transparent);
+}
+[data-dash-sheet-filter='running'] .dash-seg-n {
+  color: var(--dash-deploy);
+  background: color-mix(in srgb, var(--dash-deploy) 16%, transparent);
+}
+[data-dash-sheet-filter='live'] .dash-seg-n {
+  color: var(--dash-ok);
+  background: color-mix(in srgb, var(--dash-ok) 16%, transparent);
 }
 .dash-seg-n[hidden] {
   display: none;
@@ -1613,16 +1660,18 @@ a.dash-env:hover {
   text-transform: uppercase;
   color: var(--text-ghost);
 }
-.dash-work-list,
-.dash-feed {
+/* List rows shared by the side column and the side panels */
+.dash-rows {
   display: flex;
   flex-direction: column;
   margin: 0 -0.5rem;
   padding: 0;
   list-style: none;
 }
-.dash-work,
-.dash-feed-row {
+.dash-rows > li[hidden] {
+  display: none;
+}
+.dash-row {
   display: flex;
   align-items: center;
   gap: 0.625rem;
@@ -1630,19 +1679,27 @@ a.dash-env:hover {
   border-radius: 0.5rem;
   text-decoration: none;
 }
-.dash-work:hover,
-.dash-feed-row:hover {
+.dash-row:hover {
   background: var(--hover-overlay);
 }
-.dash-work-main {
+.dash-row:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+.dash-row-icon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+.dash-row-main {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-width: 0;
 }
-.dash-work-title {
+.dash-row-title {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.375rem;
   overflow: hidden;
   font-size: 0.8125rem;
@@ -1650,7 +1707,7 @@ a.dash-env:hover {
   white-space: nowrap;
   color: var(--text-bright);
 }
-.dash-work-path {
+.dash-row-path {
   display: flex;
   align-items: center;
   gap: 0.25rem;
@@ -1661,20 +1718,42 @@ a.dash-env:hover {
   text-overflow: ellipsis;
   color: var(--text-faint);
 }
-.dash-work-path svg {
+.dash-row-path svg {
   flex-shrink: 0;
   color: var(--dash-admin-text);
 }
-.dash-work-status {
+.dash-row-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  font-family: var(--dash-mono);
+  font-size: 0.625rem;
+  white-space: nowrap;
+  color: var(--text-faint);
+}
+.dash-row-side-wide {
+  width: 6.5rem;
+}
+.dash-row-status {
+  font-family: var(--font-sans);
   font-size: 0.6875rem;
   font-weight: 500;
-  white-space: nowrap;
   color: var(--st);
+}
+.dash-avatar-sm {
+  width: 1.75rem;
+  height: 1.75rem;
+  font-size: 0.625rem;
 }
 .dash-card-more {
   margin-top: 0.375rem;
   font-size: 0.75rem;
   color: var(--accent-text);
+}
+.dash-card-head .dash-card-more {
+  margin-top: 0;
 }
 .dash-card-more:hover {
   text-decoration: underline;
@@ -1735,6 +1814,9 @@ a.dash-env:hover {
 .dash-bar-fail {
   fill: var(--dash-fail);
 }
+.dash-bar-running {
+  fill: var(--dash-deploy);
+}
 .dash-bars-axis {
   display: flex;
   justify-content: space-between;
@@ -1743,7 +1825,7 @@ a.dash-env:hover {
   font-size: 0.625rem;
   color: var(--text-ghost);
 }
-.dash-feed-icon {
+.dash-status-icon {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1754,18 +1836,8 @@ a.dash-env:hover {
   color: var(--st);
   background: color-mix(in srgb, var(--st) 14%, transparent);
 }
-.dash-feed-icon[data-status='running'] svg {
+.dash-status-icon[data-status='running'] svg {
   animation: dash-spin 0.9s linear infinite;
-}
-.dash-feed-meta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.125rem;
-  font-family: var(--dash-mono);
-  font-size: 0.625rem;
-  white-space: nowrap;
-  color: var(--text-faint);
 }
 .dash-auto {
   padding: 0 0.3125rem;
@@ -1773,9 +1845,119 @@ a.dash-env:hover {
   color: var(--text-faint);
   background: var(--surface-inset);
 }
+
+/* Side panels opened from the summary cards */
+.dash-sheet {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(36rem, 100vw);
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0 0 0 auto;
+  padding: 0;
+  color: var(--text-bright);
+  background: var(--surface-card);
+  border: 0;
+  border-left: 1px solid var(--border-color);
+  box-shadow: -24px 0 48px rgba(0, 0, 0, 0.35);
+}
+.dash-sheet[open] {
+  display: flex;
+  flex-direction: column;
+  animation: dash-sheet-in 0.2s ease-out;
+}
+.dash-sheet::backdrop {
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+}
+@keyframes dash-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateX(2rem);
+  }
+}
+.dash-sheet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.25rem 0.75rem;
+}
+.dash-sheet-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.dash-sheet-title > svg {
+  color: var(--text-faint);
+}
+.dash-sheet-n {
+  padding: 0 0.4375rem;
+  border-radius: 9999px;
+  font-family: var(--dash-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: var(--surface-inset);
+}
+.dash-sheet-sub {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--text-faint);
+}
+.dash-sheet-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  border-radius: 0.5rem;
+  color: var(--text-faint);
+}
+.dash-sheet-close:hover {
+  color: var(--text-bright);
+  background: var(--hover-overlay-strong);
+}
+.dash-sheet-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0 1.25rem 0.75rem;
+  border-bottom: 1px solid var(--border-color-subtle);
+}
+.dash-sheet-tools .dash-search {
+  max-width: none;
+}
+.dash-sheet-list {
+  flex: 1;
+  margin: 0;
+  padding: 0.5rem 0.75rem 1rem;
+  overflow-y: auto;
+}
+.dash-sheet-empty {
+  padding: 2rem 1.25rem;
+  text-align: center;
+  font-size: 0.8125rem;
+  color: var(--text-faint);
+}
+.dash-sheet-empty[hidden] {
+  display: none;
+}
+.dash-sheet-foot {
+  padding: 0.625rem 1.25rem;
+  font-size: 0.6875rem;
+  color: var(--text-faint);
+  border-top: 1px solid var(--border-color-subtle);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .dash-dot,
-  .dash-feed-icon svg {
+  .dash-status-icon svg,
+  .dash-sheet[open] {
     animation: none !important;
   }
 }

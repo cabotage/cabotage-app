@@ -1,7 +1,6 @@
 """Tests for the authenticated dashboard at ``/``."""
 
 import datetime
-import re
 import time
 import uuid
 
@@ -9,6 +8,7 @@ import pytest
 from flask_security import hash_password
 
 from cabotage.server import db
+from cabotage.server.main.dashboard import dashboard_context
 from cabotage.server.models.auth import Organization, User
 from cabotage.server.models.auth_associations import OrganizationMember
 from cabotage.server.models.projects import (
@@ -122,12 +122,9 @@ def _login(client, user):
         sess["identity.auth_type"] = "session"
 
 
-def _app_status(html, slug):
-    match = re.search(
-        rf'data-status="([a-z-]+)"\s+data-search="[^"]* {re.escape(slug)}"', html
-    )
-    assert match, f"app row {slug} not rendered"
-    return match.group(1)
+def _context(app, user, show_all=False):
+    with app.test_request_context("/"):
+        return dashboard_context(user, show_all)
 
 
 @pytest.mark.parametrize(
@@ -141,11 +138,10 @@ def _app_status(html, slug):
         ([], "idle"),
     ],
 )
-def test_app_status_reflects_latest_deployment(client, db_session, history, expected):
+def test_app_status_reflects_latest_deployment(app, db_session, history, expected):
     user = _user(db_session)
     org = _org(db_session, member=user)
-    slug = f"app-{uuid.uuid4().hex[:8]}"
-    application, ae = _app_env(db_session, org, slug)
+    application, ae = _app_env(db_session, org, f"app-{uuid.uuid4().hex[:8]}")
     for minutes_ago, error, complete in history:
         _deploy(
             db_session,
@@ -155,12 +151,46 @@ def test_app_status_reflects_latest_deployment(client, db_session, history, expe
             complete=complete,
             error=error,
         )
-    _login(client, user)
 
-    response = client.get("/")
+    (item,) = _context(app, user)["app_items"]
 
-    assert response.status_code == 200
-    assert _app_status(response.get_data(as_text=True), slug) == expected
+    assert item.status == expected
+
+
+def test_deploy_numbers_come_from_deployment_rows(app, db_session):
+    user = _user(db_session)
+    org = _org(db_session, member=user)
+    application, ae = _app_env(db_session, org, f"app-{uuid.uuid4().hex[:8]}")
+    three_weeks = 60 * 24 * 21
+    for minutes_ago, error, complete in [
+        (three_weeks, False, True),  # completed, before the chart window
+        (90, False, True),
+        (60, True, False),
+        (30, False, True),
+        (5, False, False),  # still running
+    ]:
+        _deploy(
+            db_session,
+            application,
+            ae,
+            minutes_ago=minutes_ago,
+            complete=complete,
+            error=error,
+        )
+
+    context = _context(app, user)
+
+    assert context["completed_deploys"] == 3
+    assert context["chart_succeeded"] == 2
+    assert context["chart_failed"] == 1
+    assert context["chart_started"] == 4
+    assert [d.status for d in context["deploys"]] == [
+        "running",
+        "succeeded",
+        "failed",
+        "succeeded",
+        "succeeded",
+    ]
 
 
 def test_all_orgs_scope_is_ignored_for_non_admins(client, db_session):

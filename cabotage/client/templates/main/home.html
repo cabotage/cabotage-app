@@ -13,35 +13,148 @@
   'live': 'Live',
   'idle': 'Not deployed',
 } %}
+{% set status_order = ['build-failed', 'deploy-failed', 'building', 'deploying', 'live', 'idle'] %}
 {% set org_colors = ["#8b5cf6", "#3b82f6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444"] %}
+
+{#- Groups behind the "Failing" and "In progress" filter buttons. -#}
+{% macro filter_group(status) -%}
+  {%- if status in ('build-failed', 'deploy-failed') -%}failing
+  {%- elif status in ('building', 'deploying') -%}in-progress
+  {%- else -%}{{ status }}{%- endif -%}
+{%- endmacro %}
 
 {% macro dot(status) %}
   <span class="dash-dot" data-status="{{ status }}" aria-hidden="true"></span>
 {% endmacro %}
 
-{% macro kpi(value, label, icon_name, color) %}
-  <div class="stat-card dash-kpi">
-    <div class="flex items-center gap-2">
-      <span class="text-{{ color }}/60">{{ icon(icon_name, 'w-4 h-4') }}</span>
-      <span class="stat-card-value">{{ "{:,}".format(value) }}</span>
-    </div>
-    <span class="stat-card-label">{{ label }}</span>
-    <span class="dash-kpi-meta">{{ caller() }}</span>
-  </div>
-{% endmacro %}
+{% macro plural(count, word) -%}
+  {{ count }} {{ word }}{{ 's' if count != 1 }}
+{%- endmacro %}
 
 {% macro health_bar(counts, total) %}
   {% if total %}
     <span class="dash-health"
           role="img"
-          aria-label="{% for s in ['build-failed', 'deploy-failed', 'building', 'deploying', 'live', 'idle'] if counts.get(s) %}{{ counts[s] }} {{ status_labels[s]|lower }}{{ ', ' if not loop.last }}{% endfor %}">
-      {% for s in ['build-failed', 'deploy-failed', 'building', 'deploying', 'live', 'idle'] if counts.get(s) %}
-        <span class="dash-health-seg"
-              data-status="{{ s }}"
-              style="flex-grow: {{ counts[s] }}"></span>
+          aria-label="{% for s in status_order if counts.get(s) %}{{ counts[s] }} {{ status_labels[s]|lower }}{{ ', ' if not loop.last }}{% endfor %}">
+      {% for s in status_order if counts.get(s) %}
+        <span class="dash-health-seg" data-status="{{ s }}" style="flex-grow: {{ counts[s] }}"></span>
       {% endfor %}
     </span>
   {% endif %}
+{% endmacro %}
+
+{% macro member_marker(org) %}
+  {% if not org.is_member %}{{ icon('shield', 'w-3 h-3') }}{% endif %}
+{% endmacro %}
+
+{#- A summary card that opens the matching list (see `sheet`). -#}
+{% macro summary_card(value, label, icon_name, color, sheet_name) %}
+  <button type="button"
+          class="stat-card dash-kpi"
+          data-dash-open="{{ sheet_name }}"
+          aria-haspopup="dialog"
+          aria-label="{{ "{:,}".format(value) }} {{ label|lower }}, show list">
+    <span class="flex items-center gap-2">
+      <span class="text-{{ color }}/60">{{ icon(icon_name, 'w-4 h-4') }}</span>
+      <span class="stat-card-value">{{ "{:,}".format(value) }}</span>
+    </span>
+    <span class="stat-card-label">{{ label }}</span>
+    <span class="dash-kpi-meta">{{ caller() }}</span>
+    <span class="dash-kpi-go" aria-hidden="true">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</span>
+  </button>
+{% endmacro %}
+
+{#- Side panel with a searchable list. `filters` is a list of (value, label);
+    a row shows under a filter when its `data-filter` equals that value. -#}
+{% macro sheet(name, title, icon_name, count, subtitle, filters=[], footer='') %}
+  <dialog class="dash-sheet" data-dash-sheet="{{ name }}" aria-labelledby="dash-sheet-{{ name }}-title">
+    <header class="dash-sheet-head">
+      <div class="min-w-0">
+        <h2 id="dash-sheet-{{ name }}-title" class="dash-sheet-title">
+          {{ icon(icon_name, 'w-4 h-4') }}{{ title }}<span class="dash-sheet-n">{{ "{:,}".format(count) }}</span>
+        </h2>
+        <p class="dash-sheet-sub">{{ subtitle }}</p>
+      </div>
+      <button type="button" class="dash-sheet-close" data-dash-sheet-close aria-label="Close">
+        {{ icon('x', 'w-4 h-4') }}
+      </button>
+    </header>
+    <div class="dash-sheet-tools">
+      <label class="dash-search">
+        {{ icon('search', 'w-3.5 h-3.5') }}
+        <input type="search"
+               placeholder="Filter {{ title|lower }}"
+               autocomplete="off"
+               spellcheck="false"
+               data-dash-sheet-search
+               aria-label="Filter {{ title|lower }}">
+      </label>
+      {% if filters %}
+        <div class="dash-seg" role="group" aria-label="Status filter">
+          <button type="button" data-dash-sheet-filter="all" aria-pressed="true">All</button>
+          {% for value, label in filters %}
+            <button type="button" data-dash-sheet-filter="{{ value }}" aria-pressed="false">
+              {{ label }} <span class="dash-seg-n" data-dash-sheet-count="{{ value }}"></span>
+            </button>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+    <ul class="dash-rows dash-sheet-list">
+      {{ caller() }}
+    </ul>
+    <p class="dash-sheet-empty" data-dash-sheet-empty hidden>Nothing matches.</p>
+    {% if footer %}<footer class="dash-sheet-foot">{{ footer }}</footer>{% endif %}
+  </dialog>
+{% endmacro %}
+
+{#- One app, or one environment of an app, as a list row. -#}
+{% macro app_row(item, show_environments=False) %}
+  <li data-search="{{ item.app.name|lower }} {{ item.app.slug|lower }} {{ item.project.slug|lower }} {{ item.org.slug|lower }}"
+      data-filter="{{ filter_group(item.status) }}">
+    <a href="{{ item.url }}" class="dash-row">
+      {{ dot(item.status) }}
+      <span class="dash-row-main">
+        <span class="dash-row-title">
+          {{ item.app.name }}
+          {% if item.environment %}
+            <span class="dash-mono dash-faint">{{ item.environment.slug }}</span>
+          {% elif show_environments and item.app.show_environments %}
+            {% for env in item.app.environments %}
+              <span class="dash-env" data-status="{{ env.status }}" title="{{ env.name }}: {{ status_labels[env.status] }}">{{ dot(env.status) }}{{ env.slug }}</span>
+            {% endfor %}
+          {% endif %}
+        </span>
+        <span class="dash-row-path">{{ member_marker(item.org) }}{{ item.org.slug }} / {{ item.project.slug }}</span>
+      </span>
+      <span class="dash-row-side">
+        <span class="dash-row-status" data-status="{{ item.status }}">{{ status_labels[item.status] }}</span>
+        {% if show_environments and item.app.last_deploy %}<span>{{ item.app.last_deploy|humanize }}</span>{% endif %}
+      </span>
+    </a>
+  </li>
+{% endmacro %}
+
+{% macro deploy_row(deploy) %}
+  <li data-search="{{ deploy.app.name|lower }} {{ deploy.app.slug|lower }} {{ deploy.project.slug|lower }} {{ deploy.org.slug|lower }}{% if deploy.environment %} {{ deploy.environment.slug|lower }}{% endif %}"
+      data-filter="{{ deploy.status }}">
+    <a href="{{ deploy.url }}" class="dash-row">
+      <span class="dash-status-icon" data-status="{{ deploy.status }}">
+        {{ icon({'succeeded': 'check', 'failed': 'x'}.get(deploy.status, 'loader'), 'w-3 h-3') }}
+      </span>
+      <span class="dash-row-main">
+        <span class="dash-row-title">
+          {{ deploy.app.name }}
+          {% if deploy.environment %}<span class="dash-mono dash-faint">{{ deploy.environment.slug }}</span>{% endif %}
+        </span>
+        <span class="dash-row-path">{{ member_marker(deploy.org) }}{{ deploy.org.slug }} / {{ deploy.project.slug }}</span>
+      </span>
+      <span class="dash-row-side">
+        <span title="{{ deploy.created.strftime('%Y-%m-%d %H:%M UTC') }}">{{ deploy.created|humanize }}</span>
+        {% if deploy.automatic %}<span class="dash-auto" title="Triggered automatically">auto</span>{% endif %}
+      </span>
+    </a>
+  </li>
 {% endmacro %}
 
 {% macro org_block(org) %}
@@ -66,10 +179,10 @@
         </span>
       </span>
       <span class="dash-org-meta">
-        {% if org.attention_count %}
-          <span class="dash-flag" data-status="build-failed">{{ icon('alert-triangle', 'w-3 h-3') }}{{ org.attention_count }} failing</span>
-        {% elif org.in_flight_count %}
-          <span class="dash-flag" data-status="building">{{ dot('building') }}{{ org.in_flight_count }} in progress</span>
+        {% if org.failing_count %}
+          <span class="dash-flag" data-status="build-failed">{{ icon('alert-triangle', 'w-3 h-3') }}{{ org.failing_count }} failing</span>
+        {% elif org.in_progress_count %}
+          <span class="dash-flag" data-status="building">{{ dot('building') }}{{ org.in_progress_count }} in progress</span>
         {% endif %}
         <span class="dash-org-counts">
           <span title="Projects">{{ icon('folder', 'w-3.5 h-3.5') }}{{ org.projects|length }}</span>
@@ -99,7 +212,7 @@
               <span class="dash-project-icon">{{ icon('folder', 'w-3.5 h-3.5') }}</span>
               <span class="dash-project-name">{{ project.name }}</span>
               <span class="dash-mono dash-faint">{{ project.slug }}</span>
-              <span class="dash-pill">{{ project.apps|length }} app{{ 's' if project.apps|length != 1 }}</span>
+              <span class="dash-pill">{{ plural(project.apps|length, 'app') }}</span>
             </a>
             {% if project.apps %}
               <ul class="dash-apps">
@@ -107,13 +220,14 @@
                   <li class="dash-app"
                       data-app
                       data-status="{{ app.status }}"
+                      data-filter="{{ filter_group(app.status) }}"
                       data-search="{{ app.name|lower }} {{ app.slug|lower }}">
                     {{ dot(app.status) }}
                     <a href="{{ app.url }}" class="dash-app-name">{{ app.name }}</a>
                     <span class="dash-mono dash-faint dash-app-slug">{{ app.slug }}</span>
                     <span class="dash-app-envs">
-                      {% if app.show_envs %}
-                        {% for env in app.envs %}
+                      {% if app.show_environments %}
+                        {% for env in app.environments %}
                           <a href="{{ env.url }}"
                              class="dash-env"
                              data-status="{{ env.status }}"
@@ -143,25 +257,6 @@
   </details>
 {% endmacro %}
 
-{% macro work_item(item) %}
-  <li>
-    <a href="{{ item.url }}" class="dash-work">
-      {{ dot(item.status) }}
-      <span class="dash-work-main">
-        <span class="dash-work-title">
-          {{ item.app.name }}
-          {% if item.env %}<span class="dash-mono dash-faint">{{ item.env.slug }}</span>{% endif %}
-        </span>
-        <span class="dash-work-path">
-          {% if not item.is_member %}{{ icon('shield', 'w-3 h-3') }}{% endif %}
-          {{ item.org.slug }} / {{ item.project.slug }}
-        </span>
-      </span>
-      <span class="dash-work-status" data-status="{{ item.status }}">{{ status_labels[item.status] }}</span>
-    </a>
-  </li>
-{% endmacro %}
-
 {% block content_full %}
   {% if current_user.is_authenticated %}
     {% if not current_user.admin and member_org_count == 0 %}
@@ -188,20 +283,18 @@
         </div>
       </div>
     {% else %}
-      {% set total_apps = app_count %}
-      {% set failing = attention|length %}
+      {% set chart_days = chart|length %}
       <div class="app-content-padded dash"
            data-page="dashboard"
            data-dash
-           data-scope="{{ scope }}"
            data-signature="{{ status_signature }}"
-           data-poll="{{ 1 if in_flight else 0 }}">
+           data-refresh="{{ 1 if in_progress else 0 }}">
         <header class="dash-head">
           <div>
             <h1 class="text-xl font-semibold text-base-content">Dashboard</h1>
             <p class="text-sm text-base-content/40 mt-0.5">
               Welcome back, {{ (current_user.username or current_user.email) | display_username }}
-              <span class="dash-live" data-dash-live-pill {% if not in_flight %}hidden{% endif %}>
+              <span class="dash-live" data-dash-live {% if not in_progress %}hidden{% endif %} title="Updates every 15 seconds while builds or deploys are running">
                 <span class="dash-dot" data-status="deploying"></span>Live
               </span>
             </p>
@@ -240,31 +333,88 @@
         {% endif %}
 
         <div class="dash-kpis" data-dash-region="kpis">
-          {% call kpi(org_count, 'Organizations', 'building', 'primary') %}
-            {% set admin_orgs = org_rows|selectattr('is_org_admin')|list|length %}
-            {% if scope == 'all' %}
-              {{ member_org_count }} as member
-            {% elif admin_orgs %}
-              {{ admin_orgs }} as org admin
-            {% else %}
-              all as member
-            {% endif %}
-          {% endcall %}
-          {% call kpi(project_count, 'Projects', 'folder', 'secondary') %}
-            across {{ org_count }} org{{ 's' if org_count != 1 }}
-          {% endcall %}
-          {% call kpi(total_apps, 'Applications', 'box', 'accent') %}
-            {% set failing_apps = status_totals.get('build-failed', 0) + status_totals.get('deploy-failed', 0) %}
-            {% if failing_apps %}
-              <span class="dash-kpi-alert">{{ dot('build-failed') }}{{ failing_apps }} failing</span>
+          {% set org_admin_count = org_rows|selectattr('is_org_admin')|list|length %}
+          {% if scope == 'all' %}
+            {% set org_note = member_org_count ~ ' as member' %}
+          {% elif org_admin_count %}
+            {% set org_note = org_admin_count ~ ' as org admin' %}
+          {% else %}
+            {% set org_note = 'all as member' %}
+          {% endif %}
+          {% set project_note = 'across ' ~ plural(org_count, 'org') %}
+          {% set deploy_note = chart_succeeded ~ ' in the last ' ~ chart_days ~ ' days' %}
+
+          {% call summary_card(org_count, 'Organizations', 'building', 'primary', 'orgs') %}{{ org_note }}{% endcall %}
+          {% call summary_card(project_count, 'Projects', 'folder', 'secondary', 'projects') %}{{ project_note }}{% endcall %}
+          {% call summary_card(app_count, 'Applications', 'box', 'accent', 'apps') %}
+            {% if failing_app_count %}
+              <span class="dash-kpi-alert">{{ dot('build-failed') }}{{ failing_app_count }} failing</span>
             {% elif status_totals.get('live') %}
               {{ dot('live') }}{{ status_totals.get('live') }} live
             {% else %}
               none live yet
             {% endif %}
           {% endcall %}
-          {% call kpi(deploy_count, 'Deployments', 'deploy', 'success') %}
-            {{ activity_total }} in {{ activity|length }}d
+          {% call summary_card(completed_deploys, 'Deployments', 'deploy', 'success', 'deploys') %}{{ deploy_note }}{% endcall %}
+
+          {% call sheet('orgs', 'Organizations', 'building', org_count, org_note) %}
+            {% for org in org_rows %}
+              <li data-search="{{ org.name|lower }} {{ org.slug|lower }}">
+                <a href="{{ org.url }}" class="dash-row">
+                  <span class="dash-avatar dash-avatar-sm" style="background: {{ org_colors[org.color_index] }}">{{ org.slug[:2]|upper }}</span>
+                  <span class="dash-row-main">
+                    <span class="dash-row-title">
+                      {{ org.name }}
+                      {% if not org.is_member %}
+                        <span class="dash-role dash-role-admin">{{ icon('shield', 'w-3 h-3') }}Not a member</span>
+                      {% elif org.is_org_admin %}
+                        <span class="dash-role">Org admin</span>
+                      {% endif %}
+                    </span>
+                    <span class="dash-row-path">
+                      {{ org.slug }} · {{ plural(org.projects|length, 'project') }} · {{ plural(org.app_count, 'app') }} · {{ plural(org.member_count, 'member') }}
+                    </span>
+                  </span>
+                  <span class="dash-row-side dash-row-side-wide">
+                    {{ health_bar(org.status_counts, org.app_count) }}
+                    <span>{{ org.last_deploy|humanize if org.last_deploy else 'never deployed' }}</span>
+                  </span>
+                </a>
+              </li>
+            {% endfor %}
+          {% endcall %}
+
+          {% call sheet('projects', 'Projects', 'folder', project_count, project_note) %}
+            {% for org in org_rows %}
+              {% for project in org.projects %}
+                <li data-search="{{ project.name|lower }} {{ project.slug|lower }} {{ org.name|lower }} {{ org.slug|lower }}">
+                  <a href="{{ project.url }}" class="dash-row">
+                    <span class="dash-row-icon">{{ icon('folder', 'w-4 h-4') }}</span>
+                    <span class="dash-row-main">
+                      <span class="dash-row-title">{{ project.name }}</span>
+                      <span class="dash-row-path">{{ member_marker(org) }}{{ org.slug }} / {{ project.slug }} · {{ plural(project.apps|length, 'app') }}</span>
+                    </span>
+                    <span class="dash-row-side dash-row-side-wide">
+                      {{ health_bar(project.status_counts, project.apps|length) }}
+                      <span>{{ project.last_deploy|humanize if project.last_deploy else 'never deployed' }}</span>
+                    </span>
+                  </a>
+                </li>
+              {% endfor %}
+            {% endfor %}
+          {% endcall %}
+
+          {% call sheet('apps', 'Applications', 'box', app_count,
+                        (failing_app_count ~ ' failing, ' if failing_app_count else '') ~ status_totals.get('live', 0) ~ ' live',
+                        [('failing', 'Failing'), ('in-progress', 'In progress'), ('live', 'Live'), ('idle', 'Not deployed')]) %}
+            {% for item in app_items %}{{ app_row(item, show_environments=True) }}{% endfor %}
+          {% endcall %}
+
+          {% call sheet('deploys', 'Deployments', 'deploy', completed_deploys,
+                        completed_deploys ~ ' completed in total, ' ~ deploy_note,
+                        [('failed', 'Failed'), ('running', 'Running')],
+                        'Newest ' ~ deploys|length ~ ' deployments, including failed and running ones.' if deploys else '') %}
+            {% for deploy in deploys %}{{ deploy_row(deploy) }}{% endfor %}
           {% endcall %}
         </div>
 
@@ -284,11 +434,11 @@
               </label>
               <div class="dash-seg" role="group" aria-label="Status filter">
                 <button type="button" data-dash-filter="all" aria-pressed="true">All</button>
-                <button type="button" data-dash-filter="attention" aria-pressed="false">
-                  Failing <span class="dash-seg-n" data-dash-count="attention"></span>
+                <button type="button" data-dash-filter="failing" aria-pressed="false">
+                  Failing <span class="dash-seg-n" data-dash-count="failing"></span>
                 </button>
-                <button type="button" data-dash-filter="in-flight" aria-pressed="false">
-                  In progress <span class="dash-seg-n" data-dash-count="in-flight"></span>
+                <button type="button" data-dash-filter="in-progress" aria-pressed="false">
+                  In progress <span class="dash-seg-n" data-dash-count="in-progress"></span>
                 </button>
               </div>
               <div class="dash-fold" role="group" aria-label="Expand or collapse organizations">
@@ -315,7 +465,7 @@
                 </div>
                 <div class="dash-nomatch" data-dash-nomatch hidden>
                   {{ icon('search', 'w-6 h-6') }}
-                  <p>Nothing matches <strong data-dash-nomatch-q></strong></p>
+                  <p>Nothing matches <strong data-dash-nomatch-query></strong></p>
                   <button type="button" class="btn btn-ghost btn-xs" data-dash-clear>Clear filters</button>
                 </div>
               {% else %}
@@ -334,15 +484,15 @@
             <section class="dash-card dash-card-attention">
               <header class="dash-card-head">
                 <h2 class="dash-label">Needs attention</h2>
-                {% if failing %}<span class="dash-count" data-status="build-failed">{{ failing }}</span>{% endif %}
+                {% if failing %}<span class="dash-count" data-status="build-failed">{{ failing|length }}</span>{% endif %}
               </header>
-              {% if attention %}
-                <ul class="dash-work-list">
-                  {% for item in attention[:6] %}{{ work_item(item) }}{% endfor %}
+              {% if failing %}
+                <ul class="dash-rows">
+                  {% for item in failing[:6] %}{{ app_row(item) }}{% endfor %}
                 </ul>
-                {% if failing > 6 %}
-                  <button type="button" class="dash-card-more" data-dash-filter-jump="attention">
-                    Show all {{ failing }} in the tree
+                {% if failing|length > 6 %}
+                  <button type="button" class="dash-card-more" data-dash-open="apps" data-dash-open-filter="failing">
+                    Show all failing apps
                   </button>
                 {% endif %}
               {% else %}
@@ -350,55 +500,60 @@
                   {{ icon('check-circle', 'w-5 h-5') }}
                   <div>
                     <p>All clear</p>
-                    <span>No failed builds or deploys across {{ total_apps }} app{{ 's' if total_apps != 1 }}.</span>
+                    <span>No failed builds or deploys across {{ plural(app_count, 'app') }}.</span>
                   </div>
                 </div>
               {% endif %}
-              {% if in_flight %}
+              {% if in_progress %}
                 <h3 class="dash-sublabel">In progress</h3>
-                <ul class="dash-work-list">
-                  {% for item in in_flight[:5] %}{{ work_item(item) }}{% endfor %}
+                <ul class="dash-rows">
+                  {% for item in in_progress[:5] %}{{ app_row(item) }}{% endfor %}
                 </ul>
               {% endif %}
             </section>
 
             <section class="dash-card">
               <header class="dash-card-head">
-                <h2 class="dash-label">Deploys, last {{ activity|length }} days</h2>
+                <h2 class="dash-label">Deploys, last {{ chart_days }} days</h2>
               </header>
               <div class="dash-activity-sum">
-                <span class="dash-big">{{ activity_total }}</span>
-                {% if activity_total %}
-                  {% set ok_pct = ((activity_total - activity_failed) * 100 / activity_total)|round(0, 'floor')|int %}
-                  <span class="dash-rate" data-good="{{ 1 if ok_pct >= 90 else 0 }}">{{ ok_pct }}% succeeded</span>
+                <span class="dash-big">{{ chart_started }}</span>
+                <span class="dash-faint">started</span>
+                {% set finished = chart_succeeded + chart_failed %}
+                {% if finished %}
+                  {% set success_rate = (chart_succeeded * 100 / finished)|round(0, 'floor')|int %}
+                  <span class="dash-rate" data-good="{{ 1 if success_rate >= 90 else 0 }}">{{ success_rate }}% succeeded</span>
                 {% endif %}
-                {% if activity_failed %}
-                  <span class="dash-faint">{{ activity_failed }} failed</span>
-                {% endif %}
+                {% if chart_failed %}<span class="dash-faint">{{ chart_failed }} failed</span>{% endif %}
               </div>
-              {% set peak = activity_max or 1 %}
+              {% set scale = 44 / (chart_peak or 1) %}
               <svg class="dash-bars"
-                   viewBox="0 0 {{ activity|length * 12 }} 48"
+                   viewBox="0 0 {{ chart_days * 12 }} 48"
                    preserveAspectRatio="none"
                    role="img"
-                   aria-label="{{ activity_total }} deploys over the last {{ activity|length }} days">
-                {% for d in activity %}
-                  {% set h = (d.total / peak * 44) if d.total else 0 %}
-                  {% set fh = (d.failed / peak * 44) if d.failed else 0 %}
+                   aria-label="{{ chart_started }} deploys started over the last {{ chart_days }} days">
+                {% for day in chart %}
+                  {% set x = loop.index0 * 12 + 1 %}
+                  {% set ok_height = day.succeeded * scale %}
+                  {% set running_height = day.running * scale %}
+                  {% set failed_height = day.failed * scale %}
                   <g>
-                    <title>{{ d.day.strftime('%a %b %-d') }}: {{ d.total }} deploy{{ 's' if d.total != 1 }}{% if d.failed %}, {{ d.failed }} failed{% endif %}</title>
-                    <rect class="dash-bar-track" x="{{ loop.index0 * 12 + 1 }}" y="0" width="10" height="48" rx="2" />
-                    {% if d.total > d.failed %}
-                      <rect class="dash-bar" x="{{ loop.index0 * 12 + 1 }}" y="{{ 48 - h + fh }}" width="10" height="{{ h - fh }}" rx="2" />
+                    <title>{{ day.day.strftime('%a %b %-d') }}: {{ day.succeeded }} succeeded, {{ day.failed }} failed{% if day.running %}, {{ day.running }} running{% endif %}</title>
+                    <rect class="dash-bar-track" x="{{ x }}" y="0" width="10" height="48" rx="2" />
+                    {% if day.succeeded %}
+                      <rect class="dash-bar" x="{{ x }}" y="{{ 48 - ok_height }}" width="10" height="{{ ok_height }}" rx="2" />
                     {% endif %}
-                    {% if d.failed %}
-                      <rect class="dash-bar-fail" x="{{ loop.index0 * 12 + 1 }}" y="{{ 48 - h }}" width="10" height="{{ fh }}" rx="2" />
+                    {% if day.running %}
+                      <rect class="dash-bar-running" x="{{ x }}" y="{{ 48 - ok_height - running_height }}" width="10" height="{{ running_height }}" rx="2" />
+                    {% endif %}
+                    {% if day.failed %}
+                      <rect class="dash-bar-fail" x="{{ x }}" y="{{ 48 - ok_height - running_height - failed_height }}" width="10" height="{{ failed_height }}" rx="2" />
                     {% endif %}
                   </g>
                 {% endfor %}
               </svg>
               <div class="dash-bars-axis">
-                <span>{{ activity[0].day.strftime('%b %-d') }}</span>
+                <span>{{ chart[0].day.strftime('%b %-d') }}</span>
                 <span>today</span>
               </div>
             </section>
@@ -406,38 +561,13 @@
             <section class="dash-card">
               <header class="dash-card-head">
                 <h2 class="dash-label">Recent deploys</h2>
+                {% if deploys|length > recent_deploys|length %}
+                  <button type="button" class="dash-card-more" data-dash-open="deploys">See all</button>
+                {% endif %}
               </header>
-              {% if recent %}
-                <ul class="dash-feed">
-                  {% for r in recent %}
-                    <li>
-                      <a href="{{ r.url }}" class="dash-feed-row">
-                        <span class="dash-feed-icon" data-status="{{ r.status }}">
-                          {% if r.status == 'succeeded' %}
-                            {{ icon('check', 'w-3 h-3') }}
-                          {% elif r.status == 'failed' %}
-                            {{ icon('x', 'w-3 h-3') }}
-                          {% else %}
-                            {{ icon('loader', 'w-3 h-3') }}
-                          {% endif %}
-                        </span>
-                        <span class="dash-work-main">
-                          <span class="dash-work-title">
-                            {{ r.app.name }}
-                            {% if r.env %}<span class="dash-mono dash-faint">{{ r.env.slug }}</span>{% endif %}
-                          </span>
-                          <span class="dash-work-path">
-                            {% if not r.is_member %}{{ icon('shield', 'w-3 h-3') }}{% endif %}
-                            {{ r.org.slug }} / {{ r.project.slug }}
-                          </span>
-                        </span>
-                        <span class="dash-feed-meta">
-                          <span>{{ r.created|humanize }}</span>
-                          {% if r.auto %}<span class="dash-auto" title="Triggered automatically">auto</span>{% endif %}
-                        </span>
-                      </a>
-                    </li>
-                  {% endfor %}
+              {% if recent_deploys %}
+                <ul class="dash-rows">
+                  {% for deploy in recent_deploys %}{{ deploy_row(deploy) }}{% endfor %}
                 </ul>
               {% else %}
                 <p class="dash-empty-line">No deployments yet.</p>
@@ -472,203 +602,259 @@
   {% if current_user.is_authenticated %}
     <script>
       (function () {
-        var STORE = 'cabotage:dashboard:open';
-        var POLL_MS = 15000;
-        var state = { q: '', filter: 'all' };
         var root = document.querySelector('[data-dash]');
         if (!root) return;
+        var OPEN_ORGS_KEY = 'cabotage:dashboard:open';
+        var REFRESH_MS = 15000;
+        var treeSearch = root.querySelector('[data-dash-search]');
+        var treeState = { query: '', filter: 'all' };
 
-        function saved() {
-          try { return JSON.parse(localStorage.getItem(STORE)) || {}; } catch (e) { return {}; }
+        function matchesText(el, query) {
+          return !query || (el.getAttribute('data-search') || '').indexOf(query) !== -1;
         }
-        function save(id, open) {
-          var s = saved();
-          s[id] = open;
-          try { localStorage.setItem(STORE, JSON.stringify(s)); } catch (e) {}
+        function matchesFilter(el, filter) {
+          return filter === 'all' || el.getAttribute('data-filter') === filter;
+        }
+        function countRows(rows, counters) {
+          counters.forEach(function (counter) {
+            var value = counter.getAttribute('data-dash-count') || counter.getAttribute('data-dash-sheet-count');
+            var n = 0;
+            rows.forEach(function (row) { if (row.getAttribute('data-filter') === value) n++; });
+            counter.textContent = n;
+            counter.hidden = !n;
+          });
         }
 
-        function restoreOpen() {
-          var s = saved();
+        // Which organizations the user left open, kept in localStorage.
+        function savedOpenOrgs() {
+          try { return JSON.parse(localStorage.getItem(OPEN_ORGS_KEY)) || {}; } catch (e) { return {}; }
+        }
+        function saveOpenOrg(id, open) {
+          var saved = savedOpenOrgs();
+          saved[id] = open;
+          try { localStorage.setItem(OPEN_ORGS_KEY, JSON.stringify(saved)); } catch (e) {}
+        }
+        function restoreOpenOrgs() {
+          var saved = savedOpenOrgs();
           root.querySelectorAll('[data-org]').forEach(function (org) {
             var id = org.getAttribute('data-org');
-            if (id in s) org.open = s[id];
+            if (id in saved) org.open = saved[id];
             org.dataset.userOpen = org.open ? '1' : '0';
           });
         }
-
-        function matches(el) {
-          return !state.q || (el.getAttribute('data-search') || '').indexOf(state.q) !== -1;
-        }
-        function statusOk(app) {
-          var st = app.getAttribute('data-status');
-          if (state.filter === 'attention') return st === 'build-failed' || st === 'deploy-failed';
-          if (state.filter === 'in-flight') return st === 'building' || st === 'deploying';
-          return true;
+        function isTreeFiltered() {
+          return !!treeState.query || treeState.filter !== 'all';
         }
 
-        function apply() {
-          var filtering = !!state.q || state.filter !== 'all';
-          var anyVisible = false;
+        // Show the orgs, projects and apps that match the search and filter.
+        // A matching org or project shows all of its apps.
+        function filterTree() {
+          var filtered = isTreeFiltered();
+          var anyShown = false;
           root.querySelectorAll('[data-org]').forEach(function (org) {
-            var orgHit = matches(org);
-            var orgVisible = false;
+            var orgMatches = matchesText(org, treeState.query);
+            var orgShown = false;
             org.querySelectorAll('[data-project]').forEach(function (project) {
-              var projectHit = orgHit || matches(project);
-              var projectVisible = false;
+              var projectMatches = orgMatches || matchesText(project, treeState.query);
+              var projectShown = false;
               project.querySelectorAll('[data-app]').forEach(function (app) {
-                var show = (projectHit || matches(app)) && statusOk(app);
+                var show = (projectMatches || matchesText(app, treeState.query)) &&
+                  matchesFilter(app, treeState.filter);
                 app.hidden = !show;
-                projectVisible = projectVisible || show;
+                projectShown = projectShown || show;
               });
-              var empty = !project.querySelector('[data-app]');
-              if (empty && projectHit && state.filter === 'all') projectVisible = true;
-              project.hidden = !projectVisible;
-              orgVisible = orgVisible || projectVisible;
+              if (!project.querySelector('[data-app]') && projectMatches && treeState.filter === 'all') {
+                projectShown = true;
+              }
+              project.hidden = !projectShown;
+              orgShown = orgShown || projectShown;
             });
-            if (!org.querySelector('[data-project]') && orgHit && state.filter === 'all') orgVisible = true;
-            org.hidden = !orgVisible;
-            if (filtering && orgVisible) org.open = true;
-            if (!filtering) org.open = org.dataset.userOpen === '1';
-            anyVisible = anyVisible || orgVisible;
+            if (!org.querySelector('[data-project]') && orgMatches && treeState.filter === 'all') {
+              orgShown = true;
+            }
+            org.hidden = !orgShown;
+            org.open = filtered ? orgShown : org.dataset.userOpen === '1';
+            anyShown = anyShown || orgShown;
           });
-          root.querySelectorAll('[data-dash-divider]').forEach(function (d) { d.hidden = filtering; });
+          root.querySelectorAll('[data-dash-divider]').forEach(function (d) { d.hidden = filtered; });
           var nomatch = root.querySelector('[data-dash-nomatch]');
           if (nomatch) {
-            nomatch.hidden = anyVisible;
-            var q = nomatch.querySelector('[data-dash-nomatch-q]');
-            if (q) q.textContent = state.q ? '"' + state.q + '"' : 'this filter';
+            nomatch.hidden = anyShown;
+            nomatch.querySelector('[data-dash-nomatch-query]').textContent =
+              treeState.query ? '"' + treeState.query + '"' : 'this filter';
           }
-          root.querySelectorAll('[data-dash-filter]').forEach(function (b) {
-            b.setAttribute('aria-pressed', b.getAttribute('data-dash-filter') === state.filter ? 'true' : 'false');
+          root.querySelectorAll('[data-dash-filter]').forEach(function (button) {
+            button.setAttribute('aria-pressed', String(button.getAttribute('data-dash-filter') === treeState.filter));
           });
         }
-
-        function counts() {
-          var apps = root.querySelectorAll('[data-app]');
-          var n = { attention: 0, 'in-flight': 0 };
-          apps.forEach(function (a) {
-            var st = a.getAttribute('data-status');
-            if (st === 'build-failed' || st === 'deploy-failed') n.attention++;
-            if (st === 'building' || st === 'deploying') n['in-flight']++;
-          });
-          root.querySelectorAll('[data-dash-count]').forEach(function (el) {
-            var v = n[el.getAttribute('data-dash-count')];
-            el.textContent = v;
-            el.hidden = !v;
-          });
+        function countTree() {
+          countRows(root.querySelectorAll('[data-app]'), root.querySelectorAll('[data-dash-count]'));
         }
 
-        function setFilter(f) {
-          state.filter = f;
-          apply();
+        // Side panels opened from the summary cards.
+        function openSheet(name, filter) {
+          var sheet = root.querySelector('[data-dash-sheet="' + CSS.escape(name) + '"]');
+          if (!sheet) return;
+          if (!sheet.open) sheet.showModal();
+          if (filter) setSheetFilter(sheet, filter);
+          countRows(sheet.querySelectorAll('.dash-sheet-list > li'), sheet.querySelectorAll('[data-dash-sheet-count]'));
+          filterSheet(sheet);
+          history.replaceState(null, '', '#' + name);
+        }
+        function setSheetFilter(sheet, filter) {
+          sheet.querySelectorAll('[data-dash-sheet-filter]').forEach(function (button) {
+            button.setAttribute('aria-pressed', String(button.getAttribute('data-dash-sheet-filter') === filter));
+          });
+        }
+        function filterSheet(sheet) {
+          var query = sheet.querySelector('[data-dash-sheet-search]').value.trim().toLowerCase();
+          var pressed = sheet.querySelector('[data-dash-sheet-filter][aria-pressed="true"]');
+          var filter = pressed ? pressed.getAttribute('data-dash-sheet-filter') : 'all';
+          var shown = 0;
+          sheet.querySelectorAll('.dash-sheet-list > li').forEach(function (row) {
+            var show = matchesText(row, query) && matchesFilter(row, filter);
+            row.hidden = !show;
+            if (show) shown++;
+          });
+          sheet.querySelector('[data-dash-sheet-empty]').hidden = shown > 0;
+        }
+        function openSheetElement() {
+          return root.querySelector('dialog[open]');
         }
 
-        // `toggle` fires asynchronously, so programmatic opens made while a
-        // filter is active arrive here too; only unfiltered toggles persist.
+        // `toggle` fires after the fact, including for orgs opened by a filter;
+        // only remember choices the user made with no filter active.
         root.addEventListener('toggle', function (e) {
           var org = e.target;
-          if (!org.matches || !org.matches('[data-org]')) return;
-          if (state.q || state.filter !== 'all') return;
+          if (!org.matches || !org.matches('[data-org]') || isTreeFiltered()) return;
           org.dataset.userOpen = org.open ? '1' : '0';
-          save(org.getAttribute('data-org'), org.open);
+          saveOpenOrg(org.getAttribute('data-org'), org.open);
+        }, true);
+
+        // `close` does not bubble, so listen during capture.
+        root.addEventListener('close', function (e) {
+          if (e.target.matches('[data-dash-sheet]')) {
+            history.replaceState(null, '', window.location.pathname + window.location.search);
+          }
         }, true);
 
         root.addEventListener('click', function (e) {
-          var f = e.target.closest('[data-dash-filter]');
-          if (f) return setFilter(f.getAttribute('data-dash-filter'));
-          var jump = e.target.closest('[data-dash-filter-jump]');
-          if (jump) {
-            setFilter(jump.getAttribute('data-dash-filter-jump'));
-            var main = root.querySelector('.dash-main');
-            if (main) main.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            return;
+          var target = e.target;
+          if (target.matches('[data-dash-sheet]')) return target.close(); // backdrop click
+          var opener = target.closest('[data-dash-open]');
+          if (opener) {
+            return openSheet(opener.getAttribute('data-dash-open'), opener.getAttribute('data-dash-open-filter'));
           }
-          var fold = e.target.closest('[data-dash-fold]');
+          var close = target.closest('[data-dash-sheet-close]');
+          if (close) return close.closest('dialog').close();
+          var sheetFilter = target.closest('[data-dash-sheet-filter]');
+          if (sheetFilter) {
+            var sheet = sheetFilter.closest('dialog');
+            setSheetFilter(sheet, sheetFilter.getAttribute('data-dash-sheet-filter'));
+            return filterSheet(sheet);
+          }
+          var treeFilter = target.closest('[data-dash-filter]');
+          if (treeFilter) {
+            treeState.filter = treeFilter.getAttribute('data-dash-filter');
+            return filterTree();
+          }
+          var fold = target.closest('[data-dash-fold]');
           if (fold) {
             var open = fold.getAttribute('data-dash-fold') === 'open';
             root.querySelectorAll('[data-org]').forEach(function (org) {
               if (org.hidden) return;
               org.dataset.userOpen = open ? '1' : '0';
-              save(org.getAttribute('data-org'), open);
+              saveOpenOrg(org.getAttribute('data-org'), open);
               org.open = open;
             });
             return;
           }
-          if (e.target.closest('[data-dash-clear]')) {
-            search.value = '';
-            state.q = '';
-            setFilter('all');
+          if (target.closest('[data-dash-clear]')) {
+            treeSearch.value = '';
+            treeState.query = '';
+            treeState.filter = 'all';
+            filterTree();
           }
         });
 
-        var search = root.querySelector('[data-dash-search]');
-        search.addEventListener('input', function () {
-          state.q = search.value.trim().toLowerCase();
-          apply();
+        root.addEventListener('input', function (e) {
+          if (e.target.matches('[data-dash-sheet-search]')) filterSheet(e.target.closest('dialog'));
         });
-        search.addEventListener('keydown', function (e) {
+
+        treeSearch.addEventListener('input', function () {
+          treeState.query = treeSearch.value.trim().toLowerCase();
+          filterTree();
+        });
+        treeSearch.addEventListener('keydown', function (e) {
           if (e.key === 'Escape') {
-            search.value = '';
-            state.q = '';
-            apply();
-            search.blur();
+            treeSearch.value = '';
+            treeState.query = '';
+            filterTree();
+            treeSearch.blur();
           } else if (e.key === 'Enter') {
-            var first = root.querySelector('[data-app]:not([hidden]) .dash-app-name');
-            var visible = first && first.closest('[data-org]:not([hidden])');
-            if (visible) first.click();
+            var first = Array.prototype.find.call(
+              root.querySelectorAll('[data-app]:not([hidden])'),
+              function (app) { return !app.closest('[data-org]').hidden; }
+            );
+            if (first) first.querySelector('.dash-app-name').click();
           }
         });
+
+        // "/" focuses the search box of the open panel, or the tree's.
         document.addEventListener('keydown', function (e) {
           if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
           var t = e.target;
           if (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
           e.preventDefault();
-          search.focus();
-          search.select();
+          var sheet = openSheetElement();
+          var input = sheet ? sheet.querySelector('[data-dash-sheet-search]') : treeSearch;
+          input.focus();
+          input.select();
         });
 
-        // Live refresh: only while builds or deploys are in flight, and only
-        // swap regions when a rendered status actually changed.
-        var timer = null;
-        function schedule() {
-          clearTimeout(timer);
-          if (root.getAttribute('data-poll') === '1') timer = setTimeout(poll, POLL_MS);
+        // While builds or deploys are running, reload the page data every
+        // 15 seconds and swap in the parts that changed. Paused while a
+        // panel is open or the tab is hidden.
+        var refreshTimer = null;
+        function scheduleRefresh() {
+          clearTimeout(refreshTimer);
+          if (root.getAttribute('data-refresh') === '1') refreshTimer = setTimeout(refresh, REFRESH_MS);
         }
-        function poll() {
-          if (document.hidden) return schedule();
-          fetch(window.location.href, { credentials: 'same-origin', headers: { Accept: 'text/html' } })
-            .then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); })
+        function refresh() {
+          if (document.hidden || openSheetElement()) return scheduleRefresh();
+          fetch(window.location.pathname + window.location.search, { credentials: 'same-origin' })
+            .then(function (response) { return response.ok ? response.text() : Promise.reject(response.status); })
             .then(function (html) {
-              var doc = new DOMParser().parseFromString(html, 'text/html');
-              var next = doc.querySelector('[data-dash]');
+              var next = new DOMParser().parseFromString(html, 'text/html').querySelector('[data-dash]');
               if (!next) return;
               if (next.getAttribute('data-signature') !== root.getAttribute('data-signature')) {
                 ['kpis', 'tree', 'rail'].forEach(function (name) {
-                  var sel = '[data-dash-region="' + name + '"]';
-                  var cur = root.querySelector(sel);
-                  var fresh = next.querySelector(sel);
-                  if (cur && fresh) cur.replaceWith(fresh);
+                  var selector = '[data-dash-region="' + name + '"]';
+                  var current = root.querySelector(selector);
+                  var fresh = next.querySelector(selector);
+                  if (current && fresh) current.replaceWith(fresh);
                 });
                 root.setAttribute('data-signature', next.getAttribute('data-signature'));
-                restoreOpen();
-                counts();
-                apply();
+                restoreOpenOrgs();
+                countTree();
+                filterTree();
               }
-              root.setAttribute('data-poll', next.getAttribute('data-poll'));
-              var pill = root.querySelector('[data-dash-live-pill]');
-              if (pill) pill.hidden = next.getAttribute('data-poll') !== '1';
+              root.setAttribute('data-refresh', next.getAttribute('data-refresh'));
+              root.querySelector('[data-dash-live]').hidden = next.getAttribute('data-refresh') !== '1';
             })
             .catch(function () {})
-            .then(schedule);
+            .then(scheduleRefresh);
         }
         document.addEventListener('visibilitychange', function () {
-          if (!document.hidden && root.getAttribute('data-poll') === '1') poll();
+          if (!document.hidden && root.getAttribute('data-refresh') === '1') refresh();
         });
 
-        restoreOpen();
-        counts();
-        apply();
-        schedule();
+        restoreOpenOrgs();
+        countTree();
+        filterTree();
+        scheduleRefresh();
+        var linkedSheet = window.location.hash.slice(1);
+        if (linkedSheet) openSheet(linkedSheet);
       })();
     </script>
   {% endif %}
