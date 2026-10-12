@@ -21,7 +21,12 @@ from flask import current_app
 from cabotage.server import db
 from cabotage.server import kubernetes as kubernetes_ext
 from cabotage.server.models.auth import Organization
-from cabotage.server.models.cost import CostCollectionRun, CostLineItem, CostNode
+from cabotage.server.models.cost import (
+    CostCollectionRun,
+    CostLineItem,
+    CostNode,
+    CostRunStats,
+)
 from cabotage.server.models.projects import (
     Application,
     ApplicationEnvironment,
@@ -63,9 +68,6 @@ _TRAEFIK_QUERY = (
     "sum by (service) (increase(traefik_service_responses_bytes_total[1h]))"
 )
 
-# Stats accumulated/merged across a collection run; values are always one of
-# these primitive types (never nested containers).
-StatValue = bool | int | float
 PodKey = tuple[str | None, str | None]
 ScopeKey = tuple[
     uuid.UUID | None,
@@ -156,11 +158,12 @@ def _record_attempt(
     though the run's own `status`/data are untouched.
     """
     attempt_at = datetime.datetime.now(datetime.UTC)
-    stats = dict(run.stats or {})
-    stats["last_attempt_status"] = status
-    stats["last_attempt_error"] = error
-    stats["last_attempt_at"] = attempt_at.isoformat()
-    run.stats = stats
+    run.stats = {
+        **(run.stats or {}),
+        "last_attempt_status": status,
+        "last_attempt_error": error,
+        "last_attempt_at": attempt_at.isoformat(),
+    }
     db.session.add(run)
     db.session.commit()
     return run
@@ -173,7 +176,7 @@ def _write_run(
     *,
     status: str,
     error: str | None,
-    stats: dict[str, StatValue],
+    stats: CostRunStats,
     line_items: list[CostLineItem],
 ) -> CostCollectionRun:
     CostLineItem.query.filter_by(period_start=period_start).delete()
@@ -181,10 +184,12 @@ def _write_run(
     db.session.flush()
 
     finished_at = datetime.datetime.now(datetime.UTC)
-    full_stats: dict[str, StatValue | str | None] = dict(stats)
-    full_stats["last_attempt_status"] = status
-    full_stats["last_attempt_error"] = error
-    full_stats["last_attempt_at"] = finished_at.isoformat()
+    full_stats: CostRunStats = {
+        **stats,
+        "last_attempt_status": status,
+        "last_attempt_error": error,
+        "last_attempt_at": finished_at.isoformat(),
+    }
 
     run = CostCollectionRun(
         period_start=period_start,
@@ -219,7 +224,7 @@ def _floor_hour(dt: datetime.datetime) -> datetime.datetime:
 
 def _collect(
     period_start: datetime.datetime, period_end: datetime.datetime, rates: CostRates
-) -> tuple[list[CostLineItem], dict[str, StatValue]]:
+) -> tuple[list[CostLineItem], CostRunStats]:
     tenant_id: str | None = current_app.config.get("MIMIR_TENANT_ID")
     range_start = int(period_start.timestamp())
     range_end = int((period_start + datetime.timedelta(minutes=55)).timestamp())
@@ -272,10 +277,8 @@ def _collect(
 
     caches = _build_scope_caches()
 
-    stats: dict[str, StatValue] = {
-        "pods_seen": 0,
-        "pods_unallocated": 0,
-    }
+    pods_seen = 0
+    pods_unallocated = 0
 
     group_compute: dict[GroupKey, dict[str, float]] = defaultdict(
         lambda: {
@@ -297,14 +300,14 @@ def _collect(
         namespace, pod_name = pod_key
         if not namespace or not pod_name:
             continue
-        stats["pods_seen"] += 1
+        pods_seen += 1
         labels = pod_labels.get(pod_key)
         if labels is None:
-            stats["pods_unallocated"] += 1
+            pods_unallocated += 1
             continue
         classification = _classify_pod(namespace, pod_name, labels, caches)
         if classification is None:
-            stats["pods_unallocated"] += 1
+            pods_unallocated += 1
             continue
 
         cpu_b, cpu_u, cpu_r = _billed_hours(
@@ -439,18 +442,18 @@ def _collect(
     else:
         overhead_allocated = 0.0
 
-    stats.update(
-        {
-            "node_hours": node_hours,
-            "nodes_unpriced": nodes_unpriced,
-            "node_data_available": node_data_available,
-            "cluster_compute_cost": cluster_compute_cost,
-            "tenant_compute_cost": direct_compute_total,
-            "overhead_pool": overhead_pool,
-            "overhead_allocated": overhead_allocated,
-            "fixed_overhead": fixed_overhead,
-        }
-    )
+    stats: CostRunStats = {
+        "pods_seen": pods_seen,
+        "pods_unallocated": pods_unallocated,
+        "node_hours": node_hours,
+        "nodes_unpriced": nodes_unpriced,
+        "node_data_available": node_data_available,
+        "cluster_compute_cost": cluster_compute_cost,
+        "tenant_compute_cost": direct_compute_total,
+        "overhead_pool": overhead_pool,
+        "overhead_allocated": overhead_allocated,
+        "fixed_overhead": fixed_overhead,
+    }
 
     return line_items, stats
 

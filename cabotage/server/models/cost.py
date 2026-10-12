@@ -1,6 +1,6 @@
 import datetime
 import uuid
-from typing import Any
+from typing import Any, TypedDict
 
 from sqlalchemy import (
     DateTime,
@@ -17,6 +17,25 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from cabotage.server import Model
+from cabotage.utils.cost.rates import CostRates
+
+
+class CostRunStats(TypedDict, total=False):
+    pods_seen: int
+    pods_unallocated: int
+    node_hours: float
+    nodes_unpriced: int
+    node_data_available: bool
+    cluster_compute_cost: float
+    tenant_compute_cost: float
+    overhead_pool: float
+    overhead_allocated: float
+    fixed_overhead: float
+    synthetic: bool
+    seed: str
+    last_attempt_status: str
+    last_attempt_error: str | None
+    last_attempt_at: str
 
 
 class CostCollectionRun(Model):
@@ -38,10 +57,10 @@ class CostCollectionRun(Model):
         DateTime(timezone=True)
     )
     error: Mapped[str | None] = mapped_column(Text())
-    rates: Mapped[Any | None] = mapped_column(
+    rates: Mapped[CostRates | None] = mapped_column(
         postgresql.JSONB(), server_default=text("'{}'::jsonb")
     )
-    stats: Mapped[Any | None] = mapped_column(
+    stats: Mapped[CostRunStats | None] = mapped_column(
         postgresql.JSONB(), server_default=text("'{}'::jsonb")
     )
 

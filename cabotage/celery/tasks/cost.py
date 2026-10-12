@@ -54,7 +54,7 @@ def collect_costs() -> None:
             db.session.rollback()
             log.exception("Cost collection failed for hour %s", hour.isoformat())
             continue
-        stats: dict[str, object] = run.stats or {}
+        stats = run.stats or {}
         if stats.get("last_attempt_status") == "failed":
             suffix = (
                 " (kept previous succeeded data)" if run.status == "succeeded" else ""

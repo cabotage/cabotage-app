@@ -19,7 +19,12 @@ from sqlalchemy.orm import InstrumentedAttribute, Query
 
 from cabotage.server import db
 from cabotage.server.models.auth import Organization
-from cabotage.server.models.cost import CostCollectionRun, CostLineItem, CostNode
+from cabotage.server.models.cost import (
+    CostCollectionRun,
+    CostLineItem,
+    CostNode,
+    CostRunStats,
+)
 from cabotage.server.models.projects import Application, Environment, Project
 from cabotage.server.models.resources import Resource
 from cabotage.utils.cost.rates import CostRates, effective_rates, node_hourly_price
@@ -1890,13 +1895,10 @@ def _freshness(
                 prev_run: CostCollectionRun | None = CostCollectionRun.query.filter_by(
                     period_start=prev_hour
                 ).first()
-                prev_stats: dict[str, object] = (
-                    (prev_run.stats or {}) if prev_run else {}
-                )
+                prev_stats: CostRunStats = (prev_run.stats or {}) if prev_run else {}
                 if prev_stats.get("last_attempt_status") != "failed":
                     break
-                prev_attempt_at = prev_stats.get("last_attempt_at")
-                if isinstance(prev_attempt_at, str) and prev_attempt_at:
+                if prev_attempt_at := prev_stats.get("last_attempt_at"):
                     failing_since = prev_attempt_at
                 cursor = prev_hour
 

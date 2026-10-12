@@ -35,7 +35,12 @@ from sqlalchemy import func
 
 from cabotage.server import db
 from cabotage.server.models.auth import Organization
-from cabotage.server.models.cost import CostCollectionRun, CostLineItem, CostNode
+from cabotage.server.models.cost import (
+    CostCollectionRun,
+    CostLineItem,
+    CostNode,
+    CostRunStats,
+)
 from cabotage.server.models.projects import (
     DEFAULT_POD_CLASS,
     Application,
@@ -44,7 +49,6 @@ from cabotage.server.models.projects import (
 from cabotage.server.models.resources import RedisResource
 from cabotage.utils.cost.collector import (
     ScopeKey,
-    StatValue,
     _parse_cpu_quantity,
     _parse_memory_quantity_gib,
 )
@@ -627,7 +631,7 @@ def _generate_hour(
     rates: CostRates,
     rng: random.Random,
     events: Events,
-) -> tuple[list[CostLineItem], dict[str, StatValue]]:
+) -> tuple[list[CostLineItem], CostRunStats]:
     items: list[CostLineItem] = []
     diurnal = _diurnal_factor(hour.hour) * _weekly_factor(hour.weekday())
     is_spike_hour = hour.date() == events["spike_date"] and 8 <= hour.hour <= 20
@@ -885,7 +889,7 @@ def _generate_hour(
                 )
             )
 
-    stats: dict[str, StatValue] = {
+    stats: CostRunStats = {
         "pods_seen": len(processes),
         "pods_unallocated": 0,
         "tenant_compute_cost": direct_compute_total,
