@@ -29,7 +29,7 @@ from cabotage.server.models.projects import Application, Environment, Project
 from cabotage.server.models.resources import Resource
 from cabotage.utils.cost.rates import CostRates, effective_rates, node_hourly_price
 
-Interval = Literal["hour", "day", "week"]
+type Interval = Literal["hour", "day", "week"]
 
 
 class MeterRow(TypedDict):
@@ -167,14 +167,14 @@ class FreshnessStats(TypedDict):
 #: key: (display name, context line, link slugs, soft-deleted?); ``None``
 #: lets a resolver skip a key entirely (no current resolver does, but
 #: ``_build_rows`` handles it defensively).
-ResolvedName = tuple[str, str | None, BreakdownSlugs, bool]
-NameResolver = Callable[[object], ResolvedName | None]
+type ResolvedName = tuple[str, str | None, BreakdownSlugs, bool]
+type NameResolver = Callable[[object], ResolvedName | None]
 
 #: (aggregation column, optional category filter) per breakdown name.
-BreakdownDimension = tuple[InstrumentedAttribute[object], list[str] | None]
+type BreakdownDimension = tuple[InstrumentedAttribute[object], list[str] | None]
 
 #: The 5-tuple ``_aggregate_breakdown`` hands to ``_build_rows``.
-BreakdownAggregates = tuple[
+type BreakdownAggregates = tuple[
     dict[object, float],
     dict[object, dict[str, float]],
     dict[object, float],
@@ -182,9 +182,9 @@ BreakdownAggregates = tuple[
     dict[object, float],
 ]
 
-BreakdownFunc = Callable[
+type BreakdownFunc = Callable[
     [
-        "CostScope",
+        CostScope,
         datetime.datetime,
         datetime.datetime,
         datetime.datetime,

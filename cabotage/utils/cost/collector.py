@@ -68,15 +68,15 @@ _TRAEFIK_QUERY = (
     "sum by (service) (increase(traefik_service_responses_bytes_total[1h]))"
 )
 
-PodKey = tuple[str | None, str | None]
-ScopeKey = tuple[
+type PodKey = tuple[str | None, str | None]
+type ScopeKey = tuple[
     uuid.UUID | None,
     uuid.UUID | None,
     uuid.UUID | None,
     uuid.UUID | None,
     uuid.UUID | None,
 ]
-GroupKey = tuple[
+type GroupKey = tuple[
     str,
     uuid.UUID | None,
     uuid.UUID | None,
