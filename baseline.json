@@ -764,20 +764,6 @@
       "severity": "error"
     },
     {
-      "column": 39,
-      "path": "cabotage/celery/tasks/branch_deploy.py",
-      "name": "implicit-reexport",
-      "concise_description": "`run_image_build` is not exported from module `cabotage.celery.tasks`",
-      "severity": "error"
-    },
-    {
-      "column": 56,
-      "path": "cabotage/celery/tasks/branch_deploy.py",
-      "name": "implicit-reexport",
-      "concise_description": "`run_omnibus_build` is not exported from module `cabotage.celery.tasks`",
-      "severity": "error"
-    },
-    {
       "column": 13,
       "path": "cabotage/celery/tasks/branch_deploy.py",
       "name": "not-callable",
@@ -9742,20 +9728,6 @@
       "path": "cabotage/celery/tasks/github.py",
       "name": "implicit-reexport",
       "concise_description": "`NoResultFound` is not exported from module `sqlalchemy.orm.exc`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/celery/tasks/github.py",
-      "name": "implicit-reexport",
-      "concise_description": "`run_image_build` is not exported from module `cabotage.celery.tasks`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/celery/tasks/github.py",
-      "name": "implicit-reexport",
-      "concise_description": "`run_omnibus_build` is not exported from module `cabotage.celery.tasks`",
       "severity": "error"
     },
     {
@@ -39586,13 +39558,6 @@
       "severity": "error"
     },
     {
-      "column": 61,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_render_application_settings` is missing an annotation for parameter `form`",
-      "severity": "error"
-    },
-    {
       "column": 62,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
@@ -42519,13 +42484,6 @@
       "severity": "error"
     },
     {
-      "column": 61,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`deployment_logs_query` is missing an annotation for parameter `deployment_id`",
-      "severity": "error"
-    },
-    {
       "column": 53,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
@@ -45071,13 +45029,6 @@
       "path": "cabotage/server/user/views.py",
       "name": "implicit-any-parameter",
       "concise_description": "`project_application_observe_metric` is missing an annotation for parameter `app_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 74,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`project_application_observe_metric` is missing an annotation for parameter `env_slug`",
       "severity": "error"
     },
     {

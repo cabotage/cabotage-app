@@ -61,7 +61,7 @@ def register_mfa_guards(app):
         if endpoint in {"security.logout", "security.static", "static"}:
             return None
 
-        has_totp, num_webauthn, has_mfa = get_mfa_status(current_user)
+        _has_totp, _num_webauthn, has_mfa = get_mfa_status(current_user)
 
         # Step 1: No MFA — force setup
         if not has_mfa:
