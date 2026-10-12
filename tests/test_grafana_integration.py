@@ -25,15 +25,17 @@ from cabotage.server.integrations.grafana import (
     GrafanaIntegrationError,
     _is_valid_internal_url,
     _is_valid_same_origin_path,
+    app_dashboard_uid,
     grafana_configured,
     membership_fingerprint,
     organization_tenants,
+    project_folder_uid,
     reconcile_grafana_organization,
 )
 from cabotage.server.models.auth import Organization, User
 from cabotage.server.models.auth_associations import OrganizationMember
 from cabotage.server.models.grafana import OrganizationGrafanaIntegration
-from cabotage.server.models.projects import Environment, Project
+from cabotage.server.models.projects import Application, Environment, Project
 from cabotage.server.wsgi import app as _app
 
 
@@ -400,6 +402,8 @@ class _FakeGrafana:
         self.users: dict[str, int] = {}
         self.datasources: dict[tuple[int, str], dict] = {}
         self.dashboards: dict[tuple[int, str], dict] = {}
+        self.dashboard_folders: dict[tuple[int, str], str] = {}
+        self.folders: dict[tuple[int, str], dict] = {}
         self.calls: list[tuple[str, str]] = []
         self.fail_on: set[tuple[str, str]] = set()
         self.settings: dict[str, dict[str, str]] = {
@@ -608,9 +612,52 @@ class _FakeGrafana:
         if method == "POST" and path == "/api/dashboards/db":
             dashboard = json["dashboard"]
             key = (org_id, dashboard["uid"])
+            if key in self.dashboards and not json.get("overwrite"):
+                resp.status_code = 412
+                return resp
             self.dashboards[key] = dashboard
+            self.dashboard_folders[key] = json.get("folderUid", "")
             resp.status_code = 200
             resp.json.return_value = {"uid": dashboard["uid"]}
+            return resp
+
+        if method == "GET" and path == "/api/search":
+            resp.status_code = 200
+            resp.json.return_value = [
+                {"uid": uid, "folderUid": self.dashboard_folders.get((oid, uid), "")}
+                for (oid, uid) in self.dashboards
+                if oid == org_id
+            ]
+            return resp
+
+        if method == "GET" and path == "/api/folders":
+            resp.status_code = 200
+            resp.json.return_value = [
+                {"uid": uid, "title": folder["title"]}
+                for (oid, uid), folder in self.folders.items()
+                if oid == org_id and folder["parentUid"] is None
+            ]
+            return resp
+
+        if method == "POST" and path == "/api/folders":
+            key = (org_id, json["uid"])
+            if key in self.folders:
+                resp.status_code = 409
+                return resp
+            self.folders[key] = {"title": json["title"], "parentUid": None}
+            resp.status_code = 200
+            return resp
+
+        m = re.fullmatch(r"/api/folders/([^/]+)", path)
+        if method == "PUT" and m:
+            self.folders[(org_id, m.group(1))]["title"] = json["title"]
+            resp.status_code = 200
+            return resp
+
+        m = re.fullmatch(r"/api/folders/([^/]+)/move", path)
+        if method == "POST" and m:
+            self.folders[(org_id, m.group(1))]["parentUid"] = json["parentUid"]
+            resp.status_code = 200
             return resp
 
         raise AssertionError(f"unhandled fake Grafana request: {method} {path}")
@@ -996,6 +1043,91 @@ class TestReconcileGrafanaOrganization:
             c for c in fake_grafana.calls if c == ("POST", "/api/dashboards/db")
         ]
         assert len(dashboard_create_calls) == 2
+
+    def test_project_folders_and_app_dashboards_follow_projects_and_apps(
+        self, app, db_session, org, member_user, fake_grafana
+    ):
+        org.add_user(member_user, admin=False)
+        api = Project(name="API", slug="api", organization_id=org.id)
+        site = Project(name="Site", slug="site", organization_id=org.id)
+        db_session.add_all([api, site])
+        db_session.flush()
+        api_web = Application(name="web", slug="web", project=api)
+        site_web = Application(name="web", slug="web", project=site)
+        db_session.add_all([api_web, site_web])
+        gi = OrganizationGrafanaIntegration(organization_id=org.id, enabled=True)
+        db_session.add(gi)
+        db_session.flush()
+
+        reconcile_grafana_organization(org.id)
+        db_session.refresh(gi)
+        oid = gi.grafana_org_id
+
+        assert fake_grafana.folders[(oid, project_folder_uid(api))]["title"] == "API"
+        api_web_key = (oid, app_dashboard_uid(api_web))
+        assert fake_grafana.dashboard_folders[api_web_key] == project_folder_uid(api)
+        # Both projects have an app called "web"; each dashboard sees only its own.
+        exprs = [
+            target["expr"]
+            for panel in fake_grafana.dashboards[api_web_key]["panels"]
+            for target in panel["targets"]
+        ]
+        assert all('project="api"' in expr for expr in exprs)
+
+        fake_grafana.dashboards[api_web_key]["panels"] = []
+        worker = Application(name="worker", slug="worker", project=api)
+        db_session.add(worker)
+        api.name = "API v2"
+        db_session.flush()
+        db_session.expire(api, ["project_applications"])
+
+        reconcile_grafana_organization(org.id)
+
+        assert fake_grafana.dashboards[api_web_key]["panels"] == []
+        assert fake_grafana.dashboard_folders[
+            (oid, app_dashboard_uid(worker))
+        ] == project_folder_uid(api)
+        assert fake_grafana.folders[(oid, project_folder_uid(api))]["title"] == "API v2"
+
+    def test_deleted_projects_and_apps_are_archived_not_deleted(
+        self, app, db_session, org, member_user, fake_grafana
+    ):
+        org.add_user(member_user, admin=False)
+        api = Project(name="API", slug="api", organization_id=org.id)
+        site = Project(name="Site", slug="site", organization_id=org.id)
+        db_session.add_all([api, site])
+        db_session.flush()
+        api_web = Application(name="web", slug="web", project=api)
+        api_worker = Application(name="worker", slug="worker", project=api)
+        site_web = Application(name="web", slug="web", project=site)
+        db_session.add_all([api_web, api_worker, site_web])
+        gi = OrganizationGrafanaIntegration(organization_id=org.id, enabled=True)
+        db_session.add(gi)
+        db_session.flush()
+        reconcile_grafana_organization(org.id)
+        db_session.refresh(gi)
+        oid = gi.grafana_org_id
+
+        now = datetime.datetime.now(datetime.UTC)
+        api_worker.deleted_at = now
+        site.deleted_at = now
+        site_web.deleted_at = now
+        db_session.flush()
+        db_session.expire(org, ["projects"])
+        db_session.expire(api, ["project_applications"])
+
+        reconcile_grafana_organization(org.id)
+        reconcile_grafana_organization(org.id)
+
+        folders = fake_grafana.dashboard_folders
+        assert folders[(oid, app_dashboard_uid(api_worker))] == "cabotage-archived"
+        assert folders[(oid, app_dashboard_uid(api_web))] == project_folder_uid(api)
+        site_folder = fake_grafana.folders[(oid, project_folder_uid(site))]
+        assert site_folder["parentUid"] == "cabotage-archived"
+        # The site app's dashboard moves with its project folder, not on its own.
+        assert folders[(oid, app_dashboard_uid(site_web))] == project_folder_uid(site)
+        moves = [c for c in fake_grafana.calls if c[1].endswith("/move")]
+        assert len(moves) == 1
 
     def test_disabled_integration_revokes_access_but_preserves_org(
         self, app, db_session, org, member_user, fake_grafana

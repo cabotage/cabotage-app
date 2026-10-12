@@ -8,7 +8,9 @@ lists). It never defines Flask routes.
 
 import hashlib
 import logging
+import re
 import secrets
+import uuid
 from typing import TYPE_CHECKING, cast
 from urllib.parse import quote, urlparse
 
@@ -19,6 +21,7 @@ from cabotage.server import db
 from cabotage.server.models.auth import Organization, User
 from cabotage.server.models.auth_associations import OrganizationMember
 from cabotage.server.models.grafana import OrganizationGrafanaIntegration
+from cabotage.server.models.projects import Application, Project
 
 if TYPE_CHECKING:
     from cabotage._types.grafana import (
@@ -42,6 +45,9 @@ _PROMETHEUS_DATASOURCE_UID = "cabotage-prometheus"
 _LOKI_DATASOURCE_UID = "cabotage-loki"
 _OVERVIEW_DASHBOARD_UID = "cabotage-overview"
 _LOGS_DASHBOARD_UID = "cabotage-logs"
+_ARCHIVED_FOLDER_UID = "cabotage-archived"
+_PROJECT_FOLDER_UID = re.compile(r"p-[0-9a-f]{32}")
+_APP_DASHBOARD_UID = re.compile(r"a-[0-9a-f]{32}")
 _ORG_FILTERS = {
     "project": '=~"$project"',
     "application": '=~"$application"',
@@ -900,6 +906,37 @@ def _logs_dashboard_payload() -> JSONObject:
     }
 
 
+def project_folder_uid(project: Project) -> str:
+    return f"p-{uuid.UUID(str(project.id)).hex}"
+
+
+def app_dashboard_uid(application: Application) -> str:
+    return f"a-{uuid.UUID(str(application.id)).hex}"
+
+
+def _app_dashboard_payload(application: Application) -> JSONObject:
+    project = application.project
+    fixed = {
+        "project": f'="{project.slug}"',
+        "application": f'="{application.slug}"',
+    }
+    return {
+        "uid": app_dashboard_uid(application),
+        "title": application.name,
+        "description": f"Resources, traffic, and logs for {application.name} in {project.name}, by environment.",
+        "tags": ["cabotage", "cabotage-application"],
+        "schemaVersion": 39,
+        "editable": True,
+        "refresh": "30s",
+        "time": {"from": "now-1h", "to": "now"},
+        "templating": _dashboard_variables(("environment",), fixed=fixed),
+        "links": [_dashboard_link(_OVERVIEW_DASHBOARD_UID, "Organization overview")],
+        "panels": _workload_panels(
+            {**fixed, "environment": '=~"$environment"'}, ("environment",)
+        ),
+    }
+
+
 def _reconcile_starter_dashboards(client: _AdminClient, grafana_org_id: int) -> None:
     """Create missing starter dashboards without replacing customer edits."""
     for uid, payload in (
@@ -929,6 +966,127 @@ def _reconcile_starter_dashboards(client: _AdminClient, grafana_org_id: int) -> 
             raise GrafanaIntegrationError(
                 f"Failed to create starter dashboard (status {resp.status_code})"
             )
+
+
+def _reconcile_project_dashboards(
+    client: _AdminClient, organization: Organization, grafana_org_id: int
+) -> None:
+    """One folder per project and one dashboard per app.
+
+    Missing ones are created; existing dashboards are never overwritten. Folders
+    follow project renames. Deleted projects and apps move to an archive folder
+    instead of being deleted, since customers may have added their own panels.
+    """
+
+    def check(action: str, resp: requests.Response) -> None:
+        if resp.status_code not in (200, 201):
+            raise GrafanaIntegrationError(
+                f"Failed to {action} (status {resp.status_code})"
+            )
+
+    def get(action: str, path: str, params: dict[str, str] | None = None) -> JSONValue:
+        resp = client.request("GET", path, org_id=grafana_org_id, params=params)
+        check(action, resp)
+        return cast("JSONValue", resp.json())
+
+    def send(action: str, method: str, path: str, payload: JSONObject) -> None:
+        check(action, client.request(method, path, org_id=grafana_org_id, json=payload))
+
+    folders = {
+        str(folder["uid"]): str(folder["title"])
+        for folder in cast(
+            "list[JSONObject]",
+            get("list folders", "/api/folders", {"limit": "1000"}),
+        )
+    }
+    dashboards = {
+        str(item["uid"]): str(item.get("folderUid") or "")
+        for item in cast(
+            "list[JSONObject]",
+            get("list dashboards", "/api/search", {"type": "dash-db", "limit": "5000"}),
+        )
+    }
+
+    project_folders: set[str] = set()
+    app_dashboards: set[str] = set()
+    for project in organization.active_projects:
+        folder_uid = project_folder_uid(project)
+        project_folders.add(folder_uid)
+        if folder_uid not in folders:
+            send(
+                "create project folder",
+                "POST",
+                "/api/folders",
+                {"uid": folder_uid, "title": project.name},
+            )
+        elif folders[folder_uid] != project.name:
+            send(
+                "rename project folder",
+                "PUT",
+                f"/api/folders/{folder_uid}",
+                {"title": project.name, "overwrite": True},
+            )
+        for application in project.active_applications:
+            uid = app_dashboard_uid(application)
+            app_dashboards.add(uid)
+            if uid in dashboards:
+                continue
+            send(
+                "create app dashboard",
+                "POST",
+                "/api/dashboards/db",
+                {
+                    "dashboard": _app_dashboard_payload(application),
+                    "folderUid": folder_uid,
+                    "overwrite": False,
+                    "message": "cabotage app dashboard",
+                },
+            )
+
+    def removed_project_folder(uid: str) -> bool:
+        return bool(_PROJECT_FOLDER_UID.fullmatch(uid)) and uid not in project_folders
+
+    stale_folders = [uid for uid in folders if removed_project_folder(uid)]
+    # Dashboards inside a removed project's folder move along with that folder.
+    stale_dashboards = [
+        uid
+        for uid, folder_uid in dashboards.items()
+        if _APP_DASHBOARD_UID.fullmatch(uid)
+        and uid not in app_dashboards
+        and folder_uid != _ARCHIVED_FOLDER_UID
+        and not removed_project_folder(folder_uid)
+    ]
+    if not stale_folders and not stale_dashboards:
+        return
+    if _ARCHIVED_FOLDER_UID not in folders:
+        send(
+            "create archive folder",
+            "POST",
+            "/api/folders",
+            {"uid": _ARCHIVED_FOLDER_UID, "title": "Cabotage archive"},
+        )
+    for uid in stale_folders:
+        send(
+            "archive project folder",
+            "POST",
+            f"/api/folders/{uid}/move",
+            {"parentUid": _ARCHIVED_FOLDER_UID},
+        )
+    for uid in stale_dashboards:
+        existing = cast(
+            "JSONObject", get("look up app dashboard", f"/api/dashboards/uid/{uid}")
+        )
+        send(
+            "archive app dashboard",
+            "POST",
+            "/api/dashboards/db",
+            {
+                "dashboard": existing["dashboard"],
+                "folderUid": _ARCHIVED_FOLDER_UID,
+                "overwrite": True,
+                "message": "cabotage archived app dashboard",
+            },
+        )
 
 
 def _persist_reconcile_failure(
@@ -1013,6 +1171,7 @@ def reconcile_grafana_organization(organization_id: str) -> None:
         _reconcile_users_and_memberships(client, organization, grafana_org_id)
         _reconcile_datasources(client, organization, grafana_org_id)
         _reconcile_starter_dashboards(client, grafana_org_id)
+        _reconcile_project_dashboards(client, organization, grafana_org_id)
 
         integration.last_error = None
         # Fingerprinted last, and only on full success: this is what makes
