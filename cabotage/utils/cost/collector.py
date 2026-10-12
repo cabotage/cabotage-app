@@ -280,7 +280,7 @@ def _collect(
     pods_seen = 0
     pods_unallocated = 0
 
-    group_compute: dict[GroupKey, dict[str, float]] = defaultdict(
+    group_compute: defaultdict[GroupKey, dict[str, float]] = defaultdict(
         lambda: {
             "cpu_billed": 0.0,
             "cpu_usage": 0.0,
@@ -336,7 +336,7 @@ def _collect(
 
     line_items: list[CostLineItem] = []
     direct_compute_total = 0.0
-    direct_weight_by_scope: dict[ScopeKey, float] = defaultdict(float)
+    direct_weight_by_scope: defaultdict[ScopeKey, float] = defaultdict(float)
 
     for key, totals in group_compute.items():
         category, org_id, project_id, env_id, app_id, resource_id, component = key
@@ -521,10 +521,10 @@ class _ScopeCaches:
         self.projects: dict[tuple[uuid.UUID | None, str], Project] = {}
         self.environments: dict[tuple[uuid.UUID, str], Environment] = {}
         self.applications: dict[tuple[uuid.UUID, str], Application] = {}
-        self.app_envs_by_app: dict[uuid.UUID, list[ApplicationEnvironment]] = (
+        self.app_envs_by_app: defaultdict[uuid.UUID, list[ApplicationEnvironment]] = (
             defaultdict(list)
         )
-        self.resources_by_namespace: dict[str, list[tuple[Resource, str]]] = (
+        self.resources_by_namespace: defaultdict[str, list[tuple[Resource, str]]] = (
             defaultdict(list)
         )
 
@@ -866,7 +866,7 @@ def _collect_egress(
     service_map = _build_traefik_service_map()
     rate = rates["egress_gb"]
 
-    totals: dict[tuple[uuid.UUID, str], float] = defaultdict(float)
+    totals: defaultdict[tuple[uuid.UUID, str], float] = defaultdict(float)
     for series in traefik_result or []:
         service = series.get("metric", {}).get("service")
         if not service:
@@ -927,7 +927,7 @@ def _collect_overhead_nodes(
 ) -> tuple[float, float, int, bool]:
     _refresh_nodes()
 
-    present_steps: dict[str, int] = defaultdict(int)
+    present_steps: defaultdict[str, int] = defaultdict(int)
     for series in node_presence_result or []:
         instance = series.get("metric", {}).get("instance")
         if not instance:

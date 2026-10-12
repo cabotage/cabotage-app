@@ -181,11 +181,11 @@ type BreakdownDimension = tuple[
 
 #: The 5-tuple ``_aggregate_breakdown`` hands to ``_build_rows``.
 type BreakdownAggregates = tuple[
+    defaultdict[BreakdownKey, float],
+    defaultdict[BreakdownKey, defaultdict[str, float]],
     dict[BreakdownKey, float],
-    dict[BreakdownKey, dict[str, float]],
-    dict[BreakdownKey, float],
-    dict[BreakdownKey, float],
-    dict[BreakdownKey, float],
+    defaultdict[BreakdownKey, float],
+    defaultdict[BreakdownKey, float],
 ]
 
 type BreakdownFunc = Callable[
@@ -743,7 +743,7 @@ def _series(
     ).filter(CostLineItem.period_start >= start, CostLineItem.period_start < end)
     rows = query.group_by("bucket", CostLineItem.category).all()
 
-    by_bucket: dict[datetime.datetime, dict[str, float]] = defaultdict(
+    by_bucket: defaultdict[datetime.datetime, defaultdict[str, float]] = defaultdict(
         lambda: defaultdict(float)
     )
     for row in rows:
@@ -801,9 +801,9 @@ def _series_efficiency(
         CostLineItem.meter.in_(["vcpu", "memory"]),
         CostLineItem.category.in_(["compute", "backing_service"]),
     )
-    usage_by_bucket: dict[datetime.datetime, float] = defaultdict(float)
-    request_by_bucket: dict[datetime.datetime, float] = defaultdict(float)
-    billed_by_bucket: dict[datetime.datetime, float] = defaultdict(float)
+    usage_by_bucket: defaultdict[datetime.datetime, float] = defaultdict(float)
+    request_by_bucket: defaultdict[datetime.datetime, float] = defaultdict(float)
+    billed_by_bucket: defaultdict[datetime.datetime, float] = defaultdict(float)
     for row in query.group_by("bucket", CostLineItem.meter).all():
         bucket = _as_utc(row.bucket)
         rate = _rate_for_meter(rates, row.meter)
@@ -855,10 +855,10 @@ def _series_breakdowns(
             query = query.filter(CostLineItem.category.in_(category_filter))
 
         top_key_set = set(top_keys)
-        values_by_key: dict[BreakdownKey, dict[datetime.datetime, float]] = {
+        values_by_key: dict[BreakdownKey, defaultdict[datetime.datetime, float]] = {
             key: defaultdict(float) for key in top_keys
         }
-        other_by_bucket: dict[datetime.datetime, float] = defaultdict(float)
+        other_by_bucket: defaultdict[datetime.datetime, float] = defaultdict(float)
         for row in query.group_by("bucket", "key").all():
             bucket = _as_utc(row.bucket)
             if row.key in top_key_set:
@@ -939,8 +939,8 @@ def _breakdown_detail(
     )
     if category_filter:
         totals_query = totals_query.filter(CostLineItem.category.in_(category_filter))
-    totals_by_key: dict[BreakdownKey, dict[str, tuple[float, float]]] = defaultdict(
-        dict
+    totals_by_key: defaultdict[BreakdownKey, dict[str, tuple[float, float]]] = (
+        defaultdict(dict)
     )
     for row in totals_query.group_by("key", CostLineItem.meter).all():
         totals_by_key[row.key][row.meter] = (float(row.quantity), float(row.cost))
@@ -975,9 +975,9 @@ def _breakdown_detail(
     )
     if category_filter:
         series_query = series_query.filter(CostLineItem.category.in_(category_filter))
-    series_tmp: dict[BreakdownKey, dict[str, dict[datetime.datetime, float]]] = (
-        defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
-    )
+    series_tmp: defaultdict[
+        BreakdownKey, defaultdict[str, defaultdict[datetime.datetime, float]]
+    ] = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
     for row in series_query.group_by("bucket", "key", CostLineItem.meter).all():
         series_tmp[row.key][row.meter][_as_utc(row.bucket)] += float(row.quantity)
 
@@ -1083,10 +1083,10 @@ def _aggregate_breakdown(
         cat_query = cat_query.filter(CostLineItem.category.in_(category_filter))
     cat_rows = cat_query.group_by("key", CostLineItem.category).all()
 
-    categories_by_key: dict[BreakdownKey, dict[str, float]] = defaultdict(
+    categories_by_key: defaultdict[BreakdownKey, defaultdict[str, float]] = defaultdict(
         lambda: defaultdict(float)
     )
-    totals_by_key: dict[BreakdownKey, float] = defaultdict(float)
+    totals_by_key: defaultdict[BreakdownKey, float] = defaultdict(float)
     for row in cat_rows:
         categories_by_key[row.key][row.category] += float(row.cost)
         totals_by_key[row.key] += float(row.cost)
@@ -1122,8 +1122,8 @@ def _aggregate_breakdown(
         CostLineItem.meter.in_(["vcpu", "memory"]),
         CostLineItem.category.in_(["compute", "backing_service"]),
     )
-    efficiency_num: dict[BreakdownKey, float] = defaultdict(float)
-    efficiency_den: dict[BreakdownKey, float] = defaultdict(float)
+    efficiency_num: defaultdict[BreakdownKey, float] = defaultdict(float)
+    efficiency_den: defaultdict[BreakdownKey, float] = defaultdict(float)
     for row in eff_query.group_by("key", CostLineItem.meter).all():
         rate = _rate_for_meter(rates, row.meter)
         efficiency_num[row.key] += float(row.usage or 0.0) * rate
@@ -1139,11 +1139,11 @@ def _aggregate_breakdown(
 
 
 def _build_rows(
-    totals_by_key: dict[BreakdownKey, float],
-    categories_by_key: dict[BreakdownKey, dict[str, float]],
+    totals_by_key: defaultdict[BreakdownKey, float],
+    categories_by_key: defaultdict[BreakdownKey, defaultdict[str, float]],
     previous_by_key: dict[BreakdownKey, float],
-    efficiency_num: dict[BreakdownKey, float],
-    efficiency_den: dict[BreakdownKey, float],
+    efficiency_num: defaultdict[BreakdownKey, float],
+    efficiency_den: defaultdict[BreakdownKey, float],
     name_resolver: NameResolver,
 ) -> tuple[list[BreakdownRow], list[BreakdownKey]]:
     total_cost = sum(totals_by_key.values())
