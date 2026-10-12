@@ -24,6 +24,14 @@
 
   {% call page_header(organization.name, 'Organization') %}
     <div class="flex gap-2">
+      {% if grafana_available and organization.grafana_integration and organization.grafana_integration.ready %}
+        <form method="POST" action="{{ url_for('grafana.open_grafana', org_slug=organization.slug) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-sm btn-ghost gap-1">
+            {{ icon('bar-chart', 'w-4 h-4') }} Open Grafana
+          </button>
+        </form>
+      {% endif %}
       {% if is_admin %}
         <a href="{{ url_for('user.organization_settings', org_slug=organization.slug) }}"
            class="btn btn-sm btn-ghost gap-1">
