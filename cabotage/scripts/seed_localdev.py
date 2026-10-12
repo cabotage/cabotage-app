@@ -13,9 +13,7 @@ import os
 import sys
 from typing import TypedDict
 
-from sqlalchemy import text
-
-from sqlalchemy import update
+from sqlalchemy import text, update
 
 from cabotage.server import create_app, db
 from cabotage.server.models import Organization, User
