@@ -752,7 +752,7 @@ def _series(
 
     timestamps = [int(bucket.timestamp()) for bucket in buckets]
     categories = {
-        category: [by_bucket.get(bucket, {}).get(category, 0.0) for bucket in buckets]
+        category: [by_bucket[bucket][category] for bucket in buckets]
         for category in CATEGORY_ORDER
     }
     return {"timestamps": timestamps, "categories": categories}
@@ -811,9 +811,9 @@ def _series_efficiency(
         request_by_bucket[bucket] += float(row.request or 0.0) * rate
         billed_by_bucket[bucket] += float(row.billed or 0.0) * rate
     return {
-        "usage": [usage_by_bucket.get(bucket, 0.0) for bucket in buckets],
-        "request": [request_by_bucket.get(bucket, 0.0) for bucket in buckets],
-        "billed": [billed_by_bucket.get(bucket, 0.0) for bucket in buckets],
+        "usage": [usage_by_bucket[bucket] for bucket in buckets],
+        "request": [request_by_bucket[bucket] for bucket in buckets],
+        "billed": [billed_by_bucket[bucket] for bucket in buckets],
     }
 
 
@@ -871,10 +871,10 @@ def _series_breakdowns(
             "keys": [str(key) for key in top_keys],
             "names": {str(key): names.get(key, str(key)) for key in top_keys},
             "values": {
-                str(key): [values_by_key[key].get(bucket, 0.0) for bucket in buckets]
+                str(key): [values_by_key[key][bucket] for bucket in buckets]
                 for key in top_keys
             },
-            "other": [other_by_bucket.get(bucket, 0.0) for bucket in buckets],
+            "other": [other_by_bucket[bucket] for bucket in buckets],
         }
     return result
 
@@ -984,7 +984,7 @@ def _breakdown_detail(
     resource_series_by_key: dict[BreakdownKey, dict[str, list[float]]] = {}
     for key in keys:
         resource_series_by_key[key] = {
-            meter: [series_tmp[key][meter].get(bucket, 0.0) for bucket in buckets]
+            meter: [series_tmp[key][meter][bucket] for bucket in buckets]
             for meter in ("vcpu", "memory", "egress", "storage")
         }
 
@@ -1156,9 +1156,7 @@ def _build_rows(
             continue
         name, context, slugs, deleted = resolved
         efficiency = (
-            efficiency_num[key] / efficiency_den[key]
-            if efficiency_den.get(key)
-            else None
+            efficiency_num[key] / efficiency_den[key] if efficiency_den[key] else None
         )
         rows.append(
             {
@@ -1169,7 +1167,7 @@ def _build_rows(
                 "previous_cost": previous_by_key.get(key, 0.0),
                 "share": (cost / total_cost) if total_cost else 0.0,
                 "categories": {
-                    category: categories_by_key[key].get(category, 0.0)
+                    category: categories_by_key[key][category]
                     for category in CATEGORY_ORDER
                 },
                 "efficiency": efficiency,
