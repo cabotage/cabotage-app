@@ -42,6 +42,12 @@ _PROMETHEUS_DATASOURCE_UID = "cabotage-prometheus"
 _LOKI_DATASOURCE_UID = "cabotage-loki"
 _OVERVIEW_DASHBOARD_UID = "cabotage-overview"
 _LOGS_DASHBOARD_UID = "cabotage-logs"
+_ORG_FILTERS = {
+    "project": '=~"$project"',
+    "application": '=~"$application"',
+    "environment": '=~"$environment"',
+}
+_ORG_GROUP = ("project", "application")
 
 
 class GrafanaIntegrationError(Exception):
@@ -622,23 +628,35 @@ def _reconcile_datasources(
     )
 
 
-def _dashboard_variables(*, logs: bool = False) -> JSONObject:
+def _dashboard_variables(
+    names: tuple[str, ...],
+    *,
+    logs: bool = False,
+    fixed: dict[str, str] | None = None,
+) -> JSONObject:
+    """Dropdowns for ``names``; each one is narrowed by the ones before it."""
     datasource: JSONObject = {
         "type": "loki" if logs else "prometheus",
         "uid": _LOKI_DATASOURCE_UID if logs else _PROMETHEUS_DATASOURCE_UID,
     }
-    return {
-        "list": [
+    prefix = "" if logs else "label_"
+    variables: list[JSONValue] = []
+    for index, name in enumerate(names):
+        matchers = [f"{prefix}{label}{value}" for label, value in (fixed or {}).items()]
+        matchers += [f'{prefix}{prior}=~"${prior}"' for prior in names[:index]]
+        if logs:
+            selector = "{" + ", ".join(['namespace=~".+"', *matchers]) + "}"
+            query = f"label_values({selector},{name})"
+        else:
+            selector = "{" + ", ".join(matchers) + "}" if matchers else ""
+            query = f"label_values(kube_pod_labels{selector},label_{name})"
+        variables.append(
             {
                 "name": name,
                 "label": name.title(),
                 "type": "query",
                 "datasource": datasource,
-                "query": (
-                    f'label_values({{namespace=~".+"}},{name})'
-                    if logs
-                    else f"label_values(kube_pod_labels,label_{name})"
-                ),
+                "query": query,
                 "includeAll": True,
                 "allValue": ".*",
                 "multi": True,
@@ -646,9 +664,8 @@ def _dashboard_variables(*, logs: bool = False) -> JSONObject:
                 "sort": 1,
                 "current": {"text": "All", "value": "$__all"},
             }
-            for name in ("application", "environment")
-        ]
-    }
+        )
+    return {"list": variables}
 
 
 def _timeseries_panel(
@@ -659,6 +676,7 @@ def _timeseries_panel(
     x: int,
     y: int,
     *,
+    legend: str,
     logs: bool = False,
     width: int = 12,
 ) -> JSONObject:
@@ -694,27 +712,21 @@ def _timeseries_panel(
             },
             "tooltip": {"mode": "multi", "sort": "desc"},
         },
-        "targets": [
-            {
-                "expr": expression,
-                "refId": "A",
-                "legendFormat": "{{application}}" if logs else "{{label_application}}",
-            }
-        ],
+        "targets": [{"expr": expression, "refId": "A", "legendFormat": legend}],
     }
 
 
-def _logs_panel(panel_id: int, y: int, *, height: int = 12) -> JSONObject:
+def _logs_panel(panel_id: int, y: int, match: str, *, height: int = 12) -> JSONObject:
     return {
         "id": panel_id,
         "title": "Application logs",
-        "description": "All selected apps and environments. Expand a line to inspect its labels and structured fields.",
+        "description": "Expand a line to inspect its labels and structured fields.",
         "type": "logs",
         "gridPos": {"h": height, "w": 24, "x": 0, "y": y},
         "datasource": {"type": "loki", "uid": _LOKI_DATASOURCE_UID},
         "targets": [
             {
-                "expr": '{namespace=~".+", application=~"$application", environment=~"$environment"}',
+                "expr": f'{{namespace=~".+", {match}}}',
                 "refId": "A",
                 "queryType": "range",
                 "maxLines": 500,
@@ -754,117 +766,136 @@ def _dashboard_link(uid: str, title: str) -> JSONObject:
     }
 
 
-def _starter_dashboard_payload() -> JSONObject:
-    # Container metrics need KSM ownership labels; Traefik labels are assigned
-    # by the trusted registry router. Neither query relies on workload org labels.
-    pod_labels_join = (
-        "on(namespace,pod) group_left(label_application) "
-        "max by(namespace,pod,label_application)(kube_pod_labels{"
-        'label_application=~"$application", label_environment=~"$environment"})'
+def _matchers(filters: dict[str, str], *, prefix: str = "") -> str:
+    return ", ".join(f"{prefix}{label}{value}" for label, value in filters.items())
+
+
+def _workload_panels(
+    filters: dict[str, str], group: tuple[str, ...]
+) -> list[JSONValue]:
+    """CPU, memory, traffic, errors, latency, and logs for the workloads matching
+    ``filters`` (Cabotage's project/application/environment labels), one series
+    per ``group``.
+    """
+    match = _matchers(filters)
+    by = ",".join(group)
+    legend = "/".join(f"{{{{{label}}}}}" for label in group)
+    # cAdvisor series only carry namespace/pod; take workload labels from KSM.
+    kube_by = ",".join(f"label_{label}" for label in group)
+    kube_legend = "/".join(f"{{{{label_{label}}}}}" for label in group)
+    pod_labels = (
+        f"on(namespace,pod) group_left({kube_by}) max by(namespace,pod,{kube_by})"
+        f"(kube_pod_labels{{{_matchers(filters, prefix='label_')}}})"
     )
-    app_env_match = 'application=~"$application", environment=~"$environment"'
-    request_rate = (
-        f"rate(traefik_service_requests_total{{{app_env_match}}}[$__rate_interval])"
-    )
-    request_errors = f'rate(traefik_service_requests_total{{{app_env_match}, code=~"5.."}}[$__rate_interval])'
-    panels: list[JSONObject] = [
+    containers = 'container!="", container!="POD"'
+    requests_rate = f"rate(traefik_service_requests_total{{{match}}}[$__rate_interval])"
+    errors_rate = f'rate(traefik_service_requests_total{{{match}, code=~"5.."}}[$__rate_interval])'
+    return [
         _timeseries_panel(
             1,
             "CPU · cores",
-            'sum by(label_application)(rate(container_cpu_usage_seconds_total{container!="", container!="POD"}[$__rate_interval]) '
-            f"* {pod_labels_join})",
+            f"sum by({kube_by})(rate(container_cpu_usage_seconds_total{{{containers}}}"
+            f"[$__rate_interval]) * {pod_labels})",
             "cores",
             0,
             0,
+            legend=kube_legend,
         ),
         _timeseries_panel(
             2,
             "Memory · working set",
-            'sum by(label_application)(container_memory_working_set_bytes{container!="", container!="POD"} '
-            f"* {pod_labels_join})",
+            f"sum by({kube_by})(container_memory_working_set_bytes{{{containers}}}"
+            f" * {pod_labels})",
             "bytes",
             12,
             0,
+            legend=kube_legend,
         ),
         _timeseries_panel(
             3,
             "Traffic · requests / second",
-            f"sum by(application)({request_rate})",
+            f"sum by({by})({requests_rate})",
             "reqps",
             0,
             7,
+            legend=legend,
         ),
         _timeseries_panel(
             4,
             "HTTP errors · 5xx",
-            f"sum by(application)({request_errors}) / sum by(application)({request_rate})",
+            f"sum by({by})({errors_rate}) / sum by({by})({requests_rate})",
             "percentunit",
             12,
             7,
+            legend=legend,
         ),
         _timeseries_panel(
             5,
             "Latency · 95th percentile",
-            "histogram_quantile(0.95, sum by(application,le)(rate("
-            f"traefik_router_request_duration_seconds_bucket{{{app_env_match}}}[$__rate_interval])))",
+            f"histogram_quantile(0.95, sum by({by},le)(rate("
+            f"traefik_router_request_duration_seconds_bucket{{{match}}}[$__rate_interval])))",
             "s",
             0,
             14,
+            legend=legend,
         ),
         _timeseries_panel(
             6,
             "Logs · lines / second",
-            'sum by(application)(rate({namespace=~".+", '
-            f"{app_env_match}}}[$__interval]))",
+            f'sum by({by})(rate({{namespace=~".+", {match}}}[$__interval]))',
             "ops",
             12,
             14,
+            legend=legend,
             logs=True,
         ),
-        _logs_panel(7, 21),
+        _logs_panel(7, 21, match),
     ]
-    for panel in panels[2:5]:
-        targets = cast("list[JSONObject]", panel["targets"])
-        targets[0]["legendFormat"] = "{{application}}"
+
+
+def _starter_dashboard_payload() -> JSONObject:
     return {
         "uid": _OVERVIEW_DASHBOARD_UID,
         "title": "Cabotage Overview",
-        "description": "Resources, traffic, and logs across this organization's apps. Select an app or environment to narrow the view. Empty panels mean no matching samples in the selected time range.",
+        "description": "Resources, traffic, and logs across this organization's apps. Select a project, app, or environment to narrow the view. Empty panels mean no matching samples in the selected time range.",
         "tags": ["cabotage", "applications"],
         "schemaVersion": 39,
         "editable": True,
         "refresh": "30s",
         "time": {"from": "now-1h", "to": "now"},
-        "templating": _dashboard_variables(),
+        "templating": _dashboard_variables(tuple(_ORG_FILTERS)),
         "links": [_dashboard_link(_LOGS_DASHBOARD_UID, "Application logs")],
-        "panels": cast("list[JSONValue]", panels),
+        "panels": _workload_panels(_ORG_FILTERS, _ORG_GROUP),
     }
 
 
 def _logs_dashboard_payload() -> JSONObject:
+    match = _matchers(_ORG_FILTERS)
+    by = ",".join(_ORG_GROUP)
     return {
         "uid": _LOGS_DASHBOARD_UID,
         "title": "Cabotage Logs",
-        "description": "Logs across all applications. Filter by app and environment, inspect structured fields, or open log context around an event.",
+        "description": "Logs across all applications. Filter by project, app, and environment, inspect structured fields, or open log context around an event.",
         "tags": ["cabotage", "logs"],
         "schemaVersion": 39,
         "editable": True,
         "refresh": "30s",
         "time": {"from": "now-1h", "to": "now"},
-        "templating": _dashboard_variables(logs=True),
+        "templating": _dashboard_variables(tuple(_ORG_FILTERS), logs=True),
         "links": [_dashboard_link(_OVERVIEW_DASHBOARD_UID, "Application overview")],
         "panels": [
             _timeseries_panel(
                 1,
                 "Log volume · by application",
-                'sum by(application)(count_over_time({namespace=~".+", application=~"$application", environment=~"$environment"}[$__interval]))',
+                f'sum by({by})(count_over_time({{namespace=~".+", {match}}}[$__interval]))',
                 "short",
                 0,
                 0,
+                legend="{{project}}/{{application}}",
                 logs=True,
                 width=24,
             ),
-            _logs_panel(2, 7, height=18),
+            _logs_panel(2, 7, match, height=18),
         ],
     }
 
