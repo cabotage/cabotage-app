@@ -27,10 +27,12 @@ from werkzeug.wrappers import Response
 
 from cabotage.server import db
 from cabotage.server.integrations.grafana import (
+    app_dashboard_uid,
     grafana_configured,
     grafana_user_login,
     membership_fingerprint,
     organization_tenants,
+    project_folder_uid,
 )
 from cabotage.server.models.auth import Organization, User
 from cabotage.server.models.auth_associations import OrganizationMember
@@ -370,6 +372,36 @@ def tenants() -> Response:
     return response
 
 
+def _form_uuid(name: str) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(request.form.get(name, ""))
+    except ValueError:
+        return None
+
+
+def _open_path(organization: Organization) -> str:
+    """The app's dashboard or project's folder when opened from those pages."""
+    application_id = _form_uuid("application_id")
+    if application_id is not None:
+        application = db.session.get(Application, application_id)
+        if (
+            application is not None
+            and application.deleted_at is None
+            and application.project.organization_id == organization.id
+        ):
+            return f"d/{app_dashboard_uid(application)}"
+    project_id = _form_uuid("project_id")
+    if project_id is not None:
+        project = db.session.get(Project, project_id)
+        if (
+            project is not None
+            and project.deleted_at is None
+            and project.organization_id == organization.id
+        ):
+            return f"dashboards/f/{project_folder_uid(project)}/"
+    return "d/cabotage-overview"
+
+
 @grafana_blueprint.post("/organizations/<org_slug>/grafana/open")
 @login_required
 def open_grafana(org_slug: str) -> Response:
@@ -388,7 +420,7 @@ def open_grafana(org_slug: str) -> Response:
         return redirect(url_for("user.organization", org_slug=org_slug))
     session[_SESSION_ORGANIZATION] = str(organization.id)
     public_path: str = current_app.config["GRAFANA_PUBLIC_PATH"]
-    return redirect(public_path + "d/cabotage-overview")
+    return redirect(public_path + _open_path(organization))
 
 
 @grafana_blueprint.post("/organizations/<org_slug>/grafana/settings")

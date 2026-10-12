@@ -11,7 +11,11 @@ from flask_security import hash_password
 from kombu.exceptions import OperationalError
 
 from cabotage.server import db
-from cabotage.server.integrations.grafana import membership_fingerprint
+from cabotage.server.integrations.grafana import (
+    app_dashboard_uid,
+    membership_fingerprint,
+    project_folder_uid,
+)
 from cabotage.server.models.auth import Organization, User
 from cabotage.server.models.auth_associations import OrganizationMember
 from cabotage.server.models.grafana import OrganizationGrafanaIntegration
@@ -317,6 +321,34 @@ def test_disable_immediately_revokes_browser_access_when_broker_is_down(gateway)
     assert response.status_code == 302
     assert integration.enabled is False
     assert _auth(client).status_code == 403
+
+
+def test_open_grafana_only_targets_this_orgs_projects_and_apps(gateway):
+    client, _, _, integration, other_integration, environment = gateway
+    project = environment.project
+    other_project = Project(name="Other", organization=other_integration.organization)
+    db.session.add(other_project)
+    db.session.flush()
+    own_app = Application(name="web", slug="web", project=project)
+    other_app = Application(name="web", slug="web", project=other_project)
+    db.session.add_all([own_app, other_app])
+    db.session.flush()
+
+    def opened(**data):
+        return client.post(
+            f"/organizations/{integration.organization.slug}/grafana/open", data=data
+        ).headers["Location"]
+
+    overview = "/grafana/d/cabotage-overview"
+    assert (
+        opened(application_id=own_app.id) == f"/grafana/d/{app_dashboard_uid(own_app)}"
+    )
+    assert opened(project_id=project.id) == (
+        f"/grafana/dashboards/f/{project_folder_uid(project)}/"
+    )
+    assert opened(application_id=other_app.id) == overview
+    assert opened(project_id=other_project.id) == overview
+    assert opened(project_id="not-a-uuid") == overview
 
 
 def test_registry_withdraws_deleted_workloads_and_ignores_disabled_ingresses(gateway):
