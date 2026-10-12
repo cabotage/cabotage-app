@@ -14,7 +14,7 @@ import requests
 from flask import current_app
 
 
-def _raise_for_status(resp: requests.Response, *args: object, **kwargs: object) -> None:
+def _raise_for_status(resp: requests.Response, **_) -> None:
     resp.raise_for_status()
 
 
