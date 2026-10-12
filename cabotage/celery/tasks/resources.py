@@ -178,7 +178,7 @@ def _resource_env_config_is_current(config, value, secret):
 
 
 def _is_legacy_resource_url_config(name):
-    return name.endswith("_DATABASE_URL") or name.endswith("_REDIS_URL")
+    return name.endswith(("_DATABASE_URL", "_REDIS_URL"))
 
 
 def _resource_labels(resource):

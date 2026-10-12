@@ -1072,9 +1072,7 @@ class Release(Model, Timestamp):
             k: v
             for k, v in self.image_snapshot.processes.items()
             if not (
-                k.startswith("release")
-                or k.startswith("postdeploy")
-                or k.startswith("job")
+                k.startswith(("release", "postdeploy", "job"))
             )
         }
 
@@ -1814,9 +1812,7 @@ class ReleaseSnapshot:
             k: v
             for k, v in self.image_snapshot.processes.items()
             if not (
-                k.startswith("release")
-                or k.startswith("postdeploy")
-                or k.startswith("job")
+                k.startswith(("release", "postdeploy", "job"))
             )
         }
 
