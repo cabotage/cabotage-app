@@ -1,114 +1,453 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, stat_card, service_card, empty_state %}
+{% from "_macros.html" import icon %}
 
 {% block title %}
   Cabotage - Platform as a Service
 {% endblock title %}
 
+{% set status_labels = {
+  'build-failed': 'Build failed',
+  'deploy-failed': 'Deploy failed',
+  'building': 'Building',
+  'deploying': 'Deploying',
+  'live': 'Live',
+  'idle': 'Not deployed',
+} %}
+{% set org_colors = ["#8b5cf6", "#3b82f6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444"] %}
+
+{% macro dot(status) %}
+  <span class="dash-dot" data-status="{{ status }}" aria-hidden="true"></span>
+{% endmacro %}
+
+{% macro kpi(value, label, icon_name, color) %}
+  <div class="stat-card dash-kpi">
+    <div class="flex items-center gap-2">
+      <span class="text-{{ color }}/60">{{ icon(icon_name, 'w-4 h-4') }}</span>
+      <span class="stat-card-value">{{ "{:,}".format(value) }}</span>
+    </div>
+    <span class="stat-card-label">{{ label }}</span>
+    <span class="dash-kpi-meta">{{ caller() }}</span>
+  </div>
+{% endmacro %}
+
+{% macro health_bar(counts, total) %}
+  {% if total %}
+    <span class="dash-health"
+          role="img"
+          aria-label="{% for s in ['build-failed', 'deploy-failed', 'building', 'deploying', 'live', 'idle'] if counts.get(s) %}{{ counts[s] }} {{ status_labels[s]|lower }}{{ ', ' if not loop.last }}{% endfor %}">
+      {% for s in ['build-failed', 'deploy-failed', 'building', 'deploying', 'live', 'idle'] if counts.get(s) %}
+        <span class="dash-health-seg"
+              data-status="{{ s }}"
+              style="flex-grow: {{ counts[s] }}"></span>
+      {% endfor %}
+    </span>
+  {% endif %}
+{% endmacro %}
+
+{% macro org_block(org) %}
+  <details class="dash-org{% if not org.is_member %} dash-org-foreign{% endif %}"
+           data-org="{{ org.id }}"
+           data-search="{{ org.name|lower }} {{ org.slug|lower }}"
+           {% if org.expanded %}open{% endif %}>
+    <summary class="dash-org-head">
+      <span class="dash-chevron" aria-hidden="true">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</span>
+      <span class="dash-avatar" style="background: {{ org_colors[org.color_index] }}">{{ org.slug[:2]|upper }}</span>
+      <span class="dash-org-title">
+        <span class="dash-org-name">{{ org.name }}</span>
+        <span class="dash-org-sub">
+          <span class="dash-mono">{{ org.slug }}</span>
+          {% if not org.is_member %}
+            <span class="dash-role dash-role-admin" title="Visible because you are a platform admin. Opening its pages requires elevated admin access.">
+              {{ icon('shield', 'w-3 h-3') }}Not a member
+            </span>
+          {% elif org.is_org_admin %}
+            <span class="dash-role">Org admin</span>
+          {% endif %}
+        </span>
+      </span>
+      <span class="dash-org-meta">
+        {% if org.attention_count %}
+          <span class="dash-flag" data-status="build-failed">{{ icon('alert-triangle', 'w-3 h-3') }}{{ org.attention_count }} failing</span>
+        {% elif org.in_flight_count %}
+          <span class="dash-flag" data-status="building">{{ dot('building') }}{{ org.in_flight_count }} in progress</span>
+        {% endif %}
+        <span class="dash-org-counts">
+          <span title="Projects">{{ icon('folder', 'w-3.5 h-3.5') }}{{ org.projects|length }}</span>
+          <span title="Applications">{{ icon('box', 'w-3.5 h-3.5') }}{{ org.app_count }}</span>
+          <span title="Members">{{ icon('users', 'w-3.5 h-3.5') }}{{ org.member_count }}</span>
+        </span>
+        <span class="dash-org-health">
+          {{ health_bar(org.status_counts, org.app_count) }}
+          <span class="dash-when">{{ org.last_deploy|humanize if org.last_deploy else 'never deployed' }}</span>
+        </span>
+      </span>
+      <a href="{{ org.url }}"
+         class="dash-open"
+         title="{{ 'Open organization' if org.is_member else 'Open organization (requires elevated admin access)' }}"
+         aria-label="Open {{ org.name }}">
+        {{ icon('arrow-up-right', 'w-3.5 h-3.5') }}
+      </a>
+    </summary>
+
+    {% if org.projects %}
+      <div class="dash-projects">
+        {% for project in org.projects %}
+          <section class="dash-project"
+                   data-project
+                   data-search="{{ project.name|lower }} {{ project.slug|lower }}">
+            <a href="{{ project.url }}" class="dash-project-head">
+              <span class="dash-project-icon">{{ icon('folder', 'w-3.5 h-3.5') }}</span>
+              <span class="dash-project-name">{{ project.name }}</span>
+              <span class="dash-mono dash-faint">{{ project.slug }}</span>
+              <span class="dash-pill">{{ project.apps|length }} app{{ 's' if project.apps|length != 1 }}</span>
+            </a>
+            {% if project.apps %}
+              <ul class="dash-apps">
+                {% for app in project.apps %}
+                  <li class="dash-app"
+                      data-app
+                      data-status="{{ app.status }}"
+                      data-search="{{ app.name|lower }} {{ app.slug|lower }}">
+                    {{ dot(app.status) }}
+                    <a href="{{ app.url }}" class="dash-app-name">{{ app.name }}</a>
+                    <span class="dash-mono dash-faint dash-app-slug">{{ app.slug }}</span>
+                    <span class="dash-app-envs">
+                      {% if app.show_envs %}
+                        {% for env in app.envs %}
+                          <a href="{{ env.url }}"
+                             class="dash-env"
+                             data-status="{{ env.status }}"
+                             title="{{ env.name }}: {{ status_labels[env.status] }}{% if env.last_deploy %}, deployed {{ env.last_deploy|humanize }}{% endif %}">
+                            {{ dot(env.status) }}{{ env.slug }}
+                          </a>
+                        {% else %}
+                          <span class="dash-env" data-status="idle">no environments</span>
+                        {% endfor %}
+                      {% elif app.status != 'live' %}
+                        <span class="dash-env" data-status="{{ app.status }}">{{ status_labels[app.status] }}</span>
+                      {% endif %}
+                    </span>
+                    <span class="dash-when">{{ app.last_deploy|humanize if app.last_deploy else '' }}</span>
+                  </li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <p class="dash-empty-line">No applications yet</p>
+            {% endif %}
+          </section>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="dash-empty-line dash-empty-org">No projects yet</p>
+    {% endif %}
+  </details>
+{% endmacro %}
+
+{% macro work_item(item) %}
+  <li>
+    <a href="{{ item.url }}" class="dash-work">
+      {{ dot(item.status) }}
+      <span class="dash-work-main">
+        <span class="dash-work-title">
+          {{ item.app.name }}
+          {% if item.env %}<span class="dash-mono dash-faint">{{ item.env.slug }}</span>{% endif %}
+        </span>
+        <span class="dash-work-path">
+          {% if not item.is_member %}{{ icon('shield', 'w-3 h-3') }}{% endif %}
+          {{ item.org.slug }} / {{ item.project.slug }}
+        </span>
+      </span>
+      <span class="dash-work-status" data-status="{{ item.status }}">{{ status_labels[item.status] }}</span>
+    </a>
+  </li>
+{% endmacro %}
+
 {% block content_full %}
   {% if current_user.is_authenticated %}
-
-    {% if not current_user.admin and org_count == 0 and project_count == 0 and app_count == 0 and deploy_count == 0 %}
-    <div class="app-content-padded" data-page="dashboard">
-      <div class="empty-state py-16">
-        <div class="text-base-content/15 mb-4">{{ icon('building', 'w-12 h-12') }}</div>
-        <h1 class="text-xl font-semibold text-base-content mb-2">Welcome, {{ (current_user.username or current_user.email) | display_username }}</h1>
-        <p class="text-sm text-base-content/40 max-w-sm">{% if organization_requests_enabled %}You're not a member of any organizations yet. Request an organization to get started.{% else %}You're not a member of any organizations yet. An administrator will need to add you to one.{% endif %}</p>
-        {% if organization_requests_enabled %}
-        <a href="{{ url_for('user.organization_request_create') }}"
-           class="btn btn-primary btn-sm gap-2 mt-4">
-          {{ icon('plus', 'w-4 h-4') }}
-          Request Organization
-        </a>
-        {% endif %}
-      </div>
-    </div>
-    {% else %}
-    <div class="app-content-padded" data-page="dashboard">
-      <div class="flex items-center justify-between mb-8">
-        <div>
-          <h1 class="text-xl font-semibold text-base-content">Dashboard</h1>
-          <p class="text-sm text-base-content/40 mt-0.5">Welcome back, {{ (current_user.username or current_user.email) | display_username }}</p>
+    {% if not current_user.admin and member_org_count == 0 %}
+      <div class="app-content-padded" data-page="dashboard">
+        <div class="empty-state py-16">
+          <div class="text-base-content/15 mb-4">{{ icon('building', 'w-12 h-12') }}</div>
+          <h1 class="text-xl font-semibold text-base-content mb-2">
+            Welcome, {{ (current_user.username or current_user.email) | display_username }}
+          </h1>
+          <p class="text-sm text-base-content/40 max-w-sm">
+            {% if organization_requests_enabled %}
+              You're not a member of any organizations yet. Request an organization to get started.
+            {% else %}
+              You're not a member of any organizations yet. An administrator will need to add you to one.
+            {% endif %}
+          </p>
+          {% if organization_requests_enabled %}
+            <a href="{{ url_for('user.organization_request_create') }}"
+               class="btn btn-primary btn-sm gap-2 mt-4">
+              {{ icon('plus', 'w-4 h-4') }}
+              Request Organization
+            </a>
+          {% endif %}
         </div>
-        {% if current_user.admin %}
-        <a href="{{ url_for('user.organization_create') }}"
-           class="btn btn-primary btn-sm gap-2">
-          {{ icon('plus', 'w-4 h-4') }}
-          New Org
-        </a>
+      </div>
+    {% else %}
+      {% set total_apps = app_count %}
+      {% set failing = attention|length %}
+      <div class="app-content-padded dash"
+           data-page="dashboard"
+           data-dash
+           data-scope="{{ scope }}"
+           data-signature="{{ status_signature }}"
+           data-poll="{{ 1 if in_flight else 0 }}">
+        <header class="dash-head">
+          <div>
+            <h1 class="text-xl font-semibold text-base-content">Dashboard</h1>
+            <p class="text-sm text-base-content/40 mt-0.5">
+              Welcome back, {{ (current_user.username or current_user.email) | display_username }}
+              <span class="dash-live" data-dash-live-pill {% if not in_flight %}hidden{% endif %}>
+                <span class="dash-dot" data-status="deploying"></span>Live
+              </span>
+            </p>
+          </div>
+          <div class="dash-head-tools">
+            {% if current_user.admin %}
+              <nav class="dash-scope" aria-label="Dashboard scope">
+                <a href="{{ url_for('main.home') }}"
+                   {% if scope == 'mine' %}aria-current="page"{% endif %}>
+                  My orgs <span class="dash-scope-n">{{ member_org_count }}</span>
+                </a>
+                <a href="{{ url_for('main.home', scope='all') }}"
+                   class="dash-scope-admin"
+                   {% if scope == 'all' %}aria-current="page"{% endif %}>
+                  {{ icon('shield', 'w-3.5 h-3.5') }}All orgs <span class="dash-scope-n">{{ platform_org_count }}</span>
+                </a>
+              </nav>
+              <a href="{{ url_for('user.organization_create') }}"
+                 class="btn btn-primary btn-sm gap-2">
+                {{ icon('plus', 'w-4 h-4') }}
+                New Org
+              </a>
+            {% endif %}
+          </div>
+        </header>
+
+        {% if scope == 'all' %}
+          <div class="dash-admin-band" role="note">
+            {{ icon('shield', 'w-4 h-4') }}
+            <span>
+              <strong>Admin view.</strong>
+              Showing all {{ org_count }} organizations on the platform{% if other_org_count %}, including {{ other_org_count }} you're not a member of. Those are marked with a shield, and opening their pages requires elevated admin access{% endif %}.
+            </span>
+            <a href="{{ url_for('main.home') }}" class="dash-admin-band-exit">Back to my orgs</a>
+          </div>
         {% endif %}
-      </div>
 
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
-        {{ stat_card(org_count, 'Organizations', 'building', 'primary') }}
-        {{ stat_card(project_count, 'Projects', 'folder', 'secondary') }}
-        {{ stat_card(app_count, 'Applications', 'box', 'accent') }}
-        {{ stat_card(deploy_count, 'Deployments', 'deploy', 'success') }}
-      </div>
+        <div class="dash-kpis" data-dash-region="kpis">
+          {% call kpi(org_count, 'Organizations', 'building', 'primary') %}
+            {% set admin_orgs = org_rows|selectattr('is_org_admin')|list|length %}
+            {% if scope == 'all' %}
+              {{ member_org_count }} as member
+            {% elif admin_orgs %}
+              {{ admin_orgs }} as org admin
+            {% else %}
+              all as member
+            {% endif %}
+          {% endcall %}
+          {% call kpi(project_count, 'Projects', 'folder', 'secondary') %}
+            across {{ org_count }} org{{ 's' if org_count != 1 }}
+          {% endcall %}
+          {% call kpi(total_apps, 'Applications', 'box', 'accent') %}
+            {% set failing_apps = status_totals.get('build-failed', 0) + status_totals.get('deploy-failed', 0) %}
+            {% if failing_apps %}
+              <span class="dash-kpi-alert">{{ dot('build-failed') }}{{ failing_apps }} failing</span>
+            {% elif status_totals.get('live') %}
+              {{ dot('live') }}{{ status_totals.get('live') }} live
+            {% else %}
+              none live yet
+            {% endif %}
+          {% endcall %}
+          {% call kpi(deploy_count, 'Deployments', 'deploy', 'success') %}
+            {{ activity_total }} in {{ activity|length }}d
+          {% endcall %}
+        </div>
 
-      <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Quick Actions</h2>
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <a href="{{ url_for('user.organizations') }}"
-           class="service-card card-interactive block no-underline">
-          <div class="service-card-header">
-            <div class="service-card-icon bg-primary/10 text-primary">{{ icon('building', 'w-5 h-5') }}</div>
-            <div class="flex-1">
-              <span class="text-sm font-medium text-base-content">Organizations</span>
-              <p class="text-xs text-base-content/40">Manage teams and access</p>
+        <div class="dash-grid">
+          <section class="dash-main" aria-labelledby="dash-tree-title">
+            <div class="dash-toolbar">
+              <h2 id="dash-tree-title" class="dash-label">Organizations</h2>
+              <label class="dash-search">
+                {{ icon('search', 'w-3.5 h-3.5') }}
+                <input type="search"
+                       placeholder="Filter orgs, projects, apps"
+                       autocomplete="off"
+                       spellcheck="false"
+                       data-dash-search
+                       aria-label="Filter organizations, projects and applications">
+                <kbd>/</kbd>
+              </label>
+              <div class="dash-seg" role="group" aria-label="Status filter">
+                <button type="button" data-dash-filter="all" aria-pressed="true">All</button>
+                <button type="button" data-dash-filter="attention" aria-pressed="false">
+                  Failing <span class="dash-seg-n" data-dash-count="attention"></span>
+                </button>
+                <button type="button" data-dash-filter="in-flight" aria-pressed="false">
+                  In progress <span class="dash-seg-n" data-dash-count="in-flight"></span>
+                </button>
+              </div>
+              <div class="dash-fold" role="group" aria-label="Expand or collapse organizations">
+                <button type="button" data-dash-fold="open">Expand all</button>
+                <button type="button" data-dash-fold="close">Collapse all</button>
+              </div>
             </div>
-            <svg class="w-4 h-4 text-base-content/20"
-                 viewBox="0 0 24 24"
-                 fill="none"
-                 stroke="currentColor"
-                 stroke-width="2">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
-          </div>
-        </a>
 
-        <a href="{{ url_for('user.projects') }}"
-           class="service-card card-interactive block no-underline">
-          <div class="service-card-header">
-            <div class="service-card-icon bg-secondary/10 text-secondary">{{ icon('folder', 'w-5 h-5') }}</div>
-            <div class="flex-1">
-              <span class="text-sm font-medium text-base-content">Projects</span>
-              <p class="text-xs text-base-content/40">View all projects</p>
+            <div data-dash-region="tree">
+              {% if org_rows %}
+                <div class="dash-tree">
+                  {% set mine = org_rows|selectattr('is_member')|list %}
+                  {% set others = org_rows|rejectattr('is_member')|list %}
+                  {% if scope == 'all' and mine %}
+                    <h3 class="dash-divider" data-dash-divider>Your organizations <span>{{ mine|length }}</span></h3>
+                  {% endif %}
+                  {% for org in mine %}{{ org_block(org) }}{% endfor %}
+                  {% if others %}
+                    <h3 class="dash-divider dash-divider-admin" data-dash-divider>
+                      {{ icon('shield', 'w-3.5 h-3.5') }}Other organizations, admin view <span>{{ others|length }}</span>
+                    </h3>
+                    {% for org in others %}{{ org_block(org) }}{% endfor %}
+                  {% endif %}
+                </div>
+                <div class="dash-nomatch" data-dash-nomatch hidden>
+                  {{ icon('search', 'w-6 h-6') }}
+                  <p>Nothing matches <strong data-dash-nomatch-q></strong></p>
+                  <button type="button" class="btn btn-ghost btn-xs" data-dash-clear>Clear filters</button>
+                </div>
+              {% else %}
+                <div class="empty-state">
+                  <div class="text-base-content/15 mb-4">{{ icon('building', 'w-12 h-12') }}</div>
+                  <h3 class="text-base font-medium text-base-content/60 mb-1">No organizations</h3>
+                  <p class="text-sm text-base-content/40 max-w-sm">Create an organization to start deploying applications.</p>
+                  <a href="{{ url_for('user.organization_create') }}"
+                     class="btn btn-primary btn-sm gap-2 mt-4">{{ icon('plus', 'w-4 h-4') }}Create Organization</a>
+                </div>
+              {% endif %}
             </div>
-            <svg class="w-4 h-4 text-base-content/20"
-                 viewBox="0 0 24 24"
-                 fill="none"
-                 stroke="currentColor"
-                 stroke-width="2">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
-          </div>
-        </a>
+          </section>
 
-        {% if current_user.admin %}
-        <a href="{{ url_for('user.organization_create') }}"
-           class="service-card card-interactive block no-underline border-dashed">
-          <div class="service-card-header">
-            <div class="service-card-icon bg-accent/10 text-accent">{{ icon('plus', 'w-5 h-5') }}</div>
-            <div class="flex-1">
-              <span class="text-sm font-medium text-base-content">New Organization</span>
-              <p class="text-xs text-base-content/40">Get started deploying</p>
-            </div>
-            <svg class="w-4 h-4 text-base-content/20"
-                 viewBox="0 0 24 24"
-                 fill="none"
-                 stroke="currentColor"
-                 stroke-width="2">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
-          </div>
-        </a>
-        {% endif %}
+          <aside class="dash-rail" data-dash-region="rail">
+            <section class="dash-card dash-card-attention">
+              <header class="dash-card-head">
+                <h2 class="dash-label">Needs attention</h2>
+                {% if failing %}<span class="dash-count" data-status="build-failed">{{ failing }}</span>{% endif %}
+              </header>
+              {% if attention %}
+                <ul class="dash-work-list">
+                  {% for item in attention[:6] %}{{ work_item(item) }}{% endfor %}
+                </ul>
+                {% if failing > 6 %}
+                  <button type="button" class="dash-card-more" data-dash-filter-jump="attention">
+                    Show all {{ failing }} in the tree
+                  </button>
+                {% endif %}
+              {% else %}
+                <div class="dash-allclear">
+                  {{ icon('check-circle', 'w-5 h-5') }}
+                  <div>
+                    <p>All clear</p>
+                    <span>No failed builds or deploys across {{ total_apps }} app{{ 's' if total_apps != 1 }}.</span>
+                  </div>
+                </div>
+              {% endif %}
+              {% if in_flight %}
+                <h3 class="dash-sublabel">In progress</h3>
+                <ul class="dash-work-list">
+                  {% for item in in_flight[:5] %}{{ work_item(item) }}{% endfor %}
+                </ul>
+              {% endif %}
+            </section>
+
+            <section class="dash-card">
+              <header class="dash-card-head">
+                <h2 class="dash-label">Deploys, last {{ activity|length }} days</h2>
+              </header>
+              <div class="dash-activity-sum">
+                <span class="dash-big">{{ activity_total }}</span>
+                {% if activity_total %}
+                  {% set ok_pct = ((activity_total - activity_failed) * 100 / activity_total)|round(0, 'floor')|int %}
+                  <span class="dash-rate" data-good="{{ 1 if ok_pct >= 90 else 0 }}">{{ ok_pct }}% succeeded</span>
+                {% endif %}
+                {% if activity_failed %}
+                  <span class="dash-faint">{{ activity_failed }} failed</span>
+                {% endif %}
+              </div>
+              {% set peak = activity_max or 1 %}
+              <svg class="dash-bars"
+                   viewBox="0 0 {{ activity|length * 12 }} 48"
+                   preserveAspectRatio="none"
+                   role="img"
+                   aria-label="{{ activity_total }} deploys over the last {{ activity|length }} days">
+                {% for d in activity %}
+                  {% set h = (d.total / peak * 44) if d.total else 0 %}
+                  {% set fh = (d.failed / peak * 44) if d.failed else 0 %}
+                  <g>
+                    <title>{{ d.day.strftime('%a %b %-d') }}: {{ d.total }} deploy{{ 's' if d.total != 1 }}{% if d.failed %}, {{ d.failed }} failed{% endif %}</title>
+                    <rect class="dash-bar-track" x="{{ loop.index0 * 12 + 1 }}" y="0" width="10" height="48" rx="2" />
+                    {% if d.total > d.failed %}
+                      <rect class="dash-bar" x="{{ loop.index0 * 12 + 1 }}" y="{{ 48 - h + fh }}" width="10" height="{{ h - fh }}" rx="2" />
+                    {% endif %}
+                    {% if d.failed %}
+                      <rect class="dash-bar-fail" x="{{ loop.index0 * 12 + 1 }}" y="{{ 48 - h }}" width="10" height="{{ fh }}" rx="2" />
+                    {% endif %}
+                  </g>
+                {% endfor %}
+              </svg>
+              <div class="dash-bars-axis">
+                <span>{{ activity[0].day.strftime('%b %-d') }}</span>
+                <span>today</span>
+              </div>
+            </section>
+
+            <section class="dash-card">
+              <header class="dash-card-head">
+                <h2 class="dash-label">Recent deploys</h2>
+              </header>
+              {% if recent %}
+                <ul class="dash-feed">
+                  {% for r in recent %}
+                    <li>
+                      <a href="{{ r.url }}" class="dash-feed-row">
+                        <span class="dash-feed-icon" data-status="{{ r.status }}">
+                          {% if r.status == 'succeeded' %}
+                            {{ icon('check', 'w-3 h-3') }}
+                          {% elif r.status == 'failed' %}
+                            {{ icon('x', 'w-3 h-3') }}
+                          {% else %}
+                            {{ icon('loader', 'w-3 h-3') }}
+                          {% endif %}
+                        </span>
+                        <span class="dash-work-main">
+                          <span class="dash-work-title">
+                            {{ r.app.name }}
+                            {% if r.env %}<span class="dash-mono dash-faint">{{ r.env.slug }}</span>{% endif %}
+                          </span>
+                          <span class="dash-work-path">
+                            {% if not r.is_member %}{{ icon('shield', 'w-3 h-3') }}{% endif %}
+                            {{ r.org.slug }} / {{ r.project.slug }}
+                          </span>
+                        </span>
+                        <span class="dash-feed-meta">
+                          <span>{{ r.created|humanize }}</span>
+                          {% if r.auto %}<span class="dash-auto" title="Triggered automatically">auto</span>{% endif %}
+                        </span>
+                      </a>
+                    </li>
+                  {% endfor %}
+                </ul>
+              {% else %}
+                <p class="dash-empty-line">No deployments yet.</p>
+              {% endif %}
+            </section>
+          </aside>
+        </div>
       </div>
-    </div>
     {% endif %}
-
   {% else %}
-
     <div class="hero-gradient">
       <div class="flex flex-col items-center text-center py-12 lg:py-20">
         <div class="p-3 rounded-2xl bg-primary/10 text-primary mb-6">
@@ -120,12 +459,217 @@
         </p>
         <div class="flex items-center gap-3">
           {% if security.registerable %}
-          <a href="{{ url_for('security.register') }}" class="btn btn-primary">Get Started</a>
+            <a href="{{ url_for('security.register') }}" class="btn btn-primary">Get Started</a>
           {% endif %}
           <a href="{{ url_for('security.login') }}" class="btn btn-ghost">Sign In</a>
         </div>
       </div>
     </div>
-
   {% endif %}
 {% endblock content_full %}
+
+{% block js %}
+  {% if current_user.is_authenticated %}
+    <script>
+      (function () {
+        var STORE = 'cabotage:dashboard:open';
+        var POLL_MS = 15000;
+        var state = { q: '', filter: 'all' };
+        var root = document.querySelector('[data-dash]');
+        if (!root) return;
+
+        function saved() {
+          try { return JSON.parse(localStorage.getItem(STORE)) || {}; } catch (e) { return {}; }
+        }
+        function save(id, open) {
+          var s = saved();
+          s[id] = open;
+          try { localStorage.setItem(STORE, JSON.stringify(s)); } catch (e) {}
+        }
+
+        function restoreOpen() {
+          var s = saved();
+          root.querySelectorAll('[data-org]').forEach(function (org) {
+            var id = org.getAttribute('data-org');
+            if (id in s) org.open = s[id];
+            org.dataset.userOpen = org.open ? '1' : '0';
+          });
+        }
+
+        function matches(el) {
+          return !state.q || (el.getAttribute('data-search') || '').indexOf(state.q) !== -1;
+        }
+        function statusOk(app) {
+          var st = app.getAttribute('data-status');
+          if (state.filter === 'attention') return st === 'build-failed' || st === 'deploy-failed';
+          if (state.filter === 'in-flight') return st === 'building' || st === 'deploying';
+          return true;
+        }
+
+        function apply() {
+          var filtering = !!state.q || state.filter !== 'all';
+          var anyVisible = false;
+          root.querySelectorAll('[data-org]').forEach(function (org) {
+            var orgHit = matches(org);
+            var orgVisible = false;
+            org.querySelectorAll('[data-project]').forEach(function (project) {
+              var projectHit = orgHit || matches(project);
+              var projectVisible = false;
+              project.querySelectorAll('[data-app]').forEach(function (app) {
+                var show = (projectHit || matches(app)) && statusOk(app);
+                app.hidden = !show;
+                projectVisible = projectVisible || show;
+              });
+              var empty = !project.querySelector('[data-app]');
+              if (empty && projectHit && state.filter === 'all') projectVisible = true;
+              project.hidden = !projectVisible;
+              orgVisible = orgVisible || projectVisible;
+            });
+            if (!org.querySelector('[data-project]') && orgHit && state.filter === 'all') orgVisible = true;
+            org.hidden = !orgVisible;
+            if (filtering && orgVisible) org.open = true;
+            if (!filtering) org.open = org.dataset.userOpen === '1';
+            anyVisible = anyVisible || orgVisible;
+          });
+          root.querySelectorAll('[data-dash-divider]').forEach(function (d) { d.hidden = filtering; });
+          var nomatch = root.querySelector('[data-dash-nomatch]');
+          if (nomatch) {
+            nomatch.hidden = anyVisible;
+            var q = nomatch.querySelector('[data-dash-nomatch-q]');
+            if (q) q.textContent = state.q ? '"' + state.q + '"' : 'this filter';
+          }
+          root.querySelectorAll('[data-dash-filter]').forEach(function (b) {
+            b.setAttribute('aria-pressed', b.getAttribute('data-dash-filter') === state.filter ? 'true' : 'false');
+          });
+        }
+
+        function counts() {
+          var apps = root.querySelectorAll('[data-app]');
+          var n = { attention: 0, 'in-flight': 0 };
+          apps.forEach(function (a) {
+            var st = a.getAttribute('data-status');
+            if (st === 'build-failed' || st === 'deploy-failed') n.attention++;
+            if (st === 'building' || st === 'deploying') n['in-flight']++;
+          });
+          root.querySelectorAll('[data-dash-count]').forEach(function (el) {
+            var v = n[el.getAttribute('data-dash-count')];
+            el.textContent = v;
+            el.hidden = !v;
+          });
+        }
+
+        function setFilter(f) {
+          state.filter = f;
+          apply();
+        }
+
+        // `toggle` fires asynchronously, so programmatic opens made while a
+        // filter is active arrive here too; only unfiltered toggles persist.
+        root.addEventListener('toggle', function (e) {
+          var org = e.target;
+          if (!org.matches || !org.matches('[data-org]')) return;
+          if (state.q || state.filter !== 'all') return;
+          org.dataset.userOpen = org.open ? '1' : '0';
+          save(org.getAttribute('data-org'), org.open);
+        }, true);
+
+        root.addEventListener('click', function (e) {
+          var f = e.target.closest('[data-dash-filter]');
+          if (f) return setFilter(f.getAttribute('data-dash-filter'));
+          var jump = e.target.closest('[data-dash-filter-jump]');
+          if (jump) {
+            setFilter(jump.getAttribute('data-dash-filter-jump'));
+            var main = root.querySelector('.dash-main');
+            if (main) main.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            return;
+          }
+          var fold = e.target.closest('[data-dash-fold]');
+          if (fold) {
+            var open = fold.getAttribute('data-dash-fold') === 'open';
+            root.querySelectorAll('[data-org]').forEach(function (org) {
+              if (org.hidden) return;
+              org.dataset.userOpen = open ? '1' : '0';
+              save(org.getAttribute('data-org'), open);
+              org.open = open;
+            });
+            return;
+          }
+          if (e.target.closest('[data-dash-clear]')) {
+            search.value = '';
+            state.q = '';
+            setFilter('all');
+          }
+        });
+
+        var search = root.querySelector('[data-dash-search]');
+        search.addEventListener('input', function () {
+          state.q = search.value.trim().toLowerCase();
+          apply();
+        });
+        search.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape') {
+            search.value = '';
+            state.q = '';
+            apply();
+            search.blur();
+          } else if (e.key === 'Enter') {
+            var first = root.querySelector('[data-app]:not([hidden]) .dash-app-name');
+            var visible = first && first.closest('[data-org]:not([hidden])');
+            if (visible) first.click();
+          }
+        });
+        document.addEventListener('keydown', function (e) {
+          if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+          var t = e.target;
+          if (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+          e.preventDefault();
+          search.focus();
+          search.select();
+        });
+
+        // Live refresh: only while builds or deploys are in flight, and only
+        // swap regions when a rendered status actually changed.
+        var timer = null;
+        function schedule() {
+          clearTimeout(timer);
+          if (root.getAttribute('data-poll') === '1') timer = setTimeout(poll, POLL_MS);
+        }
+        function poll() {
+          if (document.hidden) return schedule();
+          fetch(window.location.href, { credentials: 'same-origin', headers: { Accept: 'text/html' } })
+            .then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); })
+            .then(function (html) {
+              var doc = new DOMParser().parseFromString(html, 'text/html');
+              var next = doc.querySelector('[data-dash]');
+              if (!next) return;
+              if (next.getAttribute('data-signature') !== root.getAttribute('data-signature')) {
+                ['kpis', 'tree', 'rail'].forEach(function (name) {
+                  var sel = '[data-dash-region="' + name + '"]';
+                  var cur = root.querySelector(sel);
+                  var fresh = next.querySelector(sel);
+                  if (cur && fresh) cur.replaceWith(fresh);
+                });
+                root.setAttribute('data-signature', next.getAttribute('data-signature'));
+                restoreOpen();
+                counts();
+                apply();
+              }
+              root.setAttribute('data-poll', next.getAttribute('data-poll'));
+              var pill = root.querySelector('[data-dash-live-pill]');
+              if (pill) pill.hidden = next.getAttribute('data-poll') !== '1';
+            })
+            .catch(function () {})
+            .then(schedule);
+        }
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden && root.getAttribute('data-poll') === '1') poll();
+        });
+
+        restoreOpen();
+        counts();
+        apply();
+        schedule();
+      })();
+    </script>
+  {% endif %}
+{% endblock js %}
