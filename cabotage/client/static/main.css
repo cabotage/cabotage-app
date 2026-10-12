@@ -1739,6 +1739,32 @@ a.dash-env:hover {
   outline: 2px solid var(--color-primary);
   outline-offset: -2px;
 }
+/* The title link stretches over the whole row so links inside the row
+   (environment chips) can sit on top of it. */
+.dash-row-stretch {
+  position: relative;
+}
+.dash-row-link {
+  color: inherit;
+  text-decoration: none;
+}
+.dash-row-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.dash-row-link:focus-visible {
+  outline: none;
+}
+.dash-row-link:focus-visible::after {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+.dash-row-stretch a.dash-env {
+  position: relative;
+  z-index: 1;
+}
 .dash-row-icon {
   display: flex;
   flex-shrink: 0;

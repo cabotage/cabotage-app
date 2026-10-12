@@ -113,20 +113,21 @@
   </dialog>
 {% endmacro %}
 
-{#- One app, or one environment of an app, as a list row. -#}
+{#- One app, or one environment of an app, as a list row. The title link
+    covers the whole row; environment chips are their own links on top. -#}
 {% macro app_row(item, show_environments=False) %}
   <li data-search="{{ item.app.name|lower }} {{ item.app.slug|lower }} {{ item.project.slug|lower }} {{ item.org.slug|lower }}"
       data-filter="{{ filter_group(item.status) }}">
-    <a href="{{ item.url }}" class="dash-row">
+    <div class="dash-row dash-row-stretch">
       {{ dot(item.status) }}
       <span class="dash-row-main">
         <span class="dash-row-title">
-          {{ item.app.name }}
+          <a href="{{ item.url }}" class="dash-row-link">{{ item.app.name }}</a>
           {% if item.environment %}
             <span class="dash-mono dash-faint">{{ item.environment.slug }}</span>
           {% elif show_environments and item.app.show_environments %}
             {% for env in item.app.environments %}
-              <span class="dash-env" data-status="{{ env.status }}" title="{{ env.name }}: {{ status_labels[env.status] }}">{{ dot(env.status) }}{{ env.slug }}</span>
+              <a href="{{ env.url }}" class="dash-env" data-status="{{ env.status }}" title="{{ env.name }}: {{ status_labels[env.status] }}">{{ dot(env.status) }}{{ env.slug }}</a>
             {% endfor %}
           {% endif %}
         </span>
@@ -136,7 +137,7 @@
         <span class="dash-row-status" data-status="{{ item.status }}">{{ status_labels[item.status] }}</span>
         {% if show_environments and item.app.last_deploy %}<span>{{ item.app.last_deploy|humanize }}</span>{% endif %}
       </span>
-    </a>
+    </div>
   </li>
 {% endmacro %}
 

@@ -72,10 +72,16 @@ class AppRow:
     show_environments: bool
 
     @property
+    def most_urgent_environment(self) -> EnvironmentStatus | None:
+        if not self.environments:
+            return None
+        return min(self.environments, key=lambda e: STATUS_ORDER[e.status])
+
+    @property
     def status(self) -> str:
         """The most urgent status across the app's environments."""
-        statuses = [e.status for e in self.environments]
-        return min(statuses, key=STATUS_ORDER.__getitem__, default="idle")
+        environment = self.most_urgent_environment
+        return environment.status if environment else "idle"
 
     @property
     def last_deploy(self) -> datetime.datetime | None:
@@ -151,7 +157,13 @@ class AppItem:
 
     @property
     def url(self) -> str:
-        return self.environment.url if self.environment else self.app.url
+        if self.environment:
+            return self.environment.url
+        # A failing or busy app opens the environment its status comes from.
+        urgent = self.app.most_urgent_environment
+        if urgent and urgent.status in FAILED | IN_PROGRESS:
+            return urgent.url
+        return self.app.url
 
 
 @dataclass
