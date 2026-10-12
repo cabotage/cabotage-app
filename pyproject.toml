@@ -93,18 +93,14 @@ exclude-newer = "1 week"
 # these require either an unsafe or manual fix
 ignore = [
     "RUF012",   # mutable-class-default
-    "RUF059",   # unused-unpacked-variable
     "BLE001",   # blind-except
-    "F401", # unused-import
     "SIM102",   # collapsible-if
     "DTZ001",   # call-datetime-without-tzinfo
     "EXE002",   # shebang-missing-executable-file
     "TRY002",   # raise-vanilla-class
-    "PIE810",   # multiple-starts-ends-with
     "RUF015",   # unnecessary-iterable-allocation-for-first-element
     "C408",     # unnecessary-collection-call
     "FLY002",   # static-join-to-f-string
-    "B018",     # useless-expression
     "C419",     # unnecessary-comprehension-in-call
     "TRY203",   # useless-try-except
     "PLR1722",  # sys-exit-alias
@@ -116,9 +112,7 @@ ignore = [
     "FURB192",  # sorted-min-max
     "DTZ005",   # call-datetime-now-without-tzinfo
     "FURB162",  # fromisoformat-replace-z
-    "S112",     # try-except-continue
     "TRY004",   # type-check-without-type-error
-    "SIM117",   # multiple-with-statements
 ]
 
 [tool.pyrefly]
