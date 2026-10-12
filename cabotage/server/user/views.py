@@ -2504,7 +2504,7 @@ def _backing_service_type_enabled(resource_type):
 def environment_postgres_create(org_slug, project_slug, env_slug):
     if not _backing_service_type_enabled("postgres"):
         abort(404)
-    organization, project, environment = _resolve_environment(
+    _organization, project, environment = _resolve_environment(
         org_slug, project_slug, env_slug
     )
     if not AdministerProjectPermission(project.id).can():
@@ -2560,7 +2560,7 @@ def environment_postgres_create(org_slug, project_slug, env_slug):
 )
 @login_required
 def environment_postgres_detail(org_slug, project_slug, env_slug, resource_slug):
-    organization, project, environment = _resolve_environment(
+    _organization, project, environment = _resolve_environment(
         org_slug, project_slug, env_slug
     )
     if not ViewProjectPermission(project.id).can():
@@ -2587,7 +2587,7 @@ def environment_postgres_detail(org_slug, project_slug, env_slug, resource_slug)
 )
 @login_required
 def environment_postgres_settings(org_slug, project_slug, env_slug, resource_slug):
-    organization, project, environment = _resolve_environment(
+    _organization, project, environment = _resolve_environment(
         org_slug, project_slug, env_slug
     )
     if not AdministerProjectPermission(project.id).can():
@@ -2649,7 +2649,7 @@ def environment_postgres_settings(org_slug, project_slug, env_slug, resource_slu
 )
 @login_required
 def environment_postgres_delete(org_slug, project_slug, env_slug, resource_slug):
-    organization, project, environment = _resolve_environment(
+    _organization, project, environment = _resolve_environment(
         org_slug, project_slug, env_slug
     )
     if not AdministerProjectPermission(project.id).can():
@@ -2701,7 +2701,7 @@ def environment_postgres_delete(org_slug, project_slug, env_slug, resource_slug)
 def environment_redis_create(org_slug, project_slug, env_slug):
     if not _backing_service_type_enabled("redis"):
         abort(404)
-    organization, project, environment = _resolve_environment(
+    _organization, project, environment = _resolve_environment(
         org_slug, project_slug, env_slug
     )
     if not AdministerProjectPermission(project.id).can():
@@ -2756,7 +2756,7 @@ def environment_redis_create(org_slug, project_slug, env_slug):
 )
 @login_required
 def environment_redis_detail(org_slug, project_slug, env_slug, resource_slug):
-    organization, project, environment = _resolve_environment(
+    _organization, project, environment = _resolve_environment(
         org_slug, project_slug, env_slug
     )
     if not ViewProjectPermission(project.id).can():
@@ -2781,7 +2781,7 @@ def environment_redis_detail(org_slug, project_slug, env_slug, resource_slug):
 )
 @login_required
 def environment_redis_settings(org_slug, project_slug, env_slug, resource_slug):
-    organization, project, environment = _resolve_environment(
+    _organization, project, environment = _resolve_environment(
         org_slug, project_slug, env_slug
     )
     if not AdministerProjectPermission(project.id).can():
@@ -2867,7 +2867,7 @@ def environment_redis_settings(org_slug, project_slug, env_slug, resource_slug):
 )
 @login_required
 def environment_redis_delete(org_slug, project_slug, env_slug, resource_slug):
-    organization, project, environment = _resolve_environment(
+    _organization, project, environment = _resolve_environment(
         org_slug, project_slug, env_slug
     )
     if not AdministerProjectPermission(project.id).can():
@@ -3786,7 +3786,7 @@ def project_applications(org_slug, project_slug):
 )
 @login_required
 def application_config(org_slug, project_slug, app_slug):
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     env_slug = request.args.get("env_slug")
     app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
     environment = app_env.environment if app_env else None
@@ -4494,7 +4494,7 @@ def project_application_settings_legacy(application_id):
 def project_application_environment_settings(
     org_slug, project_slug, env_slug, app_slug
 ):
-    org, project, application = _lookup_app_context(
+    _org, project, application = _lookup_app_context(
         org_slug, project_slug, app_slug, require_admin=True
     )
 
@@ -5167,7 +5167,7 @@ def _render_audit_log(scope_filter, template_context):
 def application_audit_log(org_slug, project_slug, app_slug):
     from cabotage.server.models.audit import AuditLog
 
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     env_slug = request.args.get("env_slug")
     app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
 
@@ -5303,7 +5303,7 @@ def organization_audit_log(org_slug):
 )
 @login_required
 def application_images(org_slug, project_slug, app_slug):
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     page = request.args.get("page", 1, type=int)
     env_slug = request.args.get("env_slug")
     app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
@@ -5342,7 +5342,7 @@ def application_images_legacy(application_id):
 )
 @login_required
 def image_detail(org_slug, project_slug, app_slug, image_id):
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    _org, _project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     image = Image.query.filter_by(
         id=image_id, application_id=application.id
     ).first_or_404()
@@ -5425,7 +5425,7 @@ def _stream_image_build_logs(ws, image):
 @close_on_abort
 @login_required
 def image_build_livelogs(ws, org_slug, project_slug, app_slug, image_id):
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    _org, _project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     image = Image.query.filter_by(
         id=image_id, application_id=application.id
     ).first_or_404()
@@ -5447,7 +5447,7 @@ def image_build_livelogs_legacy(ws, image_id):
 )
 @login_required
 def application_releases(org_slug, project_slug, app_slug):
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     page = request.args.get("page", 1, type=int)
     env_slug = request.args.get("env_slug")
     app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
@@ -5515,7 +5515,7 @@ def application_releases_legacy(application_id):
 )
 @login_required
 def application_deployments(org_slug, project_slug, app_slug):
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     page = request.args.get("page", 1, type=int)
     env_slug = request.args.get("env_slug")
     app_env = _resolve_app_env(application, env_slug=env_slug, project=project)
@@ -5577,7 +5577,7 @@ def application_deployments(org_slug, project_slug, app_slug):
 )
 @login_required
 def release_detail(org_slug, project_slug, app_slug, release_id):
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    _org, _project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     release = Release.query.filter_by(
         id=release_id, application_id=application.id
     ).first_or_404()
@@ -5655,7 +5655,7 @@ def _stream_release_build_logs(ws, release):
 @close_on_abort
 @login_required
 def release_build_livelogs(ws, org_slug, project_slug, app_slug, release_id):
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    _org, _project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     release = Release.query.filter_by(
         id=release_id, application_id=application.id
     ).first_or_404()
@@ -5726,7 +5726,7 @@ def _stream_deployment_logs(ws, deployment):
 @close_on_abort
 @login_required
 def deployment_livelogs(ws, org_slug, project_slug, app_slug, deployment_id):
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    _org, _project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     deployment = Deployment.query.filter_by(
         id=deployment_id, application_id=application.id
     ).first_or_404()
@@ -5748,7 +5748,7 @@ def deployment_livelogs_legacy(ws, deployment_id):
 )
 @login_required
 def deployment_detail(org_slug, project_slug, app_slug, deployment_id):
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    _org, _project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     deployment = Deployment.query.filter_by(
         id=deployment_id, application_id=application.id
     ).first_or_404()
@@ -5760,7 +5760,7 @@ def deployment_detail(org_slug, project_slug, app_slug, deployment_id):
 )
 @login_required
 def deployment_logs_view(org_slug, project_slug, app_slug, deployment_id):
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    _org, _project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     deployment = Deployment.query.filter_by(
         id=deployment_id, application_id=application.id
     ).first_or_404()
@@ -5799,7 +5799,7 @@ def deployment_logs_view(org_slug, project_slug, app_slug, deployment_id):
 )
 @login_required
 def deployment_logs_query(org_slug, project_slug, app_slug, deployment_id):
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    org, _project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     deployment = Deployment.query.filter_by(
         id=deployment_id, application_id=application.id
     ).first_or_404()
@@ -5844,7 +5844,7 @@ def deployment_detail_legacy(deployment_id):
 )
 @login_required
 def application_release_create(org_slug, project_slug, app_slug):
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    org, _project, application = _lookup_app_context(org_slug, project_slug, app_slug)
 
     environment_id = request.form.get("environment_id")
     app_env = _resolve_app_env(application, environment_id=environment_id)
@@ -6148,7 +6148,7 @@ def application_images_build_fromsource_legacy(application_id):
 )
 @login_required
 def application_clear_cache(org_slug, project_slug, app_slug):
-    org, project, application = _lookup_app_context(
+    _org, project, application = _lookup_app_context(
         org_slug, project_slug, app_slug, require_admin=True
     )
 
@@ -6251,7 +6251,7 @@ def application_clear_cache(org_slug, project_slug, app_slug):
             ),
         )
 
-        job_complete, job_logs = run_job(
+        _job_complete, _job_logs = run_job(
             core_api_instance, batch_api_instance, build_namespace, job_object
         )
 
@@ -6351,7 +6351,7 @@ def application_clear_cache_legacy(application_id):
 )
 @login_required
 def application_scale(org_slug, project_slug, app_slug):
-    org, project, application = _lookup_app_context(
+    _org, project, application = _lookup_app_context(
         org_slug, project_slug, app_slug, require_admin=True
     )
 
@@ -6471,7 +6471,7 @@ def application_scale_legacy(application_id):
 )
 @login_required
 def release_deploy(org_slug, project_slug, app_slug, release_id):
-    org, project, application = _lookup_app_context(
+    org, _project, application = _lookup_app_context(
         org_slug, project_slug, app_slug, require_admin=True
     )
     release = Release.query.filter_by(
@@ -7281,7 +7281,7 @@ def project_application_observe_metric(org_slug, project_slug, app_slug, env_slu
     if group not in _OBSERVE_GROUPS:
         group = "total"
 
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=False
     )
@@ -8336,7 +8336,7 @@ def _query_mimir_instant(query, tenant_id=None):
 )
 @login_required
 def project_application_live_stats(org_slug, project_slug, app_slug, env_slug=None):
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=False
     )
@@ -8702,7 +8702,7 @@ def _loki_query_response(selectors, process_names, tenant_id=None):
 )
 @login_required
 def job_history(org_slug, project_slug, app_slug, process_name, env_slug=None):
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=False
     )
@@ -8741,7 +8741,7 @@ def job_history(org_slug, project_slug, app_slug, process_name, env_slug=None):
 )
 @login_required
 def project_application_logs_view(org_slug, project_slug, app_slug, env_slug=None):
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=False
     )
@@ -9035,7 +9035,7 @@ def infra_observe_metric():
     labels = f"{narrow}, {container_filter}" if narrow else container_filter
     network_labels = narrow if narrow else ""
 
-    duration, step, start, end = _observe_time_params()
+    _duration, step, start, end = _observe_time_params()
     rate_window = f"{max(step, 30)}s"
 
     by_clause = {
@@ -9220,7 +9220,7 @@ def _iso_utc(value):
 )
 @login_required
 def project_application_pipeline(org_slug, project_slug, app_slug, env_slug=None):
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=False
     )
@@ -9243,7 +9243,7 @@ def project_application_pipeline(org_slug, project_slug, app_slug, env_slug=None
 )
 @login_required
 def project_application_pipeline_stats(org_slug, project_slug, app_slug, env_slug=None):
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=True
     )
@@ -9345,7 +9345,7 @@ def project_application_pipeline_stats(org_slug, project_slug, app_slug, env_slu
 )
 @login_required
 def project_application_pipeline_runs(org_slug, project_slug, app_slug, env_slug=None):
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=True
     )
@@ -9445,7 +9445,7 @@ def project_application_pipeline_runs(org_slug, project_slug, app_slug, env_slug
 def project_application_pipeline_slowest(
     org_slug, project_slug, app_slug, env_slug=None
 ):
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=True
     )
