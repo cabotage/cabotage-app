@@ -14,6 +14,14 @@ import requests
 from flask import current_app
 
 
+def _raise_for_status(resp: requests.Response, *args: object, **kwargs: object) -> None:
+    resp.raise_for_status()
+
+
+mimir_session = requests.Session()
+mimir_session.hooks["response"] = [_raise_for_status]
+
+
 class MimirError(Exception):
     """Raised when a Mimir query cannot be completed."""
 
@@ -94,7 +102,7 @@ def query_range(
     """
     mimir_url, verify, headers, timeout = mimir_connection(tenant_id=tenant_id)
     try:
-        resp = requests.get(
+        resp = mimir_session.get(
             f"{mimir_url}/prometheus/api/v1/query_range",
             params={
                 "query": query,
@@ -106,7 +114,6 @@ def query_range(
             verify=verify,
             timeout=timeout,
         )
-        resp.raise_for_status()
         data: _MimirResponse = resp.json()
     except requests.RequestException as exc:
         raise MimirError(f"Mimir query_range request failed: {exc}") from exc
@@ -133,14 +140,13 @@ def query_instant(
     if time is not None:
         params["time"] = time
     try:
-        resp = requests.get(
+        resp = mimir_session.get(
             f"{mimir_url}/prometheus/api/v1/query",
             params=params,
             headers=headers,
             verify=verify,
             timeout=timeout,
         )
-        resp.raise_for_status()
         data: _MimirResponse = resp.json()
     except requests.RequestException as exc:
         raise MimirError(f"Mimir query request failed: {exc}") from exc
