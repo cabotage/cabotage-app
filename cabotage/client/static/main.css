@@ -1441,6 +1441,59 @@ button.dash-kpi:focus-visible .dash-kpi-go {
   }
 }
 
+/* Grid layout: one card per organization, no project list. */
+.dash-main[data-view='grid'] .dash-fold {
+  display: none;
+}
+.dash-main[data-view='grid'] .dash-tree {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 0.75rem;
+}
+.dash-main[data-view='grid'] .dash-divider {
+  grid-column: 1 / -1;
+}
+.dash-main[data-view='grid'] .dash-org > :not(summary),
+.dash-main[data-view='grid'] .dash-chevron {
+  display: none;
+}
+.dash-main[data-view='grid'] .dash-org-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.875rem 0.75rem;
+  height: 100%;
+  padding: 1rem;
+}
+.dash-main[data-view='grid'] .dash-org-meta {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'counts flag'
+    'health health';
+  gap: 0.75rem;
+}
+.dash-main[data-view='grid'] .dash-org-counts {
+  display: flex;
+  grid-area: counts;
+}
+.dash-main[data-view='grid'] .dash-flag {
+  grid-area: flag;
+}
+.dash-main[data-view='grid'] .dash-org-health {
+  display: flex;
+  grid-area: health;
+  align-items: flex-start;
+  width: auto;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color-subtle);
+}
+.dash-main[data-view='grid'] .dash-open {
+  grid-row: 1;
+  grid-column: 3;
+}
+
 .dash-projects {
   padding: 0.25rem 0 0.5rem;
   border-top: 1px solid var(--border-color-subtle);
@@ -1948,10 +2001,27 @@ a.dash-env:hover {
   display: none;
 }
 .dash-sheet-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
   padding: 0.625rem 1.25rem;
   font-size: 0.6875rem;
   color: var(--text-faint);
   border-top: 1px solid var(--border-color-subtle);
+}
+.dash-sheet-page {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--color-primary);
+}
+.dash-sheet-page:hover {
+  text-decoration: underline;
 }
 
 @media (prefers-reduced-motion: reduce) {

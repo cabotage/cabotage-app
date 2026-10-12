@@ -66,7 +66,7 @@
 
 {#- Side panel with a searchable list. `filters` is a list of (value, label);
     a row shows under a filter when its `data-filter` equals that value. -#}
-{% macro sheet(name, title, icon_name, count, subtitle, filters=[], footer='') %}
+{% macro sheet(name, title, icon_name, count, subtitle, filters=[], footer='', page_url=None, page_label='') %}
   <dialog class="dash-sheet" data-dash-sheet="{{ name }}" aria-labelledby="dash-sheet-{{ name }}-title">
     <header class="dash-sheet-head">
       <div class="min-w-0">
@@ -104,7 +104,12 @@
       {{ caller() }}
     </ul>
     <p class="dash-sheet-empty" data-dash-sheet-empty hidden>Nothing matches.</p>
-    {% if footer %}<footer class="dash-sheet-foot">{{ footer }}</footer>{% endif %}
+    {% if footer or page_url %}
+      <footer class="dash-sheet-foot">
+        {{ footer }}
+        {% if page_url %}<a href="{{ page_url }}" class="dash-sheet-page">Open the {{ page_label }} page {{ icon('arrow-up-right', 'w-3 h-3') }}</a>{% endif %}
+      </footer>
+    {% endif %}
   </dialog>
 {% endmacro %}
 
@@ -357,7 +362,8 @@
           {% endcall %}
           {% call summary_card(completed_deploys, 'Deployments', 'deploy', 'success', 'deploys') %}{{ deploy_note }}{% endcall %}
 
-          {% call sheet('orgs', 'Organizations', 'building', org_count, org_note) %}
+          {% call sheet('orgs', 'Organizations', 'building', org_count, org_note,
+                        page_url=url_for('user.organizations'), page_label='Organizations') %}
             {% for org in org_rows %}
               <li data-search="{{ org.name|lower }} {{ org.slug|lower }}">
                 <a href="{{ org.url }}" class="dash-row">
@@ -384,7 +390,8 @@
             {% endfor %}
           {% endcall %}
 
-          {% call sheet('projects', 'Projects', 'folder', project_count, project_note) %}
+          {% call sheet('projects', 'Projects', 'folder', project_count, project_note,
+                        page_url=url_for('user.projects'), page_label='Projects') %}
             {% for org in org_rows %}
               {% for project in org.projects %}
                 <li data-search="{{ project.name|lower }} {{ project.slug|lower }} {{ org.name|lower }} {{ org.slug|lower }}">
@@ -419,7 +426,7 @@
         </div>
 
         <div class="dash-grid">
-          <section class="dash-main" aria-labelledby="dash-tree-title">
+          <section class="dash-main" data-view="grid" aria-labelledby="dash-tree-title">
             <div class="dash-toolbar">
               <h2 id="dash-tree-title" class="dash-label">Organizations</h2>
               <label class="dash-search">
@@ -444,6 +451,10 @@
               <div class="dash-fold" role="group" aria-label="Expand or collapse organizations">
                 <button type="button" data-dash-fold="open">Expand all</button>
                 <button type="button" data-dash-fold="close">Collapse all</button>
+              </div>
+              <div class="dash-seg" role="group" aria-label="Layout">
+                <button type="button" data-dash-view="list" aria-pressed="false">List</button>
+                <button type="button" data-dash-view="grid" aria-pressed="true">Grid</button>
               </div>
             </div>
 
@@ -605,9 +616,22 @@
         var root = document.querySelector('[data-dash]');
         if (!root) return;
         var OPEN_ORGS_KEY = 'cabotage:dashboard:open';
+        var VIEW_KEY = 'cabotage:dashboard:view';
         var REFRESH_MS = 15000;
         var treeSearch = root.querySelector('[data-dash-search]');
         var treeState = { query: '', filter: 'all' };
+        var treeSection = root.querySelector('.dash-main');
+
+        // List shows the expandable tree; grid shows one card per organization.
+        function setView(view) {
+          treeSection.setAttribute('data-view', view);
+          root.querySelectorAll('[data-dash-view]').forEach(function (button) {
+            button.setAttribute('aria-pressed', String(button.getAttribute('data-dash-view') === view));
+          });
+        }
+        function isGridView() {
+          return treeSection.getAttribute('data-view') === 'grid';
+        }
 
         function matchesText(el, query) {
           return !query || (el.getAttribute('data-search') || '').indexOf(query) !== -1;
@@ -745,6 +769,22 @@
           if (opener) {
             return openSheet(opener.getAttribute('data-dash-open'), opener.getAttribute('data-dash-open-filter'));
           }
+          var viewButton = target.closest('[data-dash-view]');
+          if (viewButton) {
+            var view = viewButton.getAttribute('data-dash-view');
+            setView(view);
+            try { localStorage.setItem(VIEW_KEY, view); } catch (err) {}
+            return;
+          }
+          // In the grid, a card opens its organization instead of expanding.
+          var orgHead = isGridView() && !target.closest('a') && target.closest('.dash-org-head');
+          if (orgHead) {
+            e.preventDefault();
+            var href = orgHead.querySelector('.dash-open').href;
+            if (e.metaKey || e.ctrlKey) window.open(href, '_blank');
+            else window.location.href = href;
+            return;
+          }
           var close = target.closest('[data-dash-sheet-close]');
           if (close) return close.closest('dialog').close();
           var sheetFilter = target.closest('[data-dash-sheet-filter]');
@@ -849,6 +889,7 @@
           if (!document.hidden && root.getAttribute('data-refresh') === '1') refresh();
         });
 
+        try { setView(localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'grid'); } catch (err) {}
         restoreOpenOrgs();
         countTree();
         filterTree();
