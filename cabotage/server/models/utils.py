@@ -197,18 +197,18 @@ class DictDiffer:
         return self.past_keys - self.intersect
 
     def changed(self):
-        return set(
+        return {
             o
             for o in self.intersect
             if self._strip(self.past_dict[o]) != self._strip(self.current_dict[o])
-        )
+        }
 
     def unchanged(self):
-        return set(
+        return {
             o
             for o in self.intersect
             if self._strip(self.past_dict[o]) == self._strip(self.current_dict[o])
-        )
+        }
 
     def has_changes(self):
         return self.added() or self.removed() or self.changed()
