@@ -1031,7 +1031,7 @@ class Release(Model, Timestamp):
                 '    denylist = ["CONSUL_*", "VAULT_*", "KUBERNETES_*"]\n  }\n'
             )
         exec_statement += "}"
-        configurations["shell"] = "\n".join([exec_statement, environment_statements])
+        configurations["shell"] = f"{exec_statement}\n{environment_statements}"
         for proc_name, proc in self.image_snapshot.processes.items():
             proc_env = [f"{key}={value}" for key, value in proc["env"]]
             proc_env.extend(resolved_template_env)
@@ -1045,9 +1045,7 @@ class Release(Model, Timestamp):
                     "  }\n"
                 )
             exec_statement += "}"
-            configurations[proc_name] = "\n".join(
-                [exec_statement, environment_statements]
-            )
+            configurations[proc_name] = f"{exec_statement}\n{environment_statements}"
         return configurations
 
     @property

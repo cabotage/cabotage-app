@@ -2819,7 +2819,7 @@ def deploy_release(deployment: Deployment):
         )
         if any(
             process_name.startswith("web")
-                for process_name in deployment.release_object.processes
+            for process_name in deployment.release_object.processes
         ):
             log("Fetching web Service(s)")
             for process_name in deployment.release_object.processes:
@@ -2830,7 +2830,7 @@ def deploy_release(deployment: Deployment):
                     )
         if any(
             process_name.startswith("tcp")
-                for process_name in deployment.release_object.processes
+            for process_name in deployment.release_object.processes
         ):
             log("Fetching tcp Service(s)")
             for process_name in deployment.release_object.processes:
@@ -3295,7 +3295,7 @@ def fake_deploy_release(deployment):
     deploy_log.append(yaml.dump(remove_none(cabotage_enrollment)))
     if any(
         process_name.startswith("web")
-            for process_name in deployment.release_object.processes
+        for process_name in deployment.release_object.processes
     ):
         deploy_log.append("Fetching web Service(s)")
         for process_name in deployment.release_object.processes:
@@ -3305,7 +3305,7 @@ def fake_deploy_release(deployment):
                 deploy_log.append(yaml.dump(remove_none(service.to_dict())))
     if any(
         process_name.startswith("tcp")
-            for process_name in deployment.release_object.processes
+        for process_name in deployment.release_object.processes
     ):
         deploy_log.append("Fetching tcp Service(s)")
         for process_name in deployment.release_object.processes:
