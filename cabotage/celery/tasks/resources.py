@@ -245,9 +245,7 @@ def _tenant_postgres_backups_enabled(resource=None):
         return False
     if not current_app.config.get("TENANT_POSTGRES_BACKUPS_ENABLED"):
         return False
-    if resource is not None and getattr(resource, "backup_strategy", None) == "none":
-        return False
-    return True
+    return not (resource is not None and getattr(resource, "backup_strategy", None) == "none")
 
 
 def _postgres_backup_requires_continuous_archiving(resource):
