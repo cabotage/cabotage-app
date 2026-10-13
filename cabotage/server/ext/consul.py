@@ -1,4 +1,5 @@
 import os
+from typing import cast
 
 import consul
 from flask import g
@@ -19,8 +20,13 @@ class Consul:
         self.consul_verify = app.config.get("CONSUL_VERIFY", False)
         self.consul_cert = app.config.get("CONSUL_CERT", None)
         self.consul_prefix = app.config.get("CONSUL_PREFIX", "cabotage")
-        self.consul_token_file = app.config.get(
-            "CONSUL_TOKEN_FILE", os.path.expanduser("~/.consul-token")
+        self.consul_token_file = (
+            cast(  # FIXME: Remove once "typed config" is implemented
+                str,
+                app.config.get(
+                    "CONSUL_TOKEN_FILE", os.path.expanduser("~/.consul-token")
+                ),
+            )
         )
         self.consul_token = app.config.get("CONSUL_TOKEN", None)
 

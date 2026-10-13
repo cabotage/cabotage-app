@@ -23059,13 +23059,6 @@
       "severity": "error"
     },
     {
-      "column": 34,
-      "path": "cabotage/server/ext/consul.py",
-      "name": "unknown-attribute-type",
-      "concise_description": "This expression is implicitly inferred to be `Any`. Please provide an explicit type annotation.",
-      "severity": "error"
-    },
-    {
       "column": 14,
       "path": "cabotage/server/ext/consul.py",
       "name": "implicitly-defined-attribute",
@@ -23077,13 +23070,6 @@
       "path": "cabotage/server/ext/consul.py",
       "name": "unknown-attribute-type",
       "concise_description": "This expression is implicitly inferred to be `Any`. Please provide an explicit type annotation.",
-      "severity": "error"
-    },
-    {
-      "column": 31,
-      "path": "cabotage/server/ext/consul.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -23598,13 +23584,6 @@
       "severity": "error"
     },
     {
-      "column": 33,
-      "path": "cabotage/server/ext/vault.py",
-      "name": "unknown-attribute-type",
-      "concise_description": "This expression is implicitly inferred to be `Any`. Please provide an explicit type annotation.",
-      "severity": "error"
-    },
-    {
       "column": 14,
       "path": "cabotage/server/ext/vault.py",
       "name": "implicitly-defined-attribute",
@@ -23658,13 +23637,6 @@
       "path": "cabotage/server/ext/vault.py",
       "name": "unknown-attribute-type",
       "concise_description": "This expression is implicitly inferred to be `Any`. Please provide an explicit type annotation.",
-      "severity": "error"
-    },
-    {
-      "column": 31,
-      "path": "cabotage/server/ext/vault.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -23952,13 +23924,6 @@
       "path": "cabotage/server/ext/vault_db_creds.py",
       "name": "implicitly-defined-attribute",
       "concise_description": "Attribute `vault_lease_duration` is implicitly defined by assignment in method `init_app`, which is not a constructor",
-      "severity": "error"
-    },
-    {
-      "column": 35,
-      "path": "cabotage/server/ext/vault_db_creds.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -35722,13 +35687,6 @@
       "severity": "error"
     },
     {
-      "column": 75,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 32,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
@@ -38985,13 +38943,6 @@
     },
     {
       "column": 63,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 75,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
