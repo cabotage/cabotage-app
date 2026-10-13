@@ -9,6 +9,7 @@ realistic data so the UI is fully populated:
 """
 
 import datetime
+import sys
 
 from sqlalchemy import update
 
@@ -201,7 +202,7 @@ def seed():
         print(
             "Warning: this command should only be run in development/test environments"
         )
-        exit(1)
+        sys.exit(1)
 
     with app.app_context():
         # ── Run create_admin logic first ──────────────────────────────
@@ -230,7 +231,7 @@ def seed():
             org = Organization.query.filter_by(slug="acme-corp").first()
             if org is None:
                 print("ERROR: admin exists but Acme Corp org not found!")
-                exit(1)
+                sys.exit(1)
 
         # ── Extra dev user ────────────────────────────────────────────
         dev_user = User.query.filter_by(username="dev").first()
