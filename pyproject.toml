@@ -94,25 +94,15 @@ exclude-newer = "1 week"
 ignore = [
     "RUF012",   # mutable-class-default
     "BLE001",   # blind-except
-    "SIM102",   # collapsible-if
     "DTZ001",   # call-datetime-without-tzinfo
     "EXE002",   # shebang-missing-executable-file
     "TRY002",   # raise-vanilla-class
     "RUF015",   # unnecessary-iterable-allocation-for-first-element
-    "C408",     # unnecessary-collection-call
-    "FLY002",   # static-join-to-f-string
-    "C419",     # unnecessary-comprehension-in-call
-    "TRY203",   # useless-try-except
-    "PLR1722",  # sys-exit-alias
     "UP031",    # printf-string-formatting
-    "PLC0206",  # dict-index-missing-items
-    "SIM103",   # needless-bool
-    "C401",     # unnecessary-generator-set
     "ISC004",   # implicit-string-concatenation-in-collection-literal
     "FURB192",  # sorted-min-max
     "DTZ005",   # call-datetime-now-without-tzinfo
     "FURB162",  # fromisoformat-replace-z
-    "TRY004",   # type-check-without-type-error
 ]
 
 [tool.pyrefly]
