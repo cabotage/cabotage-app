@@ -1338,9 +1338,8 @@ def ensure_ingresses(
             try:
                 networking_api.delete_namespaced_ingress(k8s_name, namespace)
             except ApiException as exc:
-                if exc.status != 404:
-                    if log:
-                        log(f"Failed to delete disabled Ingress/{k8s_name}: {exc}")
+                if exc.status != 404 and log:
+                    log(f"Failed to delete disabled Ingress/{k8s_name}: {exc}")
             continue
 
         ingress_object = render_ingress_object(
@@ -1400,12 +1399,11 @@ def _cleanup_orphaned_ingresses(
             try:
                 networking_api.delete_namespaced_ingress(item.metadata.name, namespace)
             except ApiException as exc:
-                if exc.status != 404:
-                    if log:
-                        log(
-                            f"Failed to delete orphaned Ingress/"
-                            f"{item.metadata.name}: {exc}"
-                        )
+                if exc.status != 404 and log:
+                    log(
+                        f"Failed to delete orphaned Ingress/"
+                        f"{item.metadata.name}: {exc}"
+                    )
 
 
 def cleanup_orphaned_ingresses(networking_api, release, active_ingress_names, log=None):
