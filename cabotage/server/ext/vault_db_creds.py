@@ -1,6 +1,7 @@
 import atexit
 import hashlib
 import os
+from typing import cast
 from urllib.parse import urlsplit, urlunsplit
 
 import hvac
@@ -21,8 +22,13 @@ class VaultDBCreds:
             self.vault_verify = app.config.get("VAULT_VERIFY", False)
             self.vault_cert = app.config.get("VAULT_CERT", None)
             self.vault_token = app.config.get("VAULT_TOKEN", None)
-            self.vault_token_file = app.config.get(
-                "VAULT_TOKEN_FILE", os.path.expanduser("~/.vault-token")
+            self.vault_token_file = (
+                cast(  # FIXME: Remove once "typed config" is implemented
+                    str,
+                    app.config.get(
+                        "VAULT_TOKEN_FILE", os.path.expanduser("~/.vault-token")
+                    ),
+                )
             )
             self.vault_token_unwrap = app.config.get("VAULT_TOKEN_UNWRAP", False)
             self.vault_db_database_uri = app.config.get("VAULT_DB_DATABASE_URI", None)
@@ -42,10 +48,9 @@ class VaultDBCreds:
                     "VAULT_DB_CREDS_PATH is specified"
                 )
 
-            if self.vault_token is None:
-                if os.path.exists(self.vault_token_file):
-                    with open(self.vault_token_file, "r") as vault_token_file:
-                        self.vault_token = vault_token_file.read().lstrip().rstrip()
+            if self.vault_token is None and os.path.exists(self.vault_token_file):
+                with open(self.vault_token_file, "r") as vault_token_file:
+                    self.vault_token = vault_token_file.read().lstrip().rstrip()
 
             self.logger = app.logger
             with app.app_context():

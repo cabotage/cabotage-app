@@ -1338,9 +1338,8 @@ def ensure_ingresses(
             try:
                 networking_api.delete_namespaced_ingress(k8s_name, namespace)
             except ApiException as exc:
-                if exc.status != 404:
-                    if log:
-                        log(f"Failed to delete disabled Ingress/{k8s_name}: {exc}")
+                if exc.status != 404 and log:
+                    log(f"Failed to delete disabled Ingress/{k8s_name}: {exc}")
             continue
 
         ingress_object = render_ingress_object(
@@ -1400,12 +1399,10 @@ def _cleanup_orphaned_ingresses(
             try:
                 networking_api.delete_namespaced_ingress(item.metadata.name, namespace)
             except ApiException as exc:
-                if exc.status != 404:
-                    if log:
-                        log(
-                            f"Failed to delete orphaned Ingress/"
-                            f"{item.metadata.name}: {exc}"
-                        )
+                if exc.status != 404 and log:
+                    log(
+                        f"Failed to delete orphaned Ingress/{item.metadata.name}: {exc}"
+                    )
 
 
 def cleanup_orphaned_ingresses(networking_api, release, active_ingress_names, log=None):
@@ -1434,11 +1431,10 @@ def cleanup_orphaned_ingresses(networking_api, release, active_ingress_names, lo
             try:
                 networking_api.delete_namespaced_ingress(item.metadata.name, namespace)
             except ApiException as exc:
-                if exc.status != 404:
-                    if log:
-                        log(
-                            f"Warning: failed to delete orphaned Ingress/{item.metadata.name}: {exc}"
-                        )
+                if exc.status != 404 and log:
+                    log(
+                        f"Warning: failed to delete orphaned Ingress/{item.metadata.name}: {exc}"
+                    )
 
 
 def cleanup_orphaned_deployments_and_services(
@@ -1471,11 +1467,10 @@ def cleanup_orphaned_deployments_and_services(
             try:
                 apps_api.delete_namespaced_deployment(item.metadata.name, namespace)
             except ApiException as exc:
-                if exc.status != 404:
-                    if log:
-                        log(
-                            f"Warning: failed to delete orphaned Deployment/{item.metadata.name}: {exc}"
-                        )
+                if exc.status != 404 and log:
+                    log(
+                        f"Warning: failed to delete orphaned Deployment/{item.metadata.name}: {exc}"
+                    )
 
     # Clean up Services (services use app=<resource_prefix> label, not org/project/application)
     svc_label_selector = f"resident-service.cabotage.io=true,app={resource_prefix}"
@@ -1493,11 +1488,10 @@ def cleanup_orphaned_deployments_and_services(
             try:
                 core_api.delete_namespaced_service(item.metadata.name, namespace)
             except ApiException as exc:
-                if exc.status != 404:
-                    if log:
-                        log(
-                            f"Warning: failed to delete orphaned Service/{item.metadata.name}: {exc}"
-                        )
+                if exc.status != 404 and log:
+                    log(
+                        f"Warning: failed to delete orphaned Service/{item.metadata.name}: {exc}"
+                    )
 
 
 def cleanup_orphaned_cronjobs(batch_api, release, active_job_names, log=None):
@@ -1527,11 +1521,10 @@ def cleanup_orphaned_cronjobs(batch_api, release, active_job_names, log=None):
             try:
                 batch_api.delete_namespaced_cron_job(item.metadata.name, namespace)
             except ApiException as exc:
-                if exc.status != 404:
-                    if log:
-                        log(
-                            f"Warning: failed to delete orphaned CronJob/{item.metadata.name}: {exc}"
-                        )
+                if exc.status != 404 and log:
+                    log(
+                        f"Warning: failed to delete orphaned CronJob/{item.metadata.name}: {exc}"
+                    )
 
 
 def render_image_pull_secrets(release):
@@ -2672,12 +2665,12 @@ def _run_job_streaming(
         container = job_object.metadata.labels.get("process", None)
         try:
             w = kubernetes.watch.Watch()
-            kwargs = dict(
-                name=pod.metadata.name,
-                namespace=namespace,
-                follow=True,
-                _preload_content=False,
-            )
+            kwargs = {
+                "name": pod.metadata.name,
+                "namespace": namespace,
+                "follow": True,
+                "_preload_content": False,
+            }
             if container:
                 kwargs["container"] = container
             for line in cast(
@@ -2820,10 +2813,8 @@ def deploy_release(deployment: Deployment):
             custom_objects_api_instance, enrollment, deployment.release_object, log=log
         )
         if any(
-            [
-                process_name.startswith("web")
-                for process_name in deployment.release_object.processes
-            ]
+            process_name.startswith("web")
+            for process_name in deployment.release_object.processes
         ):
             log("Fetching web Service(s)")
             for process_name in deployment.release_object.processes:
@@ -2833,10 +2824,8 @@ def deploy_release(deployment: Deployment):
                         core_api_instance, deployment.release_object, process_name
                     )
         if any(
-            [
-                process_name.startswith("tcp")
-                for process_name in deployment.release_object.processes
-            ]
+            process_name.startswith("tcp")
+            for process_name in deployment.release_object.processes
         ):
             log("Fetching tcp Service(s)")
             for process_name in deployment.release_object.processes:
@@ -3300,10 +3289,8 @@ def fake_deploy_release(deployment):
     )
     deploy_log.append(yaml.dump(remove_none(cabotage_enrollment)))
     if any(
-        [
-            process_name.startswith("web")
-            for process_name in deployment.release_object.processes
-        ]
+        process_name.startswith("web")
+        for process_name in deployment.release_object.processes
     ):
         deploy_log.append("Fetching web Service(s)")
         for process_name in deployment.release_object.processes:
@@ -3312,10 +3299,8 @@ def fake_deploy_release(deployment):
                 service = render_service(deployment.release_object, process_name)
                 deploy_log.append(yaml.dump(remove_none(service.to_dict())))
     if any(
-        [
-            process_name.startswith("tcp")
-            for process_name in deployment.release_object.processes
-        ]
+        process_name.startswith("tcp")
+        for process_name in deployment.release_object.processes
     ):
         deploy_log.append("Fetching tcp Service(s)")
         for process_name in deployment.release_object.processes:

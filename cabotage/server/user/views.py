@@ -387,12 +387,9 @@ def _associate_app_with_environment(application, environment, organization, proj
         secret=False,
         buildtime=False,
     )
-    try:
-        ns = _config_k8s_namespace(organization, app_env)
-        prefix = _config_k8s_resource_prefix(project, application)
-        key_slugs = config_writer.write_configuration(ns, prefix, sentinel)
-    except Exception:
-        raise
+    ns = _config_k8s_namespace(organization, app_env)
+    prefix = _config_k8s_resource_prefix(project, application)
+    key_slugs = config_writer.write_configuration(ns, prefix, sentinel)
     sentinel.key_slug = key_slugs["config_key_slug"]
     sentinel.build_key_slug = key_slugs["build_key_slug"]
     db.session.add(sentinel)
@@ -876,9 +873,8 @@ def organization_settings(org_slug):
     if not form.name.data or request.method == "GET":
         form.name.data = organization.name
 
-    if request.method == "GET":
-        if ts_integration:
-            ts_form.client_id.data = ts_integration.client_id
+    if request.method == "GET" and ts_integration:
+        ts_form.client_id.data = ts_integration.client_id
 
     delete_form = DeleteOrganizationForm()
     delete_form.organization_id.data = str(organization.id)
@@ -2211,21 +2207,18 @@ def project_environment_configuration_create(org_slug, project_slug, env_slug):
             buildtime=form.buildtime.data,
         )
         if not is_template:
-            try:
-                # Use any active app_env to derive the k8s namespace
-                app_env = (
-                    environment.active_application_environments[0]
-                    if environment.active_application_environments
-                    else None
-                )
-                if app_env:
-                    ns = _config_k8s_namespace(organization, app_env)
-                else:
-                    ns = environment.k8s_namespace
-                prefix = _env_config_k8s_resource_prefix(project)
-                key_slugs = config_writer.write_configuration(ns, prefix, configuration)
-            except Exception:
-                raise
+            # Use any active app_env to derive the k8s namespace
+            app_env = (
+                environment.active_application_environments[0]
+                if environment.active_application_environments
+                else None
+            )
+            if app_env:
+                ns = _config_k8s_namespace(organization, app_env)
+            else:
+                ns = environment.k8s_namespace
+            prefix = _env_config_k8s_resource_prefix(project)
+            key_slugs = config_writer.write_configuration(ns, prefix, configuration)
             configuration.key_slug = key_slugs["config_key_slug"]
             configuration.build_key_slug = key_slugs["build_key_slug"]
             if configuration.secret:
@@ -2339,20 +2332,17 @@ def project_environment_configuration_edit(org_slug, project_slug, env_slug, con
             )
 
         if not is_template:
-            try:
-                app_env = (
-                    environment.active_application_environments[0]
-                    if environment.active_application_environments
-                    else None
-                )
-                if app_env:
-                    ns = _config_k8s_namespace(organization, app_env)
-                else:
-                    ns = environment.k8s_namespace
-                prefix = _env_config_k8s_resource_prefix(project)
-                key_slugs = config_writer.write_configuration(ns, prefix, configuration)
-            except Exception:
-                raise
+            app_env = (
+                environment.active_application_environments[0]
+                if environment.active_application_environments
+                else None
+            )
+            if app_env:
+                ns = _config_k8s_namespace(organization, app_env)
+            else:
+                ns = environment.k8s_namespace
+            prefix = _env_config_k8s_resource_prefix(project)
+            key_slugs = config_writer.write_configuration(ns, prefix, configuration)
             configuration.key_slug = key_slugs["config_key_slug"]
             configuration.build_key_slug = key_slugs["build_key_slug"]
             if configuration.secret:
@@ -3733,12 +3723,9 @@ def project_application_create(org_slug, project_slug):
                 secret=False,
                 buildtime=False,
             )
-            try:
-                ns = _config_k8s_namespace(organization, app_env)
-                prefix = _config_k8s_resource_prefix(project, application)
-                key_slugs = config_writer.write_configuration(ns, prefix, configuration)
-            except Exception:
-                raise  # No, we should def not do this
+            ns = _config_k8s_namespace(organization, app_env)
+            prefix = _config_k8s_resource_prefix(project, application)
+            key_slugs = config_writer.write_configuration(ns, prefix, configuration)
             configuration.key_slug = key_slugs["config_key_slug"]
             configuration.build_key_slug = key_slugs["build_key_slug"]
             db.session.add(configuration)
@@ -4013,7 +4000,7 @@ def _parse_raw_config(raw_text: str, fmt: str) -> dict[str, str]:
             raise ValueError('JSON must be an object of "KEY": "VALUE" strings.')
         for name, value in data:
             if not isinstance(name, str) or not isinstance(value, str):
-                raise ValueError('JSON must be an object of "KEY": "VALUE" strings.')
+                raise ValueError('JSON must be an object of "KEY": "VALUE" strings.')  # noqa: TRY004
             _add_raw_config_entry(entries, seen_names, name, value, f"JSON key {name}")
         return entries
 
@@ -6869,8 +6856,8 @@ def _observe_common_groups(allowed):
         "errors": request.args.get("errors", "total"),
         "network": request.args.get("network", "total"),
     }
-    for k in current_groups:
-        if current_groups[k] not in allowed:
+    for k, v in current_groups.items():
+        if v not in allowed:
             current_groups[k] = "total"
     return current_groups
 
@@ -6882,8 +6869,8 @@ def _observe_backing_service_groups(allowed):
         "memory": request.args.get("backing_memory", "total"),
         "network": request.args.get("backing_network", "total"),
     }
-    for key in current_groups:
-        if current_groups[key] not in allowed:
+    for key, value in current_groups.items():
+        if value not in allowed:
             current_groups[key] = "total"
     return current_groups
 
@@ -7344,14 +7331,13 @@ def project_application_observe_metric(
             traefik_svc_names.add(
                 f"{namespace}-{prefix}-{ingress.name}-{prefix}-{path.target_process_name}-8000@kubernetesingressnginx"
             )
-        if not ingress.paths:
-            if not process_filter or process_filter == "web":
-                traefik_svc_names.add(
-                    f"{namespace}-{prefix}-{ingress.name}-{prefix}-web-https@kubernetesingressnginx"
-                )
-                traefik_svc_names.add(
-                    f"{namespace}-{prefix}-{ingress.name}-{prefix}-web-8000@kubernetesingressnginx"
-                )
+        if not ingress.paths and (not process_filter or process_filter == "web"):
+            traefik_svc_names.add(
+                f"{namespace}-{prefix}-{ingress.name}-{prefix}-web-https@kubernetesingressnginx"
+            )
+            traefik_svc_names.add(
+                f"{namespace}-{prefix}-{ingress.name}-{prefix}-web-8000@kubernetesingressnginx"
+            )
     if len(traefik_svc_names) == 1:
         traefik_svc = f'service="{next(iter(traefik_svc_names))}"'
     elif traefik_svc_names:
@@ -7604,14 +7590,13 @@ def _collect_traefik_svc_names(app_envs, namespace_fn, prefix_fn, process_filter
                 names.add(
                     f"{ns}-{pfx}-{ingress.name}-{pfx}-{path.target_process_name}-8000@kubernetesingressnginx"
                 )
-            if not ingress.paths:
-                if not process_filter or process_filter == "web":
-                    names.add(
-                        f"{ns}-{pfx}-{ingress.name}-{pfx}-web-https@kubernetesingressnginx"
-                    )
-                    names.add(
-                        f"{ns}-{pfx}-{ingress.name}-{pfx}-web-8000@kubernetesingressnginx"
-                    )
+            if not ingress.paths and (not process_filter or process_filter == "web"):
+                names.add(
+                    f"{ns}-{pfx}-{ingress.name}-{pfx}-web-https@kubernetesingressnginx"
+                )
+                names.add(
+                    f"{ns}-{pfx}-{ingress.name}-{pfx}-web-8000@kubernetesingressnginx"
+                )
     return names
 
 
@@ -8986,8 +8971,8 @@ def infra_observe():
         "memory": request.args.get("memory", "total"),
         "network": request.args.get("network", "total"),
     }
-    for k in current_groups:
-        if current_groups[k] not in _INFRA_OBSERVE_GROUPS:
+    for k, v in current_groups.items():
+        if v not in _INFRA_OBSERVE_GROUPS:
             current_groups[k] = "total"
 
     has_time_window = bool(request.args.get("start") and request.args.get("end"))

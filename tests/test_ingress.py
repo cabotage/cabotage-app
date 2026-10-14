@@ -160,11 +160,11 @@ class TestBuildIngressPaths:
 
 class TestRenderNginxIngress:
     def _make_nginx_ingress(self, **overrides):
-        defaults = dict(
-            ingress_class_name="nginx",
-            hosts=[FakeHost("app.example.com")],
-            paths=[FakePath()],
-        )
+        defaults = {
+            "ingress_class_name": "nginx",
+            "hosts": [FakeHost("app.example.com")],
+            "paths": [FakePath()],
+        }
         defaults.update(overrides)
         return FakeIngress(**defaults)
 
@@ -293,12 +293,12 @@ class TestRenderNginxIngress:
 
 class TestRenderTailscaleIngress:
     def _make_ts_ingress(self, **overrides):
-        defaults = dict(
-            name="ts-web",
-            ingress_class_name="tailscale",
-            hosts=[FakeHost("my-app")],
-            paths=[FakePath()],
-        )
+        defaults = {
+            "name": "ts-web",
+            "ingress_class_name": "tailscale",
+            "hosts": [FakeHost("my-app")],
+            "paths": [FakePath()],
+        }
         defaults.update(overrides)
         return FakeIngress(**defaults)
 
