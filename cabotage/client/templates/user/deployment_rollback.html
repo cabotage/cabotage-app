@@ -1,0 +1,179 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, app_resource_path %}
+
+{% set app = application %}
+{% set org_slug = app.project.organization.slug %}
+{% set project_slug = app.project.slug %}
+{% set app_slug = app.slug %}
+{% set tr = plan.target_release %}
+{% set cr = plan.current_release %}
+
+{% macro release_card(label, deployment, release, tone) %}
+  <div class="card bg-base-200 border border-base-300 rollback-side rollback-side-{{ tone }}">
+    <div class="card-body !p-4">
+      <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">{{ label }}</h2>
+      {% if release %}
+        <p class="text-lg font-semibold">
+          <span class="font-mono text-accent">v{{ release.version }}</span>
+        </p>
+        <div class="flex flex-col gap-2 mt-3">
+          {% set sha = release.commit_sha %}
+          {% if sha and sha != 'null' %}
+            <div class="deploy-meta-row">
+              <span class="deploy-meta-label">Commit</span>
+              <span class="deploy-meta-value">
+                {% if app.github_repository %}
+                  <a href="https://github.com/{{ app.github_repository }}/commit/{{ sha }}"
+                     class="inline-flex items-center gap-1.5 text-accent hover:text-accent/80"
+                     target="_blank"
+                     rel="noopener"><code class="text-xs">{{ sha[:12] }}</code>{{ icon('external-link', 'w-3 h-3 text-base-content/30') }}</a>
+                {% else %}
+                  <code class="text-xs text-base-content/60">{{ sha[:12] }}</code>
+                {% endif %}
+              </span>
+            </div>
+          {% endif %}
+          {% if release.image_snapshot %}
+            <div class="deploy-meta-row">
+              <span class="deploy-meta-label">Image</span>
+              <span class="deploy-meta-value"><code class="text-xs text-base-content/60">#{{ release.image_snapshot.tag }}</code></span>
+            </div>
+          {% endif %}
+          {% if deployment %}
+            <div class="deploy-meta-row">
+              <span class="deploy-meta-label">Deployed</span>
+              <span class="deploy-meta-value text-base-content/70">
+                <a href="{{ url_for('user.deployment_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id=deployment.id) }}"
+                   class="hover:text-accent"><time data-timestamp="{{ deployment.created|isoformat_utc }}">{{ deployment.created|humanize }}</time></a>
+              </span>
+            </div>
+            {% if (deployment.deploy_metadata or {}).get('triggered_by') %}
+              <div class="deploy-meta-row">
+                <span class="deploy-meta-label">By</span>
+                <span class="deploy-meta-value text-base-content/70">{{ deployment.deploy_metadata.get('triggered_by') }}</span>
+              </div>
+            {% endif %}
+          {% endif %}
+        </div>
+      {% else %}
+        <p class="text-sm text-base-content/40">Nothing is deployed.</p>
+      {% endif %}
+    </div>
+  </div>
+{% endmacro %}
+
+{% block title %}
+  Roll back - {{ app_slug }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ app_resource_path(application, 'Roll back', env=environment|default(none)) }}
+{% endblock resource_path %}
+
+{% block content %}
+
+  <div class="mb-6">
+    <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+      <div class="flex items-center gap-4">
+        <div class="deploy-status-orb rollback-orb">{{ icon('rotate-ccw', 'w-5 h-5') }}</div>
+        <div>
+          <h1 class="text-xl font-semibold text-base-content">
+            Roll back{% if tr %} to <span class="font-mono text-accent">v{{ tr.version }}</span>{% endif %}
+          </h1>
+          <p class="text-sm text-base-content/40 mt-0.5">Redeploys a release that is already built. No image or release build runs.</p>
+        </div>
+      </div>
+      <a href="{{ url_for('user.application_deployments', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}"
+         class="btn btn-ghost btn-sm gap-1.5">
+        {{ icon('arrow-left', 'w-3.5 h-3.5') }}
+        Deployments
+      </a>
+    </div>
+  </div>
+
+  {% if plan.blockers %}
+    <div class="deploy-error-banner mb-6" role="alert">
+      <div class="flex items-start gap-3">
+        <div class="flex-shrink-0 mt-0.5">{{ icon('alert-triangle', 'w-4 h-4 text-error') }}</div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-error">Can't roll back to this deployment</p>
+          <ul class="text-xs text-base-content/60 mt-1.5 list-disc pl-4 flex flex-col gap-0.5">
+            {% for blocker in plan.blockers %}<li>{{ blocker }}</li>{% endfor %}
+          </ul>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-4 items-stretch mb-6">
+    {{ release_card('Live now', plan.current, cr, 'current') }}
+    <div class="hidden md:flex items-center text-base-content/30">{{ icon('chevron-right', 'w-5 h-5') }}</div>
+    {{ release_card('After rollback', plan.target, tr, 'target') }}
+  </div>
+
+  {% if tr %}
+    <div class="card bg-base-200 border border-base-300 mb-6">
+      <div class="card-body !p-4 flex flex-col gap-5">
+        <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">What this rollback does</h2>
+        <section>
+          <h3 class="text-sm font-medium text-base-content">Configuration</h3>
+          <p class="text-xs text-base-content/50 mt-1">
+            Variables and their values go back to what v{{ tr.version }} shipped with. Edits made after v{{ tr.version }} are not applied until the next release.
+          </p>
+          {% if plan.config_added or plan.config_removed or plan.config_changed %}
+            <dl class="rollback-changes mt-2">
+              {% if plan.config_removed %}
+                <dt>Removed</dt>
+                <dd>{% for name in plan.config_removed %}<code class="rollback-chip rollback-chip-removed">{{ name }}</code>{% endfor %}</dd>
+              {% endif %}
+              {% if plan.config_added %}
+                <dt>Added back</dt>
+                <dd>{% for name in plan.config_added %}<code class="rollback-chip rollback-chip-added">{{ name }}</code>{% endfor %}</dd>
+              {% endif %}
+              {% if plan.config_changed %}
+                <dt>Reverts to v{{ tr.version }} value</dt>
+                <dd>{% for name in plan.config_changed %}<code class="rollback-chip">{{ name }}</code>{% endfor %}</dd>
+              {% endif %}
+            </dl>
+          {% else %}
+            <p class="text-xs text-base-content/40 mt-2">Same variables and values as the live release.</p>
+          {% endif %}
+        </section>
+
+        {% if plan.release_commands %}
+          <section>
+            <h3 class="text-sm font-medium text-base-content">Release commands run again</h3>
+            <p class="text-xs text-base-content/50 mt-1">
+              Rolling back code does not undo database migrations. Check that v{{ tr.version }} works with the current schema.
+            </p>
+            <p class="text-xs mt-2">{% for name in plan.release_commands %}<code class="rollback-chip">{{ name }}</code> {% endfor %}</p>
+          </section>
+        {% endif %}
+
+        {% if app_env.effective_auto_deploy_branch %}
+          <section>
+            <h3 class="text-sm font-medium text-base-content">Auto-deploy</h3>
+            <p class="text-xs text-base-content/50 mt-1">
+              The next push to <code>{{ app_env.effective_auto_deploy_branch }}</code> deploys over this rollback.
+            </p>
+          </section>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+  <form method="post"
+        action="{{ url_for('user.deployment_rollback', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id=plan.target.id) }}"
+        class="flex items-center justify-end gap-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+    <a href="{{ url_for('user.application_deployments', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}"
+       class="btn btn-ghost btn-sm">Cancel</a>
+    <button type="submit"
+            class="btn btn-warning btn-sm gap-1.5"
+            {% if not plan.allowed %}disabled{% endif %}>
+      {{ icon('rotate-ccw', 'w-3.5 h-3.5') }}
+      Roll back{% if tr %} to v{{ tr.version }}{% endif %}
+    </button>
+  </form>
+
+{% endblock content %}
