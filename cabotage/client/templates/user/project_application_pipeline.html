@@ -311,7 +311,8 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     release: {{ url_for('user.release_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id='__ID__')|tojson }},
     deploy: {{ url_for('user.deployment_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id='__ID__')|tojson }}
   };
-  var triggerIcons = { auto: {{ icon('zap', 'w-2.5 h-2.5')|tojson }}, manual: {{ icon('user', 'w-2.5 h-2.5')|tojson }} };
+  var triggerIcons = { auto: {{ icon('zap', 'w-2.5 h-2.5')|tojson }}, manual: {{ icon('user', 'w-2.5 h-2.5')|tojson }}, rollback: {{ icon('rotate-ccw', 'w-2.5 h-2.5')|tojson }} };
+  var triggerLabels = { auto: 'Auto', manual: 'Manual', rollback: 'Rollback' };
   var STAGES = ['image', 'release', 'deploy'];
   var STAGE_NAMES = { image: 'image builds', release: 'release builds', deploy: 'deploys' };
   var PER_PAGE = 15;
@@ -724,7 +725,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
         '<span title="' + esc(absTime(r.started)) + '">' + relTime(r.started) + '</span>' +
         '<span class="num sha">' + shortSha(r.sha) + '</span>' +
         '<span><span class="dpl-badge dpl-badge-' + r.trigger_type + '">' + triggerIcons[r.trigger_type] + ' ' +
-          (r.trigger_type === 'auto' ? 'Auto' : 'Manual') + '</span></span>' +
+          triggerLabels[r.trigger_type] + '</span></span>' +
         '<span class="pipe-fall">' + fall + '</span>' +
         '<span class="num dur">' + fmtDur(r.image_duration) + '</span>' +
         '<span class="num dur">' + fmtDur(r.release_duration) + '</span>' +
