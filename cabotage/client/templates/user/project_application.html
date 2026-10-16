@@ -573,12 +573,19 @@
                   <div class="action-banner-spinner"></div>
                   <div>
                     <p class="text-sm font-medium text-base-content">
-                      Deploying release
+                      {{ 'Queued' if latest_deployment.queued else 'Deploying' }} release
                       {% if latest_deploy_release %}
                         <span class="font-mono text-accent">v{{ latest_deploy_release.version }}</span>
                       {% endif %}
                     </p>
-                    <p class="text-xs text-base-content/40">Click to view deployment progress</p>
+                    <p class="text-xs text-base-content/40">
+                      {% if queued_deployments and not latest_deployment.queued %}
+                        {% set _next = release_by_id.get(queued_deployments[0].release.get('id', '')|string) %}
+                        Up next{% if _next %}: v{{ _next.version }}{% endif %}{% if queued_deployments|length > 1 %} · {{ queued_deployments|length }} queued{% endif %}
+                      {% else %}
+                        Click to view deployment progress
+                      {% endif %}
+                    </p>
                   </div>
                 </div>
                 <svg class="w-4 h-4 text-base-content/20 flex-shrink-0"
@@ -1137,6 +1144,10 @@
                 <span class="status-dot status-dot-error flex-shrink-0"
                       style="width:5px;
                              height:5px"></span>
+              {% elif dep.queued %}
+                <span class="status-dot status-dot-neutral flex-shrink-0"
+                      style="width:5px;
+                             height:5px"></span>
               {% else %}
                 <span class="status-dot status-dot-info status-dot-pulse flex-shrink-0"
                       style="width:5px;
@@ -1145,6 +1156,11 @@
               <code class="text-xs text-accent/70">v{{ release_by_id.get(dep.release.get('id', '')|string).version if release_by_id.get(dep.release.get('id', '')|string) else '?' }}</code>
               {% if dep.deploy_metadata and dep.deploy_metadata.get('trigger', '').startswith('manual') %}
                 <span class="dpl-badge dpl-badge-manual" title="by {{ dep.deploy_metadata.get('triggered_by', '?') }}">{{ icon('user', 'w-2 h-2') }} manual</span>
+              {% endif %}
+              {% if dep.queued %}
+                <span class="text-xs text-base-content/40">queued</span>
+              {% elif not dep.complete and not dep.error %}
+                <span class="text-xs text-info/70">deploying</span>
               {% endif %}
             <span class="activity-time text-xs text-base-content/25"><time data-timestamp="{{ dep.updated|isoformat_utc }}">{{ dep.updated|humanize }}</time>
             {% if dep.complete %}<span class="text-base-content/15">({{ dep|duration }})</span>{% endif %}
@@ -1316,7 +1332,7 @@
             {% elif latest_deployment.error %}
               Failed
             {% else %}
-              In progress
+              {{ 'Queued' if latest_deployment.queued else 'In progress' }}
             {% endif %}
             {% if _deploy_release %}
               <code class="text-accent ml-1">v{{ _deploy_release.version }}</code>
