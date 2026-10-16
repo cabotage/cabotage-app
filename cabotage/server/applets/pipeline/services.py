@@ -20,12 +20,12 @@ from cabotage.server.models.projects import (
     Release,
 )
 
-# stage -> (model, column marking success); error marks failure for all stages
 PIPELINE_STAGES = {
     "image": (Image, Image.built),
     "release": (Release, Release.built),
     "deploy": (Deployment, Deployment.complete),
 }
+"""Stage -> (model, column marking success); error marks failure for all stages."""
 
 
 def pipeline_finished(
