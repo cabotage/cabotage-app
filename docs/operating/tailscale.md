@@ -1,5 +1,8 @@
 # Tailscale Ingress
 
+**Audience: platform administrators operating Cabotage.** This guide covers the
+cluster integration and tailnet prerequisites. See [Operating Cabotage](index.md).
+
 Cabotage can deploy applications with ingresses accessible on an organization's
 own Tailscale network (tailnet). Each org authenticates independently via OIDC
 workload identity federation — no long-lived secrets.

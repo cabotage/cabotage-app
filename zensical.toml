@@ -1,0 +1,80 @@
+[project]
+site_name = "Cabotage documentation"
+site_description = "Deploy applications with Cabotage, operate the platform, and contribute to Cabotage itself."
+repo_url = "https://github.com/cabotage/cabotage-app"
+site_url = "https://cabotage.github.io/cabotage-app/"
+repo_name = "cabotage/cabotage-app"
+edit_uri = "edit/main/docs/"
+docs_dir = "docs"
+site_dir = "site"
+extra_css = ["stylesheets/guide.css"]
+extra_javascript = ["javascripts/navigation.js"]
+nav = [
+    { "Home" = "index.md" },
+    { "Using Cabotage" = [
+        { "Overview" = "using/index.md" },
+        { "Deploying your code" = "using/deploying.md" },
+        { "Configuration" = "using/configuration.md" },
+        { "GitHub integration" = "using/github.md" },
+        { "Processes and Procfile" = "using/processes.md" },
+        { "Scheduled jobs" = "using/jobs.md" },
+        { "Pod sizes" = "using/pod-sizes.md" },
+        { "Logs and pipeline timing" = "using/observing.md" },
+        { "Access and roles" = "using/access.md" },
+    ] },
+    { "Operating Cabotage" = [
+        { "Overview" = "operating/index.md" },
+        { "Authentication and MFA" = "operating/authentication.md" },
+        { "MFA rollout" = "operating/rollout-mfa.md" },
+        { "Network policies" = "operating/network-policies.md" },
+        { "Tailscale ingress" = "operating/tailscale.md" },
+    ] },
+    { "Contributing to Cabotage" = [
+        { "Working on Cabotage itself" = "contributing/index.md" },
+        { "Local development" = "contributing/local-development.md" },
+        { "Writing documentation" = "contributing/documentation.md" },
+    ] },
+]
+
+[project.theme]
+variant = "modern"
+language = "en"
+custom_dir = "docs/overrides"
+icon.logo = "cabotage"
+font = false
+features = [
+    "navigation.indexes",
+    "navigation.top",
+    "navigation.footer",
+    "content.code.copy",
+    "content.action.edit",
+]
+
+[[project.theme.palette]]
+scheme = "default"
+primary = "deep purple"
+accent = "deep purple"
+media = "(prefers-color-scheme: light)"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+scheme = "slate"
+primary = "deep purple"
+accent = "deep purple"
+media = "(prefers-color-scheme: dark)"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+[project.markdown_extensions]
+admonition = {}
+attr_list = {}
+md_in_html = {}
+tables = {}
+"pymdownx.highlight" = { anchor_linenums = true }
+"pymdownx.superfences" = {}
+toc = { permalink = true }
+
+[project.validation]
+invalid_links = true
+invalid_link_anchors = true

@@ -9,7 +9,8 @@ MESSAGE ?= migration
 
 .PHONY: help sync lock hooks-install hooks \
 	lint fmt type-check security-check check test ci \
-	start rebuild stop destroy migrate migrations create-admin seed routes
+	start rebuild stop destroy migrate migrations create-admin seed routes \
+	docs docs-build
 
 help: ## Show this help
 	@color=; \
@@ -37,6 +38,13 @@ hooks-install: ## Install the prek Git hook
 
 hooks: ## Run prek on all tracked files
 	$(UV) run --locked prek run --all-files
+
+##@ Documentation
+docs: ## Preview documentation on an available local port
+	$(UV) run --locked --only-group docs python bin/serve-docs
+
+docs-build: ## Build the documentation site with strict validation
+	$(UV) run --locked --only-group docs zensical build --strict
 
 ##@ Code quality
 lint: .state/docker-build-base ## Check Python code with Ruff

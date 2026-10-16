@@ -17,6 +17,25 @@ See [the PyPI infrastructure pull
 request](https://github.com/python/pypi-infra/pull/3) for more on design goals.
 
 
+## Documentation
+
+The [documentation site](https://cabotage.github.io/cabotage-app/) is built with [Zensical](https://zensical.org/).
+It separates [Using Cabotage](docs/using/index.md) (deploying your applications),
+[Operating Cabotage](docs/operating/index.md) (running the platform), and
+[Contributing to Cabotage](docs/contributing/index.md) (**working on Cabotage itself**).
+
+With [uv](https://docs.astral.sh/uv/) installed, preview or build the docs without
+starting the application stack:
+
+```sh
+make docs        # Live preview on an available local port; prints its URL
+make docs-build  # Strict static build in site/
+```
+
+These commands install only the locked documentation dependencies. See
+[writing documentation](docs/contributing/documentation.md) for the authoring workflow.
+
+
 ## Pipeline
 
 Open **Observe → Pipeline** to review build and deployment times. Redeploys

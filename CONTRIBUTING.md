@@ -19,6 +19,7 @@ Following these guidelines helps to communicate that you respect the time of the
   - [Code formatting](#code-formatting)
   - [Git hooks with prek](#git-hooks-with-prek)
   - [Dependency updates](#dependency-updates)
+  - [Documentation](#documentation)
 - [Pull requests](#pull-requests)
   - [Everyone can contribute](#everyone-can-contribute)
   - [I have submitted my Pull Request, what are the next steps?](#i-have-submitted-my-pull-request-what-are-the-next-steps)
@@ -89,8 +90,19 @@ Make sure to add tests for any new features or improvements made to the code. De
 For local development, use `CABOTAGE_DEBUG=True`; Flask's `FLASK_DEBUG=1` or
 `flask --debug run` alone does not bypass Cabotage's default-secret startup
 validation. `make test` supplies test-only secrets with debug mode disabled.
-See [startup validation](docs/authentication.md#startup-validation) for the
+See [startup validation](docs/operating/authentication.md#startup-validation) for the
 required configuration when running commands outside debug mode.
+
+### Documentation
+
+The contributor section of the [documentation site](docs/contributing/index.md)
+is for people **working on Cabotage itself**, not developers deploying their
+applications with Cabotage. User and platform-operator guides have separate sections.
+
+Run `make docs` to preview on an available local port (open the URL printed
+at startup), or `make docs-build` for a strict static build. Only uv and Python
+are required; the application stack does not need to be running. See [writing documentation](docs/contributing/documentation.md)
+for page organization, navigation, and relative links.
 
 
 ### Dependency updates

@@ -260,8 +260,9 @@
                    class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Orgs</a>
                 <a href="{{ url_for('user.projects') }}"
                    class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Projects</a>
-                <a href="{{ url_for('user.guide') }}"
-                   class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Guide</a>
+                <a href="{{ config.DOCS_URL }}"
+                   target="_blank" rel="noopener"
+                   class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Docs</a>
                 {% if current_user.admin %}
                 {% if config.ORGANIZATION_REQUESTS_ENABLED %}
                 <a href="{{ url_for('user.organization_requests') }}"
@@ -620,8 +621,9 @@
                class="btn btn-ghost btn-sm justify-start text-sm">Organizations</a>
             <a href="{{ url_for('user.projects') }}"
                class="btn btn-ghost btn-sm justify-start text-sm">Projects</a>
-            <a href="{{ url_for('user.guide') }}"
-               class="btn btn-ghost btn-sm justify-start text-sm">Guide</a>
+            <a href="{{ config.DOCS_URL }}"
+               target="_blank" rel="noopener"
+               class="btn btn-ghost btn-sm justify-start text-sm">Docs</a>
             {% if current_user.admin %}
             {% if config.ORGANIZATION_REQUESTS_ENABLED %}
             <a href="{{ url_for('user.organization_requests') }}"
