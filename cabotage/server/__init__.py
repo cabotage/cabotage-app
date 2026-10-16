@@ -1,7 +1,7 @@
 import hashlib
 import os
 from html import escape
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 import sentry_sdk
 
@@ -179,7 +179,7 @@ def celery_init_app(app):
     return celery_app
 
 
-def create_app():
+def create_app() -> Flask:
     # instantiate the app
     app = Flask(
         __name__,
@@ -187,9 +187,15 @@ def create_app():
         static_folder="../client/static",
     )
 
+    from flask_admin.theme import Bootstrap4Theme
+
     from cabotage.server.models.admin import AdminIndexView
 
-    admin = Admin(name="cabotage_admin", index_view=AdminIndexView())
+    admin = Admin(
+        name="cabotage_admin",
+        index_view=AdminIndexView(),
+        theme=Bootstrap4Theme(base_template="admin/cabotage_base.html"),
+    )
 
     from cabotage.server.models.auth import Role, User, WebAuthn
 
@@ -391,6 +397,13 @@ def create_app():
     babel.init_app(app)
 
     # register blueprints
+    from cabotage.server.admin_passkey import (
+        blueprint as admin_passkey_blueprint,
+    )
+    from cabotage.server.admin_passkey import (
+        has_admin_session,
+        register_admin_guards,
+    )
     from cabotage.server.alerting.views import alerting_blueprint
     from cabotage.server.main.views import main_blueprint
     from cabotage.server.oidc.views import oidc_blueprint
@@ -402,6 +415,7 @@ def create_app():
     app.register_blueprint(oidc_blueprint)
     app.register_blueprint(registry_auth_blueprint)
     app.register_blueprint(alerting_blueprint)
+    app.register_blueprint(admin_passkey_blueprint)
 
     # GitHub webhook uses HMAC validation, not CSRF tokens
     csrf.exempt("cabotage.server.user.views.github_hooks")
@@ -411,6 +425,10 @@ def create_app():
     from cabotage.server.mfa import register_mfa_guards
 
     register_mfa_guards(app)
+    register_admin_guards(app)
+    cast(dict[str, object], app.jinja_env.globals)["has_admin_session"] = (
+        has_admin_session
+    )
 
     # error handlers
     @app.errorhandler(401)
@@ -429,7 +447,7 @@ def create_app():
     def server_error_page(error):
         return render_template("errors/500.html"), 500
 
-    from cabotage.server.models.admin import AdminModelView
+    from cabotage.server.models.admin import AdminModelView, UserAdminModelView
     from cabotage.server.models.auth import Organization, OrganizationRequest, Team
     from cabotage.server.models.projects import (
         Alert,
@@ -461,7 +479,7 @@ def create_app():
     admin.add_view(AdminModelView(Deployment, db.session))
     admin.add_view(AdminModelView(Hook, db.session))
     admin.add_view(AdminModelView(Alert, db.session))
-    admin.add_view(AdminModelView(User, db.session))
+    admin.add_view(UserAdminModelView(User, db.session))
 
     num_proxies = app.config.get("PROXY_FIX_NUM_PROXIES", 1)
     app.wsgi_app = ProxyFix(  # ty: ignore[invalid-assignment]  # Flask types wsgi_app as a method but documents reassignment

@@ -2,10 +2,18 @@ import time
 import uuid
 
 import pytest
+from flask import g
+from flask.testing import FlaskClient
 from flask_security import hash_password
+from werkzeug.test import TestResponse
 
 from cabotage.server import db
-from cabotage.server.models.auth import Organization, OrganizationRequest, User
+from cabotage.server.models.auth import (
+    Organization,
+    OrganizationRequest,
+    User,
+    WebAuthn,
+)
 from cabotage.server.models.auth_associations import OrganizationMember
 from cabotage.server.wsgi import app as _app
 
@@ -30,8 +38,17 @@ def app():
     _app.config.update(original_config)
 
 
+class _RequestScopedClient(FlaskClient):
+    def open(self, *args: object, **kwargs: object) -> TestResponse:
+        # The DB fixture holds an outer app context. Real requests do not share
+        # Flask-Login's cached user or request-local action consumption state.
+        with self.application.app_context():
+            return super().open(*args, **kwargs)
+
+
 @pytest.fixture
-def client(app):
+def client(app, monkeypatch):
+    monkeypatch.setattr(app, "test_client_class", _RequestScopedClient)
     return app.test_client()
 
 
@@ -66,7 +83,8 @@ def admin_user(app):
     _delete_user(user.id)
 
 
-def _login(client, user):
+def _login(client: FlaskClient, user: User) -> None:
+    g.pop("_login_user", None)
     with client.session_transaction() as sess:
         sess.clear()
         sess["_user_id"] = user.fs_uniquifier
@@ -88,6 +106,7 @@ def _delete_user(user_id):
         db.text("UPDATE transaction SET user_id = NULL WHERE user_id = :uid"),
         {"uid": user_id},
     )
+    WebAuthn.query.filter_by(user_id=user_id).delete()
     User.query.filter_by(id=user_id).delete()
     db.session.commit()
 
