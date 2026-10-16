@@ -71,7 +71,7 @@
   {#- Greyed-out dropdown menu entry; caller() explains why it's unavailable. -#}
   {% set reason = caller() %}
   <li class="disabled info-popup-anchor">
-    <span class="opacity-30">{{ icon(icon_name, 'w-3.5 h-3.5') }} {{ label }}</span>
+    <span class="opacity-30" tabindex="0" aria-disabled="true">{{ icon(icon_name, 'w-3.5 h-3.5') }} {{ label }}</span>
     {% call info_popup(label ~ ' unavailable') %}
       {% call info_popup_row() %}{{ reason }}{% endcall %}
     {% endcall %}
@@ -141,7 +141,7 @@
           <li><a href="{{ url_for('user.organization_observe', org_slug=org_slug) }}"
                  class="{% if active == 'observe' %}active{% endif %}">{{ icon('bar-chart', 'w-3.5 h-3.5') }} Metrics</a></li>
           {% else %}
-          {% call disabled_menu_item('bar-chart', 'Metrics') %}Requires <code>MIMIR_URL</code> to be set by a Cabotage platform administrator.{% endcall %}
+          {% call disabled_menu_item('bar-chart', 'Metrics') %}Requires <code>CABOTAGE_MIMIR_URL</code> to be set by a Cabotage platform administrator.{% endcall %}
           {% endif %}
           <li><a href="{{ url_for('user.organization_audit_log', org_slug=org_slug) }}"
                  class="{% if active == 'audit' %}active{% endif %}">{{ icon('clock', 'w-3.5 h-3.5') }} Audit Log</a></li>
@@ -174,7 +174,7 @@
           <li><a href="{{ url_for('user.environment_observe', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug) }}"
                  class="{% if active == 'observe' %}active{% endif %}">{{ icon('bar-chart', 'w-3.5 h-3.5') }} Metrics</a></li>
           {% else %}
-          {% call disabled_menu_item('bar-chart', 'Metrics') %}Requires <code>MIMIR_URL</code> to be set by a Cabotage platform administrator.{% endcall %}
+          {% call disabled_menu_item('bar-chart', 'Metrics') %}Requires <code>CABOTAGE_MIMIR_URL</code> to be set by a Cabotage platform administrator.{% endcall %}
           {% endif %}
           <li><a href="{{ url_for('user.environment_audit_log', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug) }}"
                  class="{% if active == 'audit' %}active{% endif %}">{{ icon('clock', 'w-3.5 h-3.5') }} Audit Log</a></li>
@@ -206,7 +206,7 @@
           <li><a href="{{ url_for('user.project_observe', org_slug=org_slug, project_slug=project_slug) }}"
                  class="{% if active == 'observe' %}active{% endif %}">{{ icon('bar-chart', 'w-3.5 h-3.5') }} Metrics</a></li>
           {% else %}
-          {% call disabled_menu_item('bar-chart', 'Metrics') %}Requires <code>MIMIR_URL</code> to be set by a Cabotage platform administrator.{% endcall %}
+          {% call disabled_menu_item('bar-chart', 'Metrics') %}Requires <code>CABOTAGE_MIMIR_URL</code> to be set by a Cabotage platform administrator.{% endcall %}
           {% endif %}
           <li><a href="{{ url_for('user.project_audit_log', org_slug=org_slug, project_slug=project_slug) }}"
                  class="{% if active == 'audit' %}active{% endif %}">{{ icon('clock', 'w-3.5 h-3.5') }} Audit Log</a></li>
@@ -242,13 +242,13 @@
           <li><a href="{{ url_for('user.project_application_observe', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
                  class="{% if active == 'observe' %}active{% endif %}">{{ icon('bar-chart', 'w-3.5 h-3.5') }} Metrics</a></li>
           {% else %}
-          {% call disabled_menu_item('bar-chart', 'Metrics') %}Requires <code>MIMIR_URL</code> to be set by a Cabotage platform administrator.{% endcall %}
+          {% call disabled_menu_item('bar-chart', 'Metrics') %}Requires <code>CABOTAGE_MIMIR_URL</code> to be set by a Cabotage platform administrator.{% endcall %}
           {% endif %}
           {% if config.LOKI_URL %}
           <li><a href="{{ url_for('user.project_application_logs_view', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
                  class="{% if active == 'logs' %}active{% endif %}">{{ icon('file-text', 'w-3.5 h-3.5') }} Logs</a></li>
           {% else %}
-          {% call disabled_menu_item('file-text', 'Logs') %}Requires <code>LOKI_URL</code> to be set by a Cabotage platform administrator.{% endcall %}
+          {% call disabled_menu_item('file-text', 'Logs') %}Requires <code>CABOTAGE_LOKI_URL</code> to be set by a Cabotage platform administrator.{% endcall %}
           {% endif %}
           <li><a href="{{ url_for('user.project_application_pipeline', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
                  class="{% if active == 'pipeline' %}active{% endif %}">{{ icon('bar-chart-2', 'w-3.5 h-3.5') }} Pipeline</a></li>
@@ -273,7 +273,7 @@
           <li><a href="{{ url_for('user.project_application_ingress', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
                  class="{% if active == 'ingress' %}active{% endif %}">{{ icon('globe', 'w-3.5 h-3.5') }} Ingress</a></li>
           {% else %}
-          {% call disabled_menu_item('globe', 'Ingress') %}Requires <code>INGRESS_DOMAIN</code> to be set by a Cabotage platform administrator, or a Tailscale integration on this organization.{% endcall %}
+          {% call disabled_menu_item('globe', 'Ingress') %}Requires <code>CABOTAGE_INGRESS_DOMAIN</code> to be set by a Cabotage platform administrator, or a Tailscale integration on this organization.{% endcall %}
           {% endif %}
         </ul>
       </div>
