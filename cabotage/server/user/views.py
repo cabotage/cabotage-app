@@ -77,7 +77,6 @@ from cabotage.server.admin_passkey import (
     require_admin_session,
     require_elevated_request,
 )
-
 from cabotage.server.models.auth import (
     GitHubAppInstallation,
     GitHubIdentity,
@@ -179,6 +178,7 @@ if TYPE_CHECKING:
     from kubernetes.stream.ws_client import WSClient
     from simple_websocket import Server
     from werkzeug.wrappers import Response
+
     from cabotage.utils.build_log_stream import BuildType
 
 _REGEX_META = re.compile(r"[.*+?{}()|\\^$\[\]]")

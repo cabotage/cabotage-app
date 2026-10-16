@@ -10,8 +10,7 @@ from unittest.mock import Mock
 from urllib.parse import urlencode
 
 import pytest
-from flask import abort, g, redirect, request, session
-from flask_login import login_required
+from flask import g, session
 from sqlalchemy import delete, event, update
 
 from cabotage.server import db, security
@@ -20,8 +19,6 @@ from cabotage.server.admin_passkey import (
     elevated_stream_valid,
     has_admin_session,
     issue_shell_ticket,
-    require_admin_action,
-    require_admin_session,
 )
 from cabotage.server.models.admin_security import AdminChallenge, AdminGrant
 from cabotage.server.models.auth import (
@@ -395,9 +392,9 @@ def test_expired_elevation_retains_membership_precedence(
     passkey.enter(client)
     with client.session_transaction() as state:
         grant_id = state["admin_grant"]
-    db.session.get(AdminGrant, grant_id).expires_at = datetime.now(
-        timezone.utc
-    ).replace(tzinfo=None) - timedelta(seconds=1)
+    db.session.get(AdminGrant, grant_id).expires_at = datetime.now(UTC).replace(
+        tzinfo=None
+    ) - timedelta(seconds=1)
     db.session.commit()
     response = client.post(
         _settings(tenant), data=_data(tenant), headers={"X-Admin-Fetch": "1"}
