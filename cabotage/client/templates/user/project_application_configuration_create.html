@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import render_field, icon %}
+{% from "_macros.html" import render_field, icon, config_file_control %}
 
 {% block title %}
   Add Environment Variable - Cabotage
@@ -17,8 +17,11 @@
               class="flex flex-col gap-4">
           {{ form.hidden_tag() }}
           {{ render_field(form.name, placeholder='MY_VARIABLE') }}
-          {{ render_field(form.value, placeholder='value') }}
-          <p class="text-xs text-base-content/40 -mt-2">
+          <div>
+            {{ render_field(form.value, placeholder='value', extra_class='auto-grow config-value', rows=1) }}
+            {{ config_file_control(form.value.id) }}
+          </div>
+          <p class="text-xs text-base-content/40">
             Use <code class="text-base-content/60">${app.url}</code> or
             <code class="text-base-content/60">${app.ingress.url}</code>
             to reference a sibling app's ingress URL, or
