@@ -124,6 +124,9 @@
             <button data-nav-right class="btn btn-xs btn-ghost btn-square" title="Forward ½ interval">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</button>
             <span data-nav-right-label class="text-[0.5rem] absolute -bottom-2"></span>
           </span>
+          <button data-zoom-chip hidden class="btn btn-xs btn-ghost gap-1 ml-1" title="Clear zoom window (Esc)">
+            <span data-zoom-chip-label class="font-mono"></span>{{ icon('x', 'w-3 h-3') }}
+          </button>
         </span>
       </div>
     </div>
@@ -135,6 +138,18 @@
 
 {% block js %}
 <link rel="stylesheet" href="https://unpkg.com/uplot@1.6.31/dist/uPlot.min.css">
+<style>
+  .chart-tip-hint {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid var(--border-color);
+    color: var(--text-muted);
+    font-size: 0.65rem;
+  }
+  {% if logs_url %}
+  .metric-panel .u-over { cursor: pointer; }
+  {% endif %}
+</style>
 <script>
 (function() {
   {% if not mimir_configured %}return;{% endif %}
@@ -147,6 +162,7 @@
   function init() {
 
   var METRIC_URL = {{ metric_url|tojson }};
+  var LOGS_URL = {{ logs_url|tojson }};
   var RANGE = {{ current_range|tojson }};
   var OBSERVE_LEVEL = {{ observe_level|tojson }};
   var SHOW_BACKING_SERVICES = {{ show_backing_services_panels|tojson }};
@@ -168,6 +184,9 @@
     windowStart = null;
   }
 
+  // Synced crosshair + drag-to-zoom + click-to-logs across every panel on the page
+  var sync = uPlot.sync('cabotage-observe');
+  var activePlot = null;
   function xBounds() {
     if (windowEnd && windowStart) {
       return { min: windowStart, max: windowEnd };
@@ -229,7 +248,7 @@
   }
 
   // Floating tooltip plugin
-  function tooltipPlugin(valueFmt, rawData, showTotal) {
+  function tooltipPlugin(valueFmt, rawData, showTotal, clickable) {
     var tip = document.createElement('div');
     tip.className = 'chart-tip';
 
@@ -240,6 +259,9 @@
       var time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
       return mon + ' ' + day + ' \u00b7 ' + time;
     }
+    function fmtClock(ts) {
+      return new Date(ts * 1000).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    }
 
     return {
       hooks: {
@@ -247,6 +269,8 @@
           u.over.appendChild(tip);
         },
         setCursor: function(u) {
+          // Every synced panel moves its crosshair; only the hovered one narrates.
+          if (u !== activePlot) { tip.style.display = 'none'; return; }
           var idx = u.cursor.idx;
           if (idx == null) { tip.style.display = 'none'; return; }
           var ts = u.data[0][idx];
@@ -275,7 +299,8 @@
               '<span class="chart-tip-label">Total</span>' +
               '<strong class="chart-tip-value">' + valueFmt(total) + '</strong></div>';
           }
-          tip.innerHTML = '<div class="chart-tip-time">' + fmtTime(ts) + '</div>' + rows;
+          var hint = clickable ? '<div class="chart-tip-hint">Click to view logs at ' + fmtClock(ts) + '</div>' : '';
+          tip.innerHTML = '<div class="chart-tip-time">' + fmtTime(ts) + '</div>' + rows + hint;
           tip.style.display = 'block';
 
           var left = u.cursor.left;
@@ -291,6 +316,83 @@
         }
       }
     };
+  }
+
+  // Drag-to-zoom + click-to-logs + crosshair-ownership, shared by every panel.
+  // uPlot never fires setSelect for a true (near-zero-movement) click, so a
+  // click is detected independently via mousedown/mouseup (<=3px of travel).
+  function interactionPlugin() {
+    var downX = null;
+    return {
+      hooks: {
+        init: function(u) {
+          u.over.addEventListener('mouseenter', function() { activePlot = u; });
+          u.over.addEventListener('mouseleave', function() {
+            if (activePlot === u) activePlot = null;
+          });
+          u.over.addEventListener('mousedown', function(e) { downX = e.clientX; });
+          u.over.addEventListener('mouseup', function(e) {
+            if (downX == null) return;
+            var moved = Math.abs(e.clientX - downX);
+            downX = null;
+            if (moved <= 3 && LOGS_URL) handlePanelClick(u);
+          });
+        },
+        setSelect: function(u) {
+          var sel = u.select;
+          if (sel.width <= 3) return;
+          var from = u.posToVal(sel.left, 'x');
+          var to = u.posToVal(sel.left + sel.width, 'x');
+          applyZoom(Math.min(from, to), Math.max(from, to));
+        }
+      }
+    };
+  }
+
+  // Drag-zoom: set the window to the dragged span and refetch every panel.
+  function applyZoom(fromSec, toSec) {
+    var from = Math.round(fromSec);
+    var to = Math.round(toSec);
+    if (to - from < 5) return;
+    windowStart = from;
+    windowEnd = to;
+    if (typeof updateNavUI === 'function') updateNavUI();
+    updateURL();
+    refreshAllPanels();
+  }
+
+  // Clear the active window (drag-zoom or paged) and return to the live view.
+  function clearWindow() {
+    if (isLive()) return;
+    windowStart = null;
+    windowEnd = null;
+    if (typeof updateNavUI === 'function') updateNavUI();
+    updateURL();
+    refreshAllPanels();
+  }
+
+  // Click (<=3px drag) on a panel opens the scope's log viewer, filtered to
+  // +/-5min around the clicked moment (or the active zoom window, if any).
+  function handlePanelClick(u) {
+    if (!LOGS_URL) return;
+    var idx = u.cursor.idx;
+    if (idx == null) return;
+    var ts = u.data[0][idx];
+    if (ts == null) return;
+    var startSec, endSec;
+    if (!isLive() && windowStart && windowEnd) {
+      startSec = windowStart;
+      endSec = windowEnd;
+    } else {
+      startSec = ts - 300;
+      endSec = ts + 300;
+    }
+    var url = LOGS_URL +
+      '?start=' + encodeURIComponent(new Date(startSec * 1000).toISOString()) +
+      '&end=' + encodeURIComponent(new Date(endSec * 1000).toISOString());
+    var processEl = document.getElementById('process-filter');
+    if (processEl && processEl.value) url += '&process=' + encodeURIComponent(processEl.value);
+    window.location.href = url;
   }
 
   // Standard line chart
@@ -327,8 +429,8 @@
           values: function(u, vals) { return vals.map(valueFmt); }
         }
       ],
-      plugins: [tooltipPlugin(valueFmt)],
-      cursor: { drag: { x: false, y: false } },
+      plugins: [tooltipPlugin(valueFmt, null, false, !!LOGS_URL), interactionPlugin()],
+      cursor: { drag: { x: true, y: false, setScale: false }, sync: { key: sync.key, setSeries: false } },
       legend: { show: parsed.labels.length <= 4, live: false },
       scales: { x: { time: true, min: xBounds().min, max: xBounds().max }, y: { range: function(u, dmin, dmax) { return [0, (dmax || 1) * 1.1]; } } }
     };
@@ -397,8 +499,8 @@
           values: function(u, vals) { return vals.map(valueFmt); }
         }
       ],
-      plugins: [tooltipPlugin(valueFmt, parsed.data, true)],
-      cursor: { drag: { x: false, y: false } },
+      plugins: [tooltipPlugin(valueFmt, parsed.data, true, !!LOGS_URL), interactionPlugin()],
+      cursor: { drag: { x: true, y: false, setScale: false }, sync: { key: sync.key, setSeries: false } },
       legend: { show: true, live: false },
       scales: {
         x: { time: true, min: xBounds().min, max: xBounds().max },
@@ -495,8 +597,8 @@
           values: function(u, vals) { return vals.map(absFmt); }
         }
       ],
-      plugins: [tooltipPlugin(absFmt)],
-      cursor: { drag: { x: false, y: false } },
+      plugins: [tooltipPlugin(absFmt, null, false, !!LOGS_URL), interactionPlugin()],
+      cursor: { drag: { x: true, y: false, setScale: false }, sync: { key: sync.key, setSeries: false } },
       legend: { show: totalSeries <= 8, live: false },
       scales: {
         x: { time: true, min: xBounds().min, max: xBounds().max },
@@ -965,6 +1067,12 @@
   var navRightLabels = document.querySelectorAll('[data-nav-right-label]');
   var navRightWraps = document.querySelectorAll('[data-nav-right-wrap]');
   var HALF_LABELS = { '1h': '30m', '6h': '3h', '24h': '12h', '7d': '3.5d', '30d': '15d' };
+  var zoomChips = document.querySelectorAll('[data-zoom-chip]');
+  var zoomChipLabels = document.querySelectorAll('[data-zoom-chip-label]');
+
+  function fmtChipClock(sec) {
+    return new Date(sec * 1000).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  }
 
   function updateNavUI() {
     if (!timeNavs.length) return;
@@ -987,6 +1095,11 @@
         ? 'relative flex flex-col items-center opacity-30 pointer-events-none'
         : 'relative flex flex-col items-center';
     });
+    zoomChips.forEach(function(chip) { chip.hidden = live; });
+    if (!live && windowStart && windowEnd) {
+      var label = fmtChipClock(windowStart) + '\u2013' + fmtChipClock(windowEnd);
+      zoomChipLabels.forEach(function(l) { l.textContent = label; });
+    }
   }
 
   function navigate(direction) {
@@ -1019,13 +1132,15 @@
     button.addEventListener('click', function() { navigate(1); });
   });
   navNowButtons.forEach(function(button) {
-    button.addEventListener('click', function() {
-      windowEnd = null;
-      windowStart = null;
-      updateNavUI();
-      updateURL();
-      refreshAllPanels();
-    });
+    button.addEventListener('click', clearWindow);
+  });
+  zoomChips.forEach(function(chip) {
+    chip.addEventListener('click', clearWindow);
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && !isLive() && !e.target.closest('input, textarea, select')) {
+      clearWindow();
+    }
   });
 
   // Set initial nav button visibility
@@ -1049,21 +1164,20 @@
     }
   }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
-  // Auto-refresh (restarts when range changes)
-  var refreshTimer = setInterval(function() {
+  // Auto-refresh (restarts when range changes). Paused while a zoom/paged
+  // window is active, or while the user is hovering a panel — refresh must
+  // never steal focus or reset an in-progress hover/crosshair.
+  function refreshTick() {
+    if (!isLive() || activePlot) return;
     Object.keys(panels).forEach(function(metric) { fetchAndRender(metric, 'primary'); });
     if (SHOW_BACKING_SERVICES) {
       Object.keys(backingPanels).forEach(function(metric) { fetchAndRender(metric, 'backing'); });
     }
-  }, REFRESH_MS);
+  }
+  var refreshTimer = setInterval(refreshTick, REFRESH_MS);
   function resetRefreshTimer() {
     clearInterval(refreshTimer);
-    refreshTimer = setInterval(function() {
-      Object.keys(panels).forEach(function(metric) { fetchAndRender(metric, 'primary'); });
-      if (SHOW_BACKING_SERVICES) {
-        Object.keys(backingPanels).forEach(function(metric) { fetchAndRender(metric, 'backing'); });
-      }
-    }, REFRESH_MS);
+    refreshTimer = setInterval(refreshTick, REFRESH_MS);
   }
 
   } // end init()
