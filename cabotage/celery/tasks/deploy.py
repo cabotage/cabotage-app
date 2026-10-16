@@ -1,4 +1,5 @@
 import logging
+import re
 import secrets
 import time
 from base64 import b64encode
@@ -13,6 +14,7 @@ from flask import current_app
 from kubernetes.client.exceptions import ApiException
 from sqlalchemy.orm.attributes import flag_modified
 
+from cabotage._types import assume_not_none
 from cabotage.celery.tasks.notify import (
     dispatch_autodeploy_notification,
     dispatch_pipeline_notification,
@@ -27,6 +29,7 @@ from cabotage.server import (
 )
 from cabotage.server.models.projects import (
     DEFAULT_POD_CLASS,
+    ApplicationEnvironment,
     Configuration,
     Deployment,
     EnvironmentConfiguration,
@@ -49,6 +52,7 @@ from cabotage.utils.build_log_stream import (
     refresh_heartbeat,
     stream_key,
 )
+from cabotage.utils.datadog import DATADOG_SITES
 from cabotage.utils.github import (
     CheckRun,
     cabotage_url,
@@ -56,7 +60,8 @@ from cabotage.utils.github import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterator, Mapping
+    from uuid import UUID
 
     from redis import Redis
 
@@ -108,7 +113,11 @@ def _dispatch_deploy_failure(deployment, error_detail):
 
 @shared_task()
 def cleanup_app_env_k8s(
-    app_env_id: str, namespace: str, resource_prefix: str, label_selector: str
+    app_env_id: str,
+    namespace: str,
+    resource_prefix: str,
+    label_selector: str,
+    log_export_key: str | None = None,
 ) -> None:
     """Best-effort delete of all k8s resources for one ApplicationEnvironment.
 
@@ -202,6 +211,11 @@ def cleanup_app_env_k8s(
         core_api.delete_namespaced_secret(resource_prefix, namespace)
     except Exception:
         log.exception("k8s cleanup: failed to delete secret %s", resource_prefix)
+    if log_export_key:
+        try:
+            remove_log_export_outputs(core_api, log_export_key)
+        except Exception:
+            log.exception("k8s cleanup: failed to remove log export %s", log_export_key)
 
 
 def _preview_url_for_app_env(app_env):
@@ -277,6 +291,10 @@ def k8s_role_name(release):
 
 
 def k8s_label_value(release):
+    return app_env_label_value(release.application, release.application_environment)
+
+
+def app_env_label_value(application, app_env):
     """Build a k8s label value (max 63 chars) for the 'app' label.
 
     Uses compact_k8s_name with (slug, k8s_identifier) pairs to produce
@@ -284,15 +302,13 @@ def k8s_label_value(release):
     pass through unchanged; generated ones get their slugs joined with
     a combined hash suffix.
     """
-    org = release.application.project.organization
-    project = release.application.project
-    app = release.application
-    app_env = release.application_environment
+    org = application.project.organization
+    project = application.project
     pairs = [(org.slug, org.k8s_identifier)]
     if app_env.environment.uses_environment_namespace:
         pairs.append((app_env.environment.slug, app_env.environment.k8s_identifier))
     pairs.append((project.slug, project.k8s_identifier))
-    pairs.append((app.slug, app.k8s_identifier))
+    pairs.append((application.slug, application.k8s_identifier))
     return compact_k8s_name(*pairs)
 
 
@@ -1905,7 +1921,213 @@ def render_datadog_container(
     )
 
 
-def render_podspec(release, process_name, service_account_name):
+def _read_datadog_config(
+    configuration: Mapping[str, Configuration | EnvironmentConfiguration],
+    name: str,
+    default: str | None = None,
+) -> str | None:
+    config = configuration.get(name)
+    if config is None:
+        return default
+    if config.secret is True:
+        if not config.key_slug:
+            raise DeployError(f"Datadog configuration {name} has no secret path")
+        # read_value() intentionally masks runtime-only secrets for the UI.
+        payload = config_writer.read(config.key_slug.split(":", 1)[1], secret=True)
+        return payload["data"][name]
+    return cast("str", config.read_value(config_writer))
+
+
+LOG_EXPORT_LABEL = "log-export.cabotage.io"
+
+
+def _log_export_installed() -> bool:
+    """Whether the platform runs the tenant log exporter (resident-alloy + Fluent Bit)."""
+    return bool(current_app.config.get("LOG_EXPORT_ENABLED"))
+
+
+def _log_export_enabled(release: Release) -> bool:
+    if not _log_export_installed():
+        return False
+    flag = _read_datadog_config(
+        release.configuration_objects, "DD_LOGS_ENABLED", "false"
+    )
+    return str(flag).strip().lower() == "true"
+
+
+def log_export_secret_key(namespace: str, app_label: str) -> str:
+    """Key of one application environment's output in the log export Secret."""
+    return f"{namespace}.{app_label}.yaml"
+
+
+def render_log_export_output(release: Release) -> str:
+    """Render the tenant's Fluent Bit output, included by the platform exporter.
+
+    resident-alloy tags opted-in records ``tenant.<namespace>.<app label>`` and
+    packs the original line into ``_entry``; see kubernetes-infra.
+    """
+    configuration = release.configuration_objects
+    api_key = _read_datadog_config(configuration, "DD_API_KEY")
+    site = _read_datadog_config(configuration, "DD_SITE")
+    if not api_key or api_key == "**secret**":
+        raise DeployError("DD_LOGS_ENABLED requires the application's DD_API_KEY")
+    if "${" in api_key:
+        # Fluent Bit would expand this as one of its own environment variables.
+        raise DeployError("DD_API_KEY must not contain '${'")
+    if site not in DATADOG_SITES:
+        raise DeployError("DD_LOGS_ENABLED requires a supported DD_SITE")
+    namespace = k8s_namespace(release)
+    app_label = k8s_label_value(release)
+    application = release.application
+    tags = {
+        "organization": application.project.organization.slug,
+        "project": application.project.slug,
+        "application": application.slug,
+        "app": app_label,
+        "environment": release.application_environment.environment.slug,
+    }
+    output = {
+        "name": "datadog",
+        "alias": f"{namespace}.{app_label}",
+        "match": f"tenant.{namespace}.{app_label}",
+        "host": f"http-intake.logs.{site}",
+        "port": 443,
+        "tls": "on",
+        "tls.verify": "on",
+        "compress": "gzip",
+        "apikey": api_key,
+        "dd_message_key": "_entry",
+        "dd_service": application.slug,
+        "dd_source": application.slug,
+        "dd_tags": ",".join(f"{k}:{v}" for k, v in tags.items()),
+        # Hot reloads wait for pending chunks, so a dead sink must give up.
+        "retry_limit": 5,
+        "storage.total_limit_size": "64M",
+    }
+    return yaml.safe_dump({"pipeline": {"outputs": [output]}}, sort_keys=False)
+
+
+def _log_export_secret() -> tuple[str, str]:
+    """Name and namespace of the Secret the platform exporter includes."""
+    return (
+        cast("str", current_app.config["LOG_EXPORT_SECRET"]),
+        cast("str", current_app.config["LOG_EXPORT_NAMESPACE"]),
+    )
+
+
+def sync_log_export(
+    core_api_instance: kubernetes.client.CoreV1Api, release: Release
+) -> bool:
+    """Write or drop this application environment's exporter output."""
+    if not _log_export_installed():
+        return False
+    key = log_export_secret_key(k8s_namespace(release), k8s_label_value(release))
+    if not _log_export_enabled(release):
+        remove_log_export_outputs(core_api_instance, key)
+        return False
+    output = b64encode(render_log_export_output(release).encode()).decode()
+    name, namespace = _log_export_secret()
+    try:
+        core_api_instance.patch_namespaced_secret(
+            name, namespace, {"data": {key: output}}
+        )
+    except ApiException as exc:
+        if exc.status == 404:
+            raise DeployError(
+                f"Log export is not installed: Secret/{name} "
+                f"is missing in Namespace/{namespace}"
+            )
+        raise
+    return True
+
+
+def remove_log_export_outputs(
+    core_api_instance: kubernetes.client.CoreV1Api, prefix: str
+) -> None:
+    """Drop every exporter output whose Secret key starts with ``prefix``."""
+    if not _log_export_installed():
+        return
+    name, namespace = _log_export_secret()
+    try:
+        secret = core_api_instance.read_namespaced_secret(name, namespace)
+    except ApiException as exc:
+        if exc.status == 404:
+            return
+        raise
+    stale = {key: None for key in secret.data or {} if key.startswith(prefix)}
+    if stale:
+        core_api_instance.patch_namespaced_secret(name, namespace, {"data": stale})
+
+
+# Keys written by cabotage; anything else in the Secret belongs to the platform.
+_LOG_EXPORT_KEY = re.compile(r"[^.]+\.[^.]+\.yaml")
+
+
+@shared_task()
+def reconcile_log_export() -> None:
+    if not current_app.config["KUBERNETES_ENABLED"]:
+        return
+    _reconcile_log_export(kubernetes.client.CoreV1Api(kubernetes_ext.kubernetes_client))
+
+
+def _reconcile_log_export(core_api_instance: kubernetes.client.CoreV1Api) -> None:
+    """Rebuild exporter outputs from each live application environment.
+
+    Deploys keep the Secret current; this repairs drift such as a recreated
+    Secret or a missed teardown.
+    """
+    if not _log_export_installed():
+        return
+    name, namespace = _log_export_secret()
+    try:
+        secret = core_api_instance.read_namespaced_secret(name, namespace)
+    except ApiException as exc:
+        if exc.status == 404:
+            return
+        raise
+    current = {
+        key: value
+        for key, value in (secret.data or {}).items()
+        if _LOG_EXPORT_KEY.fullmatch(key)
+    }
+    desired: dict[str, str] = {}
+    untouched: set[str] = set()
+    for app_env in ApplicationEnvironment.query.filter(
+        ApplicationEnvironment.deleted_at.is_(None)
+    ):
+        if app_env.environment is None:
+            continue
+        key = log_export_secret_key(
+            app_env.environment.k8s_namespace,
+            app_env_label_value(app_env.application, app_env),
+        )
+        if app_env.latest_deployment_running is not None:
+            # The in-flight deploy writes or removes this output itself.
+            untouched.add(key)
+            continue
+        deployment = app_env.latest_deployment_completed
+        release = deployment.release_object if deployment else None
+        if release is None:
+            continue
+        try:
+            if _log_export_enabled(release):
+                output = render_log_export_output(release)
+                desired[key] = b64encode(output.encode()).decode()
+        except Exception:
+            log.exception("Log export: cannot render %s; leaving it unchanged", key)
+            untouched.add(key)
+    changes: dict[str, str | None] = {
+        key: output for key, output in desired.items() if current.get(key) != output
+    }
+    for key in current.keys() - desired.keys() - untouched:
+        changes[key] = None
+    if changes:
+        core_api_instance.patch_namespaced_secret(name, namespace, {"data": changes})
+
+
+def render_podspec(
+    release: Release, process_name: str, service_account_name: str
+) -> kubernetes.client.V1PodSpec:
     datadog_tags = {
         "organization": release.application.project.organization.slug,
         "project": release.application.project.slug,
@@ -2050,15 +2272,30 @@ def render_podspec(release, process_name, service_account_name):
     )
 
 
+def _log_export_pod_metadata(
+    release: Release,
+) -> tuple[dict[str, str], dict[str, str]]:
+    # Explicit "false" clears an earlier opt-in from merge-patched Deployments.
+    enabled = "true" if _log_export_enabled(release) else "false"
+    # resident-alloy forwards "true" pods to the exporter; a shared Datadog
+    # node agent must not duplicate them into its own account.
+    return {LOG_EXPORT_LABEL: enabled}, {"ad.datadoghq.com/logs_exclude": enabled}
+
+
 def render_deployment(
-    namespace, release, service_account_name, process_name, deployment_id
-):
+    namespace: str,
+    release: Release,
+    service_account_name: str,
+    process_name: str,
+    deployment_id: UUID | str | int,
+) -> kubernetes.client.V1Deployment:
     label_value = k8s_label_value(release)
     resource_prefix = k8s_resource_prefix(release)
     app_env = release.application_environment
     env_slug = app_env.environment.slug if app_env.environment else ""
     process_counts = app_env.process_counts or {}
     safe_labels = _safe_labels_from_release(release)
+    export_labels, export_annotations = _log_export_pod_metadata(release)
     pod_labels = {
         "organization": release.application.project.organization.slug,
         "project": release.application.project.slug,
@@ -2071,7 +2308,9 @@ def render_deployment(
         "ca-admission.cabotage.io": "true",
         "resident-pod.cabotage.io": "true",
         **safe_labels,
+        **export_labels,
     }
+    pod_spec = render_podspec(release, process_name, service_account_name)
     deployment_object = kubernetes.client.V1Deployment(
         metadata=kubernetes.client.V1ObjectMeta(
             name=f"{resource_prefix}-{process_name}",
@@ -2094,24 +2333,47 @@ def render_deployment(
                 },
             ),
             template=kubernetes.client.V1PodTemplateSpec(
-                metadata=kubernetes.client.V1ObjectMeta(labels=pod_labels),
-                spec=render_podspec(release, process_name, service_account_name),
+                metadata=kubernetes.client.V1ObjectMeta(
+                    labels=pod_labels,
+                    annotations=export_annotations,
+                ),
+                spec=pod_spec,
             ),
         ),
     )
     return deployment_object
 
 
+def _rendered_workload_name(
+    workload: (
+        kubernetes.client.V1Deployment
+        | kubernetes.client.V1Job
+        | kubernetes.client.V1CronJob
+    ),
+) -> str:
+    metadata = assume_not_none(
+        workload.metadata, because="The workload renderers always set metadata"
+    )
+    return assume_not_none(
+        metadata.name, because="The workload renderers always set a name"
+    )
+
+
 def fetch_deployment(
-    apps_api_instance, namespace, release, service_account_name, process_name
-):
+    apps_api_instance: kubernetes.client.AppsV1Api,
+    namespace: str,
+    release: Release,
+    service_account_name: str,
+    process_name: str,
+) -> kubernetes.client.V1Deployment | None:
     deployment_object = render_deployment(
         namespace, release, service_account_name, process_name, deployment_id=0
     )
+    deployment_name = _rendered_workload_name(deployment_object)
     deployment = None
     try:
         deployment = apps_api_instance.read_namespaced_deployment(
-            deployment_object.metadata.name, namespace
+            deployment_name, namespace
         )
     except ApiException as exc:
         if exc.status == 404:
@@ -2119,47 +2381,55 @@ def fetch_deployment(
         else:
             raise DeployError(
                 "Unexpected exception fetching Deployment/"
-                f"{deployment_object.metadata.name} in {namespace}: {exc}"
+                f"{deployment_name} in {namespace}: {exc}"
             )
     return deployment
 
 
-def _zero_if_none(value):
+def _zero_if_none(value: int | None) -> int:
     return value if value is not None else 0
 
 
 def deployment_is_complete(
-    apps_api_instance, namespace, release, service_account_name, process_name
-):
-    deployment = fetch_deployment(
-        apps_api_instance, namespace, release, service_account_name, process_name
+    apps_api_instance: kubernetes.client.AppsV1Api,
+    namespace: str,
+    release: Release,
+    service_account_name: str,
+    process_name: str,
+) -> bool:
+    deployment = assume_not_none(
+        fetch_deployment(
+            apps_api_instance, namespace, release, service_account_name, process_name
+        ),
+        because="Completion checks require an existing deployment",
     )
+    spec = assume_not_none(deployment.spec, because="Deployments have a spec")
+    status = assume_not_none(deployment.status, because="Deployments have status")
+    metadata = assume_not_none(deployment.metadata, because="Deployments have metadata")
     return (
-        _zero_if_none(deployment.status.updated_replicas)
-        == _zero_if_none(deployment.spec.replicas)
-        and _zero_if_none(deployment.status.replicas)
-        == _zero_if_none(deployment.spec.replicas)
-        and _zero_if_none(deployment.status.available_replicas)
-        == _zero_if_none(deployment.spec.replicas)
-        and deployment.status.observed_generation >= deployment.metadata.generation
+        _zero_if_none(status.updated_replicas) == _zero_if_none(spec.replicas)
+        and _zero_if_none(status.replicas) == _zero_if_none(spec.replicas)
+        and _zero_if_none(status.available_replicas) == _zero_if_none(spec.replicas)
+        and cast("int", status.observed_generation) >= cast("int", metadata.generation)
     )
 
 
 def create_deployment(
-    apps_api_instance,
-    namespace,
-    release,
-    service_account_name,
-    process_name,
-    deployment_id,
-):
+    apps_api_instance: kubernetes.client.AppsV1Api,
+    namespace: str,
+    release: Release,
+    service_account_name: str,
+    process_name: str,
+    deployment_id: UUID | str | int,
+) -> kubernetes.client.V1Deployment:
     deployment_object = render_deployment(
         namespace, release, service_account_name, process_name, deployment_id
     )
+    deployment_name = _rendered_workload_name(deployment_object)
     deployment = None
     try:
         deployment = apps_api_instance.read_namespaced_deployment(
-            deployment_object.metadata.name, namespace
+            deployment_name, namespace
         )
     except ApiException as exc:
         if exc.status == 404:
@@ -2167,7 +2437,7 @@ def create_deployment(
         else:
             raise DeployError(
                 "Unexpected exception fetching Deployment/"
-                f"{deployment_object.metadata.name} in {namespace}: {exc}"
+                f"{deployment_name} in {namespace}: {exc}"
             )
     if deployment is None:
         try:
@@ -2177,7 +2447,7 @@ def create_deployment(
         except Exception as exc:
             raise DeployError(
                 "Unexpected exception creating Deployment/"
-                f"{deployment_object.metadata.name} in {namespace}: {exc}"
+                f"{deployment_name} in {namespace}: {exc}"
             )
     else:
         try:
@@ -2187,15 +2457,15 @@ def create_deployment(
             # merge patch (RFC 7386) replaces arrays entirely, ensuring stale
             # containers/initContainers are cleared.
             return apps_api_instance.patch_namespaced_deployment(
-                deployment_object.metadata.name,
+                deployment_name,
                 namespace,
                 deployment_object,
-                _content_type="application/merge-patch+json",
+                _content_type="application/merge-patch+json",  # ty: ignore[unknown-argument]  # kubernetes-stubs omits _content_type; the client accepts it at runtime
             )
         except Exception as exc:
             raise DeployError(
                 "Unexpected exception patching Deployment/"
-                f"{deployment_object.metadata.name} in {namespace}: {exc}"
+                f"{deployment_name} in {namespace}: {exc}"
             )
 
 
@@ -2258,9 +2528,18 @@ def resize_deployment(namespace, release, process_name, pod_class_name):
     apps_api_instance.patch_namespaced_deployment(deployment_name, namespace, patch)
 
 
-def render_job(namespace, release, service_account_name, process_name, job_id):
+def render_job(
+    namespace: str,
+    release: Release,
+    service_account_name: str,
+    process_name: str,
+    job_id: str | None,
+) -> kubernetes.client.V1Job:
+    # Dry runs can leave job_id unset; retain their None labels for serialization.
     label_value = k8s_label_value(release)
     safe_labels = _safe_labels_from_release(release)
+    export_labels, export_annotations = _log_export_pod_metadata(release)
+    pod_spec = render_podspec(release, process_name, service_account_name)
     job_object = kubernetes.client.V1Job(
         metadata=kubernetes.client.V1ObjectMeta(
             name=f"deployment-{job_id}",
@@ -2271,7 +2550,7 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
                 "process": process_name,
                 "app": label_value,
                 "release": str(release.version),
-                "deployment": job_id,
+                "deployment": cast("str", job_id),
                 "resident-job.cabotage.io": "true",
                 "resident-deployment.cabotage.io": "true",
                 **safe_labels,
@@ -2290,13 +2569,15 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
                         "process": process_name,
                         "app": label_value,
                         "release": str(release.version),
-                        "deployment": job_id,
+                        "deployment": cast("str", job_id),
                         "ca-admission.cabotage.io": "true",
                         "resident-pod.cabotage.io": "true",
                         **safe_labels,
-                    }
+                        **export_labels,
+                    },
+                    annotations=export_annotations,
                 ),
-                spec=render_podspec(release, process_name, service_account_name),
+                spec=pod_spec,
             ),
         ),
     )
@@ -2327,8 +2608,12 @@ def _history_limit_for_schedule(schedule, hours=12):
 
 
 def render_cronjob(
-    namespace, release, service_account_name, process_name, deployment_id
-):
+    namespace: str,
+    release: Release,
+    service_account_name: str,
+    process_name: str,
+    deployment_id: UUID | str | int,
+) -> kubernetes.client.V1CronJob:
     label_value = k8s_label_value(release)
     resource_prefix = k8s_resource_prefix(release)
     app_env = release.application_environment
@@ -2342,6 +2627,7 @@ def render_cronjob(
     process_counts = app_env.process_counts or {}
     suspended = process_counts.get(process_name, 0) == 0
     safe_labels = _safe_labels_from_release(release)
+    export_labels, export_annotations = _log_export_pod_metadata(release)
     common_labels = {
         "organization": release.application.project.organization.slug,
         "project": release.application.project.slug,
@@ -2362,7 +2648,9 @@ def render_cronjob(
         **common_labels,
         "ca-admission.cabotage.io": "true",
         "resident-pod.cabotage.io": "true",
+        **export_labels,
     }
+    pod_spec = render_podspec(release, process_name, service_account_name)
     cronjob_object = kubernetes.client.V1CronJob(
         metadata=kubernetes.client.V1ObjectMeta(
             name=f"{resource_prefix}-{process_name}",
@@ -2388,10 +2676,11 @@ def render_cronjob(
                     active_deadline_seconds=3600,
                     backoff_limit=0,
                     template=kubernetes.client.V1PodTemplateSpec(
-                        metadata=kubernetes.client.V1ObjectMeta(labels=pod_labels),
-                        spec=render_podspec(
-                            release, process_name, service_account_name
+                        metadata=kubernetes.client.V1ObjectMeta(
+                            labels=pod_labels,
+                            annotations=export_annotations,
                         ),
+                        spec=pod_spec,
                     ),
                 ),
             ),
@@ -2401,28 +2690,27 @@ def render_cronjob(
 
 
 def create_cronjob(
-    batch_api_instance,
-    namespace,
-    release,
-    service_account_name,
-    process_name,
-    deployment_id,
-):
+    batch_api_instance: kubernetes.client.BatchV1Api,
+    namespace: str,
+    release: Release,
+    service_account_name: str,
+    process_name: str,
+    deployment_id: UUID | str | int,
+) -> kubernetes.client.V1CronJob:
     cronjob_object = render_cronjob(
         namespace, release, service_account_name, process_name, deployment_id
     )
+    cronjob_name = _rendered_workload_name(cronjob_object)
     existing = None
     try:
-        existing = batch_api_instance.read_namespaced_cron_job(
-            cronjob_object.metadata.name, namespace
-        )
+        existing = batch_api_instance.read_namespaced_cron_job(cronjob_name, namespace)
     except ApiException as exc:
         if exc.status == 404:
             pass
         else:
             raise DeployError(
                 "Unexpected exception fetching CronJob/"
-                f"{cronjob_object.metadata.name} in {namespace}: {exc}"
+                f"{cronjob_name} in {namespace}: {exc}"
             )
     if existing is None:
         try:
@@ -2432,17 +2720,17 @@ def create_cronjob(
         except Exception as exc:
             raise DeployError(
                 "Unexpected exception creating CronJob/"
-                f"{cronjob_object.metadata.name} in {namespace}: {exc}"
+                f"{cronjob_name} in {namespace}: {exc}"
             )
     else:
         try:
             return batch_api_instance.replace_namespaced_cron_job(
-                cronjob_object.metadata.name, namespace, cronjob_object
+                cronjob_name, namespace, cronjob_object
             )
         except Exception as exc:
             raise DeployError(
                 "Unexpected exception replacing CronJob/"
-                f"{cronjob_object.metadata.name} in {namespace}: {exc}"
+                f"{cronjob_name} in {namespace}: {exc}"
             )
 
 
@@ -2722,7 +3010,7 @@ def _run_job_streaming(
             pass
 
 
-def deploy_release(deployment: Deployment):
+def deploy_release(deployment: Deployment) -> bool | None:
     job_id = secrets.token_hex(4)
     deployment.job_id = job_id
     db.session.add(deployment)
@@ -2939,6 +3227,9 @@ def deploy_release(deployment: Deployment):
         if service_account.metadata is None or service_account.metadata.name is None:
             raise DeployError("Release failed due to unnamed service_account")
 
+        if sync_log_export(core_api_instance, deployment.release_object):
+            log("Enabled tenant log export")
+
         for release_command in deployment.release_object.release_commands:
             log(f"Running release command {release_command}")
             job_object = render_job(
@@ -2946,7 +3237,7 @@ def deploy_release(deployment: Deployment):
                 deployment.release_object,
                 service_account.metadata.name,
                 release_command,
-                deployment.job_id,
+                job_id,
             )
             job_complete, job_logs = run_job(
                 core_api_instance,
@@ -3017,16 +3308,23 @@ def deploy_release(deployment: Deployment):
                 )
                 if dep_obj is None:
                     continue
-                desired = _zero_if_none(dep_obj.spec.replicas)
-                updated = _zero_if_none(dep_obj.status.updated_replicas)
-                available = _zero_if_none(dep_obj.status.available_replicas)
-                ready = _zero_if_none(dep_obj.status.ready_replicas)
+                spec = assume_not_none(dep_obj.spec, because="Deployments have a spec")
+                status = assume_not_none(
+                    dep_obj.status, because="Deployments have status"
+                )
+                metadata = assume_not_none(
+                    dep_obj.metadata, because="Deployments have metadata"
+                )
+                desired = _zero_if_none(spec.replicas)
+                updated = _zero_if_none(status.updated_replicas)
+                available = _zero_if_none(status.available_replicas)
+                ready = _zero_if_none(status.ready_replicas)
                 complete = (
                     updated == desired
-                    and _zero_if_none(dep_obj.status.replicas) == desired
+                    and _zero_if_none(status.replicas) == desired
                     and available == desired
-                    and dep_obj.status.observed_generation
-                    >= dep_obj.metadata.generation
+                    and cast("int", status.observed_generation)
+                    >= cast("int", metadata.generation)
                 )
                 status_tuple = (ready, updated, available, complete)
                 if status_tuple != _last_status.get(process_name):
@@ -3090,7 +3388,7 @@ def deploy_release(deployment: Deployment):
                 deployment.release_object,
                 service_account.metadata.name,
                 postdeploy_command,
-                deployment.job_id,
+                job_id,
             )
             job_complete, job_logs = run_job(
                 core_api_instance,
@@ -3271,7 +3569,7 @@ def deploy_release(deployment: Deployment):
             )
 
 
-def fake_deploy_release(deployment):
+def fake_deploy_release(deployment: Deployment) -> None:
     deploy_log = []
     namespace = render_namespace(deployment.release_object)
     deploy_log.append(f"Creating Namespace/{namespace.metadata.name}")
@@ -3374,6 +3672,21 @@ def fake_deploy_release(deployment):
         f"with ImagePullSecrets/{image_pull_secrets.metadata.name} "
         f"in Namespace/{namespace.metadata.name}"
     )
+    if _log_export_installed():
+        release: Release = deployment.release_object
+        export_key = log_export_secret_key(
+            k8s_namespace(release), k8s_label_value(release)
+        )
+        if _log_export_enabled(release):
+            render_log_export_output(release)  # Validate; it holds the API key.
+            export_action = "Setting"
+        else:
+            export_action = "Removing"
+        export_secret, export_namespace = _log_export_secret()
+        deploy_log.append(
+            f"{export_action} {export_key} in Secret/{export_secret} "
+            f"in Namespace/{export_namespace}"
+        )
     for release_command in deployment.release_object.release_commands:
         job_object = render_job(
             namespace.metadata.name,
@@ -3383,7 +3696,7 @@ def fake_deploy_release(deployment):
             deployment.job_id,
         )
         deploy_log.append(
-            f"Running Job/{job_object.metadata.name} "
+            f"Running Job/{_rendered_workload_name(job_object)} "
             f"in Namespace/{namespace.metadata.name}"
         )
         deploy_log.append(yaml.dump(remove_none(job_object.to_dict())))
@@ -3396,7 +3709,7 @@ def fake_deploy_release(deployment):
             deployment_id=deployment.id,
         )
         deploy_log.append(
-            f"Creating Deployment/{deployment_object.metadata.name} "
+            f"Creating Deployment/{_rendered_workload_name(deployment_object)} "
             f"in Namespace/{namespace.metadata.name}"
         )
         deploy_log.append(yaml.dump(remove_none(deployment_object.to_dict())))
@@ -3409,7 +3722,7 @@ def fake_deploy_release(deployment):
             deployment_id=deployment.id,
         )
         deploy_log.append(
-            f"Creating CronJob/{cronjob_object.metadata.name} "
+            f"Creating CronJob/{_rendered_workload_name(cronjob_object)} "
             f"in Namespace/{namespace.metadata.name}"
         )
         deploy_log.append(yaml.dump(remove_none(cronjob_object.to_dict())))

@@ -6,6 +6,7 @@ from .build import (
 )
 from .deploy import (
     cleanup_app_env_k8s,
+    reconcile_log_export,
     run_deploy,
 )
 from .github import process_github_hook
@@ -47,6 +48,7 @@ __all__ = (
     "reap_stale_builds",
     "reconcile_alerts",
     "reconcile_backing_services",
+    "reconcile_log_export",
     "reconcile_notifications",
     "reconcile_tailscale_integration_states",
     "refresh_tailscale_oidc_tokens",

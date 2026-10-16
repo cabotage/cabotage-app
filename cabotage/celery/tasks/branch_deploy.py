@@ -313,6 +313,7 @@ def _teardown_environment(environment: Environment) -> None:
         build_cache_pvc_labels,
         build_cache_pvc_name,
     )
+    from cabotage.celery.tasks.deploy import remove_log_export_outputs
     from cabotage.celery.tasks.resources import (
         _RECONCILERS,
         _acquire_reconcile_lock,
@@ -394,6 +395,13 @@ def _teardown_environment(environment: Environment) -> None:
             except ApiException as exc:
                 if exc.status != 404:
                     raise
+
+            try:
+                remove_log_export_outputs(core_api, f"{ns_name}.")
+            except ApiException as exc:
+                logger.warning(
+                    "Failed to remove log export outputs for %s: %s", ns_name, exc
+                )
 
             # Clean up build cache PVCs
             for app_env in environment.active_application_environments:
