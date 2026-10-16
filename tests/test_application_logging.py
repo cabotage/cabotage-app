@@ -7,9 +7,9 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
+import requests
 from flask import template_rendered
 from flask_security import hash_password
-import requests
 
 from cabotage.server import db
 from cabotage.server.models.auth import Organization, User
