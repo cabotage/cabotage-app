@@ -1,0 +1,1001 @@
+{#-
+  Shared infrastructure chart engine (uPlot) for /infra/observe and the admin overview.
+
+  chart_canvas(metric, label) renders one panel body (chart-<metric>) in its loading state.
+  chart_script(...) loads uPlot and mounts every chart-<metric> element present on the page.
+
+  Controls are optional and bound only when present: #range-selector buttons, #time-nav,
+  [data-group-selector], #filter-workload-kind / #filter-workload / #filter-pod,
+  #system-containers-toggle and #show-debug with [data-query-debug] lines.
+-#}
+
+{% macro chart_canvas(metric, label) %}
+  <div id="chart-{{ metric }}" class="metric-panel" data-metric-panel data-chart-label="{{ label }}" data-chart-state="loading">
+    <div class="chart-plot" data-chart-plot>
+      <div class="chart-state" role="status"><span class="chart-skeleton" aria-hidden="true"></span><span>Loading {{ label }}…</span></div>
+    </div>
+    <div class="chart-status">
+      <div class="chart-status-copy" role="status" aria-live="polite" aria-atomic="true">
+        <span data-chart-message></span>
+        <time data-chart-refreshed hidden></time>
+      </div>
+      <button type="button" class="btn btn-xs btn-ghost" data-chart-retry aria-label="Retry {{ label }}" hidden>Retry</button>
+    </div>
+  </div>
+{% endmacro %}
+
+{% macro chart_script(metric_url, current_range, current_groups, workloads_json='[]', enabled=true) %}
+{% if enabled %}
+<link rel="stylesheet" href="https://unpkg.com/uplot@1.6.31/dist/uPlot.min.css">
+<script>
+(function() {
+
+  var UPLOT_SRC = 'https://unpkg.com/uplot@1.6.31/dist/uPlot.iife.min.js';
+  var LOAD_TIMEOUT_MS = 15000;
+  var started = false;
+  var loadTimer = null;
+  var libraryScript = null;
+  var libraryAttempt = 0;
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function(c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function stateHtml(kind, message) {
+    if (kind === 'loading') {
+      return '<div class="chart-state" role="status"><span class="chart-skeleton" aria-hidden="true"></span><span>' + escapeHtml(message) + '</span></div>';
+    }
+    return '<div class="chart-state chart-state-' + kind + '" role="status">' + escapeHtml(message) + '</div>';
+  }
+
+  function libraryFailed() {
+    if (started) return;
+    clearTimeout(loadTimer);
+    document.querySelectorAll('[data-metric-panel]').forEach(function(el) {
+      el.setAttribute('data-chart-state', 'unavailable');
+      el.querySelector('[data-chart-plot]').innerHTML = stateHtml('error', 'Monitoring unavailable. The chart library could not be loaded.');
+      var retry = el.querySelector('[data-chart-retry]');
+      retry.hidden = false;
+      retry.disabled = false;
+    });
+  }
+
+  function start() {
+    if (started) return;
+    if (typeof window.uPlot === 'undefined') { libraryFailed(); return; }
+    started = true;
+    clearTimeout(loadTimer);
+    init();
+  }
+
+  function loadLibrary() {
+    var attempt = ++libraryAttempt;
+    clearTimeout(loadTimer);
+    if (libraryScript) libraryScript.remove();
+    document.querySelectorAll('[data-metric-panel]').forEach(function(el) {
+      el.setAttribute('data-chart-state', 'loading');
+      el.querySelector('[data-chart-plot]').innerHTML = stateHtml('loading', 'Loading ' + el.getAttribute('data-chart-label') + '…');
+      el.querySelector('[data-chart-retry]').disabled = true;
+    });
+    libraryScript = document.createElement('script');
+    libraryScript.src = UPLOT_SRC;
+    libraryScript.onload = function() { if (attempt === libraryAttempt) start(); };
+    libraryScript.onerror = function() { if (attempt === libraryAttempt) libraryFailed(); };
+    loadTimer = setTimeout(libraryFailed, LOAD_TIMEOUT_MS);
+    document.head.appendChild(libraryScript);
+  }
+
+  document.querySelectorAll('[data-chart-retry]').forEach(function(button) {
+    button.addEventListener('click', function() { if (!started) loadLibrary(); });
+  });
+  if (typeof window.uPlot !== 'undefined') start();
+  else loadLibrary();
+
+  function init() {
+
+  var METRIC_URL = {{ metric_url|tojson }};
+  var RANGE = {{ current_range|tojson }};
+  var REFRESH_MAP = { '1h': 15000, '6h': 60000, '24h': 60000, '7d': 60000, '30d': 60000 };
+  var REFRESH_MS = REFRESH_MAP[RANGE] || 15000;
+  var RANGE_SECS = { '1h': 3600, '6h': 21600, '24h': 86400, '7d': 604800, '30d': 2592000 };
+
+  var WORKLOADS = {{ workloads_json|safe }};
+  var LABEL_MAP = {};
+
+  var windowEnd = null;
+  var windowStart = null;
+  var initParams = new URLSearchParams(window.location.search);
+  var _windowEnd = initParams.get('end') ? parseInt(initParams.get('end'), 10) : null;
+  var _windowStart = initParams.get('start') ? parseInt(initParams.get('start'), 10) : null;
+  if (_windowEnd && _windowStart && _windowEnd > _windowStart) {
+    windowEnd = _windowEnd;
+    windowStart = _windowStart;
+  }
+
+  function xBounds() {
+    if (windowEnd && windowStart) {
+      return { min: windowStart, max: windowEnd };
+    }
+    var now = Math.floor(Date.now() / 1000);
+    return { min: now - (RANGE_SECS[RANGE] || 3600), max: now };
+  }
+
+  function isLive() { return windowEnd === null; }
+
+  function getAxisStroke() {
+    return document.documentElement.getAttribute('data-theme') !== 'light'
+      ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)';
+  }
+  function getGridStroke() {
+    return document.documentElement.getAttribute('data-theme') !== 'light'
+      ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  }
+
+  var COLORS = [
+    '#8b5cf6', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b',
+    '#ef4444', '#ec4899', '#6366f1', '#14b8a6', '#f97316'
+  ];
+
+  function shortLabel(full) {
+    var parts = full.split('-');
+    if (parts.length > 2) return parts.slice(-2).join('-');
+    return full;
+  }
+
+  function sampleNumber(value) {
+    if (typeof value !== 'number' && typeof value !== 'string') return null;
+    if (typeof value === 'string' && !value.trim()) return null;
+    var number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function measuredResult(result, metric) {
+    if (!Array.isArray(result)) throw new Error('Invalid metrics response');
+    var latest = null;
+    var rows = result.map(function(series) {
+      if (!series || !series.metric || !Array.isArray(series.values)) {
+        throw new Error('Invalid metrics series');
+      }
+      var measured = !series.metric.__ref__ && (metric !== 'network' ||
+        series.metric.direction === 'tx' || series.metric.direction === 'rx');
+      var values = [];
+      series.values.forEach(function(pair) {
+        if (!Array.isArray(pair) || pair.length < 2) throw new Error('Invalid metrics sample');
+        var timestamp = sampleNumber(pair[0]);
+        if (timestamp === null) return;
+        var value = sampleNumber(pair[1]);
+        values.push([timestamp, value]);
+        if (measured && value !== null) latest = latest === null ? timestamp : Math.max(latest, timestamp);
+      });
+      return { metric: series.metric, values: values };
+    });
+    return { result: rows, latest: latest };
+  }
+  function promToUplot(result, labelKey, shortLabels) {
+    if (!result || !result.length) return null;
+    var tsSet = {};
+    result.forEach(function(s) {
+      s.values.forEach(function(v) { tsSet[v[0]] = true; });
+    });
+    var timestamps = Object.keys(tsSet).map(Number).sort(function(a, b) { return a - b; });
+    var tsIndex = {};
+    timestamps.forEach(function(t, i) { tsIndex[t] = i; });
+
+    var data = [timestamps];
+    var labels = [];
+    var refs = [];  // parallel array: null for normal series, 'requests'/'limits' for ref lines
+    result.forEach(function(s) {
+      var vals = new Array(timestamps.length).fill(null);
+      s.values.forEach(function(v) {
+        var idx = tsIndex[v[0]];
+        var num = sampleNumber(v[1]);
+        if (num !== null) vals[idx] = num;
+      });
+      data.push(vals);
+      var ref = s.metric['__ref__'] || null;
+      refs.push(ref);
+      if (ref) {
+        // For reference series, use the ref type as the label
+        var refEntity = '';
+        if (labelKey === '__pod_container__') {
+          refEntity = (s.metric.pod || '') + '/' + (s.metric.container || '');
+        } else if (labelKey !== '__total__') {
+          refEntity = s.metric[labelKey] || '';
+        }
+        var suffix = refEntity ? ' (' + (shortLabels ? shortLabel(refEntity) : refEntity) + ')' : '';
+        labels.push(ref + suffix);
+      } else if (labelKey === '__pod_container__') {
+        var pod = s.metric.pod || '';
+        var ctr = s.metric.container || '';
+        var composite = pod + '/' + ctr;
+        labels.push(shortLabels ? shortLabel(pod) + '/' + ctr : composite);
+      } else {
+        var raw = s.metric[labelKey] || (labelKey === '__total__' ? 'total' : labelKey);
+        var display = LABEL_MAP[raw] || raw;
+        labels.push(shortLabels ? shortLabel(display) : display);
+      }
+    });
+    return { data: data, labels: labels, refs: refs };
+  }
+
+  function tooltipPlugin(valueFmt, rawData, showTotal) {
+    var tip = document.createElement('div');
+    tip.className = 'chart-tip';
+
+    function fmtTime(ts) {
+      var d = new Date(ts * 1000);
+      var mon = d.toLocaleString(undefined, { month: 'short' });
+      var day = d.getDate();
+      var time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+      return mon + ' ' + day + ' · ' + time;
+    }
+
+    return {
+      hooks: {
+        init: function(u) { u.over.appendChild(tip); },
+        setCursor: function(u) {
+          var idx = u.cursor.idx;
+          if (idx == null) { tip.style.display = 'none'; return; }
+          var ts = u.data[0][idx];
+          var src = rawData || u.data;
+          var rows = '';
+          var total = 0;
+          var hasAny = false;
+          for (var i = 1; i < u.series.length; i++) {
+            var s = u.series[i];
+            if (!s.show) continue;
+            var v = src[i] ? src[i][idx] : null;
+            if (v == null) continue;
+            hasAny = true;
+            total += v;
+            var color = s._stroke || s.stroke || s._fill || s.fill;
+            if (typeof color === 'function') color = color(u, i);
+            rows += '<div class="chart-tip-row">' +
+              '<span class="chart-tip-dot" style="background:' + color + '"></span>' +
+              '<span class="chart-tip-label">' + escapeHtml(s.label || '') + '</span>' +
+              '<strong class="chart-tip-value">' + valueFmt(v) + '</strong></div>';
+          }
+          if (!hasAny) { tip.style.display = 'none'; return; }
+          if (showTotal) {
+            rows += '<div class="chart-tip-row chart-tip-total">' +
+              '<span class="chart-tip-dot"></span>' +
+              '<span class="chart-tip-label">Total</span>' +
+              '<strong class="chart-tip-value">' + valueFmt(total) + '</strong></div>';
+          }
+          tip.innerHTML = '<div class="chart-tip-time">' + fmtTime(ts) + '</div>' + rows;
+          tip.style.display = 'block';
+          var left = u.cursor.left;
+          var top = u.cursor.top;
+          var ow = u.over.clientWidth;
+          var tw = tip.offsetWidth;
+          var x = left + 12;
+          if (x + tw > ow) x = left - tw - 12;
+          var y = top - tip.offsetHeight - 8;
+          if (y < 0) y = top + 12;
+          tip.style.left = x + 'px';
+          tip.style.top = y + 'px';
+        }
+      }
+    };
+  }
+
+  var REF_COLORS = { 'requests': '#f59e0b', 'limits': '#ef4444' };
+
+  function makeLineChart(el, result, labelKey, valueFmt, shortLabels, colorMap, bounds) {
+    var parsed = promToUplot(result, labelKey, shortLabels);
+    if (!parsed) return null;
+    el.innerHTML = '';
+    var width = el.clientWidth || 400;
+    var height = parseInt(getComputedStyle(el).minHeight) || 220;
+    var series = [{ label: '', value: '' }];
+    var colorIdx = 0;
+    parsed.labels.forEach(function(label, i) {
+      var ref = parsed.refs[i];
+      if (ref) {
+        // Reference line: dashed, fixed color
+        series.push({
+          label: label,
+          stroke: REF_COLORS[ref] || '#888',
+          width: 1.5,
+          dash: [6, 4],
+          points: { show: false },
+          value: ''
+        });
+      } else {
+        var color = colorMap ? (colorMap[label] || COLORS[colorIdx % COLORS.length]) : COLORS[colorIdx % COLORS.length];
+        colorIdx++;
+        series.push({
+          label: label,
+          stroke: color,
+          width: 1.5,
+          points: { show: false },
+          value: ''
+        });
+      }
+    });
+    var opts = {
+      width: width,
+      height: height,
+      series: series,
+      axes: [
+        { stroke: getAxisStroke(), grid: { stroke: getGridStroke() } },
+        {
+          stroke: getAxisStroke(),
+          grid: { stroke: getGridStroke() },
+          size: 70,
+          values: function(u, vals) { return vals.map(valueFmt); }
+        }
+      ],
+      plugins: [tooltipPlugin(valueFmt)],
+      cursor: { drag: { x: false, y: false } },
+      legend: { show: parsed.labels.length <= 8, live: false },
+      scales: { x: { time: true, min: bounds.min, max: bounds.max }, y: { range: function(u, dmin, dmax) { return [0, (dmax || 1) * 1.1]; } } }
+    };
+    return new uPlot(opts, parsed.data, el);
+  }
+
+  function makeMirrorChart(el, result, labelKey, valueFmt, shortLabels, colorMap, bounds) {
+    if (!result || !result.length) return null;
+    var txSeries = result.filter(function(s) { return s.metric.direction === 'tx'; });
+    var rxSeries = result.filter(function(s) { return s.metric.direction === 'rx'; });
+
+    var TX_COLORS = ['#8b5cf6', '#f59e0b', '#ef4444', '#ec4899', '#f97316'];
+    var RX_COLORS = ['#3b82f6', '#10b981', '#06b6d4', '#14b8a6', '#6366f1'];
+
+    var entityKey = txSeries.length > 1 ? (txSeries[0].metric.pod ? 'pod' : null) : null;
+
+    var tsSet = {};
+    result.forEach(function(s) {
+      s.values.forEach(function(v) { tsSet[v[0]] = true; });
+    });
+    var timestamps = Object.keys(tsSet).map(Number).sort(function(a, b) { return a - b; });
+    var tsIndex = {};
+    timestamps.forEach(function(t, i) { tsIndex[t] = i; });
+
+    var data = [timestamps];
+    var seriesDefs = [];
+
+    txSeries.forEach(function(s, i) {
+      var vals = new Array(timestamps.length).fill(null);
+      s.values.forEach(function(v) {
+        var idx = tsIndex[v[0]];
+        var num = sampleNumber(v[1]);
+        if (num !== null) vals[idx] = num;
+      });
+      data.push(vals);
+      var entity = entityKey ? (s.metric[entityKey] || '') : null;
+      var extra = entity ? ' (' + (shortLabels ? shortLabel(entity) : entity) + ')' : '';
+      seriesDefs.push({ label: 'TX' + extra, color: TX_COLORS[i % TX_COLORS.length] });
+    });
+
+    rxSeries.forEach(function(s, i) {
+      var vals = new Array(timestamps.length).fill(null);
+      s.values.forEach(function(v) {
+        var idx = tsIndex[v[0]];
+        var num = sampleNumber(v[1]);
+        if (num !== null) vals[idx] = -num;
+      });
+      data.push(vals);
+      var entity = entityKey ? (s.metric[entityKey] || '') : null;
+      var extra = entity ? ' (' + (shortLabels ? shortLabel(entity) : entity) + ')' : '';
+      seriesDefs.push({ label: 'RX' + extra, color: RX_COLORS[i % RX_COLORS.length] });
+    });
+
+    el.innerHTML = '';
+    var width = el.clientWidth || 400;
+    var height = parseInt(getComputedStyle(el).minHeight) || 220;
+
+    var series = [{ label: '', value: '' }];
+    seriesDefs.forEach(function(def) {
+      series.push({
+        label: def.label,
+        stroke: def.color,
+        fill: def.color + '20',
+        width: 1.5,
+        points: { show: false },
+        value: ''
+      });
+    });
+
+    var absFmt = function(v) { return valueFmt(Math.abs(v)); };
+    var opts = {
+      width: width,
+      height: height,
+      series: series,
+      axes: [
+        { stroke: getAxisStroke(), grid: { stroke: getGridStroke() } },
+        {
+          stroke: getAxisStroke(),
+          grid: { stroke: getGridStroke() },
+          size: 70,
+          values: function(u, vals) { return vals.map(absFmt); }
+        }
+      ],
+      plugins: [tooltipPlugin(absFmt)],
+      cursor: { drag: { x: false, y: false } },
+      legend: { show: seriesDefs.length <= 8, live: false },
+      scales: {
+        x: { time: true, min: bounds.min, max: bounds.max },
+        y: { range: function(u, dmin, dmax) {
+          var absMax = Math.max(Math.abs(dmin || 0), Math.abs(dmax || 0)) * 1.1 || 1;
+          return [-absMax, absMax];
+        }}
+      }
+    };
+    return new uPlot(opts, data, el);
+  }
+
+  function fmtCpu(v) { return (v * 1000).toFixed(0) + 'm'; }
+  function fmtMem(v) {
+    if (v >= 1073741824) return (v / 1073741824).toFixed(1) + ' GiB';
+    return (v / 1048576).toFixed(0) + ' MiB';
+  }
+  function fmtBytes(v) {
+    if (v >= 1073741824) return (v / 1073741824).toFixed(1) + ' GB/s';
+    if (v >= 1048576) return (v / 1048576).toFixed(1) + ' MB/s';
+    if (v >= 1024) return (v / 1024).toFixed(1) + ' KB/s';
+    return Math.round(v) + ' B/s';
+  }
+
+  function updateURL() {
+    var url = new URL(window.location);
+    url.searchParams.set('range', RANGE);
+    if (windowStart && windowEnd) {
+      url.searchParams.set('start', windowStart);
+      url.searchParams.set('end', windowEnd);
+    } else {
+      url.searchParams.delete('start');
+      url.searchParams.delete('end');
+    }
+    ['cpu', 'memory', 'network'].forEach(function(m) {
+      var g = panelGroups[m];
+      if (g && g !== 'total') url.searchParams.set(m, g);
+      else url.searchParams.delete(m);
+    });
+    var kindEl = document.getElementById('filter-workload-kind');
+    var wlEl = document.getElementById('filter-workload');
+    var podEl = document.getElementById('filter-pod');
+    if (kindEl && kindEl.value) url.searchParams.set('workload_kind', kindEl.value);
+    else url.searchParams.delete('workload_kind');
+    if (wlEl && wlEl.value) {
+      var parts = wlEl.value.split('|');
+      url.searchParams.set('workload_name', parts[0] || '');
+      url.searchParams.set('workload_namespace', parts[1] || '');
+    } else {
+      url.searchParams.delete('workload_name');
+      url.searchParams.delete('workload_namespace');
+    }
+    if (podEl && podEl.value) url.searchParams.set('pod', podEl.value);
+    else url.searchParams.delete('pod');
+    history.replaceState(null, '', url);
+  }
+
+  var panelGroups = {{ current_groups|tojson }};
+
+  var ALL_PANELS = {
+    cpu:      { labelKey: 'pod', fmt: fmtCpu,   type: 'line', short: false },
+    memory:   { labelKey: 'pod', fmt: fmtMem,   type: 'line', short: false },
+    network:  { labelKey: 'direction', fmt: fmtBytes, type: 'mirror', short: false }
+  };
+
+  // Only mount panels the page actually renders.
+  var panels = {};
+  Object.keys(ALL_PANELS).forEach(function(m) {
+    if (document.getElementById('chart-' + m)) panels[m] = ALL_PANELS[m];
+  });
+  var METRICS = Object.keys(panels);
+
+  var _panelCache = {};
+  var _charts = {};
+  var _requestSeq = {};
+  var _panelState = {};
+  var _pending = {};
+  var REQUEST_TIMEOUT_MS = 45000;
+  var sessionEnded = false;
+  var SESSION_ENDED_MSG = 'Admin access ended. Reload to verify your passkey.';
+
+  function panelLabel(metric) {
+    var el = document.getElementById('chart-' + metric);
+    return (el && el.getAttribute('data-chart-label')) || metric;
+  }
+
+  function destroyChart(metric) {
+    if (_charts[metric]) {
+      _charts[metric].destroy();
+      _charts[metric] = null;
+    }
+  }
+
+  function updateStatus(metric) {
+    var state = _panelState[metric];
+    var el = document.getElementById('chart-' + metric);
+    if (!state || !el) return;
+    el.setAttribute('data-chart-state', state.kind);
+    el.setAttribute('aria-busy', _pending[metric] ? 'true' : 'false');
+    var message = state.message;
+    if (_pending[metric] && state.kind !== 'loading') message += ' Refreshing…';
+    el.querySelector('[data-chart-message]').textContent = message;
+    var refreshed = el.querySelector('[data-chart-refreshed]');
+    refreshed.hidden = !state.lastSuccess;
+    if (state.lastSuccess) {
+      var date = new Date(state.lastSuccess);
+      refreshed.dateTime = date.toISOString();
+      refreshed.textContent = 'Last successful refresh ' + date.toLocaleString();
+    }
+    var retry = el.querySelector('[data-chart-retry]');
+    retry.hidden = state.kind === 'ready' || state.kind === 'loading';
+    retry.disabled = !!_pending[metric];
+    retry.textContent = sessionEnded ? 'Verify access' : 'Retry';
+    retry.setAttribute('aria-label', (sessionEnded ? 'Verify admin access for ' : 'Retry ') + panelLabel(metric));
+  }
+
+  function replacePlot(metric, kind, message) {
+    destroyChart(metric);
+    _panelCache[metric] = null;
+    document.getElementById('chart-' + metric).querySelector('[data-chart-plot]').innerHTML = stateHtml(kind, message);
+  }
+
+  function showFailure(metric, reason) {
+    var state = _panelState[metric];
+    var retained = !!_panelCache[metric];
+    state.kind = retained ? 'stale' : 'unavailable';
+    state.message = retained ? 'Stale data — ' + reason : 'Monitoring unavailable — ' + reason;
+    if (!retained) replacePlot(metric, 'error', 'Monitoring unavailable. ' + reason);
+    updateStatus(metric);
+  }
+
+  function updateFreshness(metric) {
+    var state = _panelState[metric];
+    if (!state || state.kind !== 'ready' || !isLive() || !_panelCache[metric]) return;
+    var now = Date.now();
+    var refreshLimit = Math.max(REFRESH_MS * 3, 120000);
+    var sampleLimit = Math.max(refreshLimit, (state.step * 2 + 120) * 1000);
+    if (now - state.lastSuccess > refreshLimit) {
+      state.kind = 'stale';
+      state.message = 'Stale data — the live view has not refreshed recently.';
+    } else if (now - state.latest * 1000 > sampleLimit) {
+      state.kind = 'stale';
+      state.message = 'Stale data — no recent live samples have arrived.';
+    }
+    updateStatus(metric);
+  }
+
+  function renderPanel(metric, result, bounds) {
+    var panel = panels[metric];
+    var plot = document.getElementById('chart-' + metric).querySelector('[data-chart-plot]');
+    var group = panelGroups[metric] || 'total';
+    var labelKey = group === 'total' ? '__total__' : group === 'container' ? '__pod_container__' : 'pod';
+    var short = (group === 'pod' || group === 'container');
+    // Mount before discarding the previous plot, so a render failure cannot erase it.
+    var staging = document.createElement('div');
+    staging.style.minHeight = 'inherit';
+    plot.appendChild(staging);
+    var chart;
+    try {
+      var chartBounds = bounds || _panelState[metric].bounds;
+      chart = panel.type === 'mirror'
+        ? makeMirrorChart(staging, result, labelKey, panel.fmt, short, panel.colors, chartBounds)
+        : makeLineChart(staging, result, labelKey, panel.fmt, short, panel.colors, chartBounds);
+    } catch (e) {
+      staging.remove();
+      return false;
+    }
+    if (!chart) { staging.remove(); return false; }
+    destroyChart(metric);
+    plot.replaceChildren(staging);
+    _charts[metric] = chart;
+    return true;
+  }
+
+  METRICS.forEach(function(metric) {
+    document.getElementById('chart-' + metric).querySelector('[data-chart-retry]').addEventListener('click', function() {
+      if (sessionEnded) window.location.reload();
+      else fetchAndRender(metric);
+    });
+  });
+
+  function fetchAndRender(metric) {
+    if (sessionEnded) return;
+    var el = document.getElementById('chart-' + metric);
+    if (!el) return;
+    var group = panelGroups[metric] || 'total';
+
+    var sysToggle = document.getElementById('system-containers-toggle');
+    var includeSys = sysToggle && sysToggle.checked;
+    var qs = '?metric=' + metric + '&range=' + encodeURIComponent(RANGE) + '&group=' + encodeURIComponent(group);
+    if (includeSys) qs += '&system_containers=1';
+    if (windowStart && windowEnd) {
+      qs += '&start=' + windowStart + '&end=' + windowEnd;
+    }
+    // Workload filters
+    var kindEl = document.getElementById('filter-workload-kind');
+    var wlEl = document.getElementById('filter-workload');
+    var podEl = document.getElementById('filter-pod');
+    if (kindEl && kindEl.value) qs += '&workload_kind=' + encodeURIComponent(kindEl.value);
+    if (wlEl && wlEl.value) {
+      var parts = wlEl.value.split('|');
+      qs += '&workload_name=' + encodeURIComponent(parts[0]);
+      qs += '&workload_namespace=' + encodeURIComponent(parts[1]);
+    }
+    if (podEl && podEl.value) qs += '&pod=' + encodeURIComponent(podEl.value);
+
+    // A selection owns its cache. Never reuse samples from another range or filter.
+    if (_pending[metric] && _pending[metric].key === qs) return;
+    var seq = (_requestSeq[metric] || 0) + 1;
+    _requestSeq[metric] = seq;
+    if (_pending[metric]) {
+      clearTimeout(_pending[metric].timer);
+      _pending[metric].controller.abort();
+    }
+    var debugEl = document.querySelector('[data-query-debug="' + metric + '"]');
+    if (!_panelState[metric] || _panelState[metric].key !== qs) {
+      _panelState[metric] = { key: qs, kind: 'loading', message: '', lastSuccess: null };
+      replacePlot(metric, 'loading', 'Loading ' + panelLabel(metric) + '…');
+      if (debugEl) debugEl.textContent = '';
+    }
+    var state = _panelState[metric];
+    var requestBounds = xBounds();
+    var pending = { key: qs, controller: new AbortController(), timedOut: false };
+    _pending[metric] = pending;
+    pending.timer = setTimeout(function() {
+      pending.timedOut = true;
+      pending.controller.abort();
+    }, REQUEST_TIMEOUT_MS);
+    updateFreshness(metric);
+    updateStatus(metric);
+
+    function ownsPanel() { return !sessionEnded && seq === _requestSeq[metric]; }
+    function finishRequest() {
+      clearTimeout(pending.timer);
+      if (_pending[metric] === pending) {
+        _pending[metric] = null;
+        updateStatus(metric);
+      }
+    }
+
+    fetch(METRIC_URL + qs, {
+      credentials: 'same-origin',
+      headers: { 'Accept': 'application/json' },
+      signal: pending.controller.signal
+    })
+      .then(function(r) {
+        var type = r.headers.get('content-type') || '';
+        // An expired passkey grant redirects to the verification page.
+        if (r.redirected || r.status === 401 || r.status === 403 || r.status === 428 || (r.ok && type.indexOf('json') === -1)) {
+          return { kind: 'session' };
+        }
+        if (r.status === 404) return { kind: 'unconfigured' };
+        if (type.indexOf('json') === -1) return { kind: 'http', status: r.status };
+        return r.json().then(function(data) {
+          return { kind: r.ok ? 'ok' : 'http', status: r.status, data: data };
+        });
+      })
+      .then(function(res) {
+        if (!ownsPanel()) return;
+        if (res.kind === 'session') {
+          stopRefresh();
+          sessionEnded = true;
+          METRICS.forEach(function(m) {
+            _requestSeq[m] = (_requestSeq[m] || 0) + 1;
+            if (_pending[m]) {
+              clearTimeout(_pending[m].timer);
+              _pending[m].controller.abort();
+              _pending[m] = null;
+            }
+            _panelState[m] = { kind: 'unavailable', message: SESSION_ENDED_MSG, lastSuccess: null };
+            replacePlot(m, 'error', SESSION_ENDED_MSG);
+            updateStatus(m);
+          });
+          return;
+        }
+        var data = res.data;
+        if (debugEl && data && Array.isArray(data.queries)) debugEl.textContent = data.queries.join('\n');
+        if (res.kind === 'unconfigured') { showFailure(metric, 'Metrics are not configured.'); return; }
+        if (res.kind === 'http') {
+          var incomplete = data && Array.isArray(data.failed_queries) && data.failed_queries.length;
+          showFailure(metric, incomplete ? 'One or more metric queries failed; incomplete results were not plotted.' : 'Metrics request failed (HTTP ' + res.status + ').');
+          return;
+        }
+        if (!data || data.error) { showFailure(metric, 'The metrics service returned an invalid response.'); return; }
+        var measured;
+        try { measured = measuredResult(data.result, metric); }
+        catch (e) { showFailure(metric, 'The metrics service returned an invalid response.'); return; }
+        if (measured.latest === null) {
+          replacePlot(metric, 'empty', 'No samples for this range and selection.');
+          state.kind = 'empty';
+          state.message = 'No measured samples';
+        } else {
+          if (!renderPanel(metric, measured.result, requestBounds)) {
+            showFailure(metric, 'The chart could not be rendered.');
+            return;
+          }
+          _panelCache[metric] = measured.result;
+          state.kind = 'ready';
+          state.message = isLive() ? 'Live samples' : 'Historical window';
+        }
+        state.lastSuccess = Date.now();
+        state.latest = measured.latest;
+        state.step = sampleNumber(data.step) || 0;
+        state.bounds = requestBounds;
+        updateFreshness(metric);
+        updateStatus(metric);
+      })
+      .catch(function() {
+        if (!ownsPanel()) return;
+        showFailure(metric, pending.timedOut ? 'The metrics request timed out.' : 'Could not reach the metrics endpoint.');
+      })
+      .finally(finishRequest);
+  }
+
+  // Group selector buttons
+  document.querySelectorAll('[data-group-selector]').forEach(function(sel) {
+    var metric = sel.getAttribute('data-group-selector');
+    if (!panels[metric]) return;
+    sel.querySelectorAll('button[data-group]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        sel.querySelectorAll('button').forEach(function(b) {
+          b.className = 'btn btn-xs btn-ghost';
+        });
+        btn.className = 'btn btn-xs btn-primary';
+        panelGroups[metric] = btn.getAttribute('data-group');
+        updateURL();
+        fetchAndRender(metric);
+      });
+    });
+  });
+
+  // Debug toggle
+  var debugCheckbox = document.getElementById('show-debug');
+  var debugEls = document.querySelectorAll('[data-query-debug]');
+  if (debugCheckbox) {
+    debugCheckbox.addEventListener('change', function() {
+      debugEls.forEach(function(el) {
+        el.classList.toggle('hidden', !debugCheckbox.checked);
+      });
+    });
+  }
+
+  // System containers toggle
+  var sysToggleEl = document.getElementById('system-containers-toggle');
+  if (sysToggleEl) {
+    sysToggleEl.addEventListener('change', function() {
+      refreshAllPanels();
+    });
+  }
+
+  function refreshAllPanels() {
+    METRICS.forEach(fetchAndRender);
+  }
+
+  // ── Cascading workload filters ──
+  var filterKind = document.getElementById('filter-workload-kind');
+  var filterWorkload = document.getElementById('filter-workload');
+  var filterPod = document.getElementById('filter-pod');
+
+  function populateWorkloads() {
+    if (!filterWorkload) return;
+    var prev = filterWorkload.value;
+    var kindFilter = filterKind ? filterKind.value : '';
+    filterWorkload.innerHTML = '<option value="">All workloads</option>';
+    var filtered = WORKLOADS.filter(function(w) {
+      return !kindFilter || w.kind === kindFilter;
+    });
+    filtered.forEach(function(w) {
+      var opt = document.createElement('option');
+      opt.value = w.name + '|' + w.namespace;
+      opt.textContent = w.name + ' (' + w.kind + ')';
+      filterWorkload.appendChild(opt);
+    });
+    if (prev && filtered.some(function(w) { return (w.name + '|' + w.namespace) === prev; })) {
+      filterWorkload.value = prev;
+    }
+    populatePods();
+  }
+
+  function populatePods() {
+    if (!filterPod) return;
+    var prev = filterPod.value;
+    var wlVal = filterWorkload ? filterWorkload.value : '';
+    filterPod.innerHTML = '<option value="">All pods</option>';
+    var pods = [];
+    if (wlVal) {
+      var parts = wlVal.split('|');
+      var wl = WORKLOADS.find(function(w) { return w.name === parts[0] && w.namespace === parts[1]; });
+      if (wl) pods = wl.pods;
+    } else {
+      var kindFilter = filterKind ? filterKind.value : '';
+      var seen = {};
+      WORKLOADS.forEach(function(w) {
+        if (kindFilter && w.kind !== kindFilter) return;
+        w.pods.forEach(function(p) {
+          if (!seen[p]) { seen[p] = true; pods.push(p); }
+        });
+      });
+      pods.sort();
+    }
+    pods.forEach(function(p) {
+      var opt = document.createElement('option');
+      opt.value = p;
+      opt.textContent = p;
+      filterPod.appendChild(opt);
+    });
+    if (prev && pods.indexOf(prev) !== -1) {
+      filterPod.value = prev;
+    }
+  }
+
+  if (filterKind) {
+    filterKind.addEventListener('change', function() {
+      populateWorkloads();
+      updateURL();
+      refreshAllPanels();
+    });
+  }
+  if (filterWorkload) {
+    filterWorkload.addEventListener('change', function() {
+      populatePods();
+      updateURL();
+      refreshAllPanels();
+    });
+  }
+  if (filterPod) {
+    filterPod.addEventListener('change', function() {
+      updateURL();
+      refreshAllPanels();
+    });
+  }
+
+  // Initialize filters from URL params
+  (function() {
+    var params = new URLSearchParams(window.location.search);
+    if (filterKind && params.get('workload_kind')) {
+      filterKind.value = params.get('workload_kind');
+    }
+    populateWorkloads();
+    if (filterWorkload && params.get('workload_name') && params.get('workload_namespace')) {
+      filterWorkload.value = params.get('workload_name') + '|' + params.get('workload_namespace');
+    }
+    populatePods();
+    if (filterPod && params.get('pod')) {
+      filterPod.value = params.get('pod');
+    }
+  })();
+
+  // Range selector
+  document.querySelectorAll('#range-selector button[data-range]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var newRange = btn.getAttribute('data-range');
+      if (newRange === RANGE) return;
+      RANGE = newRange;
+      REFRESH_MS = REFRESH_MAP[RANGE] || 15000;
+      windowStart = null;
+      windowEnd = null;
+      updateNavUI();
+      document.querySelectorAll('#range-selector button[data-range]').forEach(function(b) {
+        b.className = 'btn btn-xs btn-ghost';
+      });
+      btn.className = 'btn btn-xs btn-primary';
+      updateURL();
+      refreshAllPanels();
+      resetRefreshTimer();
+    });
+  });
+
+  // Time navigation
+  var timeNav = document.getElementById('time-nav');
+  var navLeft = document.getElementById('nav-left');
+  var navRight = document.getElementById('nav-right');
+  var navNow = document.getElementById('nav-now');
+  var navLeftLabel = document.getElementById('nav-left-label');
+  var navRightLabel = document.getElementById('nav-right-label');
+  var HALF_LABELS = { '1h': '30m', '6h': '3h', '24h': '12h', '7d': '3.5d', '30d': '15d' };
+
+  function updateNavUI() {
+    if (!timeNav) return;
+    var half = HALF_LABELS[RANGE] || '';
+    if (navLeftLabel) navLeftLabel.textContent = '-' + half;
+    if (navRightLabel) navRightLabel.textContent = '+' + half;
+    var live = isLive();
+    if (navNow) {
+      navNow.className = live
+        ? 'btn btn-xs text-xs btn-primary btn-outline animate-pulse-gentle pointer-events-none'
+        : 'btn btn-xs text-xs btn-ghost';
+    }
+    if (navRight) {
+      navRight.className = live
+        ? 'btn btn-xs btn-ghost btn-square opacity-30 pointer-events-none'
+        : 'btn btn-xs btn-ghost btn-square';
+    }
+  }
+
+  function navigate(direction) {
+    var dur = RANGE_SECS[RANGE] || 3600;
+    var halfDur = Math.floor(dur / 2);
+    var bounds = xBounds();
+    if (direction < 0) {
+      windowEnd = bounds.max - halfDur;
+      windowStart = bounds.min - halfDur;
+    } else {
+      var newEnd = bounds.max + halfDur;
+      var now = Math.floor(Date.now() / 1000);
+      if (newEnd >= now) {
+        windowEnd = null;
+        windowStart = null;
+      } else {
+        windowEnd = newEnd;
+        windowStart = bounds.min + halfDur;
+      }
+    }
+    updateNavUI();
+    updateURL();
+    refreshAllPanels();
+  }
+
+  if (navLeft) navLeft.addEventListener('click', function() { navigate(-1); });
+  if (navRight) navRight.addEventListener('click', function() { navigate(1); });
+  if (navNow) navNow.addEventListener('click', function() {
+    windowEnd = null;
+    windowStart = null;
+    updateNavUI();
+    updateURL();
+    refreshAllPanels();
+  });
+
+  updateNavUI();
+
+  // Initial load
+  METRICS.forEach(fetchAndRender);
+
+  function rerenderCached() {
+    METRICS.forEach(function(metric) {
+      if (_panelCache[metric]) renderPanel(metric, _panelCache[metric]);
+    });
+  }
+
+  // Re-render on theme change
+  new MutationObserver(rerenderCached)
+    .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  // Re-render when a panel's width changes (layout breakpoints, window resize)
+  var resizeTimer = null;
+  window.addEventListener('resize', function() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function() {
+      METRICS.forEach(function(metric) {
+        var el = document.getElementById('chart-' + metric);
+        var chart = _charts[metric];
+        if (el && chart && _panelCache[metric] && Math.abs(chart.width - el.clientWidth) > 1) {
+          renderPanel(metric, _panelCache[metric]);
+        }
+      });
+    }, 150);
+  });
+
+  // Auto-refresh the live view; fixed windows do not change. Skipped while the tab is hidden.
+  var refreshTimer = null;
+  function refreshTick() {
+    if (sessionEnded) return;
+    METRICS.forEach(updateFreshness);
+    if (document.hidden || !isLive()) return;
+    METRICS.forEach(fetchAndRender);
+  }
+  function stopRefresh() {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+  function resetRefreshTimer() {
+    stopRefresh();
+    if (!sessionEnded) refreshTimer = setInterval(refreshTick, REFRESH_MS);
+  }
+  document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) refreshTick();
+  });
+  resetRefreshTimer();
+
+  } // end init()
+})();
+</script>
+{% endif %}
+{% endmacro %}
