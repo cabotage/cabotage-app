@@ -243,7 +243,7 @@ def test_triage_latest_before_status_and_deterministic_ties(
     inventory: dict[str, tuple[InventoryRow, InventoryRow]],
 ) -> None:
     app_env = _live_app_env(inventory)
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     failed = _deployment(
         app_env, created=now, error=True, deployment_id=uuid.UUID(int=1)
     )
@@ -273,7 +273,7 @@ def test_deployment_filters_precede_page_limit(
     inventory: dict[str, tuple[InventoryRow, InventoryRow]],
 ) -> None:
     app_env = _live_app_env(inventory)
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     desired = _deployment(
         app_env, created=now - datetime.timedelta(hours=2), error=True
     )
@@ -327,7 +327,7 @@ def test_triage_excludes_deleted_ancestry_and_old_attempts(
     inventory: dict[str, tuple[InventoryRow, InventoryRow]],
 ) -> None:
     app_env = _live_app_env(inventory)
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     failed = _deployment(app_env, created=now - datetime.timedelta(days=10), error=True)
     rows, _ = queries.deployments_page(
         "attention", 1, application_id=app_env.application_id
@@ -377,7 +377,7 @@ def test_scoped_activity_is_bounded_redacted_and_escaped(
     db.session.add_all([sibling_app, sibling_project])
     db.session.flush()
     deployment = _deployment(
-        app_env, created=datetime.datetime.now(datetime.timezone.utc), error=True
+        app_env, created=datetime.datetime.now(datetime.UTC), error=True
     )
     deployment.error_detail = "never-display-deployment-error-payload"
     db.session.flush()
@@ -507,7 +507,7 @@ def test_deployment_route_filters_and_invalid_scope(
     key.enter(client)
     app_env = _live_app_env(inventory)
     failed = _deployment(
-        app_env, created=datetime.datetime.now(datetime.timezone.utc), error=True
+        app_env, created=datetime.datetime.now(datetime.UTC), error=True
     )
     db.session.commit()
     response = client.get(

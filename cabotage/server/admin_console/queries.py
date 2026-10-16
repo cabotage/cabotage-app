@@ -62,7 +62,7 @@ _DELETED_SUFFIX = re.compile(r"--deleted-[0-9a-f]{12}$")
 
 
 def _utcnow() -> datetime.datetime:
-    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+    return datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
 
 
 def display_slug(slug: str | None) -> str:

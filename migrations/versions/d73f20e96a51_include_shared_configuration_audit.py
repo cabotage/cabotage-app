@@ -5,8 +5,8 @@ Revises: c62e19d85f40
 Create Date: 2026-10-04
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "d73f20e96a51"
 down_revision = "c62e19d85f40"
